@@ -1,0 +1,544 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>robotsix-agent-comm — Chat</title>
+<style>
+  /* ------------------------------------------------------------------ */
+  /* Reset & base                                                        */
+  /* ------------------------------------------------------------------ */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --font-stack: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                  Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', Arial, sans-serif;
+    --header-bg: #1e293b;
+    --header-fg: #f1f5f9;
+    --chat-bg: #f8fafc;
+    --user-bubble-bg: #334155;
+    --user-bubble-fg: #f1f5f9;
+    --assistant-bubble-bg: #e2e8f0;
+    --assistant-bubble-fg: #0f172a;
+    --composer-bg: #ffffff;
+    --composer-border: #cbd5e1;
+    --btn-primary-bg: #2563eb;
+    --btn-primary-fg: #ffffff;
+    --btn-primary-hover: #1d4ed8;
+    --btn-disabled-bg: #94a3b8;
+    --error-banner-bg: #fef2f2;
+    --error-banner-fg: #991b1b;
+    --error-banner-border: #fecaca;
+    --dot-green: #22c55e;
+    --dot-red: #ef4444;
+  }
+
+  html, body { height: 100%; font-family: var(--font-stack); }
+
+  body {
+    display: flex; flex-direction: column;
+    background: var(--chat-bg); color: #0f172a;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Header bar                                                          */
+  /* ------------------------------------------------------------------ */
+  #header {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.5rem 1rem;
+    background: var(--header-bg); color: var(--header-fg);
+    flex-shrink: 0;
+    position: relative;   /* anchor for settings panel */
+  }
+  #header .title {
+    font-weight: 700; font-size: 1.05rem; flex: 1;
+  }
+  #connection-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--dot-green);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  #connection-dot.error { background: var(--dot-red); }
+
+  #settings-toggle {
+    background: none; border: none; color: var(--header-fg);
+    font-size: 1.2rem; cursor: pointer; line-height: 1;
+    padding: 0.2rem 0.4rem; border-radius: 4px;
+  }
+  #settings-toggle:hover { background: rgba(255,255,255,0.15); }
+
+  #settings-panel {
+    display: none; position: absolute; top: 2.5rem; right: 1rem;
+    background: #fff; color: #0f172a; border: 1px solid var(--composer-border);
+    border-radius: 8px; padding: 0.75rem; z-index: 10;
+    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    min-width: 280px;
+  }
+  #settings-panel.visible { display: block; }
+  #settings-panel label { display: block; font-size: 0.85rem; margin-bottom: 0.3rem; }
+  #settings-panel input[type=text] {
+    width: 100%; padding: 0.4rem 0.5rem; border: 1px solid var(--composer-border);
+    border-radius: 4px; font-size: 0.9rem;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Error banner                                                        */
+  /* ------------------------------------------------------------------ */
+  #error-banner {
+    display: none; align-items: center; gap: 0.75rem;
+    padding: 0.6rem 1rem;
+    background: var(--error-banner-bg); color: var(--error-banner-fg);
+    border-bottom: 1px solid var(--error-banner-border);
+    font-size: 0.9rem; flex-shrink: 0;
+  }
+  #error-banner.visible { display: flex; }
+  #error-banner .msg { flex: 1; }
+  #error-banner .dismiss {
+    background: none; border: none; color: var(--error-banner-fg);
+    font-size: 1.2rem; cursor: pointer; line-height: 1; padding: 0 0.2rem;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Chat area                                                           */
+  /* ------------------------------------------------------------------ */
+  #chat {
+    flex: 1; overflow-y: auto; padding: 1rem;
+    display: flex; flex-direction: column; gap: 0.75rem;
+  }
+  .bubble {
+    max-width: 80%; padding: 0.6rem 0.9rem; border-radius: 12px;
+    line-height: 1.5; font-size: 0.95rem; white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .bubble.user {
+    align-self: flex-end;
+    background: var(--user-bubble-bg); color: var(--user-bubble-fg);
+    border-bottom-right-radius: 4px;
+  }
+  .bubble.assistant {
+    align-self: flex-start;
+    background: var(--assistant-bubble-bg); color: var(--assistant-bubble-fg);
+    border-bottom-left-radius: 4px;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Composer row                                                        */
+  /* ------------------------------------------------------------------ */
+  #composer {
+    display: flex; align-items: flex-end; gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--composer-bg);
+    border-top: 1px solid var(--composer-border);
+    flex-shrink: 0;
+    position: sticky; bottom: 0;
+  }
+  #composer textarea {
+    flex: 1; resize: none;
+    border: 1px solid var(--composer-border); border-radius: 8px;
+    padding: 0.5rem 0.75rem; font-family: inherit; font-size: 0.95rem;
+    line-height: 1.4; min-height: 40px; max-height: 120px;
+    outline: none;
+  }
+  #composer textarea:focus { border-color: var(--btn-primary-bg); }
+  #composer textarea:disabled { background: #f1f5f9; }
+
+  #send-btn {
+    background: var(--btn-primary-bg); color: var(--btn-primary-fg);
+    border: none; border-radius: 8px; padding: 0.5rem 1.2rem;
+    font-size: 0.95rem; font-weight: 600; cursor: pointer;
+    height: 40px; white-space: nowrap;
+    transition: background 0.15s;
+  }
+  #send-btn:hover:not(:disabled) { background: var(--btn-primary-hover); }
+  #send-btn:disabled {
+    background: var(--btn-disabled-bg); cursor: not-allowed;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Typing indicator                                                    */
+  /* ------------------------------------------------------------------ */
+  #typing-indicator {
+    display: none; align-items: center; gap: 0.3rem;
+    padding: 0.5rem 0.9rem; align-self: flex-start;
+  }
+  #typing-indicator.visible { display: flex; }
+  #typing-indicator .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #94a3b8;
+    animation: pulse 1.4s infinite ease-in-out both;
+  }
+  #typing-indicator .dot:nth-child(1) { animation-delay: -0.32s; }
+  #typing-indicator .dot:nth-child(2) { animation-delay: -0.16s; }
+  #typing-indicator .dot:nth-child(3) { animation-delay: 0s; }
+
+  @keyframes pulse {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+    40%           { transform: scale(1.0); opacity: 1.0; }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Responsive tweaks                                                   */
+  /* ------------------------------------------------------------------ */
+  @media (max-width: 480px) {
+    .bubble { max-width: 92%; }
+    #header { padding: 0.4rem 0.6rem; }
+    #composer { padding: 0.5rem 0.6rem; }
+  }
+</style>
+</head>
+<body>
+
+<!-- ================================================================= -->
+<!-- Header                                                             -->
+<!-- ================================================================= -->
+<header id="header">
+  <span class="title">robotsix-agent-comm</span>
+  <span id="connection-dot" title="connection status"></span>
+  <button id="settings-toggle" title="Server URL" aria-label="Server settings">⚙</button>
+</header>
+
+<div id="settings-panel">
+  <label for="server-url-input">Server URL (POST /chat)</label>
+  <input type="text" id="server-url-input" placeholder="http://localhost:8000/chat">
+</div>
+
+<!-- ================================================================= -->
+<!-- Error banner                                                       -->
+<!-- ================================================================= -->
+<div id="error-banner">
+  <span class="msg"></span>
+  <button class="dismiss" aria-label="Dismiss error">&times;</button>
+</div>
+
+<!-- ================================================================= -->
+<!-- Chat messages                                                      -->
+<!-- ================================================================= -->
+<div id="chat" aria-live="polite"></div>
+
+<!-- ================================================================= -->
+<!-- Composer                                                           -->
+<!-- ================================================================= -->
+<div id="composer">
+  <textarea id="msg-input" rows="1" placeholder="Type a message…" aria-label="Message"></textarea>
+  <button id="send-btn">Send</button>
+</div>
+
+<!-- ================================================================= -->
+<!-- Script                                                             -->
+<!-- ================================================================= -->
+<script>
+(function () {
+  "use strict";
+
+  // ---- DOM refs --------------------------------------------------------
+  const chatEl       = document.getElementById("chat");
+  const msgInput     = document.getElementById("msg-input");
+  const sendBtn      = document.getElementById("send-btn");
+  const errorBanner  = document.getElementById("error-banner");
+  const errorMsgEl   = errorBanner.querySelector(".msg");
+  const errorDismiss = errorBanner.querySelector(".dismiss");
+  const connDot      = document.getElementById("connection-dot");
+  const settingsToggle = document.getElementById("settings-toggle");
+  const settingsPanel  = document.getElementById("settings-panel");
+  const serverUrlInput = document.getElementById("server-url-input");
+
+  // ---- State -----------------------------------------------------------
+  var state = "idle";          // idle | sending | streaming | error
+  var currentAssistantBubble = null;  // the <div> receiving tokens
+  var typingIndicatorEl      = null;  // the animated dots element
+
+  // ---- Server URL (localStorage-backed) --------------------------------
+  var LS_KEY = "robotsix-agent-comm-server-url";
+
+  function defaultUrl() {
+    var origin = window.location.origin;
+    // file:// origins report the string "null" — fall back to localhost.
+    if (!origin || origin === "null") {
+      return "http://localhost:8000/chat";
+    }
+    return origin + "/chat";
+  }
+
+  function getServerUrl() {
+    try { return localStorage.getItem(LS_KEY) || defaultUrl(); }
+    catch (_) { return defaultUrl(); }
+  }
+
+  function setServerUrl(url) {
+    try { localStorage.setItem(LS_KEY, url); } catch (_) {}
+  }
+
+  serverUrlInput.value = getServerUrl();
+
+  // ---- Helpers ---------------------------------------------------------
+  function scrollToBottom() {
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+
+  function setConnectionStatus(ok) {
+    if (ok) { connDot.classList.remove("error"); }
+    else    { connDot.classList.add("error"); }
+  }
+
+  function showError(message) {
+    errorMsgEl.textContent = message;
+    errorBanner.classList.add("visible");
+    setConnectionStatus(false);
+  }
+
+  function hideError() {
+    errorBanner.classList.remove("visible");
+    // Don't immediately flip to green — only go green on next successful
+    // stream start or completion.
+  }
+
+  errorDismiss.addEventListener("click", function () { hideError(); });
+
+  // ---- Typing indicator ------------------------------------------------
+  function showTypingIndicator() {
+    if (typingIndicatorEl) return;            // already visible
+    typingIndicatorEl = document.createElement("div");
+    typingIndicatorEl.id = "typing-indicator";
+    typingIndicatorEl.className = "visible";
+    for (var i = 0; i < 3; i++) {
+      var dot = document.createElement("span");
+      dot.className = "dot";
+      typingIndicatorEl.appendChild(dot);
+    }
+    chatEl.appendChild(typingIndicatorEl);
+    scrollToBottom();
+  }
+
+  function hideTypingIndicator() {
+    if (!typingIndicatorEl) return;
+    typingIndicatorEl.remove();
+    typingIndicatorEl = null;
+  }
+
+  // ---- Input enable / disable ------------------------------------------
+  function setInputEnabled(enabled) {
+    msgInput.disabled = !enabled;
+    sendBtn.disabled  = !enabled;
+  }
+
+  // ---- Message bubbles -------------------------------------------------
+  function addUserBubble(text) {
+    var div = document.createElement("div");
+    div.className = "bubble user";
+    div.textContent = text;
+    chatEl.appendChild(div);
+    scrollToBottom();
+  }
+
+  function createAssistantBubble() {
+    if (currentAssistantBubble) return currentAssistantBubble;
+    var div = document.createElement("div");
+    div.className = "bubble assistant";
+    div.textContent = "";
+    chatEl.appendChild(div);
+    currentAssistantBubble = div;
+    return div;
+  }
+
+  function appendToken(token) {
+    var bubble = createAssistantBubble();
+    bubble.textContent += token;
+    scrollToBottom();
+  }
+
+  function finaliseAssistantBubble() {
+    if (currentAssistantBubble && currentAssistantBubble.textContent === "") {
+      currentAssistantBubble.textContent = "(empty response)";
+    }
+    currentAssistantBubble = null;
+  }
+
+  // ---- SSE stream parser -----------------------------------------------
+  function processSSEStream(body, controller) {
+    // We use a ReadableStream to pipe fetch body chunks into an SSE line
+    // parser.  Each \n\n-terminated block is decoded and dispatched.
+    var reader = body.getReader();
+    var decoder = new TextDecoder();
+    var buffer = "";
+
+    function pump() {
+      reader.read().then(function (result) {
+        if (result.done) {
+          // Stream ended unexpectedly (server closed connection).  If we
+          // were still streaming (no "done" frame), treat as error.
+          if (state === "streaming") {
+            controller.error(new Error("Server closed the connection unexpectedly"));
+          }
+          return;
+        }
+
+        buffer += decoder.decode(result.value, { stream: true });
+        // Normalise \r\n → \n and strip stray \r for robustness.
+        buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
+        var lines = buffer.split("\n");
+        // Keep the last (possibly incomplete) segment in the buffer.
+        buffer = lines.pop();
+
+        var currentData = "";
+        for (var i = 0; i < lines.length; i++) {
+          var line = lines[i];
+          if (line.startsWith("data: ")) {
+            // Accumulate multi-line data fields (some SSE impls split
+            // JSON across several data: lines, though ours doesn't).
+            currentData += line.slice(6);
+          } else if (line === "data:") {
+            currentData += "";
+          } else if (line === "") {
+            // Empty line = end of event.  Process accumulated data.
+            if (currentData !== "") {
+              controller.onData(currentData);
+              currentData = "";
+            }
+          }
+          // Ignore lines with "event:", "id:", "retry:", or comments.
+        }
+
+        return pump();
+      }).catch(function (err) {
+        controller.error(err);
+      });
+    }
+
+    return { start: pump };
+  }
+
+  // ---- Send logic ------------------------------------------------------
+  function sendMessage() {
+    var message = msgInput.value.trim();
+    if (!message || state === "sending" || state === "streaming") return;
+
+    msgInput.value = "";
+    // Auto-resize textarea back to 1 row
+    msgInput.style.height = "";
+
+    hideError();
+    addUserBubble(message);
+    showTypingIndicator();
+    setInputEnabled(false);
+    setConnectionStatus(true);
+
+    state = "sending";
+
+    var streamController = {
+      onData: function (raw) {
+        var frame;
+        try { frame = JSON.parse(raw); }
+        catch (_) { return; /* skip unparseable frames */ }
+
+        if (frame.type === "token") {
+          // First token — hide typing indicator and enter streaming.
+          if (state === "sending") {
+            hideTypingIndicator();
+            state = "streaming";
+          }
+          var content = frame.content;
+          if (typeof content === "string") {
+            appendToken(content);
+          }
+        } else if (frame.type === "done") {
+          hideTypingIndicator();
+          finaliseAssistantBubble();
+          setInputEnabled(true);
+          setConnectionStatus(true);
+          state = "idle";
+        } else if (frame.type === "error") {
+          hideTypingIndicator();
+          finaliseAssistantBubble();
+          setInputEnabled(true);
+          showError(frame.message || "Server error");
+          state = "error";
+        }
+      },
+      error: function (err) {
+        hideTypingIndicator();
+        finaliseAssistantBubble();
+        setInputEnabled(true);
+        showError(err.message || "Network error — is the server running?");
+        state = "error";
+      }
+    };
+
+    var url = getServerUrl();
+
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ message: message })
+    }).then(function (response) {
+      if (!response.ok) {
+        // Non-2xx — try to read an error body, else show status.
+        return response.text().then(function (txt) {
+          var msg;
+          try {
+            var errBody = JSON.parse(txt);
+            msg = errBody.error || errBody.message || ("HTTP " + response.status);
+          } catch (_) {
+            msg = txt || ("HTTP " + response.status);
+          }
+          throw new Error(msg);
+        });
+      }
+
+      var contentType = response.headers.get("content-type") || "";
+      if (contentType.indexOf("text/event-stream") === -1) {
+        // Not SSE — read body and show as error.
+        return response.text().then(function (txt) {
+          throw new Error("Unexpected response: " + txt.slice(0, 200));
+        });
+      }
+
+      var parser = processSSEStream(response.body, streamController);
+      parser.start();
+    }).catch(function (err) {
+      streamController.error(err);
+    });
+  }
+
+  // ---- Event listeners -------------------------------------------------
+  sendBtn.addEventListener("click", sendMessage);
+
+  msgInput.addEventListener("keydown", function (e) {
+    if (e.key === "Enter" && !e.shiftKey) {
+      e.preventDefault();
+      sendMessage();
+    }
+  });
+
+  // Auto-resize textarea
+  msgInput.addEventListener("input", function () {
+    msgInput.style.height = "";
+    msgInput.style.height = Math.min(msgInput.scrollHeight, 120) + "px";
+  });
+
+  // Settings toggle
+  settingsToggle.addEventListener("click", function (e) {
+    e.stopPropagation();
+    settingsPanel.classList.toggle("visible");
+  });
+
+  document.addEventListener("click", function () {
+    settingsPanel.classList.remove("visible");
+  });
+
+  settingsPanel.addEventListener("click", function (e) {
+    e.stopPropagation();
+  });
+
+  serverUrlInput.addEventListener("input", function () {
+    var val = serverUrlInput.value.trim();
+    if (val) setServerUrl(val);
+  });
+
+  // ---- Initial state ---------------------------------------------------
+  setConnectionStatus(true);  // optimistic green; turns red on first error
+})();
+</script>
+
+</body>
+</html>

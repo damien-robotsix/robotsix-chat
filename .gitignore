@@ -1,0 +1,25 @@
+# Byte-compiled / optimized files
+__pycache__/
+*.pyc
+
+# Virtual environments
+.venv/
+
+# Environment secrets
+.env
+
+# Build artifacts
+dist/
+build/
+*.egg-info/
+
+# Tool caches
+.mypy_cache/
+.ruff_cache/
+.pytest_cache/
+# coverage data
+.coverage
+.coverage.*
+
+# mkdocs build output
+site/
