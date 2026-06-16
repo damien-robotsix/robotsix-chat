@@ -27,13 +27,14 @@ robotsix-chat = "robotsix_chat.chat.server:run_server_from_config"
 
 [dependency-groups]
 dev = [
-    "ruff",
+    "httpx",
     "mypy",
+    "pip-audit",
+    "pre-commit",
     "pytest",
     "pytest-asyncio",
     "pytest-cov",
-    "pre-commit",
-    "httpx",
+    "ruff",
 ]
 
 [tool.hatch.build.targets.wheel]
@@ -49,6 +50,9 @@ select = ["E", "F", "I", "UP", "B", "SIM"]
 [tool.mypy]
 python_version = "3.12"
 strict = true
+
+[tool.bandit]
+exclude_dirs = ["tests"]
 
 [tool.pytest.ini_options]
 strict = true

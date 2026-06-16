@@ -128,6 +128,9 @@ uv run mypy .                    # static type checking (strict)
 uv run pytest                    # tests
 ```
 
+See [CONTRIBUTING.md](CONTRIBUTING.md) for full contributor setup, including
+pre-commit hooks and dependency auditing.
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE).

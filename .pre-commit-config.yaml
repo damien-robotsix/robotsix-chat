@@ -29,6 +29,15 @@ repos:
       - id: bandit
         args: ["-c", "pyproject.toml"]
 
+  - repo: local
+    hooks:
+      - id: pip-audit
+        name: pip-audit
+        entry: pip-audit
+        language: system
+        pass_filenames: false
+        files: ^uv\.lock$
+
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.5.0
     hooks:
