@@ -31,8 +31,14 @@ uv sync
 
 ### Run against a real LLM
 
-Configure the LLM via environment variables (a `.env` file is picked up
-automatically), then start the server:
+Copy the example environment file and edit as needed:
+
+```bash
+cp .env.example .env
+```
+
+Then configure the LLM via environment variables (the `.env` file is picked up
+automatically) and start the server:
 
 ```bash
 export LLM_API_KEY=sk-...
