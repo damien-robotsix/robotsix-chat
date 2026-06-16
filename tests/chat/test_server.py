@@ -7,7 +7,6 @@ from collections.abc import AsyncIterator
 from unittest.mock import MagicMock, patch
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
 from robotsix_chat.chat.server import (
     SSE_CONTENT_TYPE,
@@ -20,6 +19,7 @@ from robotsix_chat.chat.server import (
     run_server_from_config,
 )
 from robotsix_chat.config import Settings
+from tests.conftest import http_client
 
 
 class MockAgent:
@@ -53,9 +53,7 @@ async def test_health_endpoint() -> None:
     agent = MockAgent()
     app = create_app(agent)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         response = await client.get("/health")
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
@@ -71,9 +69,7 @@ async def test_chat_endpoint_streams_tokens() -> None:
     agent = MockAgent(tokens=["Hello", " ", "world!"])
     app = create_app(agent)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         response = await client.post("/chat", json={"message": "hello"})
 
     assert response.status_code == 200
@@ -101,9 +97,7 @@ async def test_chat_endpoint_passes_message_to_agent() -> None:
     agent = MockAgent(tokens=["ok"])
     app = create_app(agent)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         await client.post("/chat", json={"message": "hello world"})
 
     assert agent.called_with == "hello world"
@@ -114,9 +108,7 @@ async def test_chat_endpoint_sends_done_at_end() -> None:
     agent = MockAgent(tokens=["one", "two"])
     app = create_app(agent)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         response = await client.post("/chat", json={"message": "x"})
 
     assert response.text.rstrip("\r\n").endswith(f'data: {{"type": "{SSE_DONE_TYPE}"}}')
@@ -132,9 +124,7 @@ async def test_chat_endpoint_missing_message_field() -> None:
     agent = MockAgent()
     app = create_app(agent)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         response = await client.post("/chat", json={})
 
     assert response.status_code == 400
@@ -147,9 +137,7 @@ async def test_chat_endpoint_message_not_a_string() -> None:
     agent = MockAgent()
     app = create_app(agent)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         response = await client.post("/chat", json={"message": 123})
 
     assert response.status_code == 400
@@ -162,9 +150,7 @@ async def test_chat_endpoint_invalid_json() -> None:
     agent = MockAgent()
     app = create_app(agent)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         response = await client.post(
             "/chat", content=b"not json", headers={"Content-Type": "application/json"}
         )
@@ -179,9 +165,7 @@ async def test_chat_endpoint_empty_message_string() -> None:
     agent = MockAgent()
     app = create_app(agent)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         response = await client.post("/chat", json={"message": ""})
 
     assert response.status_code == 400
@@ -194,9 +178,7 @@ async def test_chat_endpoint_agent_raises() -> None:
     error_agent = MockAgent(error=RuntimeError("LLM went boom"))
     app = create_app(error_agent)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         response = await client.post("/chat", json={"message": "hello"})
 
     assert response.status_code == 200
@@ -359,9 +341,7 @@ async def test_unknown_route_returns_404_json() -> None:
     agent = MockAgent()
     app = create_app(agent)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         response = await client.get("/nonexistent")
 
     assert response.status_code == 404
@@ -374,9 +354,7 @@ async def test_wrong_method_on_known_route_returns_405() -> None:
     agent = MockAgent()
     app = create_app(agent)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         # POST /health is not a valid endpoint — Starlette returns 405.
         response = await client.post("/health")
 
@@ -393,9 +371,7 @@ async def test_ui_served_at_root_by_default() -> None:
     """``GET /`` returns the bundled browser chat UI HTML."""
     app = create_app(MockAgent())
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         response = await client.get("/")
 
     assert response.status_code == 200
@@ -409,9 +385,7 @@ async def test_ui_disabled_returns_404() -> None:
     """With ``serve_ui=False`` the root path is not registered."""
     app = create_app(MockAgent(), serve_ui=False)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         response = await client.get("/")
 
     assert response.status_code == 404
@@ -427,9 +401,7 @@ async def test_cors_headers_present_when_configured() -> None:
     """A configured allowed origin receives ``access-control-allow-origin``."""
     app = create_app(MockAgent(), cors_allow_origins=["https://ui.example.com"])
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         response = await client.post(
             "/chat",
             json={"message": "hi"},
@@ -446,9 +418,7 @@ async def test_no_cors_headers_by_default() -> None:
     """Without configuration, no CORS headers are added."""
     app = create_app(MockAgent())
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         response = await client.post(
             "/chat",
             json={"message": "hi"},
