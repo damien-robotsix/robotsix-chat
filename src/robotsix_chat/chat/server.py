@@ -9,10 +9,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import logging.config
+import os
 from collections.abc import AsyncIterator
 from importlib import resources
 from typing import Protocol
 
+from asgi_correlation_id import CorrelationIdMiddleware
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
@@ -162,7 +165,10 @@ def create_app(
     if serve_ui:
         routes.append(Route("/", ui_endpoint, methods=["GET"]))
 
-    middleware = []
+    correlation_id_header = os.getenv("CORRELATION_ID_HEADER", "X-Request-ID")
+    middleware = [
+        Middleware(CorrelationIdMiddleware, header_name=correlation_id_header)
+    ]
     if cors_allow_origins:
         middleware.append(
             Middleware(
@@ -243,8 +249,35 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     delegates to :func:`run_server`.
     """
     settings = Settings.from_env()
-    logging.basicConfig(
-        level=getattr(logging, settings.log_level.upper(), logging.INFO)
+    logging.config.dictConfig(
+        {
+            "version": 1,
+            "disable_existing_loggers": False,
+            "filters": {
+                "correlation_id": {
+                    "()": "asgi_correlation_id.CorrelationIdFilter",
+                }
+            },
+            "formatters": {
+                "default": {
+                    "format": (
+                        "%(asctime)s %(levelname)-8s "
+                        "[%(correlation_id)s] %(name)s %(message)s"
+                    ),
+                },
+            },
+            "handlers": {
+                "default": {
+                    "class": "logging.StreamHandler",
+                    "formatter": "default",
+                    "filters": ["correlation_id"],
+                },
+            },
+            "root": {
+                "level": settings.log_level.upper(),
+                "handlers": ["default"],
+            },
+        }
     )
     if agent is None:
         agent = create_agent_from_settings(
