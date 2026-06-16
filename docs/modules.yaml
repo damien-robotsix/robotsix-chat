@@ -1,0 +1,7 @@
+modules:
+  - robotsix_chat
+  - robotsix_chat.config
+  - robotsix_chat.chat
+  - robotsix_chat.chat.server
+  - robotsix_chat.llm
+  - robotsix_chat.llm.agent

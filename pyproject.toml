@@ -43,6 +43,10 @@ dev = [
     "pytest-cov",
     "ruff",
 ]
+docs = [
+    "mkdocs-material",
+    "mkdocstrings[python]",
+]
 
 [tool.hatch.build.targets.wheel]
 packages = ["src/robotsix_chat"]
