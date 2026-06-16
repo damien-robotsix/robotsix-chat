@@ -20,6 +20,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, StreamingResponse
 from starlette.routing import Route
 
+from robotsix_chat import PROJECT_TITLE
 from robotsix_chat.config import Settings
 from robotsix_chat.llm import Agent
 
@@ -67,9 +68,10 @@ async def health_endpoint(request: Request) -> JSONResponse:
 
 def _load_ui_html() -> str:
     """Read the bundled browser UI (``ui/index.html``) as a string."""
-    return (resources.files("robotsix_chat") / "ui" / "index.html").read_text(
+    raw = (resources.files("robotsix_chat") / "ui" / "index.html").read_text(
         encoding="utf-8"
     )
+    return raw.replace("{{ PROJECT_TITLE }}", PROJECT_TITLE)
 
 
 async def ui_endpoint(request: Request) -> HTMLResponse:

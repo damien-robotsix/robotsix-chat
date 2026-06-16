@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from robotsix_chat import PROJECT_TITLE
 from robotsix_chat.chat.server import (
     SSE_CONTENT_TYPE,
     SSE_DONE_TYPE,
@@ -377,7 +378,7 @@ async def test_ui_served_at_root_by_default() -> None:
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
     assert "<!DOCTYPE html>" in response.text
-    assert "robotsix-agent-comm" in response.text or "Chat" in response.text
+    assert PROJECT_TITLE in response.text
 
 
 @pytest.mark.asyncio

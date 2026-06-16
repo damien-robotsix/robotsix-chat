@@ -8,3 +8,5 @@ without binding a real port.
 """
 
 __version__ = "0.1.0"
+
+PROJECT_TITLE = "robotsix-agent-comm"

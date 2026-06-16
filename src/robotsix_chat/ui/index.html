@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>robotsix-agent-comm — Chat</title>
+<title>{{ PROJECT_TITLE }} — Chat</title>
 <style>
   /* ------------------------------------------------------------------ */
   /* Reset & base                                                        */
@@ -193,7 +193,7 @@
 <!-- Header                                                             -->
 <!-- ================================================================= -->
 <header id="header">
-  <span class="title">robotsix-agent-comm</span>
+  <span class="title">{{ PROJECT_TITLE }}</span>
   <span id="connection-dot" title="connection status"></span>
   <button id="settings-toggle" title="Server URL" aria-label="Server settings">⚙</button>
 </header>
@@ -249,7 +249,7 @@
   var typingIndicatorEl      = null;  // the animated dots element
 
   // ---- Server URL (localStorage-backed) --------------------------------
-  var LS_KEY = "robotsix-agent-comm-server-url";
+  var LS_KEY = "{{ PROJECT_TITLE }}-server-url";
 
   function defaultUrl() {
     var origin = window.location.origin;
