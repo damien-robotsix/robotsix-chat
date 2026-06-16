@@ -228,6 +228,7 @@ def create_agent_from_settings(
         api_key=settings.llm_api_key,
         model=settings.llm_model,
         base_url=settings.llm_base_url,
+        graceful_errors=settings.graceful_errors,
     )
     return LLMChatAgent(agent)
 

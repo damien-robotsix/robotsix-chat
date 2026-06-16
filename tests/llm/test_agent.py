@@ -84,6 +84,26 @@ async def test_instantiate_with_api_key_and_base_url(
 
 
 @pytest.mark.asyncio
+async def test_instantiate_with_graceful_errors_enabled(
+    mock_llmio_agent: tuple[Any, Any, list[Callable[..., Any]]],
+) -> None:
+    """``Agent(instruction, graceful_errors=True)`` forwards the flag
+    to ``llmio.Agent``."""
+    mock_client = MagicMock()
+    MockLLMIOAgent, mock_llmio, _ = mock_llmio_agent
+
+    agent = Agent("You are helpful.", client=mock_client, graceful_errors=True)
+
+    MockLLMIOAgent.assert_called_once_with(
+        instruction="You are helpful.",
+        client=mock_client,
+        model="gpt-4o-mini",
+        graceful_errors=True,
+    )
+    assert agent._agent is mock_llmio
+
+
+@pytest.mark.asyncio
 async def test_tool_registration(
     mock_llmio_agent: tuple[Any, Any, list[Callable[..., Any]]],
 ) -> None:

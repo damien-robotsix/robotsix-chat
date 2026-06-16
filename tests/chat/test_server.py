@@ -246,9 +246,31 @@ async def test_create_agent_from_settings_explicit() -> None:
             api_key="sk-from-settings",
             model="gpt-5",
             base_url="https://custom.example.com",
+            graceful_errors=False,
         )
         assert isinstance(result, LLMChatAgent)
         assert result._agent is mock_agent_instance
+
+
+@pytest.mark.asyncio
+async def test_create_agent_from_settings_graceful_errors_plumbed() -> None:
+    """``create_agent_from_settings`` forwards ``graceful_errors=True`` to
+    ``Agent``."""
+    settings = Settings(
+        llm_api_key="sk-test",
+        graceful_errors=True,
+    )
+
+    with patch("robotsix_chat.chat.server.Agent") as MockAgent:
+        create_agent_from_settings("Be concise.", settings=settings)
+
+        MockAgent.assert_called_once_with(
+            instruction="Be concise.",
+            api_key="sk-test",
+            model="gpt-4o-mini",
+            base_url=None,
+            graceful_errors=True,
+        )
 
 
 @pytest.mark.asyncio
@@ -269,6 +291,7 @@ async def test_create_agent_from_settings_uses_from_env_when_none(
             api_key="sk-env-test",
             model="gpt-4.1",
             base_url="http://localhost:8080/v1",
+            graceful_errors=False,
         )
         assert isinstance(result, LLMChatAgent)
 
@@ -301,6 +324,7 @@ async def test_run_server_from_config_creates_agent_from_settings(
             api_key="sk-run-server-test",
             model="gpt-4o",
             base_url=None,  # empty string → None via Settings
+            graceful_errors=False,
         )
         # The agent passed to run_server is an LLMChatAgent wrapping
         # the constructed Agent.
