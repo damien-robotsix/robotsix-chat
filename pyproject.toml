@@ -10,7 +10,14 @@ readme = "README.md"
 requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Damien Robotsix", email = "damien.robotsix@gmail.com" }]
-dependencies = ["llmio", "pydantic", "python-dotenv", "uvicorn", "starlette"]
+dependencies = [
+    "asgi-correlation-id",
+    "llmio",
+    "pydantic",
+    "python-dotenv",
+    "uvicorn",
+    "starlette",
+]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Developers",
