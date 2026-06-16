@@ -109,6 +109,7 @@ All configuration is via environment variables (with `.env` support).
 | `SERVER_PORT` | `8000` | Port the server listens on. |
 | `LOG_LEVEL` | `INFO` | Python logging level. |
 | `CORS_ALLOW_ORIGINS` | *(empty)* | Comma-separated origins allowed to call `/chat` cross-origin (`*` = any). Only needed when the UI is hosted elsewhere. |
+| `GRACEFUL_ERRORS` | `false` | When `true` / `1` / `yes`, the LLM client silently swallows recoverable errors rather than raising. |
 
 ## Application factory
 
