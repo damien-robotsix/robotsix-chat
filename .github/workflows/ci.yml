@@ -27,3 +27,12 @@ jobs:
       - run: uv run mypy .
       - run: uv run pytest --cov
       - run: uv run pip-audit
+
+  security:
+    uses: damien-robotsix/robotsix-mill/.github/workflows/python-security.yml@main
+    with:
+      install-extras: ""
+      trufflehog-pr-diff: true
+      trufflehog-extra-args: "--results=verified,unknown"
+    permissions:
+      contents: read
