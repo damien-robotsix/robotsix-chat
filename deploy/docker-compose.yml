@@ -1,0 +1,23 @@
+services:
+  chat:
+    image: ghcr.io/damien-robotsix/robotsix-chat:${IMAGE_TAG}
+    restart: unless-stopped
+    ports:
+      - "127.0.0.1:${CHAT_PORT:-8088}:8080"
+    volumes:
+      - ./config:/home/appuser/config
+      - ~/.claude:/home/appuser/.claude:ro
+    environment:
+      CHAT_CONFIG_PATH: config/chat.local.yaml
+      LLMIO_MODEL_LEVEL: "3"
+      AUTH_ENABLED: "1"
+      AUTH_PASSWORD: ${CHAT_AUTH_PASSWORD:?err}
+    labels:
+      - "com.centurylinklabs.watchtower.enable=true"
+
+  watchtower:
+    image: containrrr/watchtower
+    restart: unless-stopped
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    command: --interval 30 --label-enable --cleanup
