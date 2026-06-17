@@ -85,7 +85,7 @@ class BasicAuthMiddleware:
             if scheme.lower() != "basic" or not param:
                 return False
             decoded = base64.b64decode(param, validate=True).decode("utf-8")
-        except ValueError, binascii.Error, UnicodeDecodeError:
+        except (ValueError, binascii.Error, UnicodeDecodeError):
             return False
 
         username, sep, password = decoded.partition(":")
