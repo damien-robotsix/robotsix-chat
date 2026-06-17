@@ -234,7 +234,7 @@ def test_create_agent_from_settings_explicit() -> None:
     assert agent._model_level == 2
     assert agent._instruction == "Be concise."
     # Level 2 → openrouter (key-bearing), so the key is forwarded.
-    assert agent._api_key == "sk-from-settings"
+    assert agent._api_key == "sk-from-settings"  # pragma: allowlist secret
 
 
 def test_create_agent_from_settings_keyless_level_drops_key() -> None:
@@ -274,7 +274,7 @@ async def test_create_agent_from_settings_uses_load_when_none(
 
     assert isinstance(result, LlmioChatAgent)
     assert result._model_level == 1
-    assert result._api_key == "sk-env-test"
+    assert result._api_key == "sk-env-test"  # pragma: allowlist secret
 
 
 # ---------------------------------------------------------------------------

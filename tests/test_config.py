@@ -77,7 +77,7 @@ def test_key_bearing_level_with_key_ok() -> None:
     """Level 1 constructs fine with a key."""
     settings = Settings(llmio_model_level=1, llmio_api_key="sk-x")
     assert settings.llmio_model_level == 1
-    assert settings.llmio_api_key == "sk-x"
+    assert settings.llmio_api_key == "sk-x"  # pragma: allowlist secret
 
 
 def test_invalid_model_level_raises() -> None:
@@ -112,7 +112,7 @@ def test_loads_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings.from_env()
 
     assert settings.llmio_model_level == 2
-    assert settings.llmio_api_key == "sk-env-test"
+    assert settings.llmio_api_key == "sk-env-test"  # pragma: allowlist secret
     assert settings.server_host == "0.0.0.0"
     assert settings.server_port == 9090
     assert settings.log_level == "DEBUG"
@@ -179,7 +179,7 @@ def test_dotenv_file_loaded(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> 
     settings = Settings.from_env()
 
     assert settings.llmio_model_level == 2
-    assert settings.llmio_api_key == "sk-dotenv-test"
+    assert settings.llmio_api_key == "sk-dotenv-test"  # pragma: allowlist secret
     assert settings.server_host == "0.0.0.0"
     assert settings.server_port == 3000
 
@@ -216,7 +216,7 @@ def test_auth_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert settings.auth.enabled is True
     assert settings.auth.username == "ops"
-    assert settings.auth.password == "s3cret"
+    assert settings.auth.password == "s3cret"  # pragma: allowlist secret
 
 
 # ---------------------------------------------------------------------------
@@ -248,14 +248,14 @@ def test_load_from_yaml_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     settings = Settings.load(config_path=config_file)
 
     assert settings.llmio_model_level == 2
-    assert settings.llmio_api_key == "sk-yaml"
+    assert settings.llmio_api_key == "sk-yaml"  # pragma: allowlist secret
     assert settings.agent_instruction == "Be terse."
     assert settings.server_host == "0.0.0.0"
     assert settings.server_port == 9000
     assert settings.cors_allow_origins == ["https://ui.example.com"]
     assert settings.auth.enabled is True
     assert settings.auth.username == "ops"
-    assert settings.auth.password == "hunter2"
+    assert settings.auth.password == "hunter2"  # pragma: allowlist secret
 
 
 def test_load_claude_sdk_yaml_needs_no_key(
@@ -287,7 +287,7 @@ def test_env_overrides_yaml(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> 
     settings = Settings.load(config_path=config_file)
 
     # Overridden by env...
-    assert settings.llmio_api_key == "sk-env"
+    assert settings.llmio_api_key == "sk-env"  # pragma: allowlist secret
     assert settings.server_port == 1234
     # ...but the un-overridden YAML value survives.
     assert settings.llmio_model_level == 1
