@@ -20,8 +20,9 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, StreamingResponse
 from starlette.routing import Route
 
-from robotsix_chat.config import Settings
-from robotsix_chat.llm import Agent
+from robotsix_chat.chat.auth import BasicAuthConfig, BasicAuthMiddleware
+from robotsix_chat.config import Settings, level_needs_api_key
+from robotsix_chat.llm import LlmioChatAgent
 
 logger = logging.getLogger(__name__)
 
@@ -86,7 +87,7 @@ async def chat_endpoint(
     # -- parse & validate JSON body ---------------------------------------
     try:
         body = await request.json()
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return JSONResponse({"error": "invalid JSON body"}, status_code=400)
 
     if not isinstance(body, dict):
@@ -138,6 +139,7 @@ def create_app(
     *,
     serve_ui: bool = True,
     cors_allow_origins: list[str] | None = None,
+    auth: BasicAuthConfig | None = None,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -152,6 +154,9 @@ def create_app(
         cors_allow_origins: Origins permitted to call ``/chat`` cross-origin
             (e.g. when the UI is hosted separately). ``None`` (default)
             adds no CORS headers; ``["*"]`` allows any origin.
+        auth: When set, gate every request except ``GET /health`` behind
+            HTTP Basic Auth with these credentials. ``None`` (default)
+            leaves the server open.
     """
     routes = [
         Route("/health", health_endpoint, methods=["GET"]),
@@ -160,6 +165,8 @@ def create_app(
     if serve_ui:
         routes.append(Route("/", ui_endpoint, methods=["GET"]))
 
+    # CORS is outermost so it can answer preflight ``OPTIONS`` (which carry
+    # no credentials) before the auth layer would reject them.
     middleware = []
     if cors_allow_origins:
         middleware.append(
@@ -170,6 +177,8 @@ def create_app(
                 allow_headers=["Content-Type"],
             )
         )
+    if auth is not None:
+        middleware.append(Middleware(BasicAuthMiddleware, config=auth))
 
     app = Starlette(
         routes=routes,
@@ -187,6 +196,7 @@ def run_server(
     port: int = 8000,
     serve_ui: bool = True,
     cors_allow_origins: list[str] | None = None,
+    auth: BasicAuthConfig | None = None,
 ) -> None:
     """Start the chat SSE server on ``host:port``.
 
@@ -195,61 +205,73 @@ def run_server(
     """
     import uvicorn
 
-    app = create_app(agent, serve_ui=serve_ui, cors_allow_origins=cors_allow_origins)
+    app = create_app(
+        agent,
+        serve_ui=serve_ui,
+        cors_allow_origins=cors_allow_origins,
+        auth=auth,
+    )
     uvicorn.run(app, host=host, port=port)
 
 
-class LLMChatAgent:
-    """Adapter that wraps ``llm.Agent`` to satisfy the :class:`ChatAgent` protocol."""
-
-    def __init__(self, agent: Agent) -> None:
-        self._agent = agent
-
-    async def stream(self, message: str) -> AsyncIterator[str]:
-        async for token in self._agent.run(message):
-            yield token
-
-
 def create_agent_from_settings(
-    instruction: str, settings: Settings | None = None
-) -> LLMChatAgent:
-    """Build an :class:`LLMChatAgent` wired from *settings*.
+    instruction: str | None = None, settings: Settings | None = None
+) -> LlmioChatAgent:
+    """Build an :class:`LlmioChatAgent` wired from *settings*.
 
-    When *settings* is ``None``, ``Settings.from_env()`` is called to
-    load configuration from the environment / ``.env`` file.
+    The backend is chosen by robotsix-llmio's capability ``model_level``
+    (``settings.llmio_model_level``) — the level encodes the transport + model.
+    ``settings.llmio_api_key`` is forwarded only when that level's transport
+    needs a key (so keyless levels like claude-sdk never receive one).
+
+    When *settings* is ``None``, ``Settings.load()`` resolves configuration
+    from the YAML config file and environment. When *instruction* is ``None``,
+    it is taken from ``settings.agent_instruction``.
     """
     if settings is None:
-        settings = Settings.from_env()
+        settings = Settings.load()
+    if instruction is None:
+        instruction = settings.agent_instruction
 
-    agent = Agent(
-        instruction=instruction,
-        api_key=settings.llm_api_key,
-        model=settings.llm_model,
-        base_url=settings.llm_base_url,
+    api_key = (
+        settings.llmio_api_key
+        if level_needs_api_key(settings.llmio_model_level)
+        else ""
     )
-    return LLMChatAgent(agent)
+    return LlmioChatAgent(
+        model_level=settings.llmio_model_level,
+        instruction=instruction,
+        api_key=api_key,
+    )
 
 
 def run_server_from_config(agent: ChatAgent | None = None) -> None:
-    """Start the chat SSE server using ``Settings.from_env()`` for configuration.
+    """Start the chat SSE server using ``Settings.load()`` for configuration.
 
-    Reads ``SERVER_HOST``, ``SERVER_PORT``, ``LOG_LEVEL``, and LLM
-    settings (``LLM_API_KEY``, ``LLM_MODEL``, ``LLM_BASE_URL``) from the
-    environment (with ``.env`` support), configures Python logging, builds
-    a default :class:`LLMChatAgent` when *agent* is ``None``, and then
-    delegates to :func:`run_server`.
+    Resolves settings through the full cascade (pydantic defaults → YAML
+    config file → environment, with ``.env`` support), configures Python
+    logging, builds a default :class:`LlmioChatAgent` when *agent* is
+    ``None`` (using ``agent_instruction`` from config), enables HTTP Basic
+    Auth when ``auth.enabled`` is set, and delegates to :func:`run_server`.
     """
-    settings = Settings.from_env()
+    settings = Settings.load()
     logging.basicConfig(
         level=getattr(logging, settings.log_level.upper(), logging.INFO)
     )
     if agent is None:
-        agent = create_agent_from_settings(
-            instruction="You are a helpful assistant.", settings=settings
+        agent = create_agent_from_settings(settings=settings)
+
+    auth = (
+        BasicAuthConfig(
+            username=settings.auth.username, password=settings.auth.password
         )
+        if settings.auth.enabled
+        else None
+    )
     run_server(
         agent,
         host=settings.server_host,
         port=settings.server_port,
         cors_allow_origins=settings.cors_allow_origins,
+        auth=auth,
     )

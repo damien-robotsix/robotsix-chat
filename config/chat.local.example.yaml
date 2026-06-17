@@ -1,0 +1,48 @@
+# Example configuration for robotsix-chat.
+#
+# Copy this file to config/chat.local.yaml and fill in your real values:
+#
+#     cp config/chat.local.example.yaml config/chat.local.yaml
+#
+# config/chat.local.yaml is git-ignored so credentials never land in the
+# repo. Override the path with the CHAT_CONFIG_PATH environment variable.
+#
+# Every value you omit falls back to its built-in default (shown commented
+# below). Environment variables override the corresponding YAML value
+# field-by-field.
+
+# LLM selection — delegated to robotsix-llmio: pick a capability *level* and
+# llmio resolves the transport + model for it (never a concrete provider class).
+#
+# Default level → transport/model mapping (llmio's baked defaults):
+#   level 1 → openrouter[deepseek] / deepseek-v4-flash  (cheapest/fastest)
+#   level 2 → openrouter[deepseek] / deepseek-v4-pro
+#   level 3 → claude-sdk / opus                          (most capable; keyless)
+#
+# Levels 1-2 use OpenRouter — install `uv sync --extra openrouter` and set
+# api_key below. Level 3 uses the Claude Agent SDK — install
+# `uv sync --extra claude-sdk`, run `claude login` (needs Node.js); no api_key.
+llmio:
+  model_level: 3                 # 1 (cheapest) | 2 | 3 (best); env: LLMIO_MODEL_LEVEL
+  # api_key: sk-or-...           # required for levels 1-2 (OpenRouter); env: LLMIO_API_KEY
+
+# The LLM agent's behaviour.
+agent:
+  # instruction: You are a helpful assistant.   # env override: AGENT_INSTRUCTION
+
+# HTTP/SSE server.
+server:
+  # host: 127.0.0.1                # env override: SERVER_HOST
+  # port: 8000                     # env override: SERVER_PORT
+  # log_level: INFO                # env override: LOG_LEVEL
+  # Origins allowed to call /chat cross-origin (only when the UI is hosted
+  # elsewhere). [] = none, ["*"] = any. Env override: CORS_ALLOW_ORIGINS
+  # cors_allow_origins: []
+
+# Login — gate the browser UI and /chat behind HTTP Basic Auth. Disabled by
+# default so local runs need no credentials. Enable for any deployment that
+# is reachable beyond localhost.
+auth:
+  enabled: false                   # env override: AUTH_ENABLED
+  username: admin                  # env override: AUTH_USERNAME
+  password: ""                     # required when enabled; env override: AUTH_PASSWORD

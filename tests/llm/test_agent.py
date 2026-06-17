@@ -1,316 +1,105 @@
-"""Tests for the ``llm.Agent`` async streaming wrapper."""
+"""Tests for :class:`LlmioChatAgent` — the robotsix-llmio-backed chat agent."""
 
 from __future__ import annotations
 
-from collections.abc import Callable
-from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from robotsix_chat.llm import Agent
+from robotsix_chat.llm import LlmioChatAgent
 
-# ---------------------------------------------------------------------------
-# 1. Instantiation
-# ---------------------------------------------------------------------------
+
+def _patched_create_model(output: str = "hi there") -> tuple[MagicMock, MagicMock]:
+    """Return (create_model mock, handle mock) wired so ``build_agent().run()``
+    resolves to a result whose ``.output`` is *output*."""
+    handle = MagicMock()
+
+    async def fake_run(message: str) -> MagicMock:
+        result = MagicMock()
+        result.output = output
+        return result
+
+    handle.run = fake_run
+    handle.close = MagicMock()
+
+    provider = MagicMock()
+    provider.build_agent.return_value = handle
+
+    create_model = MagicMock(return_value=provider)
+    return create_model, handle
 
 
 @pytest.mark.asyncio
-async def test_instantiate_with_explicit_client() -> None:
-    """``Agent(instruction, client=mock_client)`` stores the wrapped
-    ``llmio.Agent`` and passes the client through."""
-    mock_client = MagicMock()
+async def test_stream_yields_block_response() -> None:
+    """``stream`` yields the agent's full reply as a single block."""
+    create_model, handle = _patched_create_model("Hello world!")
 
-    with patch("robotsix_chat.llm.agent.llmio.Agent") as MockLLMIOAgent:
-        mock_llmio_instance = MockLLMIOAgent.return_value
-        agent = Agent("You are helpful.", client=mock_client)
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        chunks = [c async for c in agent.stream("hi")]
 
-        MockLLMIOAgent.assert_called_once_with(
-            instruction="You are helpful.",
-            client=mock_client,
-            model="gpt-4o-mini",
-            graceful_errors=False,
+    assert chunks == ["Hello world!"]
+    handle.close.assert_called_once()  # handle is always closed
+
+
+@pytest.mark.asyncio
+async def test_keyless_level_forwards_no_api_key() -> None:
+    """With no api_key (keyless level), ``create_model`` gets only the level."""
+    create_model, _ = _patched_create_model()
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        _ = [c async for c in agent.stream("hi")]
+
+    create_model.assert_called_once_with(level=3)
+
+
+@pytest.mark.asyncio
+async def test_key_bearing_level_forwards_api_key() -> None:
+    """An api_key is forwarded to ``create_model``; ``build_agent`` gets the level."""
+    create_model, _ = _patched_create_model()
+    provider = create_model.return_value
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(
+            model_level=1, instruction="Be helpful.", api_key="sk-or-test"
         )
-        assert agent._agent is mock_llmio_instance
+        _ = [c async for c in agent.stream("hi")]
+
+    create_model.assert_called_once_with(level=1, api_key="sk-or-test")
+    provider.build_agent.assert_called_once_with(level=1, system_prompt="Be helpful.")
 
 
 @pytest.mark.asyncio
-async def test_instantiate_with_api_key_creates_client() -> None:
-    """``Agent(instruction, api_key="sk-test")`` constructs an
-    ``OpenAIClient`` internally and forwards it to ``llmio.Agent``."""
-    with (
-        patch("robotsix_chat.llm.agent.llmio.Agent") as MockLLMIOAgent,
-        patch("robotsix_chat.llm.agent.OpenAIClient") as MockOpenAIClient,
-    ):
-        mock_client_instance = MockOpenAIClient.return_value
-        agent = Agent("You are helpful.", api_key="sk-test")
+async def test_empty_output_yields_nothing() -> None:
+    """An empty reply yields no chunks (and still closes the handle)."""
+    create_model, handle = _patched_create_model("")
 
-        MockOpenAIClient.assert_called_once_with(api_key="sk-test", base_url=None)
-        MockLLMIOAgent.assert_called_once_with(
-            instruction="You are helpful.",
-            client=mock_client_instance,
-            model="gpt-4o-mini",
-            graceful_errors=False,
-        )
-        assert agent._agent is MockLLMIOAgent.return_value
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=1, instruction="Be helpful.", api_key="k")
+        chunks = [c async for c in agent.stream("hi")]
+
+    assert chunks == []
+    handle.close.assert_called_once()
 
 
 @pytest.mark.asyncio
-async def test_instantiate_with_api_key_and_base_url() -> None:
-    """``Agent(instruction, api_key="sk-test", base_url="http://local")``
-    forwards ``base_url`` to ``OpenAIClient``."""
-    with (
-        patch("robotsix_chat.llm.agent.llmio.Agent") as MockLLMIOAgent,
-        patch("robotsix_chat.llm.agent.OpenAIClient") as MockOpenAIClient,
-    ):
-        agent = Agent(
-            "You are helpful.",
-            api_key="sk-test",
-            base_url="http://localhost:11434",
-        )
+async def test_handle_closed_on_error() -> None:
+    """If the underlying run raises, the handle is still closed."""
+    handle = MagicMock()
 
-        MockOpenAIClient.assert_called_once_with(
-            api_key="sk-test", base_url="http://localhost:11434"
-        )
-        assert agent._agent is MockLLMIOAgent.return_value
+    async def boom(message: str) -> None:
+        raise RuntimeError("backend exploded")
 
+    handle.run = boom
+    handle.close = MagicMock()
+    provider = MagicMock()
+    provider.build_agent.return_value = handle
+    create_model = MagicMock(return_value=provider)
 
-# ---------------------------------------------------------------------------
-# 2. Tool registration
-# ---------------------------------------------------------------------------
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        with pytest.raises(RuntimeError, match="backend exploded"):
+            _ = [c async for c in agent.stream("hi")]
 
-
-@pytest.mark.asyncio
-async def test_tool_registration() -> None:
-    """``@agent.tool`` adds the function to the underlying ``llmio.Agent``
-    and the decorated function remains callable directly."""
-    with patch("robotsix_chat.llm.agent.llmio.Agent") as MockLLMIOAgent:
-        mock_llmio = MockLLMIOAgent.return_value
-
-        # Simulate the real llmio.Agent.tool behaviour: when called with
-        # a function, return the function unchanged; when called without,
-        # return a decorator that records the function.
-        def fake_tool(
-            fn: Callable[..., Any] | None = None, *, strict: bool = False
-        ) -> Callable[..., Any]:
-            if fn is not None:
-                return fn
-
-            def decorator(func: Callable[..., Any]) -> Callable[..., Any]:
-                return func
-
-            return decorator
-
-        mock_llmio.tool = fake_tool
-
-        agent = Agent("You are helpful.", api_key="sk-test")
-
-        # -- bare decorator form -----------------------------------------
-        @agent.tool
-        def get_time() -> str:
-            """Return the current server time."""
-            return "2025-01-01T00:00:00"
-
-        # The decorated function is callable and returns its value
-        assert get_time() == "2025-01-01T00:00:00"
-
-        # -- parameterised form ------------------------------------------
-        @agent.tool(strict=True)
-        def get_date() -> str:
-            """Return the current date."""
-            return "2025-01-01"
-
-        assert get_date() == "2025-01-01"
-
-
-# ---------------------------------------------------------------------------
-# 3. run() — streaming helpers
-# ---------------------------------------------------------------------------
-
-
-def _make_on_stream(
-    callbacks: list[Callable[..., Any]],
-) -> Callable[..., Any]:
-    """Return a function that behaves like ``llmio.Agent.on_stream``.
-
-    The returned callable stores *fn* in *callbacks* and returns it
-    unchanged, matching the real decorator contract.
-    """
-
-    def on_stream(fn: Callable[..., Any]) -> Callable[..., Any]:
-        callbacks.append(fn)
-        return fn
-
-    return on_stream
-
-
-# ---------------------------------------------------------------------------
-# 4. run() — streaming tests
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_run_streams_tokens() -> None:
-    """Mock ``llmio.Agent.speak`` and ``on_stream`` to simulate delta
-    callbacks; ``run()`` yields the expected tokens."""
-    with patch("robotsix_chat.llm.agent.llmio.Agent") as MockLLMIOAgent:
-        mock_llmio = MockLLMIOAgent.return_value
-
-        _stream_callbacks: list[Callable[..., Any]] = []
-        mock_llmio._stream_callbacks = _stream_callbacks
-        mock_llmio.on_stream = _make_on_stream(_stream_callbacks)
-
-        async def fake_speak(
-            message: str,
-            history: list[Any] | None = None,
-            stream: bool = False,
-            _context: object = None,
-        ) -> object:
-            del message, history, _context
-            for cb in _stream_callbacks:
-                cb(delta="Hello")
-                cb(delta=" ")
-                cb(delta="world")
-            from llmio.agent import AgentResponse
-
-            return AgentResponse(messages=["Hello world"], history=[])
-
-        mock_llmio.speak = fake_speak
-
-        agent = Agent("You are helpful.", api_key="sk-test")
-        tokens: list[str] = []
-        async for token in agent.run("hello"):
-            tokens.append(token)
-
-        assert tokens == ["Hello", " ", "world"]
-
-
-@pytest.mark.asyncio
-async def test_run_yields_error_on_api_failure() -> None:
-    """When ``speak()`` raises, ``run()`` yields an ``"Error: ..."`` token
-    and stops."""
-    with patch("robotsix_chat.llm.agent.llmio.Agent") as MockLLMIOAgent:
-        mock_llmio = MockLLMIOAgent.return_value
-        _stream_callbacks: list[Callable[..., Any]] = []
-        mock_llmio._stream_callbacks = _stream_callbacks
-        mock_llmio.on_stream = _make_on_stream(_stream_callbacks)
-
-        async def fake_speak(
-            message: str,
-            history: list[Any] | None = None,
-            stream: bool = False,
-            _context: object = None,
-        ) -> None:
-            del message, history, stream, _context
-            raise RuntimeError("API connection refused")
-
-        mock_llmio.speak = fake_speak
-
-        agent = Agent("You are helpful.", api_key="sk-test")
-        tokens: list[str] = []
-        async for token in agent.run("hello"):
-            tokens.append(token)
-
-        assert len(tokens) == 1
-        assert tokens[0].startswith("Error:")
-        assert "API connection refused" in tokens[0]
-
-
-@pytest.mark.asyncio
-async def test_run_yields_error_on_bad_tool_call() -> None:
-    """When ``speak()`` raises ``llmio.BadToolCall``, ``run()`` yields an
-    error token."""
-    with patch("robotsix_chat.llm.agent.llmio.Agent") as MockLLMIOAgent:
-        mock_llmio = MockLLMIOAgent.return_value
-        _stream_callbacks: list[Callable[..., Any]] = []
-        mock_llmio._stream_callbacks = _stream_callbacks
-        mock_llmio.on_stream = _make_on_stream(_stream_callbacks)
-
-        from llmio import BadToolCall
-
-        async def fake_speak(
-            message: str,
-            history: list[Any] | None = None,
-            stream: bool = False,
-            _context: object = None,
-        ) -> None:
-            del message, history, stream, _context
-            raise BadToolCall("bad args")
-
-        mock_llmio.speak = fake_speak
-
-        agent = Agent("You are helpful.", api_key="sk-test")
-        tokens: list[str] = []
-        async for token in agent.run("hello"):
-            tokens.append(token)
-
-        assert len(tokens) == 1
-        assert tokens[0].startswith("Error:")
-        assert "bad args" in tokens[0]
-
-
-@pytest.mark.asyncio
-async def test_run_with_history() -> None:
-    """Passing a non-empty *history* list forwards it to
-    ``llmio.Agent.speak``."""
-    with patch("robotsix_chat.llm.agent.llmio.Agent") as MockLLMIOAgent:
-        mock_llmio = MockLLMIOAgent.return_value
-        _stream_callbacks: list[Callable[..., Any]] = []
-        mock_llmio._stream_callbacks = _stream_callbacks
-        mock_llmio.on_stream = _make_on_stream(_stream_callbacks)
-
-        speak_called_with: list[tuple[str, list[Any] | None]] = []
-
-        async def fake_speak(
-            message: str,
-            history: list[Any] | None = None,
-            **kwargs: object,
-        ) -> object:
-            speak_called_with.append((message, history))
-            from llmio.agent import AgentResponse
-
-            return AgentResponse(messages=[], history=[])
-
-        mock_llmio.speak = fake_speak
-
-        agent = Agent("You are helpful.", api_key="sk-test")
-        history: list[Any] = [{"role": "user", "content": "previous"}]
-        tokens: list[str] = []
-        async for token in agent.run("hello", history=history):
-            tokens.append(token)
-
-        assert len(speak_called_with) == 1
-        _, passed_history = speak_called_with[0]
-        assert passed_history == history
-        assert tokens == []
-
-
-@pytest.mark.asyncio
-async def test_run_empty_response() -> None:
-    """When ``speak()`` returns an empty message list, ``run()`` yields
-    nothing and exits cleanly."""
-    with patch("robotsix_chat.llm.agent.llmio.Agent") as MockLLMIOAgent:
-        mock_llmio = MockLLMIOAgent.return_value
-        _stream_callbacks: list[Callable[..., Any]] = []
-        mock_llmio._stream_callbacks = _stream_callbacks
-        mock_llmio.on_stream = _make_on_stream(_stream_callbacks)
-
-        async def fake_speak(
-            message: str,
-            history: list[Any] | None = None,
-            stream: bool = False,
-            _context: object = None,
-        ) -> object:
-            del message, history, stream, _context
-            from llmio.agent import AgentResponse
-
-            return AgentResponse(messages=[], history=[])
-
-        mock_llmio.speak = fake_speak
-
-        agent = Agent("You are helpful.", api_key="sk-test")
-        tokens: list[str] = []
-        async for token in agent.run("hello"):
-            tokens.append(token)
-
-        assert tokens == []
+    handle.close.assert_called_once()
