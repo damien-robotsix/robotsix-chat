@@ -1,0 +1,13 @@
+name: Docs
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  docs:
+    uses: damien-robotsix/robotsix-mill/.github/workflows/python-docs.yml@main

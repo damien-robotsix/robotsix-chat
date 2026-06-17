@@ -1,0 +1,46 @@
+# docs/modules.yaml — module manifest for the robotsix-chat repository.
+#
+# This file is maintained by the module_curator periodic workflow.  It maps
+# every importable Python namespace under ``src/robotsix_chat/`` to its
+# purpose (sourced from the module docstring) and the repo-relative file
+# paths that belong to it.
+#
+# Format:
+#   modules:
+#     - name: <dotted module name>
+#       description: <one-line summary from the module docstring>
+#       paths:
+#         - <repo-relative path>
+#
+# Non-Python resources that ship inside a package (e.g. ``ui/index.html``)
+# are listed under the owning module so the curator does not flag them as
+# unclassified orphans.
+
+modules:
+  - name: robotsix_chat
+    description: "Top-level package — browser + SSE chat server for an LLM agent."
+    paths:
+      - src/robotsix_chat/__init__.py
+      - src/robotsix_chat/py.typed
+
+  - name: robotsix_chat.config
+    description: "Environment-based configuration via pydantic + python-dotenv."
+    paths:
+      - src/robotsix_chat/config.py
+
+  - name: robotsix_chat.chat
+    description: "Chat SSE server — HTTP + Server-Sent Events bridge for human-to-agent chat."
+    paths:
+      - src/robotsix_chat/chat/__init__.py
+      - src/robotsix_chat/chat/server.py
+
+  - name: robotsix_chat.llm
+    description: "LLM-powered agent — streaming wrapper around llmio.Agent."
+    paths:
+      - src/robotsix_chat/llm/__init__.py
+      - src/robotsix_chat/llm/agent.py
+
+  - name: robotsix_chat.ui
+    description: "Browser chat UI — self-contained HTML frontend served at /."
+    paths:
+      - src/robotsix_chat/ui/index.html

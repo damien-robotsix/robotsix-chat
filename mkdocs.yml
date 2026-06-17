@@ -1,0 +1,18 @@
+site_name: robotsix-chat
+site_description: Browser + SSE chat server exposing an LLM agent to human users
+repo_url: https://github.com/damien-robotsix/robotsix-chat
+
+theme:
+  name: material
+
+plugins:
+  - search
+  - mkdocstrings:
+      handlers:
+        python:
+          paths: [src]
+          options:
+            show_source: true
+
+nav:
+  - Home: index.md

@@ -9,10 +9,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import logging.config
+import os
 from collections.abc import AsyncIterator
 from importlib import resources
 from typing import Protocol
 
+from asgi_correlation_id import CorrelationIdMiddleware
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
@@ -20,6 +23,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, StreamingResponse
 from starlette.routing import Route
 
+from robotsix_chat import PROJECT_TITLE
 from robotsix_chat.chat.auth import BasicAuthConfig, BasicAuthMiddleware
 from robotsix_chat.config import Settings, level_needs_api_key
 from robotsix_chat.llm import LlmioChatAgent
@@ -67,10 +71,11 @@ async def health_endpoint(request: Request) -> JSONResponse:
 
 
 def _load_ui_html() -> str:
-    """Read the bundled browser UI (``ui/index.html``) as a string."""
-    return (resources.files("robotsix_chat") / "ui" / "index.html").read_text(
+    """Read the bundled browser UI (``ui/index.html``) and fill placeholders."""
+    raw = (resources.files("robotsix_chat") / "ui" / "index.html").read_text(
         encoding="utf-8"
     )
+    return raw.replace("{{ PROJECT_TITLE }}", PROJECT_TITLE)
 
 
 async def ui_endpoint(request: Request) -> HTMLResponse:
@@ -165,9 +170,13 @@ def create_app(
     if serve_ui:
         routes.append(Route("/", ui_endpoint, methods=["GET"]))
 
-    # CORS is outermost so it can answer preflight ``OPTIONS`` (which carry
-    # no credentials) before the auth layer would reject them.
-    middleware = []
+    # CorrelationIdMiddleware is outermost so every request (and its log lines)
+    # carries a request id. CORS comes next so it can answer preflight
+    # ``OPTIONS`` (which carry no credentials) before the auth layer rejects them.
+    correlation_id_header = os.getenv("CORRELATION_ID_HEADER", "X-Request-ID")
+    middleware = [
+        Middleware(CorrelationIdMiddleware, header_name=correlation_id_header)
+    ]
     if cors_allow_origins:
         middleware.append(
             Middleware(
@@ -255,8 +264,35 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     Auth when ``auth.enabled`` is set, and delegates to :func:`run_server`.
     """
     settings = Settings.load()
-    logging.basicConfig(
-        level=getattr(logging, settings.log_level.upper(), logging.INFO)
+    logging.config.dictConfig(
+        {
+            "version": 1,
+            "disable_existing_loggers": False,
+            "filters": {
+                "correlation_id": {
+                    "()": "asgi_correlation_id.CorrelationIdFilter",
+                }
+            },
+            "formatters": {
+                "default": {
+                    "format": (
+                        "%(asctime)s %(levelname)-8s "
+                        "[%(correlation_id)s] %(name)s %(message)s"
+                    ),
+                },
+            },
+            "handlers": {
+                "default": {
+                    "class": "logging.StreamHandler",
+                    "formatter": "default",
+                    "filters": ["correlation_id"],
+                },
+            },
+            "root": {
+                "level": settings.log_level.upper(),
+                "handlers": ["default"],
+            },
+        }
     )
     if agent is None:
         agent = create_agent_from_settings(settings=settings)

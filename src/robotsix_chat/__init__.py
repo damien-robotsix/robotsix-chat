@@ -8,3 +8,5 @@ self-contained browser chat UI. Built on Starlette so it can be tested with
 """
 
 __version__ = "0.1.0"
+
+PROJECT_TITLE = "robotsix-agent-comm"

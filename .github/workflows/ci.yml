@@ -1,0 +1,38 @@
+name: CI
+
+on: [push, pull_request]
+
+permissions:
+  contents: read
+
+jobs:
+  ci:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.12", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+
+      - uses: astral-sh/setup-uv@v5
+
+      - run: uv sync --frozen --group dev
+
+      - run: uv run ruff check .
+      - run: uv run ruff format --check .
+      - run: uv run mypy .
+      - run: uv run pytest --cov
+      - run: uv run pip-audit
+
+  security:
+    uses: damien-robotsix/robotsix-mill/.github/workflows/python-security.yml@main
+    with:
+      install-extras: ""
+      trufflehog-pr-diff: true
+      trufflehog-extra-args: "--results=verified,unknown"
+    permissions:
+      contents: read

@@ -1,0 +1,35 @@
+name: Release
+
+on:
+  release:
+    types: [published]
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - name: Verify tag matches pyproject.toml version
+        env:
+          TAG: ${{ github.event.release.tag_name }}
+        run: |
+          version=$(python -c "import tomllib; print(tomllib.load(open('pyproject.toml','rb'))['project']['version'])")
+          if [ "${TAG#v}" != "$version" ]; then
+            echo "::error::release tag '$TAG' does not match pyproject version '$version'"
+            exit 1
+          fi
+          if ! grep -qE "^## \[?$version\]?" CHANGELOG.md; then
+            echo "::error::CHANGELOG.md has no '## [$version]' section for version '$version'"
+            exit 1
+          fi
+
+  publish:
+    needs: verify
+    uses: damien-robotsix/robotsix-mill/.github/workflows/python-release.yml@main
+    permissions:
+      id-token: write
