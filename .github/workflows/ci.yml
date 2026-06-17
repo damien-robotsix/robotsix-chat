@@ -27,6 +27,7 @@ jobs:
 
       - run: uv sync --frozen --group dev
 
+      - run: uv run pre-commit run --all-files --show-diff-on-failure
       - run: uv run ruff check .
       - run: uv run ruff format --check .
       - run: uv run mypy .
