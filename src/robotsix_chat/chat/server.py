@@ -92,7 +92,7 @@ async def chat_endpoint(
     # -- parse & validate JSON body ---------------------------------------
     try:
         body = await request.json()
-    except json.JSONDecodeError, ValueError:
+    except (json.JSONDecodeError, ValueError):
         return JSONResponse({"error": "invalid JSON body"}, status_code=400)
 
     if not isinstance(body, dict):
