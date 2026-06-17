@@ -77,7 +77,8 @@ target-version = "py314"
 line-length = 88
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM"]
+select = ["E", "F", "I", "UP", "B", "SIM", "S"]
+per-file-ignores = {"src/robotsix_chat/chat/server.py" = ["S105"], "tests/**" = ["S101", "S104", "S105", "S106", "S107"]}
 
 [tool.mypy]
 python_version = "3.14"
