@@ -134,6 +134,11 @@ async def not_found_handler(request: Request, exc: Exception) -> JSONResponse:
     return JSONResponse({"error": "not found"}, status_code=404)
 
 
+async def server_error_handler(request: Request, exc: Exception) -> JSONResponse:
+    """Return JSON for unhandled server errors."""
+    return JSONResponse({"error": "internal server error"}, status_code=500)
+
+
 # ---------------------------------------------------------------------------
 # Application factory & entry point
 # ---------------------------------------------------------------------------
@@ -192,7 +197,10 @@ def create_app(
     app = Starlette(
         routes=routes,
         middleware=middleware,
-        exception_handlers={404: not_found_handler},
+        exception_handlers={
+            404: not_found_handler,
+            500: server_error_handler,
+        },
     )
     app.state.agent = agent
     return app
