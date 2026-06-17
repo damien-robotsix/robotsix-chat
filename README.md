@@ -3,12 +3,14 @@
 **Browser + SSE chat server for an LLM agent** — exposes an LLM agent to
 human users over HTTP, with a self-contained browser chat UI.
 
-`robotsix-chat` wraps [`llmio`](https://pypi.org/project/llmio/)'s tool-calling
-loop in a small streaming `Agent`, then serves it over Server-Sent Events:
+`robotsix-chat` drives an LLM through
+[`robotsix-llmio`](https://github.com/damien-robotsix/robotsix-llmio) (pick a
+`model_level`, never a concrete provider), then serves it over
+Server-Sent Events:
 
 - `GET /` — a single-file browser chat UI (no build step, no framework).
-- `POST /chat` — accepts `{"message": "..."}` and streams the agent's reply
-  as SSE token frames.
+- `POST /chat` — accepts `{"message": "..."}` and returns the agent's reply
+  as SSE frames.
 - `GET /health` — liveness probe.
 
 The UI and the API are served from the **same origin** by default, so the
@@ -31,23 +33,32 @@ uv sync
 
 ### Run against a real LLM
 
-Copy the example environment file and edit as needed:
+The LLM is selected through [`robotsix-llmio`](https://github.com/damien-robotsix/robotsix-llmio):
+you pick a **model level** (1–3) and llmio resolves the transport + model for
+it — you never name a concrete provider. By default level 3 → Claude
+(`claude-sdk`/`opus`), levels 1–2 → OpenRouter (deepseek).
+
+Easiest path — level 3, the Claude Agent SDK, which uses your `claude login`
+subscription, so **no API key**:
 
 ```bash
-cp .env.example .env
-```
-
-Then configure the LLM via environment variables (the `.env` file is picked up
-automatically) and start the server:
-
-```bash
-export LLM_API_KEY=sk-...
-export LLM_MODEL=gpt-4o-mini        # optional
-# export LLM_BASE_URL=...           # optional, for OpenAI-compatible providers
+uv sync --extra claude-sdk          # pulls claude-agent-sdk via robotsix-llmio
+claude login                        # one-time; also needs Node.js on PATH
+cp config/chat.local.example.yaml config/chat.local.yaml   # defaults to model_level 3
 uv run robotsix-chat
 ```
 
 Open <http://127.0.0.1:8000/> in your browser and start chatting.
+
+Prefer a cheaper level (1–2, OpenRouter deepseek)? Install that extra and set
+the key (env vars override the config file; a `.env` file is picked up too):
+
+```bash
+uv sync --extra openrouter
+export LLMIO_MODEL_LEVEL=1           # 1 cheapest · 2 · 3 best
+export LLMIO_API_KEY=sk-or-...
+uv run robotsix-chat
+```
 
 ### Run without an API key (echo agent)
 
@@ -98,24 +109,104 @@ data: {"type": "done"}
 
 ## Configuration
 
-All configuration is via environment variables (with `.env` support).
+Settings resolve through a layered cascade that matches the rest of the
+robotsix stack (`robotsix-mill`, `robotsix-auto-mail`), built on the shared
+[`robotsix-yaml-config`](https://github.com/damien-robotsix/robotsix-yaml-config)
+library:
 
-| Variable | Default | Description |
-|---|---|---|
-| `LLM_API_KEY` | *(required)* | Provider API key. |
-| `LLM_MODEL` | `gpt-4o-mini` | Model name. |
-| `LLM_BASE_URL` | *(none)* | Custom base URL for OpenAI-compatible providers. |
-| `SERVER_HOST` | `127.0.0.1` | Host the server binds to. |
-| `SERVER_PORT` | `8000` | Port the server listens on. |
-| `LOG_LEVEL` | `INFO` | Python logging level. |
-| `CORS_ALLOW_ORIGINS` | *(empty)* | Comma-separated origins allowed to call `/chat` cross-origin (`*` = any). Only needed when the UI is hosted elsewhere. |
-| `GRACEFUL_ERRORS` | `false` | When `true` / `1` / `yes`, the LLM client silently swallows recoverable errors rather than raising. |
+```
+pydantic field defaults  →  YAML config file  →  environment variables
+```
+
+with each later layer overriding the earlier one **field-by-field**.
+
+### Config file
+
+The YAML file lives at **`config/chat.local.yaml`** by default — copy it from
+the committed [`config/chat.local.example.yaml`](config/chat.local.example.yaml).
+It is git-ignored so credentials never land in the repo. Override the path
+with the `CHAT_CONFIG_PATH` environment variable.
+
+```yaml
+llmio:                       # LLM selection, delegated to robotsix-llmio
+  model_level: 3             # 1 (cheapest) | 2 | 3 (most capable)
+  # api_key: sk-or-...       # required for levels 1-2 (OpenRouter); level 3 needs none
+
+agent:
+  # instruction: You are a helpful assistant.
+
+server:
+  # host: 127.0.0.1
+  # port: 8000
+  # log_level: INFO
+  # cors_allow_origins: []   # ["*"] = any; only when the UI is hosted elsewhere
+
+auth:                        # HTTP Basic Auth gating the UI and /chat
+  enabled: false
+  username: admin
+  password: ""               # required when enabled
+```
+
+### Model level
+
+The LLM is configured the [`robotsix-llmio`](https://github.com/damien-robotsix/robotsix-llmio)
+way — you pick a capability **level** (1–3) and llmio resolves the transport +
+model for it (via `robotsix_llmio.config.create_model`). robotsix-chat never
+names a concrete provider or model. The default level → transport/model mapping:
+
+| `model_level` | transport | model | needs API key? |
+|---|---|---|---|
+| 1 (cheapest) | `openrouter[deepseek]` | `deepseek-v4-flash` | yes (`llmio.api_key`) |
+| 2 | `openrouter[deepseek]` | `deepseek-v4-pro` | yes (`llmio.api_key`) |
+| 3 (most capable) | `claude-sdk` | `opus` | no (subscription auth) |
+
+- **Level 3 / `claude-sdk`** — the
+  [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk) authenticates
+  via your local `claude login` subscription, so **no API key**. Install with
+  `uv sync --extra claude-sdk` and run `claude login` (needs Node.js on PATH).
+- **Levels 1–2 / `openrouter[deepseek]`** — install with
+  `uv sync --extra openrouter` and set `llmio.api_key` (env `LLMIO_API_KEY`).
+
+Each backend dependency is pulled **through** robotsix-llmio's own extras
+(`robotsix-llmio[claude_sdk]` / `robotsix-llmio[openrouter-deepseek]`), so the
+stack owns those deps in one place.
+
+> Replies are returned as a single block (not token-streamed): llmio's Claude
+> SDK model does not yet support incremental streaming through pydantic-ai.
+
+### Login (authentication)
+
+Set `auth.enabled: true` (with a `password`) to gate the browser UI and the
+`/chat` endpoint behind HTTP Basic Auth. The `GET /health` probe stays open.
+The browser prompts for credentials on first load and reuses them for the
+chat requests, so no UI changes are needed. **Enable this for any deployment
+reachable beyond `localhost`.**
+
+### Environment variables
+
+Every field can also be set via an environment variable (with `.env`
+support); env vars override the config file.
+
+| Variable | Config key | Default | Description |
+|---|---|---|---|
+| `LLMIO_MODEL_LEVEL` | `llmio.model_level` | `3` | Capability level: `1` (cheapest), `2`, or `3` (most capable). |
+| `LLMIO_API_KEY` | `llmio.api_key` | *(required for levels 1–2)* | OpenRouter API key (unused by level 3 / claude-sdk). |
+| `AGENT_INSTRUCTION` | `agent.instruction` | `You are a helpful assistant.` | System instruction for the agent. |
+| `SERVER_HOST` | `server.host` | `127.0.0.1` | Host the server binds to. |
+| `SERVER_PORT` | `server.port` | `8000` | Port the server listens on. |
+| `LOG_LEVEL` | `server.log_level` | `INFO` | Python logging level. |
+| `CORS_ALLOW_ORIGINS` | `server.cors_allow_origins` | *(empty)* | Comma-separated origins allowed to call `/chat` cross-origin (`*` = any). Only needed when the UI is hosted elsewhere. |
+| `AUTH_ENABLED` | `auth.enabled` | `false` | Gate the UI and `/chat` behind HTTP Basic Auth. |
+| `AUTH_USERNAME` | `auth.username` | `admin` | Accepted username. |
+| `AUTH_PASSWORD` | `auth.password` | *(empty)* | Accepted password (required when auth is enabled). |
 
 ## Application factory
 
-`create_app(agent, *, serve_ui=True, cors_allow_origins=None)` returns a
-Starlette ASGI app you can mount in tests via `httpx.ASGITransport` or run
-with `uvicorn`. Any object with an
+`create_app(agent, *, serve_ui=True, cors_allow_origins=None, auth=None)`
+returns a Starlette ASGI app you can mount in tests via
+`httpx.ASGITransport` or run with `uvicorn`. Pass a
+`robotsix_chat.chat.auth.BasicAuthConfig` as `auth` to gate every request
+except `GET /health`. Any object with an
 `async def stream(self, message: str) -> AsyncIterator[str]` method
 satisfies the `ChatAgent` protocol.
 

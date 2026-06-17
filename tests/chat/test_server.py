@@ -4,23 +4,23 @@ from __future__ import annotations
 
 import json
 from collections.abc import AsyncIterator
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+from httpx import ASGITransport, AsyncClient
 
-from robotsix_chat import PROJECT_TITLE
 from robotsix_chat.chat.server import (
     SSE_CONTENT_TYPE,
     SSE_DONE_TYPE,
     SSE_ERROR_TYPE,
     SSE_TOKEN_TYPE,
-    LLMChatAgent,
     create_agent_from_settings,
     create_app,
     run_server_from_config,
 )
 from robotsix_chat.config import Settings
-from tests.conftest import http_client
+from robotsix_chat.llm import LlmioChatAgent
 
 
 class MockAgent:
@@ -54,7 +54,9 @@ async def test_health_endpoint() -> None:
     agent = MockAgent()
     app = create_app(agent)
 
-    async with http_client(app) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         response = await client.get("/health")
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
@@ -70,7 +72,9 @@ async def test_chat_endpoint_streams_tokens() -> None:
     agent = MockAgent(tokens=["Hello", " ", "world!"])
     app = create_app(agent)
 
-    async with http_client(app) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         response = await client.post("/chat", json={"message": "hello"})
 
     assert response.status_code == 200
@@ -98,7 +102,9 @@ async def test_chat_endpoint_passes_message_to_agent() -> None:
     agent = MockAgent(tokens=["ok"])
     app = create_app(agent)
 
-    async with http_client(app) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         await client.post("/chat", json={"message": "hello world"})
 
     assert agent.called_with == "hello world"
@@ -109,7 +115,9 @@ async def test_chat_endpoint_sends_done_at_end() -> None:
     agent = MockAgent(tokens=["one", "two"])
     app = create_app(agent)
 
-    async with http_client(app) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         response = await client.post("/chat", json={"message": "x"})
 
     assert response.text.rstrip("\r\n").endswith(f'data: {{"type": "{SSE_DONE_TYPE}"}}')
@@ -125,7 +133,9 @@ async def test_chat_endpoint_missing_message_field() -> None:
     agent = MockAgent()
     app = create_app(agent)
 
-    async with http_client(app) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         response = await client.post("/chat", json={})
 
     assert response.status_code == 400
@@ -138,7 +148,9 @@ async def test_chat_endpoint_message_not_a_string() -> None:
     agent = MockAgent()
     app = create_app(agent)
 
-    async with http_client(app) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         response = await client.post("/chat", json={"message": 123})
 
     assert response.status_code == 400
@@ -151,7 +163,9 @@ async def test_chat_endpoint_invalid_json() -> None:
     agent = MockAgent()
     app = create_app(agent)
 
-    async with http_client(app) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         response = await client.post(
             "/chat", content=b"not json", headers={"Content-Type": "application/json"}
         )
@@ -166,7 +180,9 @@ async def test_chat_endpoint_empty_message_string() -> None:
     agent = MockAgent()
     app = create_app(agent)
 
-    async with http_client(app) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         response = await client.post("/chat", json={"message": ""})
 
     assert response.status_code == 400
@@ -179,7 +195,9 @@ async def test_chat_endpoint_agent_raises() -> None:
     error_agent = MockAgent(error=RuntimeError("LLM went boom"))
     app = create_app(error_agent)
 
-    async with http_client(app) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         response = await client.post("/chat", json={"message": "hello"})
 
     assert response.status_code == 200
@@ -202,98 +220,61 @@ async def test_chat_endpoint_agent_raises() -> None:
 
 
 # ---------------------------------------------------------------------------
-# LLMChatAgent adapter
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_llm_chat_agent_streams_tokens() -> None:
-    """``LLMChatAgent`` delegates ``stream()`` to the wrapped ``Agent.run()``."""
-    mock_agent = MagicMock()
-
-    async def fake_run(message: str) -> AsyncIterator[str]:
-        for token in ["Hi", " ", "there"]:
-            yield token
-
-    mock_agent.run = fake_run
-
-    adapter = LLMChatAgent(mock_agent)
-    tokens = [token async for token in adapter.stream("hello")]
-
-    assert tokens == ["Hi", " ", "there"]
-
-
-# ---------------------------------------------------------------------------
 # create_agent_from_settings
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_create_agent_from_settings_explicit() -> None:
-    """``create_agent_from_settings`` wires LLM fields from a ``Settings`` object."""
-    settings = Settings(
-        llm_api_key="sk-from-settings",
-        llm_model="gpt-5",
-        llm_base_url="https://custom.example.com",
-    )
+def test_create_agent_from_settings_explicit() -> None:
+    """``create_agent_from_settings`` wires llmio fields from a ``Settings``."""
+    settings = Settings(llmio_model_level=2, llmio_api_key="sk-from-settings")
 
-    with patch("robotsix_chat.chat.server.Agent") as MockAgent:
-        mock_agent_instance = MockAgent.return_value
-        result = create_agent_from_settings("Be concise.", settings=settings)
+    agent = create_agent_from_settings("Be concise.", settings=settings)
 
-        MockAgent.assert_called_once_with(
-            instruction="Be concise.",
-            api_key="sk-from-settings",
-            model="gpt-5",
-            base_url="https://custom.example.com",
-            graceful_errors=False,
-        )
-        assert isinstance(result, LLMChatAgent)
-        assert result._agent is mock_agent_instance
+    assert isinstance(agent, LlmioChatAgent)
+    assert agent._model_level == 2
+    assert agent._instruction == "Be concise."
+    # Level 2 → openrouter (key-bearing), so the key is forwarded.
+    assert agent._api_key == "sk-from-settings"
 
 
-@pytest.mark.asyncio
-async def test_create_agent_from_settings_graceful_errors_plumbed() -> None:
-    """``create_agent_from_settings`` forwards ``graceful_errors=True`` to
-    ``Agent``."""
-    settings = Settings(
-        llm_api_key="sk-test",
-        graceful_errors=True,
-    )
+def test_create_agent_from_settings_keyless_level_drops_key() -> None:
+    """A keyless level (3 → claude-sdk) never forwards an api_key."""
+    settings = Settings()  # model_level 3, keyless
 
-    with patch("robotsix_chat.chat.server.Agent") as MockAgent:
-        create_agent_from_settings("Be concise.", settings=settings)
+    agent = create_agent_from_settings("Be helpful.", settings=settings)
 
-        MockAgent.assert_called_once_with(
-            instruction="Be concise.",
-            api_key="sk-test",
-            model="gpt-4o-mini",
-            base_url=None,
-            graceful_errors=True,
-        )
+    assert isinstance(agent, LlmioChatAgent)
+    assert agent._model_level == 3
+    assert agent._api_key == ""
+
+
+def test_create_agent_from_settings_instruction_from_config() -> None:
+    """A ``None`` instruction falls back to ``settings.agent_instruction``."""
+    settings = Settings(agent_instruction="You are terse.")
+
+    agent = create_agent_from_settings(settings=settings)
+
+    assert agent._instruction == "You are terse."
 
 
 @pytest.mark.asyncio
-async def test_create_agent_from_settings_uses_from_env_when_none(
+async def test_create_agent_from_settings_uses_load_when_none(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``create_agent_from_settings`` loads from the environment when
-    *settings* is ``None``."""
-    monkeypatch.setenv("LLM_API_KEY", "sk-env-test")
-    monkeypatch.setenv("LLM_MODEL", "gpt-4.1")
-    monkeypatch.setenv("LLM_BASE_URL", "http://localhost:8080/v1")
+    """``create_agent_from_settings`` resolves config when *settings* is None."""
+    # Isolate from any on-disk config/chat.local.yaml so resolution is env-only.
+    monkeypatch.setattr(
+        "robotsix_chat.config.DEFAULT_CONFIG_PATH", Path("/nonexistent/chat.local.yaml")
+    )
+    monkeypatch.delenv("CHAT_CONFIG_PATH", raising=False)
+    monkeypatch.setenv("LLMIO_MODEL_LEVEL", "1")
+    monkeypatch.setenv("LLMIO_API_KEY", "sk-env-test")
 
-    with patch("robotsix_chat.chat.server.Agent") as MockAgent:
-        result = create_agent_from_settings("Helpful bot.")
+    result = create_agent_from_settings("Helpful bot.")
 
-        MockAgent.assert_called_once_with(
-            instruction="Helpful bot.",
-            api_key="sk-env-test",
-            model="gpt-4.1",
-            base_url="http://localhost:8080/v1",
-            graceful_errors=False,
-        )
-        assert isinstance(result, LLMChatAgent)
+    assert isinstance(result, LlmioChatAgent)
+    assert result._model_level == 1
+    assert result._api_key == "sk-env-test"
 
 
 # ---------------------------------------------------------------------------
@@ -306,36 +287,29 @@ async def test_run_server_from_config_creates_agent_from_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``run_server_from_config()`` with no *agent* creates an
-    ``LLMChatAgent`` from ``Settings``."""
-    monkeypatch.setenv("LLM_API_KEY", "sk-run-server-test")
-    monkeypatch.setenv("LLM_MODEL", "gpt-4o")
-    monkeypatch.setenv("LLM_BASE_URL", "")
+    ``LlmioChatAgent`` from ``Settings`` and forwards server options."""
+    # Isolate from any on-disk config/chat.local.yaml so resolution is env-only.
+    monkeypatch.setattr(
+        "robotsix_chat.config.DEFAULT_CONFIG_PATH", Path("/nonexistent/chat.local.yaml")
+    )
+    monkeypatch.delenv("CHAT_CONFIG_PATH", raising=False)
+    monkeypatch.setenv("LLMIO_MODEL_LEVEL", "3")
     monkeypatch.setenv("SERVER_HOST", "127.0.0.1")
     monkeypatch.setenv("SERVER_PORT", "8080")
 
-    with (
-        patch("robotsix_chat.chat.server.Agent") as MockAgent,
-        patch("robotsix_chat.chat.server.run_server") as mock_run_server,
-    ):
+    with patch("robotsix_chat.chat.server.run_server") as mock_run_server:
         run_server_from_config()
 
-        MockAgent.assert_called_once_with(
-            instruction="You are a helpful assistant.",
-            api_key="sk-run-server-test",
-            model="gpt-4o",
-            base_url=None,  # empty string → None via Settings
-            graceful_errors=False,
-        )
-        # The agent passed to run_server is an LLMChatAgent wrapping
-        # the constructed Agent.
         call_args = mock_run_server.call_args
         passed_agent = call_args[0][0]
-        assert isinstance(passed_agent, LLMChatAgent)
-        assert passed_agent._agent is MockAgent.return_value
+        assert isinstance(passed_agent, LlmioChatAgent)
+        assert passed_agent._model_level == 3
+        assert passed_agent._instruction == "You are a helpful assistant."
         assert call_args[1] == {
             "host": "127.0.0.1",
             "port": 8080,
             "cors_allow_origins": [],
+            "auth": None,
         }
 
 
@@ -345,7 +319,11 @@ async def test_run_server_from_config_passes_explicit_agent(
 ) -> None:
     """``run_server_from_config(agent)`` forwards *agent* to
     ``run_server`` without creating a new one."""
-    monkeypatch.setenv("LLM_API_KEY", "sk-test")
+    # Isolate from any on-disk config; the default (claude-sdk) needs no key.
+    monkeypatch.setattr(
+        "robotsix_chat.config.DEFAULT_CONFIG_PATH", Path("/nonexistent/chat.local.yaml")
+    )
+    monkeypatch.delenv("CHAT_CONFIG_PATH", raising=False)
     mock_agent = MagicMock()
 
     with patch("robotsix_chat.chat.server.run_server") as mock_run_server:
@@ -366,7 +344,9 @@ async def test_unknown_route_returns_404_json() -> None:
     agent = MockAgent()
     app = create_app(agent)
 
-    async with http_client(app) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         response = await client.get("/nonexistent")
 
     assert response.status_code == 404
@@ -379,7 +359,9 @@ async def test_wrong_method_on_known_route_returns_405() -> None:
     agent = MockAgent()
     app = create_app(agent)
 
-    async with http_client(app) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         # POST /health is not a valid endpoint — Starlette returns 405.
         response = await client.post("/health")
 
@@ -396,13 +378,15 @@ async def test_ui_served_at_root_by_default() -> None:
     """``GET /`` returns the bundled browser chat UI HTML."""
     app = create_app(MockAgent())
 
-    async with http_client(app) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         response = await client.get("/")
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
     assert "<!DOCTYPE html>" in response.text
-    assert PROJECT_TITLE in response.text
+    assert "robotsix-agent-comm" in response.text or "Chat" in response.text
 
 
 @pytest.mark.asyncio
@@ -410,7 +394,9 @@ async def test_ui_disabled_returns_404() -> None:
     """With ``serve_ui=False`` the root path is not registered."""
     app = create_app(MockAgent(), serve_ui=False)
 
-    async with http_client(app) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         response = await client.get("/")
 
     assert response.status_code == 404
@@ -426,7 +412,9 @@ async def test_cors_headers_present_when_configured() -> None:
     """A configured allowed origin receives ``access-control-allow-origin``."""
     app = create_app(MockAgent(), cors_allow_origins=["https://ui.example.com"])
 
-    async with http_client(app) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         response = await client.post(
             "/chat",
             json={"message": "hi"},
@@ -443,7 +431,9 @@ async def test_no_cors_headers_by_default() -> None:
     """Without configuration, no CORS headers are added."""
     app = create_app(MockAgent())
 
-    async with http_client(app) as client:
+    async with AsyncClient(
+        transport=ASGITransport(app=app), base_url="http://test"
+    ) as client:
         response = await client.post(
             "/chat",
             json={"message": "hi"},

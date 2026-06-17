@@ -7,27 +7,44 @@ name = "robotsix-chat"
 version = "0.1.0"
 description = "Browser + SSE chat server exposing an LLM agent to human users"
 readme = "README.md"
-requires-python = ">=3.12"
+requires-python = ">=3.14"
 license = { text = "MIT" }
 authors = [{ name = "Damien Robotsix", email = "damien.robotsix@gmail.com" }]
 dependencies = [
     "asgi-correlation-id",
-    "llmio",
     "pydantic",
     "python-dotenv",
     "uvicorn",
     "starlette",
+    # Shared robotsix-stack libraries, consumed via git (see [tool.uv.sources]):
+    #   - robotsix-yaml-config: the YAML config-cascade.
+    #   - robotsix-llmio: provider-agnostic LLM I/O; the chat picks a
+    #     `model_level` and llmio resolves the backend. The base package is
+    #     enough to import the config factory; the actual backend deps come
+    #     from the per-transport extras below.
+    "robotsix-yaml-config",
+    "robotsix-llmio",
+    "pyyaml>=6",
 ]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.12",
-    "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
     "Typing :: Typed",
 ]
+
+[project.optional-dependencies]
+# Per-transport backends, obtained THROUGH robotsix-llmio's own extras so the
+# stack owns those deps in one place. The transport is selected by
+# `llmio.model_level` (the level encodes the transport + model).
+#
+# claude-sdk: Claude Agent SDK — subscription auth via a logged-in `claude` CLI
+# (no API key), needs Node.js + the `claude` CLI at runtime. (model_level 3)
+claude-sdk = ["robotsix-llmio[claude_sdk]"]
+# openrouter: OpenRouter (deepseek) — needs `llmio.api_key`. (model_level 1-2)
+openrouter = ["robotsix-llmio[openrouter-deepseek]"]
 
 [project.scripts]
 robotsix-chat = "robotsix_chat.chat.server:run_server_from_config"
@@ -51,15 +68,19 @@ docs = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/robotsix_chat"]
 
+[tool.uv.sources]
+robotsix-yaml-config = { git = "https://github.com/damien-robotsix/robotsix-yaml-config.git", rev = "main" }
+robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "main" }
+
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 88
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
 [tool.mypy]
-python_version = "3.12"
+python_version = "3.14"
 strict = true
 
 [tool.bandit]

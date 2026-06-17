@@ -8,6 +8,11 @@ __pycache__/
 # Environment secrets
 .env
 
+# Real local configuration (may contain credentials: API keys, passwords)
+config/chat.local.yaml
+config/*.local.yaml
+!config/*.local.example.yaml
+
 # Build artifacts
 dist/
 build/

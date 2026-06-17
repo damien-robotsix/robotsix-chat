@@ -14,7 +14,6 @@ from .server import (
     SSE_ERROR_TYPE,
     SSE_TOKEN_TYPE,
     ChatAgent,
-    LLMChatAgent,
     create_agent_from_settings,
     create_app,
     run_server,
@@ -23,7 +22,6 @@ from .server import (
 
 __all__ = [
     "ChatAgent",
-    "LLMChatAgent",
     "SSE_CONTENT_TYPE",
     "SSE_DONE_TYPE",
     "SSE_ERROR_TYPE",

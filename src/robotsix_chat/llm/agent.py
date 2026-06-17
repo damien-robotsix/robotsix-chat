@@ -1,122 +1,72 @@
-"""Async :class:`Agent` wrapping ``llmio.Agent`` with a streaming API.
+"""LLM chat agent backed by robotsix-llmio's per-level model factory.
 
-The wrapper handles ``llmio.Agent`` lifecycle, tool registration, and
-streaming token delivery.  All LLM and tool errors are caught and
-converted to ``"Error: ..."`` tokens — the generator never raises.
+:class:`LlmioChatAgent` satisfies the chat server's ``ChatAgent`` protocol
+(``async def stream(message) -> AsyncIterator[str]``). It selects the backend
+purely from a capability **level** via
+:func:`robotsix_llmio.config.create_model`: the level encodes both the
+transport and the model (resolved from llmio's baked default ``TierConfig``),
+so this package never names a concrete provider class or the Claude Agent SDK.
+
+By default: level 1-2 → ``openrouter[deepseek]`` (needs an API key), level 3 →
+``claude-sdk``/``opus`` (keyless, via the logged-in ``claude`` CLI).
+
+Responses are returned as a single block (not token-streamed): llmio's Claude
+SDK model does not support incremental streaming through pydantic-ai, so each
+``stream`` call yields the full reply once. The chat server still frames it as a
+normal SSE ``token`` + ``done`` sequence.
+
+The transport dependencies are obtained through robotsix-llmio's own extras —
+``robotsix-llmio[claude_sdk]`` and ``robotsix-llmio[openrouter-deepseek]`` —
+wired via this package's ``claude-sdk`` / ``openrouter`` extras.
 """
 
 from __future__ import annotations
 
-import asyncio
-import contextlib
-import os
-from collections.abc import AsyncIterator, Callable
-from typing import Any
+from collections.abc import AsyncIterator
 
-import llmio
-from llmio.clients import BaseClient, OpenAIClient
+from robotsix_llmio.config import create_model
 
 
-class Agent:
-    """Streaming LLM agent backed by ``llmio.Agent``.
+class LlmioChatAgent:
+    """Stream LLM responses via robotsix-llmio, selected by capability level.
 
-    Exposes an ``async for token in agent.run("hello")`` API that yields
-    one token per LLM delta, including whitespace.  Tool registration is
-    delegated to the underlying ``llmio.Agent`` so tools can be either
-    sync or async, and their type annotations are used to build the
-    OpenAI JSON schema.
+    Each ``stream`` call is an independent, stateless query (no conversation
+    memory) — matching the chat server, which sends one user message at a time.
+    A fresh llmio agent handle is built per call and deterministically closed.
     """
 
     def __init__(
         self,
+        *,
+        model_level: int,
         instruction: str,
-        *,
-        client: BaseClient | None = None,
-        model: str = "gpt-4o-mini",
-        api_key: str | None = None,
-        base_url: str | None = None,
-        graceful_errors: bool = False,
+        api_key: str = "",
     ) -> None:
-        if client is None:
-            client = OpenAIClient(
-                api_key=api_key if api_key is not None else os.environ["LLM_API_KEY"],
-                base_url=base_url,
-            )
-        self._agent = llmio.Agent(
-            instruction=instruction,
-            client=client,
-            model=model,
-            graceful_errors=graceful_errors,
+        self._model_level = model_level
+        self._instruction = instruction
+        self._api_key = api_key
+
+    async def stream(self, message: str) -> AsyncIterator[str]:
+        """Yield the assistant's reply to *message* as a single block.
+
+        Raises on backend errors — the chat server turns that into an SSE
+        ``error`` frame.
+        """
+        # Forward the key only when one is configured; keyless levels
+        # (claude-sdk) must not receive an api_key (the provider rejects it).
+        provider_kwargs: dict[str, str] = {}
+        if self._api_key:
+            provider_kwargs["api_key"] = self._api_key
+
+        provider = create_model(level=self._model_level, **provider_kwargs)
+        handle = provider.build_agent(
+            level=self._model_level, system_prompt=self._instruction
         )
-
-    def tool(
-        self, fn: Callable[..., Any] | None = None, *, strict: bool = False
-    ) -> Callable[..., Any]:
-        """Register a tool function with the underlying ``llmio.Agent``.
-
-        Supports both bare ``@agent.tool`` and parameterised
-        ``@agent.tool(strict=True)`` forms, matching llmio's API exactly.
-        The decorated function remains callable directly.
-        """
-        return self._agent.tool(fn, strict=strict)
-
-    async def run(
-        self,
-        user_message: str,
-        *,
-        history: list[llmio.Message] | None = None,
-    ) -> AsyncIterator[str]:
-        """Stream LLM tokens for *user_message*.
-
-        Parameters
-        ----------
-        user_message:
-            The user message to send to the LLM.
-        history:
-            Optional conversation history (list of ``llmio.Message``
-            typed dicts).  When provided it is forwarded verbatim to the
-            underlying ``llmio.Agent.speak`` call.
-
-        Yields
-        ------
-        str
-            One token per LLM delta.  If the LLM or a tool raises, an
-            ``"Error: <message>"`` token is yielded before the stream
-            ends.  The generator never raises.
-        """
-        queue: asyncio.Queue[str | None] = asyncio.Queue()
-
-        # -- on_stream callback that feeds the queue -------------------
-        def on_delta(delta: str) -> None:
-            queue.put_nowait(delta)
-
-        self._agent.on_stream(on_delta)
-
-        # -- background speak task -------------------------------------
-        async def _speak() -> None:
-            try:
-                await self._agent.speak(user_message, history=history, stream=True)
-            except Exception as exc:
-                queue.put_nowait(f"Error: {exc}")
-            finally:
-                queue.put_nowait(None)
-
-        task = asyncio.ensure_future(_speak())
-
-        # -- yield tokens from the queue -------------------------------
         try:
-            while True:
-                token = await queue.get()
-                if token is None:
-                    break
-                yield token
-            # Let any exception from speak() propagate after the
-            # sentinel — but we already caught exceptions inside
-            # _speak, so this is just a safety check.
-            await task
+            result = await handle.run(message)
         finally:
-            if not task.done():
-                task.cancel()
-                with contextlib.suppress(asyncio.CancelledError):
-                    await task
-            self._agent._stream_callbacks.remove(on_delta)
+            handle.close()
+
+        text = result.output
+        if text:
+            yield text

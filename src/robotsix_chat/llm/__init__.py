@@ -1,14 +1,13 @@
-"""LLM-powered agent — streaming wrapper around ``llmio.Agent``.
+"""LLM chat agent — robotsix-llmio-backed implementation.
 
-Provides the :class:`Agent` class, an async, streaming-first wrapper that
-delegates tool-calling to ``llmio`` while exposing a simple
-``AsyncIterator[str]`` API.  Errors from the underlying LLM or tool layer
-are caught and yielded as error tokens, so callers never see a raw
-traceback mid-stream.
+Provides :class:`LlmioChatAgent`, which selects the LLM backend from a
+``transport`` alias plus a ``model_level`` (via ``robotsix_llmio.config``) and
+satisfies the chat server's ``ChatAgent`` protocol with a simple
+``AsyncIterator[str]`` API. Replies are returned as a single block.
 """
 
 from __future__ import annotations
 
-from .agent import Agent
+from .agent import LlmioChatAgent
 
-__all__ = ["Agent"]
+__all__ = ["LlmioChatAgent"]
