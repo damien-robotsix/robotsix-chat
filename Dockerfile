@@ -22,6 +22,7 @@ ENV VIRTUAL_ENV=/opt/venv \
 # Copy only what is needed to resolve and build the project.
 COPY pyproject.toml uv.lock ./
 COPY src ./src
+COPY README.md ./
 
 # uv needs git to fetch the git-sourced dependencies declared under
 # [tool.uv.sources] (robotsix-yaml-config, robotsix-llmio).
