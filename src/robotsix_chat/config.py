@@ -77,7 +77,7 @@ def level_needs_api_key(level: int) -> bool:
 # parses it into the nested :class:`AuthSettings` model.
 _YAML_PATH_TO_FIELD: dict[str, str] = {
     "llmio.model_level": "llmio_model_level",
-    "llmio.api_key": "llmio_api_key",
+    "llmio.api_key": "llmio_api_key",  # pragma: allowlist secret
     "agent.instruction": "agent_instruction",
     "server.host": "server_host",
     "server.port": "server_port",

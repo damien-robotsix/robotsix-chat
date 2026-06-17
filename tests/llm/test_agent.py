@@ -62,11 +62,16 @@ async def test_key_bearing_level_forwards_api_key() -> None:
 
     with patch("robotsix_chat.llm.agent.create_model", create_model):
         agent = LlmioChatAgent(
-            model_level=1, instruction="Be helpful.", api_key="sk-or-test"
+            model_level=1,
+            instruction="Be helpful.",
+            api_key="sk-or-test",  # pragma: allowlist secret
         )
         _ = [c async for c in agent.stream("hi")]
 
-    create_model.assert_called_once_with(level=1, api_key="sk-or-test")
+    create_model.assert_called_once_with(
+        level=1,
+        api_key="sk-or-test",  # pragma: allowlist secret
+    )
     provider.build_agent.assert_called_once_with(level=1, system_prompt="Be helpful.")
 
 
