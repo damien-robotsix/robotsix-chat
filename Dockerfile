@@ -23,6 +23,13 @@ ENV VIRTUAL_ENV=/opt/venv \
 COPY pyproject.toml uv.lock ./
 COPY src ./src
 
+# uv needs git to fetch the git-sourced dependencies declared under
+# [tool.uv.sources] (robotsix-yaml-config, robotsix-llmio).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
 # Export the locked dependency set (including the claude-sdk extra), install it,
 # then install the project itself without re-resolving dependencies.
 RUN uv export --frozen --no-emit-project --no-hashes --extra claude-sdk > requirements.txt \
