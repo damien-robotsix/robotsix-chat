@@ -335,6 +335,32 @@ async def test_run_server_from_config_passes_explicit_agent(
 
 
 # ---------------------------------------------------------------------------
+# Error handlers
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_server_error_handler_returns_json_500() -> None:
+    """An unhandled exception in an endpoint returns a JSON 500 response."""
+    agent = MockAgent()
+    app = create_app(agent)
+
+    with patch(
+        "robotsix_chat.chat.server._load_ui_html",
+        side_effect=RuntimeError("UI resource missing"),
+    ):
+        async with AsyncClient(
+            transport=ASGITransport(app=app, raise_app_exceptions=False),
+            base_url="http://test",
+        ) as client:
+            response = await client.get("/")
+
+    assert response.status_code == 500
+    data = response.json()
+    assert data == {"error": "internal server error"}
+
+
+# ---------------------------------------------------------------------------
 # Unknown routes
 # ---------------------------------------------------------------------------
 
