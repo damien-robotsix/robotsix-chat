@@ -1,0 +1,24 @@
+# Local build-and-run compose stack for robotsix-chat.
+#
+# Prerequisites before first run:
+#   1. cp config/chat.local.example.yaml config/chat.local.yaml
+#   2. claude login   (populates ~/.claude for subscription auth)
+#
+# Then: docker compose up --build
+
+services:
+  chat:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: robotsix-chat:local
+    container_name: robotsix-chat
+    ports:
+      - "8080:8080"
+    environment:
+      - LLMIO_MODEL_LEVEL=3
+      - CHAT_CONFIG_PATH=config/chat.local.yaml
+    volumes:
+      - ./config/chat.local.yaml:/home/appuser/config/chat.local.yaml:ro
+      - ~/.claude:/home/appuser/.claude:ro
+    restart: unless-stopped
