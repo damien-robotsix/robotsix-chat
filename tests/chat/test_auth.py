@@ -6,10 +6,10 @@ import base64
 from collections.abc import AsyncIterator
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 
 from robotsix_chat.chat.auth import BasicAuthConfig
 from robotsix_chat.chat.server import create_app
+from tests.conftest import http_client
 
 
 class _MockAgent:
@@ -32,9 +32,7 @@ async def test_requires_credentials() -> None:
     """Without credentials, the UI and /chat return 401 + WWW-Authenticate."""
     app = create_app(_MockAgent(), auth=AUTH)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         ui = await client.get("/")
         chat = await client.post("/chat", json={"message": "hi"})
 
@@ -48,9 +46,7 @@ async def test_valid_credentials_pass() -> None:
     """Correct credentials are admitted to a protected route."""
     app = create_app(_MockAgent(), auth=AUTH)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         response = await client.get("/", headers=_basic_header("admin", "s3cret"))
 
     assert response.status_code == 200
@@ -62,9 +58,7 @@ async def test_wrong_password_rejected() -> None:
     """A valid username with the wrong password is rejected."""
     app = create_app(_MockAgent(), auth=AUTH)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         response = await client.get("/", headers=_basic_header("admin", "nope"))
 
     assert response.status_code == 401
@@ -75,9 +69,7 @@ async def test_malformed_authorization_header_rejected() -> None:
     """A non-Basic / un-decodable Authorization header is rejected, not crashed."""
     app = create_app(_MockAgent(), auth=AUTH)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         bearer = await client.get("/", headers={"Authorization": "Bearer abc"})
         garbage = await client.get("/", headers={"Authorization": "Basic !!!notb64"})
 
@@ -90,9 +82,7 @@ async def test_health_is_not_gated() -> None:
     """``GET /health`` stays open so liveness probes work without auth."""
     app = create_app(_MockAgent(), auth=AUTH)
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         response = await client.get("/health")
 
     assert response.status_code == 200
@@ -104,9 +94,7 @@ async def test_no_auth_leaves_server_open() -> None:
     """Without an *auth* config the server is reachable without credentials."""
     app = create_app(_MockAgent())
 
-    async with AsyncClient(
-        transport=ASGITransport(app=app), base_url="http://test"
-    ) as client:
+    async with http_client(app) as client:
         response = await client.get("/")
 
     assert response.status_code == 200
