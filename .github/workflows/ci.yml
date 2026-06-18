@@ -7,32 +7,14 @@ permissions:
 
 jobs:
   ci:
-    runs-on: ubuntu-latest
-    strategy:
-      matrix:
-        python-version: ["3.12", "3.13"]
-    steps:
-      - uses: actions/checkout@v4
-
-      - uses: actions/dependency-review-action@v4
-        if: github.event_name == 'pull_request'
-        with:
-          fail-on-severity: high
-
-      - uses: actions/setup-python@v5
-        with:
-          python-version: ${{ matrix.python-version }}
-
-      - uses: astral-sh/setup-uv@v5
-
-      - run: uv sync --frozen --group dev
-
-      - run: uv run pre-commit run --all-files --show-diff-on-failure
-      - run: uv run ruff check .
-      - run: uv run ruff format --check .
-      - run: uv run mypy .
-      - run: uv run pytest --cov
-      - run: uv run pip-audit
+    uses: damien-robotsix/robotsix-mill/.github/workflows/python-ci.yml@main
+    with:
+      python-version: "3.12"
+      cov-package: "robotsix_chat"
+      install-extras: ""
+      coverage-threshold: "60"
+    permissions:
+      contents: read
 
   codeql:
     runs-on: ubuntu-latest
