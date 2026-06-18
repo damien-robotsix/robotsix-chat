@@ -83,6 +83,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "server.port": "server_port",
     "server.log_level": "log_level",
     "server.cors_allow_origins": "cors_allow_origins",
+    "server.correlation_id_header": "correlation_id_header",
     "auth": "auth",
 }
 
@@ -137,6 +138,8 @@ class Settings(BaseModel):
         cors_allow_origins: Origins allowed to call /chat cross-origin
             (empty = none; ``["*"]`` = any). Only needed when the browser
             UI is hosted on a different origin than the server.
+        correlation_id_header: HTTP header name used for the correlation /
+            request-id (both inbound and outbound). Default ``X-Request-ID``.
         auth: HTTP Basic Auth settings gating the UI and ``/chat``.
     """
 
@@ -147,6 +150,7 @@ class Settings(BaseModel):
     server_port: int = 8000
     log_level: str = "INFO"
     cors_allow_origins: list[str] = Field(default_factory=list)
+    correlation_id_header: str = "X-Request-ID"
     auth: AuthSettings = Field(default_factory=AuthSettings)
 
     def model_post_init(self, __context: Any) -> None:
@@ -280,6 +284,8 @@ class Settings(BaseModel):
             raw["cors_allow_origins"] = [
                 origin.strip() for origin in cors_raw.split(",") if origin.strip()
             ]
+
+        env_override("correlation_id_header", "CORRELATION_ID_HEADER")
 
         auth_enabled = os.getenv("AUTH_ENABLED")
         if auth_enabled is not None:
