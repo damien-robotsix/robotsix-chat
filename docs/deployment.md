@@ -211,6 +211,14 @@ The deploy compose file sets `AUTH_ENABLED=1` and pulls the password from the
 `docker compose up` to fail with an error if the variable is unset or empty,
 preventing accidental deployments without auth.
 
+### Agent instruction
+
+The system prompt (agent instruction) sent to the LLM on every chat turn:
+
+| Setting | YAML path | Env var | Default |
+|---|---|---|---|
+| Instruction | `agent.instruction` | `AGENT_INSTRUCTION` | (none) |
+
 ---
 
 ## 6. Reverse proxy / TLS
