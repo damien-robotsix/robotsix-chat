@@ -10,7 +10,6 @@ import asyncio
 import json
 import logging
 import logging.config
-import os
 from collections.abc import AsyncIterator
 from importlib import resources
 from typing import Protocol
@@ -150,6 +149,7 @@ def create_app(
     serve_ui: bool = True,
     cors_allow_origins: list[str] | None = None,
     auth: BasicAuthConfig | None = None,
+    correlation_id_header: str = "X-Request-ID",
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -167,6 +167,8 @@ def create_app(
         auth: When set, gate every request except ``GET /health`` behind
             HTTP Basic Auth with these credentials. ``None`` (default)
             leaves the server open.
+        correlation_id_header: HTTP header name for the correlation /
+            request-id. Default ``X-Request-ID``.
     """
     routes = [
         Route("/health", health_endpoint, methods=["GET"]),
@@ -178,7 +180,6 @@ def create_app(
     # CorrelationIdMiddleware is outermost so every request (and its log lines)
     # carries a request id. CORS comes next so it can answer preflight
     # ``OPTIONS`` (which carry no credentials) before the auth layer rejects them.
-    correlation_id_header = os.getenv("CORRELATION_ID_HEADER", "X-Request-ID")
     middleware = [
         Middleware(CorrelationIdMiddleware, header_name=correlation_id_header)
     ]
@@ -214,6 +215,7 @@ def run_server(
     serve_ui: bool = True,
     cors_allow_origins: list[str] | None = None,
     auth: BasicAuthConfig | None = None,
+    correlation_id_header: str = "X-Request-ID",
 ) -> None:
     """Start the chat SSE server on ``host:port``.
 
@@ -227,6 +229,7 @@ def run_server(
         serve_ui=serve_ui,
         cors_allow_origins=cors_allow_origins,
         auth=auth,
+        correlation_id_header=correlation_id_header,
     )
     uvicorn.run(app, host=host, port=port)
 
@@ -318,4 +321,5 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         port=settings.server_port,
         cors_allow_origins=settings.cors_allow_origins,
         auth=auth,
+        correlation_id_header=settings.correlation_id_header,
     )

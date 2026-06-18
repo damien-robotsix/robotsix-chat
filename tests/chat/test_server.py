@@ -292,6 +292,7 @@ async def test_run_server_from_config_creates_agent_from_settings(
             "port": 8080,
             "cors_allow_origins": [],
             "auth": None,
+            "correlation_id_header": "X-Request-ID",
         }
 
 
@@ -434,3 +435,24 @@ async def test_no_cors_headers_by_default() -> None:
         )
 
     assert "access-control-allow-origin" not in response.headers
+
+
+# ---------------------------------------------------------------------------
+# Correlation ID header
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_custom_correlation_id_header_in_response() -> None:
+    """A custom ``correlation_id_header`` name reaches the middleware and
+    is echoed back in the response."""
+    app = create_app(MockAgent(), correlation_id_header="X-Custom-ID")
+
+    async with http_client(app) as client:
+        response = await client.get(
+            "/health",
+            headers={"X-Custom-ID": "11111111-1111-1111-1111-111111111111"},
+        )
+
+    assert response.status_code == 200
+    assert response.headers["X-Custom-ID"] == "11111111-1111-1111-1111-111111111111"
