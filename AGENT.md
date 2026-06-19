@@ -133,7 +133,7 @@ Edit `deploy/config/chat.local.yaml` as needed.
 
 - `docker-compose.yml` — local dev compose (builds from Dockerfile, tag `robotsix-chat:local`)
 - `deploy/docker-compose.yml` — production stack (GHCR image + Watchtower, loopback-only)
-- `Dockerfile` — multi-stage build (`python:3.14-slim`, Node.js + `claude` CLI, non-root `appuser`, `EXPOSE 8080`)
+- `Dockerfile` — multi-stage build (`python:3.13-slim-bookworm`, Node.js + `claude` CLI, non-root `appuser`, `EXPOSE 8080`)
 - `.env.example` — canonical env-var reference (standard variables; deploy-only vars documented above)
 - `config/chat.local.example.yaml` — canonical YAML config template (copy to `chat.local.yaml`)
 - `src/robotsix_chat/config.py` — settings cascade (pydantic defaults → YAML → env, `Settings.load()`)

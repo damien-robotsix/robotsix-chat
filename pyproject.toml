@@ -7,7 +7,7 @@ name = "robotsix-chat"
 version = "0.1.0"
 description = "Browser + SSE chat server exposing an LLM agent to human users"
 readme = "README.md"
-requires-python = ">=3.14"
+requires-python = ">=3.12"
 license = { text = "MIT" }
 authors = [{ name = "Damien Robotsix", email = "damien.robotsix@gmail.com" }]
 dependencies = [
@@ -31,7 +31,8 @@ classifiers = [
     "Intended Audience :: Developers",
     "License :: OSI Approved :: MIT License",
     "Programming Language :: Python :: 3",
-    "Programming Language :: Python :: 3.14",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Typing :: Typed",
 ]
 
@@ -81,7 +82,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "S"]
 per-file-ignores = {"src/robotsix_chat/chat/server.py" = ["S105"], "tests/**" = ["S101", "S104", "S105", "S106", "S107"]}
 
 [tool.mypy]
-python_version = "3.14"
+python_version = "3.12"
 strict = true
 
 [tool.bandit]
