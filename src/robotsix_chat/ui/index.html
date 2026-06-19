@@ -13,31 +13,35 @@
   :root {
     --font-stack: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
                   Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', Arial, sans-serif;
-    --header-bg: #1e293b;
+    /* Dark theme */
+    --header-bg: #020617;
     --header-fg: #f1f5f9;
-    --chat-bg: #f8fafc;
-    --user-bubble-bg: #334155;
-    --user-bubble-fg: #f1f5f9;
-    --assistant-bubble-bg: #e2e8f0;
-    --assistant-bubble-fg: #0f172a;
-    --composer-bg: #ffffff;
-    --composer-border: #cbd5e1;
+    --chat-bg: #0f172a;
+    --text-fg: #e2e8f0;
+    --user-bubble-bg: #1d4ed8;
+    --user-bubble-fg: #eff6ff;
+    --assistant-bubble-bg: #1e293b;
+    --assistant-bubble-fg: #e2e8f0;
+    --composer-bg: #0b1120;
+    --composer-border: #334155;
     --btn-primary-bg: #2563eb;
     --btn-primary-fg: #ffffff;
     --btn-primary-hover: #1d4ed8;
-    --btn-disabled-bg: #94a3b8;
-    --error-banner-bg: #fef2f2;
-    --error-banner-fg: #991b1b;
-    --error-banner-border: #fecaca;
+    --btn-disabled-bg: #475569;
+    --error-banner-bg: #450a0a;
+    --error-banner-fg: #fca5a5;
+    --error-banner-border: #7f1d1d;
     --dot-green: #22c55e;
     --dot-red: #ef4444;
   }
+
+  html { color-scheme: dark; }
 
   html, body { height: 100%; font-family: var(--font-stack); }
 
   body {
     display: flex; flex-direction: column;
-    background: var(--chat-bg); color: #0f172a;
+    background: var(--chat-bg); color: var(--text-fg);
   }
 
   /* ------------------------------------------------------------------ */
@@ -70,7 +74,7 @@
 
   #settings-panel {
     display: none; position: absolute; top: 2.5rem; right: 1rem;
-    background: #fff; color: #0f172a; border: 1px solid var(--composer-border);
+    background: var(--composer-bg); color: var(--text-fg); border: 1px solid var(--composer-border);
     border-radius: 8px; padding: 0.75rem; z-index: 10;
     box-shadow: 0 4px 12px rgba(0,0,0,0.15);
     min-width: 280px;
@@ -135,13 +139,15 @@
   }
   #composer textarea {
     flex: 1; resize: none;
+    background: var(--chat-bg); color: var(--text-fg);
     border: 1px solid var(--composer-border); border-radius: 8px;
     padding: 0.5rem 0.75rem; font-family: inherit; font-size: 0.95rem;
     line-height: 1.4; min-height: 40px; max-height: 120px;
     outline: none;
   }
+  #composer textarea::placeholder { color: #64748b; }
   #composer textarea:focus { border-color: var(--btn-primary-bg); }
-  #composer textarea:disabled { background: #f1f5f9; }
+  #composer textarea:disabled { background: #1e293b; }
 
   #send-btn {
     background: var(--btn-primary-bg); color: var(--btn-primary-fg);
