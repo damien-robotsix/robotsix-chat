@@ -4,7 +4,7 @@
 # Builder stage: resolve and install locked dependencies + the project into a
 # self-contained virtual environment that the runtime stage can simply COPY.
 # ---------------------------------------------------------------------------
-FROM python:3.13-slim-bookworm AS builder
+FROM python:3.14-slim@sha256:44dd04494ee8f3b538294360e7c4b3acb87c8268e4d0a4828a6500b1eff50061 AS builder
 
 # Bring in the uv static binary (pinned to a released version for reproducibility).
 COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /usr/local/bin/uv
@@ -41,7 +41,7 @@ RUN uv export --frozen --no-emit-project --no-hashes --extra claude-sdk > requir
 # Runtime stage: minimal image with Node.js + the claude CLI and the prebuilt
 # virtual environment, running as a non-root user.
 # ---------------------------------------------------------------------------
-FROM python:3.13-slim-bookworm AS runtime
+FROM python:3.14-slim@sha256:44dd04494ee8f3b538294360e7c4b3acb87c8268e4d0a4828a6500b1eff50061 AS runtime
 
 # Install Node.js (LTS) and the claude CLI, then prune build-only packages and
 # caches to keep the layer lean.
