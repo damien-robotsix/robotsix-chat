@@ -23,6 +23,7 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "SERVER_PORT",
         "LOG_LEVEL",
         "CORS_ALLOW_ORIGINS",
+        "CORRELATION_ID_HEADER",
         "AUTH_ENABLED",
         "AUTH_USERNAME",
         "AUTH_PASSWORD",
