@@ -31,9 +31,10 @@ RUN apt-get update \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Export the locked dependency set (including the claude-sdk extra), install it,
-# then install the project itself without re-resolving dependencies.
-RUN uv export --frozen --no-emit-project --no-hashes --extra claude-sdk > requirements.txt \
+# Export the locked dependency set (claude-sdk for the LLM transport + tracing
+# for Langfuse observability), install it, then install the project itself
+# without re-resolving dependencies.
+RUN uv export --frozen --no-emit-project --no-hashes --extra claude-sdk --extra tracing > requirements.txt \
     && uv pip install --python /opt/venv/bin/python -r requirements.txt \
     && uv pip install --python /opt/venv/bin/python --no-deps .
 
@@ -65,8 +66,14 @@ COPY --from=builder /opt/venv /opt/venv
 ENV VIRTUAL_ENV=/opt/venv \
     PATH="/opt/venv/bin:$PATH"
 
-# Run as a non-root user with a writable home/work directory.
-RUN useradd --create-home --uid 10001 appuser
+# Run as a non-root user. The UID/GID match the deploy host's user (robotsix =
+# 1001) so the bind-mounted ~/.claude (mode-600 subscription credentials) is
+# readable for the level-3 (claude-sdk/opus) transport. Build args allow other
+# hosts to override.
+ARG APP_UID=1001
+ARG APP_GID=1001
+RUN groupadd --gid ${APP_GID} appuser \
+    && useradd --create-home --uid ${APP_UID} --gid ${APP_GID} appuser
 WORKDIR /home/appuser
 USER appuser
 
