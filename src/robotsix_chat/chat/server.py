@@ -265,6 +265,29 @@ def create_agent_from_settings(
     )
 
 
+def _setup_observability() -> None:
+    """Configure Langfuse tracing and OTel-aware logging (idempotent).
+
+    Both calls are no-ops when their prerequisites are absent:
+    * ``setup_langfuse_tracing`` returns ``False`` when ``LANGFUSE_PUBLIC_KEY``
+      / ``LANGFUSE_SECRET_KEY`` env vars are unset.
+    * ``setup_logging`` is always safe to call; it only configures the
+      ``robotsix_llmio`` logger namespace and leaves the root logger alone.
+
+    Both are wrapped in a blanket ``ImportError`` guard so the server still
+    starts when the ``tracing`` optional-dependency extra is not installed.
+    """
+    try:
+        from robotsix_llmio.core.tracing import setup_langfuse_tracing
+        from robotsix_llmio.logging import setup_logging
+    except ImportError:
+        logger.debug("robotsix-llmio tracing extras not installed — skipping")
+        return
+
+    setup_logging()
+    setup_langfuse_tracing()
+
+
 def run_server_from_config(agent: ChatAgent | None = None) -> None:
     """Start the chat SSE server using ``Settings.load()`` for configuration.
 
@@ -305,6 +328,10 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             },
         }
     )
+
+    # -- tracing / observability (graceful no-op when deps or creds absent) --
+    _setup_observability()
+
     if agent is None:
         agent = create_agent_from_settings(settings=settings)
 

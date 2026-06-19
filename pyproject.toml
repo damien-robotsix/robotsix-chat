@@ -45,6 +45,10 @@ classifiers = [
 claude-sdk = ["robotsix-llmio[claude_sdk]"]
 # openrouter: OpenRouter (deepseek) — needs `llmio.api_key`. (model_level 1-2)
 openrouter = ["robotsix-llmio[openrouter-deepseek]"]
+# tracing: Langfuse observability — exports LLM call traces and enables
+# OTel trace-id injection in log records.  Credentials are read from the
+# LANGFUSE_* env vars at startup; absent credentials = graceful no-op.
+tracing = ["robotsix-llmio[tracing]"]
 
 [project.scripts]
 robotsix-chat = "robotsix_chat.chat.server:run_server_from_config"
