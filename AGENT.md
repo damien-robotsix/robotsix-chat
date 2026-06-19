@@ -9,7 +9,7 @@ It drives an LLM through `robotsix-llmio` (pick a `model_level`, never a concret
 - `POST /chat` — accepts `{"message": "..."}`, returns the agent reply as SSE (`text/event-stream`) frames
 - `GET /health` — liveness probe, returns `200 {"status": "ok"}`
 
-Key stack: **Python ≥3.12**, **Starlette** (ASGI), `robotsix-llmio`, `pydantic`, `uvicorn`.
+Key stack: **Python ≥3.14**, **Starlette** (ASGI), `robotsix-llmio`, `pydantic`, `uvicorn`.
 Entrypoint: `robotsix-chat` (console script installed by the package).
 
 ## Deploy stack structure
@@ -133,7 +133,7 @@ Edit `deploy/config/chat.local.yaml` as needed.
 
 - `docker-compose.yml` — local dev compose (builds from Dockerfile, tag `robotsix-chat:local`)
 - `deploy/docker-compose.yml` — production stack (GHCR image + Watchtower, loopback-only)
-- `Dockerfile` — multi-stage build (`python:3.13-slim-bookworm`, Node.js + `claude` CLI, non-root `appuser`, `EXPOSE 8080`)
+- `Dockerfile` — multi-stage build (`python:3.14-slim`, Node.js + `claude` CLI, non-root `appuser`, `EXPOSE 8080`)
 - `.env.example` — canonical env-var reference (standard variables; deploy-only vars documented above)
 - `config/chat.local.example.yaml` — canonical YAML config template (copy to `chat.local.yaml`)
 - `src/robotsix_chat/config.py` — settings cascade (pydantic defaults → YAML → env, `Settings.load()`)
