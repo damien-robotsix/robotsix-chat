@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import json
-from collections.abc import AsyncIterator
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -20,29 +19,7 @@ from robotsix_chat.chat.server import (
 )
 from robotsix_chat.config import Settings
 from robotsix_chat.llm import LlmioChatAgent
-from tests.conftest import http_client
-
-
-class MockAgent:
-    """A :class:`ChatAgent` that yields a fixed list of tokens."""
-
-    def __init__(
-        self,
-        tokens: list[str] | None = None,
-        *,
-        error: Exception | None = None,
-    ) -> None:
-        self.tokens = tokens or ["Hello", " ", "world!"]
-        self.error = error
-        self.called_with: str | None = None
-
-    async def stream(self, message: str) -> AsyncIterator[str]:
-        self.called_with = message
-        if self.error is not None:
-            raise self.error
-        for token in self.tokens:
-            yield token
-
+from tests.conftest import MockAgent, http_client, mock_app
 
 # ---------------------------------------------------------------------------
 # Health endpoint
@@ -51,11 +28,8 @@ class MockAgent:
 
 @pytest.mark.asyncio
 async def test_health_endpoint() -> None:
-    agent = MockAgent()
-    app = create_app(agent)
-
-    async with http_client(app) as client:
-        response = await client.get("/health")
+    async with mock_app() as f:
+        response = await f.client.get("/health")
         assert response.status_code == 200
         assert response.json() == {"status": "ok"}
 
@@ -67,11 +41,8 @@ async def test_health_endpoint() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_streams_tokens() -> None:
-    agent = MockAgent(tokens=["Hello", " ", "world!"])
-    app = create_app(agent)
-
-    async with http_client(app) as client:
-        response = await client.post("/chat", json={"message": "hello"})
+    async with mock_app(tokens=["Hello", " ", "world!"]) as f:
+        response = await f.client.post("/chat", json={"message": "hello"})
 
     assert response.status_code == 200
     assert response.headers["content-type"] == SSE_CONTENT_TYPE
@@ -95,22 +66,17 @@ async def test_chat_endpoint_streams_tokens() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_passes_message_to_agent() -> None:
-    agent = MockAgent(tokens=["ok"])
-    app = create_app(agent)
+    async with mock_app(tokens=["ok"]) as f:
+        await f.client.post("/chat", json={"message": "hello world"})
+        agent_ref = f.agent
 
-    async with http_client(app) as client:
-        await client.post("/chat", json={"message": "hello world"})
-
-    assert agent.called_with == "hello world"
+    assert agent_ref.called_with == "hello world"
 
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_sends_done_at_end() -> None:
-    agent = MockAgent(tokens=["one", "two"])
-    app = create_app(agent)
-
-    async with http_client(app) as client:
-        response = await client.post("/chat", json={"message": "x"})
+    async with mock_app(tokens=["one", "two"]) as f:
+        response = await f.client.post("/chat", json={"message": "x"})
 
     assert response.text.rstrip("\r\n").endswith(f'data: {{"type": "{SSE_DONE_TYPE}"}}')
 
@@ -122,11 +88,8 @@ async def test_chat_endpoint_sends_done_at_end() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_missing_message_field() -> None:
-    agent = MockAgent()
-    app = create_app(agent)
-
-    async with http_client(app) as client:
-        response = await client.post("/chat", json={})
+    async with mock_app() as f:
+        response = await f.client.post("/chat", json={})
 
     assert response.status_code == 400
     data = response.json()
@@ -135,11 +98,8 @@ async def test_chat_endpoint_missing_message_field() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_message_not_a_string() -> None:
-    agent = MockAgent()
-    app = create_app(agent)
-
-    async with http_client(app) as client:
-        response = await client.post("/chat", json={"message": 123})
+    async with mock_app() as f:
+        response = await f.client.post("/chat", json={"message": 123})
 
     assert response.status_code == 400
     data = response.json()
@@ -148,11 +108,8 @@ async def test_chat_endpoint_message_not_a_string() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_invalid_json() -> None:
-    agent = MockAgent()
-    app = create_app(agent)
-
-    async with http_client(app) as client:
-        response = await client.post(
+    async with mock_app() as f:
+        response = await f.client.post(
             "/chat", content=b"not json", headers={"Content-Type": "application/json"}
         )
 
@@ -163,11 +120,8 @@ async def test_chat_endpoint_invalid_json() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_empty_message_string() -> None:
-    agent = MockAgent()
-    app = create_app(agent)
-
-    async with http_client(app) as client:
-        response = await client.post("/chat", json={"message": ""})
+    async with mock_app() as f:
+        response = await f.client.post("/chat", json={"message": ""})
 
     assert response.status_code == 400
     data = response.json()
@@ -176,11 +130,8 @@ async def test_chat_endpoint_empty_message_string() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_agent_raises() -> None:
-    error_agent = MockAgent(error=RuntimeError("LLM went boom"))
-    app = create_app(error_agent)
-
-    async with http_client(app) as client:
-        response = await client.post("/chat", json={"message": "hello"})
+    async with mock_app(error=RuntimeError("LLM went boom")) as f:
+        response = await f.client.post("/chat", json={"message": "hello"})
 
     assert response.status_code == 200
     assert SSE_CONTENT_TYPE in response.headers["content-type"]
@@ -325,15 +276,12 @@ async def test_run_server_from_config_passes_explicit_agent(
 @pytest.mark.asyncio
 async def test_server_error_handler_returns_json_500() -> None:
     """An unhandled exception in an endpoint returns a JSON 500 response."""
-    agent = MockAgent()
-    app = create_app(agent)
-
-    with patch(
-        "robotsix_chat.chat.server._load_ui_html",
-        side_effect=RuntimeError("UI resource missing"),
-    ):
-        async with http_client(app, raise_app_exceptions=False) as client:
-            response = await client.get("/")
+    async with mock_app(raise_app_exceptions=False) as f:
+        with patch(
+            "robotsix_chat.chat.server._load_ui_html",
+            side_effect=RuntimeError("UI resource missing"),
+        ):
+            response = await f.client.get("/")
 
     assert response.status_code == 500
     data = response.json()
@@ -347,11 +295,8 @@ async def test_server_error_handler_returns_json_500() -> None:
 
 @pytest.mark.asyncio
 async def test_unknown_route_returns_404_json() -> None:
-    agent = MockAgent()
-    app = create_app(agent)
-
-    async with http_client(app) as client:
-        response = await client.get("/nonexistent")
+    async with mock_app() as f:
+        response = await f.client.get("/nonexistent")
 
     assert response.status_code == 404
     data = response.json()
@@ -360,12 +305,9 @@ async def test_unknown_route_returns_404_json() -> None:
 
 @pytest.mark.asyncio
 async def test_wrong_method_on_known_route_returns_405() -> None:
-    agent = MockAgent()
-    app = create_app(agent)
-
-    async with http_client(app) as client:
+    async with mock_app() as f:
         # POST /health is not a valid endpoint — Starlette returns 405.
-        response = await client.post("/health")
+        response = await f.client.post("/health")
 
     assert response.status_code == 405
 
