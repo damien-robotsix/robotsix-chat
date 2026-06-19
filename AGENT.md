@@ -9,7 +9,7 @@ It drives an LLM through `robotsix-llmio` (pick a `model_level`, never a concret
 - `POST /chat` — accepts `{"message": "..."}`, returns the agent reply as SSE (`text/event-stream`) frames
 - `GET /health` — liveness probe, returns `200 {"status": "ok"}`
 
-Key stack: **Python ≥3.14**, **Starlette** (ASGI), `robotsix-llmio`, `pydantic`, `uvicorn`.
+Key stack: **Python ≥3.12**, **Starlette** (ASGI), `robotsix-llmio`, `pydantic`, `uvicorn`.
 Entrypoint: `robotsix-chat` (console script installed by the package).
 
 ## Deploy stack structure
