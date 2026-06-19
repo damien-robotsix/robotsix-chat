@@ -32,6 +32,7 @@ modules:
     description: "Chat SSE server — HTTP + Server-Sent Events bridge for human-to-agent chat."
     paths:
       - src/robotsix_chat/chat/__init__.py
+      - src/robotsix_chat/chat/auth.py
       - src/robotsix_chat/chat/server.py
 
   - name: robotsix_chat.llm
