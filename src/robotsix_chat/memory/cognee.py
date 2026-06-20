@@ -61,12 +61,33 @@ class CogneeMemory:
             self._setup_done = True
 
     def _configure(self) -> None:
-        import cognee
-
         s = self._settings
         # Embedded, single-user posture (cognee defaults to multi-tenant auth).
         os.environ.setdefault("ENABLE_BACKEND_ACCESS_CONTROL", "false")
         os.environ.setdefault("TELEMETRY_DISABLED", "1")
+        os.environ.setdefault("MONITORING_TOOL", "none")
+
+        # cognee force-selects Langfuse as its monitoring tool when LANGFUSE_*
+        # creds are present in the env (a model validator, overriding
+        # MONITORING_TOOL) and then `import cognee` does `from langfuse.decorators
+        # import observe` — which crashes because the image ships no langfuse SDK.
+        # Hide those creds for cognee's (one-time) import so it caches
+        # monitoring=NONE; llmio's own Langfuse tracing was already configured at
+        # server startup, so it is unaffected.
+        saved_langfuse = {
+            key: os.environ.pop(key)
+            for key in (
+                "LANGFUSE_PUBLIC_KEY",
+                "LANGFUSE_SECRET_KEY",
+                "LANGFUSE_HOST",
+                "LANGFUSE_BASE_URL",
+            )
+            if key in os.environ
+        }
+        try:
+            import cognee
+        finally:
+            os.environ.update(saved_langfuse)
 
         data_dir = Path(s.data_dir)
         data_root = data_dir / "data"
