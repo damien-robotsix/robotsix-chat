@@ -39,6 +39,21 @@ _MEMORY_PROMPT_HEADER = (
     "Use this background only if it helps; ignore it otherwise.\n"
 )
 
+# Always appended to the system prompt. The agent runs with NO built-in system
+# tools (no shell/file/web/host access — enforced in llmio via
+# ``builtin_tools=False``); stating this makes the model decline such requests
+# gracefully instead of repeatedly attempting a denied tool (which the SDK
+# surfaces as a hard error). Tools explicitly provided (e.g. the mill consult
+# tool) remain available and are exempted by "tools provided to you".
+_AGENT_GUARD = (
+    "\n\nYou are a conversational assistant with no ability to run shell "
+    "commands, read or edit files, browse the web, or otherwise access the host "
+    "system or its network. You can only converse and use the tools explicitly "
+    "provided to you in this session. If a request needs access you don't have, "
+    "briefly say so and suggest an alternative; never narrate or pretend to "
+    "perform such actions."
+)
+
 
 class LlmioChatAgent:
     """Stream LLM responses via robotsix-llmio, selected by capability level.
@@ -80,7 +95,7 @@ class LlmioChatAgent:
         # Recall relevant memory and fold it into the system prompt. recall()
         # never raises (it degrades to "" on any backend failure).
         recalled = await self._memory.recall(message)
-        system_prompt = self._instruction
+        system_prompt = f"{self._instruction}{_AGENT_GUARD}"
         if recalled:
             system_prompt = f"{system_prompt}\n\n{_MEMORY_PROMPT_HEADER}{recalled}"
 
@@ -95,6 +110,10 @@ class LlmioChatAgent:
             level=self._model_level,
             system_prompt=system_prompt,
             tools=self._tools,
+            # The chat is an untrusted, internet-facing surface: never expose the
+            # SDK's built-in tools (Bash/Read/Edit/...). Only the explicitly
+            # provided tools (e.g. the mill consult tool) are callable.
+            builtin_tools=False,
         )
         try:
             result = await handle.run(message)

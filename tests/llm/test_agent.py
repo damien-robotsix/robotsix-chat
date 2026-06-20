@@ -90,9 +90,13 @@ async def test_key_bearing_level_forwards_api_key() -> None:
         level=1,
         api_key="sk-or-test",  # pragma: allowlist secret
     )
-    provider.build_agent.assert_called_once_with(
-        level=1, system_prompt="Be helpful.", tools=None
-    )
+    kwargs = provider.build_agent.call_args.kwargs
+    assert kwargs["level"] == 1
+    assert kwargs["tools"] is None
+    # The chat must never expose the SDK's built-in tools.
+    assert kwargs["builtin_tools"] is False
+    # The instruction is preserved (with the no-system-access guard appended).
+    assert kwargs["system_prompt"].startswith("Be helpful.")
 
 
 @pytest.mark.asyncio
@@ -154,8 +158,9 @@ async def test_recalled_memory_injected_into_system_prompt() -> None:
 
 
 @pytest.mark.asyncio
-async def test_no_recall_leaves_prompt_unchanged() -> None:
-    """With empty recall, the system prompt is exactly the instruction."""
+async def test_no_recall_adds_no_memory_block() -> None:
+    """With empty recall, the system prompt is the instruction + the guard, and
+    carries no memory block."""
     create_model, _ = _patched_create_model("ok")
     provider = create_model.return_value
 
@@ -165,7 +170,10 @@ async def test_no_recall_leaves_prompt_unchanged() -> None:
         )
         _ = [c async for c in agent.stream("hi")]
 
-    assert provider.build_agent.call_args.kwargs["system_prompt"] == "Be helpful."
+    system_prompt = provider.build_agent.call_args.kwargs["system_prompt"]
+    assert system_prompt.startswith("Be helpful.")
+    assert "no ability to run shell commands" in system_prompt  # the guard
+    assert "# Relevant memory" not in system_prompt  # no recall block
 
 
 @pytest.mark.asyncio
