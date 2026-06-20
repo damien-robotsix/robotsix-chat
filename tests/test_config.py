@@ -11,6 +11,7 @@ from robotsix_chat.config import (
     MemoryEmbeddingSettings,
     MemoryLlmSettings,
     MemorySettings,
+    MillSettings,
     Settings,
 )
 
@@ -47,6 +48,15 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "MEMORY_EMBEDDING_API_KEY",
         "MEMORY_EMBEDDING_TOKENIZER",
         "MEMORY_EMBEDDING_DIMENSIONS",
+        "MILL_ENABLED",
+        "MILL_BROKER_HOST",
+        "MILL_BROKER_PORT",
+        "MILL_BROKER_SCHEME",
+        "MILL_BROKER_TOKEN",
+        "MILL_AGENT_ID",
+        "MILL_BOARD_MANAGER_ID",
+        "MILL_REPO_ID",
+        "MILL_TIMEOUT",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -449,4 +459,60 @@ def test_memory_dimensions_invalid_raises(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("MEMORY_EMBEDDING_DIMENSIONS", "lots")
 
     with pytest.raises(ValueError, match="MEMORY_EMBEDDING_DIMENSIONS"):
+        Settings.from_env()
+
+
+# ---------------------------------------------------------------------------
+# Mill (broker integration)
+# ---------------------------------------------------------------------------
+
+
+def test_mill_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mill integration is off by default, with broker defaults present."""
+    _wipe_env_vars(monkeypatch)
+
+    settings = Settings.from_env()
+
+    assert settings.mill.enabled is False
+    assert settings.mill.broker_host == "ai-broker.robotsix.net"
+    assert settings.mill.broker_port == 443
+    assert settings.mill.agent_id == "robotsix-chat"
+    assert settings.mill.board_manager_id == "board-manager-robotsix-mill"
+    assert settings.mill.repo_id == ""
+
+
+def test_mill_enabled_requires_token() -> None:
+    """Enabling the mill without a broker token is rejected."""
+    with pytest.raises(ValueError, match="mill.broker_token"):
+        Settings(mill=MillSettings(enabled=True))
+
+
+def test_mill_enabled_with_token_ok() -> None:
+    """The mill constructs once a broker token is present."""
+    settings = Settings(mill=MillSettings(enabled=True, broker_token="tok"))
+    assert settings.mill.enabled is True
+
+
+def test_mill_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``MILL_*`` env vars populate the nested mill settings."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("MILL_ENABLED", "true")
+    monkeypatch.setenv("MILL_BROKER_TOKEN", "sek")
+    monkeypatch.setenv("MILL_BROKER_PORT", "8443")
+    monkeypatch.setenv("MILL_REPO_ID", "robotsix-chat")
+
+    settings = Settings.from_env()
+
+    assert settings.mill.enabled is True
+    assert settings.mill.broker_token == "sek"  # pragma: allowlist secret
+    assert settings.mill.broker_port == 8443
+    assert settings.mill.repo_id == "robotsix-chat"
+
+
+def test_mill_port_invalid_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-numeric ``MILL_BROKER_PORT`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("MILL_BROKER_PORT", "https")
+
+    with pytest.raises(ValueError, match="MILL_BROKER_PORT"):
         Settings.from_env()

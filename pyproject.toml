@@ -55,6 +55,10 @@ tracing = ["robotsix-llmio[tracing]"]
 # Disabled at runtime unless `memory.enabled` is set; absent extra = graceful
 # no-op (NullMemory).
 memory = ["cognee", "transformers"]
+# broker: robotsix-agent-comm — lets the chat agent talk to other robotsix
+# agents over the shared broker (e.g. consult the mill's board manager). Pure
+# stdlib, light. Absent extra = the mill tool is simply not offered.
+broker = ["robotsix-agent-comm"]
 
 [project.scripts]
 robotsix-chat = "robotsix_chat.chat.server:run_server_from_config"
@@ -81,6 +85,7 @@ packages = ["src/robotsix_chat"]
 [tool.uv.sources]
 robotsix-yaml-config = { git = "https://github.com/damien-robotsix/robotsix-yaml-config.git", rev = "main" }
 robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "main" }
+robotsix-agent-comm = { git = "https://github.com/damien-robotsix/robotsix-agent-comm.git", rev = "main" }
 
 [tool.ruff]
 target-version = "py312"

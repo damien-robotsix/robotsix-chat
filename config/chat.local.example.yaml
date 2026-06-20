@@ -74,3 +74,18 @@ memory:
     # dimensions: 1024             # sticky — changing it invalidates stored vectors
     # api_key: ollama             # env override: MEMORY_EMBEDDING_API_KEY
     # huggingface_tokenizer: BAAI/bge-m3   # env: MEMORY_EMBEDDING_TOKENIZER
+
+# robotsix-mill integration over the agent-comm broker. Disabled by default;
+# requires `uv sync --extra broker`. When enabled, the agent gains a tool that
+# forwards natural-language requests to the mill's board manager (create/triage
+# tickets, ask status). Needs a broker_token registered on the broker.
+mill:
+  enabled: false                   # env override: MILL_ENABLED
+  # broker_host: ai-broker.robotsix.net  # env: MILL_BROKER_HOST
+  # broker_port: 443               # env: MILL_BROKER_PORT
+  # broker_scheme: https           # env: MILL_BROKER_SCHEME
+  broker_token: ""                 # this agent's bearer token; required; env: MILL_BROKER_TOKEN
+  # agent_id: robotsix-chat        # this agent's id on the broker; env: MILL_AGENT_ID
+  # board_manager_id: board-manager-robotsix-mill  # recipient; env: MILL_BOARD_MANAGER_ID
+  # repo_id: ""                    # empty → board manager picks the repo; env: MILL_REPO_ID
+  # timeout: 240                   # per-request seconds; env: MILL_TIMEOUT

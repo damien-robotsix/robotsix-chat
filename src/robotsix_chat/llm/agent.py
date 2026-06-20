@@ -25,6 +25,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections.abc import AsyncIterator
+from typing import Any
 
 from robotsix_llmio.config import create_model
 
@@ -57,11 +58,16 @@ class LlmioChatAgent:
         instruction: str,
         api_key: str = "",
         memory: ChatMemory | None = None,
+        tools: list[Any] | None = None,
     ) -> None:
         self._model_level = model_level
         self._instruction = instruction
         self._api_key = api_key
         self._memory: ChatMemory = memory if memory is not None else NullMemory()
+        # Tools the underlying agent may call (e.g. the mill consult tool). When
+        # non-empty, llmio runs a real tool loop; the final reply is still
+        # returned as one block.
+        self._tools = tools or None
         # Hold references to in-flight background writes so they aren't GC'd.
         self._write_tasks: set[asyncio.Task[None]] = set()
 
@@ -86,7 +92,9 @@ class LlmioChatAgent:
 
         provider = create_model(level=self._model_level, **provider_kwargs)
         handle = provider.build_agent(
-            level=self._model_level, system_prompt=system_prompt
+            level=self._model_level,
+            system_prompt=system_prompt,
+            tools=self._tools,
         )
         try:
             result = await handle.run(message)

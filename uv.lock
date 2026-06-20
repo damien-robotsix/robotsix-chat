@@ -2808,6 +2808,11 @@ wheels = [
 ]
 
 [[package]]
+name = "robotsix-agent-comm"
+version = "0.1.0"
+source = { git = "https://github.com/damien-robotsix/robotsix-agent-comm.git?rev=main#fcf9adab4c0aa70de8221ce6c402cf0d4c1ddc4d" }
+
+[[package]]
 name = "robotsix-chat"
 version = "0.1.0"
 source = { editable = "." }
@@ -2823,6 +2828,9 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+broker = [
+    { name = "robotsix-agent-comm" },
+]
 claude-sdk = [
     { name = "robotsix-llmio", extra = ["claude-sdk"] },
 ]
@@ -2860,6 +2868,7 @@ requires-dist = [
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "pyyaml", specifier = ">=6" },
+    { name = "robotsix-agent-comm", marker = "extra == 'broker'", git = "https://github.com/damien-robotsix/robotsix-agent-comm.git?rev=main" },
     { name = "robotsix-llmio", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=main" },
     { name = "robotsix-llmio", extras = ["claude-sdk"], marker = "extra == 'claude-sdk'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=main" },
     { name = "robotsix-llmio", extras = ["openrouter-deepseek"], marker = "extra == 'openrouter'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=main" },
@@ -2869,7 +2878,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'memory'" },
     { name = "uvicorn" },
 ]
-provides-extras = ["claude-sdk", "openrouter", "tracing", "memory"]
+provides-extras = ["claude-sdk", "openrouter", "tracing", "memory", "broker"]
 
 [package.metadata.requires-dev]
 dev = [

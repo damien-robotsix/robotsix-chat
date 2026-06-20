@@ -90,7 +90,9 @@ async def test_key_bearing_level_forwards_api_key() -> None:
         level=1,
         api_key="sk-or-test",  # pragma: allowlist secret
     )
-    provider.build_agent.assert_called_once_with(level=1, system_prompt="Be helpful.")
+    provider.build_agent.assert_called_once_with(
+        level=1, system_prompt="Be helpful.", tools=None
+    )
 
 
 @pytest.mark.asyncio
