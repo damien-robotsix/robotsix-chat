@@ -16,3 +16,17 @@ plugins:
 
 nav:
   - Home: index.md
+  - Getting Started: getting-started.md
+  - User Guide:
+      - Configuration: user-guide/configuration.md
+      - Deployment: user-guide/deployment.md
+  - API Reference:
+      - robotsix_chat: api/robotsix_chat.md
+      - robotsix_chat.config: api/robotsix_chat/config.md
+      - robotsix_chat.chat.server: api/robotsix_chat/server.md
+      - robotsix_chat.chat.auth: api/robotsix_chat/auth.md
+      - robotsix_chat.llm.agent: api/robotsix_chat/agent.md
+      - robotsix_chat.memory: api/robotsix_chat/memory.md
+      - robotsix_chat.mill.client: api/robotsix_chat/mill.md
+  - Changelog: changelog.md
+  - Contributing: contributing.md
