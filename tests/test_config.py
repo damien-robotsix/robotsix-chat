@@ -6,7 +6,13 @@ from pathlib import Path
 
 import pytest
 
-from robotsix_chat.config import AuthSettings, Settings
+from robotsix_chat.config import (
+    AuthSettings,
+    MemoryEmbeddingSettings,
+    MemoryLlmSettings,
+    MemorySettings,
+    Settings,
+)
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -28,6 +34,19 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "AUTH_USERNAME",
         "AUTH_PASSWORD",
         "CHAT_CONFIG_PATH",
+        "MEMORY_ENABLED",
+        "MEMORY_DATA_DIR",
+        "MEMORY_RECALL_SEARCH_TYPE",
+        "MEMORY_LLM_PROVIDER",
+        "MEMORY_LLM_MODEL",
+        "MEMORY_LLM_ENDPOINT",
+        "MEMORY_LLM_API_KEY",
+        "MEMORY_EMBEDDING_PROVIDER",
+        "MEMORY_EMBEDDING_MODEL",
+        "MEMORY_EMBEDDING_ENDPOINT",
+        "MEMORY_EMBEDDING_API_KEY",
+        "MEMORY_EMBEDDING_TOKENIZER",
+        "MEMORY_EMBEDDING_DIMENSIONS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -325,3 +344,109 @@ def test_load_empty_string_skips_file(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings.load(config_path="")
 
     assert settings.llmio_model_level == 3
+
+
+# ---------------------------------------------------------------------------
+# Memory
+# ---------------------------------------------------------------------------
+
+
+def test_memory_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Memory is off by default, with the validated robotsix defaults present."""
+    _wipe_env_vars(monkeypatch)
+
+    settings = Settings.from_env()
+
+    assert settings.memory.enabled is False
+    assert settings.memory.data_dir == ".data/cognee"
+    assert settings.memory.recall_search_type == "GRAPH_COMPLETION"
+    assert settings.memory.llm.model == "openrouter/deepseek/deepseek-v4-flash"
+    assert settings.memory.embedding.provider == "openai_compatible"
+    assert settings.memory.embedding.dimensions == 1024
+
+
+def test_memory_enabled_requires_llm_key() -> None:
+    """Enabling memory without an extraction-LLM key is rejected."""
+    with pytest.raises(ValueError, match="memory.llm.api_key"):
+        Settings(
+            memory=MemorySettings(
+                enabled=True,
+                embedding=MemoryEmbeddingSettings(endpoint="http://box:11434/v1"),
+            )
+        )
+
+
+def test_memory_enabled_requires_embedding_endpoint() -> None:
+    """Enabling memory without an embedding endpoint is rejected."""
+    with pytest.raises(ValueError, match="memory.embedding.endpoint"):
+        Settings(
+            memory=MemorySettings(
+                enabled=True,
+                llm=MemoryLlmSettings(api_key="sk-or-x"),  # pragma: allowlist secret
+            )
+        )
+
+
+def test_memory_enabled_with_key_and_endpoint_ok() -> None:
+    """Memory constructs once both required fields are present."""
+    settings = Settings(
+        memory=MemorySettings(
+            enabled=True,
+            llm=MemoryLlmSettings(api_key="sk-or-x"),  # pragma: allowlist secret
+            embedding=MemoryEmbeddingSettings(endpoint="http://box:11434/v1"),
+        )
+    )
+    assert settings.memory.enabled is True
+
+
+def test_memory_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``MEMORY_*`` env vars populate the nested memory settings."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("MEMORY_ENABLED", "true")
+    monkeypatch.setenv("MEMORY_LLM_API_KEY", "sk-or-env")
+    monkeypatch.setenv("MEMORY_EMBEDDING_ENDPOINT", "http://box:11434/v1")
+    monkeypatch.setenv("MEMORY_EMBEDDING_DIMENSIONS", "768")
+
+    settings = Settings.from_env()
+
+    assert settings.memory.enabled is True
+    assert settings.memory.llm.api_key == "sk-or-env"  # pragma: allowlist secret
+    assert settings.memory.embedding.endpoint == "http://box:11434/v1"
+    assert settings.memory.embedding.dimensions == 768
+
+
+def test_memory_env_overrides_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``MEMORY_*`` env vars win over nested YAML, field-by-field."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text(
+        "memory:\n"
+        "  enabled: true\n"
+        "  llm:\n"
+        "    api_key: sk-yaml\n"
+        "    model: yaml-model\n"
+        "  embedding:\n"
+        "    endpoint: http://yaml:11434/v1\n"
+    )
+    monkeypatch.setenv("MEMORY_LLM_API_KEY", "sk-env")
+    monkeypatch.setenv("MEMORY_EMBEDDING_ENDPOINT", "http://env:11434/v1")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.memory.enabled is True
+    assert settings.memory.llm.api_key == "sk-env"  # pragma: allowlist secret
+    assert settings.memory.embedding.endpoint == "http://env:11434/v1"
+    # Un-overridden YAML value survives.
+    assert settings.memory.llm.model == "yaml-model"
+
+
+def test_memory_dimensions_invalid_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-numeric ``MEMORY_EMBEDDING_DIMENSIONS`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("MEMORY_EMBEDDING_DIMENSIONS", "lots")
+
+    with pytest.raises(ValueError, match="MEMORY_EMBEDDING_DIMENSIONS"):
+        Settings.from_env()

@@ -26,6 +26,7 @@ from robotsix_chat import PROJECT_TITLE
 from robotsix_chat.chat.auth import BasicAuthConfig, BasicAuthMiddleware
 from robotsix_chat.config import Settings, level_needs_api_key
 from robotsix_chat.llm import LlmioChatAgent
+from robotsix_chat.memory import build_memory
 
 logger = logging.getLogger(__name__)
 
@@ -247,6 +248,9 @@ def create_agent_from_settings(
     When *settings* is ``None``, ``Settings.load()`` resolves configuration
     from the YAML config file and environment. When *instruction* is ``None``,
     it is taken from ``settings.agent_instruction``.
+
+    Long-term memory is attached when ``settings.memory.enabled`` is set
+    (otherwise a no-op memory is used and the agent stays stateless).
     """
     if settings is None:
         settings = Settings.load()
@@ -262,6 +266,7 @@ def create_agent_from_settings(
         model_level=settings.llmio_model_level,
         instruction=instruction,
         api_key=api_key,
+        memory=build_memory(settings.memory),
     )
 
 

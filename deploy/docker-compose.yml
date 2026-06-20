@@ -6,6 +6,10 @@ services:
       - "127.0.0.1:${CHAT_PORT:-8088}:8080"
     volumes:
       - ./config:/home/appuser/config
+      # Persistent agent data (e.g. memory) — survives container redeploys.
+      # Host ./data resolves to deploy/data; mounted read-write so the
+      # container (appuser, uid 1001) can write to it.
+      - ./data:/home/appuser/.data
       - ~/.claude:/home/appuser/.claude:ro
     environment:
       CHAT_CONFIG_PATH: config/chat.local.yaml

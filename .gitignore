@@ -28,3 +28,10 @@ build/
 
 # mkdocs build output
 site/
+
+# Persistent deploy-time agent data (bind-mounted into the container)
+deploy/data/
+
+# Secret material (API keys etc.) — never commit
+*.secrets
+cogney-key.secrets
