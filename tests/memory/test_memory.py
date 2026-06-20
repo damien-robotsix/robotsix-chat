@@ -123,21 +123,29 @@ def _install_fake_cognee(monkeypatch: pytest.MonkeyPatch) -> Any:
     return fake
 
 
+@pytest.fixture
+def cognee_memory(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> tuple[CogneeMemory, Any]:
+    """Fixture providing a CogneeMemory with a mocked cognee module."""
+    fake = _install_fake_cognee(monkeypatch)
+    mem = CogneeMemory(_enabled_settings(str(tmp_path / "cognee")))
+    return mem, fake
+
+
 @pytest.mark.asyncio
 async def test_cognee_recall_returns_formatted(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    cognee_memory: tuple[CogneeMemory, Any],
 ) -> None:
-    _install_fake_cognee(monkeypatch)
-    mem = CogneeMemory(_enabled_settings(str(tmp_path / "cognee")))
+    mem, _ = cognee_memory
     assert await mem.recall("who?") == "recalled fact"
 
 
 @pytest.mark.asyncio
 async def test_cognee_recall_blank_query_skips(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    cognee_memory: tuple[CogneeMemory, Any],
 ) -> None:
-    fake = _install_fake_cognee(monkeypatch)
-    mem = CogneeMemory(_enabled_settings(str(tmp_path / "cognee")))
+    mem, fake = cognee_memory
     assert await mem.recall("   ") == ""
     # A skipped recall never configures or queries cognee.
     fake.config.set_llm_provider.assert_not_called()
@@ -146,10 +154,9 @@ async def test_cognee_recall_blank_query_skips(
 
 @pytest.mark.asyncio
 async def test_cognee_remember_calls_add_and_cognify(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    cognee_memory: tuple[CogneeMemory, Any],
 ) -> None:
-    fake = _install_fake_cognee(monkeypatch)
-    mem = CogneeMemory(_enabled_settings(str(tmp_path / "cognee")))
+    mem, fake = cognee_memory
     await mem.remember("hello", "hi there")
     fake.add.assert_awaited_once()
     fake.cognify.assert_awaited_once()
@@ -157,29 +164,28 @@ async def test_cognee_remember_calls_add_and_cognify(
 
 @pytest.mark.asyncio
 async def test_cognee_recall_never_raises(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    cognee_memory: tuple[CogneeMemory, Any],
 ) -> None:
     """A backend error during recall degrades to an empty string."""
-    fake = _install_fake_cognee(monkeypatch)
+    mem, fake = cognee_memory
     fake.search = AsyncMock(side_effect=RuntimeError("backend down"))
-    mem = CogneeMemory(_enabled_settings(str(tmp_path / "cognee")))
     assert await mem.recall("who?") == ""
 
 
 @pytest.mark.asyncio
 async def test_cognee_remember_never_raises(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    cognee_memory: tuple[CogneeMemory, Any],
 ) -> None:
     """A backend error during remember is swallowed (logged, not raised)."""
-    fake = _install_fake_cognee(monkeypatch)
+    mem, fake = cognee_memory
     fake.add = AsyncMock(side_effect=RuntimeError("write failed"))
-    mem = CogneeMemory(_enabled_settings(str(tmp_path / "cognee")))
     await mem.remember("hello", "hi")  # must not raise
 
 
 @pytest.mark.asyncio
 async def test_configure_restores_langfuse_env(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+    cognee_memory: tuple[CogneeMemory, Any],
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """LANGFUSE_* creds are hidden for cognee's import, then restored.
 
@@ -188,10 +194,9 @@ async def test_configure_restores_langfuse_env(
     """
     import os
 
-    _install_fake_cognee(monkeypatch)
+    mem, _ = cognee_memory
     monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-keep")
     monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-keep")
-    mem = CogneeMemory(_enabled_settings(str(tmp_path / "cognee")))
     await mem.setup()
     assert os.environ["LANGFUSE_PUBLIC_KEY"] == "pk-keep"
     assert os.environ["LANGFUSE_SECRET_KEY"] == "sk-keep"  # pragma: allowlist secret
