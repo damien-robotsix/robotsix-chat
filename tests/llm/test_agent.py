@@ -139,18 +139,32 @@ async def test_handle_closed_on_error() -> None:
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_recalled_memory_injected_into_system_prompt() -> None:
-    """Recalled memory is appended to the system prompt for that call."""
-    create_model, _ = _patched_create_model("ok")
+async def _agent_with_memory(
+    output: str = "hi there",
+    recall: str = "",
+    message: str = "hi",
+) -> tuple[MagicMock, LlmioChatAgent, list[str], _RecordingMemory]:
+    """Create an agent with patched create_model and a RecordingMemory,
+    stream a message, and return (provider, agent, chunks, memory)."""
+    create_model, _ = _patched_create_model(output)
     provider = create_model.return_value
-    memory = _RecordingMemory(recall="Damien prefers Python.")
+    memory = _RecordingMemory(recall=recall)
 
     with patch("robotsix_chat.llm.agent.create_model", create_model):
         agent = LlmioChatAgent(
             model_level=3, instruction="Be helpful.", memory=memory
         )
-        _ = [c async for c in agent.stream("hi")]
+        chunks = [c async for c in agent.stream(message)]
+
+    return provider, agent, chunks, memory
+
+
+@pytest.mark.asyncio
+async def test_recalled_memory_injected_into_system_prompt() -> None:
+    """Recalled memory is appended to the system prompt for that call."""
+    provider, _, _, _ = await _agent_with_memory(
+        output="ok", recall="Damien prefers Python."
+    )
 
     system_prompt = provider.build_agent.call_args.kwargs["system_prompt"]
     assert system_prompt.startswith("Be helpful.")
@@ -161,14 +175,7 @@ async def test_recalled_memory_injected_into_system_prompt() -> None:
 async def test_no_recall_adds_no_memory_block() -> None:
     """With empty recall, the system prompt is the instruction + the guard, and
     carries no memory block."""
-    create_model, _ = _patched_create_model("ok")
-    provider = create_model.return_value
-
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
-        agent = LlmioChatAgent(
-            model_level=3, instruction="Be helpful.", memory=_RecordingMemory("")
-        )
-        _ = [c async for c in agent.stream("hi")]
+    provider, _, _, _ = await _agent_with_memory(output="ok")
 
     system_prompt = provider.build_agent.call_args.kwargs["system_prompt"]
     assert system_prompt.startswith("Be helpful.")
@@ -179,16 +186,11 @@ async def test_no_recall_adds_no_memory_block() -> None:
 @pytest.mark.asyncio
 async def test_exchange_persisted_in_background() -> None:
     """After a reply, the (message, reply) exchange is handed to memory."""
-    create_model, _ = _patched_create_model("the reply")
-    memory = _RecordingMemory()
-
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
-        agent = LlmioChatAgent(
-            model_level=3, instruction="Be helpful.", memory=memory
-        )
-        _ = [c async for c in agent.stream("the question")]
-        # Let the fire-and-forget write task run.
-        await asyncio.sleep(0)
+    _, _, _, memory = await _agent_with_memory(
+        output="the reply", message="the question"
+    )
+    # Let the fire-and-forget write task run.
+    await asyncio.sleep(0)
 
     assert memory.remembered == [("the question", "the reply")]
 
@@ -196,15 +198,8 @@ async def test_exchange_persisted_in_background() -> None:
 @pytest.mark.asyncio
 async def test_empty_reply_not_persisted() -> None:
     """An empty reply yields no chunks and nothing is written to memory."""
-    create_model, _ = _patched_create_model("")
-    memory = _RecordingMemory()
-
-    with patch("robotsix_chat.llm.agent.create_model", create_model):
-        agent = LlmioChatAgent(
-            model_level=3, instruction="Be helpful.", memory=memory
-        )
-        chunks = [c async for c in agent.stream("hi")]
-        await asyncio.sleep(0)
+    _, _, chunks, memory = await _agent_with_memory(output="")
+    await asyncio.sleep(0)
 
     assert chunks == []
     assert memory.remembered == []
