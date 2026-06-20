@@ -49,6 +49,12 @@ openrouter = ["robotsix-llmio[openrouter-deepseek]"]
 # OTel trace-id injection in log records.  Credentials are read from the
 # LANGFUSE_* env vars at startup; absent credentials = graceful no-op.
 tracing = ["robotsix-llmio[tracing]"]
+# memory: cognee-backed long-term agent memory (model_level-agnostic). Heavy —
+# pulls a large transitive tree (litellm, lancedb, …). `transformers` supplies
+# the HuggingFace tokenizer for the bge-m3 embedding path (no torch required).
+# Disabled at runtime unless `memory.enabled` is set; absent extra = graceful
+# no-op (NullMemory).
+memory = ["cognee", "transformers"]
 
 [project.scripts]
 robotsix-chat = "robotsix_chat.chat.server:run_server_from_config"
@@ -87,6 +93,11 @@ per-file-ignores = {"src/robotsix_chat/chat/server.py" = ["S105"], "tests/**" = 
 [tool.mypy]
 python_version = "3.14"
 strict = true
+
+# cognee (the optional `memory` extra) ships no type information.
+[[tool.mypy.overrides]]
+module = ["cognee.*"]
+ignore_missing_imports = true
 
 [tool.bandit]
 exclude_dirs = ["tests"]

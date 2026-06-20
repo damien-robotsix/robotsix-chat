@@ -43,6 +43,7 @@ Pulls `ghcr.io/damien-robotsix/robotsix-chat:${IMAGE_TAG}` (no build), binds loo
   - `AUTH_PASSWORD=${CHAT_AUTH_PASSWORD:?err}` (mandatory; compose refuses to start if unset)
 - **Volume mounts** (chat service):
   - `./config:/home/appuser/config` (whole directory, read-write — config changes persist across redeploys)
+  - `./data:/home/appuser/.data` (persistent agent data, e.g. memory — read-write; survives container redeploys. Follows the fleet convention shared with `robotsix-cost-monitor`/`robotsix-auto-mail`, which bind-mount `./data` into the container's `.data` dir.)
   - `~/.claude:/home/appuser/.claude:ro`
 - **Watchtower** sidecar: `containrrr/watchtower`, `--interval 30 --label-enable --cleanup`, targeting the label `com.centurylinklabs.watchtower.enable=true` on the chat container.
 
@@ -129,6 +130,42 @@ cp config/chat.local.example.yaml deploy/config/chat.local.yaml
 
 Edit `deploy/config/chat.local.yaml` as needed.
 
+## Long-term memory (cognee)
+
+The agent is stateless by default. The optional `memory` extra adds persistent,
+cross-conversation memory via embedded **cognee**: before each reply the agent
+`recall`s relevant memory and folds it into the system prompt; after replying it
+persists the exchange (`add` + `cognify`) in a **background task** so
+consolidation never adds latency. Disabled by default; a `NullMemory` no-op is
+used when off or when the extra is absent — the agent then behaves exactly as
+before.
+
+- **Selection**: `memory.enabled` (config). `build_memory()` returns
+  `CogneeMemory` only when enabled *and* cognee is importable, else `NullMemory`.
+- **Backends** (cognee runs embedded; the heavy inference is offloaded):
+  - *Extraction LLM* — OpenRouter via litellm's `custom` provider
+    (`openrouter/deepseek/deepseek-v4-flash`); needs `memory.llm.api_key`.
+  - *Embeddings* — a remote **OpenAI-compatible** server (self-hosted Ollama /
+    `bge-m3`, 1024-dim); provider must be `openai_compatible`, needs
+    `memory.embedding.endpoint` (e.g. `http://host:11434/v1`). Embeddings are
+    **not** run on the chat host.
+- **Storage**: cognee's stores live under `memory.data_dir` (default
+  `.data/cognee`) — keep it on the persistent `.data` bind mount so memory
+  survives redeploys.
+- **Safety**: `recall`/`remember` never raise into the chat path (errors are
+  logged; the reply proceeds without memory).
+- **Resilience caveat**: memory depends on the embedding server being
+  reachable; while it's down, recall/consolidation silently no-op.
+- **Image note**: the extra pulls a large dep tree (litellm, lancedb,
+  transformers, …) — it is intentionally *not* baked into the production image
+  until memory is enabled there (which also needs the embedding endpoint
+  reachable from the host).
+
+Config keys: `memory.enabled`, `memory.data_dir`, `memory.recall_search_type`,
+`memory.llm.{provider,model,endpoint,api_key}`,
+`memory.embedding.{provider,model,endpoint,dimensions,api_key,huggingface_tokenizer}`
+— each with a `MEMORY_*` env override (see `.env.example`).
+
 ## Key file map
 
 - `docker-compose.yml` — local dev compose (builds from Dockerfile, tag `robotsix-chat:local`)
@@ -136,6 +173,7 @@ Edit `deploy/config/chat.local.yaml` as needed.
 - `Dockerfile` — multi-stage build (`python:3.14-slim`, Node.js + `claude` CLI, non-root `appuser`, `EXPOSE 8080`)
 - `.env.example` — canonical env-var reference (standard variables; deploy-only vars documented above)
 - `config/chat.local.example.yaml` — canonical YAML config template (copy to `chat.local.yaml`)
-- `src/robotsix_chat/config.py` — settings cascade (pydantic defaults → YAML → env, `Settings.load()`)
+- `src/robotsix_chat/config.py` — settings cascade (pydantic defaults → YAML → env, `Settings.load()`); includes `MemorySettings`
+- `src/robotsix_chat/memory/` — optional long-term memory: `base.py` (`ChatMemory` protocol + `NullMemory`), `cognee.py` (`CogneeMemory`), `__init__.py` (`build_memory()`)
 - `src/robotsix_chat/chat/server.py` — Starlette ASGI app; `GET /`, `POST /chat`, `GET /health`
 - `.github/workflows/release-image.yml` — GHCR publish workflow (triggers on `main` push, `v*` tag, manual dispatch)

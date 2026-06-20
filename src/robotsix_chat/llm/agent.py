@@ -22,17 +22,32 @@ wired via this package's ``claude-sdk`` / ``openrouter`` extras.
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from collections.abc import AsyncIterator
 
 from robotsix_llmio.config import create_model
+
+from robotsix_chat.memory import ChatMemory, NullMemory
+
+logger = logging.getLogger(__name__)
+
+# Header for the recalled-memory block injected into the system prompt.
+_MEMORY_PROMPT_HEADER = (
+    "# Relevant memory from earlier conversations\n"
+    "Use this background only if it helps; ignore it otherwise.\n"
+)
 
 
 class LlmioChatAgent:
     """Stream LLM responses via robotsix-llmio, selected by capability level.
 
-    Each ``stream`` call is an independent, stateless query (no conversation
-    memory) — matching the chat server, which sends one user message at a time.
-    A fresh llmio agent handle is built per call and deterministically closed.
+    Each ``stream`` call builds a fresh llmio agent handle (deterministically
+    closed). When a :class:`~robotsix_chat.memory.ChatMemory` is supplied, the
+    agent gains continuity across calls: it recalls relevant memory before
+    replying and persists the exchange afterwards (the write runs in the
+    background so it never adds latency). With the default :class:`NullMemory`
+    it stays fully stateless.
     """
 
     def __init__(
@@ -41,10 +56,14 @@ class LlmioChatAgent:
         model_level: int,
         instruction: str,
         api_key: str = "",
+        memory: ChatMemory | None = None,
     ) -> None:
         self._model_level = model_level
         self._instruction = instruction
         self._api_key = api_key
+        self._memory: ChatMemory = memory if memory is not None else NullMemory()
+        # Hold references to in-flight background writes so they aren't GC'd.
+        self._write_tasks: set[asyncio.Task[None]] = set()
 
     async def stream(self, message: str) -> AsyncIterator[str]:
         """Yield the assistant's reply to *message* as a single block.
@@ -52,6 +71,13 @@ class LlmioChatAgent:
         Raises on backend errors — the chat server turns that into an SSE
         ``error`` frame.
         """
+        # Recall relevant memory and fold it into the system prompt. recall()
+        # never raises (it degrades to "" on any backend failure).
+        recalled = await self._memory.recall(message)
+        system_prompt = self._instruction
+        if recalled:
+            system_prompt = f"{system_prompt}\n\n{_MEMORY_PROMPT_HEADER}{recalled}"
+
         # Forward the key only when one is configured; keyless levels
         # (claude-sdk) must not receive an api_key (the provider rejects it).
         provider_kwargs: dict[str, str] = {}
@@ -60,7 +86,7 @@ class LlmioChatAgent:
 
         provider = create_model(level=self._model_level, **provider_kwargs)
         handle = provider.build_agent(
-            level=self._model_level, system_prompt=self._instruction
+            level=self._model_level, system_prompt=system_prompt
         )
         try:
             result = await handle.run(message)
@@ -68,5 +94,18 @@ class LlmioChatAgent:
             handle.close()
 
         text = result.output
+        # Persist the exchange in the background so memory consolidation never
+        # blocks the reply. The task is tracked to avoid premature GC.
         if text:
+            self._schedule_remember(message, text)
             yield text
+
+    def _schedule_remember(self, message: str, reply: str) -> None:
+        """Fire-and-forget the memory write for a completed exchange."""
+        try:
+            task = asyncio.create_task(self._memory.remember(message, reply))
+        except RuntimeError:
+            # No running loop (shouldn't happen in the ASGI path) — skip silently.
+            return
+        self._write_tasks.add(task)
+        task.add_done_callback(self._write_tasks.discard)

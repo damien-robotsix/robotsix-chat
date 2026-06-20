@@ -15,6 +15,7 @@ docker compose -f deploy/docker-compose.yml up -d
 │                                              │
 │  chat (ghcr.io/damien-robotsix/robotsix-chat)│
 │  ├─ config/  ← deploy/config/chat.local.yaml │
+│  ├─ .data/   ← deploy/data (persistent)      │
 │  └─ .claude/ ← ~/.claude (read-only)         │
 │                                              │
 │  watchtower (containrrr/watchtower)          │
@@ -32,7 +33,7 @@ below for a placeholder snippet.
 ```bash
 # 1. One-time host prerequisites
 claude login                                    # populates ~/.claude
-mkdir -p deploy/config
+mkdir -p deploy/config deploy/data              # data/ = persistent agent storage
 cp config/chat.local.example.yaml deploy/config/chat.local.yaml
 # Edit deploy/config/chat.local.yaml and set auth.enabled: true
 

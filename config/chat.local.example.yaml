@@ -47,3 +47,30 @@ auth:
   enabled: false                   # env override: AUTH_ENABLED
   username: admin                  # env override: AUTH_USERNAME
   password: ""                     # required when enabled; env override: AUTH_PASSWORD
+
+# Long-term memory (cognee) — gives the agent continuity across conversations:
+# it recalls relevant memory before each reply and persists the exchange after
+# (the write runs in the background, off the reply's latency path). Disabled by
+# default; requires `uv sync --extra memory`. When enabled, both
+# memory.llm.api_key and memory.embedding.endpoint are required.
+#
+# Architecture: cognee runs embedded; the extraction LLM is OpenRouter and the
+# embedding model is a remote OpenAI-compatible server (self-hosted Ollama).
+memory:
+  enabled: false                   # env override: MEMORY_ENABLED
+  # data_dir: .data/cognee         # cognee stores live here; keep on a persistent
+                                   #   mount. Env override: MEMORY_DATA_DIR
+  # recall_search_type: GRAPH_COMPLETION  # clean facts, +1 cheap LLM call/msg;
+                                   #   CHUNKS/SUMMARIES are faster but rawer.
+  llm:                             # extraction LLM (graph building / consolidation)
+    # provider: custom             # env override: MEMORY_LLM_PROVIDER
+    # model: openrouter/deepseek/deepseek-v4-flash   # env: MEMORY_LLM_MODEL
+    # endpoint: https://openrouter.ai/api/v1         # env: MEMORY_LLM_ENDPOINT
+    api_key: ""                    # OpenRouter key, required; env: MEMORY_LLM_API_KEY
+  embedding:                       # remote OpenAI-compatible embedding server
+    # provider: openai_compatible  # env override: MEMORY_EMBEDDING_PROVIDER
+    # model: bge-m3                # env override: MEMORY_EMBEDDING_MODEL
+    endpoint: ""                   # e.g. http://host:11434/v1, required; env: MEMORY_EMBEDDING_ENDPOINT
+    # dimensions: 1024             # sticky — changing it invalidates stored vectors
+    # api_key: ollama             # env override: MEMORY_EMBEDDING_API_KEY
+    # huggingface_tokenizer: BAAI/bge-m3   # env: MEMORY_EMBEDDING_TOKENIZER

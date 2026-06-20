@@ -85,6 +85,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "server.cors_allow_origins": "cors_allow_origins",
     "server.correlation_id_header": "correlation_id_header",
     "auth": "auth",
+    "memory": "memory",
 }
 
 
@@ -114,6 +115,63 @@ class AuthSettings(BaseModel):
     enabled: bool = False
     username: str = "admin"
     password: str = ""
+
+
+class MemoryLlmSettings(BaseModel):
+    """Extraction-LLM config for cognee memory (OpenRouter via litellm).
+
+    Defaults match the validated robotsix setup: the cheap OpenRouter DeepSeek
+    model through the ``custom`` provider. ``api_key`` is required when memory
+    is enabled (provide it via ``MEMORY_LLM_API_KEY``).
+    """
+
+    provider: str = "custom"
+    model: str = "openrouter/deepseek/deepseek-v4-flash"
+    endpoint: str = "https://openrouter.ai/api/v1"
+    api_key: str = ""
+
+
+class MemoryEmbeddingSettings(BaseModel):
+    """Embedding config for cognee memory (remote OpenAI-compatible server).
+
+    Defaults target a self-hosted Ollama ``bge-m3`` endpoint. ``provider`` must
+    be ``openai_compatible`` for that path (it tolerates a non-OpenAI model
+    name); ``endpoint`` (e.g. ``http://host:11434/v1``) is required when memory
+    is enabled. ``dimensions`` is sticky — changing it invalidates stored
+    vectors.
+    """
+
+    provider: str = "openai_compatible"
+    model: str = "bge-m3"
+    endpoint: str = ""
+    dimensions: int = 1024
+    api_key: str = "ollama"
+    huggingface_tokenizer: str = "BAAI/bge-m3"
+
+
+class MemorySettings(BaseModel):
+    """Long-term agent memory (cognee). Disabled by default.
+
+    Attributes:
+        enabled: When ``True``, the agent recalls before and persists after each
+            reply. Requires the ``memory`` extra (cognee) installed.
+        data_dir: Directory for cognee's stores (relative to the working dir).
+            Put it under the persistent ``.data`` mount so memory survives
+            container redeploys.
+        recall_search_type: cognee ``SearchType`` name used for recall.
+            ``GRAPH_COMPLETION`` (default) returns clean, relevant facts as text
+            but costs one (cheap) LLM call per message; retrieval-only types
+            like ``CHUNKS``/``SUMMARIES`` are faster but return raw, noisier
+            payloads.
+        llm: Extraction-LLM config (graph building / consolidation).
+        embedding: Embedding-server config (semantic search).
+    """
+
+    enabled: bool = False
+    data_dir: str = ".data/cognee"
+    recall_search_type: str = "GRAPH_COMPLETION"
+    llm: MemoryLlmSettings = Field(default_factory=MemoryLlmSettings)
+    embedding: MemoryEmbeddingSettings = Field(default_factory=MemoryEmbeddingSettings)
 
 
 class Settings(BaseModel):
@@ -152,6 +210,7 @@ class Settings(BaseModel):
     cors_allow_origins: list[str] = Field(default_factory=list)
     correlation_id_header: str = "X-Request-ID"
     auth: AuthSettings = Field(default_factory=AuthSettings)
+    memory: MemorySettings = Field(default_factory=MemorySettings)
 
     def model_post_init(self, __context: Any) -> None:
         """Validate fields that cannot be expressed via simple type annotations."""
@@ -174,6 +233,19 @@ class Settings(BaseModel):
                 "auth.password must be set when auth is enabled — provide it "
                 "via AUTH_PASSWORD or the `auth.password` field of your config file"
             )
+        if self.memory.enabled:
+            if not self.memory.llm.api_key:
+                raise ValueError(
+                    "memory.llm.api_key must be set when memory is enabled — "
+                    "provide it via MEMORY_LLM_API_KEY or the `memory.llm.api_key` "
+                    "field of your config file"
+                )
+            if not self.memory.embedding.endpoint:
+                raise ValueError(
+                    "memory.embedding.endpoint must be set when memory is enabled "
+                    "(e.g. http://host:11434/v1) — provide it via "
+                    "MEMORY_EMBEDDING_ENDPOINT or the config file"
+                )
 
     # ------------------------------------------------------------------
     # Factories
@@ -248,7 +320,9 @@ class Settings(BaseModel):
     @classmethod
     def _build(cls, flat: dict[str, Any]) -> Settings:
         """Overlay environment variables onto *flat* YAML values and build."""
-        raw: dict[str, Any] = {k: v for k, v in flat.items() if k != "auth"}
+        raw: dict[str, Any] = {
+            k: v for k, v in flat.items() if k not in ("auth", "memory")
+        }
         auth_raw: dict[str, Any] = dict(flat.get("auth") or {})
 
         def env_override(field: str, env_name: str) -> None:
@@ -300,7 +374,59 @@ class Settings(BaseModel):
         if auth_raw:
             raw["auth"] = auth_raw
 
+        memory_raw = _build_memory_raw(flat.get("memory"))
+        if memory_raw:
+            raw["memory"] = memory_raw
+
         return cls(**raw)
+
+
+def _build_memory_raw(yaml_memory: Any) -> dict[str, Any]:
+    """Overlay ``MEMORY_*`` env vars onto the YAML ``memory`` subtree.
+
+    Returns a nested dict (with ``llm`` / ``embedding`` sub-dicts) ready to be
+    parsed into :class:`MemorySettings`, or an empty dict when nothing is set.
+    """
+    memory_raw: dict[str, Any] = dict(yaml_memory or {})
+    llm_raw: dict[str, Any] = dict(memory_raw.get("llm") or {})
+    embed_raw: dict[str, Any] = dict(memory_raw.get("embedding") or {})
+
+    def env_set(target: dict[str, Any], field: str, env_name: str) -> None:
+        value = os.getenv(env_name)
+        if value is not None:
+            target[field] = value
+
+    enabled = os.getenv("MEMORY_ENABLED")
+    if enabled is not None:
+        memory_raw["enabled"] = _parse_bool(enabled)
+    env_set(memory_raw, "data_dir", "MEMORY_DATA_DIR")
+    env_set(memory_raw, "recall_search_type", "MEMORY_RECALL_SEARCH_TYPE")
+
+    env_set(llm_raw, "provider", "MEMORY_LLM_PROVIDER")
+    env_set(llm_raw, "model", "MEMORY_LLM_MODEL")
+    env_set(llm_raw, "endpoint", "MEMORY_LLM_ENDPOINT")
+    env_set(llm_raw, "api_key", "MEMORY_LLM_API_KEY")
+
+    env_set(embed_raw, "provider", "MEMORY_EMBEDDING_PROVIDER")
+    env_set(embed_raw, "model", "MEMORY_EMBEDDING_MODEL")
+    env_set(embed_raw, "endpoint", "MEMORY_EMBEDDING_ENDPOINT")
+    env_set(embed_raw, "api_key", "MEMORY_EMBEDDING_API_KEY")
+    env_set(embed_raw, "huggingface_tokenizer", "MEMORY_EMBEDDING_TOKENIZER")
+
+    dims = os.getenv("MEMORY_EMBEDDING_DIMENSIONS")
+    if dims is not None:
+        try:
+            embed_raw["dimensions"] = int(dims)
+        except ValueError:
+            raise ValueError(
+                f"MEMORY_EMBEDDING_DIMENSIONS must be an integer, got {dims!r}"
+            ) from None
+
+    if llm_raw:
+        memory_raw["llm"] = llm_raw
+    if embed_raw:
+        memory_raw["embedding"] = embed_raw
+    return memory_raw
 
 
 def _load_dotenv() -> None:
