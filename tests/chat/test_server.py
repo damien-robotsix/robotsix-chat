@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -14,12 +15,23 @@ from robotsix_chat.chat.server import (
     SSE_ERROR_TYPE,
     SSE_TOKEN_TYPE,
     create_agent_from_settings,
-    create_app,
     run_server_from_config,
 )
 from robotsix_chat.config import Settings
 from robotsix_chat.llm import LlmioChatAgent
-from tests.conftest import MockAgent, http_client, mock_app
+from tests.conftest import mock_app
+
+
+def _parse_sse(response: Any) -> list[dict[str, object]]:
+    """Split SSE text into parsed JSON frames from ``data:`` lines."""
+    text: str = response.text
+    events = [e for e in text.split("\n\n") if e]
+    frames: list[dict[str, object]] = []
+    for e in events:
+        if e.startswith("data: "):
+            frames.append(json.loads(e[len("data: ") :]))
+    return frames
+
 
 # ---------------------------------------------------------------------------
 # Health endpoint
@@ -47,15 +59,7 @@ async def test_chat_endpoint_streams_tokens() -> None:
     assert response.status_code == 200
     assert response.headers["content-type"] == SSE_CONTENT_TYPE
 
-    text = response.text
-    # SSE uses \n\n as event delimiter.  Split on that, then extract the
-    # JSON payload from each "data: ..." block.
-    events = [e for e in text.split("\n\n") if e]
-    frames: list[dict[str, object]] = []
-    for e in events:
-        if e.startswith("data: "):
-            payload = e[len("data: ") :]
-            frames.append(json.loads(payload))
+    frames = _parse_sse(response)
 
     assert len(frames) >= 4  # 3 tokens + done
     assert frames[0] == {"type": SSE_TOKEN_TYPE, "content": "Hello"}
@@ -136,12 +140,7 @@ async def test_chat_endpoint_agent_raises() -> None:
     assert response.status_code == 200
     assert SSE_CONTENT_TYPE in response.headers["content-type"]
 
-    text = response.text
-    events = [e for e in text.split("\n\n") if e]
-    frames: list[dict[str, object]] = []
-    for e in events:
-        if e.startswith("data: "):
-            frames.append(json.loads(e[len("data: ") :]))
+    frames = _parse_sse(response)
 
     error_frames = [f for f in frames if f.get("type") == SSE_ERROR_TYPE]
     assert len(error_frames) == 1
@@ -320,10 +319,8 @@ async def test_wrong_method_on_known_route_returns_405() -> None:
 @pytest.mark.asyncio
 async def test_ui_served_at_root_by_default() -> None:
     """``GET /`` returns the bundled browser chat UI HTML."""
-    app = create_app(MockAgent())
-
-    async with http_client(app) as client:
-        response = await client.get("/")
+    async with mock_app() as f:
+        response = await f.client.get("/")
 
     assert response.status_code == 200
     assert response.headers["content-type"].startswith("text/html")
@@ -334,10 +331,8 @@ async def test_ui_served_at_root_by_default() -> None:
 @pytest.mark.asyncio
 async def test_ui_disabled_returns_404() -> None:
     """With ``serve_ui=False`` the root path is not registered."""
-    app = create_app(MockAgent(), serve_ui=False)
-
-    async with http_client(app) as client:
-        response = await client.get("/")
+    async with mock_app(serve_ui=False) as f:
+        response = await f.client.get("/")
 
     assert response.status_code == 404
 
@@ -348,35 +343,34 @@ async def test_ui_disabled_returns_404() -> None:
 
 
 @pytest.mark.asyncio
-async def test_cors_headers_present_when_configured() -> None:
-    """A configured allowed origin receives ``access-control-allow-origin``."""
-    app = create_app(MockAgent(), cors_allow_origins=["https://ui.example.com"])
-
-    async with http_client(app) as client:
-        response = await client.post(
+@pytest.mark.parametrize(
+    "cors_allow_origins, expect_header",
+    [
+        (None, False),
+        (["https://ui.example.com"], True),
+    ],
+)
+async def test_cors_headers(
+    cors_allow_origins: list[str] | None,
+    expect_header: bool,
+) -> None:
+    """CORS ``access-control-allow-origin`` is present only when configured."""
+    kwargs: dict[str, Any] = {}
+    if cors_allow_origins is not None:
+        kwargs["cors_allow_origins"] = cors_allow_origins
+    async with mock_app(**kwargs) as f:
+        response = await f.client.post(
             "/chat",
             json={"message": "hi"},
             headers={"Origin": "https://ui.example.com"},
         )
 
-    assert response.headers.get("access-control-allow-origin") == (
-        "https://ui.example.com"
-    )
-
-
-@pytest.mark.asyncio
-async def test_no_cors_headers_by_default() -> None:
-    """Without configuration, no CORS headers are added."""
-    app = create_app(MockAgent())
-
-    async with http_client(app) as client:
-        response = await client.post(
-            "/chat",
-            json={"message": "hi"},
-            headers={"Origin": "https://ui.example.com"},
+    if expect_header:
+        assert response.headers.get("access-control-allow-origin") == (
+            "https://ui.example.com"
         )
-
-    assert "access-control-allow-origin" not in response.headers
+    else:
+        assert "access-control-allow-origin" not in response.headers
 
 
 # ---------------------------------------------------------------------------
@@ -388,10 +382,8 @@ async def test_no_cors_headers_by_default() -> None:
 async def test_custom_correlation_id_header_in_response() -> None:
     """A custom ``correlation_id_header`` name reaches the middleware and
     is echoed back in the response."""
-    app = create_app(MockAgent(), correlation_id_header="X-Custom-ID")
-
-    async with http_client(app) as client:
-        response = await client.get(
+    async with mock_app(correlation_id_header="X-Custom-ID") as f:
+        response = await f.client.get(
             "/health",
             headers={"X-Custom-ID": "11111111-1111-1111-1111-111111111111"},
         )
