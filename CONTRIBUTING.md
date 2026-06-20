@@ -29,6 +29,13 @@ bandit, pip-audit, and detect-secrets.
 | pip-audit | `uv run pip-audit` | Known vulnerabilities in dependencies |
 | pytest | `uv run pytest` | Test suite |
 
+## Testing conventions
+
+Tests for module `robotsix_chat.<module>` live under `tests/<module>/`,
+mirroring the per-module source layout (e.g. `tests/chat/` for
+`robotsix_chat.chat`, `tests/config/` for `robotsix_chat.config`).
+Do not place tests directly in the `tests/` root.
+
 ## Dependency auditing
 
 `pip-audit` checks installed packages against the [PyPA Advisory
