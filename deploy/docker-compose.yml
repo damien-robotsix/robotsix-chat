@@ -16,6 +16,14 @@ services:
       LLMIO_MODEL_LEVEL: "3"
       AUTH_ENABLED: "1"
       AUTH_PASSWORD: ${CHAT_AUTH_PASSWORD:?err}
+      # Long-term memory (cognee). Disabled unless MEMORY_ENABLED=1 in deploy/.env
+      # with a reachable embedding endpoint + OpenRouter key. Stores live under
+      # the ./data mount (MEMORY_DATA_DIR is relative to the container WORKDIR).
+      MEMORY_ENABLED: ${MEMORY_ENABLED:-0}
+      MEMORY_DATA_DIR: .data/cognee
+      MEMORY_LLM_API_KEY: ${MEMORY_LLM_API_KEY:-}
+      MEMORY_EMBEDDING_ENDPOINT: ${MEMORY_EMBEDDING_ENDPOINT:-}
+      MEMORY_EMBEDDING_API_KEY: ${MEMORY_EMBEDDING_API_KEY:-}
     labels:
       - "com.centurylinklabs.watchtower.enable=true"
 

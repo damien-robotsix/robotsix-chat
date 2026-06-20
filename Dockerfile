@@ -34,7 +34,7 @@ RUN apt-get update \
 # Export the locked dependency set (claude-sdk for the LLM transport + tracing
 # for Langfuse observability), install it, then install the project itself
 # without re-resolving dependencies.
-RUN uv export --frozen --no-emit-project --no-hashes --extra claude-sdk --extra tracing > requirements.txt \
+RUN uv export --frozen --no-emit-project --no-hashes --extra claude-sdk --extra tracing --extra memory > requirements.txt \
     && uv pip install --python /opt/venv/bin/python -r requirements.txt \
     && uv pip install --python /opt/venv/bin/python --no-deps .
 
@@ -79,7 +79,10 @@ USER appuser
 
 # Bind to all interfaces on 8080 inside the container.
 ENV SERVER_HOST=0.0.0.0 \
-    SERVER_PORT=8080
+    SERVER_PORT=8080 \
+    # Cache the HuggingFace tokenizer (bge-m3) on the persistent .data mount so
+    # the cognee `memory` extra doesn't re-download it on every redeploy.
+    HF_HOME=/home/appuser/.data/huggingface
 EXPOSE 8080
 
 # Probe the in-container /health route using only the Python stdlib.
