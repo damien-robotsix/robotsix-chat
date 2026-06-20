@@ -47,8 +47,8 @@
 
 ## Configuration
 
-See the [Configuration](../user-guide/configuration.md) page for a full reference of every setting, including OpenRouter API keys, HTTP Basic Auth, memory, and mill integration.
+See the [Configuration](user-guide/configuration.md) page for a full reference of every setting, including OpenRouter API keys, HTTP Basic Auth, memory, and mill integration.
 
 ## Deployment
 
-See the [Deployment](../user-guide/deployment.md) guide for Docker, GHCR publishing, Watchtower auto-updates, and reverse-proxy TLS setup.
+See the [Deployment](user-guide/deployment.md) guide for Docker, GHCR publishing, Watchtower auto-updates, and reverse-proxy TLS setup.
