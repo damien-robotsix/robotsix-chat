@@ -89,7 +89,10 @@ class CogneeMemory:
         finally:
             os.environ.update(saved_langfuse)
 
-        data_dir = Path(s.data_dir)
+        # cognee builds file:// URIs from these, so they MUST be absolute —
+        # a relative data_dir raises "relative paths can't be expressed as file
+        # URIs" deep in ingestion. Resolve against the working dir.
+        data_dir = Path(s.data_dir).expanduser().resolve()
         data_root = data_dir / "data"
         system_root = data_dir / "system"
         data_root.mkdir(parents=True, exist_ok=True)
