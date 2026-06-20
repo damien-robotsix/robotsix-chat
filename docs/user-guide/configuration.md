@@ -19,7 +19,7 @@ set as an environment variable.
 | `server.host` | `SERVER_HOST` | `"127.0.0.1"` | IP address the server binds to |
 | `server.port` | `SERVER_PORT` | `8000` | TCP port the server listens on |
 | `server.log_level` | `LOG_LEVEL` | `"INFO"` | Python log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`) |
-| `server.cors_allow_origins` | `CORS_ALLOW_ORIGINS` | `[]` | CORS allowed origins (JSON array of strings) |
+| `server.cors_allow_origins` | `CORS_ALLOW_ORIGINS` | `[]` | CORS allowed origins (YAML: JSON array; env: comma-separated list) |
 | `server.correlation_id_header` | `CORRELATION_ID_HEADER` | `"X-Request-ID"` | HTTP header used to propagate request IDs |
 
 ## HTTP Basic Auth
@@ -37,16 +37,16 @@ set as an environment variable.
 | `memory.enabled` | `MEMORY_ENABLED` | `false` | Enable embedded cognee long-term memory |
 | `memory.data_dir` | `MEMORY_DATA_DIR` | `".data/cognee"` | Directory for cognee storage (keep on `.data` bind mount for production) |
 | `memory.recall_search_type` | `MEMORY_RECALL_SEARCH_TYPE` | `"GRAPH_COMPLETION"` | Cognee recall search strategy |
-| `memory.llm.provider` | `MEMORY_LLM_PROVIDER` | `"openrouter"` | Provider for memory extraction (cognee's litellm `custom` provider) |
-| `memory.llm.model` | `MEMORY_LLM_MODEL` | `"deepseek/deepseek-v4-flash"` | Model for memory extraction |
+| `memory.llm.provider` | `MEMORY_LLM_PROVIDER` | `"custom"` | Provider for memory extraction (cognee's litellm `custom` provider) |
+| `memory.llm.model` | `MEMORY_LLM_MODEL` | `"openrouter/deepseek/deepseek-v4-flash"` | Model for memory extraction |
 | `memory.llm.endpoint` | `MEMORY_LLM_ENDPOINT` | `"https://openrouter.ai/api/v1"` | OpenRouter endpoint |
 | `memory.llm.api_key` | `MEMORY_LLM_API_KEY` | `""` | OpenRouter API key for memory extraction |
 | `memory.embedding.provider` | `MEMORY_EMBEDDING_PROVIDER` | `"openai_compatible"` | Embedding provider type |
 | `memory.embedding.model` | `MEMORY_EMBEDDING_MODEL` | `"bge-m3"` | Embedding model name |
 | `memory.embedding.endpoint` | `MEMORY_EMBEDDING_ENDPOINT` | `""` | Self-hosted embedding server URL (e.g. `http://host:11434/v1`) |
 | `memory.embedding.dimensions` | `MEMORY_EMBEDDING_DIMENSIONS` | `1024` | Embedding vector size |
-| `memory.embedding.api_key` | `MEMORY_EMBEDDING_API_KEY` | `""` | API key for the embedding server |
-| `memory.embedding.huggingface_tokenizer` | `MEMORY_EMBEDDING_HUGGINGFACE_TOKENIZER` | `""` | HuggingFace tokenizer name (optional fallback) |
+| `memory.embedding.api_key` | `MEMORY_EMBEDDING_API_KEY` | `"ollama"` | API key for the embedding server |
+| `memory.embedding.huggingface_tokenizer` | `MEMORY_EMBEDDING_TOKENIZER` | `"BAAI/bge-m3"` | HuggingFace tokenizer name (optional fallback) |
 
 ## Mill (broker integration)
 
@@ -55,12 +55,12 @@ set as an environment variable.
 | `mill.enabled` | `MILL_ENABLED` | `false` | Enable robotsix-mill broker integration (adds `consult_mill` tool) |
 | `mill.broker_host` | `MILL_BROKER_HOST` | `"ai-broker.robotsix.net"` | Agent-comm broker hostname |
 | `mill.broker_port` | `MILL_BROKER_PORT` | `443` | Broker TCP port |
-| `mill.broker_scheme` | `MILL_BROKER_SCHEME` | `"brokered"` | Transport scheme |
+| `mill.broker_scheme` | `MILL_BROKER_SCHEME` | `"https"` | Transport scheme |
 | `mill.broker_token` | `MILL_BROKER_TOKEN` | `""` | Bearer token registered on the broker for `agent_id` |
 | `mill.agent_id` | `MILL_AGENT_ID` | `"robotsix-chat"` | Agent identity on the broker |
 | `mill.board_manager_id` | `MILL_BOARD_MANAGER_ID` | `"board-manager-robotsix-mill"` | Target board manager agent ID |
 | `mill.repo_id` | `MILL_REPO_ID` | `""` | Optional target repo (blank = board manager decides) |
-| `mill.timeout` | `MILL_TIMEOUT` | `30` | Broker request timeout in seconds |
+| `mill.timeout` | `MILL_TIMEOUT` | `240.0` | Broker request timeout in seconds |
 
 ## Example YAML
 
