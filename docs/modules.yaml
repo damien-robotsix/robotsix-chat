@@ -48,6 +48,12 @@ modules:
       - src/robotsix_chat/memory/base.py
       - src/robotsix_chat/memory/cognee.py
 
+  - name: robotsix_chat.mill
+    description: "Mill/broker integration — consult robotsix-mill's board manager via the agent-comm broker."
+    paths:
+      - src/robotsix_chat/mill/__init__.py
+      - src/robotsix_chat/mill/client.py
+
   - name: robotsix_chat.ui
     description: "Browser chat UI — self-contained HTML frontend served at /."
     paths:
