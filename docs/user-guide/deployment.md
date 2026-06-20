@@ -233,7 +233,7 @@ serve it on a public domain, place a reverse proxy in front of it.
 
 ### Example nginx snippet
 
-See the [example nginx reverse proxy snippet](_snippets/nginx-reverse-proxy.md) for a complete configuration.
+See the [example nginx reverse proxy snippet](../_snippets/nginx-reverse-proxy.md) for a complete configuration.
 
 The chat server applies its own HTTP Basic auth — the reverse proxy does
 **not** need to add a second auth layer.
