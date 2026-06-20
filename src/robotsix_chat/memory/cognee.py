@@ -145,8 +145,11 @@ class CogneeMemory:
                 query_type=search_type, query_text=query
             )
             return _format_results(results)
-        except Exception:
-            logger.exception("memory recall failed; continuing without memory")
+        except Exception as exc:
+            # Best-effort: a recall failure (incl. the expected "empty store"
+            # case on the first-ever message) must never break the reply, so
+            # log it concisely — no ERROR-level traceback — and continue.
+            logger.warning("memory recall failed (%s); continuing without memory", exc)
             return ""
 
     # -- write ------------------------------------------------------------
