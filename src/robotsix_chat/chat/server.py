@@ -27,6 +27,7 @@ from robotsix_chat.chat.auth import BasicAuthConfig, BasicAuthMiddleware
 from robotsix_chat.config import Settings, level_needs_api_key
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.memory import build_memory
+from robotsix_chat.mill import build_mill_tools
 
 logger = logging.getLogger(__name__)
 
@@ -250,7 +251,9 @@ def create_agent_from_settings(
     it is taken from ``settings.agent_instruction``.
 
     Long-term memory is attached when ``settings.memory.enabled`` is set
-    (otherwise a no-op memory is used and the agent stays stateless).
+    (otherwise a no-op memory is used and the agent stays stateless). The mill
+    consult tool is attached when ``settings.mill.enabled`` is set (otherwise no
+    tools are added).
     """
     if settings is None:
         settings = Settings.load()
@@ -267,6 +270,7 @@ def create_agent_from_settings(
         instruction=instruction,
         api_key=api_key,
         memory=build_memory(settings.memory),
+        tools=build_mill_tools(settings.mill),
     )
 
 

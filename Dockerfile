@@ -34,7 +34,7 @@ RUN apt-get update \
 # Export the locked dependency set (claude-sdk for the LLM transport + tracing
 # for Langfuse observability), install it, then install the project itself
 # without re-resolving dependencies.
-RUN uv export --frozen --no-emit-project --no-hashes --extra claude-sdk --extra tracing --extra memory > requirements.txt \
+RUN uv export --frozen --no-emit-project --no-hashes --extra claude-sdk --extra tracing --extra memory --extra broker > requirements.txt \
     && uv pip install --python /opt/venv/bin/python -r requirements.txt \
     && uv pip install --python /opt/venv/bin/python --no-deps .
 

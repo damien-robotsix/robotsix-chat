@@ -86,6 +86,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "server.correlation_id_header": "correlation_id_header",
     "auth": "auth",
     "memory": "memory",
+    "mill": "mill",
 }
 
 
@@ -174,6 +175,39 @@ class MemorySettings(BaseModel):
     embedding: MemoryEmbeddingSettings = Field(default_factory=MemoryEmbeddingSettings)
 
 
+class MillSettings(BaseModel):
+    """robotsix-mill integration over the agent-comm broker. Disabled by default.
+
+    When enabled, the chat agent gains a tool that forwards natural-language
+    requests to the mill's board manager (``board-manager-robotsix-mill``) over
+    the broker and relays its reply — so a user can have the mill track/do
+    development work from chat. Mirrors the cost-analyst → board pattern.
+
+    Attributes:
+        enabled: Master switch. Requires the ``broker`` extra (robotsix-agent-comm).
+        broker_host: Broker hostname (the shared agent-comm broker).
+        broker_port: Broker port (443 for the public TLS endpoint).
+        broker_scheme: ``https`` (TLS) or ``http``.
+        broker_token: This agent's bearer token, registered on the broker.
+            Required when enabled.
+        agent_id: This agent's id on the broker.
+        board_manager_id: Recipient agent id — the mill's NL board manager.
+        repo_id: Optional repo to scope requests to; empty lets the board manager
+            choose the target repo from the conversation.
+        timeout: Per-request timeout (seconds); generous, the recipient is an LLM.
+    """
+
+    enabled: bool = False
+    broker_host: str = "ai-broker.robotsix.net"
+    broker_port: int = 443
+    broker_scheme: str = "https"
+    broker_token: str = ""
+    agent_id: str = "robotsix-chat"
+    board_manager_id: str = "board-manager-robotsix-mill"
+    repo_id: str = ""
+    timeout: float = 240.0
+
+
 class Settings(BaseModel):
     """Application settings, resolved from defaults → YAML → environment.
 
@@ -211,6 +245,7 @@ class Settings(BaseModel):
     correlation_id_header: str = "X-Request-ID"
     auth: AuthSettings = Field(default_factory=AuthSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
+    mill: MillSettings = Field(default_factory=MillSettings)
 
     def model_post_init(self, __context: Any) -> None:
         """Validate fields that cannot be expressed via simple type annotations."""
@@ -245,6 +280,17 @@ class Settings(BaseModel):
                     "memory.embedding.endpoint must be set when memory is enabled "
                     "(e.g. http://host:11434/v1) — provide it via "
                     "MEMORY_EMBEDDING_ENDPOINT or the config file"
+                )
+        if self.mill.enabled:
+            if not self.mill.broker_token:
+                raise ValueError(
+                    "mill.broker_token must be set when mill is enabled — provide "
+                    "it via MILL_BROKER_TOKEN or the `mill.broker_token` config field"
+                )
+            if not self.mill.broker_host:
+                raise ValueError(
+                    "mill.broker_host must be set when mill is enabled — provide it "
+                    "via MILL_BROKER_HOST or the config file"
                 )
 
     # ------------------------------------------------------------------
@@ -321,7 +367,7 @@ class Settings(BaseModel):
     def _build(cls, flat: dict[str, Any]) -> Settings:
         """Overlay environment variables onto *flat* YAML values and build."""
         raw: dict[str, Any] = {
-            k: v for k, v in flat.items() if k not in ("auth", "memory")
+            k: v for k, v in flat.items() if k not in ("auth", "memory", "mill")
         }
         auth_raw: dict[str, Any] = dict(flat.get("auth") or {})
 
@@ -378,6 +424,10 @@ class Settings(BaseModel):
         if memory_raw:
             raw["memory"] = memory_raw
 
+        mill_raw = _build_mill_raw(flat.get("mill"))
+        if mill_raw:
+            raw["mill"] = mill_raw
+
         return cls(**raw)
 
 
@@ -427,6 +477,50 @@ def _build_memory_raw(yaml_memory: Any) -> dict[str, Any]:
     if embed_raw:
         memory_raw["embedding"] = embed_raw
     return memory_raw
+
+
+def _build_mill_raw(yaml_mill: Any) -> dict[str, Any]:
+    """Overlay ``MILL_*`` env vars onto the YAML ``mill`` subtree.
+
+    Returns a dict ready to parse into :class:`MillSettings`, or empty when
+    nothing is set.
+    """
+    mill_raw: dict[str, Any] = dict(yaml_mill or {})
+
+    def env_set(field: str, env_name: str) -> None:
+        value = os.getenv(env_name)
+        if value is not None:
+            mill_raw[field] = value
+
+    enabled = os.getenv("MILL_ENABLED")
+    if enabled is not None:
+        mill_raw["enabled"] = _parse_bool(enabled)
+    env_set("broker_host", "MILL_BROKER_HOST")
+    env_set("broker_scheme", "MILL_BROKER_SCHEME")
+    env_set("broker_token", "MILL_BROKER_TOKEN")
+    env_set("agent_id", "MILL_AGENT_ID")
+    env_set("board_manager_id", "MILL_BOARD_MANAGER_ID")
+    env_set("repo_id", "MILL_REPO_ID")
+
+    port_str = os.getenv("MILL_BROKER_PORT")
+    if port_str is not None:
+        try:
+            mill_raw["broker_port"] = int(port_str)
+        except ValueError:
+            raise ValueError(
+                f"MILL_BROKER_PORT must be an integer, got {port_str!r}"
+            ) from None
+
+    timeout_str = os.getenv("MILL_TIMEOUT")
+    if timeout_str is not None:
+        try:
+            mill_raw["timeout"] = float(timeout_str)
+        except ValueError:
+            raise ValueError(
+                f"MILL_TIMEOUT must be a number, got {timeout_str!r}"
+            ) from None
+
+    return mill_raw
 
 
 def _load_dotenv() -> None:

@@ -166,6 +166,30 @@ Config keys: `memory.enabled`, `memory.data_dir`, `memory.recall_search_type`,
 `memory.embedding.{provider,model,endpoint,dimensions,api_key,huggingface_tokenizer}`
 — each with a `MEMORY_*` env override (see `.env.example`).
 
+## Mill integration (agent-comm broker)
+
+When `mill.enabled` is set, the chat agent gains a **tool** (`consult_mill`) that
+the LLM calls to forward a natural-language request to the robotsix-mill **board
+manager** (`board-manager-robotsix-mill`) over the shared **agent-comm broker**,
+and relays its reply — so a user can have the mill track/do development work
+(create/triage tickets, ask status) from chat. Disabled by default; no tools are
+added when off or when the `broker` extra is absent.
+
+- **Pattern**: mirrors `robotsix-cost-monitor`'s cost-analyst → board flow — a
+  per-call pull/mailbox `robotsix_agent_comm.sdk.agent.Agent` +
+  `create_transport_pair("brokered", …)`, sending `{"message": <NL>}` (plus
+  optional `repo_id`) to the board manager. The blocking call is offloaded with
+  `asyncio.to_thread`; failures degrade to a message the LLM relays (never raise).
+- **Tool wiring**: `build_mill_tools(settings.mill)` returns the async
+  `consult_mill` callable; `create_agent_from_settings` passes it as
+  `LlmioChatAgent(tools=…)` → `provider.build_agent(tools=…)`. The claude-sdk
+  transport runs a real tool loop (in-SDK MCP); the final reply is still one block.
+- **Broker auth**: the agent authenticates with a bearer token (`mill.broker_token`)
+  registered on the broker under its `agent_id` (`robotsix-chat`). The board
+  manager decides the target repo unless `repo_id` is set. Broker is public TLS
+  at `ai-broker.robotsix.net:443` (no custom CA).
+- **Config keys**: `mill.{enabled,broker_host,broker_port,broker_scheme,broker_token,agent_id,board_manager_id,repo_id,timeout}` — each with a `MILL_*` env override.
+
 ## Key file map
 
 - `docker-compose.yml` — local dev compose (builds from Dockerfile, tag `robotsix-chat:local`)
@@ -175,5 +199,6 @@ Config keys: `memory.enabled`, `memory.data_dir`, `memory.recall_search_type`,
 - `config/chat.local.example.yaml` — canonical YAML config template (copy to `chat.local.yaml`)
 - `src/robotsix_chat/config.py` — settings cascade (pydantic defaults → YAML → env, `Settings.load()`); includes `MemorySettings`
 - `src/robotsix_chat/memory/` — optional long-term memory: `base.py` (`ChatMemory` protocol + `NullMemory`), `cognee.py` (`CogneeMemory`), `__init__.py` (`build_memory()`)
+- `src/robotsix_chat/mill/` — optional mill-via-broker tool: `client.py` (`MillClient` — cost-analyst pattern), `__init__.py` (`build_mill_tools()`)
 - `src/robotsix_chat/chat/server.py` — Starlette ASGI app; `GET /`, `POST /chat`, `GET /health`
 - `.github/workflows/release-image.yml` — GHCR publish workflow (triggers on `main` push, `v*` tag, manual dispatch)
