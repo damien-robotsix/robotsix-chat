@@ -175,3 +175,23 @@ async def test_cognee_remember_never_raises(
     fake.add = AsyncMock(side_effect=RuntimeError("write failed"))
     mem = CogneeMemory(_enabled_settings(str(tmp_path / "cognee")))
     await mem.remember("hello", "hi")  # must not raise
+
+
+@pytest.mark.asyncio
+async def test_configure_restores_langfuse_env(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """LANGFUSE_* creds are hidden for cognee's import, then restored.
+
+    cognee force-enables a langfuse import when these are set; the chat's own
+    llmio tracing still needs them after setup.
+    """
+    import os
+
+    _install_fake_cognee(monkeypatch)
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-keep")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-keep")
+    mem = CogneeMemory(_enabled_settings(str(tmp_path / "cognee")))
+    await mem.setup()
+    assert os.environ["LANGFUSE_PUBLIC_KEY"] == "pk-keep"
+    assert os.environ["LANGFUSE_SECRET_KEY"] == "sk-keep"  # pragma: allowlist secret
