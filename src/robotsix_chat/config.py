@@ -57,8 +57,8 @@ _TRUE_VALUES = {"1", "true", "yes", "on"}
 _LEVEL_DEFAULTS = {1: LEVEL1_DEFAULT, 2: LEVEL2_DEFAULT, 3: LEVEL3_DEFAULT}
 _VALID_MODEL_LEVELS = set(_LEVEL_DEFAULTS)
 
-# Transports that authenticate without an API key (via the `claude` CLI).
-_KEYLESS_TRANSPORTS = {"claude-sdk"}
+# Providers that authenticate without an API key (via the `claude` CLI).
+_KEYLESS_PROVIDERS = {"claudeSDK"}
 
 
 def level_needs_api_key(level: int) -> bool:
@@ -69,7 +69,7 @@ def level_needs_api_key(level: int) -> bool:
     (model_level is validated separately before this matters).
     """
     tlc = _LEVEL_DEFAULTS.get(level)
-    return tlc is None or tlc.transport not in _KEYLESS_TRANSPORTS
+    return tlc is None or tlc.provider not in _KEYLESS_PROVIDERS
 
 
 # Maps nested YAML ``section.field`` paths to ``Settings`` field names.

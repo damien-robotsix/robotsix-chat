@@ -104,6 +104,12 @@ strict = true
 module = ["cognee.*"]
 ignore_missing_imports = true
 
+# robotsix-agent-comm (the optional `broker` extra) is not installed in the
+# default dev/test env, so let mypy tolerate its absence.
+[[tool.mypy.overrides]]
+module = ["robotsix_agent_comm.*"]
+ignore_missing_imports = true
+
 [tool.bandit]
 exclude_dirs = ["tests"]
 
