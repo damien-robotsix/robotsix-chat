@@ -34,9 +34,9 @@ uv sync
 ### Run against a real LLM
 
 The LLM is selected through [`robotsix-llmio`](https://github.com/damien-robotsix/robotsix-llmio):
-you pick a **model level** (1–3) and llmio resolves the transport + model for
+you pick a **model level** (1–3) and llmio resolves the provider + model for
 it — you never name a concrete provider. By default level 3 → Claude
-(`claude-sdk`/`opus`), levels 1–2 → OpenRouter (deepseek).
+(`claudeSDK-opus`), levels 1–2 → OpenRouter (deepseek).
 
 Easiest path — level 3, the Claude Agent SDK, which uses your `claude login`
 subscription, so **no API key**:
@@ -150,25 +150,25 @@ auth:                        # HTTP Basic Auth gating the UI and /chat
 ### Model level
 
 The LLM is configured the [`robotsix-llmio`](https://github.com/damien-robotsix/robotsix-llmio)
-way — you pick a capability **level** (1–3) and llmio resolves the transport +
+way — you pick a capability **level** (1–3) and llmio resolves the provider +
 model for it (via `robotsix_llmio.config.create_model`). robotsix-chat never
-names a concrete provider or model. The default level → transport/model mapping:
+names a concrete provider or model. The default level → provider-model mapping:
 
-| `model_level` | transport | model | needs API key? |
-|---|---|---|---|
-| 1 (cheapest) | `openrouter[deepseek]` | `deepseek-v4-flash` | yes (`llmio.api_key`) |
-| 2 | `openrouter[deepseek]` | `deepseek-v4-pro` | yes (`llmio.api_key`) |
-| 3 (most capable) | `claude-sdk` | `opus` | no (subscription auth) |
+| `model_level` | provider-model identifier | needs API key? |
+|---|---|---|
+| 1 (cheapest) | `openrouter[deepseek]-deepseek/deepseek-v4-flash` | yes (`llmio.api_key`) |
+| 2 | `openrouter[deepseek]-deepseek/deepseek-v4-pro` | yes (`llmio.api_key`) |
+| 3 (most capable) | `claudeSDK-opus` | no (subscription auth) |
 
-- **Level 3 / `claude-sdk`** — the
+- **Level 3 / `claudeSDK`** — the
   [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk) authenticates
   via your local `claude login` subscription, so **no API key**. Install with
   `uv sync --extra claude-sdk` and run `claude login` (needs Node.js on PATH).
-- **Levels 1–2 / `openrouter[deepseek]`** — install with
+- **Levels 1–2 / `openrouter`** — install with
   `uv sync --extra openrouter` and set `llmio.api_key` (env `LLMIO_API_KEY`).
 
 Each backend dependency is pulled **through** robotsix-llmio's own extras
-(`robotsix-llmio[claude_sdk]` / `robotsix-llmio[openrouter-deepseek]`), so the
+(`robotsix-llmio[claude-sdk]` / `robotsix-llmio[openrouter-deepseek]`), so the
 stack owns those deps in one place.
 
 > Replies are returned as a single block (not token-streamed): llmio's Claude
@@ -190,7 +190,7 @@ support); env vars override the config file.
 | Variable | Config key | Default | Description |
 |---|---|---|---|
 | `LLMIO_MODEL_LEVEL` | `llmio.model_level` | `3` | Capability level: `1` (cheapest), `2`, or `3` (most capable). |
-| `LLMIO_API_KEY` | `llmio.api_key` | *(required for levels 1–2)* | OpenRouter API key (unused by level 3 / claude-sdk). |
+| `LLMIO_API_KEY` | `llmio.api_key` | *(required for levels 1–2)* | OpenRouter API key (unused by level 3 / claudeSDK). |
 | `AGENT_INSTRUCTION` | `agent.instruction` | `You are a helpful assistant.` | System instruction for the agent. |
 | `SERVER_HOST` | `server.host` | `127.0.0.1` | Host the server binds to. |
 | `SERVER_PORT` | `server.port` | `8000` | Port the server listens on. |

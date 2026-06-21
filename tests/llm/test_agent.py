@@ -28,8 +28,7 @@ class _RecordingMemory:
 
 
 def _patched_create_model(output: str = "hi there") -> tuple[MagicMock, MagicMock]:
-    """Return (create_model mock, handle mock) wired so ``build_agent().run()``
-    resolves to a result whose ``.output`` is *output*."""
+    """Return patched create_model and handle wired for the given output."""
     handle = MagicMock()
 
     async def fake_run(message: str, *, message_history: object = None) -> MagicMock:
@@ -148,16 +147,16 @@ async def _agent_with_memory(
     recall: str = "",
     message: str = "hi",
 ) -> tuple[MagicMock, LlmioChatAgent, list[str], _RecordingMemory]:
-    """Create an agent with patched create_model and a RecordingMemory,
-    stream a message, and return (provider, agent, chunks, memory)."""
+    """Create an agent with patched create_model and RecordingMemory.
+
+    Stream a message and return captured objects.
+    """
     create_model, _ = _patched_create_model(output)
     provider = create_model.return_value
     memory = _RecordingMemory(recall=recall)
 
     with patch("robotsix_chat.llm.agent.create_model", create_model):
-        agent = LlmioChatAgent(
-            model_level=3, instruction="Be helpful.", memory=memory
-        )
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.", memory=memory)
         chunks = [c async for c in agent.stream(message)]
 
     return provider, agent, chunks, memory
@@ -177,8 +176,11 @@ async def test_recalled_memory_injected_into_system_prompt() -> None:
 
 @pytest.mark.asyncio
 async def test_no_recall_adds_no_memory_block() -> None:
-    """With empty recall, the system prompt is the instruction + the guard, and
-    carries no memory block."""
+    """Keep the system prompt clean when recall is empty.
+
+    With no recalled memory, the system prompt has the instruction and
+    guard but no memory block.
+    """
     provider, _, _, _ = await _agent_with_memory(output="ok")
 
     system_prompt = provider.build_agent.call_args.kwargs["system_prompt"]

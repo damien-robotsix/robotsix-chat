@@ -33,6 +33,7 @@ def _store(clock: _FakeClock, **kwargs: object) -> ConversationStore:
 
 
 def test_first_message_starts_fresh_conversation() -> None:
+    """A brand-new client gets a fresh session id and empty history."""
     clock = _FakeClock()
     store = _store(clock)
 
@@ -43,6 +44,7 @@ def test_first_message_starts_fresh_conversation() -> None:
 
 
 def test_consecutive_messages_share_session_and_accumulate_history() -> None:
+    """Messages within the idle window share a session and replay prior turns."""
     clock = _FakeClock()
     store = _store(clock)
 
@@ -58,6 +60,7 @@ def test_consecutive_messages_share_session_and_accumulate_history() -> None:
 
 
 def test_idle_gap_resets_to_new_conversation() -> None:
+    """Past the idle window, the next message starts a new session + history."""
     clock = _FakeClock()
     store = _store(clock, idle_reset_seconds=1800)
 
@@ -87,6 +90,7 @@ def test_within_window_after_record_does_not_reset() -> None:
 
 
 def test_history_trimmed_to_max_turns() -> None:
+    """History keeps only the most recent ``max_history_turns`` turns."""
     clock = _FakeClock()
     store = _store(clock, max_history_turns=2)
 
@@ -99,6 +103,7 @@ def test_history_trimmed_to_max_turns() -> None:
 
 
 def test_separate_clients_have_independent_conversations() -> None:
+    """Different client ids keep separate sessions and histories."""
     clock = _FakeClock()
     store = _store(clock)
 
@@ -113,6 +118,7 @@ def test_separate_clients_have_independent_conversations() -> None:
 
 
 def test_lru_eviction_bounds_tracked_clients() -> None:
+    """Tracking more than ``max_conversations`` clients evicts the oldest."""
     clock = _FakeClock()
     store = _store(clock, max_conversations=2)
 
@@ -128,6 +134,7 @@ def test_lru_eviction_bounds_tracked_clients() -> None:
 
 
 def test_new_session_id_is_unique() -> None:
+    """Each ``new_session_id`` call returns a distinct id."""
     clock = _FakeClock()
     store = _store(clock)
 

@@ -29,8 +29,7 @@ Turn = tuple[str, str]
 
 @dataclass
 class _Conversation:
-    """One client's live conversation: its trace session id, recent turns, and
-    the monotonic timestamp of the last activity (used for idle expiry)."""
+    """One client's live conversation: session id, recent turns, last-activity."""
 
     session_id: str
     last_activity: float
@@ -56,6 +55,7 @@ class ConversationStore:
         clock: Callable[[], float] = time.monotonic,
         session_factory: Callable[[], str] | None = None,
     ) -> None:
+        """Configure idle/size bounds and the clock + session-id factory."""
         self._idle_reset_seconds = idle_reset_seconds
         self._max_history_turns = max_history_turns
         self._max_conversations = max_conversations

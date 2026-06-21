@@ -22,6 +22,7 @@ class MockAgent:
         *,
         error: Exception | None = None,
     ) -> None:
+        """Initialise with a fixed token list and optional error."""
         self.tokens = tokens or ["Hello", " ", "world!"]
         self.error = error
         self.called_with: str | None = None
@@ -36,6 +37,7 @@ class MockAgent:
         history: list[tuple[str, str]] | None = None,
         session_id: str | None = None,
     ) -> AsyncIterator[str]:
+        """Yield tokens or raise the configured error."""
         self.called_with = message
         self.history = history
         self.session_id = session_id

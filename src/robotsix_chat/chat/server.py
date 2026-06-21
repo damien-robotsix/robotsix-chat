@@ -134,9 +134,7 @@ async def chat_endpoint(
     # it, each request is an independent, untracked single query.
     client_id = body.get("client_id")
     if client_id is not None and not isinstance(client_id, str):
-        return JSONResponse(
-            {"error": "invalid 'client_id' field"}, status_code=400
-        )
+        return JSONResponse({"error": "invalid 'client_id' field"}, status_code=400)
     if client_id:
         session_id, history = store.begin(client_id)
     else:
@@ -253,6 +251,7 @@ def create_app(
         conversation_store: Tracks per-client multi-turn conversation history
             and trace sessions. ``None`` (default) builds one with default
             settings (30-minute idle reset).
+
     """
     routes = [
         Route("/health", health_endpoint, methods=["GET"]),

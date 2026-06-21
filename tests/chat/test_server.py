@@ -41,6 +41,7 @@ def _parse_sse(response: Any) -> list[dict[str, object]]:
 
 @pytest.mark.asyncio
 async def test_health_endpoint() -> None:
+    """Verify that the /health endpoint responds with 200 and a status object."""
     async with mock_app() as f:
         response = await f.client.get("/health")
         assert response.status_code == 200
@@ -54,6 +55,7 @@ async def test_health_endpoint() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_streams_tokens() -> None:
+    """Verify that the /chat endpoint returns SSE-framed tokens and a done event."""
     async with mock_app(tokens=["Hello", " ", "world!"]) as f:
         response = await f.client.post("/chat", json={"message": "hello"})
 
@@ -71,9 +73,12 @@ async def test_chat_endpoint_streams_tokens() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_opens_with_heartbeat() -> None:
-    """The stream emits a heartbeat comment up front (and keeps the connection
+    """Emit a heartbeat comment before the first token.
+
+    The stream emits a heartbeat comment up front (and keeps the connection
     alive while the agent works), so a long quiet reply isn't dropped. The
-    comment is not a ``data:`` frame, so it never parses as a token."""
+    comment is not a ``data:`` frame, so it never parses as a token.
+    """
     async with mock_app(tokens=["hi"]) as f:
         response = await f.client.post("/chat", json={"message": "hello"})
 
@@ -91,6 +96,7 @@ async def test_chat_endpoint_opens_with_heartbeat() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_passes_message_to_agent() -> None:
+    """Verify that the /chat endpoint forwards the user message to the agent."""
     async with mock_app(tokens=["ok"]) as f:
         await f.client.post("/chat", json={"message": "hello world"})
         agent_ref = f.agent
@@ -100,6 +106,7 @@ async def test_chat_endpoint_passes_message_to_agent() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_sends_done_at_end() -> None:
+    """Verify that the /chat endpoint emits a done SSE frame as the last event."""
     async with mock_app(tokens=["one", "two"]) as f:
         response = await f.client.post("/chat", json={"message": "x"})
 
@@ -113,8 +120,10 @@ async def test_chat_endpoint_sends_done_at_end() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_threads_history_for_client_id() -> None:
-    """A ``client_id`` threads consecutive messages into one conversation:
-    the prior turn is replayed and the trace session id stays the same."""
+    """A ``client_id`` threads consecutive messages into one conversation.
+
+    The prior turn is replayed and the trace session id stays the same.
+    """
     async with mock_app(tokens=["Hello", " ", "world!"]) as f:
         await f.client.post(
             "/chat", json={"message": "first", "client_id": "browser-1"}
@@ -133,8 +142,10 @@ async def test_chat_endpoint_threads_history_for_client_id() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_without_client_id_is_stateless() -> None:
-    """With no ``client_id`` no history is threaded, but a per-request trace
-    session id is still assigned so spans group sensibly."""
+    """No ``client_id`` threads no history, but still assigns a trace session.
+
+    A per-request session id is assigned so spans group sensibly.
+    """
     async with mock_app(tokens=["ok"]) as f:
         await f.client.post("/chat", json={"message": "hi"})
 
@@ -144,6 +155,7 @@ async def test_chat_endpoint_without_client_id_is_stateless() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_invalid_client_id() -> None:
+    """A non-string ``client_id`` is rejected with 400."""
     async with mock_app() as f:
         response = await f.client.post(
             "/chat", json={"message": "hi", "client_id": 123}
@@ -160,6 +172,7 @@ async def test_chat_endpoint_invalid_client_id() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_missing_message_field() -> None:
+    """Verify that the /chat endpoint returns 400 when the message field is missing."""
     async with mock_app() as f:
         response = await f.client.post("/chat", json={})
 
@@ -170,6 +183,7 @@ async def test_chat_endpoint_missing_message_field() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_message_not_a_string() -> None:
+    """Verify that the /chat endpoint returns 400 when message is not a string."""
     async with mock_app() as f:
         response = await f.client.post("/chat", json={"message": 123})
 
@@ -180,6 +194,7 @@ async def test_chat_endpoint_message_not_a_string() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_invalid_json() -> None:
+    """Return 400 when the request body is not valid JSON."""
     async with mock_app() as f:
         response = await f.client.post(
             "/chat", content=b"not json", headers={"Content-Type": "application/json"}
@@ -192,6 +207,7 @@ async def test_chat_endpoint_invalid_json() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_empty_message_string() -> None:
+    """Return 400 when the message field is an empty string."""
     async with mock_app() as f:
         response = await f.client.post("/chat", json={"message": ""})
 
@@ -202,6 +218,7 @@ async def test_chat_endpoint_empty_message_string() -> None:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_agent_raises() -> None:
+    """Return an SSE error frame when the agent raises."""
     async with mock_app(error=RuntimeError("LLM went boom")) as f:
         response = await f.client.post("/chat", json={"message": "hello"})
 
@@ -286,8 +303,11 @@ async def test_create_agent_from_settings_uses_load_when_none(
 async def test_run_server_from_config_creates_agent_from_settings(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``run_server_from_config()`` with no *agent* creates an
-    ``LlmioChatAgent`` from ``Settings`` and forwards server options."""
+    """Create an ``LlmioChatAgent`` from ``Settings``.
+
+    ``run_server_from_config()`` with no *agent* argument creates the
+    agent and forwards server options.
+    """
     # Isolate from any on-disk config/chat.local.yaml so resolution is env-only.
     monkeypatch.setattr(
         "robotsix_chat.config.DEFAULT_CONFIG_PATH", Path("/nonexistent/chat.local.yaml")
@@ -322,8 +342,11 @@ async def test_run_server_from_config_creates_agent_from_settings(
 async def test_run_server_from_config_passes_explicit_agent(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """``run_server_from_config(agent)`` forwards *agent* to
-    ``run_server`` without creating a new one."""
+    """Forward an explicit agent to ``run_server``.
+
+    ``run_server_from_config(agent)`` passes *agent* through without
+    creating a new one.
+    """
     # Isolate from any on-disk config; the default (claude-sdk) needs no key.
     monkeypatch.setattr(
         "robotsix_chat.config.DEFAULT_CONFIG_PATH", Path("/nonexistent/chat.local.yaml")
@@ -366,6 +389,7 @@ async def test_server_error_handler_returns_json_500() -> None:
 
 @pytest.mark.asyncio
 async def test_unknown_route_returns_404_json() -> None:
+    """Return a JSON 404 for unknown routes."""
     async with mock_app() as f:
         response = await f.client.get("/nonexistent")
 
@@ -376,6 +400,7 @@ async def test_unknown_route_returns_404_json() -> None:
 
 @pytest.mark.asyncio
 async def test_wrong_method_on_known_route_returns_405() -> None:
+    """Return 405 when using the wrong HTTP method on a known route."""
     async with mock_app() as f:
         # POST /health is not a valid endpoint — Starlette returns 405.
         response = await f.client.post("/health")
@@ -452,8 +477,11 @@ async def test_cors_headers(
 
 @pytest.mark.asyncio
 async def test_custom_correlation_id_header_in_response() -> None:
-    """A custom ``correlation_id_header`` name reaches the middleware and
-    is echoed back in the response."""
+    """Echo a custom correlation ID header in the response.
+
+    The ``correlation_id_header`` name reaches the middleware and is
+    reflected back.
+    """
     async with mock_app(correlation_id_header="X-Custom-ID") as f:
         response = await f.client.get(
             "/health",

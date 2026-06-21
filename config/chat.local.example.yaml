@@ -12,12 +12,12 @@
 # field-by-field.
 
 # LLM selection — delegated to robotsix-llmio: pick a capability *level* and
-# llmio resolves the transport + model for it (never a concrete provider class).
+# llmio resolves the provider + model for it (never a concrete provider class).
 #
-# Default level → transport/model mapping (llmio's baked defaults):
-#   level 1 → openrouter[deepseek] / deepseek-v4-flash  (cheapest/fastest)
-#   level 2 → openrouter[deepseek] / deepseek-v4-pro
-#   level 3 → claude-sdk / opus                          (most capable; keyless)
+# Default level → provider-model identifier (llmio's baked defaults):
+#   level 1 → openrouter[deepseek]-deepseek/deepseek-v4-flash  (cheapest/fastest)
+#   level 2 → openrouter[deepseek]-deepseek/deepseek-v4-pro
+#   level 3 → claudeSDK-opus  (most capable; keyless)
 #
 # Levels 1-2 use OpenRouter — install `uv sync --extra openrouter` and set
 # api_key below. Level 3 uses the Claude Agent SDK — install

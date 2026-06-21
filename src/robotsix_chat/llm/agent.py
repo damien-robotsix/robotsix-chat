@@ -3,20 +3,21 @@
 :class:`LlmioChatAgent` satisfies the chat server's ``ChatAgent`` protocol
 (``async def stream(message) -> AsyncIterator[str]``). It selects the backend
 purely from a capability **level** via
-:func:`robotsix_llmio.config.create_model`: the level encodes both the
-transport and the model (resolved from llmio's baked default ``TierConfig``),
-so this package never names a concrete provider class or the Claude Agent SDK.
+:func:`robotsix_llmio.config.create_model`: the level encodes the combined
+``provider-model`` identifier (resolved from llmio's baked default
+``TierLevelConfig``), so this package never names a concrete provider class or
+the Claude Agent SDK.
 
-By default: level 1-2 → ``openrouter[deepseek]`` (needs an API key), level 3 →
-``claude-sdk``/``opus`` (keyless, via the logged-in ``claude`` CLI).
+By default: level 1-2 → ``openrouter[deepseek]-deepseek/...`` (needs an API
+key), level 3 → ``claudeSDK-opus`` (keyless, via the logged-in ``claude`` CLI).
 
 Responses are returned as a single block (not token-streamed): llmio's Claude
 SDK model does not support incremental streaming through pydantic-ai, so each
 ``stream`` call yields the full reply once. The chat server still frames it as a
 normal SSE ``token`` + ``done`` sequence.
 
-The transport dependencies are obtained through robotsix-llmio's own extras —
-``robotsix-llmio[claude_sdk]`` and ``robotsix-llmio[openrouter-deepseek]`` —
+The provider dependencies are obtained through robotsix-llmio's own extras —
+``robotsix-llmio[claude-sdk]`` and ``robotsix-llmio[openrouter-deepseek]`` —
 wired via this package's ``claude-sdk`` / ``openrouter`` extras.
 """
 
@@ -44,7 +45,8 @@ def _build_message_history(history: list[Turn] | None) -> list[Any] | None:
     Returns ``None`` for empty history (so callers pass nothing through). The
     pydantic-ai message types are imported lazily — llmio is built on
     pydantic-ai and ``handle.run`` already returns its result objects, but
-    importing them here keeps the dependency off the module import path."""
+    importing them here keeps the dependency off the module import path.
+    """
     if not history:
         return None
     from pydantic_ai.messages import (
@@ -66,7 +68,8 @@ def _trace_session(session_id: str | None) -> Iterator[None]:
     """Group the enclosed agent run under *session_id* in Langfuse.
 
     A no-op when *session_id* is falsy or llmio's tracing extra is absent, so
-    callers can wrap unconditionally."""
+    callers can wrap unconditionally.
+    """
     if not session_id:
         yield
         return
@@ -77,6 +80,7 @@ def _trace_session(session_id: str | None) -> Iterator[None]:
         return
     with langfuse_session(session_id):
         yield
+
 
 # Header for the recalled-memory block injected into the system prompt.
 _MEMORY_PROMPT_HEADER = (
@@ -120,6 +124,7 @@ class LlmioChatAgent:
         memory: ChatMemory | None = None,
         tools: list[Any] | None = None,
     ) -> None:
+        """Store the agent configuration for later ``stream`` calls."""
         self._model_level = model_level
         self._instruction = instruction
         self._api_key = api_key
@@ -157,7 +162,7 @@ class LlmioChatAgent:
             system_prompt = f"{system_prompt}\n\n{_MEMORY_PROMPT_HEADER}{recalled}"
 
         # Forward the key only when one is configured; keyless levels
-        # (claude-sdk) must not receive an api_key (the provider rejects it).
+        # (claudeSDK) must not receive an api_key (the provider rejects it).
         provider_kwargs: dict[str, str] = {}
         if self._api_key:
             provider_kwargs["api_key"] = self._api_key
