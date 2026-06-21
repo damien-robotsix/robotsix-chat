@@ -7,6 +7,7 @@ a self-contained browser chat UI from the same origin.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import logging.config
@@ -39,6 +40,15 @@ SSE_CONTENT_TYPE = "text/event-stream"
 SSE_TOKEN_TYPE = "token"
 SSE_DONE_TYPE = "done"
 SSE_ERROR_TYPE = "error"
+
+# The agent returns its reply as a single block only once the whole pipeline
+# (memory recall, the LLM, any tool calls) completes — which can be many seconds
+# with no bytes on the wire. A silent connection that long gets dropped by the
+# browser/proxy ("NetworkError"). Emit an SSE *comment* heartbeat immediately and
+# on this interval so the data channel never goes quiet. Comments carry no
+# ``data:`` line, so clients ignore them.
+SSE_HEARTBEAT_INTERVAL = 5.0
+_SSE_HEARTBEAT_FRAME = b": keepalive\n\n"
 
 
 def _sse_frame(payload: object) -> bytes:
@@ -108,15 +118,48 @@ async def chat_endpoint(
     # -- SSE async generator ----------------------------------------------
 
     async def sse_stream() -> AsyncIterator[bytes]:
+        # Drive the agent in a background task and forward its output through a
+        # queue, so the response loop can interleave heartbeats while the agent
+        # works (it yields its reply only at the end, after a long quiet spell).
+        queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
+
+        async def _produce() -> None:
+            try:
+                async for token in agent.stream(message):
+                    await queue.put((SSE_TOKEN_TYPE, token))
+                await queue.put((SSE_DONE_TYPE, None))
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.exception("Agent stream error")
+                await queue.put((SSE_ERROR_TYPE, str(exc)))
+
+        producer = asyncio.create_task(_produce())
         try:
-            async for token in agent.stream(message):
-                yield _sse_frame({"type": SSE_TOKEN_TYPE, "content": token})
-            yield _sse_frame({"type": SSE_DONE_TYPE})
+            yield _SSE_HEARTBEAT_FRAME  # first byte immediately
+            while True:
+                try:
+                    kind, payload = await asyncio.wait_for(
+                        queue.get(), SSE_HEARTBEAT_INTERVAL
+                    )
+                except TimeoutError:
+                    yield _SSE_HEARTBEAT_FRAME
+                    continue
+                if kind == SSE_TOKEN_TYPE:
+                    yield _sse_frame({"type": SSE_TOKEN_TYPE, "content": payload})
+                elif kind == SSE_DONE_TYPE:
+                    yield _sse_frame({"type": SSE_DONE_TYPE})
+                    break
+                else:  # SSE_ERROR_TYPE
+                    yield _sse_frame({"type": SSE_ERROR_TYPE, "message": payload})
+                    break
         except asyncio.CancelledError:
             logger.debug("SSE stream cancelled (client disconnect)")
-        except Exception as exc:
-            logger.exception("Agent stream error")
-            yield _sse_frame({"type": SSE_ERROR_TYPE, "message": str(exc)})
+            raise
+        finally:
+            producer.cancel()
+            with contextlib.suppress(BaseException):
+                await producer
 
     return StreamingResponse(
         sse_stream(),
