@@ -26,16 +26,35 @@ jobs:
         uses: actions/github-script@v7
         with:
           script: |
-            const { data: checks } = await github.rest.checks.listForRef({
+            const POLL_MS = 15000;
+            const MAX_ATTEMPTS = 80; // ~20 min
+            for (let attempt = 1; attempt <= MAX_ATTEMPTS; attempt++) {
+              const { data } = await github.rest.checks.listForRef({
+                ...context.repo,
+                ref: context.sha,
+                check_name: 'check',
+              });
+              const run = data.check_runs[0];
+              if (run && run.status === 'completed') {
+                if (run.conclusion === 'success') {
+                  core.info(`Aggregate CI check succeeded for ${context.sha}`);
+                  return;
+                }
+                core.setFailed(`CI aggregate check concluded '${run.conclusion}'`);
+                return;
+              }
+              core.info(`Aggregate CI check not complete yet (attempt ${attempt}/${MAX_ATTEMPTS}); waiting...`);
+              await new Promise(r => setTimeout(r, POLL_MS));
+            }
+            const { data: allChecks } = await github.rest.checks.listForRef({
               ...context.repo,
               ref: context.sha,
             });
-            const allGreen = checks.check_runs.every(
-              r => r.conclusion === 'success' || r.conclusion === 'skipped'
-            );
-            if (!allGreen) {
-              core.setFailed('CI checks have not passed for this commit');
+            core.info('Check runs found on timeout:');
+            for (const r of allChecks.check_runs) {
+              core.info(`  ${r.name}: status=${r.status} conclusion=${r.conclusion}`);
             }
+            core.setFailed('Timed out waiting for the aggregate CI check to complete');
 
   docker:
     needs: verify
