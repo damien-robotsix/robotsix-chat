@@ -91,7 +91,7 @@ def test_log_level_default() -> None:
 
 
 def test_default_level_is_keyless() -> None:
-    """The default level (3 → claude-sdk) is keyless — constructs with no key."""
+    """The default level (3 → claudeSDK) is keyless — constructs with no key."""
     settings = Settings()
     assert settings.llmio_model_level == 3
     assert settings.llmio_api_key == ""
@@ -291,7 +291,7 @@ def test_load_from_yaml_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
 def test_load_claude_sdk_yaml_needs_no_key(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """A keyless level (3 → claude-sdk) loads without any api_key."""
+    """A keyless level (3 → claudeSDK) loads without any api_key."""
     _wipe_env_vars(monkeypatch)
 
     config_file = tmp_path / "chat.local.yaml"

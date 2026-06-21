@@ -10,8 +10,9 @@ loading is delegated to the shared ``robotsix-yaml-config`` library so
 every repo in the stack reads YAML the same way.
 
 The LLM is selected through ``robotsix-llmio``'s consumer-facing
-``transport`` + ``model_level`` config (``robotsix_llmio.config``): you pick a
-transport alias and a model level, never a concrete provider class.
+``provider-model`` tier identifier (``robotsix_llmio.config``): you pick a
+capability level and llmio resolves the provider + model from its baked
+defaults, never a concrete provider class.
 
 The YAML file lives at ``config/chat.local.yaml`` by default (gitignored
 so credentials never land in the repo); copy ``config/chat.local.example.yaml``
@@ -48,28 +49,30 @@ CONFIG_PATH_ENV = "CHAT_CONFIG_PATH"
 # Case-insensitive truthy spellings for the AUTH_ENABLED env override.
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 
-# robotsix-llmio now owns the level → (transport, model) mapping. The chat
-# just picks a capability *level*; the transport (and model) for that level
-# come from llmio's baked default TierConfig (single source of truth):
-#   level 1 → openrouter[deepseek]/deepseek-v4-flash  (cheapest)
-#   level 2 → openrouter[deepseek]/deepseek-v4-pro
-#   level 3 → claude-sdk/opus                          (most capable; keyless)
+# robotsix-llmio now owns the level → provider-model mapping. The chat
+# just picks a capability *level*; the combined provider-model identifier for
+# that level comes from llmio's baked default TierLevelConfig (single source
+# of truth):
+#   level 1 → openrouter[deepseek]-deepseek/deepseek-v4-flash  (cheapest)
+#   level 2 → openrouter[deepseek]-deepseek/deepseek-v4-pro
+#   level 3 → claudeSDK-opus  (most capable; keyless)
 _LEVEL_DEFAULTS = {1: LEVEL1_DEFAULT, 2: LEVEL2_DEFAULT, 3: LEVEL3_DEFAULT}
 _VALID_MODEL_LEVELS = set(_LEVEL_DEFAULTS)
 
-# Providers that authenticate without an API key (via the `claude` CLI).
-_KEYLESS_PROVIDERS = {"claudeSDK"}
+# Provider prefix for the keyless Claude SDK tier (auth via logged-in
+# `claude` CLI — no API key needed).
+_KEYLESS_PROVIDER = "claudeSDK"
 
 
 def level_needs_api_key(level: int) -> bool:
-    """Whether *level*'s default transport requires an ``api_key``.
+    """Whether *level*'s default provider requires an ``api_key``.
 
-    True for key-bearing transports (e.g. ``openrouter[deepseek]``), False for
-    keyless ones (``claude-sdk``). Unknown levels are treated as needing a key
-    (model_level is validated separately before this matters).
+    True for key-bearing providers (e.g. ``openrouter``), False for the
+    keyless ``claudeSDK`` provider. Unknown levels are treated as needing a
+    key (model_level is validated separately before this matters).
     """
     tlc = _LEVEL_DEFAULTS.get(level)
-    return tlc is None or tlc.provider not in _KEYLESS_PROVIDERS
+    return tlc is None or tlc.provider != _KEYLESS_PROVIDER
 
 
 # Maps nested YAML ``section.field`` paths to ``Settings`` field names.
@@ -215,17 +218,17 @@ class Settings(BaseModel):
     """Application settings, resolved from defaults → YAML → environment.
 
     The LLM is configured the robotsix-llmio way — pick a capability
-    ``model_level`` and llmio resolves the transport + model for that level
-    (from its baked default :class:`~robotsix_llmio.config.TierConfig`).
+    ``model_level`` and llmio resolves the provider + model for that level
+    (from its baked default :class:`~robotsix_llmio.config.TierLevelConfig`).
 
     Attributes:
         llmio_model_level: Capability level — ``1`` (cheapest/fastest), ``2``,
-            or ``3`` (most capable). The level encodes the transport + model:
-            by default levels 1-2 use ``openrouter[deepseek]`` and level 3 uses
-            ``claude-sdk``/``opus``.
+            or ``3`` (most capable). The level encodes the provider + model:
+            by default levels 1-2 use ``openrouter`` and level 3 uses
+            ``claudeSDK``/``opus``.
         llmio_api_key: Provider API key, forwarded to llmio when the chosen
-            level's transport needs one (e.g. ``openrouter[deepseek]``); unused
-            by keyless transports like ``claude-sdk``.
+            level's provider needs one (e.g. ``openrouter``); unused
+            by keyless providers like ``claudeSDK``.
         agent_instruction: System instruction handed to the LLM agent.
         server_host: Host address the chat SSE server binds to.
         server_port: Port the chat SSE server listens on.
@@ -258,12 +261,12 @@ class Settings(BaseModel):
                 f"llmio.model_level must be one of {sorted(_VALID_MODEL_LEVELS)}, "
                 f"got {self.llmio_model_level!r}"
             )
-        # Levels whose transport authenticates via the `claude` CLI need no
-        # key; key-bearing levels (e.g. openrouter[deepseek]) require one.
+        # The keyless Claude SDK provider (level 3) needs no API key;
+        # key-bearing providers (e.g. openrouter, levels 1-2) require one.
         if level_needs_api_key(self.llmio_model_level) and not self.llmio_api_key:
             raise ValueError(
                 f"llmio.api_key must be set for model_level "
-                f"{self.llmio_model_level} (its transport needs a key) — provide "
+                f"{self.llmio_model_level} (its provider needs a key) — provide "
                 "it via LLMIO_API_KEY, a .env file, or the `llmio.api_key` field "
                 "of your config file (or use model_level 3, which is keyless)"
             )
