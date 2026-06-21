@@ -90,7 +90,7 @@ packages = ["src/robotsix_chat"]
 
 [tool.uv.sources]
 robotsix-yaml-config = { git = "https://github.com/damien-robotsix/robotsix-yaml-config.git", rev = "main" }
-robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "596f52f7c9a1b151608b8cd1a04f5000d1a6fa8e" }
+robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "03c5d0d7891602c17ec27ee0d3b658fc8d67bb49" }
 robotsix-agent-comm = { git = "https://github.com/damien-robotsix/robotsix-agent-comm.git", rev = "main" }
 
 [tool.ruff]
