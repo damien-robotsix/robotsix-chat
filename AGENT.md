@@ -202,3 +202,7 @@ added when off or when the `broker` extra is absent.
 - `src/robotsix_chat/mill/` — optional mill-via-broker tool: `client.py` (`MillClient` — cost-analyst pattern), `__init__.py` (`build_mill_tools()`)
 - `src/robotsix_chat/chat/server.py` — Starlette ASGI app; `GET /`, `POST /chat`, `GET /health`
 - `.github/workflows/release-image.yml` — GHCR publish workflow (triggers on `main` push, `v*` tag, manual dispatch)
+
+## Testing conventions
+
+Tests for module `robotsix_chat.<module>` live under `tests/<module>/`, mirroring the per-module source layout (e.g. `tests/chat/` for `robotsix_chat.chat`, `tests/config/` for `robotsix_chat.config`). Do not place tests directly in the `tests/` root.
