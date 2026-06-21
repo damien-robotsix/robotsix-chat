@@ -8,7 +8,6 @@ import pytest
 
 from robotsix_chat.config import (
     AuthSettings,
-    ConversationSettings,
     MemoryEmbeddingSettings,
     MemoryLlmSettings,
     MemorySettings,
