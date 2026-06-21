@@ -10,6 +10,9 @@ permissions:
 jobs:
   verify:
     runs-on: ubuntu-latest
+    permissions:
+      checks: read
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -27,6 +30,20 @@ jobs:
             echo "::error::CHANGELOG.md has no '## [$version]' section for version '$version'"
             exit 1
           fi
+      - name: Verify CI status
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const { data: checks } = await github.rest.checks.listForRef({
+              ...context.repo,
+              ref: context.sha,
+            });
+            const allGreen = checks.check_runs.every(
+              r => r.conclusion === 'success' || r.conclusion === 'skipped'
+            );
+            if (!allGreen) {
+              core.setFailed('CI checks have not passed for this commit');
+            }
 
   publish:
     needs: verify
