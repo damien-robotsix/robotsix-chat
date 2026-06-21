@@ -65,6 +65,26 @@ async def test_chat_endpoint_streams_tokens() -> None:
 
 
 @pytest.mark.asyncio
+async def test_chat_endpoint_opens_with_heartbeat() -> None:
+    """The stream emits a heartbeat comment up front (and keeps the connection
+    alive while the agent works), so a long quiet reply isn't dropped. The
+    comment is not a ``data:`` frame, so it never parses as a token."""
+    async with mock_app(tokens=["hi"]) as f:
+        response = await f.client.post("/chat", json={"message": "hello"})
+
+    assert response.status_code == 200
+    assert response.text.startswith(": keepalive")
+    # Heartbeat carries no JSON payload — only real frames do.
+    frames = [
+        json.loads(e[len("data: ") :])
+        for e in response.text.split("\n\n")
+        if e.startswith("data: ")
+    ]
+    assert {"type": SSE_TOKEN_TYPE, "content": "hi"} in frames
+    assert {"type": SSE_DONE_TYPE} in frames
+
+
+@pytest.mark.asyncio
 async def test_chat_endpoint_passes_message_to_agent() -> None:
     async with mock_app(tokens=["ok"]) as f:
         await f.client.post("/chat", json={"message": "hello world"})
