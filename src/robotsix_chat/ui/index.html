@@ -257,6 +257,32 @@
   // ---- Server URL (localStorage-backed) --------------------------------
   var LS_KEY = "{{ PROJECT_TITLE }}-server-url";
 
+  // ---- Idle timeout (minutes; 0 = disabled) ----------------------------
+  var IDLE_TIMEOUT_MINUTES = {{ IDLE_TIMEOUT_MINUTES }};
+  var idleTimerId = null;
+
+  function resetIdleTimer() {
+    if (IDLE_TIMEOUT_MINUTES <= 0) return;
+    if (idleTimerId) clearTimeout(idleTimerId);
+    idleTimerId = setTimeout(restartConversation, IDLE_TIMEOUT_MINUTES * 60 * 1000);
+  }
+
+  function restartConversation() {
+    idleTimerId = null;
+    // Clear all message bubbles and any in-flight assistant bubble.
+    chatEl.innerHTML = "";
+    currentAssistantBubble = null;
+    hideTypingIndicator();
+    state = "idle";
+    // Append a brief italic notice so the user knows what happened.
+    var notice = document.createElement("div");
+    notice.className = "bubble assistant";
+    notice.style.fontStyle = "italic";
+    notice.textContent = "Conversation restarted — you were idle for "
+                       + IDLE_TIMEOUT_MINUTES + " minute(s).";
+    chatEl.appendChild(notice);
+  }
+
   function defaultUrl() {
     var origin = window.location.origin;
     // file:// origins report the string "null" — fall back to localhost.
@@ -449,6 +475,8 @@
     var message = msgInput.value.trim();
     if (!message || state === "sending" || state === "streaming") return;
 
+    resetIdleTimer();
+
     msgInput.value = "";
     // Auto-resize textarea back to 1 row
     msgInput.style.height = "";
@@ -573,6 +601,7 @@
 
   // ---- Initial state ---------------------------------------------------
   setConnectionStatus(true);  // optimistic green; turns red on first error
+  resetIdleTimer();
 })();
 </script>
 

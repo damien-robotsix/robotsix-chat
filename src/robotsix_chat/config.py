@@ -84,6 +84,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "agent.instruction": "agent_instruction",
     "server.host": "server_host",
     "server.port": "server_port",
+    "server.idle_timeout_minutes": "idle_timeout_minutes",
     "server.log_level": "log_level",
     "server.cors_allow_origins": "cors_allow_origins",
     "server.correlation_id_header": "correlation_id_header",
@@ -288,6 +289,9 @@ class Settings(BaseModel):
         agent_instruction: System instruction handed to the LLM agent.
         server_host: Host address the chat SSE server binds to.
         server_port: Port the chat SSE server listens on.
+        idle_timeout_minutes: Minutes of no user activity before the UI
+            auto-restarts the conversation; ``0`` disables the feature.
+            Env override: ``IDLE_TIMEOUT_MINUTES``.
         log_level: Python logging level name.
         cors_allow_origins: Origins allowed to call /chat cross-origin
             (empty = none; ``["*"]`` = any). Only needed when the browser
@@ -303,6 +307,7 @@ class Settings(BaseModel):
     agent_instruction: str = "You are a helpful assistant."
     server_host: str = "127.0.0.1"
     server_port: int = 8000
+    idle_timeout_minutes: int = 30
     log_level: str = "INFO"
     cors_allow_origins: list[str] = Field(default_factory=list)
     correlation_id_header: str = "X-Request-ID"
@@ -346,6 +351,10 @@ class Settings(BaseModel):
                     "(e.g. http://host:11434/v1) — provide it via "
                     "MEMORY_EMBEDDING_ENDPOINT or the config file"
                 )
+        if self.idle_timeout_minutes < 0:
+            raise ValueError(
+                f"idle_timeout_minutes must be >= 0, got {self.idle_timeout_minutes!r}"
+            )
         if self.mill.enabled:
             if not self.mill.broker_token:
                 raise ValueError(
@@ -469,6 +478,15 @@ class Settings(BaseModel):
             except ValueError:
                 raise ValueError(
                     f"SERVER_PORT must be an integer, got {port_str!r}"
+                ) from None
+
+        timeout_str = os.getenv("IDLE_TIMEOUT_MINUTES")
+        if timeout_str is not None:
+            try:
+                raw["idle_timeout_minutes"] = int(timeout_str)
+            except ValueError:
+                raise ValueError(
+                    f"IDLE_TIMEOUT_MINUTES must be an integer, got {timeout_str!r}"
                 ) from None
 
         cors_raw = os.getenv("CORS_ALLOW_ORIGINS")
