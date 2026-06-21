@@ -9,7 +9,7 @@ jobs:
   ci:
     uses: damien-robotsix/robotsix-mill/.github/workflows/python-ci.yml@main
     with:
-      python-version: "3.12"
+      python-version: "3.14"
       cov-package: "robotsix_chat"
       install-extras: ""
       coverage-threshold: "60"
