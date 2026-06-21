@@ -10,4 +10,9 @@ permissions:
 
 jobs:
   docs:
+    # python-docs.yml's nested job pushes the built site to gh-pages, so it
+    # requests `contents: write`. The caller must grant it or GitHub rejects
+    # the reusable-workflow call with a startup_failure.
+    permissions:
+      contents: write
     uses: damien-robotsix/robotsix-mill/.github/workflows/python-docs.yml@main
