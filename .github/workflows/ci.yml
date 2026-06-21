@@ -9,12 +9,17 @@ jobs:
   ci:
     uses: damien-robotsix/robotsix-mill/.github/workflows/python-ci.yml@main
     with:
-      python-version: "3.12"
+      python-version: "3.14"
       cov-package: "robotsix_chat"
       install-extras: ""
       coverage-threshold: "60"
+    # python-ci.yml's nested `tests` job uploads SARIF, so it requests
+    # `security-events: write`. A caller job MUST grant at least that or
+    # GitHub rejects the reusable-workflow call with a startup_failure
+    # ("nested job 'tests' is requesting 'security-events: write'").
     permissions:
       contents: read
+      security-events: write
 
   codeql:
     runs-on: ubuntu-latest
