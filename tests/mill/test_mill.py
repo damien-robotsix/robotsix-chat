@@ -110,12 +110,14 @@ class _Reply:
 
 
 def test_build_mill_tools_disabled() -> None:
+    """Verify that disabled mill returns no tools."""
     assert build_mill_tools(MillSettings(enabled=False)) == []
 
 
 def test_build_mill_tools_without_broker_extra(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify that missing broker extra returns no tools."""
     import importlib.util
 
     monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
@@ -125,6 +127,7 @@ def test_build_mill_tools_without_broker_extra(
 def test_build_mill_tools_returns_consult_tool(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify that enabled mill with broker extra returns the consult tool."""
     import importlib.util
 
     monkeypatch.setattr(
@@ -146,6 +149,7 @@ def test_build_mill_tools_returns_consult_tool(
 async def test_consult_sends_nl_to_board_manager(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify that consult sends a natural-language request to the board manager."""
     captured = _install_fake_agent_comm(monkeypatch, reply=_Reply({"reply": "done"}))
     client = MillClient(_settings(agent_id="robotsix-chat"))
     out = await client.consult("create a ticket to add X")
@@ -162,6 +166,7 @@ async def test_consult_sends_nl_to_board_manager(
 async def test_consult_includes_repo_id_when_set(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify that repo_id is included in the payload when set."""
     captured = _install_fake_agent_comm(monkeypatch, reply=_Reply({"reply": "ok"}))
     client = MillClient(_settings(repo_id="robotsix-chat"))
     await client.consult("status?")
@@ -172,6 +177,10 @@ async def test_consult_includes_repo_id_when_set(
 async def test_consult_blank_request_skips_broker(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Return an error for blank requests without contacting the broker.
+
+    The broker is never contacted for empty or whitespace-only requests.
+    """
     captured = _install_fake_agent_comm(monkeypatch, reply=_Reply({"reply": "x"}))
     client = MillClient(_settings())
     out = await client.consult("   ")
@@ -183,6 +192,7 @@ async def test_consult_blank_request_skips_broker(
 async def test_consult_never_raises_on_transport_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify that transport errors degrade to a message instead of raising."""
     _install_fake_agent_comm(monkeypatch, raise_exc=RuntimeError("broker down"))
     client = MillClient(_settings())
     out = await client.consult("hi")
@@ -194,6 +204,7 @@ async def test_consult_never_raises_on_transport_error(
 async def test_consult_handles_board_error_reply(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
+    """Verify that board manager error replies are surfaced as text."""
     err = _FakeError({"code": "BAD_REQUEST", "message": "nope"})
     _install_fake_agent_comm(monkeypatch, reply=err)
     client = MillClient(_settings())
@@ -211,4 +222,5 @@ async def test_consult_handles_board_error_reply(
     ],
 )
 def test_reply_text(body: Any, expected: str) -> None:
+    """Verify _reply_text extracts the expected substring from the response body."""
     assert expected in _reply_text(body)

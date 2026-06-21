@@ -111,6 +111,7 @@ class AuthSettings(BaseModel):
             carry valid HTTP Basic credentials.
         username: The single accepted username.
         password: The single accepted password (required when *enabled*).
+
     """
 
     enabled: bool = False
@@ -166,6 +167,7 @@ class MemorySettings(BaseModel):
             payloads.
         llm: Extraction-LLM config (graph building / consolidation).
         embedding: Embedding-server config (semantic search).
+
     """
 
     enabled: bool = False
@@ -195,6 +197,7 @@ class MillSettings(BaseModel):
         repo_id: Optional repo to scope requests to; empty lets the board manager
             choose the target repo from the conversation.
         timeout: Per-request timeout (seconds); generous, the recipient is an LLM.
+
     """
 
     enabled: bool = False
@@ -233,6 +236,7 @@ class Settings(BaseModel):
         correlation_id_header: HTTP header name used for the correlation /
             request-id (both inbound and outbound). Default ``X-Request-ID``.
         auth: HTTP Basic Auth settings gating the UI and ``/chat``.
+
     """
 
     llmio_model_level: int = 3

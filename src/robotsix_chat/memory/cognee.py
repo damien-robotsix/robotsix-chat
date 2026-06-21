@@ -41,6 +41,7 @@ class CogneeMemory:
     """
 
     def __init__(self, settings: MemorySettings) -> None:
+        """Store settings; actual cognee configuration is deferred to ``setup``."""
         self._settings = settings
         self._setup_done = False
         self._setup_lock = asyncio.Lock()
@@ -141,9 +142,7 @@ class CogneeMemory:
                 self._settings.recall_search_type,
                 SearchType.GRAPH_COMPLETION,
             )
-            results = await cognee.search(
-                query_type=search_type, query_text=query
-            )
+            results = await cognee.search(query_type=search_type, query_text=query)
             return _format_results(results)
         except Exception as exc:
             # Best-effort: a recall failure (incl. the expected "empty store"

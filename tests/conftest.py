@@ -22,11 +22,13 @@ class MockAgent:
         *,
         error: Exception | None = None,
     ) -> None:
+        """Initialise with a fixed token list and optional error."""
         self.tokens = tokens or ["Hello", " ", "world!"]
         self.error = error
         self.called_with: str | None = None
 
     async def stream(self, message: str) -> AsyncIterator[str]:
+        """Yield tokens or raise the configured error."""
         self.called_with = message
         if self.error is not None:
             raise self.error

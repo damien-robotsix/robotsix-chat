@@ -24,6 +24,7 @@ class MillClient:
     """Forwards natural-language requests to the mill's board manager."""
 
     def __init__(self, settings: MillSettings) -> None:
+        """Store the mill broker settings for later consult calls."""
         self._s = settings
 
     async def consult(self, request: str) -> str:
@@ -63,9 +64,7 @@ class MillClient:
             payload["repo_id"] = s.repo_id
         # `with agent:` registers a mailbox + receive loop, torn down per call.
         with agent:
-            reply = agent.send_request(
-                s.board_manager_id, payload, timeout=s.timeout
-            )
+            reply = agent.send_request(s.board_manager_id, payload, timeout=s.timeout)
         if isinstance(reply, Error):
             err = getattr(reply, "body", None) or {}
             raise RuntimeError(err.get("message") or "board manager returned an error")

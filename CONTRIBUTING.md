@@ -22,7 +22,7 @@ bandit, pip-audit, and detect-secrets.
 
 | Tool | Command | What it checks |
 |---|---|---|
-| ruff (lint) | `uv run ruff check .` | Code style and lint rules |
+| ruff (lint) | `uv run ruff check .` | Code style, lint, and docstring rules |
 | ruff (format) | `uv run ruff format --check .` | Code formatting |
 | mypy | `uv run mypy .` | Static type checking (strict mode) |
 | bandit | `uv run bandit -c pyproject.toml -r src/` | Security linting |
