@@ -67,6 +67,7 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "REFDOCS_GITHUB_TOKEN",
         "REFDOCS_BASE_URL",
         "REFDOCS_TIMEOUT",
+        "IDLE_TIMEOUT_MINUTES",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -628,3 +629,80 @@ def test_refdocs_timeout_invalid_raises(monkeypatch: pytest.MonkeyPatch) -> None
 
     with pytest.raises(ValueError, match="REFDOCS_TIMEOUT"):
         Settings.from_env()
+
+
+# ---------------------------------------------------------------------------
+# Idle timeout
+# ---------------------------------------------------------------------------
+
+
+def test_idle_timeout_default() -> None:
+    """``idle_timeout_minutes`` defaults to 30."""
+    settings = Settings()
+    assert settings.idle_timeout_minutes == 30
+
+
+def test_idle_timeout_from_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``server.idle_timeout_minutes`` in YAML overrides the default."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text("server:
+  idle_timeout_minutes: 15
+")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.idle_timeout_minutes == 15
+
+
+def test_idle_timeout_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``IDLE_TIMEOUT_MINUTES`` env var overrides the default."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("IDLE_TIMEOUT_MINUTES", "10")
+
+    settings = Settings.from_env()
+
+    assert settings.idle_timeout_minutes == 10
+
+
+def test_idle_timeout_env_override_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Env var ``IDLE_TIMEOUT_MINUTES`` wins over YAML value."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text("server:
+  idle_timeout_minutes: 25
+")
+    monkeypatch.setenv("IDLE_TIMEOUT_MINUTES", "5")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.idle_timeout_minutes == 5
+
+
+def test_idle_timeout_env_non_integer_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-integer ``IDLE_TIMEOUT_MINUTES`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("IDLE_TIMEOUT_MINUTES", "five")
+
+    with pytest.raises(ValueError, match="IDLE_TIMEOUT_MINUTES"):
+        Settings.from_env()
+
+
+def test_idle_timeout_negative_raises() -> None:
+    """A negative ``idle_timeout_minutes`` is rejected by ``model_post_init``."""
+    with pytest.raises(ValueError, match="idle_timeout_minutes"):
+        Settings(idle_timeout_minutes=-1)
+
+
+def test_idle_timeout_zero_allowed() -> None:
+    """``idle_timeout_minutes = 0`` is valid (disables the feature)."""
+    settings = Settings(idle_timeout_minutes=0)
+    assert settings.idle_timeout_minutes == 0

@@ -94,17 +94,20 @@ async def health_endpoint(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
-def _load_ui_html() -> str:
+def _load_ui_html(idle_timeout_minutes: int) -> str:
     """Read the bundled browser UI (``ui/index.html``) and fill placeholders."""
     raw = (resources.files("robotsix_chat") / "ui" / "index.html").read_text(
         encoding="utf-8"
     )
-    return raw.replace("{{ PROJECT_TITLE }}", PROJECT_TITLE)
+    return raw.replace("{{ PROJECT_TITLE }}", PROJECT_TITLE).replace(
+        "{{ IDLE_TIMEOUT_MINUTES }}", str(idle_timeout_minutes)
+    )
 
 
 async def ui_endpoint(request: Request) -> HTMLResponse:
     """Serve the self-contained browser chat UI at ``GET /``."""
-    return HTMLResponse(_load_ui_html())
+    timeout = request.app.state.idle_timeout_minutes
+    return HTMLResponse(_load_ui_html(timeout))
 
 
 async def chat_endpoint(
@@ -226,6 +229,7 @@ def create_app(
     agent: ChatAgent,
     *,
     serve_ui: bool = True,
+    idle_timeout_minutes: int = 30,
     cors_allow_origins: list[str] | None = None,
     auth: BasicAuthConfig | None = None,
     correlation_id_header: str = "X-Request-ID",
@@ -241,6 +245,8 @@ def create_app(
         agent: Object whose ``stream(message)`` yields response tokens.
         serve_ui: When ``True`` (default), serve the bundled browser chat
             UI at ``GET /`` so the UI and ``/chat`` share one origin.
+        idle_timeout_minutes: Minutes of no user activity before the UI
+            auto-restarts the conversation; ``0`` disables.
         cors_allow_origins: Origins permitted to call ``/chat`` cross-origin
             (e.g. when the UI is hosted separately). ``None`` (default)
             adds no CORS headers; ``["*"]`` allows any origin.
@@ -289,6 +295,7 @@ def create_app(
     )
     app.state.agent = agent
     app.state.conversation_store = conversation_store or ConversationStore()
+    app.state.idle_timeout_minutes = idle_timeout_minutes
     return app
 
 
@@ -298,6 +305,7 @@ def run_server(
     host: str = "127.0.0.1",
     port: int = 8000,
     serve_ui: bool = True,
+    idle_timeout_minutes: int = 30,
     cors_allow_origins: list[str] | None = None,
     auth: BasicAuthConfig | None = None,
     correlation_id_header: str = "X-Request-ID",
@@ -313,6 +321,7 @@ def run_server(
     app = create_app(
         agent,
         serve_ui=serve_ui,
+        idle_timeout_minutes=idle_timeout_minutes,
         cors_allow_origins=cors_allow_origins,
         auth=auth,
         correlation_id_header=correlation_id_header,
@@ -449,6 +458,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         agent,
         host=settings.server_host,
         port=settings.server_port,
+        idle_timeout_minutes=settings.idle_timeout_minutes,
         cors_allow_origins=settings.cors_allow_origins,
         auth=auth,
         correlation_id_header=settings.correlation_id_header,

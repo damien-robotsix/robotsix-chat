@@ -332,6 +332,7 @@ async def test_run_server_from_config_creates_agent_from_settings(
         assert call_args[1] == {
             "host": "127.0.0.1",
             "port": 8080,
+            "idle_timeout_minutes": 30,
             "cors_allow_origins": [],
             "auth": None,
             "correlation_id_header": "X-Request-ID",
@@ -423,6 +424,26 @@ async def test_ui_served_at_root_by_default() -> None:
     assert response.headers["content-type"].startswith("text/html")
     assert "<!DOCTYPE html>" in response.text
     assert "robotsix-agent-comm" in response.text or "Chat" in response.text
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "timeout, expect_substring",
+    [
+        (30, "var IDLE_TIMEOUT_MINUTES = 30;"),
+        (5, "var IDLE_TIMEOUT_MINUTES = 5;"),
+        (0, "var IDLE_TIMEOUT_MINUTES = 0;"),
+    ],
+)
+async def test_ui_injects_idle_timeout(timeout: int, expect_substring: str) -> None:
+    """``GET /`` injects the configured ``idle_timeout_minutes`` into the JS."""
+    async with mock_app(idle_timeout_minutes=timeout) as f:
+        response = await f.client.get("/")
+
+    assert response.status_code == 200
+    assert expect_substring in response.text
+    # No unsubstituted placeholder remains.
+    assert "{{ IDLE_TIMEOUT_MINUTES }}" not in response.text
 
 
 @pytest.mark.asyncio
