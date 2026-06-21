@@ -24,7 +24,6 @@ dependencies = [
     #     from the per-transport extras below.
     "robotsix-yaml-config",
     "robotsix-llmio",
-    "pyyaml>=6",
 ]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
@@ -100,7 +99,7 @@ line-length = 88
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "S", "D"]
-per-file-ignores = {"src/robotsix_chat/chat/server.py" = ["S105"], "tests/**" = ["S101", "S104", "S105", "S106", "S107"]}
+per-file-ignores = {"src/robotsix_chat/chat/server.py" = ["S105"], "tests/**" = ["S101", "S104", "S105", "S106", "S107"], "vulture_whitelist.py" = ["D100"]}
 
 [tool.mypy]
 python_version = "3.14"
@@ -116,6 +115,22 @@ ignore_missing_imports = true
 [[tool.mypy.overrides]]
 module = ["robotsix_agent_comm.*"]
 ignore_missing_imports = true
+
+[tool.deptry]
+# `robotsix_chat` is this project's own package (built from src/robotsix_chat);
+# deptry otherwise misreads the intra-package absolute imports as a transitive
+# third-party dependency (DEP003).
+known_first_party = ["robotsix_chat"]
+# vulture_whitelist.py imports `from src.robotsix_chat...` purely so vulture can
+# resolve the whitelisted symbols; the `src` prefix is a tooling artefact, not a
+# runtime dependency, so it is excluded from deptry's scan (DEP001 'src').
+extend_exclude = ["vulture_whitelist.py"]
+
+[tool.deptry.per_rule_ignores]
+# `transformers` is an optional `memory`-extra dependency consumed dynamically by
+# the cognee bge-m3 tokenizer path; it is never imported from src/, so deptry's
+# DEP002 ("defined but not used") is expected and intentional.
+DEP002 = ["transformers"]
 
 [tool.bandit]
 exclude_dirs = ["tests"]
