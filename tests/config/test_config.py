@@ -649,9 +649,7 @@ def test_idle_timeout_from_yaml(
     _wipe_env_vars(monkeypatch)
 
     config_file = tmp_path / "chat.local.yaml"
-    config_file.write_text("server:
-  idle_timeout_minutes: 15
-")
+    config_file.write_text("server:\n  idle_timeout_minutes: 15\n")
 
     settings = Settings.load(config_path=config_file)
 
@@ -675,9 +673,7 @@ def test_idle_timeout_env_override_yaml(
     _wipe_env_vars(monkeypatch)
 
     config_file = tmp_path / "chat.local.yaml"
-    config_file.write_text("server:
-  idle_timeout_minutes: 25
-")
+    config_file.write_text("server:\n  idle_timeout_minutes: 25\n")
     monkeypatch.setenv("IDLE_TIMEOUT_MINUTES", "5")
 
     settings = Settings.load(config_path=config_file)
