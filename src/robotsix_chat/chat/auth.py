@@ -39,6 +39,7 @@ class BasicAuthMiddleware:
         exclude_paths: Paths served without authentication (default
             ``("/health",)`` so liveness probes are not gated).
         realm: The ``WWW-Authenticate`` realm shown in the browser dialog.
+
     """
 
     def __init__(
@@ -49,12 +50,14 @@ class BasicAuthMiddleware:
         exclude_paths: tuple[str, ...] = ("/health",),
         realm: str = "robotsix-chat",
     ) -> None:
+        """Store the wrapped app and auth config."""
         self.app = app
         self.config = config
         self.exclude_paths = frozenset(exclude_paths)
         self.realm = realm
 
     async def __call__(self, scope: Scope, receive: Receive, send: Send) -> None:
+        """Check credentials and forward the request, or return 401."""
         if scope["type"] != "http" or scope.get("path") in self.exclude_paths:
             await self.app(scope, receive, send)
             return

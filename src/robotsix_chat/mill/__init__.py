@@ -56,6 +56,7 @@ def build_mill_tools(settings: MillSettings) -> list[Callable[..., Any]]:
 
         Returns:
             The board manager's reply.
+
         """
         return await client.consult(request)
 

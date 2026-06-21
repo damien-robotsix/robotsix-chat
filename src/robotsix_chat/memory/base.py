@@ -35,10 +35,13 @@ class NullMemory:
     """
 
     async def setup(self) -> None:
+        """No-op: nothing to initialise."""
         return None
 
     async def recall(self, query: str) -> str:
+        """Return an empty string (no memory stored)."""
         return ""
 
     async def remember(self, user_message: str, assistant_message: str) -> None:
+        """Discard the exchange (no memory backend)."""
         return None

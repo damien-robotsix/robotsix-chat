@@ -1,6 +1,8 @@
-"""Tests for the memory layer — :func:`build_memory`, ``NullMemory``, and the
-cognee backend's graceful-degradation contract (cognee mocked, never imported
-for real)."""
+"""Tests for the memory layer.
+
+Covers :func:`build_memory`, ``NullMemory``, and the cognee backend's
+graceful-degradation contract (cognee mocked, never imported for real).
+"""
 
 from __future__ import annotations
 
@@ -21,7 +23,7 @@ from robotsix_chat.memory.cognee import CogneeMemory, _format_results
 
 
 def _enabled_settings(data_dir: str = ".data/cognee") -> MemorySettings:
-    """A valid enabled MemorySettings (key + endpoint present)."""
+    """Return a valid enabled MemorySettings with key and endpoint present."""
     return MemorySettings(
         enabled=True,
         data_dir=data_dir,
@@ -71,6 +73,7 @@ def test_build_memory_enabled_with_cognee_returns_cognee(
 
 @pytest.mark.asyncio
 async def test_null_memory_is_inert() -> None:
+    """Verify that NullMemory stores and recalls nothing."""
     mem = NullMemory()
     await mem.setup()
     await mem.remember("u", "a")
@@ -93,10 +96,12 @@ async def test_null_memory_is_inert() -> None:
     ],
 )
 def test_format_results(value: Any, expected: str) -> None:
+    """Verify _format_results produces the expected output for given input."""
     assert _format_results(value) == expected
 
 
 def test_format_results_truncates() -> None:
+    """Verify _format_results truncates output exceeding the max length."""
     out = _format_results(["x" * 9000])
     assert len(out) <= 4001
     assert out.endswith("…")
@@ -137,6 +142,7 @@ def cognee_memory(
 async def test_cognee_recall_returns_formatted(
     cognee_memory: tuple[CogneeMemory, Any],
 ) -> None:
+    """Verify that cognee recall returns the mocked fact as a string."""
     mem, _ = cognee_memory
     assert await mem.recall("who?") == "recalled fact"
 
@@ -145,6 +151,7 @@ async def test_cognee_recall_returns_formatted(
 async def test_cognee_recall_blank_query_skips(
     cognee_memory: tuple[CogneeMemory, Any],
 ) -> None:
+    """Verify that a blank query skips cognee entirely."""
     mem, fake = cognee_memory
     assert await mem.recall("   ") == ""
     # A skipped recall never configures or queries cognee.
@@ -156,6 +163,7 @@ async def test_cognee_recall_blank_query_skips(
 async def test_cognee_remember_calls_add_and_cognify(
     cognee_memory: tuple[CogneeMemory, Any],
 ) -> None:
+    """Verify that remember calls add and cognify on the cognee module."""
     mem, fake = cognee_memory
     await mem.remember("hello", "hi there")
     fake.add.assert_awaited_once()

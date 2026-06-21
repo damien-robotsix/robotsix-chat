@@ -214,6 +214,7 @@ def create_app(
             leaves the server open.
         correlation_id_header: HTTP header name for the correlation /
             request-id. Default ``X-Request-ID``.
+
     """
     routes = [
         Route("/health", health_endpoint, methods=["GET"]),

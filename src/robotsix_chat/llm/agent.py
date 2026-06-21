@@ -75,6 +75,7 @@ class LlmioChatAgent:
         memory: ChatMemory | None = None,
         tools: list[Any] | None = None,
     ) -> None:
+        """Store the agent configuration for later ``stream`` calls."""
         self._model_level = model_level
         self._instruction = instruction
         self._api_key = api_key
