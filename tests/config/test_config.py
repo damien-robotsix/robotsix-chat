@@ -8,10 +8,12 @@ import pytest
 
 from robotsix_chat.config import (
     AuthSettings,
+    ConversationSettings,
     MemoryEmbeddingSettings,
     MemoryLlmSettings,
     MemorySettings,
     MillSettings,
+    RefDocsSettings,
     Settings,
 )
 
@@ -60,6 +62,12 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "CONVERSATION_IDLE_RESET_SECONDS",
         "CONVERSATION_MAX_HISTORY_TURNS",
         "CONVERSATION_MAX_CONVERSATIONS",
+        "REFDOCS_ENABLED",
+        "REFDOCS_REPOS",
+        "REFDOCS_REF",
+        "REFDOCS_GITHUB_TOKEN",
+        "REFDOCS_BASE_URL",
+        "REFDOCS_TIMEOUT",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -557,4 +565,67 @@ def test_conversation_idle_invalid_raises(monkeypatch: pytest.MonkeyPatch) -> No
     monkeypatch.setenv("CONVERSATION_IDLE_RESET_SECONDS", "soon")
 
     with pytest.raises(ValueError, match="CONVERSATION_IDLE_RESET_SECONDS"):
+        Settings.from_env()
+
+
+# ---------------------------------------------------------------------------
+# Refdocs (reference-docs tool)
+# ---------------------------------------------------------------------------
+
+
+def test_refdocs_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Refdocs is off by default, with sensible defaults present."""
+    _wipe_env_vars(monkeypatch)
+
+    settings = Settings.from_env()
+
+    assert settings.refdocs.enabled is False
+    assert settings.refdocs.repos == []
+    assert settings.refdocs.ref == "main"
+    assert settings.refdocs.github_token == ""
+    assert settings.refdocs.base_url == "https://api.github.com"
+    assert settings.refdocs.timeout == 30.0
+
+
+def test_refdocs_enabled_without_repos_raises() -> None:
+    """Enabling refdocs without any repos is rejected."""
+    with pytest.raises(ValueError, match="refdocs.repos"):
+        Settings(refdocs=RefDocsSettings(enabled=True))
+
+
+def test_refdocs_enabled_with_repos_ok() -> None:
+    """Refdocs constructs once repos are present."""
+    settings = Settings(
+        refdocs=RefDocsSettings(enabled=True, repos=["org/board-workflow"])
+    )
+    assert settings.refdocs.enabled is True
+    assert settings.refdocs.repos == ["org/board-workflow"]
+
+
+def test_refdocs_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``REFDOCS_*`` env vars populate the nested refdocs settings."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("REFDOCS_ENABLED", "true")
+    monkeypatch.setenv("REFDOCS_REPOS", "org/repo-a, org/repo-b")
+    monkeypatch.setenv("REFDOCS_REF", "develop")
+    monkeypatch.setenv("REFDOCS_GITHUB_TOKEN", "ghp_test")
+    monkeypatch.setenv("REFDOCS_BASE_URL", "https://ghe.example.com/api/v3")
+    monkeypatch.setenv("REFDOCS_TIMEOUT", "15.5")
+
+    settings = Settings.from_env()
+
+    assert settings.refdocs.enabled is True
+    assert settings.refdocs.repos == ["org/repo-a", "org/repo-b"]
+    assert settings.refdocs.ref == "develop"
+    assert settings.refdocs.github_token == "ghp_test"  # pragma: allowlist secret
+    assert settings.refdocs.base_url == "https://ghe.example.com/api/v3"
+    assert settings.refdocs.timeout == 15.5
+
+
+def test_refdocs_timeout_invalid_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-numeric ``REFDOCS_TIMEOUT`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("REFDOCS_TIMEOUT", "slow")
+
+    with pytest.raises(ValueError, match="REFDOCS_TIMEOUT"):
         Settings.from_env()
