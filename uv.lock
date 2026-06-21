@@ -2818,6 +2818,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "asgi-correlation-id" },
+    { name = "httpx" },
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "robotsix-llmio" },
@@ -2846,7 +2847,6 @@ tracing = [
 
 [package.dev-dependencies]
 dev = [
-    { name = "httpx" },
     { name = "mypy" },
     { name = "pip-audit" },
     { name = "pre-commit" },
@@ -2864,6 +2864,7 @@ docs = [
 requires-dist = [
     { name = "asgi-correlation-id" },
     { name = "cognee", marker = "extra == 'memory'" },
+    { name = "httpx" },
     { name = "pydantic" },
     { name = "python-dotenv" },
     { name = "robotsix-agent-comm", marker = "extra == 'broker'", git = "https://github.com/damien-robotsix/robotsix-agent-comm.git?rev=main" },
@@ -2880,7 +2881,6 @@ provides-extras = ["claude-sdk", "openrouter", "tracing", "memory", "broker"]
 
 [package.metadata.requires-dev]
 dev = [
-    { name = "httpx" },
     { name = "mypy" },
     { name = "pip-audit" },
     { name = "pre-commit" },

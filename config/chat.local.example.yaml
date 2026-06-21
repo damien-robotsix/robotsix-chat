@@ -102,3 +102,18 @@ conversation:
                                    #   env: CONVERSATION_MAX_HISTORY_TURNS
   # max_conversations: 1000        # tracked clients (LRU-capped); bounds memory.
                                    #   Env override: CONVERSATION_MAX_CONVERSATIONS
+
+# Reference-docs tool — lets the agent read documentation from allowlisted
+# team GitHub repos on demand. Primarily used to consult the board-workflow
+# reference repo when deciding whether a ticket needs manual human action.
+# The tool is read-only and repos outside the allowlist are refused.
+refdocs:
+  enabled: false                   # env override: REFDOCS_ENABLED
+  # repos:                         # allowlist of owner/name repos; required when
+                                   #   enabled — put the board-workflow reference
+                                   #   repo here. Comma-separated in env:
+                                   #   REFDOCS_REPOS (e.g. org/repo1,org/repo2)
+  # ref: main                      # default git ref/branch; env: REFDOCS_REF
+  # github_token: ""               # PAT for private repos; env: REFDOCS_GITHUB_TOKEN
+  # base_url: https://api.github.com  # overridable for GHE; env: REFDOCS_BASE_URL
+  # timeout: 30.0                  # per-request HTTP seconds; env: REFDOCS_TIMEOUT

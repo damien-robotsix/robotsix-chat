@@ -91,6 +91,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "memory": "memory",
     "mill": "mill",
     "conversation": "conversation",
+    "refdocs": "refdocs",
 }
 
 
@@ -179,6 +180,36 @@ class MemorySettings(BaseModel):
     recall_search_type: str = "GRAPH_COMPLETION"
     llm: MemoryLlmSettings = Field(default_factory=MemoryLlmSettings)
     embedding: MemoryEmbeddingSettings = Field(default_factory=MemoryEmbeddingSettings)
+
+
+class RefDocsSettings(BaseModel):
+    """Read-only reference-docs tool for the agent.
+
+    Lets the agent fetch documentation from allowlisted GitHub repos on
+    demand. Primarily used to consult the board-workflow reference repo
+    when deciding whether a ticket needs manual human action. The tool is
+    strictly read-only, fetches are on-demand (no bulk ingestion), and only
+    repos in the *repos* allowlist are reachable.
+
+    Attributes:
+        enabled: Master switch. When ``False``, no refdocs tools are offered.
+        repos: Allowlist of ``owner/name`` GitHub repos the agent may read.
+            The board-workflow reference repo goes here. The tool refuses
+            any repo not in this list.
+        ref: Default git ref/branch to read from (``"main"``).
+        github_token: Optional PAT for private team repos; public repos work
+            without a token.
+        base_url: Overridable base URL for GitHub Enterprise.
+        timeout: Per-request HTTP timeout in seconds.
+
+    """
+
+    enabled: bool = False
+    repos: list[str] = Field(default_factory=list)
+    ref: str = "main"
+    github_token: str = ""
+    base_url: str = "https://api.github.com"
+    timeout: float = 30.0
 
 
 class MillSettings(BaseModel):
@@ -279,6 +310,7 @@ class Settings(BaseModel):
     memory: MemorySettings = Field(default_factory=MemorySettings)
     mill: MillSettings = Field(default_factory=MillSettings)
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)
+    refdocs: RefDocsSettings = Field(default_factory=RefDocsSettings)
 
     def model_post_init(self, __context: Any) -> None:
         """Validate fields that cannot be expressed via simple type annotations."""
@@ -325,6 +357,11 @@ class Settings(BaseModel):
                     "mill.broker_host must be set when mill is enabled — provide it "
                     "via MILL_BROKER_HOST or the config file"
                 )
+        if self.refdocs.enabled and not self.refdocs.repos:
+            raise ValueError(
+                "refdocs.repos must be non-empty when refdocs is enabled — "
+                "provide it via REFDOCS_REPOS or the `refdocs.repos` config field"
+            )
 
     # ------------------------------------------------------------------
     # Factories
@@ -402,7 +439,7 @@ class Settings(BaseModel):
         raw: dict[str, Any] = {
             k: v
             for k, v in flat.items()
-            if k not in ("auth", "memory", "mill", "conversation")
+            if k not in ("auth", "memory", "mill", "conversation", "refdocs")
         }
         auth_raw: dict[str, Any] = dict(flat.get("auth") or {})
 
@@ -466,6 +503,10 @@ class Settings(BaseModel):
         conversation_raw = _build_conversation_raw(flat.get("conversation"))
         if conversation_raw:
             raw["conversation"] = conversation_raw
+
+        refdocs_raw = _build_refdocs_raw(flat.get("refdocs"))
+        if refdocs_raw:
+            raw["refdocs"] = refdocs_raw
 
         return cls(**raw)
 
@@ -584,6 +625,44 @@ def _build_conversation_raw(yaml_conversation: Any) -> dict[str, Any]:
     env_int("max_conversations", "CONVERSATION_MAX_CONVERSATIONS")
 
     return conversation_raw
+
+
+def _build_refdocs_raw(yaml_refdocs: Any) -> dict[str, Any]:
+    """Overlay ``REFDOCS_*`` env vars onto the YAML ``refdocs`` subtree.
+
+    Returns a dict ready to parse into :class:`RefDocsSettings`, or empty
+    when nothing is set.
+    """
+    refdocs_raw: dict[str, Any] = dict(yaml_refdocs or {})
+
+    def env_set(field: str, env_name: str) -> None:
+        value = os.getenv(env_name)
+        if value is not None:
+            refdocs_raw[field] = value
+
+    enabled = os.getenv("REFDOCS_ENABLED")
+    if enabled is not None:
+        refdocs_raw["enabled"] = _parse_bool(enabled)
+    env_set("github_token", "REFDOCS_GITHUB_TOKEN")
+    env_set("ref", "REFDOCS_REF")
+    env_set("base_url", "REFDOCS_BASE_URL")
+
+    repos_raw = os.getenv("REFDOCS_REPOS")
+    if repos_raw is not None:
+        refdocs_raw["repos"] = [
+            repo.strip() for repo in repos_raw.split(",") if repo.strip()
+        ]
+
+    timeout_str = os.getenv("REFDOCS_TIMEOUT")
+    if timeout_str is not None:
+        try:
+            refdocs_raw["timeout"] = float(timeout_str)
+        except ValueError:
+            raise ValueError(
+                f"REFDOCS_TIMEOUT must be a number, got {timeout_str!r}"
+            ) from None
+
+    return refdocs_raw
 
 
 def _load_dotenv() -> None:
