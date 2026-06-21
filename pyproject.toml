@@ -131,6 +131,11 @@ extend_exclude = ["vulture_whitelist.py"]
 # the cognee bge-m3 tokenizer path; it is never imported from src/, so deptry's
 # DEP002 ("defined but not used") is expected and intentional.
 DEP002 = ["transformers"]
+# `pydantic_ai` is robotsix-llmio's agent framework: `handle.run` already returns
+# its result objects, and the agent builds a multi-turn `message_history` from
+# its message types. We consume it through llmio (never declare it directly), so
+# this transitive import (DEP003) is deliberate.
+DEP003 = ["pydantic_ai"]
 
 [tool.bandit]
 exclude_dirs = ["tests"]

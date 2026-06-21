@@ -57,6 +57,9 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "MILL_BOARD_MANAGER_ID",
         "MILL_REPO_ID",
         "MILL_TIMEOUT",
+        "CONVERSATION_IDLE_RESET_SECONDS",
+        "CONVERSATION_MAX_HISTORY_TURNS",
+        "CONVERSATION_MAX_CONVERSATIONS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -515,4 +518,43 @@ def test_mill_port_invalid_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MILL_BROKER_PORT", "https")
 
     with pytest.raises(ValueError, match="MILL_BROKER_PORT"):
+        Settings.from_env()
+
+
+# ---------------------------------------------------------------------------
+# Conversation settings
+# ---------------------------------------------------------------------------
+
+
+def test_conversation_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Conversation continuity defaults to a 30-minute idle reset."""
+    _wipe_env_vars(monkeypatch)
+
+    settings = Settings.from_env()
+
+    assert settings.conversation.idle_reset_seconds == 1800
+    assert settings.conversation.max_history_turns == 20
+    assert settings.conversation.max_conversations == 1000
+
+
+def test_conversation_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``CONVERSATION_*`` env vars populate the nested conversation settings."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("CONVERSATION_IDLE_RESET_SECONDS", "600")
+    monkeypatch.setenv("CONVERSATION_MAX_HISTORY_TURNS", "8")
+    monkeypatch.setenv("CONVERSATION_MAX_CONVERSATIONS", "50")
+
+    settings = Settings.from_env()
+
+    assert settings.conversation.idle_reset_seconds == 600
+    assert settings.conversation.max_history_turns == 8
+    assert settings.conversation.max_conversations == 50
+
+
+def test_conversation_idle_invalid_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-numeric ``CONVERSATION_IDLE_RESET_SECONDS`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("CONVERSATION_IDLE_RESET_SECONDS", "soon")
+
+    with pytest.raises(ValueError, match="CONVERSATION_IDLE_RESET_SECONDS"):
         Settings.from_env()

@@ -26,10 +26,21 @@ class MockAgent:
         self.tokens = tokens or ["Hello", " ", "world!"]
         self.error = error
         self.called_with: str | None = None
+        # Capture the conversation context the server passes, for assertions.
+        self.history: list[tuple[str, str]] | None = None
+        self.session_id: str | None = None
 
-    async def stream(self, message: str) -> AsyncIterator[str]:
+    async def stream(
+        self,
+        message: str,
+        *,
+        history: list[tuple[str, str]] | None = None,
+        session_id: str | None = None,
+    ) -> AsyncIterator[str]:
         """Yield tokens or raise the configured error."""
         self.called_with = message
+        self.history = history
+        self.session_id = session_id
         if self.error is not None:
             raise self.error
         for token in self.tokens:

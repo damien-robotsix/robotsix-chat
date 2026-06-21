@@ -9,6 +9,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.server import (
     SSE_CONTENT_TYPE,
     SSE_DONE_TYPE,
@@ -110,6 +111,58 @@ async def test_chat_endpoint_sends_done_at_end() -> None:
         response = await f.client.post("/chat", json={"message": "x"})
 
     assert response.text.rstrip("\r\n").endswith(f'data: {{"type": "{SSE_DONE_TYPE}"}}')
+
+
+# ---------------------------------------------------------------------------
+# Chat endpoint — multi-turn conversations
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_threads_history_for_client_id() -> None:
+    """A ``client_id`` threads consecutive messages into one conversation.
+
+    The prior turn is replayed and the trace session id stays the same.
+    """
+    async with mock_app(tokens=["Hello", " ", "world!"]) as f:
+        await f.client.post(
+            "/chat", json={"message": "first", "client_id": "browser-1"}
+        )
+        first_session = f.agent.session_id
+        assert f.agent.history == []  # the opening message has no history
+
+        await f.client.post(
+            "/chat", json={"message": "second", "client_id": "browser-1"}
+        )
+        # The follow-up sees the first exchange replayed, under the same session.
+        assert f.agent.history == [("first", "Hello world!")]
+        assert f.agent.session_id == first_session
+        assert first_session  # a real, non-empty session id
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_without_client_id_is_stateless() -> None:
+    """No ``client_id`` threads no history, but still assigns a trace session.
+
+    A per-request session id is assigned so spans group sensibly.
+    """
+    async with mock_app(tokens=["ok"]) as f:
+        await f.client.post("/chat", json={"message": "hi"})
+
+    assert f.agent.history is None
+    assert f.agent.session_id
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_invalid_client_id() -> None:
+    """A non-string ``client_id`` is rejected with 400."""
+    async with mock_app() as f:
+        response = await f.client.post(
+            "/chat", json={"message": "hi", "client_id": 123}
+        )
+
+    assert response.status_code == 400
+    assert "error" in response.json()
 
 
 # ---------------------------------------------------------------------------
@@ -272,6 +325,10 @@ async def test_run_server_from_config_creates_agent_from_settings(
         assert isinstance(passed_agent, LlmioChatAgent)
         assert passed_agent._model_level == 3
         assert passed_agent._instruction == "You are a helpful assistant."
+        # A conversation store is built from settings and forwarded; assert the
+        # rest of the server options explicitly.
+        conversation_store = call_args[1].pop("conversation_store")
+        assert isinstance(conversation_store, ConversationStore)
         assert call_args[1] == {
             "host": "127.0.0.1",
             "port": 8080,

@@ -89,3 +89,16 @@ mill:
   # board_manager_id: board-manager-robotsix-mill  # recipient; env: MILL_BOARD_MANAGER_ID
   # repo_id: ""                    # empty → board manager picks the repo; env: MILL_REPO_ID
   # timeout: 240                   # per-request seconds; env: MILL_TIMEOUT
+
+# Multi-turn conversation continuity for the browser chat. The server keys
+# conversations by a per-browser id (sent automatically by the UI) and replays
+# recent turns to the agent, grouping a conversation's traces under one session.
+# After the idle window a fresh conversation starts (new trace, empty history),
+# matching how an abandoned-then-resumed chat should behave.
+conversation:
+  # idle_reset_seconds: 1800       # start a new conversation after this idle gap
+                                   #   (30 min); env: CONVERSATION_IDLE_RESET_SECONDS
+  # max_history_turns: 20          # recent turns replayed per conversation;
+                                   #   env: CONVERSATION_MAX_HISTORY_TURNS
+  # max_conversations: 1000        # tracked clients (LRU-capped); bounds memory.
+                                   #   Env override: CONVERSATION_MAX_CONVERSATIONS

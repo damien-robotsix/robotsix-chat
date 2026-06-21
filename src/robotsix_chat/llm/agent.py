@@ -24,8 +24,9 @@ wired via this package's ``claude-sdk`` / ``openrouter`` extras.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 from robotsix_llmio.config import create_model
@@ -33,6 +34,53 @@ from robotsix_llmio.config import create_model
 from robotsix_chat.memory import ChatMemory, NullMemory
 
 logger = logging.getLogger(__name__)
+
+# A prior conversation turn replayed to the agent: ``(user, assistant)``.
+Turn = tuple[str, str]
+
+
+def _build_message_history(history: list[Turn] | None) -> list[Any] | None:
+    """Convert ``(user, assistant)`` turns into a pydantic-ai message history.
+
+    Returns ``None`` for empty history (so callers pass nothing through). The
+    pydantic-ai message types are imported lazily — llmio is built on
+    pydantic-ai and ``handle.run`` already returns its result objects, but
+    importing them here keeps the dependency off the module import path.
+    """
+    if not history:
+        return None
+    from pydantic_ai.messages import (
+        ModelRequest,
+        ModelResponse,
+        TextPart,
+        UserPromptPart,
+    )
+
+    messages: list[Any] = []
+    for user_message, assistant_reply in history:
+        messages.append(ModelRequest(parts=[UserPromptPart(content=user_message)]))
+        messages.append(ModelResponse(parts=[TextPart(content=assistant_reply)]))
+    return messages
+
+
+@contextlib.contextmanager
+def _trace_session(session_id: str | None) -> Iterator[None]:
+    """Group the enclosed agent run under *session_id* in Langfuse.
+
+    A no-op when *session_id* is falsy or llmio's tracing extra is absent, so
+    callers can wrap unconditionally.
+    """
+    if not session_id:
+        yield
+        return
+    try:
+        from robotsix_llmio.core.tracing import langfuse_session
+    except ImportError:
+        yield
+        return
+    with langfuse_session(session_id):
+        yield
+
 
 # Header for the recalled-memory block injected into the system prompt.
 _MEMORY_PROMPT_HEADER = (
@@ -88,8 +136,20 @@ class LlmioChatAgent:
         # Hold references to in-flight background writes so they aren't GC'd.
         self._write_tasks: set[asyncio.Task[None]] = set()
 
-    async def stream(self, message: str) -> AsyncIterator[str]:
+    async def stream(
+        self,
+        message: str,
+        *,
+        history: list[Turn] | None = None,
+        session_id: str | None = None,
+    ) -> AsyncIterator[str]:
         """Yield the assistant's reply to *message* as a single block.
+
+        *history* is the prior ``(user, assistant)`` turns of the current
+        conversation, replayed to the agent so it has multi-turn context.
+        *session_id* groups this run's trace spans under one conversation in
+        Langfuse (a fresh id starts a new trace). Both are optional — with
+        neither, the agent behaves as a single stateless query.
 
         Raises on backend errors — the chat server turns that into an SSE
         ``error`` frame.
@@ -117,8 +177,10 @@ class LlmioChatAgent:
             # provided tools (e.g. the mill consult tool) are callable.
             builtin_tools=False,
         )
+        message_history = _build_message_history(history)
         try:
-            result = await handle.run(message)
+            with _trace_session(session_id):
+                result = await handle.run(message, message_history=message_history)
         finally:
             handle.close()
 
