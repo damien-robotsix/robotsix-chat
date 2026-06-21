@@ -35,6 +35,13 @@ classifiers = [
     "Typing :: Typed",
 ]
 
+[project.urls]
+Homepage = "https://github.com/damien-robotsix/robotsix-chat"
+Repository = "https://github.com/damien-robotsix/robotsix-chat"
+Documentation = "https://damien-robotsix.github.io/robotsix-chat"
+Issues = "https://github.com/damien-robotsix/robotsix-chat/issues"
+Changelog = "https://github.com/damien-robotsix/robotsix-chat/blob/main/CHANGELOG.md"
+
 [project.optional-dependencies]
 # Per-transport backends, obtained THROUGH robotsix-llmio's own extras so the
 # stack owns those deps in one place. The transport is selected by
