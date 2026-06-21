@@ -12,6 +12,7 @@ license = { text = "MIT" }
 authors = [{ name = "Damien Robotsix", email = "damien.robotsix@gmail.com" }]
 dependencies = [
     "asgi-correlation-id",
+    "httpx",
     "pydantic",
     "python-dotenv",
     "uvicorn",
@@ -71,7 +72,6 @@ robotsix-chat = "robotsix_chat.chat.server:run_server_from_config"
 
 [dependency-groups]
 dev = [
-    "httpx",
     "mypy",
     "pip-audit",
     "pre-commit",
