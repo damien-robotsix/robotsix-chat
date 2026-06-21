@@ -48,7 +48,7 @@ Changelog = "https://github.com/damien-robotsix/robotsix-chat/blob/main/CHANGELO
 #
 # claude-sdk: Claude Agent SDK — subscription auth via a logged-in `claude` CLI
 # (no API key), needs Node.js + the `claude` CLI at runtime. (model_level 3)
-claude-sdk = ["robotsix-llmio[claude_sdk]"]
+claude-sdk = ["robotsix-llmio[claude-sdk]"]
 # openrouter: OpenRouter (deepseek) — needs `llmio.api_key`. (model_level 1-2)
 openrouter = ["robotsix-llmio[openrouter-deepseek]"]
 # tracing: Langfuse observability — exports LLM call traces and enables
@@ -90,7 +90,7 @@ packages = ["src/robotsix_chat"]
 
 [tool.uv.sources]
 robotsix-yaml-config = { git = "https://github.com/damien-robotsix/robotsix-yaml-config.git", rev = "main" }
-robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "main" }
+robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "596f52f7c9a1b151608b8cd1a04f5000d1a6fa8e" }
 robotsix-agent-comm = { git = "https://github.com/damien-robotsix/robotsix-agent-comm.git", rev = "main" }
 
 [tool.ruff]
