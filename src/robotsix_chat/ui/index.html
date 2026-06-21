@@ -277,6 +277,36 @@
 
   serverUrlInput.value = getServerUrl();
 
+  // ---- Conversation client id (localStorage-backed) --------------------
+  // A stable per-browser id sent with every message so the server can thread
+  // consecutive messages into one conversation (and reset to a new one after
+  // it's been idle). Persisted so a page reload continues the conversation.
+  var CLIENT_ID_KEY = "{{ PROJECT_TITLE }}-client-id";
+
+  function randomId() {
+    try {
+      if (window.crypto && window.crypto.randomUUID) {
+        return window.crypto.randomUUID();
+      }
+    } catch (_) {}
+    return "c-" + Date.now().toString(36) + "-" +
+      Math.random().toString(36).slice(2, 10);
+  }
+
+  function getClientId() {
+    try {
+      var id = localStorage.getItem(CLIENT_ID_KEY);
+      if (!id) { id = randomId(); localStorage.setItem(CLIENT_ID_KEY, id); }
+      return id;
+    } catch (_) {
+      // Private mode / storage disabled — fall back to a per-session id so the
+      // request still works (continuity just won't survive a reload).
+      return randomId();
+    }
+  }
+
+  var clientId = getClientId();
+
   // ---- Helpers ---------------------------------------------------------
   function scrollToBottom() {
     chatEl.scrollTop = chatEl.scrollHeight;
@@ -475,7 +505,7 @@
     fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: message })
+      body: JSON.stringify({ message: message, client_id: clientId })
     }).then(function (response) {
       if (!response.ok) {
         // Non-2xx — try to read an error body, else show status.

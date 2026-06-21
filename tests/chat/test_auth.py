@@ -15,7 +15,13 @@ from tests.conftest import http_client
 class _MockAgent:
     """Minimal :class:`ChatAgent` yielding a single token."""
 
-    async def stream(self, message: str) -> AsyncIterator[str]:
+    async def stream(
+        self,
+        message: str,
+        *,
+        history: list[tuple[str, str]] | None = None,
+        session_id: str | None = None,
+    ) -> AsyncIterator[str]:
         yield "ok"
 
 

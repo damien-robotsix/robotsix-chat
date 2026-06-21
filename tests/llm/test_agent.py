@@ -32,11 +32,15 @@ def _patched_create_model(output: str = "hi there") -> tuple[MagicMock, MagicMoc
     resolves to a result whose ``.output`` is *output*."""
     handle = MagicMock()
 
-    async def fake_run(message: str) -> MagicMock:
+    async def fake_run(message: str, *, message_history: object = None) -> MagicMock:
+        handle.run_calls.append(
+            {"message": message, "message_history": message_history}
+        )
         result = MagicMock()
         result.output = output
         return result
 
+    handle.run_calls = []
     handle.run = fake_run
     handle.close = MagicMock()
 
@@ -117,7 +121,7 @@ async def test_handle_closed_on_error() -> None:
     """If the underlying run raises, the handle is still closed."""
     handle = MagicMock()
 
-    async def boom(message: str) -> None:
+    async def boom(message: str, *, message_history: object = None) -> None:
         raise RuntimeError("backend exploded")
 
     handle.run = boom
@@ -203,3 +207,71 @@ async def test_empty_reply_not_persisted() -> None:
 
     assert chunks == []
     assert memory.remembered == []
+
+
+# ---------------------------------------------------------------------------
+# Conversation history & trace session
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_history_passed_as_message_history() -> None:
+    """Prior turns are rendered into a pydantic-ai message history for the run."""
+    from pydantic_ai.messages import ModelRequest, ModelResponse
+
+    create_model, handle = _patched_create_model("next reply")
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        _ = [
+            c
+            async for c in agent.stream(
+                "third", history=[("first", "1st reply"), ("second", "2nd reply")]
+            )
+        ]
+
+    message_history = handle.run_calls[0]["message_history"]
+    # Two turns → request/response per turn, in order.
+    assert [type(m) for m in message_history] == [
+        ModelRequest,
+        ModelResponse,
+        ModelRequest,
+        ModelResponse,
+    ]
+
+
+@pytest.mark.asyncio
+async def test_no_history_passes_none() -> None:
+    """With no prior turns, message_history is None (a plain single query)."""
+    create_model, handle = _patched_create_model("reply")
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        _ = [c async for c in agent.stream("hi")]
+
+    assert handle.run_calls[0]["message_history"] is None
+
+
+@pytest.mark.asyncio
+async def test_session_id_wraps_run_in_langfuse_session() -> None:
+    """When a session id is given, the run executes inside langfuse_session."""
+    create_model, _ = _patched_create_model("reply")
+    seen: list[str] = []
+
+    import contextlib
+
+    @contextlib.contextmanager
+    def fake_session(session_id: str):  # type: ignore[no-untyped-def]
+        seen.append(session_id)
+        yield
+
+    with (
+        patch("robotsix_chat.llm.agent.create_model", create_model),
+        patch(
+            "robotsix_llmio.core.tracing.langfuse_session", fake_session, create=True
+        ),
+    ):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        _ = [c async for c in agent.stream("hi", session_id="sess-123")]
+
+    assert seen == ["sess-123"]

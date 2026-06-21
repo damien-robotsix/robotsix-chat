@@ -87,6 +87,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "auth": "auth",
     "memory": "memory",
     "mill": "mill",
+    "conversation": "conversation",
 }
 
 
@@ -208,6 +209,29 @@ class MillSettings(BaseModel):
     timeout: float = 240.0
 
 
+class ConversationSettings(BaseModel):
+    """Multi-turn conversation continuity for the browser chat.
+
+    The server keys conversations by a per-browser ``client_id`` (sent with each
+    message). Messages within ``idle_reset_seconds`` of the previous one share a
+    conversation: the prior turns are fed back to the agent and all spans are
+    grouped under one trace session. After that idle window a fresh conversation
+    starts — a new trace session with empty history.
+
+    Attributes:
+        idle_reset_seconds: Idle gap (seconds) after which the next message
+            starts a new conversation. Default ``1800`` (30 minutes).
+        max_history_turns: Most recent user/assistant turns kept per
+            conversation and replayed to the agent (bounds prompt size).
+        max_conversations: Maximum number of distinct clients tracked at once
+            (LRU-evicted); bounds the in-memory store.
+    """
+
+    idle_reset_seconds: int = 1800
+    max_history_turns: int = 20
+    max_conversations: int = 1000
+
+
 class Settings(BaseModel):
     """Application settings, resolved from defaults → YAML → environment.
 
@@ -246,6 +270,7 @@ class Settings(BaseModel):
     auth: AuthSettings = Field(default_factory=AuthSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     mill: MillSettings = Field(default_factory=MillSettings)
+    conversation: ConversationSettings = Field(default_factory=ConversationSettings)
 
     def model_post_init(self, __context: Any) -> None:
         """Validate fields that cannot be expressed via simple type annotations."""
@@ -367,7 +392,9 @@ class Settings(BaseModel):
     def _build(cls, flat: dict[str, Any]) -> Settings:
         """Overlay environment variables onto *flat* YAML values and build."""
         raw: dict[str, Any] = {
-            k: v for k, v in flat.items() if k not in ("auth", "memory", "mill")
+            k: v
+            for k, v in flat.items()
+            if k not in ("auth", "memory", "mill", "conversation")
         }
         auth_raw: dict[str, Any] = dict(flat.get("auth") or {})
 
@@ -427,6 +454,10 @@ class Settings(BaseModel):
         mill_raw = _build_mill_raw(flat.get("mill"))
         if mill_raw:
             raw["mill"] = mill_raw
+
+        conversation_raw = _build_conversation_raw(flat.get("conversation"))
+        if conversation_raw:
+            raw["conversation"] = conversation_raw
 
         return cls(**raw)
 
@@ -521,6 +552,32 @@ def _build_mill_raw(yaml_mill: Any) -> dict[str, Any]:
             ) from None
 
     return mill_raw
+
+
+def _build_conversation_raw(yaml_conversation: Any) -> dict[str, Any]:
+    """Overlay ``CONVERSATION_*`` env vars onto the YAML ``conversation`` subtree.
+
+    Returns a dict ready to parse into :class:`ConversationSettings`, or empty
+    when nothing is set.
+    """
+    conversation_raw: dict[str, Any] = dict(yaml_conversation or {})
+
+    def env_int(field: str, env_name: str) -> None:
+        value = os.getenv(env_name)
+        if value is None:
+            return
+        try:
+            conversation_raw[field] = int(value)
+        except ValueError:
+            raise ValueError(
+                f"{env_name} must be an integer, got {value!r}"
+            ) from None
+
+    env_int("idle_reset_seconds", "CONVERSATION_IDLE_RESET_SECONDS")
+    env_int("max_history_turns", "CONVERSATION_MAX_HISTORY_TURNS")
+    env_int("max_conversations", "CONVERSATION_MAX_CONVERSATIONS")
+
+    return conversation_raw
 
 
 def _load_dotenv() -> None:

@@ -25,6 +25,7 @@ from starlette.routing import Route
 
 from robotsix_chat import PROJECT_TITLE
 from robotsix_chat.chat.auth import BasicAuthConfig, BasicAuthMiddleware
+from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.config import Settings, level_needs_api_key
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.memory import build_memory
@@ -63,10 +64,21 @@ class ChatAgent(Protocol):
     ``AsyncIterator[str]`` satisfies this protocol — no subclassing
     required.  (An ``async def`` generator method naturally returns an
     async iterator, so real implementations just write ``async def
-    stream(self, message: str) -> AsyncIterator[str]:`` with ``yield``.)
+    stream(self, message: str, *, history=None, session_id=None) ->
+    AsyncIterator[str]:`` with ``yield``.)
+
+    *history* (prior ``(user, assistant)`` turns) and *session_id* (trace
+    grouping) are optional keyword arguments the server supplies for multi-turn
+    conversations; an agent free to ignore them stays a stateless single query.
     """
 
-    def stream(self, message: str) -> AsyncIterator[str]:
+    def stream(
+        self,
+        message: str,
+        *,
+        history: list[tuple[str, str]] | None = None,
+        session_id: str | None = None,
+    ) -> AsyncIterator[str]:
         """Yield tokens from the LLM in response to ``message``."""
         ...
 
@@ -99,6 +111,7 @@ async def chat_endpoint(
 ) -> JSONResponse | StreamingResponse:
     """Accept a chat message and stream the agent's response as SSE."""
     agent: ChatAgent = request.app.state.agent
+    store: ConversationStore = request.app.state.conversation_store
 
     # -- parse & validate JSON body ---------------------------------------
     try:
@@ -115,6 +128,20 @@ async def chat_endpoint(
             {"error": "missing or invalid 'message' field"}, status_code=400
         )
 
+    # Optional per-browser conversation key. When present, the message joins the
+    # client's ongoing conversation (recent turns replayed, spans grouped under
+    # one trace session) unless it has been idle long enough to reset. Without
+    # it, each request is an independent, untracked single query.
+    client_id = body.get("client_id")
+    if client_id is not None and not isinstance(client_id, str):
+        return JSONResponse(
+            {"error": "invalid 'client_id' field"}, status_code=400
+        )
+    if client_id:
+        session_id, history = store.begin(client_id)
+    else:
+        session_id, history = store.new_session_id(), None
+
     # -- SSE async generator ----------------------------------------------
 
     async def sse_stream() -> AsyncIterator[bytes]:
@@ -124,9 +151,17 @@ async def chat_endpoint(
         queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
 
         async def _produce() -> None:
+            reply_parts: list[str] = []
             try:
-                async for token in agent.stream(message):
+                async for token in agent.stream(
+                    message, history=history, session_id=session_id
+                ):
+                    reply_parts.append(token)
                     await queue.put((SSE_TOKEN_TYPE, token))
+                # Persist the completed exchange so the next message in this
+                # conversation sees it (only on a clean finish, not on error).
+                if client_id:
+                    store.record(client_id, message, "".join(reply_parts))
                 await queue.put((SSE_DONE_TYPE, None))
             except asyncio.CancelledError:
                 raise
@@ -195,6 +230,7 @@ def create_app(
     cors_allow_origins: list[str] | None = None,
     auth: BasicAuthConfig | None = None,
     correlation_id_header: str = "X-Request-ID",
+    conversation_store: ConversationStore | None = None,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -214,6 +250,9 @@ def create_app(
             leaves the server open.
         correlation_id_header: HTTP header name for the correlation /
             request-id. Default ``X-Request-ID``.
+        conversation_store: Tracks per-client multi-turn conversation history
+            and trace sessions. ``None`` (default) builds one with default
+            settings (30-minute idle reset).
     """
     routes = [
         Route("/health", health_endpoint, methods=["GET"]),
@@ -249,6 +288,7 @@ def create_app(
         },
     )
     app.state.agent = agent
+    app.state.conversation_store = conversation_store or ConversationStore()
     return app
 
 
@@ -261,6 +301,7 @@ def run_server(
     cors_allow_origins: list[str] | None = None,
     auth: BasicAuthConfig | None = None,
     correlation_id_header: str = "X-Request-ID",
+    conversation_store: ConversationStore | None = None,
 ) -> None:
     """Start the chat SSE server on ``host:port``.
 
@@ -275,6 +316,7 @@ def run_server(
         cors_allow_origins=cors_allow_origins,
         auth=auth,
         correlation_id_header=correlation_id_header,
+        conversation_store=conversation_store,
     )
     uvicorn.run(app, host=host, port=port)
 
@@ -394,6 +436,11 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         if settings.auth.enabled
         else None
     )
+    conversation_store = ConversationStore(
+        idle_reset_seconds=settings.conversation.idle_reset_seconds,
+        max_history_turns=settings.conversation.max_history_turns,
+        max_conversations=settings.conversation.max_conversations,
+    )
     run_server(
         agent,
         host=settings.server_host,
@@ -401,4 +448,5 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         cors_allow_origins=settings.cors_allow_origins,
         auth=auth,
         correlation_id_header=settings.correlation_id_header,
+        conversation_store=conversation_store,
     )
