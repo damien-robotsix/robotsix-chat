@@ -81,17 +81,20 @@ async def health_endpoint(request: Request) -> JSONResponse:
     return JSONResponse({"status": "ok"})
 
 
-def _load_ui_html() -> str:
+def _load_ui_html(idle_timeout_minutes: float) -> str:
     """Read the bundled browser UI (``ui/index.html``) and fill placeholders."""
     raw = (resources.files("robotsix_chat") / "ui" / "index.html").read_text(
         encoding="utf-8"
     )
-    return raw.replace("{{ PROJECT_TITLE }}", PROJECT_TITLE)
+    return raw.replace("{{ PROJECT_TITLE }}", PROJECT_TITLE).replace(
+        "{{ IDLE_TIMEOUT_MINUTES }}", str(idle_timeout_minutes)
+    )
 
 
 async def ui_endpoint(request: Request) -> HTMLResponse:
     """Serve the self-contained browser chat UI at ``GET /``."""
-    return HTMLResponse(_load_ui_html())
+    idle_timeout_minutes: float = request.app.state.idle_timeout_minutes
+    return HTMLResponse(_load_ui_html(idle_timeout_minutes))
 
 
 async def chat_endpoint(
@@ -195,6 +198,7 @@ def create_app(
     cors_allow_origins: list[str] | None = None,
     auth: BasicAuthConfig | None = None,
     correlation_id_header: str = "X-Request-ID",
+    idle_timeout_minutes: float = 10.0,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -214,6 +218,9 @@ def create_app(
             leaves the server open.
         correlation_id_header: HTTP header name for the correlation /
             request-id. Default ``X-Request-ID``.
+        idle_timeout_minutes: Minutes of browser inactivity before the UI
+            auto-starts a new conversation. Set to ``0`` to disable.
+            Default ``10``.
 
     """
     routes = [
@@ -250,6 +257,7 @@ def create_app(
         },
     )
     app.state.agent = agent
+    app.state.idle_timeout_minutes = idle_timeout_minutes
     return app
 
 
@@ -262,6 +270,7 @@ def run_server(
     cors_allow_origins: list[str] | None = None,
     auth: BasicAuthConfig | None = None,
     correlation_id_header: str = "X-Request-ID",
+    idle_timeout_minutes: float = 10.0,
 ) -> None:
     """Start the chat SSE server on ``host:port``.
 
@@ -276,6 +285,7 @@ def run_server(
         cors_allow_origins=cors_allow_origins,
         auth=auth,
         correlation_id_header=correlation_id_header,
+        idle_timeout_minutes=idle_timeout_minutes,
     )
     uvicorn.run(app, host=host, port=port)
 
@@ -402,4 +412,5 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         cors_allow_origins=settings.cors_allow_origins,
         auth=auth,
         correlation_id_header=settings.correlation_id_header,
+        idle_timeout_minutes=settings.idle_timeout_minutes,
     )

@@ -56,7 +56,9 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "MILL_AGENT_ID",
         "MILL_BOARD_MANAGER_ID",
         "MILL_REPO_ID",
+        "MILL_REPO_ID",
         "MILL_TIMEOUT",
+        "SERVER_IDLE_TIMEOUT_MINUTES",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -515,4 +517,75 @@ def test_mill_port_invalid_raises(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("MILL_BROKER_PORT", "https")
 
     with pytest.raises(ValueError, match="MILL_BROKER_PORT"):
+        Settings.from_env()
+
+
+# ---------------------------------------------------------------------------
+# Idle timeout
+# ---------------------------------------------------------------------------
+
+
+def test_idle_timeout_defaults_to_10() -> None:
+    """``idle_timeout_minutes`` defaults to ``10.0``."""
+    settings = Settings()
+    assert settings.idle_timeout_minutes == 10.0
+
+
+def test_idle_timeout_negative_raises() -> None:
+    """A negative ``idle_timeout_minutes`` raises ``ValueError``."""
+    with pytest.raises(ValueError, match="idle_timeout_minutes"):
+        Settings(idle_timeout_minutes=-1.0)
+
+
+def test_idle_timeout_zero_accepted() -> None:
+    """``idle_timeout_minutes=0`` is accepted (disables the timer)."""
+    settings = Settings(idle_timeout_minutes=0)
+    assert settings.idle_timeout_minutes == 0
+
+
+def test_idle_timeout_from_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``server.idle_timeout_minutes`` is read from YAML."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text("server:\n  idle_timeout_minutes: 5\n")
+    monkeypatch.setenv("LLMIO_MODEL_LEVEL", "3")
+
+    settings = Settings.load(config_path=config_file)
+    assert settings.idle_timeout_minutes == 5.0
+
+
+def test_idle_timeout_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``SERVER_IDLE_TIMEOUT_MINUTES`` env var overrides the default."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("LLMIO_MODEL_LEVEL", "3")
+    monkeypatch.setenv("SERVER_IDLE_TIMEOUT_MINUTES", "2.5")
+
+    settings = Settings.from_env()
+    assert settings.idle_timeout_minutes == 2.5
+
+
+def test_idle_timeout_env_overrides_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``SERVER_IDLE_TIMEOUT_MINUTES`` env var overrides the YAML value."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text("server:\n  idle_timeout_minutes: 7\n")
+    monkeypatch.setenv("LLMIO_MODEL_LEVEL", "3")
+    monkeypatch.setenv("SERVER_IDLE_TIMEOUT_MINUTES", "3.0")
+
+    settings = Settings.load(config_path=config_file)
+    assert settings.idle_timeout_minutes == 3.0
+
+
+def test_idle_timeout_env_invalid_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-numeric ``SERVER_IDLE_TIMEOUT_MINUTES`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("SERVER_IDLE_TIMEOUT_MINUTES", "forever")
+
+    with pytest.raises(ValueError, match="SERVER_IDLE_TIMEOUT_MINUTES"):
         Settings.from_env()

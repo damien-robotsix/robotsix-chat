@@ -278,6 +278,7 @@ async def test_run_server_from_config_creates_agent_from_settings(
             "cors_allow_origins": [],
             "auth": None,
             "correlation_id_header": "X-Request-ID",
+            "idle_timeout_minutes": 10.0,
         }
 
 
@@ -433,3 +434,39 @@ async def test_custom_correlation_id_header_in_response() -> None:
 
     assert response.status_code == 200
     assert response.headers["X-Custom-ID"] == "11111111-1111-1111-1111-111111111111"
+
+
+# ---------------------------------------------------------------------------
+# Idle timeout — UI substitution
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ui_contains_default_idle_timeout() -> None:
+    """``GET /`` renders the default idle timeout (10) in the HTML."""
+    async with mock_app() as f:
+        response = await f.client.get("/")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "10" in body or "10.0" in body
+    assert "{{ IDLE_TIMEOUT_MINUTES }}" not in body
+
+
+@pytest.mark.asyncio
+async def test_ui_contains_configured_idle_timeout() -> None:
+    """``GET /`` renders the configured idle timeout substituted into the HTML."""
+    async with mock_app(idle_timeout_minutes=3.0) as f:
+        response = await f.client.get("/")
+
+    assert response.status_code == 200
+    body = response.text
+    assert "3.0" in body
+    assert "{{ IDLE_TIMEOUT_MINUTES }}" not in body
+
+
+@pytest.mark.asyncio
+async def test_ui_idle_timeout_stored_on_app_state() -> None:
+    """``create_app`` stores ``idle_timeout_minutes`` on ``app.state``."""
+    async with mock_app(idle_timeout_minutes=7.5) as f:
+        assert f.app.state.idle_timeout_minutes == 7.5

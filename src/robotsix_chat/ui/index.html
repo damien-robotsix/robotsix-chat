@@ -254,6 +254,32 @@
   var currentAssistantBubble = null;  // the <div> receiving tokens
   var typingIndicatorEl      = null;  // the animated dots element
 
+  // ---- Idle-timeout configuration --------------------------------------
+  var IDLE_TIMEOUT_MINUTES = parseFloat("{{ IDLE_TIMEOUT_MINUTES }}");
+  var IDLE_TIMEOUT_MS = (isFinite(IDLE_TIMEOUT_MINUTES) ? IDLE_TIMEOUT_MINUTES : 0) * 60000;
+  var _idleTimer = null;
+
+  // ---- New-conversation reset ------------------------------------------
+  function startNewConversation() {
+    // Remove all chat bubbles, typing indicator, and reset state.
+    while (chatEl.firstChild) {
+      chatEl.removeChild(chatEl.firstChild);
+    }
+    currentAssistantBubble = null;
+    typingIndicatorEl = null;
+    state = "idle";
+  }
+
+  function resetIdleTimer() {
+    if (_idleTimer !== null) {
+      clearTimeout(_idleTimer);
+      _idleTimer = null;
+    }
+    if (IDLE_TIMEOUT_MS > 0) {
+      _idleTimer = setTimeout(startNewConversation, IDLE_TIMEOUT_MS);
+    }
+  }
+
   // ---- Server URL (localStorage-backed) --------------------------------
   var LS_KEY = "{{ PROJECT_TITLE }}-server-url";
 
@@ -428,6 +454,7 @@
     showTypingIndicator();
     setInputEnabled(false);
     setConnectionStatus(true);
+    resetIdleTimer();
 
     state = "sending";
 
@@ -453,12 +480,14 @@
           setInputEnabled(true);
           setConnectionStatus(true);
           state = "idle";
+          resetIdleTimer();
         } else if (frame.type === "error") {
           hideTypingIndicator();
           finaliseAssistantBubble();
           setInputEnabled(true);
           showError(frame.message || "Server error");
           state = "error";
+          resetIdleTimer();
         }
       },
       error: function (err) {
@@ -520,6 +549,7 @@
   msgInput.addEventListener("input", function () {
     msgInput.style.height = "";
     msgInput.style.height = Math.min(msgInput.scrollHeight, 120) + "px";
+    resetIdleTimer();
   });
 
   // Settings toggle
@@ -543,6 +573,7 @@
 
   // ---- Initial state ---------------------------------------------------
   setConnectionStatus(true);  // optimistic green; turns red on first error
+  resetIdleTimer();
 })();
 </script>
 

@@ -87,6 +87,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "server.log_level": "log_level",
     "server.cors_allow_origins": "cors_allow_origins",
     "server.correlation_id_header": "correlation_id_header",
+    "server.idle_timeout_minutes": "idle_timeout_minutes",
     "auth": "auth",
     "memory": "memory",
     "mill": "mill",
@@ -238,6 +239,9 @@ class Settings(BaseModel):
             UI is hosted on a different origin than the server.
         correlation_id_header: HTTP header name used for the correlation /
             request-id (both inbound and outbound). Default ``X-Request-ID``.
+        idle_timeout_minutes: Minutes of browser inactivity before the UI
+            auto-starts a new conversation (clears the chat bubble list).
+            Default ``10``. Set to ``0`` to disable the timeout.
         auth: HTTP Basic Auth settings gating the UI and ``/chat``.
 
     """
@@ -250,6 +254,7 @@ class Settings(BaseModel):
     log_level: str = "INFO"
     cors_allow_origins: list[str] = Field(default_factory=list)
     correlation_id_header: str = "X-Request-ID"
+    idle_timeout_minutes: float = 10.0
     auth: AuthSettings = Field(default_factory=AuthSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     mill: MillSettings = Field(default_factory=MillSettings)
@@ -260,6 +265,10 @@ class Settings(BaseModel):
             raise ValueError(
                 f"llmio.model_level must be one of {sorted(_VALID_MODEL_LEVELS)}, "
                 f"got {self.llmio_model_level!r}"
+            )
+        if self.idle_timeout_minutes < 0:
+            raise ValueError(
+                f"idle_timeout_minutes must be >= 0, got {self.idle_timeout_minutes!r}"
             )
         # The keyless Claude SDK provider (level 3) needs no API key;
         # key-bearing providers (e.g. openrouter, levels 1-2) require one.
@@ -404,6 +413,15 @@ class Settings(BaseModel):
             except ValueError:
                 raise ValueError(
                     f"SERVER_PORT must be an integer, got {port_str!r}"
+                ) from None
+
+        timeout_str = os.getenv("SERVER_IDLE_TIMEOUT_MINUTES")
+        if timeout_str is not None:
+            try:
+                raw["idle_timeout_minutes"] = float(timeout_str)
+            except ValueError:
+                raise ValueError(
+                    f"SERVER_IDLE_TIMEOUT_MINUTES must be a number, got {timeout_str!r}"
                 ) from None
 
         cors_raw = os.getenv("CORS_ALLOW_ORIGINS")
