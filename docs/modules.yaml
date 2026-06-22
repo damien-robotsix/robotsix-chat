@@ -22,11 +22,16 @@ modules:
     paths:
       - src/robotsix_chat/__init__.py
       - src/robotsix_chat/py.typed
+      - tests/__init__.py
+      - tests/conftest.py
+      - tests/test_smoke.py
 
   - id: robotsix_chat.config
     description: "Environment-based configuration via pydantic + python-dotenv."
     paths:
       - src/robotsix_chat/config.py
+      - tests/config/__init__.py
+      - tests/config/test_config.py
 
   - id: robotsix_chat.chat
     description: "Chat SSE server — HTTP + Server-Sent Events bridge for human-to-agent chat."
@@ -36,12 +41,18 @@ modules:
       - src/robotsix_chat/chat/conversation.py
       - src/robotsix_chat/chat/server.py
       - src/robotsix_chat/chat/tasks.py
+      - tests/chat/__init__.py
+      - tests/chat/test_auth.py
+      - tests/chat/test_conversation.py
+      - tests/chat/test_server.py
 
   - id: robotsix_chat.llm
     description: "LLM-powered agent — streaming wrapper around llmio.Agent."
     paths:
       - src/robotsix_chat/llm/__init__.py
       - src/robotsix_chat/llm/agent.py
+      - tests/llm/__init__.py
+      - tests/llm/test_agent.py
 
   - id: robotsix_chat.memory
     description: "Long-term memory backend — Cognee-based persistent storage for cross-conversation continuity."
@@ -49,13 +60,24 @@ modules:
       - src/robotsix_chat/memory/__init__.py
       - src/robotsix_chat/memory/base.py
       - src/robotsix_chat/memory/cognee.py
+      - tests/memory/__init__.py
+      - tests/memory/test_memory.py
 
   - id: robotsix_chat.mill
     description: "Mill/broker integration — consult robotsix-mill's board manager via the agent-comm broker."
     paths:
       - src/robotsix_chat/mill/__init__.py
       - src/robotsix_chat/mill/client.py
+      - tests/mill/__init__.py
+      - tests/mill/test_mill.py
 
+  - id: robotsix_chat.refdocs
+    description: "Read-only reference-docs tool — lets the chat agent read team repos."
+    paths:
+      - src/robotsix_chat/refdocs/__init__.py
+      - src/robotsix_chat/refdocs/client.py
+      - tests/refdocs/__init__.py
+      - tests/refdocs/test_refdocs.py
   - id: robotsix_chat.ui
     description: "Browser chat UI — self-contained HTML frontend served at /."
     paths:
