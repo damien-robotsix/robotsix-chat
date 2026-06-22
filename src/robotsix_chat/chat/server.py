@@ -27,6 +27,8 @@ from robotsix_chat import PROJECT_TITLE
 from robotsix_chat.calendar import build_calendar_tools
 from robotsix_chat.chat.auth import BasicAuthConfig, BasicAuthMiddleware
 from robotsix_chat.chat.conversation import ConversationStore
+from robotsix_chat.chat.events import EventBus
+from robotsix_chat.chat.tasks import TaskRegistry
 from robotsix_chat.config import Settings, level_needs_api_key
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.memory import build_memory
@@ -206,6 +208,43 @@ async def chat_endpoint(
     )
 
 
+async def events_endpoint(request: Request) -> JSONResponse | StreamingResponse:
+    """Open a persistent SSE channel for background-task lifecycle events.
+
+    ``GET /events?client_id=...`` opens a never-closing ``text/event-stream``
+    that delivers ``task_started``, ``task_completed``, and ``task_failed``
+    frames pushed via :class:`~robotsix_chat.chat.events.EventBus`.  Heartbeat
+    comments keep the connection alive during quiet periods.
+    """
+    client_id = request.query_params.get("client_id")
+    if not client_id:
+        return JSONResponse(
+            {"error": "client_id query parameter is required"}, status_code=400
+        )
+
+    async def event_stream() -> AsyncIterator[bytes]:
+        queue = request.app.state.event_bus.subscribe(client_id)
+        try:
+            yield _SSE_HEARTBEAT_FRAME  # first byte immediately
+            while True:
+                try:
+                    frame = await asyncio.wait_for(queue.get(), SSE_HEARTBEAT_INTERVAL)
+                except TimeoutError:
+                    if await request.is_disconnected():
+                        break
+                    yield _SSE_HEARTBEAT_FRAME
+                    continue
+                yield _sse_frame(frame)
+        finally:
+            request.app.state.event_bus.unsubscribe(client_id, queue)
+
+    return StreamingResponse(
+        event_stream(),
+        media_type=SSE_CONTENT_TYPE,
+        headers={"Content-Type": SSE_CONTENT_TYPE},
+    )
+
+
 # ---------------------------------------------------------------------------
 # Error handlers
 # ---------------------------------------------------------------------------
@@ -264,6 +303,7 @@ def create_app(
     routes = [
         Route("/health", health_endpoint, methods=["GET"]),
         Route("/chat", chat_endpoint, methods=["POST"]),
+        Route("/events", events_endpoint, methods=["GET"]),
     ]
     if serve_ui:
         routes.append(Route("/", ui_endpoint, methods=["GET"]))
@@ -297,6 +337,8 @@ def create_app(
     app.state.agent = agent
     app.state.conversation_store = conversation_store or ConversationStore()
     app.state.idle_timeout_minutes = idle_timeout_minutes
+    app.state.event_bus = EventBus()
+    app.state.task_registry = TaskRegistry(event_sink=app.state.event_bus)
     return app
 
 

@@ -1,0 +1,159 @@
+"""In-memory per-client SSE event bus for background-task lifecycle events.
+
+Provides frame builders, type constants, and a publish/subscribe registry so
+the chat server can push ``task_started`` / ``task_completed`` / ``task_failed``
+notification frames to connected browsers via a persistent SSE channel.
+
+This module must NOT import from ``tasks.py`` — the dependency is one-way:
+``tasks.py`` → ``events.py``, never a cycle.
+"""
+
+from __future__ import annotations
+
+import asyncio
+from collections import defaultdict
+from typing import Protocol
+
+# ---------------------------------------------------------------------------
+# SSE frame-type constants (mirror the SSE_*_TYPE naming convention in server.py)
+# ---------------------------------------------------------------------------
+
+SSE_TASK_STARTED_TYPE = "task_started"
+SSE_TASK_COMPLETED_TYPE = "task_completed"
+SSE_TASK_FAILED_TYPE = "task_failed"
+
+# ---------------------------------------------------------------------------
+# EventSink — structural Protocol for dependency injection
+# ---------------------------------------------------------------------------
+
+
+class EventSink(Protocol):
+    """Structural interface for publishing lifecycle frames to a client.
+
+    ``TaskRegistry`` depends on this protocol (dependency injection) so it
+    never imports the concrete :class:`EventBus` — any object with a matching
+    ``publish`` method satisfies the contract.
+    """
+
+    def publish(self, client_id: str, frame: dict[str, object]) -> None:
+        """Deliver *frame* to the owner of *client_id*."""
+        ...
+
+
+# ---------------------------------------------------------------------------
+# Frame builders
+#
+# Each takes plain primitive fields (NOT a ``TaskInfo``, to avoid importing
+# ``tasks``) and returns a dict of the exact shape documented in its docstring.
+# ---------------------------------------------------------------------------
+
+
+def task_started_frame(task_id: str, client_id: str, prompt: str) -> dict[str, object]:
+    """Build a ``task_started`` notification frame.
+
+    Returns a dict with shape::
+
+        {
+            "type": "task_started",
+            "task_id": <str>,
+            "client_id": <str>,
+            "prompt": <str>,
+            "status": "running",
+        }
+    """
+    return {
+        "type": SSE_TASK_STARTED_TYPE,
+        "task_id": task_id,
+        "client_id": client_id,
+        "prompt": prompt,
+        "status": "running",
+    }
+
+
+def task_completed_frame(task_id: str, result: str) -> dict[str, object]:
+    """Build a ``task_completed`` notification frame.
+
+    Returns a dict with shape::
+
+        {
+            "type": "task_completed",
+            "task_id": <str>,
+            "status": "completed",
+            "result": <str>,
+        }
+    """
+    return {
+        "type": SSE_TASK_COMPLETED_TYPE,
+        "task_id": task_id,
+        "status": "completed",
+        "result": result,
+    }
+
+
+def task_failed_frame(task_id: str, error: str) -> dict[str, object]:
+    """Build a ``task_failed`` notification frame.
+
+    Returns a dict with shape::
+
+        {
+            "type": "task_failed",
+            "task_id": <str>,
+            "status": "failed",
+            "error": <str>,
+        }
+    """
+    return {
+        "type": SSE_TASK_FAILED_TYPE,
+        "task_id": task_id,
+        "status": "failed",
+        "error": error,
+    }
+
+
+# ---------------------------------------------------------------------------
+# EventBus — per-client asyncio.Queue registry
+# ---------------------------------------------------------------------------
+
+
+class EventBus:
+    """Per-client :class:`asyncio.Queue` registry for SSE notification frames.
+
+    Callers publish frames to a ``client_id``; every queue currently subscribed
+    for that id receives the frame.  A browser that (re)connects re-syncs
+    current state via ``TaskRegistry.list_for_client(client_id)`` rather than
+    replaying a buffer — so when no queue is subscribed for a ``client_id``,
+    :meth:`publish` **silently drops the frame** (no buffering).  The in-memory
+    model favours bounded memory over guaranteed delivery.
+    """
+
+    def __init__(self) -> None:
+        """Create an empty bus with no subscribers."""
+        self._subscribers: defaultdict[str, set[asyncio.Queue[dict[str, object]]]] = (
+            defaultdict(set)
+        )
+
+    def subscribe(self, client_id: str) -> asyncio.Queue[dict[str, object]]:
+        """Create a fresh queue, add to *client_id*'s subscribers, return it."""
+        queue: asyncio.Queue[dict[str, object]] = asyncio.Queue()
+        self._subscribers[client_id].add(queue)
+        return queue
+
+    def unsubscribe(
+        self, client_id: str, queue: asyncio.Queue[dict[str, object]]
+    ) -> None:
+        """Discard *queue*; drop the *client_id* key when its set becomes empty."""
+        subscribers = self._subscribers.get(client_id)
+        if subscribers is None:
+            return
+        subscribers.discard(queue)
+        if not subscribers:
+            del self._subscribers[client_id]
+
+    def publish(self, client_id: str, frame: dict[str, object]) -> None:
+        """Put *frame* on every queue currently subscribed for *client_id*.
+
+        If no queue is subscribed, the frame is dropped silently — it is
+        **not** buffered.  See the class docstring for the rationale.
+        """
+        for queue in self._subscribers.get(client_id, ()):
+            queue.put_nowait(frame)

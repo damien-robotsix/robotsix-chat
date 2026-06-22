@@ -22,6 +22,13 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 
+from .events import (
+    EventSink,
+    task_completed_frame,
+    task_failed_frame,
+    task_started_frame,
+)
+
 
 class TaskStatus(StrEnum):
     """Lifecycle status of a background task."""
@@ -61,10 +68,16 @@ class TaskRegistry:
         *,
         clock: Callable[[], float] = time.monotonic,
         id_factory: Callable[[], str] | None = None,
+        event_sink: EventSink | None = None,
     ) -> None:
-        """Configure the clock and id factory used by the registry."""
+        """Configure the clock, id factory, and optional event sink.
+
+        When *event_sink* is provided, lifecycle frames are published on
+        :meth:`register`, :meth:`complete`, and :meth:`fail`.
+        """
         self._clock = clock
         self._id_factory = id_factory or (lambda: uuid.uuid4().hex)
+        self._event_sink = event_sink
         # task_id → TaskInfo (status + metadata snapshot).
         self._tasks: dict[str, TaskInfo] = {}
         # task_id → asyncio.Task (strong reference to prevent GC).
@@ -102,6 +115,10 @@ class TaskRegistry:
         self._running[task_id] = coro
         self._by_client[client_id].add(task_id)
         coro.add_done_callback(lambda _t: self._running.pop(task_id, None))
+        if self._event_sink is not None:
+            self._event_sink.publish(
+                client_id, task_started_frame(task_id, client_id, prompt)
+            )
         return task_id
 
     def get(self, task_id: str) -> TaskInfo | None:
@@ -119,6 +136,10 @@ class TaskRegistry:
         if info is not None:
             info.status = TaskStatus.COMPLETED
             info.result = result
+            if self._event_sink is not None:
+                self._event_sink.publish(
+                    info.client_id, task_completed_frame(task_id, result)
+                )
 
     def fail(self, task_id: str, error: str) -> None:
         """Mark *task_id* as failed with the given *error*."""
@@ -126,3 +147,7 @@ class TaskRegistry:
         if info is not None:
             info.status = TaskStatus.FAILED
             info.error = error
+            if self._event_sink is not None:
+                self._event_sink.publish(
+                    info.client_id, task_failed_frame(task_id, error)
+                )
