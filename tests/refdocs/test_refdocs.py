@@ -31,6 +31,25 @@ def _settings(**kw: Any) -> RefDocsSettings:
 # ---------------------------------------------------------------------------
 
 
+def _failing_client(exc: type[Exception], msg: str) -> type:
+    """Return an httpx.AsyncClient stand-in that raises *exc(msg)* on ``get``."""
+
+    class _FailingClient:
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
+        async def __aenter__(self) -> _FailingClient:
+            return self
+
+        async def __aexit__(self, *exc_obj: object) -> None:
+            return None
+
+        async def get(self, url: str, *, headers: dict[str, str]) -> None:
+            raise exc(msg)
+
+    return _FailingClient
+
+
 class _MockResponse:
     """Minimal httpx.Response stand-in for testing."""
 
@@ -227,20 +246,7 @@ async def test_read_file_network_error_returns_string(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A network/connection error is returned as a concise string, never raised."""
-
-    class _FailingClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _FailingClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(self, url: str, *, headers: dict[str, str]) -> None:
-            raise ConnectionError("connection refused")
-
+    _FailingClient = _failing_client(ConnectionError, "connection refused")
     monkeypatch.setattr(httpx, "AsyncClient", _FailingClient)
 
     client = RefDocsClient(_settings())
@@ -292,20 +298,7 @@ async def test_list_files_network_error_returns_string(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A network error in list_files is returned as a string, never raised."""
-
-    class _FailingClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _FailingClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(self, url: str, *, headers: dict[str, str]) -> None:
-            raise OSError("timeout")
-
+    _FailingClient = _failing_client(OSError, "timeout")
     monkeypatch.setattr(httpx, "AsyncClient", _FailingClient)
 
     client = RefDocsClient(_settings())
