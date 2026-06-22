@@ -21,6 +21,7 @@ jobs:
     runs-on: ubuntu-latest
     permissions:
       checks: read
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -29,7 +30,7 @@ jobs:
         uses: actions/github-script@v9
         with:
           script: |
-            const fn = require('./.github/scripts/verify-ci.js');
+            const { default: fn } = await import('./.github/scripts/verify-ci.js');
             await fn({github, context, core});
 
   docker:
