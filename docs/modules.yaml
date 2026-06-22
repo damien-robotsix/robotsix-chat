@@ -7,7 +7,7 @@
 #
 # Format:
 #   modules:
-#     - name: <dotted module name>
+#     - id: <dotted module name>
 #       description: <one-line summary from the module docstring>
 #       paths:
 #         - <repo-relative path>
@@ -17,45 +17,46 @@
 # unclassified orphans.
 
 modules:
-  - name: robotsix_chat
+  - id: robotsix_chat
     description: "Top-level package — browser + SSE chat server for an LLM agent."
     paths:
       - src/robotsix_chat/__init__.py
       - src/robotsix_chat/py.typed
 
-  - name: robotsix_chat.config
+  - id: robotsix_chat.config
     description: "Environment-based configuration via pydantic + python-dotenv."
     paths:
       - src/robotsix_chat/config.py
 
-  - name: robotsix_chat.chat
+  - id: robotsix_chat.chat
     description: "Chat SSE server — HTTP + Server-Sent Events bridge for human-to-agent chat."
     paths:
       - src/robotsix_chat/chat/__init__.py
       - src/robotsix_chat/chat/auth.py
       - src/robotsix_chat/chat/conversation.py
       - src/robotsix_chat/chat/server.py
+      - src/robotsix_chat/chat/tasks.py
 
-  - name: robotsix_chat.llm
+  - id: robotsix_chat.llm
     description: "LLM-powered agent — streaming wrapper around llmio.Agent."
     paths:
       - src/robotsix_chat/llm/__init__.py
       - src/robotsix_chat/llm/agent.py
 
-  - name: robotsix_chat.memory
+  - id: robotsix_chat.memory
     description: "Long-term memory backend — Cognee-based persistent storage for cross-conversation continuity."
     paths:
       - src/robotsix_chat/memory/__init__.py
       - src/robotsix_chat/memory/base.py
       - src/robotsix_chat/memory/cognee.py
 
-  - name: robotsix_chat.mill
+  - id: robotsix_chat.mill
     description: "Mill/broker integration — consult robotsix-mill's board manager via the agent-comm broker."
     paths:
       - src/robotsix_chat/mill/__init__.py
       - src/robotsix_chat/mill/client.py
 
-  - name: robotsix_chat.ui
+  - id: robotsix_chat.ui
     description: "Browser chat UI — self-contained HTML frontend served at /."
     paths:
       - src/robotsix_chat/ui/index.html
