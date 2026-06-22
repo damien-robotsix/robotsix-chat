@@ -104,6 +104,7 @@ per-file-ignores = {"src/robotsix_chat/chat/server.py" = ["S105"], "tests/**" = 
 [tool.mypy]
 python_version = "3.14"
 strict = true
+exclude = ["vulture_whitelist.py"]
 
 # cognee (the optional `memory` extra) ships no type information.
 [[tool.mypy.overrides]]
