@@ -463,6 +463,27 @@ async def test_ui_injects_message_queue() -> None:
 
 
 @pytest.mark.asyncio
+async def test_ui_renders_task_notifications() -> None:
+    """``GET /`` contains the task-notification UI wiring.
+
+    The served HTML must reference the ``/events`` SSE endpoint, the
+    ``openEventStream`` function that opens it, the three task-lifecycle
+    frame-type literals that the JS dispatcher switches on, and the
+    ``.bubble.notification`` CSS selector used for rendering.
+    """
+    async with mock_app() as f:
+        response = await f.client.get("/")
+
+    assert response.status_code == 200
+    assert '"/events"' in response.text
+    assert "openEventStream" in response.text
+    assert '"task_started"' in response.text
+    assert '"task_completed"' in response.text
+    assert '"task_failed"' in response.text
+    assert ".bubble.notification" in response.text
+
+
+@pytest.mark.asyncio
 async def test_ui_disabled_returns_404() -> None:
     """With ``serve_ui=False`` the root path is not registered."""
     async with mock_app(serve_ui=False) as f:

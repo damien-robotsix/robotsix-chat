@@ -129,6 +129,35 @@
   .bubble.user.queued { opacity: 0.55; }
   .bubble.user.queued::after { content: " (queued)"; font-style: italic; }
 
+  /* Task notification bubbles (from /events SSE channel) */
+  .bubble.notification {
+    align-self: center;
+    max-width: 90%;
+    font-size: 0.85rem;
+    text-align: center;
+    border-radius: 8px;
+    padding: 0.5rem 0.8rem;
+    opacity: 0.92;
+    background: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #334155;
+  }
+  .bubble.notification.started {
+    background: #1e293b;
+    color: #93c5fd;
+    border-color: #1d4ed8;
+  }
+  .bubble.notification.completed {
+    background: #1e293b;
+    color: #86efac;
+    border-color: #15803d;
+  }
+  .bubble.notification.failed {
+    background: #1e293b;
+    color: #fca5a5;
+    border-color: #b91c1c;
+  }
+
   /* ------------------------------------------------------------------ */
   /* Composer row                                                        */
   /* ------------------------------------------------------------------ */
@@ -403,6 +432,28 @@
     return div;
   }
 
+  function addNotificationBubble(frame) {
+    var div = document.createElement("div");
+    var typeClass = "";
+    var text = "";
+    if (frame.type === "task_started") {
+      typeClass = "started";
+      text = "[Task " + frame.task_id.slice(0, 8) + "] Started: " + frame.prompt;
+    } else if (frame.type === "task_completed") {
+      typeClass = "completed";
+      text = "[Task " + frame.task_id.slice(0, 8) + "] Completed: " + frame.result;
+    } else if (frame.type === "task_failed") {
+      typeClass = "failed";
+      text = "[Task " + frame.task_id.slice(0, 8) + "] Failed: " + frame.error;
+    } else {
+      return; // ignore unknown types
+    }
+    div.className = "bubble notification " + typeClass;
+    div.textContent = text;
+    chatEl.appendChild(div);
+    scrollToBottom();
+  }
+
   function createAssistantBubble() {
     if (currentAssistantBubble) return currentAssistantBubble;
     var div = document.createElement("div");
@@ -437,9 +488,13 @@
     function pump() {
       reader.read().then(function (result) {
         if (result.done) {
-          // Stream ended unexpectedly (server closed connection).  If we
-          // were still streaming (no "done" frame), treat as error.
-          if (state === "streaming") {
+          // Stream ended.  If we were still streaming (no "done" frame
+          // from /chat), treat as error.  Otherwise, if the controller
+          // provides an onDone callback (e.g. the /events channel), call
+          // it so the consumer can reconnect.
+          if (controller.onDone) {
+            controller.onDone();
+          } else if (state === "streaming") {
             controller.error(new Error("Server closed the connection unexpectedly"));
           }
           return;
@@ -478,6 +533,53 @@
     }
 
     return { start: pump };
+  }
+
+  // ---- Persistent /events SSE channel ----------------------------------
+  function openEventStream() {
+    var serverUrl = getServerUrl();
+    // Derive events URL: replace trailing /chat with /events.
+    var eventsUrl = serverUrl.replace(/\/chat$/, "/events") +
+                    "?client_id=" + encodeURIComponent(clientId);
+
+    var eventsController = {
+      onData: function (raw) {
+        var frame;
+        try { frame = JSON.parse(raw); }
+        catch (_) { return; /* skip unparseable frames */ }
+
+        if (frame.type === "task_started" ||
+            frame.type === "task_completed" ||
+            frame.type === "task_failed") {
+          addNotificationBubble(frame);
+        }
+        // ignore unknown types gracefully
+      },
+      onDone: function () {
+        // Stream closed by server — reconnect after a short delay.
+        setTimeout(openEventStream, 5000);
+      },
+      error: function (_err) {
+        // Network error or stream failure — reconnect after a short delay.
+        setTimeout(openEventStream, 5000);
+      }
+    };
+
+    fetch(eventsUrl, { method: "GET" }).then(function (response) {
+      if (!response.ok) {
+        setTimeout(openEventStream, 5000);
+        return;
+      }
+      var contentType = response.headers.get("content-type") || "";
+      if (contentType.indexOf("text/event-stream") === -1) {
+        setTimeout(openEventStream, 5000);
+        return;
+      }
+      var parser = processSSEStream(response.body, eventsController);
+      parser.start();
+    }).catch(function () {
+      setTimeout(openEventStream, 5000);
+    });
   }
 
   // ---- Send logic ------------------------------------------------------
@@ -637,6 +739,7 @@
   // ---- Initial state ---------------------------------------------------
   setConnectionStatus(true);  // optimistic green; turns red on first error
   resetIdleTimer();
+  openEventStream();          // open persistent /events channel for task notifications
 })();
 </script>
 
