@@ -324,11 +324,15 @@ async def test_run_server_from_config_creates_agent_from_settings(
         passed_agent = call_args[0][0]
         assert isinstance(passed_agent, LlmioChatAgent)
         assert passed_agent._model_level == 3
-        assert passed_agent._instruction == "You are a helpful assistant."
+        assert passed_agent._instruction.startswith("You are a helpful assistant.")
         # A conversation store is built from settings and forwarded; assert the
         # rest of the server options explicitly.
         conversation_store = call_args[1].pop("conversation_store")
         assert isinstance(conversation_store, ConversationStore)
+        task_registry = call_args[1].pop("task_registry")
+        from robotsix_chat.chat.tasks import TaskRegistry
+
+        assert isinstance(task_registry, TaskRegistry)
         assert call_args[1] == {
             "host": "127.0.0.1",
             "port": 8080,

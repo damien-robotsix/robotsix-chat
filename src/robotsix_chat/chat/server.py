@@ -13,7 +13,7 @@ import logging
 import logging.config
 from collections.abc import AsyncIterator
 from importlib import resources
-from typing import Protocol
+from typing import TYPE_CHECKING, Any, Protocol
 
 from asgi_correlation_id import CorrelationIdMiddleware
 from starlette.applications import Starlette
@@ -34,6 +34,9 @@ from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.memory import build_memory
 from robotsix_chat.mill import build_mill_tools
 from robotsix_chat.refdocs import build_refdocs_tools
+
+if TYPE_CHECKING:
+    from robotsix_chat.chat.runner import DeliveryChannel
 
 logger = logging.getLogger(__name__)
 
@@ -146,6 +149,13 @@ async def chat_endpoint(
         session_id, history = store.begin(client_id)
     else:
         session_id, history = store.new_session_id(), None
+
+    # Let any delegation tool invoked during this request tag spawned tasks
+    # with the owning client id.  Function-local import keeps the module
+    # dependency acyclic (delegation → runner → server).
+    from robotsix_chat.chat.delegation import current_client_id
+
+    current_client_id.set(client_id)
 
     # -- SSE async generator ----------------------------------------------
 
@@ -274,6 +284,7 @@ def create_app(
     auth: BasicAuthConfig | None = None,
     correlation_id_header: str = "X-Request-ID",
     conversation_store: ConversationStore | None = None,
+    task_registry: TaskRegistry | None = None,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -298,6 +309,11 @@ def create_app(
         conversation_store: Tracks per-client multi-turn conversation history
             and trace sessions. ``None`` (default) builds one with default
             settings (30-minute idle reset).
+        task_registry: Shared registry for background sub-agent task
+            lifecycle.  When ``None`` (default), a fresh registry is
+            created and wired to the internal event bus.  Pass an existing
+            instance to share the same registry between the foreground
+            agent's delegation tool and the ``GET /events`` SSE endpoint.
 
     """
     routes = [
@@ -338,7 +354,9 @@ def create_app(
     app.state.conversation_store = conversation_store or ConversationStore()
     app.state.idle_timeout_minutes = idle_timeout_minutes
     app.state.event_bus = EventBus()
-    app.state.task_registry = TaskRegistry(event_sink=app.state.event_bus)
+    app.state.task_registry = task_registry or TaskRegistry(
+        event_sink=app.state.event_bus
+    )
     return app
 
 
@@ -353,6 +371,7 @@ def run_server(
     auth: BasicAuthConfig | None = None,
     correlation_id_header: str = "X-Request-ID",
     conversation_store: ConversationStore | None = None,
+    task_registry: TaskRegistry | None = None,
 ) -> None:
     """Start the chat SSE server on ``host:port``.
 
@@ -369,12 +388,17 @@ def run_server(
         auth=auth,
         correlation_id_header=correlation_id_header,
         conversation_store=conversation_store,
+        task_registry=task_registry,
     )
     uvicorn.run(app, host=host, port=port)
 
 
 def create_agent_from_settings(
-    instruction: str | None = None, settings: Settings | None = None
+    instruction: str | None = None,
+    settings: Settings | None = None,
+    *,
+    task_registry: TaskRegistry | None = None,
+    delivery_channel: DeliveryChannel | None = None,
 ) -> LlmioChatAgent:
     """Build an :class:`LlmioChatAgent` wired from *settings*.
 
@@ -393,6 +417,12 @@ def create_agent_from_settings(
     and task tools are attached when ``settings.calendar.enabled`` is set; the
     reference-docs tools are attached when ``settings.refdocs.enabled`` is set
     (otherwise no tools are added).
+
+    When both *task_registry* and *delivery_channel* are provided, the
+    ``delegate_task`` tool is also added so the agent can offload long-running
+    work to a background sub-agent.  Sub-agents built by the runner — which
+    omits these two arguments — do **not** receive the delegation tool,
+    preventing infinite recursion.
     """
     if settings is None:
         settings = Settings.load()
@@ -404,16 +434,23 @@ def create_agent_from_settings(
         if level_needs_api_key(settings.llmio_model_level)
         else ""
     )
+    tools: list[Any] = [
+        *build_mill_tools(settings.mill),
+        *build_calendar_tools(settings.calendar),
+        *build_refdocs_tools(settings.refdocs),
+    ]
+    # Attach the delegation tool only for the foreground agent (both
+    # registry and channel are required — sub-agents get neither).
+    if task_registry is not None and delivery_channel is not None:
+        from robotsix_chat.chat.delegation import build_delegation_tools
+
+        tools.extend(build_delegation_tools(settings, task_registry, delivery_channel))
     return LlmioChatAgent(
         model_level=settings.llmio_model_level,
         instruction=instruction,
         api_key=api_key,
         memory=build_memory(settings.memory),
-        tools=[
-            *build_mill_tools(settings.mill),
-            *build_calendar_tools(settings.calendar),
-            *build_refdocs_tools(settings.refdocs),
-        ],
+        tools=tools,
     )
 
 
@@ -484,8 +521,21 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # -- tracing / observability (graceful no-op when deps or creds absent) --
     _setup_observability()
 
+    # -- shared task registry + delivery channel for delegation -----------
+    # A single TaskRegistry backs both the foreground agent's delegate_task
+    # tool and GET /events (via app.state.task_registry).  The channel is a
+    # NullDeliveryChannel until Ticket 1 lands a concrete SSE adapter.
+    from robotsix_chat.chat.delegation import NullDeliveryChannel
+
+    registry = TaskRegistry()
+    channel = NullDeliveryChannel()
+
     if agent is None:
-        agent = create_agent_from_settings(settings=settings)
+        agent = create_agent_from_settings(
+            settings=settings,
+            task_registry=registry,
+            delivery_channel=channel,
+        )
 
     auth = (
         BasicAuthConfig(
@@ -508,4 +558,5 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         auth=auth,
         correlation_id_header=settings.correlation_id_header,
         conversation_store=conversation_store,
+        task_registry=registry,
     )

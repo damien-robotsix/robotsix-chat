@@ -325,6 +325,7 @@ class Settings(BaseModel):
             level's provider needs one (e.g. ``openrouter``); unused
             by keyless providers like ``claudeSDK``.
         agent_instruction: System instruction handed to the LLM agent.
+            Includes delegate-vs-inline guidance for background tasks.
         server_host: Host address the chat SSE server binds to.
         server_port: Port the chat SSE server listens on.
         idle_timeout_minutes: Minutes of no user activity before the UI
@@ -342,7 +343,16 @@ class Settings(BaseModel):
 
     llmio_model_level: int = 3
     llmio_api_key: str = ""
-    agent_instruction: str = "You are a helpful assistant."
+    agent_instruction: str = (
+        "You are a helpful assistant. "
+        "Answer quick questions inline. "
+        "When a request is judged to take a while — multi-step research, "
+        "long generation, or anything that would stall your reply — call "
+        "the delegate_task tool to offload it to a background sub-agent. "
+        "The tool returns a task id immediately; tell the user the work "
+        "is running in the background and they'll be notified when it "
+        "finishes."
+    )
     server_host: str = "127.0.0.1"
     server_port: int = 8000
     idle_timeout_minutes: int = 30

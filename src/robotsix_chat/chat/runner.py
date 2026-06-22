@@ -61,6 +61,11 @@ class DeliveryChannel(Protocol):
 # ---------------------------------------------------------------------------
 
 
+def task_started_frame(task_id: str, prompt: str) -> dict[str, Any]:
+    """Return a ``task_started`` notification frame."""
+    return {"type": "task_started", "task_id": task_id, "prompt": prompt}
+
+
 def task_completed_frame(task_id: str, result: str) -> dict[str, Any]:
     """Return a ``task_completed`` notification frame."""
     return {"type": "task_completed", "task_id": task_id, "result": result}

@@ -88,7 +88,7 @@ def test_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.server_host == "127.0.0.1"
     assert settings.server_port == 8000
     assert settings.log_level == "INFO"
-    assert settings.agent_instruction == "You are a helpful assistant."
+    assert settings.agent_instruction.startswith("You are a helpful assistant.")
 
 
 def test_log_level_default() -> None:
