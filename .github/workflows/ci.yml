@@ -44,6 +44,19 @@ jobs:
     permissions:
       contents: read
 
+  changelog:
+    runs-on: ubuntu-latest
+    if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'skip-changelog')
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          fetch-depth: 0
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6.8.0
+      - name: Check for newsfragment
+        run: uv run --with towncrier towncrier check --compare-with origin/${{ github.base_ref }}
+
   check:
     needs: [ci, codeql, security]
     runs-on: ubuntu-latest

@@ -79,6 +79,7 @@ dev = [
     "pytest-asyncio",
     "pytest-cov",
     "ruff",
+    "towncrier",
 ]
 docs = [
     "mkdocs-material",
@@ -92,6 +93,14 @@ packages = ["src/robotsix_chat"]
 robotsix-yaml-config = { git = "https://github.com/damien-robotsix/robotsix-yaml-config.git", rev = "main" }
 robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "03c5d0d7891602c17ec27ee0d3b658fc8d67bb49" }
 robotsix-agent-comm = { git = "https://github.com/damien-robotsix/robotsix-agent-comm.git", rev = "main" }
+
+[tool.towncrier]
+package = "robotsix_chat"
+package_dir = "src"
+filename = "CHANGELOG.md"
+directory = "changelog.d"
+title_format = "## [{version}] - {project_date}"
+issue_format = "[#{issue}](https://github.com/damien-robotsix/robotsix-chat/issues/{issue})"
 
 [tool.ruff]
 target-version = "py312"
