@@ -1,0 +1,1 @@
+Extract shared CI-verify script from duplicated release workflows
