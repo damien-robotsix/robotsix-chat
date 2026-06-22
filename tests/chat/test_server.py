@@ -447,6 +447,18 @@ async def test_ui_injects_idle_timeout(timeout: int, expect_substring: str) -> N
 
 
 @pytest.mark.asyncio
+async def test_ui_injects_message_queue() -> None:
+    """``GET /`` contains the client-side FIFO message-queue markers."""
+    async with mock_app() as f:
+        response = await f.client.get("/")
+
+    assert response.status_code == 200
+    assert "messageQueue" in response.text
+    assert "drainQueue" in response.text
+    assert ".bubble.user.queued" in response.text
+
+
+@pytest.mark.asyncio
 async def test_ui_disabled_returns_404() -> None:
     """With ``serve_ui=False`` the root path is not registered."""
     async with mock_app(serve_ui=False) as f:
