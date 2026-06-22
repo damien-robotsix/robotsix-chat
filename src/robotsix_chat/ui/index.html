@@ -126,6 +126,9 @@
     border-bottom-left-radius: 4px;
   }
 
+  .bubble.user.queued { opacity: 0.55; }
+  .bubble.user.queued::after { content: " (queued)"; font-style: italic; }
+
   /* ------------------------------------------------------------------ */
   /* Composer row                                                        */
   /* ------------------------------------------------------------------ */
@@ -253,6 +256,11 @@
   var state = "idle";          // idle | sending | streaming | error
   var currentAssistantBubble = null;  // the <div> receiving tokens
   var typingIndicatorEl      = null;  // the animated dots element
+  var messageQueue = [];       // FIFO queue of { text, el } for busy-state
+
+  function isBusy() {
+    return state === "sending" || state === "streaming";
+  }
 
   // ---- Server URL (localStorage-backed) --------------------------------
   var LS_KEY = "{{ PROJECT_TITLE }}-server-url";
@@ -272,6 +280,7 @@
     // Clear all message bubbles and any in-flight assistant bubble.
     chatEl.innerHTML = "";
     currentAssistantBubble = null;
+    messageQueue = [];
     hideTypingIndicator();
     state = "idle";
     // Append a brief italic notice so the user knows what happened.
@@ -391,6 +400,7 @@
     div.textContent = text;
     chatEl.appendChild(div);
     scrollToBottom();
+    return div;
   }
 
   function createAssistantBubble() {
@@ -471,9 +481,10 @@
   }
 
   // ---- Send logic ------------------------------------------------------
-  function sendMessage() {
+  function submitMessage() {
+    // Read and trim input.  If empty, do nothing (preserves existing guard).
     var message = msgInput.value.trim();
-    if (!message || state === "sending" || state === "streaming") return;
+    if (!message) return;
 
     resetIdleTimer();
 
@@ -482,9 +493,31 @@
     msgInput.style.height = "";
 
     hideError();
-    addUserBubble(message);
+
+    // Create the user bubble immediately — if we're busy, mark it queued.
+    var el = addUserBubble(message);
+    if (isBusy()) {
+      el.classList.add("queued");
+    }
+
+    messageQueue.push({ text: message, el: el });
+    drainQueue();
+  }
+
+  function drainQueue() {
+    // Do not dispatch while a request is in flight.
+    if (isBusy()) return;
+    if (messageQueue.length === 0) return;
+
+    var item = messageQueue.shift();
+    item.el.classList.remove("queued");
+    startRequest(item.text);
+  }
+
+  function startRequest(message) {
+    // The existing network/streaming body of the old sendMessage, minus
+    // the user-bubble creation (the bubble already exists).
     showTypingIndicator();
-    setInputEnabled(false);
     setConnectionStatus(true);
 
     state = "sending";
@@ -508,23 +541,25 @@
         } else if (frame.type === "done") {
           hideTypingIndicator();
           finaliseAssistantBubble();
-          setInputEnabled(true);
           setConnectionStatus(true);
           state = "idle";
+          // Automatically dispatch the next queued message (FIFO).
+          drainQueue();
         } else if (frame.type === "error") {
           hideTypingIndicator();
           finaliseAssistantBubble();
-          setInputEnabled(true);
           showError(frame.message || "Server error");
           state = "error";
+          // Leave queued messages in place — the user can trigger
+          // drainQueue() by submitting another message later.
         }
       },
       error: function (err) {
         hideTypingIndicator();
         finaliseAssistantBubble();
-        setInputEnabled(true);
         showError(err.message || "Network error — is the server running?");
         state = "error";
+        // Same as above: queued messages stay; next submit resumes draining.
       }
     };
 
@@ -565,12 +600,12 @@
   }
 
   // ---- Event listeners -------------------------------------------------
-  sendBtn.addEventListener("click", sendMessage);
+  sendBtn.addEventListener("click", submitMessage);
 
   msgInput.addEventListener("keydown", function (e) {
     if (e.key === "Enter" && !e.shiftKey) {
       e.preventDefault();
-      sendMessage();
+      submitMessage();
     }
   });
 
