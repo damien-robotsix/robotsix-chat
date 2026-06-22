@@ -24,6 +24,7 @@ from starlette.responses import HTMLResponse, JSONResponse, StreamingResponse
 from starlette.routing import Route
 
 from robotsix_chat import PROJECT_TITLE
+from robotsix_chat.calendar import build_calendar_tools
 from robotsix_chat.chat.auth import BasicAuthConfig, BasicAuthMiddleware
 from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.config import Settings, level_needs_api_key
@@ -346,7 +347,8 @@ def create_agent_from_settings(
 
     Long-term memory is attached when ``settings.memory.enabled`` is set
     (otherwise a no-op memory is used and the agent stays stateless). The mill
-    consult tool is attached when ``settings.mill.enabled`` is set; the
+    consult tool is attached when ``settings.mill.enabled`` is set; the calendar
+    and task tools are attached when ``settings.calendar.enabled`` is set; the
     reference-docs tools are attached when ``settings.refdocs.enabled`` is set
     (otherwise no tools are added).
     """
@@ -367,6 +369,7 @@ def create_agent_from_settings(
         memory=build_memory(settings.memory),
         tools=[
             *build_mill_tools(settings.mill),
+            *build_calendar_tools(settings.calendar),
             *build_refdocs_tools(settings.refdocs),
         ],
     )

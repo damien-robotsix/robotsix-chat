@@ -91,6 +91,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "auth": "auth",
     "memory": "memory",
     "mill": "mill",
+    "calendar": "calendar",
     "conversation": "conversation",
     "refdocs": "refdocs",
 }
@@ -247,6 +248,43 @@ class MillSettings(BaseModel):
     timeout: float = 240.0
 
 
+class CalendarSettings(BaseModel):
+    """Calendar/tasks integration over the agent-comm broker. Disabled by default.
+
+    When enabled, the chat agent gains tools that forward natural-language
+    calendar and task requests to ``robotsix-calendar-agent`` over the broker
+    and relay its reply — so a user can query their schedule, create/update
+    events, and manage to-dos from chat. Mirrors the mill→board pattern.
+
+    Both calendar and task requests route to the same recipient
+    (``calendar_agent_id``) under the assumption that a single calendar agent
+    handles CalDAV events (``VEVENT``) and to-dos (``VTODO``). If a separate
+    tasks recipient is needed later, add a ``tasks_agent_id`` field and pass it
+    from the task tools.
+
+    Attributes:
+        enabled: Master switch. Requires the ``broker`` extra (robotsix-agent-comm).
+        broker_host: Broker hostname (the shared agent-comm broker).
+        broker_port: Broker port (443 for the public TLS endpoint).
+        broker_scheme: ``https`` (TLS) or ``http``.
+        broker_token: This agent's bearer token, registered on the broker.
+            Required when enabled.
+        agent_id: This agent's id on the broker.
+        calendar_agent_id: Recipient agent id — the calendar/tasks agent.
+        timeout: Per-request timeout (seconds); generous, the recipient is an LLM.
+
+    """
+
+    enabled: bool = False
+    broker_host: str = "ai-broker.robotsix.net"
+    broker_port: int = 443
+    broker_scheme: str = "https"
+    broker_token: str = ""
+    agent_id: str = "robotsix-chat"
+    calendar_agent_id: str = "calendar-agent-robotsix"
+    timeout: float = 240.0
+
+
 class ConversationSettings(BaseModel):
     """Multi-turn conversation continuity for the browser chat.
 
@@ -314,6 +352,7 @@ class Settings(BaseModel):
     auth: AuthSettings = Field(default_factory=AuthSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     mill: MillSettings = Field(default_factory=MillSettings)
+    calendar: CalendarSettings = Field(default_factory=CalendarSettings)
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)
     refdocs: RefDocsSettings = Field(default_factory=RefDocsSettings)
 
@@ -365,6 +404,18 @@ class Settings(BaseModel):
                 raise ValueError(
                     "mill.broker_host must be set when mill is enabled — provide it "
                     "via MILL_BROKER_HOST or the config file"
+                )
+        if self.calendar.enabled:
+            if not self.calendar.broker_token:
+                raise ValueError(
+                    "calendar.broker_token must be set when calendar is enabled — "
+                    "provide it via CALENDAR_BROKER_TOKEN or the "
+                    "`calendar.broker_token` config field"
+                )
+            if not self.calendar.broker_host:
+                raise ValueError(
+                    "calendar.broker_host must be set when calendar is enabled — "
+                    "provide it via CALENDAR_BROKER_HOST or the config file"
                 )
         if self.refdocs.enabled and not self.refdocs.repos:
             raise ValueError(
@@ -448,7 +499,15 @@ class Settings(BaseModel):
         raw: dict[str, Any] = {
             k: v
             for k, v in flat.items()
-            if k not in ("auth", "memory", "mill", "conversation", "refdocs")
+            if k
+            not in (
+                "auth",
+                "memory",
+                "mill",
+                "calendar",
+                "conversation",
+                "refdocs",
+            )
         }
         auth_raw: dict[str, Any] = dict(flat.get("auth") or {})
 
@@ -517,6 +576,10 @@ class Settings(BaseModel):
         mill_raw = _build_mill_raw(flat.get("mill"))
         if mill_raw:
             raw["mill"] = mill_raw
+
+        calendar_raw = _build_calendar_raw(flat.get("calendar"))
+        if calendar_raw:
+            raw["calendar"] = calendar_raw
 
         conversation_raw = _build_conversation_raw(flat.get("conversation"))
         if conversation_raw:
@@ -619,6 +682,49 @@ def _build_mill_raw(yaml_mill: Any) -> dict[str, Any]:
             ) from None
 
     return mill_raw
+
+
+def _build_calendar_raw(yaml_calendar: Any) -> dict[str, Any]:
+    """Overlay ``CALENDAR_*`` env vars onto the YAML ``calendar`` subtree.
+
+    Returns a dict ready to parse into :class:`CalendarSettings`, or empty when
+    nothing is set.
+    """
+    calendar_raw: dict[str, Any] = dict(yaml_calendar or {})
+
+    def env_set(field: str, env_name: str) -> None:
+        value = os.getenv(env_name)
+        if value is not None:
+            calendar_raw[field] = value
+
+    enabled = os.getenv("CALENDAR_ENABLED")
+    if enabled is not None:
+        calendar_raw["enabled"] = _parse_bool(enabled)
+    env_set("broker_host", "CALENDAR_BROKER_HOST")
+    env_set("broker_scheme", "CALENDAR_BROKER_SCHEME")
+    env_set("broker_token", "CALENDAR_BROKER_TOKEN")
+    env_set("agent_id", "CALENDAR_AGENT_ID")
+    env_set("calendar_agent_id", "CALENDAR_CALENDAR_AGENT_ID")
+
+    port_str = os.getenv("CALENDAR_BROKER_PORT")
+    if port_str is not None:
+        try:
+            calendar_raw["broker_port"] = int(port_str)
+        except ValueError:
+            raise ValueError(
+                f"CALENDAR_BROKER_PORT must be an integer, got {port_str!r}"
+            ) from None
+
+    timeout_str = os.getenv("CALENDAR_TIMEOUT")
+    if timeout_str is not None:
+        try:
+            calendar_raw["timeout"] = float(timeout_str)
+        except ValueError:
+            raise ValueError(
+                f"CALENDAR_TIMEOUT must be a number, got {timeout_str!r}"
+            ) from None
+
+    return calendar_raw
 
 
 def _build_conversation_raw(yaml_conversation: Any) -> dict[str, Any]:
