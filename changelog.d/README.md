@@ -3,7 +3,7 @@
 Each non-trivial PR must add a file to this directory. The file name
 follows the pattern `<id>.<type>.md` where:
 
-- `<id>` is the issue or PR number
+- `<id>` is the issue number, PR number, or ticket identifier
 - `<type>` is one of: `feature`, `bugfix`, `doc`, `removal`, `misc`
 
 Examples:

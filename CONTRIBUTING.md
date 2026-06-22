@@ -50,7 +50,7 @@ the reporting and response process.
 
 Every pull request that changes user-facing behaviour must include a
 changelog fragment in `changelog.d/`. The fragment file is named
-`<id>.<type>.md` where `<id>` is the issue or PR number and `<type>`
+`<id>.<type>.md` where `<id>` is the issue number, PR number, or ticket identifier and `<type>`
 is one of:
 
 - `feature` — a new feature
