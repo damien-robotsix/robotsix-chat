@@ -303,4 +303,72 @@ def build_check_loop_tools(
             f"{interval_seconds:g}s; I'll surface each result as it lands."
         )
 
-    return [start_check_loop]
+    async def stop_check_loop(loop_id: str) -> str:
+        """Stop a running check loop by its id.
+
+        Use this when the user asks you to cancel, stop, or end a recurring
+        check.  The *loop_id* is the identifier returned by
+        ``start_check_loop``; you can also discover active loop ids via
+        ``list_check_loops``.
+
+        Only loops owned by this conversation can be stopped — you cannot
+        interfere with another client's checks.  Stopping an already-stopped
+        (or nonexistent) loop is harmless and returns a polite message.
+
+        To **change a loop's interval or prompt**, stop the running loop with
+        this tool, then start a new one with ``start_check_loop`` — there is
+        no in-place edit for interval or prompt.
+
+        Args:
+            loop_id: The id of the loop to stop (from ``start_check_loop``'s
+                return value or from ``list_check_loops``).
+
+        Returns:
+            A confirmation message on success, or a polite notice when the
+            loop is not found / not owned by this client.
+
+        """
+        info = registry.get(loop_id)
+        if info is None or info.client_id != client_id:
+            logger.info(
+                "stop_check_loop: loop %s not found for client %s", loop_id, client_id
+            )
+            return (
+                f"I don't see a check loop with id '{loop_id}' that belongs "
+                f"to this conversation.  Use ``list_check_loops`` to see your "
+                f"active loops and their ids."
+            )
+        registry.stop(loop_id, reason="stopped by assistant")
+        logger.info("stop_check_loop: stopped loop %s", loop_id)
+        return f"Stopped check loop {loop_id}."
+
+    async def list_check_loops() -> str:
+        """List all active check loops owned by this conversation.
+
+        Use this to discover what recurring checks are currently running so
+        you can report status to the user or obtain an *loop_id* to pass to
+        ``stop_check_loop``.  Loops belonging to other conversations are
+        never shown.
+
+        Returns:
+            A human-readable summary of this client's loops — one line per
+            loop with id, status, interval, iteration count, and a prompt
+            snippet — or a message that there are none.
+
+        """
+        loops = registry.list_for_client(client_id)
+        if not loops:
+            return "There are no check loops running in this conversation."
+        lines: list[str] = []
+        for info in loops:
+            snippet = info.prompt[:80].replace("\n", " ")
+            lines.append(
+                f"- {info.id}: {info.status.value}, "
+                f"every {info.interval_seconds:g}s, "
+                f"iteration {info.iterations}"
+                f"{f' of {info.max_iterations}' if info.max_iterations else ''}"
+                f' — "{snippet}…"'
+            )
+        return "Active check loops:\n" + "\n".join(lines)
+
+    return [start_check_loop, stop_check_loop, list_check_loops]

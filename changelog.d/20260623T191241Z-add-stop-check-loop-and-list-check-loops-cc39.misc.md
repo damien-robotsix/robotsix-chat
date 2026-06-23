@@ -1,0 +1,1 @@
+Add stop_check_loop and list_check_loops agent tools
