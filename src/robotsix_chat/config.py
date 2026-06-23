@@ -348,6 +348,15 @@ class Settings(BaseModel):
         correlation_id_header: HTTP header name used for the correlation /
             request-id (both inbound and outbound). Default ``X-Request-ID``.
         auth: HTTP Basic Auth settings gating the UI and ``/chat``.
+        max_images_per_message: Maximum number of images a client may attach to
+            a single ``POST /chat`` request.  Default ``8``.
+            Env override: ``MAX_IMAGES_PER_MESSAGE``.
+        max_image_bytes: Maximum decoded size (bytes) of a single attached
+            image.  Default ``5_242_880`` (5 MiB).  Env override:
+            ``MAX_IMAGE_BYTES``.
+        allowed_image_media_types: Media types accepted for image attachments.
+            Default ``["image/png", "image/jpeg", "image/gif", "image/webp"]``.
+            Env override: ``ALLOWED_IMAGE_MEDIA_TYPES`` (comma-separated).
 
     """
 
@@ -378,6 +387,11 @@ class Settings(BaseModel):
     calendar: CalendarSettings = Field(default_factory=CalendarSettings)
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)
     refdocs: RefDocsSettings = Field(default_factory=RefDocsSettings)
+    max_images_per_message: int = 8
+    max_image_bytes: int = 5_242_880
+    allowed_image_media_types: list[str] = Field(
+        default_factory=lambda: ["image/png", "image/jpeg", "image/gif", "image/webp"]
+    )
 
     def model_post_init(self, __context: Any) -> None:
         """Validate fields that cannot be expressed via simple type annotations."""
@@ -619,6 +633,30 @@ class Settings(BaseModel):
             ]
 
         env_override("correlation_id_header", "CORRELATION_ID_HEADER")
+
+        max_img_str = os.getenv("MAX_IMAGES_PER_MESSAGE")
+        if max_img_str is not None:
+            try:
+                raw["max_images_per_message"] = int(max_img_str)
+            except ValueError:
+                raise ValueError(
+                    f"MAX_IMAGES_PER_MESSAGE must be an integer, got {max_img_str!r}"
+                ) from None
+
+        max_bytes_str = os.getenv("MAX_IMAGE_BYTES")
+        if max_bytes_str is not None:
+            try:
+                raw["max_image_bytes"] = int(max_bytes_str)
+            except ValueError:
+                raise ValueError(
+                    f"MAX_IMAGE_BYTES must be an integer, got {max_bytes_str!r}"
+                ) from None
+
+        allowed_types = os.getenv("ALLOWED_IMAGE_MEDIA_TYPES")
+        if allowed_types is not None:
+            raw["allowed_image_media_types"] = [
+                t.strip() for t in allowed_types.split(",") if t.strip()
+            ]
 
         auth_enabled = os.getenv("AUTH_ENABLED")
         if auth_enabled is not None:

@@ -15,6 +15,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added a Stop button to the Check Loops panel in the chat UI for cancelling
   running check loops via the existing `/loops/{loop_id}/stop` endpoint.
+- Added support for image attachments on `POST /chat`. Clients can now send an
+  optional `images` array of `{"media_type": "<image/png|image/jpeg|image/gif|image/webp>", "data": "<base64>"}`
+  objects alongside or instead of text. Images are forwarded as multimodal
+  content to a vision-capable LLM (requires OpenRouter model level 1 or 2;
+  the default level-3 claude_sdk path drops image content — see
+  `docs/configuration.md`). New settings `max_images_per_message` (default 8),
+  `max_image_bytes` (default 5 MiB), and `allowed_image_media_types` control
+  limits.
 
 - Enabled Ruff's `FURB` (Refurb) ruleset to catch future idiomatic-Python
   anti-patterns.

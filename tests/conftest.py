@@ -48,11 +48,13 @@ class MockAgent:
         history: list[tuple[str, str]] | None = None,
         session_id: str | None = None,
         client_id: str | None = None,
+        images: list[tuple[str, bytes]] | None = None,
     ) -> AsyncIterator[str]:
         """Yield tokens or raise the configured error."""
         self.called_with = message
         self.history = history
         self.session_id = session_id
+        self.images = images
         if self.error is not None:
             raise self.error
         for token in self.tokens:

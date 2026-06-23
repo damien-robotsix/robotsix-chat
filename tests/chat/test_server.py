@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import base64
 import contextlib
 import json
 from collections.abc import AsyncGenerator
@@ -326,6 +327,235 @@ async def test_chat_endpoint_agent_raises() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Chat endpoint — image attachments
+# ---------------------------------------------------------------------------
+
+
+def _png_pixel() -> bytes:
+    """Smallest valid PNG — 1×1 red pixel."""
+    return base64.b64decode(
+        "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5"
+        "+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
+    )
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_passes_images_to_agent() -> None:
+    """A request with a valid ``images`` array reaches the agent with decoded bytes."""
+    png_bytes = _png_pixel()
+    data_b64 = base64.b64encode(png_bytes).decode()
+
+    async with mock_app(tokens=["ok"]) as f:
+        response = await f.client.post(
+            "/chat",
+            json={
+                "message": "look at this",
+                "images": [{"media_type": "image/png", "data": data_b64}],
+            },
+        )
+
+    assert response.status_code == 200
+    assert f.agent.called_with == "look at this"
+    assert f.agent.images == [("image/png", png_bytes)]
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_images_only_no_message() -> None:
+    """A request with only images (no text) is accepted."""
+    png_bytes = _png_pixel()
+    data_b64 = base64.b64encode(png_bytes).decode()
+
+    async with mock_app(tokens=["seen it"]) as f:
+        response = await f.client.post(
+            "/chat",
+            json={"images": [{"media_type": "image/png", "data": data_b64}]},
+        )
+
+    assert response.status_code == 200
+    # message passed through as empty string
+    assert f.agent.called_with == ""
+    assert f.agent.images == [("image/png", png_bytes)]
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_multiple_images() -> None:
+    """Multiple valid images are all decoded and forwarded."""
+    png_bytes = _png_pixel()
+    data_b64 = base64.b64encode(png_bytes).decode()
+
+    async with mock_app(tokens=["ok"]) as f:
+        await f.client.post(
+            "/chat",
+            json={
+                "message": "compare",
+                "images": [
+                    {"media_type": "image/png", "data": data_b64},
+                    {"media_type": "image/jpeg", "data": data_b64},
+                ],
+            },
+        )
+
+    assert f.agent.images == [
+        ("image/png", png_bytes),
+        ("image/jpeg", png_bytes),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_neither_message_nor_images_returns_400() -> None:
+    """A body with no message and no images is rejected with 400."""
+    async with mock_app() as f:
+        response = await f.client.post("/chat", json={})
+
+    assert response.status_code == 400
+    assert "error" in response.json()
+    assert "message" in response.json()["error"] or "image" in response.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_images_not_a_list_returns_400() -> None:
+    """A non-list ``images`` field is rejected with 400."""
+    async with mock_app() as f:
+        response = await f.client.post(
+            "/chat", json={"message": "hi", "images": "not-a-list"}
+        )
+
+    assert response.status_code == 400
+    assert "error" in response.json()
+    assert "array" in response.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_too_many_images_returns_400() -> None:
+    """Exceeding ``max_images_per_message`` returns 400."""
+    png_bytes = _png_pixel()
+    data_b64 = base64.b64encode(png_bytes).decode()
+
+    async with mock_app(max_images_per_message=2) as f:
+        response = await f.client.post(
+            "/chat",
+            json={
+                "message": "hi",
+                "images": [
+                    {"media_type": "image/png", "data": data_b64},
+                    {"media_type": "image/png", "data": data_b64},
+                    {"media_type": "image/png", "data": data_b64},
+                ],
+            },
+        )
+
+    assert response.status_code == 400
+    err = response.json()["error"]
+    assert "too many images" in err
+    assert "3" in err
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_oversized_image_returns_400() -> None:
+    """An image whose decoded size exceeds ``max_image_bytes`` returns 400."""
+    # Create a 50-byte payload, set limit to 40.
+    payload = b"x" * 50
+    data_b64 = base64.b64encode(payload).decode()
+
+    async with mock_app(max_image_bytes=40) as f:
+        response = await f.client.post(
+            "/chat",
+            json={
+                "message": "hi",
+                "images": [{"media_type": "image/png", "data": data_b64}],
+            },
+        )
+
+    assert response.status_code == 400
+    err = response.json()["error"]
+    assert "exceeds maximum" in err
+    assert "50" in err
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_disallowed_media_type_returns_400() -> None:
+    """A media_type not in the allowlist is rejected with 400."""
+    data_b64 = base64.b64encode(b"fake").decode()
+
+    async with mock_app() as f:
+        response = await f.client.post(
+            "/chat",
+            json={
+                "message": "hi",
+                "images": [{"media_type": "image/bmp", "data": data_b64}],
+            },
+        )
+
+    assert response.status_code == 400
+    err = response.json()["error"]
+    assert "image/bmp" in err
+    assert "not allowed" in err
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_non_base64_data_returns_400() -> None:
+    """Non-base64 ``data`` is rejected with 400."""
+    async with mock_app() as f:
+        response = await f.client.post(
+            "/chat",
+            json={
+                "message": "hi",
+                "images": [{"media_type": "image/png", "data": "!!!not-base64!!!"}],
+            },
+        )
+
+    assert response.status_code == 400
+    assert "not valid base64" in response.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_image_missing_media_type_returns_400() -> None:
+    """An image entry without ``media_type`` is rejected."""
+    data_b64 = base64.b64encode(b"x").decode()
+
+    async with mock_app() as f:
+        response = await f.client.post(
+            "/chat",
+            json={
+                "message": "hi",
+                "images": [{"data": data_b64}],
+            },
+        )
+
+    assert response.status_code == 400
+    assert "media_type" in response.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_image_missing_data_returns_400() -> None:
+    """An image entry without ``data`` is rejected."""
+    async with mock_app() as f:
+        response = await f.client.post(
+            "/chat",
+            json={
+                "message": "hi",
+                "images": [{"media_type": "image/png"}],
+            },
+        )
+
+    assert response.status_code == 400
+    assert "data" in response.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_image_entry_not_a_dict_returns_400() -> None:
+    """An image entry that is not a dict is rejected."""
+    async with mock_app() as f:
+        response = await f.client.post(
+            "/chat",
+            json={"message": "hi", "images": ["not-a-dict"]},
+        )
+
+    assert response.status_code == 400
+    assert "expected a JSON object" in response.json()["error"]
+
+
+# ---------------------------------------------------------------------------
 # create_agent_from_settings
 # ---------------------------------------------------------------------------
 
@@ -436,6 +666,14 @@ async def test_run_server_from_config_creates_agent_from_settings(
             "host": "127.0.0.1",
             "port": 8080,
             "idle_timeout_minutes": 30,
+            "max_images_per_message": 8,
+            "max_image_bytes": 5_242_880,
+            "allowed_image_media_types": [
+                "image/png",
+                "image/jpeg",
+                "image/gif",
+                "image/webp",
+            ],
             "cors_allow_origins": [],
             "auth": None,
             "correlation_id_header": "X-Request-ID",

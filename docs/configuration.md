@@ -25,6 +25,26 @@ set as an environment variable.
 | `server.idle_timeout_minutes` | `IDLE_TIMEOUT_MINUTES` | `30` | Minutes of no user activity before the UI auto-restarts the conversation. `0` disables the feature. |
 | `server.max_background_tasks` | `MAX_BACKGROUND_TASKS` | `5` | Maximum number of concurrently-running background sub-agent tasks per process. |
 
+## Image attachments
+
+Image attachments let the user send pictures alongside or instead of text.
+They are delivered as multimodal content so a vision-capable LLM can process
+them.
+
+| YAML path | Env var | Default | Description |
+|---|---|---|---|
+| `max_images_per_message` | `MAX_IMAGES_PER_MESSAGE` | `8` | Maximum number of images a client may attach to a single `/chat` request. |
+| `max_image_bytes` | `MAX_IMAGE_BYTES` | `5242880` (5 MiB) | Maximum decoded size (bytes) of a single attached image. |
+| `allowed_image_media_types` | `ALLOWED_IMAGE_MEDIA_TYPES` | `image/png,image/jpeg,image/gif,image/webp` | Comma-separated list of accepted media types for image attachments. |
+
+**Important:** the default `llmio_model_level = 3` routes to `claude_sdk`, which
+currently **drops image content silently** (its internal `_content_to_text()`
+flattens non-text parts to `str(...)`).  To have the assistant actually *see*
+images, configure a vision-capable OpenRouter model at level 1 or 2 (e.g.
+`llmio.model_level: 2` with a multimodal model).  Full level-3 image support
+requires an external change to `robotsix_llmio`'s claude_sdk model to map image
+parts into the Claude SDK request format.
+
 ## HTTP Basic Auth
 
 | YAML path | Env var | Default | Description |

@@ -1,0 +1,1 @@
+Backend: accept image attachments on POST /chat and forward as multimodal LLM content
