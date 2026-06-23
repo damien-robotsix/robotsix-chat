@@ -12,6 +12,7 @@ Usage::
     from robotsix_chat.chat.delegation import (
         build_check_loop_tools,
         build_delegation_tools,
+        ConversationDeliveryChannel,
         NullDeliveryChannel,
     )
 
@@ -27,7 +28,7 @@ from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from robotsix_chat.chat.loops import (
     CheckLoopRegistry,
@@ -44,6 +45,9 @@ from robotsix_chat.chat.runner import (
 from robotsix_chat.chat.server import ChatAgent
 from robotsix_chat.chat.tasks import TaskRegistry
 from robotsix_chat.config import Settings
+
+if TYPE_CHECKING:
+    from robotsix_chat.chat.conversation import ConversationStore
 
 logger = logging.getLogger(__name__)
 
@@ -63,6 +67,62 @@ class NullDeliveryChannel:
             frame.get("type"),
             client_id,
         )
+
+
+class ConversationDeliveryChannel:
+    """Record completed/failed background-task results into ConversationStore.
+
+    When a delegated task finishes (or fails), the foreground agent needs to
+    learn about the outcome so it can relay task ids, URLs, and findings to
+    the user on its **next** turn.  This channel bridges that gap by writing a
+    synthetic turn into the store keyed by the originating ``client_id``.
+
+    ``task_started`` frames are intentionally ignored — the user already sees
+    those via the SSE path — so the conversation history stays clean.
+
+    Constructor takes the shared :class:`ConversationStore` instance (the same
+    object passed to ``run_server`` via ``app.state.conversation_store``).
+    """
+
+    def __init__(self, store: ConversationStore) -> None:
+        """Create a channel that writes to *store*."""
+        self._store = store
+
+    async def publish(self, client_id: str, frame: dict[str, Any]) -> None:
+        """Record *frame* into the conversation store for *client_id*.
+
+        Dispatches on ``frame["type"]``:
+
+        * ``"task_completed"`` — reads ``frame["task_id"]`` and
+          ``frame["result"]`` and records a turn so the agent sees the result
+          in its next-turn history.
+        * ``"task_failed"`` — reads ``frame["task_id"]`` and ``frame["error"]``
+          and records a turn conveying the failure.
+        * ``"task_started"`` and any other/unknown type — no-op.
+        * Empty/falsy *client_id* — no-op.
+
+        Best-effort: never raises out to the runner's ``_worker``.
+        """
+        if not client_id:
+            return
+
+        frame_type = frame.get("type")
+        task_id = frame.get("task_id", "")
+
+        if frame_type == "task_completed":
+            result = frame.get("result", "")
+            self._store.record(
+                client_id,
+                f"[Background task {task_id} completed]",
+                str(result),
+            )
+        elif frame_type == "task_failed":
+            error = frame.get("error", "")
+            self._store.record(
+                client_id,
+                f"[Background task {task_id} failed]",
+                f"Error: {str(error)}",
+            )
 
 
 # ---------------------------------------------------------------------------
