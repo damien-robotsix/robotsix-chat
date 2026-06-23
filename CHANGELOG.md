@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Increased default width of the background tasks slide-in panel from
+  340px to 420px to improve readability of task names and status text.
+  Added a drag-to-resize handle on the left edge of the panel so users
+  can adjust the width between 260px and 90vw to suit their needs.
+
 - Added persistent, human-readable task tracking under `tasks/`:
   `tasks/TASKS.md` (active), `tasks/ARCHIVE.md` (completed), and
   `tasks/README.md` (format & workflow reference).  Referenced from

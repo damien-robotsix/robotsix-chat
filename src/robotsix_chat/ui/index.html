@@ -98,13 +98,20 @@
 
   #tasks-panel {
     display: none; position: fixed; top: 0; right: 0; bottom: 0;
-    width: 340px; max-width: 90vw;
+    width: 420px; min-width: 260px; max-width: 90vw;
     background: var(--composer-bg); color: var(--text-fg);
     border-left: 1px solid var(--composer-border);
     z-index: 20; overflow-y: auto;
     box-shadow: -4px 0 12px rgba(0,0,0,0.25);
   }
   #tasks-panel.visible { display: flex; flex-direction: column; }
+
+  #tasks-resize-handle {
+    display: none; position: fixed; top: 0; bottom: 0;
+    width: 6px; cursor: ew-resize; z-index: 21;
+  }
+  #tasks-resize-handle:hover,
+  #tasks-resize-handle.active { background: rgba(59, 130, 246, 0.5); }
 
   .tasks-header {
     padding: 0.6rem 0.75rem; font-weight: 700; font-size: 0.95rem;
@@ -383,6 +390,7 @@
   <input type="text" id="server-url-input" placeholder="http://localhost:8000/chat">
 </div>
 
+<div id="tasks-resize-handle"></div>
 <div id="tasks-panel">
   <div class="tasks-header">Background tasks<button class="dismiss" aria-label="Close tasks panel">&times;</button></div>
   <div id="tasks-list"></div>
@@ -439,6 +447,7 @@
   const serverUrlInput = document.getElementById("server-url-input");
   const tasksToggle    = document.getElementById("tasks-toggle");
   const tasksPanel     = document.getElementById("tasks-panel");
+  const tasksResizeHandle = document.getElementById("tasks-resize-handle");
   const tasksList      = document.getElementById("tasks-list");
   const attachBtn      = document.getElementById("attach-btn");
   const fileInput      = document.getElementById("file-input");
@@ -1570,12 +1579,16 @@
   var tasksDismiss = tasksPanel.querySelector(".dismiss");
   tasksToggle.addEventListener("click", function (e) {
     e.stopPropagation();
+    var opening = !tasksPanel.classList.contains("visible");
     tasksPanel.classList.toggle("visible");
+    if (opening) positionResizeHandle();
+    else hideResizeHandle();
   });
 
   tasksDismiss.addEventListener("click", function (e) {
     e.stopPropagation();
     tasksPanel.classList.remove("visible");
+    hideResizeHandle();
   });
 
   tasksPanel.addEventListener("click", function (e) {
@@ -1585,7 +1598,48 @@
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && tasksPanel.classList.contains("visible")) {
       tasksPanel.classList.remove("visible");
+      hideResizeHandle();
     }
+  });
+
+  // ---- Resize handle for tasks panel ----------------------------------
+  var resizeDragging = false;
+  var resizeStartX = 0;
+  var resizeStartWidth = 0;
+
+  function positionResizeHandle() {
+    var rect = tasksPanel.getBoundingClientRect();
+    tasksResizeHandle.style.display = "block";
+    tasksResizeHandle.style.left = rect.left + "px";
+  }
+
+  function hideResizeHandle() {
+    tasksResizeHandle.style.display = "none";
+  }
+
+  tasksResizeHandle.addEventListener("mousedown", function (e) {
+    e.preventDefault();
+    resizeDragging = true;
+    resizeStartX = e.clientX;
+    resizeStartWidth = tasksPanel.getBoundingClientRect().width;
+    tasksResizeHandle.classList.add("active");
+    document.body.style.userSelect = "none";
+  });
+
+  document.addEventListener("mousemove", function (e) {
+    if (!resizeDragging) return;
+    var dx = resizeStartX - e.clientX;
+    var newWidth = resizeStartWidth + dx;
+    newWidth = Math.max(260, Math.min(newWidth, window.innerWidth * 0.9));
+    tasksPanel.style.width = newWidth + "px";
+  });
+
+  document.addEventListener("mouseup", function () {
+    if (!resizeDragging) return;
+    resizeDragging = false;
+    tasksResizeHandle.classList.remove("active");
+    document.body.style.userSelect = "";
+    positionResizeHandle();
   });
 
   // ---- Initial state ---------------------------------------------------
