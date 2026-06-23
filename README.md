@@ -200,6 +200,38 @@ support); env vars override the config file.
 | `AUTH_USERNAME` | `auth.username` | `admin` | Accepted username. |
 | `AUTH_PASSWORD` | `auth.password` | *(empty)* | Accepted password (required when auth is enabled). |
 
+### Calendar & tasks (broker integration)
+
+The assistant can read your calendar (events, availability/free-busy) and
+manage your personal tasks via the
+[`robotsix-calendar-agent`](https://github.com/damien-robotsix/robotsix-calendar-agent)
+broker. When enabled, the agent gains four tools:
+
+| Tool | What it does |
+|---|---|
+| `query_calendar` | Read your schedule, upcoming events, and availability. |
+| `manage_calendar` | Create, update, or cancel calendar events. |
+| `query_tasks` | List your to-dos. |
+| `manage_tasks` | Create, update, complete, or delete tasks. |
+
+The integration is **off by default**. To enable it:
+
+```bash
+uv sync --extra broker
+```
+
+Then set in your `.env` (or YAML config):
+
+```bash
+CALENDAR_ENABLED=true
+CALENDAR_BROKER_TOKEN=<your-agent-token>   # required when enabled
+# CALENDAR_BROKER_HOST=ai-broker.robotsix.net   # default
+```
+
+All settings are listed in the
+[Calendar (broker integration)](docs/configuration.md#calendar-broker-integration)
+section of `docs/configuration.md`.
+
 ## Application factory
 
 `create_app(agent, *, serve_ui=True, cors_allow_origins=None, auth=None)`
