@@ -32,4 +32,7 @@ services:
     restart: unless-stopped
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-    command: --interval 30 --label-enable --cleanup
+    # Poll interval (seconds) for new GHCR images. Default 3600 (1h) to keep
+    # container restarts — and the brief 502 they cause behind the proxy —
+    # infrequent. Override via WATCHTOWER_POLL_INTERVAL in deploy/.env.
+    command: --interval ${WATCHTOWER_POLL_INTERVAL:-3600} --label-enable --cleanup
