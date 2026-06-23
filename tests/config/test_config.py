@@ -68,6 +68,7 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "REFDOCS_BASE_URL",
         "REFDOCS_TIMEOUT",
         "IDLE_TIMEOUT_MINUTES",
+        "MAX_BACKGROUND_TASKS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -702,3 +703,76 @@ def test_idle_timeout_zero_allowed() -> None:
     """``idle_timeout_minutes = 0`` is valid (disables the feature)."""
     settings = Settings(idle_timeout_minutes=0)
     assert settings.idle_timeout_minutes == 0
+
+
+# ---------------------------------------------------------------------------
+# max_background_tasks
+# ---------------------------------------------------------------------------
+
+
+def test_max_background_tasks_default() -> None:
+    """``max_background_tasks`` defaults to 5."""
+    settings = Settings()
+    assert settings.max_background_tasks == 5
+
+
+def test_max_background_tasks_from_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``server.max_background_tasks`` in YAML overrides the default."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text("server:\n  max_background_tasks: 3\n")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.max_background_tasks == 3
+
+
+def test_max_background_tasks_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``MAX_BACKGROUND_TASKS`` env var overrides the default."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("MAX_BACKGROUND_TASKS", "10")
+
+    settings = Settings.from_env()
+
+    assert settings.max_background_tasks == 10
+
+
+def test_max_background_tasks_env_override_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Env var ``MAX_BACKGROUND_TASKS`` wins over YAML value."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text("server:\n  max_background_tasks: 8\n")
+    monkeypatch.setenv("MAX_BACKGROUND_TASKS", "2")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.max_background_tasks == 2
+
+
+def test_max_background_tasks_env_non_integer_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-integer ``MAX_BACKGROUND_TASKS`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("MAX_BACKGROUND_TASKS", "many")
+
+    with pytest.raises(ValueError, match="MAX_BACKGROUND_TASKS"):
+        Settings.from_env()
+
+
+def test_max_background_tasks_zero_raises() -> None:
+    """``max_background_tasks = 0`` is rejected by ``model_post_init``."""
+    with pytest.raises(ValueError, match="max_background_tasks"):
+        Settings(max_background_tasks=0)
+
+
+def test_max_background_tasks_one_allowed() -> None:
+    """``max_background_tasks = 1`` is valid."""
+    settings = Settings(max_background_tasks=1)
+    assert settings.max_background_tasks == 1

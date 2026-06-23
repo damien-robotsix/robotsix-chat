@@ -405,6 +405,55 @@ async def test_null_delivery_channel_is_noop() -> None:
 
 
 # ---------------------------------------------------------------------------
+# delegate_task — concurrency cap degradation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_delegate_task_at_capacity_returns_friendly_message() -> None:
+    """When the cap is reached, ``delegate_task`` returns a friendly message.
+
+    (no task id) and publishes **no** ``task_started`` frame.
+    """
+    registry = TaskRegistry()
+    channel = _FakeDeliveryChannel()
+    settings = Settings(max_background_tasks=1)
+
+    # Fill the capacity so spawn_subagent_task will raise.
+    registry.register("c1", "blocker", asyncio.create_task(asyncio.sleep(0)))
+    assert registry.count_running() == 1
+
+    current_client_id.set("c1")
+    try:
+        tools = build_delegation_tools(
+            settings,
+            registry,
+            channel,
+            agent_factory=lambda s: _StubAgent(["ok"]),
+        )
+        delegate_task_fn = tools[0]
+
+        result = await delegate_task_fn("too many tasks")
+
+        # Returns the friendly message — no task id substring.
+        assert isinstance(result, str)
+        assert "couldn't start" in result
+        # Verify no 32-char hex task id in the response.
+        import re
+
+        assert not re.search(r"\b[0-9a-f]{32}\b", result)
+
+        # No task_started frame was published to the channel.
+        started_frames = [f for _, f in channel.frames if f["type"] == "task_started"]
+        assert len(started_frames) == 0
+
+        # The registry count is still 1 (no new task was registered).
+        assert registry.count_running() == 1
+    finally:
+        current_client_id.set(None)
+
+
+# ---------------------------------------------------------------------------
 # Helpers
 # ---------------------------------------------------------------------------
 

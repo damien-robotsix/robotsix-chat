@@ -125,6 +125,10 @@ class TaskRegistry:
         """Return the current snapshot of *task_id*, or ``None``."""
         return self._tasks.get(task_id)
 
+    def count_running(self) -> int:
+        """Return the number of in-flight background tasks (process-wide)."""
+        return len(self._running)
+
     def list_for_client(self, client_id: str) -> list[TaskInfo]:
         """Return all tasks for *client_id*."""
         ids = self._by_client.get(client_id, set())

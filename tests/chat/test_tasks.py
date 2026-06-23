@@ -224,3 +224,38 @@ async def test_reference_dropped_when_task_completes() -> None:
 
     # The done callback should have removed the reference.
     assert tid not in reg._running
+
+
+# ---------------------------------------------------------------------------
+# count_running
+# ---------------------------------------------------------------------------
+
+
+def test_count_running_reflects_registered_tasks() -> None:
+    """``count_running()`` returns the number of in-flight tasks."""
+    reg = _registry()
+
+    assert reg.count_running() == 0
+
+    reg.register("c1", "task 1", _fake_coro())  # type: ignore[arg-type]
+    assert reg.count_running() == 1
+
+    reg.register("c1", "task 2", _fake_coro())  # type: ignore[arg-type]
+    assert reg.count_running() == 2
+
+
+def test_count_running_drops_after_done_callback() -> None:
+    """``count_running()`` declines after the done callback fires.
+
+    With the ``_FakeCoro`` stand-in the done callback is a no-op, so we
+    simulate what the real ``asyncio.Task.add_done_callback`` does by
+    manually popping from ``_running``.
+    """
+    reg = _registry()
+
+    tid = reg.register("c1", "to finish", _fake_coro())  # type: ignore[arg-type]
+    assert reg.count_running() == 1
+
+    # Simulate the done callback firing.
+    reg._running.pop(tid, None)
+    assert reg.count_running() == 0

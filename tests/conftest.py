@@ -2,15 +2,23 @@
 
 from __future__ import annotations
 
+import sys
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Any
 
-from httpx import ASGITransport, AsyncClient
-from starlette.applications import Starlette
+# Ensure locally-installed packages (asgi-correlation-id etc.) are
+# importable before any application code is loaded.
+_local_pkgs = Path(__file__).resolve().parent.parent / "local-deps"
+if str(_local_pkgs) not in sys.path and _local_pkgs.is_dir():
+    sys.path.insert(0, str(_local_pkgs))
 
-from robotsix_chat.chat.server import create_app
+from httpx import ASGITransport, AsyncClient  # noqa: E402
+from starlette.applications import Starlette  # noqa: E402
+
+from robotsix_chat.chat.server import create_app  # noqa: E402
 
 
 class MockAgent:

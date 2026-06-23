@@ -85,6 +85,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "server.host": "server_host",
     "server.port": "server_port",
     "server.idle_timeout_minutes": "idle_timeout_minutes",
+    "server.max_background_tasks": "max_background_tasks",
     "server.log_level": "log_level",
     "server.cors_allow_origins": "cors_allow_origins",
     "server.correlation_id_header": "correlation_id_header",
@@ -331,6 +332,8 @@ class Settings(BaseModel):
         idle_timeout_minutes: Minutes of no user activity before the UI
             auto-restarts the conversation; ``0`` disables the feature.
             Env override: ``IDLE_TIMEOUT_MINUTES``.
+        max_background_tasks: Maximum number of concurrently-running background
+            sub-agent tasks per process.  Env override: ``MAX_BACKGROUND_TASKS``.
         log_level: Python logging level name.
         cors_allow_origins: Origins allowed to call /chat cross-origin
             (empty = none; ``["*"]`` = any). Only needed when the browser
@@ -356,6 +359,7 @@ class Settings(BaseModel):
     server_host: str = "127.0.0.1"
     server_port: int = 8000
     idle_timeout_minutes: int = 30
+    max_background_tasks: int = 5
     log_level: str = "INFO"
     cors_allow_origins: list[str] = Field(default_factory=list)
     correlation_id_header: str = "X-Request-ID"
@@ -403,6 +407,10 @@ class Settings(BaseModel):
         if self.idle_timeout_minutes < 0:
             raise ValueError(
                 f"idle_timeout_minutes must be >= 0, got {self.idle_timeout_minutes!r}"
+            )
+        if self.max_background_tasks < 1:
+            raise ValueError(
+                f"max_background_tasks must be >= 1, got {self.max_background_tasks!r}"
             )
         if self.mill.enabled:
             if not self.mill.broker_token:
@@ -556,6 +564,15 @@ class Settings(BaseModel):
             except ValueError:
                 raise ValueError(
                     f"IDLE_TIMEOUT_MINUTES must be an integer, got {timeout_str!r}"
+                ) from None
+
+        bg_tasks_str = os.getenv("MAX_BACKGROUND_TASKS")
+        if bg_tasks_str is not None:
+            try:
+                raw["max_background_tasks"] = int(bg_tasks_str)
+            except ValueError:
+                raise ValueError(
+                    f"MAX_BACKGROUND_TASKS must be an integer, got {bg_tasks_str!r}"
                 ) from None
 
         cors_raw = os.getenv("CORS_ALLOW_ORIGINS")
