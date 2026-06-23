@@ -42,7 +42,7 @@ class BaseBrokeredClient:
     ) -> None:
         """Store the broker settings and build a brokered requester."""
         # Lazy import: robotsix-agent-comm is the optional `broker` extra.
-        from robotsix_agent_comm.sdk import BrokeredRequester
+        from robotsix_agent_comm.sdk import BrokeredRequester  # noqa: I001
 
         self._s = settings
         self._requester = BrokeredRequester(

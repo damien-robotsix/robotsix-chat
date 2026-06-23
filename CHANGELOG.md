@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Fixed pre-existing mypy errors in `broker_client.py` (lazy import type-ignore),
+  `test_broker_client.py` (mock function signature), and `test_auth.py` (missing
+  `client_id` parameter in `_MockAgent.stream`).
+
 - Added `stop_check_loop` and `list_check_loops` tools so the assistant agent
   can stop and inspect its own running check loops; both tools are scoped to
   the calling client for cross-session isolation.

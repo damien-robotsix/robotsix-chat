@@ -21,6 +21,7 @@ class _MockAgent:
         *,
         history: list[tuple[str, str]] | None = None,
         session_id: str | None = None,
+        client_id: str | None = None,
     ) -> AsyncIterator[str]:
         yield "ok"
 

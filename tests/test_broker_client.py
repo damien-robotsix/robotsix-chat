@@ -99,7 +99,7 @@ async def test_consult_valid_request_calls_broker_via_to_thread(
     _real_to_thread = asyncio.to_thread
     to_thread_calls: list[tuple[object, object]] = []
 
-    async def _fake_to_thread(func: object, *args: object) -> object:
+    async def _fake_to_thread(func: Any, *args: Any) -> Any:
         to_thread_calls.append((func, args))
         return await _real_to_thread(func, *args)
 
