@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -277,3 +277,183 @@ async def test_session_id_wraps_run_in_langfuse_session() -> None:
         _ = [c async for c in agent.stream("hi", session_id="sess-123")]
 
     assert seen == ["sess-123"]
+
+
+# ---------------------------------------------------------------------------
+# Retry behaviour
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_retry_on_transient_error() -> None:
+    """Transient error on first ``handle.run`` is retried; success yields reply."""
+    call_count = 0
+
+    async def fail_then_pass(
+        _message: str, *, message_history: object = None
+    ) -> MagicMock:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            # A ValueError with a ValidationError-ish flavour is transient
+            # when we patch the detector; the real detector would catch
+            # OpenRouter's finish_reason='error' ValidationError.
+            raise ValueError("simulated transient hiccup")
+        result = MagicMock()
+        result.output = "recovered reply"
+        return result
+
+    handle = MagicMock()
+    handle.run = fail_then_pass
+    handle.close = MagicMock()
+
+    provider = MagicMock()
+    provider.build_agent.return_value = handle
+    create_model_patch = MagicMock(return_value=provider)
+
+    with (
+        patch("robotsix_chat.llm.agent.create_model", create_model_patch),
+        patch("robotsix_chat.llm.agent.is_openrouter_transient", return_value=True),
+        patch("robotsix_chat.llm.agent.asyncio.sleep", new=AsyncMock()),
+    ):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        chunks = [c async for c in agent.stream("hi")]
+
+    assert chunks == ["recovered reply"]
+    assert provider.build_agent.call_count == 2  # fresh handle per attempt
+    assert handle.close.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_no_retry_on_non_transient_error() -> None:
+    """Non-transient errors raise immediately with no retry."""
+    handle = MagicMock()
+
+    async def boom(_message: str, *, message_history: object = None) -> None:
+        raise RuntimeError("backend exploded")
+
+    handle.run = boom
+    handle.close = MagicMock()
+
+    provider = MagicMock()
+    provider.build_agent.return_value = handle
+    create_model_patch = MagicMock(return_value=provider)
+
+    with (
+        patch("robotsix_chat.llm.agent.create_model", create_model_patch),
+        patch("robotsix_chat.llm.agent.is_openrouter_transient", return_value=False),
+    ):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        with pytest.raises(RuntimeError, match="backend exploded"):
+            _ = [c async for c in agent.stream("hi")]
+
+    assert provider.build_agent.call_count == 1
+    assert handle.close.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_retries_exhausted_on_persistent_transient() -> None:
+    """Persistent transient errors exhaust max attempts then re-raise."""
+    from robotsix_chat.llm.agent import _MAX_RUN_ATTEMPTS
+
+    handle = MagicMock()
+
+    async def always_boom(_message: str, *, message_history: object = None) -> None:
+        raise ValueError("persistent transient")
+
+    handle.run = always_boom
+    handle.close = MagicMock()
+
+    provider = MagicMock()
+    provider.build_agent.return_value = handle
+    create_model_patch = MagicMock(return_value=provider)
+
+    with (
+        patch("robotsix_chat.llm.agent.create_model", create_model_patch),
+        patch("robotsix_chat.llm.agent.is_openrouter_transient", return_value=True),
+        patch("robotsix_chat.llm.agent.asyncio.sleep", new=AsyncMock()),
+    ):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        with pytest.raises(ValueError, match="persistent transient"):
+            _ = [c async for c in agent.stream("hi")]
+
+    assert provider.build_agent.call_count == _MAX_RUN_ATTEMPTS
+    assert handle.close.call_count == _MAX_RUN_ATTEMPTS
+
+
+@pytest.mark.asyncio
+async def test_retry_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
+    """Each retry attempt logs at WARNING with the exception type."""
+    call_count = 0
+
+    async def fail_twice(_message: str, *, message_history: object = None) -> MagicMock:
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 2:
+            raise ValueError("transient blip")
+        result = MagicMock()
+        result.output = "ok"
+        return result
+
+    handle = MagicMock()
+    handle.run = fail_twice
+    handle.close = MagicMock()
+
+    provider = MagicMock()
+    provider.build_agent.return_value = handle
+    create_model_patch = MagicMock(return_value=provider)
+
+    with (
+        patch("robotsix_chat.llm.agent.create_model", create_model_patch),
+        patch("robotsix_chat.llm.agent.is_openrouter_transient", return_value=True),
+        patch("robotsix_chat.llm.agent.asyncio.sleep", new=AsyncMock()),
+        caplog.at_level("WARNING", logger="robotsix_chat.llm.agent"),
+    ):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        _ = [c async for c in agent.stream("hi")]
+
+    assert len(caplog.records) == 2
+    for record in caplog.records:
+        assert record.levelname == "WARNING"
+        assert "transient backend error on attempt" in record.message
+        assert "ValueError" in record.message
+        assert "retrying" in record.message
+
+
+@pytest.mark.asyncio
+async def test_retry_sleeps_backoff() -> None:
+    """asyncio.sleep is awaited with the backoff schedule on each retry."""
+    call_count = 0
+    from robotsix_chat.llm.agent import _RETRY_BACKOFFS
+
+    async def fail_twice(_message: str, *, message_history: object = None) -> MagicMock:
+        nonlocal call_count
+        call_count += 1
+        if call_count <= 2:
+            raise ValueError("transient")
+        result = MagicMock()
+        result.output = "ok"
+        return result
+
+    handle = MagicMock()
+    handle.run = fail_twice
+    handle.close = MagicMock()
+
+    provider = MagicMock()
+    provider.build_agent.return_value = handle
+    create_model_patch = MagicMock(return_value=provider)
+
+    sleep_mock = AsyncMock()
+
+    with (
+        patch("robotsix_chat.llm.agent.create_model", create_model_patch),
+        patch("robotsix_chat.llm.agent.is_openrouter_transient", return_value=True),
+        patch("robotsix_chat.llm.agent.asyncio.sleep", new=sleep_mock),
+    ):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        _ = [c async for c in agent.stream("hi")]
+
+    assert sleep_mock.await_count == 2
+    # First retry → _RETRY_BACKOFFS[0], second → _RETRY_BACKOFFS[1]
+    assert sleep_mock.await_args_list[0].args == (_RETRY_BACKOFFS[0],)
+    assert sleep_mock.await_args_list[1].args == (_RETRY_BACKOFFS[1],)

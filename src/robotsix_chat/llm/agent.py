@@ -30,10 +30,17 @@ from collections.abc import AsyncIterator, Iterator
 from typing import Any
 
 from robotsix_llmio.config import create_model
+from robotsix_llmio.openrouter import is_openrouter_transient
 
 from robotsix_chat.memory import ChatMemory, NullMemory
 
 logger = logging.getLogger(__name__)
+
+# Transient upstream errors (OpenRouter provider failures, 5xx, network
+# blips) are retried up to this many times.  A fresh agent handle is built
+# per attempt so each try starts from a clean state.
+_MAX_RUN_ATTEMPTS = 3
+_RETRY_BACKOFFS = (0.5, 1.0)
 
 # A prior conversation turn replayed to the agent: ``(user, assistant)``.
 Turn = tuple[str, str]
@@ -151,8 +158,10 @@ class LlmioChatAgent:
         Langfuse (a fresh id starts a new trace). Both are optional — with
         neither, the agent behaves as a single stateless query.
 
-        Raises on backend errors — the chat server turns that into an SSE
-        ``error`` frame.
+        Transient upstream errors (OpenRouter provider failures, 5xx, network
+        blips) are retried up to :data:`_MAX_RUN_ATTEMPTS` before surfacing.
+        Non-transient errors and exhausted retries are raised — the chat server
+        turns that into an SSE ``error`` frame.
         """
         # Recall relevant memory and fold it into the system prompt. recall()
         # never raises (it degrades to "" on any backend failure).
@@ -168,28 +177,45 @@ class LlmioChatAgent:
             provider_kwargs["api_key"] = self._api_key
 
         provider = create_model(level=self._model_level, **provider_kwargs)
-        handle = provider.build_agent(
-            level=self._model_level,
-            system_prompt=system_prompt,
-            tools=self._tools,
-            # The chat is an untrusted, internet-facing surface: never expose the
-            # SDK's built-in tools (Bash/Read/Edit/...). Only the explicitly
-            # provided tools (e.g. the mill consult tool) are callable.
-            builtin_tools=False,
-        )
         message_history = _build_message_history(history)
-        try:
-            with _trace_session(session_id):
-                result = await handle.run(message, message_history=message_history)
-        finally:
-            handle.close()
 
-        text = result.output
-        # Persist the exchange in the background so memory consolidation never
-        # blocks the reply. The task is tracked to avoid premature GC.
-        if text:
-            self._schedule_remember(message, text)
-            yield text
+        for attempt in range(1, _MAX_RUN_ATTEMPTS + 1):
+            # Build a fresh handle per attempt so each try starts from a
+            # clean state (the handle is always closed in the finally block
+            # below regardless of success or failure).
+            handle = provider.build_agent(
+                level=self._model_level,
+                system_prompt=system_prompt,
+                tools=self._tools,
+                builtin_tools=False,
+            )
+            try:
+                try:
+                    with _trace_session(session_id):
+                        result = await handle.run(
+                            message, message_history=message_history
+                        )
+                finally:
+                    handle.close()
+            except Exception as exc:
+                if attempt == _MAX_RUN_ATTEMPTS or not is_openrouter_transient(exc):
+                    raise
+                logger.warning(
+                    "transient backend error on attempt %d/%d (%s), retrying",
+                    attempt,
+                    _MAX_RUN_ATTEMPTS,
+                    type(exc).__name__,
+                )
+                await asyncio.sleep(_RETRY_BACKOFFS[attempt - 1])
+                continue
+
+            text = result.output
+            # Persist the exchange in the background so memory consolidation never
+            # blocks the reply. The task is tracked to avoid premature GC.
+            if text:
+                self._schedule_remember(message, text)
+                yield text
+            return
 
     def _schedule_remember(self, message: str, reply: str) -> None:
         """Fire-and-forget the memory write for a completed exchange."""
