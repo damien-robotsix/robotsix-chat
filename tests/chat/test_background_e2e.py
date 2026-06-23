@@ -10,7 +10,6 @@ the EventBus.
 from __future__ import annotations
 
 import asyncio
-from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
@@ -19,47 +18,7 @@ from robotsix_chat.chat.delegation import build_delegation_tools
 from robotsix_chat.chat.events import EventBus
 from robotsix_chat.chat.tasks import TaskRegistry
 from robotsix_chat.config import Settings
-
-# ---------------------------------------------------------------------------
-# Stubs / fakes
-# ---------------------------------------------------------------------------
-
-
-class _StubAgent:
-    """An agent whose ``stream`` yields fixed chunks."""
-
-    def __init__(self, chunks: list[str] | None = None) -> None:
-        self.chunks = chunks or ["Hello", " ", "world!"]
-
-    async def stream(
-        self,
-        message: str,
-        *,
-        history: list[tuple[str, str]] | None = None,
-        session_id: str | None = None,
-        client_id: str | None = None,
-    ) -> AsyncIterator[str]:
-        for chunk in self.chunks:
-            yield chunk
-
-
-class _FailingAgent:
-    """An agent whose ``stream`` always raises (as an async generator)."""
-
-    def __init__(self, exc: Exception) -> None:
-        self.exc = exc
-
-    async def stream(
-        self,
-        message: str,
-        *,
-        history: list[tuple[str, str]] | None = None,
-        session_id: str | None = None,
-        client_id: str | None = None,
-    ) -> AsyncIterator[str]:
-        raise self.exc
-        yield  # make this an async generator  # pragma: no cover
-
+from tests.conftest import MockAgent
 
 # ---------------------------------------------------------------------------
 # EventBus → DeliveryChannel adapter
@@ -122,7 +81,7 @@ async def test_e2e_happy_path_task_started_to_completed() -> None:
         registry,
         channel,
         client_id="c1",
-        agent_factory=lambda s: _StubAgent(["result:", " 42"]),
+        agent_factory=lambda s: MockAgent(tokens=["result:", " 42"]),
     )
     delegate_task_fn = tools[0]
 
@@ -175,7 +134,7 @@ async def test_e2e_failure_path_task_started_to_failed() -> None:
         registry,
         channel,
         client_id="c2",
-        agent_factory=lambda s: _FailingAgent(exc),
+        agent_factory=lambda s: MockAgent(error=exc),
     )
     delegate_task_fn = tools[0]
 
@@ -223,7 +182,7 @@ async def test_e2e_frames_isolated_per_client() -> None:
         registry,
         channel,
         client_id="client-a",
-        agent_factory=lambda s: _StubAgent(["ok"]),
+        agent_factory=lambda s: MockAgent(["ok"]),
     )
     delegate_task_fn = tools[0]
 
