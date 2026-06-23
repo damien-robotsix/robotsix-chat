@@ -667,15 +667,16 @@ def _loop_registry(
 # ---------------------------------------------------------------------------
 
 
-def test_build_check_loop_tools_returns_one_callable() -> None:
-    """``build_check_loop_tools`` returns one callable named start_check_loop."""
+def test_build_check_loop_tools_returns_three_callables() -> None:
+    """``build_check_loop_tools`` returns three callables: start, stop, list."""
     registry = _loop_registry()
     settings = _stub_settings()
 
     tools = build_check_loop_tools(settings, registry)
-    assert len(tools) == 1
-    assert callable(tools[0])
-    assert tools[0].__name__ == "start_check_loop"
+    assert len(tools) == 3
+    assert all(callable(t) for t in tools)
+    names = [t.__name__ for t in tools]
+    assert names == ["start_check_loop", "stop_check_loop", "list_check_loops"]
 
 
 def test_start_check_loop_has_docstring() -> None:
@@ -899,6 +900,207 @@ async def test_start_check_loop_does_not_publish_loop_started_frame() -> None:
 
 
 # ---------------------------------------------------------------------------
+# stop_check_loop
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stop_check_loop_stops_running_loop() -> None:
+    """Calling stop_check_loop on an owned running loop stops it."""
+    bus = EventBus()
+    registry = _loop_registry(sink=bus)
+    settings = _stub_settings()
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        client_id="c1",
+        agent_factory=lambda s: _StubAgent(["ok"]),
+    )
+    start_check_loop = tools[0]
+    stop_check_loop = tools[1]
+
+    result = await start_check_loop("loop to stop", interval_seconds=120.0)
+    loop_id = _extract_loop_id(result)
+
+    # Stop it.
+    stop_result = await stop_check_loop(loop_id)
+    assert "Stopped" in stop_result
+    assert loop_id in stop_result
+
+    # Registry confirms STOPPED.
+    info = registry.get(loop_id)
+    assert info is not None
+    assert info.status.value == "stopped"
+
+
+@pytest.mark.asyncio
+async def test_stop_check_loop_different_client_not_stopped() -> None:
+    """A loop owned by a different client_id is NOT stopped and returns not-found."""
+    bus = EventBus()
+    registry = _loop_registry(sink=bus)
+    settings = _stub_settings()
+
+    # Start a loop as client "owner".
+    tools_owner = build_check_loop_tools(
+        settings,
+        registry,
+        client_id="owner",
+        agent_factory=lambda s: _StubAgent(["ok"]),
+    )
+    result = await tools_owner[0]("loop for owner", interval_seconds=120.0)
+    loop_id = _extract_loop_id(result)
+
+    # Try to stop as client "intruder".
+    tools_intruder = build_check_loop_tools(
+        settings,
+        registry,
+        client_id="intruder",
+        agent_factory=lambda s: _StubAgent(["nope"]),
+    )
+    stop_result = await tools_intruder[1](loop_id)
+    assert "don't see" in stop_result.lower() or "not found" in stop_result.lower()
+
+    # The original loop is still RUNNING (not stopped).
+    info = registry.get(loop_id)
+    assert info is not None
+    assert info.status.value == "running"
+
+    # Clean up.
+    registry.stop(loop_id, reason="test teardown")
+    await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_stop_check_loop_unknown_id_returns_message() -> None:
+    """Stopping a nonexistent loop id returns a not-found message without raising."""
+    registry = _loop_registry()
+    settings = _stub_settings()
+
+    tools = build_check_loop_tools(settings, registry, client_id="c1")
+    _, stop_check_loop, _ = tools
+
+    result = await stop_check_loop("nonexistent-99")
+    assert isinstance(result, str)
+    assert "don't see" in result.lower() or "not found" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_stop_check_loop_idempotent() -> None:
+    """Stopping an already-stopped loop returns a polite message (idempotent)."""
+    bus = EventBus()
+    registry = _loop_registry(sink=bus)
+    settings = _stub_settings()
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        client_id="c1",
+        agent_factory=lambda s: _StubAgent(["ok"]),
+    )
+    start_check_loop = tools[0]
+    stop_check_loop = tools[1]
+
+    result = await start_check_loop("loop to double-stop", interval_seconds=120.0)
+    loop_id = _extract_loop_id(result)
+
+    # First stop.
+    await stop_check_loop(loop_id)
+    info = registry.get(loop_id)
+    assert info is not None
+    assert info.status.value == "stopped"
+
+    # Second stop — idempotent (no raise).
+    result2 = await stop_check_loop(loop_id)
+    assert "Stopped" in result2 or "don't see" in result2.lower()
+
+
+# ---------------------------------------------------------------------------
+# list_check_loops
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_check_loops_empty() -> None:
+    """list_check_loops returns a message when there are no loops."""
+    registry = _loop_registry()
+    settings = _stub_settings()
+
+    tools = build_check_loop_tools(settings, registry, client_id="c1")
+    _, _, list_check_loops = tools
+
+    result = await list_check_loops()
+    assert isinstance(result, str)
+    assert "no check loops" in result.lower() or "none" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_list_check_loops_includes_owned_loop_ids() -> None:
+    """list_check_loops returns a summary containing ids of owned loops."""
+    bus = EventBus()
+    registry = _loop_registry(sink=bus)
+    settings = _stub_settings()
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        client_id="c1",
+        agent_factory=lambda s: _StubAgent(["ok"]),
+    )
+    start_check_loop = tools[0]
+    _, _, list_check_loops = tools
+
+    await start_check_loop("alpha check", interval_seconds=120.0)
+    await start_check_loop("beta check", interval_seconds=300.0)
+
+    # Let first iterations land.
+    await asyncio.sleep(0.15)
+
+    result = await list_check_loops()
+    assert "L0" in result
+    assert "L1" in result
+    assert "alpha" in result
+    assert "beta" in result
+    assert "running" in result
+
+    # Clean up.
+    registry.stop("L0", reason="test teardown")
+    registry.stop("L1", reason="test teardown")
+    await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_list_check_loops_excludes_other_clients() -> None:
+    """list_check_loops does not reveal loops belonging to other clients."""
+    bus = EventBus()
+    registry = _loop_registry(sink=bus)
+    settings = _stub_settings()
+
+    # Start a loop as "alice".
+    tools_alice = build_check_loop_tools(
+        settings,
+        registry,
+        client_id="alice",
+        agent_factory=lambda s: _StubAgent(["alice's check"]),
+    )
+    r = await tools_alice[0]("alice loop", interval_seconds=120.0)
+    alice_loop_id = _extract_loop_id(r)
+
+    # List as "bob".
+    tools_bob = build_check_loop_tools(settings, registry, client_id="bob")
+    _, _, list_check_loops = tools_bob
+
+    result = await list_check_loops()
+    # Bob sees his own loops (none) but not Alice's.
+    assert alice_loop_id not in result
+    assert "no check loops" in result.lower() or "none" in result.lower()
+
+    # Clean up.
+    registry.stop(alice_loop_id, reason="test teardown")
+    await asyncio.sleep(0.05)
+
+
+# ---------------------------------------------------------------------------
 # create_agent_from_settings — check_loop_registry gating
 # ---------------------------------------------------------------------------
 
@@ -946,7 +1148,7 @@ def test_sub_agent_has_no_start_check_loop_tool() -> None:
 
 
 def test_foreground_agent_gets_both_delegation_and_loop_tools() -> None:
-    """When both registries are provided, both tools appear in the factory."""
+    """When both registries are provided, all tools appear in the factory."""
     loop_registry = _loop_registry()
     task_registry = TaskRegistry()
     channel = _FakeDeliveryChannel()
@@ -963,6 +1165,8 @@ def test_foreground_agent_gets_both_delegation_and_loop_tools() -> None:
     tool_names = [t.__name__ for t in per_req]
     assert "delegate_task" in tool_names
     assert "start_check_loop" in tool_names
+    assert "stop_check_loop" in tool_names
+    assert "list_check_loops" in tool_names
 
 
 # ---------------------------------------------------------------------------

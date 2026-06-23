@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added `stop_check_loop` and `list_check_loops` tools so the assistant agent
+  can stop and inspect its own running check loops; both tools are scoped to
+  the calling client for cross-session isolation.
+
 - Added a Stop button to the Check Loops panel in the chat UI for cancelling
   running check loops via the existing `/loops/{loop_id}/stop` endpoint.
 
