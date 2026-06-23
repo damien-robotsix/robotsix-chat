@@ -35,3 +35,8 @@ deploy/data/
 # Secret material (API keys etc.) — never commit
 *.secrets
 cogney-key.secrets
+
+# Vendored deps installed into the tree during sandboxed builds/tests
+# (e.g. pip/uv install --target local-deps). Generated, never committed —
+# without this they flood the implement diff and trip scope-triage.
+local-deps/
