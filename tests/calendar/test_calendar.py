@@ -137,6 +137,7 @@ def test_build_calendar_tools_returns_four_tools(
         "find_spec",
         lambda name: object() if name == "robotsix_agent_comm" else None,
     )
+    _install_fake_agent_comm(monkeypatch)
     tools = build_calendar_tools(_settings())
     assert len(tools) == 4
     names = [t.__name__ for t in tools]

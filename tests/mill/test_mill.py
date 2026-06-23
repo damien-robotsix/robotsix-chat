@@ -137,6 +137,7 @@ def test_build_mill_tools_returns_consult_tool(
         "find_spec",
         lambda name: object() if name == "robotsix_agent_comm" else None,
     )
+    _install_fake_agent_comm(monkeypatch)
     tools = build_mill_tools(_settings())
     assert len(tools) == 1
     assert tools[0].__name__ == "consult_mill"
