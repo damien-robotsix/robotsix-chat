@@ -1,0 +1,60 @@
+# System Prompt Changelog
+
+Governed artifact: `Settings.agent_instruction` default literal in
+`src/robotsix_chat/config.py`.  Version stamp: `SYSTEM_PROMPT_VERSION`
+in the same module.
+
+---
+
+## Governance policy
+
+Every change to `Settings.agent_instruction` (the pydantic field default
+literal in `src/robotsix_chat/config.py`) **MUST**:
+
+1. **Bump** `SYSTEM_PROMPT_VERSION` to the next integer.
+2. **Add a new entry** at the top of this file (reverse-chronological,
+   newest first) with the header `## v<N> — <YYYY-MM-DD> — <ticket-id>`.
+3. **Record the SHA256** of the new `agent_instruction` default literal
+   (computed as `hashlib.sha256(default.encode()).hexdigest()`) in the entry.
+4. **Mirror** the updated default literal verbatim in the `agent.instruction`
+   row of `docs/configuration.md`.
+
+A CI test (`tests/config/test_system_prompt_governance.py`) enforces that
+the latest entry's version matches `SYSTEM_PROMPT_VERSION` and its recorded
+hash matches the live default — edits that skip this file **will fail CI**.
+
+### Rollback procedure
+
+Rollback is a **forward-moving new version** — never reuse a version
+number.  To revert to a previous prompt:
+
+1. Pick the target prior version's entry in this changelog.
+2. Restore its prompt text via git, e.g.:
+   `git revert <commit>` or `git show <commit>:src/robotsix_chat/config.py`
+   (extract the `agent_instruction` block).
+3. Bump `SYSTEM_PROMPT_VERSION` to the next number.
+4. Add a new changelog entry `## v<N> — <YYYY-MM-DD> — <ticket-id>` with:
+   - **Summary**: `rollback to v<K>`
+   - **Rationale**: why the rollback is needed and which ticket authorises it.
+   - **SHA256**: the hash of the restored literal (must match the prior
+     version's recorded hash).
+5. Mirror the restored literal in `docs/configuration.md`.
+
+---
+
+## v1 — 2026-06-23 — 20260623T204251Z-robotsix-chat-governance-for-assistant-s-45f3
+
+**Summary:** Baseline — the current `agent_instruction` default literal as
+established by ticket `20260623T203856Z-robotsix-chat-update-the-assistant-s-own-838a`
+and recorded when this governance layer was introduced.
+
+**Rationale:** Ticket …-838a appended board/mill operational guidance
+(delegate-vs-inline, board-placement verification, draft→ready auto-pickup)
+and calendar/task tool guidance to the pre-existing "You are a helpful
+assistant." prefix.  This entry locks in that known-good state.
+
+**Diff:** `git show 7b890de -- src/robotsix_chat/config.py` (the …-838a
+merge commit), or `git log -p -- src/robotsix_chat/config.py` scoped to the
+`agent_instruction` block.
+
+**SHA256:** `09b73c46b24449484a5e2e9484137b85d73cfe210aa31eac05c81ca4f0698674`
