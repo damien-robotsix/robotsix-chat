@@ -47,7 +47,7 @@
 
 ## Configuration
 
-See the [Configuration](user-guide/configuration.md) page for a full reference of every setting, including OpenRouter API keys, HTTP Basic Auth, memory, and mill integration.
+See the [Configuration](configuration.md) page for a full reference of every setting, including OpenRouter API keys, HTTP Basic Auth, memory, mill, calendar, and refdocs integration.
 
 ## Deployment
 
