@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import sys
+import types
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
+
+import pytest
 
 # Ensure locally-installed packages (asgi-correlation-id etc.) are
 # importable before any application code is loaded.
@@ -101,3 +104,95 @@ async def mock_app(
 
     async with http_client(app, **transport_kwargs) as client:
         yield AppFixture(agent=agent, app=app, client=client)
+
+
+# ---------------------------------------------------------------------------
+# Shared fake robotsix_agent_comm helpers
+# ---------------------------------------------------------------------------
+
+
+class _FakeError:
+    """Stand-in for robotsix_agent_comm.protocol.Error."""
+
+    def __init__(self, body: Any) -> None:
+        self.body = body
+
+
+class _Reply:
+    def __init__(self, body: Any) -> None:
+        self.body = body
+
+
+def _install_fake_agent_comm(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    reply: Any = None,
+    raise_exc: Exception | None = None,
+) -> dict[str, Any]:
+    """Install a fake robotsix_agent_comm module tree; return a capture dict."""
+    captured: dict[str, Any] = {}
+
+    class _FakeBrokeredRequester:
+        def __init__(
+            self,
+            agent_id: str,
+            target_agent_id: str,
+            *,
+            broker_host: str,
+            broker_token: str | None,
+            broker_port: int = 443,
+            broker_scheme: str = "https",
+            broker_ssl_context: object | None = None,
+            timeout: float = 30.0,
+            default_reply: str = "",
+        ) -> None:
+            captured["agent_id"] = agent_id
+            captured["recipient"] = target_agent_id
+            captured["broker_host"] = broker_host
+            captured["broker_port"] = broker_port
+            captured["broker_scheme"] = broker_scheme
+            captured["broker_token"] = broker_token
+            captured["timeout"] = timeout
+            captured["default_reply"] = default_reply
+            self._raise_exc = raise_exc
+            self._reply = reply
+            self._default_reply = default_reply
+
+        def request(
+            self,
+            payload: dict[str, Any] | None = None,
+            *,
+            timeout: float | None = None,
+            default: str | None = None,
+        ) -> str:
+            captured["payload"] = payload
+            if self._raise_exc is not None:
+                raise self._raise_exc
+            if isinstance(self._reply, _FakeError):
+                msg = (
+                    self._reply.body.get("message")
+                    if isinstance(self._reply.body, dict)
+                    else None
+                )
+                raise RuntimeError(f"brokered request to ... failed: {msg}")
+            body = getattr(self._reply, "body", self._reply)
+            # Replicate reply_text behaviour used by the real BrokeredRequester
+            if isinstance(body, dict):
+                r = body.get("reply")
+                if r is not None and r != "":
+                    return r if isinstance(r, str) else str(r)
+                return str(body)
+            if body is None:
+                return default if default is not None else self._default_reply
+            return str(body)
+
+    root = types.ModuleType("robotsix_agent_comm")
+    sdk = types.ModuleType("robotsix_agent_comm.sdk")
+    sdk.BrokeredRequester = _FakeBrokeredRequester  # type: ignore[attr-defined]
+
+    for name, mod in {
+        "robotsix_agent_comm": root,
+        "robotsix_agent_comm.sdk": sdk,
+    }.items():
+        monkeypatch.setitem(sys.modules, name, mod)
+    return captured
