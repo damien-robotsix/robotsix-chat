@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import json
+import tempfile
 from itertools import count
+from pathlib import Path
 
 import pytest
 
@@ -172,3 +175,133 @@ def test_default_idle_window_is_thirty_minutes(client_turns: int) -> None:
     clock.advance(1801)
     _, reset = store.begin("c")
     assert reset == []
+
+
+# -- on-disk persistence -------------------------------------------------
+
+
+def test_persist_writes_to_file_on_record() -> None:
+    """record() writes the full store state to the persist file."""
+    clock = _FakeClock()
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        persist_path = Path(f.name)
+
+    try:
+        store = _store(clock, persist_path=persist_path)
+        store.begin("c1")
+        store.record("c1", "hello", "hi there")
+
+        raw = json.loads(persist_path.read_text(encoding="utf-8"))
+        assert "c1" in raw
+        assert raw["c1"]["turns"] == [["hello", "hi there"]]
+    finally:
+        persist_path.unlink(missing_ok=True)
+
+
+def test_load_restores_history_from_disk() -> None:
+    """On init, previously persisted conversations are loaded back."""
+    data = {
+        "c1": {
+            "session_id": "saved-session",
+            "turns": [["q1", "a1"], ["q2", "a2"]],
+        }
+    }
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False, encoding="utf-8"
+    ) as f:
+        json.dump(data, f)
+        persist_path = Path(f.name)
+
+    try:
+        clock = _FakeClock()
+        store = _store(clock, persist_path=persist_path)
+        session_id, history = store.begin("c1")
+        assert history == [("q1", "a1"), ("q2", "a2")]
+    finally:
+        persist_path.unlink(missing_ok=True)
+
+
+def test_load_missing_file_is_graceful() -> None:
+    """A missing persist file is not an error — store starts empty."""
+    clock = _FakeClock()
+    store = _store(clock, persist_path=Path("/nonexistent/conversations.json"))
+    session_id, history = store.begin("c1")
+    assert history == []
+
+
+def test_load_trims_to_max_history_turns() -> None:
+    """On load, turns beyond max_history_turns are trimmed."""
+    data = {
+        "c1": {
+            "session_id": "s",
+            "turns": [["q0", "a0"], ["q1", "a1"], ["q2", "a2"]],
+        }
+    }
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False, encoding="utf-8"
+    ) as f:
+        json.dump(data, f)
+        persist_path = Path(f.name)
+
+    try:
+        clock = _FakeClock()
+        store = _store(clock, max_history_turns=2, persist_path=persist_path)
+        _, history = store.begin("c1")
+        assert history == [("q1", "a1"), ("q2", "a2")]
+    finally:
+        persist_path.unlink(missing_ok=True)
+
+
+def test_load_malformed_json_is_graceful() -> None:
+    """Malformed persist file is logged and ignored — store starts empty."""
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False, encoding="utf-8"
+    ) as f:
+        f.write("not json {")
+        persist_path = Path(f.name)
+
+    try:
+        clock = _FakeClock()
+        store = _store(clock, persist_path=persist_path)
+        _, history = store.begin("c1")
+        assert history == []
+    finally:
+        persist_path.unlink(missing_ok=True)
+
+
+def test_persist_preserves_idle_reset_behaviour() -> None:
+    """Idle reset still works after loading from disk."""
+    data = {
+        "c1": {
+            "session_id": "old-session",
+            "turns": [["q1", "a1"]],
+        }
+    }
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False, encoding="utf-8"
+    ) as f:
+        json.dump(data, f)
+        persist_path = Path(f.name)
+
+    try:
+        clock = _FakeClock()
+        store = _store(clock, idle_reset_seconds=100, persist_path=persist_path)
+
+        # Loaded conversation should be active right after load.
+        sid1, hist1 = store.begin("c1")
+        assert hist1 == [("q1", "a1")]
+
+        # Advance past idle window — conversation resets.
+        clock.advance(101)
+        sid2, hist2 = store.begin("c1")
+        assert sid2 != sid1
+        assert hist2 == []
+    finally:
+        persist_path.unlink(missing_ok=True)
+
+
+def test_default_max_history_turns_is_50() -> None:
+    """The default cap matches the acceptance criterion of 50 most recent."""
+    clock = _FakeClock()
+    store = ConversationStore(clock=clock)
+    assert store._max_history_turns == 50

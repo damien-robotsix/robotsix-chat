@@ -386,8 +386,8 @@
 
   function restartConversation() {
     idleTimerId = null;
-    // Clear all message bubbles and any in-flight assistant bubble.
-    chatEl.innerHTML = "";
+    // Do NOT clear existing chat history — idle timeout adds an inline
+    // notice so the user can still scroll back through the conversation.
     currentAssistantBubble = null;
     messageQueue = [];
     hideTypingIndicator();
@@ -396,9 +396,12 @@
     var notice = document.createElement("div");
     notice.className = "bubble assistant";
     notice.style.fontStyle = "italic";
-    notice.textContent = "Conversation restarted — you were idle for "
-                       + IDLE_TIMEOUT_MINUTES + " minute(s).";
+    notice.textContent = "You were idle for "
+                       + IDLE_TIMEOUT_MINUTES + " minute(s) — "
+                       + "the conversation has been reset. "
+                       + "Your previous messages are still visible above.";
     chatEl.appendChild(notice);
+    scrollToBottom();
   }
 
   function defaultUrl() {

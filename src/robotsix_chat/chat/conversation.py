@@ -17,11 +17,16 @@ fewer turns), never corruption.
 
 from __future__ import annotations
 
+import json
+import logging
 import time
 import uuid
 from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
+from pathlib import Path
+
+logger = logging.getLogger(__name__)
 
 # A single exchanged turn: ``(user_message, assistant_reply)``.
 Turn = tuple[str, str]
@@ -50,19 +55,30 @@ class ConversationStore:
         self,
         *,
         idle_reset_seconds: float = 1800.0,
-        max_history_turns: int = 20,
+        max_history_turns: int = 50,
         max_conversations: int = 1000,
         clock: Callable[[], float] = time.monotonic,
         session_factory: Callable[[], str] | None = None,
+        persist_path: Path | None = None,
     ) -> None:
-        """Configure idle/size bounds and the clock + session-id factory."""
+        """Configure store bounds, clock, session factory, and optional disk persist.
+
+        When *persist_path* is given, the store loads any previously-saved
+        conversations on startup and writes the full state to that JSON file
+        after every ``record()`` — so chat history survives a container
+        restart when the path is on a persistent volume mount (e.g.
+        ``.data/conversations.json``).
+        """
         self._idle_reset_seconds = idle_reset_seconds
         self._max_history_turns = max_history_turns
         self._max_conversations = max_conversations
         self._clock = clock
         self._session_factory = session_factory or (lambda: uuid.uuid4().hex)
+        self._persist_path = persist_path
         # Insertion-ordered so the oldest-touched conversation is evicted first.
         self._conversations: OrderedDict[str, _Conversation] = OrderedDict()
+        if self._persist_path is not None:
+            self._load_from_disk()
 
     def new_session_id(self) -> str:
         """Return a fresh trace session id (for untracked / ephemeral callers)."""
@@ -98,6 +114,9 @@ class ConversationStore:
         configured cap. If the client was evicted between :meth:`begin` and now,
         the turn is dropped (its session simply won't accumulate) rather than
         resurrecting an evicted conversation.
+
+        When a *persist_path* was configured, writes the full store state to
+        disk after recording.
         """
         conversation = self._conversations.get(client_id)
         if conversation is None:
@@ -107,6 +126,8 @@ class ConversationStore:
             del conversation.turns[: -self._max_history_turns]
         conversation.last_activity = self._clock()
         self._conversations.move_to_end(client_id)
+        if self._persist_path is not None:
+            self._persist()
 
     def history(self, client_id: str) -> list[Turn]:
         """Return a snapshot copy of *client_id*'s recorded turns.
@@ -125,3 +146,61 @@ class ConversationStore:
     def _evict_overflow(self) -> None:
         while len(self._conversations) > self._max_conversations:
             self._conversations.popitem(last=False)
+
+    # -- on-disk persistence ----------------------------------------------
+
+    def _load_from_disk(self) -> None:
+        """Restore conversations from the persist file (best-effort)."""
+        if self._persist_path is None:  # only called when configured
+            return
+        try:
+            raw = json.loads(self._persist_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return  # first run — no saved state yet
+        except (OSError, json.JSONDecodeError):
+            logger.exception(
+                "Failed to load conversation history from %s", self._persist_path
+            )
+            return
+
+        now = self._clock()
+        if not isinstance(raw, dict):
+            return
+        for client_id, entry in raw.items():
+            if not isinstance(entry, dict):
+                continue
+            turns_raw = entry.get("turns")
+            if not isinstance(turns_raw, list):
+                continue
+            turns: list[Turn] = []
+            for t in turns_raw:
+                if isinstance(t, list) and len(t) == 2:
+                    turns.append((str(t[0]), str(t[1])))
+            if not turns:
+                continue
+            # Cap to the configured limit on restore (the limit may have
+            # been lowered since the data was saved).
+            if len(turns) > self._max_history_turns:
+                turns = turns[-self._max_history_turns :]
+            self._conversations[client_id] = _Conversation(
+                session_id=str(entry.get("session_id", self._session_factory())),
+                last_activity=now,  # reset activity clock on load
+                turns=turns,
+            )
+
+    def _persist(self) -> None:
+        """Write the full conversation state to the persist file."""
+        if self._persist_path is None:
+            return
+        data: dict[str, dict[str, object]] = {}
+        for client_id, conv in self._conversations.items():
+            data[client_id] = {
+                "session_id": conv.session_id,
+                "turns": [list(t) for t in conv.turns],
+            }
+        try:
+            self._persist_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        except OSError:
+            logger.exception(
+                "Failed to persist conversation history to %s", self._persist_path
+            )

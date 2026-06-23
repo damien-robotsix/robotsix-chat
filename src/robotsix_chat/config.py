@@ -308,7 +308,7 @@ class ConversationSettings(BaseModel):
     """
 
     idle_reset_seconds: int = 1800
-    max_history_turns: int = 20
+    max_history_turns: int = 50
     max_conversations: int = 1000
 
 
