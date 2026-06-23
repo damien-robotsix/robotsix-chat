@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   variables across server, auth, memory, mill, calendar, conversation,
   and refdocs settings.
 
+### Changed
+
+- Extracted shared `BaseBrokeredClient` base class from `MillClient` and
+  `CalendarClient`, eliminating ~40 lines of duplicated boilerplate.
+
 ## [0.1.0] - Unreleased
 
 ### Added

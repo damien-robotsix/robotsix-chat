@@ -26,6 +26,11 @@ modules:
       - tests/conftest.py
       - tests/test_smoke.py
 
+  - id: robotsix_chat.broker_client
+    description: "Shared base for brokered agent-comm clients — lazy import, common __init__ pattern, and thread-offloaded consult()."
+    paths:
+      - src/robotsix_chat/broker_client.py
+
   - id: robotsix_chat.config
     description: "Environment-based configuration via pydantic + python-dotenv."
     paths:
