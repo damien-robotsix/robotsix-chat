@@ -26,7 +26,14 @@ class CalendarClient(BaseBrokeredClient):
             default_reply="The calendar agent returned no reply.",
         )
 
-    async def consult(self, request: str, *, domain: str) -> str:
+    async def consult(
+        self,
+        request: str,
+        *,
+        empty_reply: str = "",
+        error_label: str = "",
+        **extra_payload: object,
+    ) -> str:
         """Send *request* to the calendar agent under *domain* and return its reply.
 
         *domain* is ``"calendar"`` or ``"tasks"`` — passed in the payload so the
@@ -36,6 +43,7 @@ class CalendarClient(BaseBrokeredClient):
         Never raises: broker/timeout/recipient errors become a short message the
         calling LLM can relay to the user.
         """
+        domain = str(extra_payload.pop("domain", ""))
         return await super().consult(
             request,
             empty_reply=f"No request was provided to send to the {domain} agent.",

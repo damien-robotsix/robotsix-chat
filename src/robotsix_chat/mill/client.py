@@ -26,7 +26,14 @@ class MillClient(BaseBrokeredClient):
             default_reply="The mill board manager returned no reply.",
         )
 
-    async def consult(self, request: str) -> str:
+    async def consult(
+        self,
+        request: str,
+        *,
+        empty_reply: str = "",
+        error_label: str = "",
+        **extra_payload: object,
+    ) -> str:
         """Send *request* to the board manager and return its reply as text.
 
         Never raises: broker/timeout/board errors become a short message the
