@@ -209,6 +209,8 @@ Tests for module `robotsix_chat.<module>` live under `tests/<module>/`, mirrorin
 
 **Rule:** When testing a module that lazy-imports `robotsix_agent_comm`, both monkeypatch `importlib.util.find_spec` AND populate `sys.modules` with a fake module stub. Use the `_install_fake_agent_comm(monkeypatch)` helper from `tests/conftest.py` rather than only patching `find_spec` — the lazy `from robotsix_agent_comm.sdk import BrokeredRequester` import resolves at class-construction time through `sys.modules`, not through `find_spec`.
 
+**Rule:** When a `ChatAgent` protocol parameter is added or changed, update ALL mock classes that implement the protocol (`_MockAgent`, `MockAgent`, and any other test-local mocks) in the same PR. Run `mypy` on the full test suite to verify protocol conformance — a mock that lacks a keyword argument silently passes structural subtyping at runtime but fails static `mypy --strict` checks.
+
 ## Task tracking
 
 Persistent, human-readable task tracking lives under `tasks/` at the repo root:
