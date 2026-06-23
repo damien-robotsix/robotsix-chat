@@ -90,8 +90,13 @@ class ChatAgent(Protocol):
         history: list[tuple[str, str]] | None = None,
         session_id: str | None = None,
         client_id: str | None = None,
+        images: list[tuple[str, bytes]] | None = None,
     ) -> AsyncIterator[str]:
-        """Yield tokens from the LLM in response to ``message``."""
+        """Yield tokens from the LLM in response to ``message``.
+
+        *images* is an optional list of ``(media_type, raw_bytes)`` pairs
+        representing attached images (e.g. ``[("image/png", b"...")]``).
+        """
         ...
 
 
@@ -138,10 +143,90 @@ async def chat_endpoint(
         return JSONResponse({"error": "expected a JSON object"}, status_code=400)
 
     message = body.get("message")
-    if not message or not isinstance(message, str):
+    if message is not None and not isinstance(message, str):
         return JSONResponse(
-            {"error": "missing or invalid 'message' field"}, status_code=400
+            {"error": "message must be a string when present"}, status_code=400
         )
+
+    # -- parse & validate images (optional) -------------------------------
+    max_per_msg: int = request.app.state.max_images_per_message
+    max_bytes: int = request.app.state.max_image_bytes
+    allowed_types: list[str] = request.app.state.allowed_image_media_types
+
+    raw_images = body.get("images")
+    images: list[tuple[str, bytes]] | None = None
+    if raw_images is not None:
+        if not isinstance(raw_images, list):
+            return JSONResponse(
+                {"error": "'images' must be a JSON array"}, status_code=400
+            )
+        if len(raw_images) > max_per_msg:
+            return JSONResponse(
+                {
+                    "error": (
+                        f"too many images: got {len(raw_images)}, maximum {max_per_msg}"
+                    )
+                },
+                status_code=400,
+            )
+        images = []
+        import base64
+
+        for idx, img in enumerate(raw_images):
+            if not isinstance(img, dict):
+                return JSONResponse(
+                    {"error": f"images[{idx}]: expected a JSON object"},
+                    status_code=400,
+                )
+            media_type = img.get("media_type")
+            if not isinstance(media_type, str) or not media_type:
+                return JSONResponse(
+                    {"error": (f"images[{idx}]: missing or invalid 'media_type'")},
+                    status_code=400,
+                )
+            if media_type not in allowed_types:
+                return JSONResponse(
+                    {
+                        "error": (
+                            f"images[{idx}]: media_type {media_type!r} not "
+                            f"allowed (allowed: {allowed_types})"
+                        )
+                    },
+                    status_code=400,
+                )
+            data_b64 = img.get("data")
+            if not isinstance(data_b64, str) or not data_b64:
+                return JSONResponse(
+                    {"error": f"images[{idx}]: missing or invalid 'data'"},
+                    status_code=400,
+                )
+            try:
+                raw_bytes = base64.b64decode(data_b64, validate=True)
+            except Exception:
+                return JSONResponse(
+                    {"error": f"images[{idx}]: 'data' is not valid base64"},
+                    status_code=400,
+                )
+            if len(raw_bytes) > max_bytes:
+                return JSONResponse(
+                    {
+                        "error": (
+                            f"images[{idx}]: decoded size {len(raw_bytes)} "
+                            f"exceeds maximum {max_bytes}"
+                        )
+                    },
+                    status_code=400,
+                )
+            images.append((media_type, raw_bytes))
+
+    # -- require at least one of message or images -----------------------
+    if not message and not images:
+        return JSONResponse(
+            {"error": "either 'message' or at least one image is required"},
+            status_code=400,
+        )
+    if not message:
+        message = ""
 
     # Optional per-browser conversation key. When present, the message joins the
     # client's ongoing conversation (recent turns replayed, spans grouped under
@@ -171,6 +256,7 @@ async def chat_endpoint(
                     history=history,
                     session_id=session_id,
                     client_id=client_id,
+                    images=images,
                 ):
                     reply_parts.append(token)
                     await queue.put((SSE_TOKEN_TYPE, token))
@@ -380,6 +466,9 @@ def create_app(
     *,
     serve_ui: bool = True,
     idle_timeout_minutes: int = 30,
+    max_images_per_message: int = 8,
+    max_image_bytes: int = 5_242_880,
+    allowed_image_media_types: list[str] | None = None,
     cors_allow_origins: list[str] | None = None,
     auth: BasicAuthConfig | None = None,
     correlation_id_header: str = "X-Request-ID",
@@ -401,6 +490,13 @@ def create_app(
             UI at ``GET /`` so the UI and ``/chat`` share one origin.
         idle_timeout_minutes: Minutes of no user activity before the UI
             auto-restarts the conversation; ``0`` disables.
+        max_images_per_message: Maximum number of images a client may attach
+            to a single ``POST /chat`` request.  Default ``8``.
+        max_image_bytes: Maximum decoded size (bytes) of a single attached
+            image.  Default ``5_242_880`` (5 MiB).
+        allowed_image_media_types: Media types accepted for image
+            attachments.  Default ``["image/png", "image/jpeg", "image/gif",
+            "image/webp"]``.
         cors_allow_origins: Origins permitted to call ``/chat`` cross-origin
             (e.g. when the UI is hosted separately). ``None`` (default)
             adds no CORS headers; ``["*"]`` allows any origin.
@@ -472,6 +568,13 @@ def create_app(
     app.state.agent = agent
     app.state.conversation_store = conversation_store or ConversationStore()
     app.state.idle_timeout_minutes = idle_timeout_minutes
+    app.state.max_images_per_message = max_images_per_message
+    app.state.max_image_bytes = max_image_bytes
+    app.state.allowed_image_media_types = (
+        allowed_image_media_types
+        if allowed_image_media_types is not None
+        else ["image/png", "image/jpeg", "image/gif", "image/webp"]
+    )
     app.state.event_bus = event_bus or EventBus()
     app.state.task_registry = task_registry or TaskRegistry(
         event_sink=app.state.event_bus
@@ -487,6 +590,9 @@ def run_server(
     port: int = 8000,
     serve_ui: bool = True,
     idle_timeout_minutes: int = 30,
+    max_images_per_message: int = 8,
+    max_image_bytes: int = 5_242_880,
+    allowed_image_media_types: list[str] | None = None,
     cors_allow_origins: list[str] | None = None,
     auth: BasicAuthConfig | None = None,
     correlation_id_header: str = "X-Request-ID",
@@ -507,6 +613,9 @@ def run_server(
         agent,
         serve_ui=serve_ui,
         idle_timeout_minutes=idle_timeout_minutes,
+        max_images_per_message=max_images_per_message,
+        max_image_bytes=max_image_bytes,
+        allowed_image_media_types=allowed_image_media_types,
         cors_allow_origins=cors_allow_origins,
         auth=auth,
         correlation_id_header=correlation_id_header,
@@ -737,6 +846,9 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         host=settings.server_host,
         port=settings.server_port,
         idle_timeout_minutes=settings.idle_timeout_minutes,
+        max_images_per_message=settings.max_images_per_message,
+        max_image_bytes=settings.max_image_bytes,
+        allowed_image_media_types=settings.allowed_image_media_types,
         cors_allow_origins=settings.cors_allow_origins,
         auth=auth,
         correlation_id_header=settings.correlation_id_header,

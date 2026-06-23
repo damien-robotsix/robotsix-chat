@@ -457,3 +457,71 @@ async def test_retry_sleeps_backoff() -> None:
     # First retry → _RETRY_BACKOFFS[0], second → _RETRY_BACKOFFS[1]
     assert sleep_mock.await_args_list[0].args == (_RETRY_BACKOFFS[0],)
     assert sleep_mock.await_args_list[1].args == (_RETRY_BACKOFFS[1],)
+
+
+# ---------------------------------------------------------------------------
+# Image attachments — multimodal prompt
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_stream_with_images_builds_multimodal_prompt() -> None:
+    """With images, handle.run receives a list with text + BinaryContent parts."""
+    from pydantic_ai.messages import BinaryContent
+
+    create_model, handle = _patched_create_model("I see an image!")
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=1, instruction="Be helpful.", api_key="k")
+        chunks = [
+            c
+            async for c in agent.stream(
+                "describe this", images=[("image/png", b"fake-png-data")]
+            )
+        ]
+
+    assert chunks == ["I see an image!"]
+    run_arg = handle.run_calls[0]["message"]
+    assert isinstance(run_arg, list)
+    assert len(run_arg) == 2
+    assert run_arg[0] == "describe this"
+    assert isinstance(run_arg[1], BinaryContent)
+    assert run_arg[1].data == b"fake-png-data"
+    assert run_arg[1].media_type == "image/png"
+
+
+@pytest.mark.asyncio
+async def test_stream_with_images_only_no_text() -> None:
+    """Images-only (empty message) builds a list of just BinaryContent parts."""
+    from pydantic_ai.messages import BinaryContent
+
+    create_model, handle = _patched_create_model("nice pic")
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=1, instruction="Be helpful.", api_key="k")
+        chunks = [
+            c async for c in agent.stream("", images=[("image/jpeg", b"jpeg-data")])
+        ]
+
+    assert chunks == ["nice pic"]
+    run_arg = handle.run_calls[0]["message"]
+    assert isinstance(run_arg, list)
+    assert len(run_arg) == 1
+    assert isinstance(run_arg[0], BinaryContent)
+    assert run_arg[0].data == b"jpeg-data"
+    assert run_arg[0].media_type == "image/jpeg"
+
+
+@pytest.mark.asyncio
+async def test_stream_without_images_still_passes_plain_string() -> None:
+    """With no images, handle.run receives a plain str (behaviour unchanged)."""
+    create_model, handle = _patched_create_model("text-only reply")
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        chunks = [c async for c in agent.stream("hello")]
+
+    assert chunks == ["text-only reply"]
+    run_arg = handle.run_calls[0]["message"]
+    assert isinstance(run_arg, str)
+    assert run_arg == "hello"

@@ -159,6 +159,7 @@ class LlmioChatAgent:
         history: list[Turn] | None = None,
         session_id: str | None = None,
         client_id: str | None = None,
+        images: list[tuple[str, bytes]] | None = None,
     ) -> AsyncIterator[str]:
         """Yield the assistant's reply to *message* as a single block.
 
@@ -167,9 +168,12 @@ class LlmioChatAgent:
         *session_id* groups this run's trace spans under one conversation in
         Langfuse (a fresh id starts a new trace). *client_id* identifies the
         owning browser — it is forwarded to the per-request tools factory so
-        delegation tools can tag spawned tasks correctly.  All keyword
-        arguments are optional — with none, the agent behaves as a single
-        stateless query.
+        delegation tools can tag spawned tasks correctly.  *images* is an
+        optional list of ``(media_type, raw_bytes)`` pairs (e.g.
+        ``[("image/png", b"...")]``) — when non-empty the prompt is built as a
+        multimodal sequence so a vision-capable LLM can see the attachments.
+        All keyword arguments are optional — with none, the agent behaves as a
+        single stateless query.
 
         Transient upstream errors (OpenRouter provider failures, 5xx, network
         blips) are retried up to :data:`_MAX_RUN_ATTEMPTS` before surfacing.
@@ -213,8 +217,33 @@ class LlmioChatAgent:
             try:
                 try:
                     with _trace_session(session_id):
+                        # Build the user-prompt: plain str (no images) or a
+                        # multimodal list (text + BinaryContent parts).
+                        # NOTE: the default model_level 3 routes to
+                        # robotsix_llmio's claude_sdk model, whose internal
+                        # _content_to_text() flattens non-text content to
+                        # str(...) — images are silently dropped on that
+                        # path.  To have the assistant actually *see* images,
+                        # configure a vision-capable OpenRouter model at
+                        # level 1 or 2.  Full level-3 image support requires
+                        # an external change to robotsix_llmio's claude_sdk
+                        # model to map image parts into the Claude SDK
+                        # request format.
+                        if images:
+                            from pydantic_ai.messages import BinaryContent
+
+                            user_prompt: list[str | BinaryContent] = []
+                            if message:
+                                user_prompt.append(message)
+                            for mt, data in images:
+                                user_prompt.append(
+                                    BinaryContent(data=data, media_type=mt)
+                                )
+                            prompt: object = user_prompt
+                        else:
+                            prompt = message
                         result = await handle.run(
-                            message, message_history=message_history
+                            prompt, message_history=message_history
                         )
                 finally:
                     handle.close()
