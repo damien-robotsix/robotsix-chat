@@ -341,9 +341,9 @@ def spawn_check_loop(
             f"got {interval_seconds!r}"
         )
 
-    if registry.count_running() >= settings.max_check_loops:  # type: ignore[attr-defined]
+    if registry.count_running() >= settings.max_check_loops:
         raise LoopCapacityError(
-            f"check-loop limit reached ({settings.max_check_loops} concurrent)"  # type: ignore[attr-defined]
+            f"check-loop limit reached ({settings.max_check_loops} concurrent)"
         )
 
     # Resolve agent factory lazily to avoid import cycle.
