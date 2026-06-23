@@ -206,3 +206,5 @@ added when off or when the `broker` extra is absent.
 ## Testing conventions
 
 Tests for module `robotsix_chat.<module>` live under `tests/<module>/`, mirroring the per-module source layout (e.g. `tests/chat/` for `robotsix_chat.chat`, `tests/config/` for `robotsix_chat.config`). Do not place tests directly in the `tests/` root.
+
+**Rule:** When testing a module that lazy-imports `robotsix_agent_comm`, both monkeypatch `importlib.util.find_spec` AND populate `sys.modules` with a fake module stub. Use the `_install_fake_agent_comm(monkeypatch)` helper defined in each test file (e.g. `tests/mill/test_mill.py`, `tests/calendar/test_calendar.py`) rather than only patching `find_spec` — the lazy `from robotsix_agent_comm.sdk import BrokeredRequester` import resolves at class-construction time through `sys.modules`, not through `find_spec`.
