@@ -24,6 +24,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added a Stop button to the Check Loops panel in the chat UI for cancelling
   running check loops via the existing `/loops/{loop_id}/stop` endpoint.
+- Added image attachment UI to the chat: file-picker button, clipboard paste,
+  and drag-and-drop support for attaching PNG/JPEG/GIF/WebP images with a
+  preview tray, per-thumbnail remove controls, and inline validation errors
+  for unsupported types, oversized files, and max-count limits. Sent user
+  bubbles now render attached image thumbnails.
 - Added support for image attachments on `POST /chat`. Clients can now send an
   optional `images` array of `{"media_type": "<image/png|image/jpeg|image/gif|image/webp>", "data": "<base64>"}`
   objects alongside or instead of text. Images are forwarded as multimodal

@@ -1,0 +1,1 @@
+Frontend: image upload/attach UI in the chat web app

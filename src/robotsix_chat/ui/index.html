@@ -281,6 +281,59 @@
     background: var(--btn-disabled-bg); cursor: not-allowed;
   }
 
+  #attach-btn {
+    background: var(--assistant-bubble-bg); color: var(--text-fg);
+    border: 1px solid var(--composer-border); border-radius: 8px;
+    padding: 0 0.7rem; font-size: 1.1rem; cursor: pointer;
+    height: 40px; white-space: nowrap; line-height: 1;
+    transition: background 0.15s;
+  }
+  #attach-btn:hover:not(:disabled) { background: var(--composer-border); }
+  #attach-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ------------------------------------------------------------------ */
+  /* Preview tray                                                        */
+  /* ------------------------------------------------------------------ */
+  #preview-tray {
+    display: none; flex-wrap: wrap; gap: 0.5rem; align-items: flex-start;
+    padding: 0.5rem 1rem 0 1rem;
+  }
+  #preview-tray.has-images { display: flex; }
+
+  .preview-item {
+    position: relative; width: 64px; height: 64px; flex-shrink: 0;
+    border-radius: 6px; overflow: hidden;
+    border: 1px solid var(--composer-border);
+  }
+  .preview-item img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .preview-item .remove-btn {
+    position: absolute; top: 2px; right: 2px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: rgba(0,0,0,0.65); color: #fff;
+    border: none; font-size: 12px; line-height: 1;
+    cursor: pointer; display: flex; align-items: center;
+    justify-content: center; padding: 0;
+  }
+  .preview-item .remove-btn:hover { background: rgba(239,68,68,0.85); }
+
+  #attach-error {
+    display: none; padding: 0.3rem 1rem; font-size: 0.82rem;
+    color: #fca5a5;
+  }
+  #attach-error.visible { display: block; }
+
+  /* Image thumbnails inside user bubbles */
+  .bubble-images {
+    display: flex; flex-wrap: wrap; gap: 0.4rem;
+    margin-bottom: 0.4rem;
+  }
+  .bubble-images img {
+    max-width: 120px; max-height: 120px; border-radius: 6px;
+    object-fit: cover; cursor: pointer;
+  }
+
   /* ------------------------------------------------------------------ */
   /* Typing indicator                                                    */
   /* ------------------------------------------------------------------ */
@@ -351,11 +404,19 @@
 <div id="chat" aria-live="polite"></div>
 
 <!-- ================================================================= -->
+<!-- Preview tray                                                       -->
+<!-- ================================================================= -->
+<div id="preview-tray" aria-label="Image attachments"></div>
+<div id="attach-error" aria-live="polite"></div>
+
+<!-- ================================================================= -->
 <!-- Composer                                                           -->
 <!-- ================================================================= -->
 <div id="composer">
   <textarea id="msg-input" rows="1" placeholder="Type a message…" aria-label="Message"></textarea>
+  <button id="attach-btn" title="Attach images" aria-label="Attach images">📎</button>
   <button id="send-btn">Send</button>
+  <input type="file" id="file-input" accept="image/png,image/jpeg,image/gif,image/webp" multiple style="display:none">
 </div>
 
 <!-- ================================================================= -->
@@ -379,12 +440,132 @@
   const tasksToggle    = document.getElementById("tasks-toggle");
   const tasksPanel     = document.getElementById("tasks-panel");
   const tasksList      = document.getElementById("tasks-list");
+  const attachBtn      = document.getElementById("attach-btn");
+  const fileInput      = document.getElementById("file-input");
+  const previewTray    = document.getElementById("preview-tray");
+  const attachErrorEl  = document.getElementById("attach-error");
 
   // ---- State -----------------------------------------------------------
   var state = "idle";          // idle | sending | streaming | error
   var currentAssistantBubble = null;  // the <div> receiving tokens
   var typingIndicatorEl      = null;  // the animated dots element
   var messageQueue = [];       // FIFO queue of { text, el } for busy-state
+
+  // ---- Image attachments -----------------------------------------------
+  var MAX_IMAGES = 8;
+  var MAX_FILE_BYTES = 5 * 1024 * 1024;  // 5 MiB
+  var ALLOWED_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
+  var pendingImages = [];  // { file, objectURL, mediaType }
+
+  function clearAttachError() {
+    attachErrorEl.classList.remove("visible");
+    attachErrorEl.textContent = "";
+  }
+
+  function showAttachError(msg) {
+    attachErrorEl.textContent = msg;
+    attachErrorEl.classList.add("visible");
+  }
+
+  function removeAttachment(index) {
+    var item = pendingImages[index];
+    if (item && item.objectURL) URL.revokeObjectURL(item.objectURL);
+    pendingImages.splice(index, 1);
+    renderPreviewTray();
+    clearAttachError();
+  }
+
+  function renderPreviewTray() {
+    previewTray.innerHTML = "";
+    if (pendingImages.length === 0) {
+      previewTray.classList.remove("has-images");
+      return;
+    }
+    previewTray.classList.add("has-images");
+    for (var i = 0; i < pendingImages.length; i++) {
+      var item = pendingImages[i];
+      var wrap = document.createElement("div");
+      wrap.className = "preview-item";
+
+      var img = document.createElement("img");
+      img.src = item.objectURL;
+      img.alt = item.file.name;
+      wrap.appendChild(img);
+
+      var rm = document.createElement("button");
+      rm.className = "remove-btn";
+      rm.textContent = "\u00d7";
+      rm.title = "Remove " + item.file.name;
+      rm.setAttribute("aria-label", "Remove " + item.file.name);
+      // capture index in closure
+      (function (idx) {
+        rm.addEventListener("click", function (e) {
+          e.stopPropagation();
+          removeAttachment(idx);
+        });
+      })(i);
+      wrap.appendChild(rm);
+
+      previewTray.appendChild(wrap);
+    }
+  }
+
+  function validateAndAddFiles(files) {
+    clearAttachError();
+    var accepted = [];
+    for (var i = 0; i < files.length; i++) {
+      var file = files[i];
+      if (ALLOWED_TYPES.indexOf(file.type) === -1) {
+        showAttachError("Unsupported file type: " + (file.type || "unknown") +
+                        ". Use PNG, JPEG, GIF, or WebP.");
+        continue;
+      }
+      if (file.size > MAX_FILE_BYTES) {
+        showAttachError("\"" + file.name + "\" is too large (" +
+                        (file.size / 1024 / 1024).toFixed(1) +
+                        " MiB). Maximum is 5 MiB.");
+        continue;
+      }
+      if (pendingImages.length + accepted.length >= MAX_IMAGES) {
+        showAttachError("Maximum " + MAX_IMAGES + " images allowed.");
+        break;
+      }
+      accepted.push(file);
+    }
+
+    for (var j = 0; j < accepted.length; j++) {
+      var f = accepted[j];
+      var objectURL = URL.createObjectURL(f);
+      pendingImages.push({ file: f, objectURL: objectURL, mediaType: f.type });
+    }
+
+    renderPreviewTray();
+  }
+
+  function encodeImage(file) {
+    return new Promise(function (resolve, reject) {
+      var reader = new FileReader();
+      reader.onload = function () {
+        // readAsArrayBuffer returns the raw bytes; convert to binary string
+        // then btoa for base64 WITHOUT any data: prefix.
+        var bytes = new Uint8Array(reader.result);
+        var binary = "";
+        for (var i = 0; i < bytes.length; i++) {
+          binary += String.fromCharCode(bytes[i]);
+        }
+        var b64 = btoa(binary);
+        resolve({ media_type: file.type, data: b64 });
+      };
+      reader.onerror = function () { reject(new Error("Failed to read file")); };
+      reader.readAsArrayBuffer(file);
+    });
+  }
+
+  function clearPendingImages() {
+    pendingImages = [];
+    renderPreviewTray();
+    clearAttachError();
+  }
 
   function isBusy() {
     return state === "sending" || state === "streaming";
@@ -868,6 +1049,7 @@
   function setInputEnabled(enabled) {
     msgInput.disabled = !enabled;
     sendBtn.disabled  = !enabled;
+    attachBtn.disabled = !enabled;
   }
 
   // ---- Message bubbles -------------------------------------------------
@@ -1140,9 +1322,14 @@
 
   // ---- Send logic ------------------------------------------------------
   function submitMessage() {
-    // Read and trim input.  If empty, do nothing (preserves existing guard).
+    // Read and trim input.
     var message = msgInput.value.trim();
-    if (!message) return;
+
+    // Snapshot the current pending images for this message.
+    var imagesForSend = pendingImages.slice();
+
+    // Require at least text OR images.
+    if (!message && imagesForSend.length === 0) return;
 
     resetIdleTimer();
 
@@ -1151,14 +1338,29 @@
     msgInput.style.height = "";
 
     hideError();
+    clearAttachError();
+    clearPendingImages();
 
-    // Create the user bubble immediately — if we're busy, mark it queued.
+    // Create the user bubble — if we're busy, mark it queued.
     var el = addUserBubble(message);
+    // Append image thumbnails to the user bubble.
+    if (imagesForSend.length > 0) {
+      var imgsDiv = document.createElement("div");
+      imgsDiv.className = "bubble-images";
+      for (var i = 0; i < imagesForSend.length; i++) {
+        var thumb = document.createElement("img");
+        thumb.src = imagesForSend[i].objectURL;
+        thumb.alt = imagesForSend[i].file.name;
+        imgsDiv.appendChild(thumb);
+      }
+      el.insertBefore(imgsDiv, el.firstChild);
+    }
+
     if (isBusy()) {
       el.classList.add("queued");
     }
 
-    messageQueue.push({ text: message, el: el });
+    messageQueue.push({ text: message, el: el, images: imagesForSend });
     drainQueue();
   }
 
@@ -1169,10 +1371,10 @@
 
     var item = messageQueue.shift();
     item.el.classList.remove("queued");
-    startRequest(item.text);
+    startRequest(item.text, item.images || []);
   }
 
-  function startRequest(message) {
+  function startRequest(message, pendingForSend) {
     // The existing network/streaming body of the old sendMessage, minus
     // the user-bubble creation (the bubble already exists).
     showTypingIndicator();
@@ -1180,6 +1382,29 @@
 
     state = "sending";
 
+    // Encode images if any; then POST.
+    var encodePromise = pendingForSend.length > 0
+      ? encodeImagesFromList(pendingForSend)
+      : Promise.resolve([]);
+
+    encodePromise.then(function (encodedImages) {
+      doPost(message, encodedImages);
+    }).catch(function (err) {
+      hideTypingIndicator();
+      showError(err.message || "Failed to encode images");
+      state = "error";
+    });
+  }
+
+  function encodeImagesFromList(list) {
+    var promises = [];
+    for (var i = 0; i < list.length; i++) {
+      promises.push(encodeImage(list[i].file));
+    }
+    return Promise.all(promises);
+  }
+
+  function doPost(message, encodedImages) {
     var streamController = {
       onData: function (raw) {
         var frame;
@@ -1223,10 +1448,15 @@
 
     var url = getServerUrl();
 
+    var body = { message: message, client_id: clientId };
+    if (encodedImages.length > 0) {
+      body.images = encodedImages;
+    }
+
     fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ message: message, client_id: clientId })
+      body: JSON.stringify(body)
     }).then(function (response) {
       if (!response.ok) {
         // Non-2xx — try to read an error body, else show status.
@@ -1271,6 +1501,50 @@
   msgInput.addEventListener("input", function () {
     msgInput.style.height = "";
     msgInput.style.height = Math.min(msgInput.scrollHeight, 120) + "px";
+  });
+
+  // ---- Image attach / file picker --------------------------------------
+  attachBtn.addEventListener("click", function () {
+    fileInput.click();
+  });
+
+  fileInput.addEventListener("change", function () {
+    if (fileInput.files && fileInput.files.length > 0) {
+      validateAndAddFiles(fileInput.files);
+      fileInput.value = "";  // reset so re-selecting the same file works
+    }
+  });
+
+  // ---- Clipboard paste (image) -----------------------------------------
+  msgInput.addEventListener("paste", function (e) {
+    var items = (e.clipboardData && e.clipboardData.items);
+    if (!items) return;
+    var imageFiles = [];
+    for (var i = 0; i < items.length; i++) {
+      var item = items[i];
+      if (item.type && item.type.indexOf("image/") === 0) {
+        var blob = item.getAsFile();
+        if (blob) imageFiles.push(blob);
+      }
+    }
+    if (imageFiles.length > 0) {
+      e.preventDefault();  // don't paste a broken image URL into the textarea
+      validateAndAddFiles(imageFiles);
+    }
+  });
+
+  // ---- Drag-and-drop onto the composer area -----------------------------
+  var composerEl = document.getElementById("composer");
+  composerEl.addEventListener("dragover", function (e) {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  });
+  composerEl.addEventListener("drop", function (e) {
+    e.preventDefault();
+    var files = e.dataTransfer.files;
+    if (files && files.length > 0) {
+      validateAndAddFiles(files);
+    }
   });
 
   // Settings toggle
