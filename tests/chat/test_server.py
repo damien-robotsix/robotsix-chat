@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
+from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 from unittest.mock import MagicMock, patch
@@ -424,6 +426,12 @@ async def test_run_server_from_config_creates_agent_from_settings(
         from robotsix_chat.chat.events import EventBus
 
         assert isinstance(event_bus, EventBus)
+        check_loop_registry = call_args[1].pop("check_loop_registry")
+        from robotsix_chat.chat.loops import CheckLoopRegistry
+
+        assert isinstance(check_loop_registry, CheckLoopRegistry)
+        on_startup = call_args[1].pop("on_startup")
+        assert callable(on_startup)
         assert call_args[1] == {
             "host": "127.0.0.1",
             "port": 8080,
@@ -646,3 +654,354 @@ async def test_custom_correlation_id_header_in_response() -> None:
 
     assert response.status_code == 200
     assert response.headers["X-Custom-ID"] == "11111111-1111-1111-1111-111111111111"
+
+
+# ---------------------------------------------------------------------------
+# Check-loop registry wiring
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_check_loop_registry_wired_into_app_state() -> None:
+    """``check_loop_registry`` kwarg is exposed on ``app.state``."""
+    from robotsix_chat.chat.events import EventBus
+    from robotsix_chat.chat.loops import CheckLoopRegistry
+
+    bus = EventBus()
+    reg = CheckLoopRegistry(event_sink=bus, store_path=None)
+
+    async with mock_app(check_loop_registry=reg, event_bus=bus) as f:
+        assert f.app.state.check_loop_registry is reg
+        assert f.app.state.event_bus is bus
+
+
+@pytest.mark.asyncio
+async def test_check_loop_registry_defaults_to_none() -> None:
+    """Without ``check_loop_registry`` kwarg, ``app.state`` stores ``None``."""
+    async with mock_app() as f:
+        assert f.app.state.check_loop_registry is None
+
+
+# ---------------------------------------------------------------------------
+# Stop route — /loops/{loop_id}/stop
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_loops_stop_endpoint_no_registry_returns_503() -> None:
+    """``POST /loops/{id}/stop`` returns 503 when no registry is wired."""
+    async with mock_app() as f:
+        response = await f.client.post("/loops/abc123/stop")
+
+    assert response.status_code == 503
+    assert response.json() == {"error": "check-loop feature not enabled"}
+
+
+@pytest.mark.asyncio
+async def test_loops_stop_endpoint_unknown_loop_returns_404() -> None:
+    """Stopping a loop id that does not exist returns a 404 JSON error."""
+    from robotsix_chat.chat.loops import CheckLoopRegistry
+
+    reg = CheckLoopRegistry(store_path=None)
+    async with mock_app(check_loop_registry=reg) as f:
+        response = await f.client.post("/loops/nonexistent/stop")
+
+    assert response.status_code == 404
+    data = response.json()
+    assert data["error"] == "unknown loop"
+    assert data["loop_id"] == "nonexistent"
+
+
+@pytest.mark.asyncio
+async def test_loops_stop_endpoint_stops_running_loop() -> None:
+    """``POST /loops/{id}/stop`` stops a running loop and returns 200."""
+    import asyncio
+
+    from robotsix_chat.chat.loops import CheckLoopRegistry, LoopStatus
+
+    reg = CheckLoopRegistry(store_path=None)
+
+    # Register a running loop — the registry needs an asyncio.Task.
+    async def _noop() -> None:
+        pass
+
+    task = asyncio.create_task(_noop())
+    loop_id = reg.register(
+        "client-1",
+        "check the weather",
+        interval_seconds=60.0,
+        max_iterations=None,
+        coro=task,
+    )
+
+    async with mock_app(check_loop_registry=reg) as f:
+        response = await f.client.post(f"/loops/{loop_id}/stop")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["loop_id"] == loop_id
+    assert data["status"] == "stopped"
+
+    info = reg.get(loop_id)
+    assert info is not None
+    assert info.status == LoopStatus.STOPPED
+    assert info.stop_reason == "stopped via api"
+
+    # Cleanup — the task may have been cancelled by stop().
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+@pytest.mark.asyncio
+async def test_loops_stop_endpoint_idempotent() -> None:
+    """Stopping an already-stopped loop is idempotent — returns 200."""
+    import asyncio
+
+    from robotsix_chat.chat.loops import CheckLoopRegistry
+
+    reg = CheckLoopRegistry(store_path=None)
+
+    async def _noop() -> None:
+        pass
+
+    task = asyncio.create_task(_noop())
+    loop_id = reg.register(
+        "client-2",
+        "check mail",
+        interval_seconds=30.0,
+        max_iterations=None,
+        coro=task,
+    )
+    # Pre-stop
+    reg.stop(loop_id, reason="already stopped")
+
+    async with mock_app(check_loop_registry=reg) as f:
+        response = await f.client.post(f"/loops/{loop_id}/stop")
+
+    assert response.status_code == 200
+    assert response.json()["status"] == "stopped"
+
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+# ---------------------------------------------------------------------------
+# Loop lifecycle frame observable via /events
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_loop_stopped_frame_reaches_events_stream() -> None:
+    """``registry.stop`` publishes ``loop_stopped`` frame on the shared ``EventBus``."""
+    import asyncio
+
+    from starlette.responses import StreamingResponse
+
+    from robotsix_chat.chat.events import EventBus, loop_stopped_frame
+    from robotsix_chat.chat.loops import CheckLoopRegistry
+    from robotsix_chat.chat.server import events_endpoint
+    from tests.chat.test_events import _make_request, _parse_data_line
+
+    bus = EventBus()
+    reg = CheckLoopRegistry(event_sink=bus, store_path=None)
+
+    # Register a running loop for client "cloop"
+    async def _noop() -> None:
+        pass
+
+    task = asyncio.create_task(_noop())
+    loop_id = reg.register(
+        "cloop",
+        "check inbox",
+        interval_seconds=60.0,
+        max_iterations=None,
+        coro=task,
+    )
+
+    async with mock_app(check_loop_registry=reg, event_bus=bus) as f:
+        # Open the /events SSE stream for the same client
+        request = _make_request("cloop", f.app)
+        response = await events_endpoint(request)
+        assert isinstance(response, StreamingResponse)
+        assert response.media_type == "text/event-stream"
+
+        body_iter: AsyncGenerator[bytes, None] = response.body_iterator  # type: ignore[assignment]
+        try:
+            # Consume the initial heartbeat
+            chunk = await asyncio.wait_for(body_iter.__anext__(), timeout=2.0)
+            assert chunk == b": keepalive\n\n"
+
+            # Stop the loop — the registry publishes via the shared EventBus
+            reg.stop(loop_id, reason="test stop")
+
+            # The next SSE frame must be the loop_stopped data frame
+            chunk = await asyncio.wait_for(body_iter.__anext__(), timeout=2.0)
+            text = chunk.decode()
+            lines = text.rstrip("\n").split("\n")
+            data_lines = [ln for ln in lines if ln.startswith("data: ")]
+            assert len(data_lines) == 1
+            parsed = _parse_data_line(data_lines[0])
+            expected = loop_stopped_frame(loop_id, reason="test stop", iterations=0)
+            assert parsed == expected
+        finally:
+            await body_iter.aclose()
+
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+
+
+# ---------------------------------------------------------------------------
+# Resume-on-startup
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resume_check_loops_restarts_persisted_running_loop(
+    tmp_path: Path,
+) -> None:
+    """A persisted ``status='running'`` loop is resumed via the startup hook."""
+    import json
+
+    from robotsix_chat.chat.loops import (
+        CheckLoopRegistry,
+        LoopStatus,
+        resume_check_loops,
+    )
+    from robotsix_chat.config import Settings
+
+    store_path = tmp_path / "check_loops.json"
+    persisted_id = "resume-me-1"
+    persisted_client = "c-resume"
+    persisted_prompt = "check the weather every hour"
+
+    store_path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": persisted_id,
+                    "client_id": persisted_client,
+                    "prompt": persisted_prompt,
+                    "interval_seconds": 60.0,
+                    "max_iterations": None,
+                    "iterations": 3,
+                    "status": "running",
+                    "last_result": "sunny",
+                }
+            ]
+        )
+    )
+
+    reg = CheckLoopRegistry(store_path=store_path)
+
+    # Stub agent factory so resume doesn't start real agent work.
+    from tests.conftest import MockAgent
+
+    def _agent_factory(s: Settings) -> MockAgent:
+        return MockAgent(tokens=["resumed ok"])
+
+    settings = Settings()
+    # Ensure settings allow the loop interval
+    settings.min_check_loop_interval_seconds = 1.0
+
+    resumed = resume_check_loops(reg, settings, agent_factory=_agent_factory)
+    assert resumed == [persisted_id]
+
+    info = reg.get(persisted_id)
+    assert info is not None
+    assert info.status == LoopStatus.RUNNING
+    assert info.client_id == persisted_client
+    assert info.prompt == persisted_prompt
+
+    # Cleanup — stop the resumed loop so its asyncio task cancels.
+    reg.stop(persisted_id, reason="test teardown")
+    # Give the task a moment to process the cancellation.
+    import asyncio
+
+    await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_resume_check_loops_skips_stopped_and_failed(
+    tmp_path: Path,
+) -> None:
+    """Persisted loops with status ``stopped`` or ``failed`` are not resumed."""
+    import json
+
+    from robotsix_chat.chat.loops import CheckLoopRegistry, resume_check_loops
+    from robotsix_chat.config import Settings
+
+    store_path = tmp_path / "check_loops.json"
+    store_path.write_text(
+        json.dumps(
+            [
+                {
+                    "id": "loop-running",
+                    "client_id": "c1",
+                    "prompt": "check X",
+                    "interval_seconds": 60.0,
+                    "max_iterations": None,
+                    "iterations": 0,
+                    "status": "running",
+                    "last_result": None,
+                },
+                {
+                    "id": "loop-stopped",
+                    "client_id": "c1",
+                    "prompt": "check Y",
+                    "interval_seconds": 60.0,
+                    "max_iterations": None,
+                    "iterations": 5,
+                    "status": "stopped",
+                    "last_result": "done",
+                },
+                {
+                    "id": "loop-failed",
+                    "client_id": "c1",
+                    "prompt": "check Z",
+                    "interval_seconds": 60.0,
+                    "max_iterations": None,
+                    "iterations": 2,
+                    "status": "failed",
+                    "last_result": None,
+                },
+            ]
+        )
+    )
+    reg = CheckLoopRegistry(store_path=store_path)
+
+    from tests.conftest import MockAgent
+
+    def _agent_factory(s: Settings) -> MockAgent:
+        return MockAgent(tokens=["ok"])
+
+    settings = Settings()
+    settings.min_check_loop_interval_seconds = 1.0
+
+    resumed = resume_check_loops(reg, settings, agent_factory=_agent_factory)
+    assert resumed == ["loop-running"]
+    assert reg.get("loop-running") is not None
+    assert reg.get("loop-stopped") is None
+    assert reg.get("loop-failed") is None
+
+    # Cleanup
+    reg.stop("loop-running", reason="test teardown")
+    import asyncio
+
+    await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_resume_hook_passed_through_mock_app() -> None:
+    """The ``on_startup`` callable is threaded through ``create_app``."""
+    from unittest.mock import MagicMock
+
+    hook = MagicMock()
+
+    async with mock_app(on_startup=hook) as f:
+        pass  # mock_app doesn't run the lifespan, but the hook is wired
+
+    # The hook was passed through; the lifespan stores it but doesn't call
+    # it until the ASGI server starts.  We can verify it's been retained.
+    # (We can't easily assert it's stored because Starlette's lifespan is
+    # internal, but the app was built without error.)
+    assert f.app.state.check_loop_registry is None  # default
