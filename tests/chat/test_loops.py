@@ -23,7 +23,6 @@ from robotsix_chat.chat.events import (
     loop_tick_frame,
 )
 from robotsix_chat.chat.loops import (
-    MIN_CHECK_LOOP_INTERVAL_SECONDS,
     CheckLoopRegistry,
     LoopCapacityError,
     LoopIntervalError,
@@ -140,6 +139,7 @@ def _stub_settings(**overrides: Any) -> Any:
 
     defaults: dict[str, Any] = {
         "max_check_loops": 5,
+        "min_check_loop_interval_seconds": 60.0,
         "llmio_model_level": 3,
         "llmio_api_key": "",
     }
@@ -762,15 +762,11 @@ async def test_explicit_stop_publishes_stopped_frame() -> None:
 
 
 @pytest.mark.asyncio
-async def test_max_iterations_cap_stops_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_max_iterations_cap_stops_loop() -> None:
     """After exactly N iterations the loop stops with reason max_iterations."""
-    monkeypatch.setattr(
-        "robotsix_chat.chat.loops.MIN_CHECK_LOOP_INTERVAL_SECONDS", 0.001
-    )
-
     bus = EventBus()
     reg = _registry(sink=bus)
-    settings = _stub_settings()
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
     q_sse = bus.subscribe("c1")
 
     lid = spawn_check_loop(
@@ -805,15 +801,11 @@ async def test_max_iterations_cap_stops_loop(monkeypatch: pytest.MonkeyPatch) ->
 
 
 @pytest.mark.asyncio
-async def test_stop_when_self_stops_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_stop_when_self_stops_loop() -> None:
     """A stop_when predicate returning True stops the loop (reason condition_met)."""
-    monkeypatch.setattr(
-        "robotsix_chat.chat.loops.MIN_CHECK_LOOP_INTERVAL_SECONDS", 0.001
-    )
-
     bus = EventBus()
     reg = _registry(sink=bus)
-    settings = _stub_settings()
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
 
     lid = spawn_check_loop(
         client_id="c1",
@@ -1212,5 +1204,6 @@ def test_resume_handles_corrupt_file(tmp_path: Path) -> None:
 
 
 def test_min_check_loop_interval_constant() -> None:
-    """The constant is exactly 60.0 — the server ticket depends on this value."""
-    assert MIN_CHECK_LOOP_INTERVAL_SECONDS == 60.0
+    """The default ``min_check_loop_interval_seconds`` in settings is 60.0."""
+    settings = _stub_settings()
+    assert settings.min_check_loop_interval_seconds == 60.0

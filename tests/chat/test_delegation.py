@@ -485,6 +485,7 @@ def _stub_settings(**overrides: Any) -> Any:
 
     defaults: dict[str, Any] = {
         "max_check_loops": 5,
+        "min_check_loop_interval_seconds": 60.0,
         "llmio_model_level": 3,
         "llmio_api_key": "",
     }
