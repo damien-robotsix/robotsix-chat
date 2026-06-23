@@ -155,6 +155,25 @@
   .loop-row.state-stopped  { border-left: 3px solid #64748b; }
   .loop-row.state-failed   { border-left: 3px solid #ef4444; }
 
+  .loop-stop-btn {
+    margin-top: 0.3rem;
+    padding: 0.15rem 0.5rem;
+    font-size: 0.72rem;
+    border: 1px solid #ef4444;
+    border-radius: 4px;
+    color: #fca5a5;
+    background: transparent;
+    cursor: pointer;
+    transition: background 0.15s;
+  }
+  .loop-stop-btn:hover:not(:disabled) {
+    background: rgba(239, 68, 68, 0.15);
+  }
+  .loop-stop-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   /* ------------------------------------------------------------------ */
   /* Error banner                                                        */
   /* ------------------------------------------------------------------ */
@@ -645,6 +664,35 @@
       reasonDiv.className = "loop-meta";
       reasonDiv.textContent = "Reason: " + loop.stop_reason;
       row.appendChild(reasonDiv);
+    }
+
+    if (loop.state === "running") {
+      var stopBtn = document.createElement("button");
+      stopBtn.className = "loop-stop-btn";
+      stopBtn.textContent = "Stop";
+      stopBtn.addEventListener("click", function () {
+        stopBtn.disabled = true;
+        stopBtn.textContent = "Stopping\u2026";
+        fetch("/loops/" + encodeURIComponent(loop.id) + "/stop", { method: "POST" })
+          .then(function (resp) {
+            if (!resp.ok) {
+              stopBtn.disabled = false;
+              stopBtn.textContent = "Stop";
+              resp.text().then(function (body) {
+                showError("Stop failed: " + (body || resp.statusText));
+              }).catch(function () {
+                showError("Stop failed: " + resp.statusText);
+              });
+            }
+            // On success, rely on loop_stopped SSE to re-render the row.
+          })
+          .catch(function (err) {
+            stopBtn.disabled = false;
+            stopBtn.textContent = "Stop";
+            showError("Stop failed: " + (err.message || "Network error"));
+          });
+      });
+      row.appendChild(stopBtn);
     }
 
     loop.rowEl = row;

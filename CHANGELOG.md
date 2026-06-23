@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added a Stop button to the Check Loops panel in the chat UI for cancelling
+  running check loops via the existing `/loops/{loop_id}/stop` endpoint.
+
 - Enabled Ruff's `FURB` (Refurb) ruleset to catch future idiomatic-Python
   anti-patterns.
 
