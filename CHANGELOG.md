@@ -24,6 +24,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added a Stop button to the Check Loops panel in the chat UI for cancelling
   running check loops via the existing `/loops/{loop_id}/stop` endpoint.
+- Redesigned the check-loop panel to declutter and compact displayed rows:
+  stopped/failed loops are now hidden (only running loops remain visible); each
+  row shows an optional short `reason` (or truncated prompt), a fire-count +
+  interval meta line, and a timestamped, truncated latest-feedback summary
+  (never the full prompt or full result text). Added `reason` and
+  `last_result_at` fields to `LoopInfo`, threaded through the SSE event frames,
+  `GET /loops`, and the `start_check_loop` tool; persisted with backward-compat
+  defaults so existing `.data/check_loops.json` files load cleanly.
 - Added image attachment UI to the chat: file-picker button, clipboard paste,
   and drag-and-drop support for attaching PNG/JPEG/GIF/WebP images with a
   preview tray, per-thumbnail remove controls, and inline validation errors
