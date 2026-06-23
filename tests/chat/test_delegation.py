@@ -66,6 +66,7 @@ class _StubAgent:
         history: list[tuple[str, str]] | None = None,
         session_id: str | None = None,
         client_id: str | None = None,
+        images: list[tuple[str, bytes]] | None = None,
     ) -> AsyncIterator[str]:
         for chunk in self.chunks:
             yield chunk
@@ -146,6 +147,7 @@ async def test_delegate_task_does_not_await_completion() -> None:
             history: list[tuple[str, str]] | None = None,
             session_id: str | None = None,
             client_id: str | None = None,
+            images: list[tuple[str, bytes]] | None = None,
         ) -> AsyncIterator[str]:
             await finish.wait()
             yield "finally done"
@@ -884,6 +886,60 @@ async def test_start_check_loop_passes_max_iterations() -> None:
     info = registry.get(loop_id)
     assert info is not None
     assert info.max_iterations == 3
+
+
+@pytest.mark.asyncio
+async def test_start_check_loop_forwards_reason_to_registry() -> None:
+    """The ``reason`` kwarg is forwarded through to the registry on register."""
+    bus = EventBus()
+    registry = _loop_registry(sink=bus)
+    settings = _stub_settings()
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        agent_factory=lambda s: _StubAgent(["ok"]),
+    )
+    start_check_loop = tools[0]
+
+    result = await start_check_loop(
+        "poll endpoint", interval_seconds=120.0, reason="Monitor API health"
+    )
+    loop_id = _extract_loop_id(result)
+
+    info = registry.get(loop_id)
+    assert info is not None
+    assert info.reason == "Monitor API health"
+
+    # Clean up.
+    registry.stop(loop_id, reason="test teardown")
+    await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_start_check_loop_reason_omitted_is_none() -> None:
+    """When ``reason`` is omitted, the loop's ``reason`` is ``None``."""
+    bus = EventBus()
+    registry = _loop_registry(sink=bus)
+    settings = _stub_settings()
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        agent_factory=lambda s: _StubAgent(["ok"]),
+    )
+    start_check_loop = tools[0]
+
+    result = await start_check_loop("no reason loop", interval_seconds=120.0)
+    loop_id = _extract_loop_id(result)
+
+    info = registry.get(loop_id)
+    assert info is not None
+    assert info.reason is None
+
+    # Clean up.
+    registry.stop(loop_id, reason="test teardown")
+    await asyncio.sleep(0.05)
 
 
 @pytest.mark.asyncio

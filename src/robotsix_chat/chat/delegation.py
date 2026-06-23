@@ -265,6 +265,7 @@ def build_check_loop_tools(
         check_description: str,
         interval_seconds: float,
         max_iterations: int | None = None,
+        reason: str | None = None,
     ) -> str:
         """Start a recurring background check that re-runs every ``interval_seconds``.
 
@@ -288,6 +289,11 @@ def build_check_loop_tools(
             max_iterations: Optional cap on the number of iterations.  When the
                 loop reaches this many ticks it stops automatically.  ``None``
                 (the default) means it runs until explicitly stopped.
+            reason: A short human-readable summary of what this loop checks
+                for (e.g. "Monitor stock price" or "Watch for new emails").
+                Displayed in the UI to help the user identify the loop at a
+                glance.  When omitted, the UI falls back to a truncated
+                prompt.
 
         Returns:
             A message with the started loop's id; relay it to the user so they
@@ -305,6 +311,7 @@ def build_check_loop_tools(
                 max_iterations=max_iterations,
                 agent_factory=agent_factory,
                 channel=channel,
+                reason=reason,
             )
         except LoopIntervalError as exc:
             logger.info("start_check_loop rejected (interval): %s", exc)

@@ -1332,6 +1332,8 @@ async def test_loops_list_endpoint_returns_loops_for_client() -> None:
                 "next_run",
                 "error",
                 "stop_reason",
+                "reason",
+                "last_result_at",
             ):
                 assert field in entry, f"missing field {field!r}"
 

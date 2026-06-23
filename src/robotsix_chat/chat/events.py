@@ -126,6 +126,8 @@ def loop_started_frame(
     prompt: str,
     interval_seconds: float,
     max_iterations: int | None,
+    *,
+    reason: str | None = None,
 ) -> dict[str, object]:
     """Build a ``loop_started`` notification frame.
 
@@ -139,9 +141,10 @@ def loop_started_frame(
             "interval_seconds": <float>,
             "max_iterations": <int | None>,
             "status": "running",
+            "reason": <str | None>,
         }
     """
-    return {
+    result: dict[str, object] = {
         "type": SSE_LOOP_STARTED_TYPE,
         "loop_id": loop_id,
         "client_id": client_id,
@@ -150,6 +153,9 @@ def loop_started_frame(
         "max_iterations": max_iterations,
         "status": "running",
     }
+    if reason is not None:
+        result["reason"] = reason
+    return result
 
 
 def loop_tick_frame(
@@ -157,6 +163,8 @@ def loop_tick_frame(
     iteration: int,
     result: str,
     next_run: float | None,
+    *,
+    last_result_at: float | None = None,
 ) -> dict[str, object]:
     """Build a ``loop_tick`` notification frame.
 
@@ -169,6 +177,7 @@ def loop_tick_frame(
             "result": <str>,
             "next_run": <float | None>,
             "status": "running",
+            "last_result_at": <float | None>,
         }
     """
     return {
@@ -178,6 +187,7 @@ def loop_tick_frame(
         "result": result,
         "next_run": next_run,
         "status": "running",
+        "last_result_at": last_result_at,
     }
 
 
