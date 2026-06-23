@@ -468,8 +468,10 @@ async def test_ui_renders_task_notifications() -> None:
 
     The served HTML must reference the ``/events`` SSE endpoint, the
     ``openEventStream`` function that opens it, the three task-lifecycle
-    frame-type literals that the JS dispatcher switches on, and the
-    ``.bubble.notification`` CSS selector used for rendering.
+    frame-type literals that the JS dispatcher switches on, the
+    ``.bubble.notification`` CSS selector used for rendering, and the
+    side-panel markers (``tasks-toggle``, ``tasks-list``, ``updateTaskPanel``)
+    introduced for the background-tasks detail panel.
     """
     async with mock_app() as f:
         response = await f.client.get("/")
@@ -481,6 +483,9 @@ async def test_ui_renders_task_notifications() -> None:
     assert '"task_completed"' in response.text
     assert '"task_failed"' in response.text
     assert ".bubble.notification" in response.text
+    assert '"tasks-toggle"' in response.text
+    assert '"tasks-list"' in response.text
+    assert "updateTaskPanel" in response.text
 
 
 @pytest.mark.asyncio

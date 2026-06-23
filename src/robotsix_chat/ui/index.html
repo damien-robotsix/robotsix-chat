@@ -87,6 +87,51 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Tasks side panel                                                    */
+  /* ------------------------------------------------------------------ */
+  #tasks-toggle {
+    background: none; border: none; color: var(--header-fg);
+    font-size: 1.2rem; cursor: pointer; line-height: 1;
+    padding: 0.2rem 0.4rem; border-radius: 4px;
+  }
+  #tasks-toggle:hover { background: rgba(255,255,255,0.15); }
+
+  #tasks-panel {
+    display: none; position: fixed; top: 0; right: 0; bottom: 0;
+    width: 340px; max-width: 90vw;
+    background: var(--composer-bg); color: var(--text-fg);
+    border-left: 1px solid var(--composer-border);
+    z-index: 20; overflow-y: auto;
+    box-shadow: -4px 0 12px rgba(0,0,0,0.25);
+  }
+  #tasks-panel.visible { display: flex; flex-direction: column; }
+
+  .tasks-header {
+    padding: 0.6rem 0.75rem; font-weight: 700; font-size: 0.95rem;
+    border-bottom: 1px solid var(--composer-border);
+    background: var(--header-bg); color: var(--header-fg);
+    flex-shrink: 0;
+  }
+
+  #tasks-list { flex: 1; overflow-y: auto; padding: 0.5rem; }
+
+  .task-row {
+    padding: 0.5rem 0.6rem; margin-bottom: 0.4rem;
+    border-radius: 6px; font-size: 0.82rem;
+    border: 1px solid var(--composer-border);
+    background: var(--assistant-bubble-bg);
+    word-break: break-word;
+  }
+  .task-row .task-id    { font-family: monospace; font-size: 0.75rem; color: #94a3b8; }
+  .task-row .task-desc  { font-weight: 600; margin: 0.15rem 0; }
+  .task-row .task-meta  { font-size: 0.72rem; color: #94a3b8; }
+  .task-row .task-result { margin-top: 0.25rem; font-size: 0.78rem; }
+
+  .task-row.state-running   { border-left: 3px solid #3b82f6; }
+  .task-row.state-completed { border-left: 3px solid #22c55e; }
+  .task-row.state-failed    { border-left: 3px solid #ef4444; }
+
+  /* ------------------------------------------------------------------ */
   /* Error banner                                                        */
   /* ------------------------------------------------------------------ */
   #error-banner {
@@ -234,11 +279,17 @@
   <span class="title">{{ PROJECT_TITLE }}</span>
   <span id="connection-dot" title="connection status"></span>
   <button id="settings-toggle" title="Server URL" aria-label="Server settings">⚙</button>
+  <button id="tasks-toggle" title="Background tasks" aria-label="Background tasks">☰</button>
 </header>
 
 <div id="settings-panel">
   <label for="server-url-input">Server URL (POST /chat)</label>
   <input type="text" id="server-url-input" placeholder="http://localhost:8000/chat">
+</div>
+
+<div id="tasks-panel">
+  <div class="tasks-header">Background tasks</div>
+  <div id="tasks-list"></div>
 </div>
 
 <!-- ================================================================= -->
@@ -280,6 +331,9 @@
   const settingsToggle = document.getElementById("settings-toggle");
   const settingsPanel  = document.getElementById("settings-panel");
   const serverUrlInput = document.getElementById("server-url-input");
+  const tasksToggle    = document.getElementById("tasks-toggle");
+  const tasksPanel     = document.getElementById("tasks-panel");
+  const tasksList      = document.getElementById("tasks-list");
 
   // ---- State -----------------------------------------------------------
   var state = "idle";          // idle | sending | streaming | error
@@ -370,6 +424,120 @@
   }
 
   var clientId = getClientId();
+
+  // ---- Task panel store (session-only, in-memory) ----------------------
+  // tasksById: maps task_id → { id, description, state, startedAt,
+  //                            result, error, rowEl }
+  // tasksOrder: ordered list of task_ids in insertion order.
+  // The store is intentionally NOT cleared on restartConversation()
+  // so reopening the panel preserves the full session history.
+  var tasksById = {};
+  var tasksOrder = [];
+
+  function renderTaskRow(task) {
+    // Remove old row element if re-rendering.
+    if (task.rowEl) task.rowEl.remove();
+
+    var row = document.createElement("div");
+    row.className = "task-row state-" + task.state;
+
+    var idSpan = document.createElement("span");
+    idSpan.className = "task-id";
+    idSpan.textContent = task.id.slice(0, 8);
+    row.appendChild(idSpan);
+
+    var descDiv = document.createElement("div");
+    descDiv.className = "task-desc";
+    descDiv.textContent = task.description || "(no description)";
+    row.appendChild(descDiv);
+
+    var metaDiv = document.createElement("div");
+    metaDiv.className = "task-meta";
+    var stateLabel = task.state === "running" ? "running"
+      : task.state === "completed" ? "completed" : "failed";
+    metaDiv.textContent = stateLabel + " \u2022 " + (task.startedAt || "\u2014");
+    row.appendChild(metaDiv);
+
+    if (task.result) {
+      var resultDiv = document.createElement("div");
+      resultDiv.className = "task-result";
+      resultDiv.textContent = task.result;
+      row.appendChild(resultDiv);
+    }
+    if (task.error) {
+      var errorDiv = document.createElement("div");
+      errorDiv.className = "task-result";
+      errorDiv.style.color = "#fca5a5";
+      errorDiv.textContent = task.error;
+      row.appendChild(errorDiv);
+    }
+
+    task.rowEl = row;
+    tasksList.appendChild(row);
+  }
+
+  function updateTaskPanel(frame) {
+    var tid = frame.task_id;
+    if (!tid) return;
+
+    var task = tasksById[tid];
+
+    if (frame.type === "task_started") {
+      if (!task) {
+        task = {
+          id: tid,
+          description: frame.prompt || "",
+          state: "running",
+          startedAt: new Date().toLocaleTimeString(),
+          result: null,
+          error: null,
+          rowEl: null
+        };
+        tasksById[tid] = task;
+        tasksOrder.push(tid);
+      }
+      // Update in case a completion frame arrived first (race).
+      task.description = frame.prompt || task.description;
+      task.state = "running";
+      if (!task.startedAt) task.startedAt = new Date().toLocaleTimeString();
+    } else if (frame.type === "task_completed") {
+      if (!task) {
+        task = {
+          id: tid,
+          description: "",
+          state: "completed",
+          startedAt: new Date().toLocaleTimeString(),
+          result: frame.result || "",
+          error: null,
+          rowEl: null
+        };
+        tasksById[tid] = task;
+        tasksOrder.push(tid);
+      } else {
+        task.state = "completed";
+        task.result = frame.result || "";
+      }
+    } else if (frame.type === "task_failed") {
+      if (!task) {
+        task = {
+          id: tid,
+          description: "",
+          state: "failed",
+          startedAt: new Date().toLocaleTimeString(),
+          result: null,
+          error: frame.error || "",
+          rowEl: null
+        };
+        tasksById[tid] = task;
+        tasksOrder.push(tid);
+      } else {
+        task.state = "failed";
+        task.error = frame.error || "";
+      }
+    }
+
+    renderTaskRow(task);
+  }
 
   // ---- Helpers ---------------------------------------------------------
   function scrollToBottom() {
@@ -552,6 +720,7 @@
             frame.type === "task_completed" ||
             frame.type === "task_failed") {
           addNotificationBubble(frame);
+          updateTaskPanel(frame);
         }
         // ignore unknown types gracefully
       },
@@ -734,6 +903,16 @@
   serverUrlInput.addEventListener("input", function () {
     var val = serverUrlInput.value.trim();
     if (val) setServerUrl(val);
+  });
+
+  // Tasks panel toggle — no auto-close on outside click (unlike settings).
+  tasksToggle.addEventListener("click", function (e) {
+    e.stopPropagation();
+    tasksPanel.classList.toggle("visible");
+  });
+
+  tasksPanel.addEventListener("click", function (e) {
+    e.stopPropagation();
   });
 
   // ---- Initial state ---------------------------------------------------
