@@ -1,18 +1,25 @@
-"""Delegation tool factory for the foreground chat agent.
+"""Delegation and check-loop tool factories for the foreground chat agent.
 
 Lets the foreground agent offload long-running work to a background sub-agent
 via :func:`~robotsix_chat.chat.runner.spawn_subagent_task`. The tool returns
 a task id immediately — the foreground reply is never blocked.
 
+Also lets the model launch a recurring check loop via
+:func:`~robotsix_chat.chat.loops.spawn_check_loop`.
+
 Usage::
 
     from robotsix_chat.chat.delegation import (
+        build_check_loop_tools,
         build_delegation_tools,
         NullDeliveryChannel,
     )
 
     tools = build_delegation_tools(
         settings, registry, channel, client_id="browser-1",
+    )
+    loop_tools = build_check_loop_tools(
+        settings, check_loop_registry, client_id="browser-1",
     )
 """
 
@@ -22,6 +29,12 @@ import logging
 from collections.abc import Callable
 from typing import Any
 
+from robotsix_chat.chat.loops import (
+    CheckLoopRegistry,
+    LoopCapacityError,
+    LoopIntervalError,
+    spawn_check_loop,
+)
 from robotsix_chat.chat.runner import (
     DeliveryChannel,
     TaskCapacityError,
@@ -139,3 +152,95 @@ def build_delegation_tools(
         )
 
     return [delegate_task]
+
+
+# ---------------------------------------------------------------------------
+# Check-loop tool factory
+# ---------------------------------------------------------------------------
+
+
+def build_check_loop_tools(
+    settings: Settings,
+    registry: CheckLoopRegistry,
+    *,
+    client_id: str = "",
+    agent_factory: Callable[[Settings], ChatAgent] | None = None,
+) -> list[Callable[..., Any]]:
+    """Return the ``start_check_loop`` tool for the foreground chat agent.
+
+    When wired into the agent's tools list, the model can call
+    ``start_check_loop`` to launch a recurring check on the user's behalf.
+
+    *client_id* is captured lexically in the returned tool closure so it
+    survives the claude_sdk / MCP execution-context boundary — unlike a
+    ContextVar, which is invisible there.
+
+    *agent_factory* is forwarded to
+    :func:`~robotsix_chat.chat.loops.spawn_check_loop`; when ``None``
+    (the default), the runner's own default factory is used — which builds
+    a sub-agent with **no** loop tools (preventing infinite recursion).
+    """
+
+    async def start_check_loop(
+        check_description: str,
+        interval_seconds: float,
+        max_iterations: int | None = None,
+    ) -> str:
+        """Start a recurring background check that re-runs every ``interval_seconds``.
+
+        Use this when the user asks you to watch something over time — monitor a
+        price, poll an endpoint, check for new results, etc.  The check runs in
+        a fresh sub-agent with no conversation history, so *check_description*
+        must be complete and self-contained (include all context the sub-agent
+        needs).
+
+        The check re-runs automatically until it is explicitly stopped, reaches
+        *max_iterations* (if set), or self-stops.  Every result is surfaced to
+        the user as it lands.
+
+        Args:
+            check_description: A complete, self-contained description of what
+                the background check sub-agent should do on every iteration.
+                The sub-agent is a fresh instance with no conversation history —
+                include all necessary context.
+            interval_seconds: How often to re-run the check, in seconds.  The
+                minimum is 60 seconds; shorter intervals are rejected.
+            max_iterations: Optional cap on the number of iterations.  When the
+                loop reaches this many ticks it stops automatically.  ``None``
+                (the default) means it runs until explicitly stopped.
+
+        Returns:
+            A message with the started loop's id; relay it to the user so they
+            know the check is running and how often it will re-run.
+
+        """
+        cid = client_id
+        try:
+            loop_id = spawn_check_loop(
+                client_id=cid,
+                prompt=check_description,
+                interval_seconds=interval_seconds,
+                settings=settings,
+                registry=registry,
+                max_iterations=max_iterations,
+                agent_factory=agent_factory,
+            )
+        except LoopIntervalError as exc:
+            logger.info("start_check_loop rejected (interval): %s", exc)
+            return (
+                f"I can't start a check loop with an interval of "
+                f"{interval_seconds:g} seconds — the minimum is 60 seconds. "
+                f"Please ask again with a longer interval."
+            )
+        except LoopCapacityError as exc:
+            logger.info("start_check_loop rejected (capacity): %s", exc)
+            return (
+                "I couldn't start a new check loop right now — too many are "
+                "already running. Ask me again once some have finished."
+            )
+        return (
+            f"Started check loop {loop_id}. It will re-run every "
+            f"{interval_seconds:g}s; I'll surface each result as it lands."
+        )
+
+    return [start_check_loop]

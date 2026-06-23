@@ -1,0 +1,1 @@
+Add start_check_loop agent tool (stop handled via HTTP, not tool)
