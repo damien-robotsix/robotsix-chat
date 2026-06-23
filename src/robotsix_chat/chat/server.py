@@ -271,6 +271,30 @@ async def events_endpoint(request: Request) -> JSONResponse | StreamingResponse:
     )
 
 
+async def loops_stop_endpoint(request: Request) -> JSONResponse:
+    """Stop a running check loop.
+
+    ``POST /loops/{loop_id}/stop`` stops the loop and returns a 200 JSON ack.
+    Returns 503 when the check-loop feature is not wired (registry is None),
+    or 404 when the loop id is unknown.
+    """
+    registry: CheckLoopRegistry | None = request.app.state.check_loop_registry
+    if registry is None:
+        return JSONResponse(
+            {"error": "check-loop feature not enabled"}, status_code=503
+        )
+
+    loop_id = request.path_params["loop_id"]
+
+    if registry.get(loop_id) is None:
+        return JSONResponse(
+            {"error": "unknown loop", "loop_id": loop_id}, status_code=404
+        )
+
+    registry.stop(loop_id, reason="stopped via api")
+    return JSONResponse({"loop_id": loop_id, "status": "stopped"})
+
+
 # ---------------------------------------------------------------------------
 # Error handlers
 # ---------------------------------------------------------------------------
@@ -291,6 +315,22 @@ async def server_error_handler(request: Request, exc: Exception) -> JSONResponse
 # ---------------------------------------------------------------------------
 
 
+@contextlib.asynccontextmanager
+async def _make_lifespan(
+    on_startup: Callable[[], None] | None,
+) -> AsyncIterator[None]:
+    """Starlette lifespan that invokes *on_startup* (if provided) on startup.
+
+    A resume failure is logged but does not crash app startup.
+    """
+    if on_startup is not None:
+        try:
+            on_startup()
+        except Exception:
+            logger.exception("Startup hook failed — continuing")
+    yield
+
+
 def create_app(
     agent: ChatAgent,
     *,
@@ -302,6 +342,8 @@ def create_app(
     conversation_store: ConversationStore | None = None,
     task_registry: TaskRegistry | None = None,
     event_bus: EventBus | None = None,
+    check_loop_registry: CheckLoopRegistry | None = None,
+    on_startup: Callable[[], None] | None = None,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -336,6 +378,13 @@ def create_app(
             Pass the same instance given to the :class:`TaskRegistry` so
             lifecycle frames published by the registry reach the SSE
             subscribers.
+        check_loop_registry: Shared registry for recurring check-loop
+            lifecycle.  Leave ``None`` (default) when check loops are
+            not wired — the stop route returns 503 and the resume hook
+            is skipped.
+        on_startup: Optional callable invoked during application startup
+            (the Starlette lifespan ``startup`` phase).  Pass a closure
+            that e.g. resumes persisted check loops.
 
     """
     routes = [
@@ -343,6 +392,7 @@ def create_app(
         Route("/chat", chat_endpoint, methods=["POST"]),
         Route("/events", events_endpoint, methods=["GET"]),
         Route("/history", history_endpoint, methods=["GET"]),
+        Route("/loops/{loop_id}/stop", loops_stop_endpoint, methods=["POST"]),
     ]
     if serve_ui:
         routes.append(Route("/", ui_endpoint, methods=["GET"]))
@@ -372,6 +422,7 @@ def create_app(
             404: not_found_handler,
             500: server_error_handler,
         },
+        lifespan=lambda app: _make_lifespan(on_startup),
     )
     app.state.agent = agent
     app.state.conversation_store = conversation_store or ConversationStore()
@@ -380,6 +431,7 @@ def create_app(
     app.state.task_registry = task_registry or TaskRegistry(
         event_sink=app.state.event_bus
     )
+    app.state.check_loop_registry = check_loop_registry  # may be None
     return app
 
 
@@ -396,6 +448,8 @@ def run_server(
     conversation_store: ConversationStore | None = None,
     task_registry: TaskRegistry | None = None,
     event_bus: EventBus | None = None,
+    check_loop_registry: CheckLoopRegistry | None = None,
+    on_startup: Callable[[], None] | None = None,
 ) -> None:
     """Start the chat SSE server on ``host:port``.
 
@@ -414,6 +468,8 @@ def run_server(
         conversation_store=conversation_store,
         task_registry=task_registry,
         event_bus=event_bus,
+        check_loop_registry=check_loop_registry,
+        on_startup=on_startup,
     )
     uvicorn.run(app, host=host, port=port)
 
@@ -583,9 +639,11 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # registry's event_sink is the single authoritative lifecycle publisher,
     # so no duplicate frames reach /events subscribers.
     from robotsix_chat.chat.delegation import NullDeliveryChannel
+    from robotsix_chat.chat.loops import CheckLoopRegistry, resume_check_loops
 
     event_bus = EventBus()
     registry = TaskRegistry(event_sink=event_bus)
+    check_loop_registry = CheckLoopRegistry(event_sink=event_bus)
     channel = NullDeliveryChannel()
 
     if agent is None:
@@ -593,7 +651,13 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             settings=settings,
             task_registry=registry,
             delivery_channel=channel,
+            check_loop_registry=check_loop_registry,
         )
+
+    # -- resume persisted check loops after redeploy ----------------------
+    def _resume() -> None:
+        """Resume any check loops that were RUNNING at last shutdown."""
+        resume_check_loops(check_loop_registry, settings)
 
     auth = (
         BasicAuthConfig(
@@ -618,4 +682,6 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         conversation_store=conversation_store,
         task_registry=registry,
         event_bus=event_bus,
+        check_loop_registry=check_loop_registry,
+        on_startup=_resume,
     )
