@@ -218,6 +218,22 @@ async def chat_endpoint(
     )
 
 
+async def history_endpoint(request: Request) -> JSONResponse:
+    """Return a client's stored conversation history as JSON.
+
+    ``GET /history?client_id=...`` returns ``{"turns": [[user, assistant], ...]}``.
+    """
+    client_id = request.query_params.get("client_id")
+    if not client_id:
+        return JSONResponse(
+            {"error": "client_id query parameter is required"}, status_code=400
+        )
+
+    store: ConversationStore = request.app.state.conversation_store
+    turns = store.history(client_id)
+    return JSONResponse({"turns": turns})
+
+
 async def events_endpoint(request: Request) -> JSONResponse | StreamingResponse:
     """Open a persistent SSE channel for background-task lifecycle events.
 
@@ -320,6 +336,7 @@ def create_app(
         Route("/health", health_endpoint, methods=["GET"]),
         Route("/chat", chat_endpoint, methods=["POST"]),
         Route("/events", events_endpoint, methods=["GET"]),
+        Route("/history", history_endpoint, methods=["GET"]),
     ]
     if serve_ui:
         routes.append(Route("/", ui_endpoint, methods=["GET"]))

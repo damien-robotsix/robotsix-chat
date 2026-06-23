@@ -166,6 +166,93 @@ async def test_chat_endpoint_invalid_client_id() -> None:
 
 
 # ---------------------------------------------------------------------------
+# History endpoint
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_history_endpoint_returns_stored_turns() -> None:
+    """``GET /history?client_id=`` returns the client's recorded turns as JSON."""
+    store = ConversationStore()
+    store.begin("c1")
+    store.record("c1", "hi", "hello")
+    store.record("c1", "how are you", "I'm fine")
+
+    async with mock_app(conversation_store=store) as f:
+        response = await f.client.get("/history?client_id=c1")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data == {"turns": [["hi", "hello"], ["how are you", "I'm fine"]]}
+
+
+@pytest.mark.asyncio
+async def test_history_endpoint_unknown_client_returns_200_empty() -> None:
+    """``GET /history?client_id=unknown`` returns 200 with an empty turn list."""
+    async with mock_app() as f:
+        response = await f.client.get("/history?client_id=does-not-exist")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data == {"turns": []}
+
+
+@pytest.mark.asyncio
+async def test_history_endpoint_missing_client_id_returns_400() -> None:
+    """``GET /history`` without a ``client_id`` query param returns 400."""
+    async with mock_app() as f:
+        response = await f.client.get("/history")
+
+    assert response.status_code == 400
+    data = response.json()
+    assert "error" in data
+    assert "client_id" in data["error"]
+
+
+@pytest.mark.asyncio
+async def test_history_read_is_non_mutating() -> None:
+    """Reading history does not refresh last-activity or reset an idle conversation."""
+    from tests.chat.test_conversation import _FakeClock, _store
+
+    clock = _FakeClock()
+    store = _store(clock)
+    store.begin("c1")
+    store.record("c1", "q", "a")
+
+    # Read history — this must not count as activity.
+    turns = store.history("c1")
+    assert turns == [("q", "a")]
+
+    # Advance past the default idle window and assert begin() resets.
+    clock.advance(1801)
+    session_id, history = store.begin("c1")
+    assert history == []  # history was read-only; idle window still expired
+
+
+# ---------------------------------------------------------------------------
+# UI: history load path
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ui_injects_history_load_path() -> None:
+    """``GET /`` contains the history-loading wiring.
+
+    The served HTML must reference:
+    - the ``loadHistory`` function
+    - the ``/history`` endpoint (via string match)
+    - the ``addAssistantBubble`` helper
+    """
+    async with mock_app() as f:
+        response = await f.client.get("/")
+
+    assert response.status_code == 200
+    assert "loadHistory" in response.text
+    assert '"/history"' in response.text
+    assert "addAssistantBubble" in response.text
+
+
+# ---------------------------------------------------------------------------
 # Chat endpoint — error handling
 # ---------------------------------------------------------------------------
 

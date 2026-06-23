@@ -108,6 +108,17 @@ class ConversationStore:
         conversation.last_activity = self._clock()
         self._conversations.move_to_end(client_id)
 
+    def history(self, client_id: str) -> list[Turn]:
+        """Return a snapshot copy of *client_id*'s recorded turns.
+
+        Read-only: does not update last-activity, LRU order, or reset an
+        expired conversation. Returns an empty list for unknown clients.
+        """
+        conversation = self._conversations.get(client_id)
+        if conversation is None:
+            return []
+        return list(conversation.turns)
+
     def _is_expired(self, conversation: _Conversation, now: float) -> bool:
         return now - conversation.last_activity > self._idle_reset_seconds
 
