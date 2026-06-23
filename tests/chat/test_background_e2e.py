@@ -5,6 +5,10 @@ Exercises the wired subsystem end to end: delegation via the
 on the happy path, and ``task_started → task_failed`` on the failure path,
 with frames observed as delivered to a connected client/subscriber through
 the EventBus.
+
+Also exercises the ``ConversationDeliveryChannel`` integration: completed/
+failed task results are recorded into the originating conversation's
+``ConversationStore`` history.
 """
 
 from __future__ import annotations
@@ -14,7 +18,11 @@ from typing import Any
 
 import pytest
 
-from robotsix_chat.chat.delegation import build_delegation_tools
+from robotsix_chat.chat.conversation import ConversationStore
+from robotsix_chat.chat.delegation import (
+    ConversationDeliveryChannel,
+    build_delegation_tools,
+)
 from robotsix_chat.chat.events import EventBus
 from robotsix_chat.chat.tasks import TaskRegistry
 from robotsix_chat.config import Settings
@@ -201,3 +209,90 @@ async def test_e2e_frames_isolated_per_client() -> None:
 
     # client-b gets nothing.
     assert q_b.empty()
+
+
+# ---------------------------------------------------------------------------
+# ConversationDeliveryChannel integration e2e
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_e2e_conversation_delivery_channel_completed() -> None:
+    """Completed background-task result lands in the originating conversation store.
+
+    The next agent turn will see it in history.
+    """
+    bus = EventBus()
+    registry = TaskRegistry(event_sink=bus)
+    store = ConversationStore(
+        idle_reset_seconds=3600.0,
+        max_history_turns=10,
+    )
+    # Begin the conversation so the store knows about client "c-e2e".
+    store.begin("c-e2e")
+
+    channel = ConversationDeliveryChannel(store)
+    settings = Settings()
+
+    tools = build_delegation_tools(
+        settings,
+        registry,
+        channel,
+        client_id="c-e2e",
+        agent_factory=lambda s: MockAgent(tokens=["findings: 99"]),
+    )
+    delegate_task_fn = tools[0]
+
+    result = await delegate_task_fn("investigate the issue")
+    assert isinstance(result, str)
+
+    # Let the worker finish (it writes to the store via the channel).
+    await asyncio.sleep(0.1)
+
+    # The store now contains the synthetic turn.
+    history = store.history("c-e2e")
+    assert len(history) >= 1
+
+    # The turn conveys the completed task result.
+    user_msg, assistant_msg = history[-1]
+    assert "Background task" in user_msg
+    assert "completed" in user_msg
+    assert assistant_msg == "findings: 99"
+
+
+@pytest.mark.asyncio
+async def test_e2e_conversation_delivery_channel_failed() -> None:
+    """Failed background-task error lands in the originating conversation store."""
+    bus = EventBus()
+    registry = TaskRegistry(event_sink=bus)
+    store = ConversationStore(
+        idle_reset_seconds=3600.0,
+        max_history_turns=10,
+    )
+    store.begin("c-e2e-fail")
+
+    channel = ConversationDeliveryChannel(store)
+    settings = Settings()
+
+    exc = ValueError("bad input")
+
+    tools = build_delegation_tools(
+        settings,
+        registry,
+        channel,
+        client_id="c-e2e-fail",
+        agent_factory=lambda s: MockAgent(error=exc),
+    )
+    delegate_task_fn = tools[0]
+
+    await delegate_task_fn("risky work")
+
+    await asyncio.sleep(0.1)
+
+    history = store.history("c-e2e-fail")
+    assert len(history) >= 1
+
+    user_msg, assistant_msg = history[-1]
+    assert "Background task" in user_msg
+    assert "failed" in user_msg
+    assert "Error: bad input" in assistant_msg

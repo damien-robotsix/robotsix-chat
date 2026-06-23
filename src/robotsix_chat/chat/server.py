@@ -678,18 +678,39 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     _setup_observability()
 
     # -- shared task registry + delivery channel for delegation -----------
-    # A single EventBus backs both the foreground agent's delegate_task
-    # tool (via registry.event_sink) and GET /events (via
-    # app.state.event_bus).  The channel is a NullDeliveryChannel: the
-    # registry's event_sink is the single authoritative lifecycle publisher,
-    # so no duplicate frames reach /events subscribers.
-    from robotsix_chat.chat.delegation import NullDeliveryChannel
+    # Two independent notification sinks for background-task lifecycles:
+    #
+    # 1. EventBus → GET /events SSE → browser UI
+    #    TaskRegistry.complete() / .fail() publish task_completed / task_failed
+    #    frames to the EventBus, which the /events endpoint streams to the
+    #    connected browser.  This path is unchanged.
+    #
+    # 2. ConversationDeliveryChannel → ConversationStore → agent history
+    #    The runner's _worker also calls channel.publish(client_id, frame).
+    #    This channel records completed/failed task results into the
+    #    ConversationStore keyed by the originating client_id, so the
+    #    foreground agent sees them in its next-turn history and can relay
+    #    task IDs / URLs / findings to the user.
+    #
+    # The two sinks have different destinations (browser SSE vs. agent
+    # history) — there is no duplicate-frame concern.
+    #
+    # The conversation store MUST be constructed before the channel so both
+    # the channel and run_server() receive the exact same store instance.
+    from robotsix_chat.chat.delegation import ConversationDeliveryChannel
     from robotsix_chat.chat.loops import CheckLoopRegistry, resume_check_loops
 
     event_bus = EventBus()
     registry = TaskRegistry(event_sink=event_bus)
     check_loop_registry = CheckLoopRegistry(event_sink=event_bus)
-    channel = NullDeliveryChannel()
+
+    conversation_store = ConversationStore(
+        idle_reset_seconds=settings.conversation.idle_reset_seconds,
+        max_history_turns=settings.conversation.max_history_turns,
+        max_conversations=settings.conversation.max_conversations,
+        persist_path=Path(".data/conversations.json"),
+    )
+    channel = ConversationDeliveryChannel(conversation_store)
 
     if agent is None:
         agent = create_agent_from_settings(
@@ -710,12 +731,6 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         )
         if settings.auth.enabled
         else None
-    )
-    conversation_store = ConversationStore(
-        idle_reset_seconds=settings.conversation.idle_reset_seconds,
-        max_history_turns=settings.conversation.max_history_turns,
-        max_conversations=settings.conversation.max_conversations,
-        persist_path=Path(".data/conversations.json"),
     )
     run_server(
         agent,

@@ -10,7 +10,9 @@ from typing import Any
 
 import pytest
 
+from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.delegation import (
+    ConversationDeliveryChannel,
     NullDeliveryChannel,
     build_check_loop_tools,
     build_delegation_tools,
@@ -423,6 +425,158 @@ async def test_null_delivery_channel_is_noop() -> None:
     channel = NullDeliveryChannel()
     await channel.publish("c1", {"type": "task_started", "task_id": "x"})
     # No exception → success.
+
+
+# ---------------------------------------------------------------------------
+# ConversationDeliveryChannel
+# ---------------------------------------------------------------------------
+
+
+class TestConversationDeliveryChannel:
+    """Tests for :class:`ConversationDeliveryChannel`."""
+
+    @staticmethod
+    def _store(**kwargs: Any) -> ConversationStore:
+        return ConversationStore(
+            idle_reset_seconds=3600.0,
+            max_history_turns=10,
+            max_conversations=5,
+            **kwargs,
+        )
+
+    @pytest.mark.asyncio
+    async def test_completed_frame_records_turn(self) -> None:
+        """A ``task_completed`` frame records a turn into the store."""
+        store = self._store()
+        store.begin("c1")  # ensure the conversation exists
+        channel = ConversationDeliveryChannel(store)
+
+        await channel.publish(
+            "c1",
+            {"type": "task_completed", "task_id": "t42", "result": "done: 42"},
+        )
+
+        history = store.history("c1")
+        assert len(history) == 1
+        user_msg, assistant_msg = history[0]
+        assert "t42" in user_msg
+        assert "Background task" in user_msg
+        assert "completed" in user_msg
+        assert assistant_msg == "done: 42"
+
+    @pytest.mark.asyncio
+    async def test_failed_frame_records_turn(self) -> None:
+        """A ``task_failed`` frame records a turn with the error."""
+        store = self._store()
+        store.begin("c2")
+        channel = ConversationDeliveryChannel(store)
+
+        await channel.publish(
+            "c2",
+            {"type": "task_failed", "task_id": "t99", "error": "timeout"},
+        )
+
+        history = store.history("c2")
+        assert len(history) == 1
+        user_msg, assistant_msg = history[0]
+        assert "t99" in user_msg
+        assert "failed" in user_msg
+        assert "Error: timeout" in assistant_msg
+
+    @pytest.mark.asyncio
+    async def test_started_frame_is_ignored(self) -> None:
+        """A ``task_started`` frame does NOT create a history turn."""
+        store = self._store()
+        store.begin("c3")
+        channel = ConversationDeliveryChannel(store)
+
+        await channel.publish(
+            "c3",
+            {"type": "task_started", "task_id": "t1", "prompt": "do stuff"},
+        )
+
+        history = store.history("c3")
+        assert len(history) == 0
+
+    @pytest.mark.asyncio
+    async def test_unknown_frame_is_ignored(self) -> None:
+        """An unknown frame type does NOT create a history turn."""
+        store = self._store()
+        store.begin("c4")
+        channel = ConversationDeliveryChannel(store)
+
+        await channel.publish("c4", {"type": "some_unknown", "x": 1})
+
+        history = store.history("c4")
+        assert len(history) == 0
+
+    @pytest.mark.asyncio
+    async def test_empty_client_id_is_noop(self) -> None:
+        """An empty ``client_id`` is a no-op — no turn created."""
+        store = self._store()
+        channel = ConversationDeliveryChannel(store)
+
+        await channel.publish(
+            "",
+            {"type": "task_completed", "task_id": "t42", "result": "x"},
+        )
+
+        # No conversation was ever begun for "".
+        assert store.history("") == []
+
+    @pytest.mark.asyncio
+    async def test_nonexistent_client_is_dropped_by_store(self) -> None:
+        """Publishing for a client never begun is silently dropped by the store."""
+        store = self._store()
+        channel = ConversationDeliveryChannel(store)
+
+        # The store never had a begin() call for "ghost".
+        await channel.publish(
+            "ghost",
+            {"type": "task_completed", "task_id": "t1", "result": "nope"},
+        )
+
+        # record() is a no-op for unknown clients.
+        assert store.history("ghost") == []
+
+    @pytest.mark.asyncio
+    async def test_completed_then_failed_only_last_recorded(self) -> None:
+        """Two frames for the same client both land in history."""
+        store = self._store()
+        store.begin("c5")
+        channel = ConversationDeliveryChannel(store)
+
+        await channel.publish(
+            "c5",
+            {"type": "task_completed", "task_id": "ta", "result": "first"},
+        )
+        await channel.publish(
+            "c5",
+            {"type": "task_failed", "task_id": "tb", "error": "second"},
+        )
+
+        history = store.history("c5")
+        assert len(history) == 2
+        assert history[0][1] == "first"
+        assert "Error: second" in history[1][1]
+
+    @pytest.mark.asyncio
+    async def test_publish_does_not_raise_on_missing_keys(self) -> None:
+        """Missing 'result' or 'error' keys don't crash publish."""
+        store = self._store()
+        store.begin("c6")
+        channel = ConversationDeliveryChannel(store)
+
+        # task_completed without 'result' key — should default to "".
+        await channel.publish(
+            "c6",
+            {"type": "task_completed", "task_id": "t1"},
+        )
+
+        history = store.history("c6")
+        assert len(history) == 1
+        # assistant_reply is empty string (default from .get).
+        assert history[0][1] == ""
 
 
 # ---------------------------------------------------------------------------
