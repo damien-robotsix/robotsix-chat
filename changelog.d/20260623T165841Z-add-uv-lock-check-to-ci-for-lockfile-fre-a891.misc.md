@@ -1,0 +1,1 @@
+Add uv lock --check to CI for lockfile freshness validation
