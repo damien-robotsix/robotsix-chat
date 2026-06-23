@@ -622,6 +622,15 @@
     return div;
   }
 
+  function addAssistantBubble(text) {
+    var div = document.createElement("div");
+    div.className = "bubble assistant";
+    div.textContent = text;
+    chatEl.appendChild(div);
+    scrollToBottom();
+    return div;
+  }
+
   function addNotificationBubble(frame) {
     var div = document.createElement("div");
     var typeClass = "";
@@ -770,6 +779,30 @@
       parser.start();
     }).catch(function () {
       setTimeout(openEventStream, 5000);
+    });
+  }
+
+  // ---- History loading -------------------------------------------------
+  function loadHistory() {
+    var historyUrl = getServerUrl().replace(/\/chat$/, "/history") +
+                     "?client_id=" + encodeURIComponent(clientId);
+
+    fetch(historyUrl, { method: "GET" }).then(function (response) {
+      if (!response.ok) return;
+      return response.json();
+    }).then(function (data) {
+      if (!data || !Array.isArray(data.turns)) return;
+      var turns = data.turns;
+      for (var i = 0; i < turns.length; i++) {
+        var turn = turns[i];
+        if (Array.isArray(turn) && turn.length >= 2) {
+          addUserBubble(turn[0]);
+          addAssistantBubble(turn[1]);
+        }
+      }
+      scrollToBottom();
+    }).catch(function () {
+      // Silently ignore network errors — empty chat is fine.
     });
   }
 
@@ -941,6 +974,7 @@
   setConnectionStatus(true);  // optimistic green; turns red on first error
   resetIdleTimer();
   openEventStream();          // open persistent /events channel for task notifications
+  loadHistory();              // restore prior conversation turns on page load
 })();
 </script>
 
