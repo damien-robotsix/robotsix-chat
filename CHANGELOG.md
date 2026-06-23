@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Added
+
+- Comprehensive `docs/configuration.md` documenting all ~30 environment
+  variables across server, auth, memory, mill, calendar, conversation,
+  and refdocs settings.
+
 ## [0.1.0] - Unreleased
 
 ### Added

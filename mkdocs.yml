@@ -18,7 +18,7 @@ nav:
   - Home: index.md
   - Getting Started: getting-started.md
   - User Guide:
-      - Configuration: user-guide/configuration.md
+      - Configuration: configuration.md
       - Deployment: user-guide/deployment.md
   - API Reference:
       - robotsix_chat: api/robotsix_chat.md
