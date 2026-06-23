@@ -18,6 +18,10 @@ if TYPE_CHECKING:
 class CalendarClient(BaseBrokeredClient):
     """Forwards natural-language calendar/task requests to the calendar agent."""
 
+    # robotsix-calendar-agent reads the request text from the ``"instruction"``
+    # key (not the board-manager's ``"message"``); see its agent.process().
+    _request_key = "instruction"
+
     def __init__(self, settings: CalendarSettings) -> None:
         """Store the calendar broker settings, build a brokered requester."""
         super().__init__(

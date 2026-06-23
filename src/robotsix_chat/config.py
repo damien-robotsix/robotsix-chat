@@ -284,7 +284,7 @@ class CalendarSettings(BaseModel):
     broker_scheme: str = "https"
     broker_token: str = ""
     agent_id: str = "robotsix-chat"
-    calendar_agent_id: str = "calendar-agent-robotsix"
+    calendar_agent_id: str = "robotsix-calendar"
     timeout: float = 240.0
 
 
