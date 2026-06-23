@@ -23,8 +23,15 @@ class BaseBrokeredClient:
     Subclasses pass *target_agent_id* (the broker-registered ID of the
     recipient agent) and *default_reply* (the fallback when the broker
     returns an empty reply).  ``consult()`` forwards any ``**extra_payload``
-    keys into the request dict alongside ``"message"``.
+    keys into the request dict alongside the request text.
+
+    The request text is sent under ``_request_key`` (default ``"message"``,
+    matching the mill board-manager's contract).  Subclasses whose recipient
+    expects a different key override it — e.g. the calendar agent requires
+    ``"instruction"``.
     """
+
+    _request_key: str = "message"
 
     def __init__(
         self,
@@ -65,7 +72,7 @@ class BaseBrokeredClient:
         if not request.strip():
             return empty_reply
         try:
-            payload: dict[str, object] = {"message": request, **extra_payload}
+            payload: dict[str, object] = {self._request_key: request, **extra_payload}
             return await asyncio.to_thread(self._requester.request, payload)
         except Exception as exc:  # noqa: BLE001 — surface as text, never crash chat
             logger.warning("%s consult failed: %s", error_label, exc)

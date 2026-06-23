@@ -77,9 +77,9 @@ async def test_consult_calendar_domain_sends_payload(
 
     assert out == "done"
     assert captured["agent_id"] == "robotsix-chat"
-    assert captured["recipient"] == "calendar-agent-robotsix"
+    assert captured["recipient"] == "robotsix-calendar"
     assert captured["payload"] == {
-        "message": "what's on my calendar?",
+        "instruction": "what's on my calendar?",
         "domain": "calendar",
     }
     assert captured["broker_token"] == "tok"  # pragma: allowlist secret
@@ -96,7 +96,7 @@ async def test_consult_tasks_domain_sends_payload(
 
     assert out == "ok"
     assert captured["payload"] == {
-        "message": "create a task: buy milk",
+        "instruction": "create a task: buy milk",
         "domain": "tasks",
     }
 

@@ -135,6 +135,29 @@ async def test_consult_forwards_extra_payload(
 
 
 @pytest.mark.asyncio
+async def test_request_key_override_changes_payload_key(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A subclass overriding ``_request_key`` sends the request under that key.
+
+    The calendar agent reads ``"instruction"`` (not the board-manager's
+    ``"message"``); regression guard for that wire-contract mismatch.
+    """
+    captured = _install_fake_agent_comm(monkeypatch, reply=_Reply({"reply": "ok"}))
+
+    class _InstructionClient(BaseBrokeredClient):
+        _request_key = "instruction"
+
+    client = _InstructionClient(
+        _settings(), target_agent_id="t", default_reply="default"
+    )
+    out = await client.consult("book a meeting", empty_reply="E", error_label="cal")
+    assert out == "ok"
+    assert captured["payload"] == {"instruction": "book a meeting"}
+    assert "message" not in captured["payload"]
+
+
+@pytest.mark.asyncio
 async def test_consult_exception_caught_and_returned_as_error_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
