@@ -14,6 +14,20 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the shared `SSE_TASK_*_TYPE` constants from `events.py`, so frame types
   stay consistent across the codebase.
 
+- Conversation history is now persisted to `.data/conversations.json` (JSON,
+  one write per completed exchange) so chat history survives a Docker container
+  restart when the `.data` directory is on a persistent volume mount. The
+  in-memory store loads saved conversations on startup.
+
+- The per-conversation history cap was raised from 20 to 50 turns (most recent
+  messages), matching the acceptance criterion for conversation retention
+  across UI reloads and container restarts.
+
+- The idle-timeout UI behaviour was changed: instead of clearing the entire
+  chat area (`chatEl.innerHTML = ""`), an inline italic notice is now appended
+  while all previous message bubbles remain visible — so the user can still
+  scroll back through the conversation after returning from idle.
+
 - Registered `robotsix_chat.calendar` in `docs/modules.yaml` (was a
   fully-fledged module but absent from the module manifest).
 

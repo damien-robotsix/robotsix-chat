@@ -544,7 +544,7 @@ def test_conversation_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings.from_env()
 
     assert settings.conversation.idle_reset_seconds == 1800
-    assert settings.conversation.max_history_turns == 20
+    assert settings.conversation.max_history_turns == 50
     assert settings.conversation.max_conversations == 1000
 
 

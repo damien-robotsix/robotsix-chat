@@ -30,6 +30,11 @@ single `chat` container.  Use this for development, testing, or ad-hoc runs.
 
 - Docker Engine 24+ and Compose v2
 - Claude subscription: `claude login` (populates `~/.claude`)
+- **Persistent `.data` volume**: conversation history is written to
+  `.data/conversations.json` inside the container. The deploy stack mounts
+  `./data` at `/home/appuser/.data` (read-write) so chat history survives
+  container restarts. Ensure the `deploy/data/` directory exists (or let
+  Docker create it).
 
 ### Steps
 
@@ -242,6 +247,32 @@ For Caddy, Traefik, or other proxies, follow the same pattern: terminate TLS
 at the proxy and forward to the loopback port.
 
 ---
+
+## Conversation history across restarts
+
+The server persists each completed chat exchange to `.data/conversations.json`
+(one write per turn). On startup, any saved conversations are loaded back into
+memory, so a user's prior turns are restored even after a full container
+restart — provided the `.data` directory lives on a persistent volume mount
+(see [volume mounts](#prerequisites) above).
+
+Key characteristics:
+
+- **Cap**: the most recent 50 turns per conversation are retained (older turns
+  are trimmed).
+- **Idle timeout**: when the browser tab has been idle for the configured
+  window (default 30 minutes), an inline italic notice is appended to the chat
+  but **all prior messages remain visible** — the chat area is never cleared.
+  After timeout, the next message starts a fresh conversation (new trace
+  session, empty history), but the user can still scroll back through the
+  prior exchange.
+- **UI reload**: the client id is stored in `localStorage`, and on page load
+  the UI fetches `/history?client_id=...` to restore message bubbles. This
+  works regardless of whether the server persisted to disk (the in-memory
+  store is sufficient for reloads within the same process lifetime).
+- **Container restart**: history loaded from `.data/conversations.json` is
+  fully functional — idle-reset behaviour, the 50-turn cap, and LRU eviction
+  all apply to restored conversations.
 
 ## 7. Updating
 

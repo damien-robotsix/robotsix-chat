@@ -13,6 +13,7 @@ import logging
 import logging.config
 from collections.abc import AsyncIterator, Callable
 from importlib import resources
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, Protocol
 
 from asgi_correlation_id import CorrelationIdMiddleware
@@ -714,6 +715,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         idle_reset_seconds=settings.conversation.idle_reset_seconds,
         max_history_turns=settings.conversation.max_history_turns,
         max_conversations=settings.conversation.max_conversations,
+        persist_path=Path(".data/conversations.json"),
     )
     run_server(
         agent,

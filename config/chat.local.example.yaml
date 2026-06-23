@@ -117,7 +117,7 @@ calendar:
 conversation:
   # idle_reset_seconds: 1800       # start a new conversation after this idle gap
                                    #   (30 min); env: CONVERSATION_IDLE_RESET_SECONDS
-  # max_history_turns: 20          # recent turns replayed per conversation;
+  # max_history_turns: 50          # recent turns replayed per conversation;
                                    #   env: CONVERSATION_MAX_HISTORY_TURNS
   # max_conversations: 1000        # tracked clients (LRU-capped); bounds memory.
                                    #   Env override: CONVERSATION_MAX_CONVERSATIONS
