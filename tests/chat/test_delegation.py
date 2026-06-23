@@ -1,16 +1,26 @@
-"""Tests for :mod:`robotsix_chat.chat.delegation` — the delegate_task tool."""
+"""Tests for :mod:`robotsix_chat.chat.delegation` (delegate_task & start_check_loop)."""
 
 from __future__ import annotations
 
 import asyncio
+import re
 from collections.abc import AsyncIterator
+from itertools import count
 from typing import Any
 
 import pytest
 
 from robotsix_chat.chat.delegation import (
     NullDeliveryChannel,
+    build_check_loop_tools,
     build_delegation_tools,
+)
+from robotsix_chat.chat.events import (
+    SSE_LOOP_STARTED_TYPE,
+    EventBus,
+)
+from robotsix_chat.chat.loops import (
+    CheckLoopRegistry,
 )
 from robotsix_chat.chat.runner import (
     task_started_frame,
@@ -449,7 +459,6 @@ async def test_delegate_task_at_capacity_returns_friendly_message() -> None:
     assert isinstance(result, str)
     assert "couldn't start" in result
     # Verify no 32-char hex task id in the response.
-    import re
 
     assert not re.search(r"\b[0-9a-f]{32}\b", result)
 
@@ -459,6 +468,346 @@ async def test_delegate_task_at_capacity_returns_friendly_message() -> None:
 
     # The registry count is still 1 (no new task was registered).
     assert registry.count_running() == 1
+
+
+# ---------------------------------------------------------------------------
+# Helpers — check-loop tests
+# ---------------------------------------------------------------------------
+
+
+def _stub_settings(**overrides: Any) -> Any:
+    """Build a stub settings object carrying ``max_check_loops`` and other attrs.
+
+    Uses ``types.SimpleNamespace`` so the worker only reads attributes
+    without needing the real ``Settings`` pydantic model.
+    """
+    from types import SimpleNamespace
+
+    defaults: dict[str, Any] = {
+        "max_check_loops": 5,
+        "llmio_model_level": 3,
+        "llmio_api_key": "",
+    }
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
+
+
+def _loop_registry(
+    sink: EventBus | None = None,
+) -> CheckLoopRegistry:
+    """Build a registry with deterministic loop ids (``L0``, ``L1``, …).
+
+    Persistence is disabled (``store_path=None``).
+    """
+    ids = count()
+    return CheckLoopRegistry(
+        id_factory=lambda: f"L{next(ids)}",
+        event_sink=sink,
+        store_path=None,
+    )
+
+
+# ---------------------------------------------------------------------------
+# build_check_loop_tools
+# ---------------------------------------------------------------------------
+
+
+def test_build_check_loop_tools_returns_one_callable() -> None:
+    """``build_check_loop_tools`` returns one callable named start_check_loop."""
+    registry = _loop_registry()
+    settings = _stub_settings()
+
+    tools = build_check_loop_tools(settings, registry)
+    assert len(tools) == 1
+    assert callable(tools[0])
+    assert tools[0].__name__ == "start_check_loop"
+
+
+def test_start_check_loop_has_docstring() -> None:
+    """The start_check_loop closure has a docstring (LLM tool description)."""
+    registry = _loop_registry()
+    settings = _stub_settings()
+
+    tools = build_check_loop_tools(settings, registry)
+    assert tools[0].__doc__ is not None
+    assert "interval_seconds" in tools[0].__doc__
+    assert "60 seconds" in tools[0].__doc__
+
+
+# ---------------------------------------------------------------------------
+# start_check_loop — success path
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_start_check_loop_returns_string_with_loop_id() -> None:
+    """Calling start_check_loop returns a str containing the loop id immediately."""
+    bus = EventBus()
+    registry = _loop_registry(sink=bus)
+    settings = _stub_settings()
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        client_id="browser-42",
+        agent_factory=lambda s: _StubAgent(["check result"]),
+    )
+    start_check_loop = tools[0]
+
+    result = await start_check_loop("monitor the thing", interval_seconds=120.0)
+    assert isinstance(result, str)
+    assert "check loop" in result.lower()
+    assert "L0" in result
+
+
+@pytest.mark.asyncio
+async def test_start_check_loop_registers_with_correct_client_id() -> None:
+    """The registered loop's client_id matches the one passed to the factory."""
+    bus = EventBus()
+    registry = _loop_registry(sink=bus)
+    settings = _stub_settings()
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        client_id="browser-42",
+        agent_factory=lambda s: _StubAgent(["ok"]),
+    )
+    start_check_loop = tools[0]
+
+    result = await start_check_loop("client-aware check", interval_seconds=120.0)
+    loop_id = _extract_loop_id(result)
+
+    info = registry.get(loop_id)
+    assert info is not None
+    assert info.client_id == "browser-42"
+    assert info.prompt == "client-aware check"
+
+
+@pytest.mark.asyncio
+async def test_start_check_loop_passes_max_iterations() -> None:
+    """The max_iterations kwarg is forwarded to the registry."""
+    bus = EventBus()
+    registry = _loop_registry(sink=bus)
+    settings = _stub_settings()
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        agent_factory=lambda s: _StubAgent(["ok"]),
+    )
+    start_check_loop = tools[0]
+
+    result = await start_check_loop(
+        "bounded check", interval_seconds=120.0, max_iterations=3
+    )
+    loop_id = _extract_loop_id(result)
+
+    info = registry.get(loop_id)
+    assert info is not None
+    assert info.max_iterations == 3
+
+
+@pytest.mark.asyncio
+async def test_start_check_loop_runs_first_iteration() -> None:
+    """The stub agent runs to completion → first tick is recorded."""
+    bus = EventBus()
+    registry = _loop_registry(sink=bus)
+    settings = _stub_settings()
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        agent_factory=lambda s: _StubAgent(["hello from loop"]),
+    )
+    start_check_loop = tools[0]
+
+    result = await start_check_loop("test loop", interval_seconds=120.0)
+    loop_id = _extract_loop_id(result)
+
+    # Let the background worker finish its first iteration.
+    await asyncio.sleep(0.1)
+
+    info = registry.get(loop_id)
+    assert info is not None
+    assert info.iterations == 1
+    assert info.last_result == "hello from loop"
+
+    # Clean up: stop the loop so we don't leak tasks.
+    registry.stop(loop_id, reason="test teardown")
+    await asyncio.sleep(0.05)
+
+
+# ---------------------------------------------------------------------------
+# start_check_loop — rejection paths
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_start_check_loop_interval_too_short_returns_friendly_message() -> None:
+    """When the interval is below 60s, a friendly message is returned (no raise)."""
+    registry = _loop_registry()
+    settings = _stub_settings()
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        agent_factory=lambda s: _StubAgent(["nope"]),
+    )
+    start_check_loop = tools[0]
+
+    result = await start_check_loop("too fast", interval_seconds=10.0)
+    assert isinstance(result, str)
+    assert "60 seconds" in result
+    # No loop registered.
+    assert registry.count_running() == 0
+
+
+@pytest.mark.asyncio
+async def test_start_check_loop_at_capacity_returns_friendly_message() -> None:
+    """When the cap is reached, a friendly message is returned (no raise)."""
+    registry = _loop_registry()
+    settings = _stub_settings(max_check_loops=1)
+
+    # Fill the capacity.
+    registry.register(
+        "c1",
+        "blocker",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=asyncio.create_task(asyncio.sleep(0)),
+    )
+    assert registry.count_running() == 1
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        agent_factory=lambda s: _StubAgent(["nope"]),
+    )
+    start_check_loop = tools[0]
+
+    result = await start_check_loop("should reject", interval_seconds=120.0)
+    assert isinstance(result, str)
+    assert "couldn't start" in result
+    assert "too many" in result
+    # Still only 1 running loop.
+    assert registry.count_running() == 1
+
+
+# ---------------------------------------------------------------------------
+# start_check_loop — no duplicate loop_started frame
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_start_check_loop_does_not_publish_loop_started_frame() -> None:
+    """The tool does NOT itself publish a loop_started frame.
+
+    The registry's event_sink is the sole authoritative publisher — exactly
+    one loop_started frame must reach the sink per start.
+    """
+    bus = EventBus()
+    q = bus.subscribe("c1")
+    registry = _loop_registry(sink=bus)
+    settings = _stub_settings()
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        client_id="c1",
+        agent_factory=lambda s: _StubAgent(["check done"]),
+    )
+    start_check_loop = tools[0]
+
+    await start_check_loop("frame check", interval_seconds=120.0)
+
+    # Collect frames from the bus.
+    await asyncio.sleep(0.1)
+    frames: list[dict[str, Any]] = []
+    while not q.empty():
+        frames.append(q.get_nowait())
+
+    started_frames = [f for f in frames if f["type"] == SSE_LOOP_STARTED_TYPE]
+    assert len(started_frames) == 1, (
+        f"Expected exactly 1 loop_started frame from the registry's event_sink, "
+        f"got {len(started_frames)}"
+    )
+
+    # The loop_started frame came from the registry, not the tool.
+    frame = started_frames[0]
+    assert frame["client_id"] == "c1"
+
+    # Clean up.
+    loop_id = frame["loop_id"]
+    registry.stop(loop_id, reason="test teardown")
+    await asyncio.sleep(0.05)
+
+
+# ---------------------------------------------------------------------------
+# create_agent_from_settings — check_loop_registry gating
+# ---------------------------------------------------------------------------
+
+
+def test_foreground_agent_gets_start_check_loop_tool() -> None:
+    """A foreground agent built with check_loop_registry gets start_check_loop."""
+    registry = _loop_registry()
+    settings = Settings()
+
+    agent = create_agent_from_settings(
+        settings=settings,
+        check_loop_registry=registry,
+    )
+    assert agent._request_tools_factory is not None, (
+        "Foreground agent must have a request_tools_factory"
+    )
+    per_req = agent._request_tools_factory("test-client")
+    tool_names = [t.__name__ for t in per_req]
+    assert "start_check_loop" in tool_names, (
+        f"Expected start_check_loop in per-request tools, got {tool_names}"
+    )
+
+
+def test_sub_agent_has_no_start_check_loop_tool() -> None:
+    """A sub-agent built without check_loop_registry gets no start_check_loop tool."""
+    agent = create_agent_from_settings(settings=Settings())
+    tools = agent._tools
+    request_tools_factory = agent._request_tools_factory
+
+    # Static tools: no start_check_loop.
+    if tools is not None:
+        names = [getattr(t, "__name__", str(t)) for t in tools]
+        assert "start_check_loop" not in names, (
+            "Sub-agent must not receive start_check_loop statically"
+        )
+
+    # Per-request factory: not set for sub-agents (unless delegation tools
+    # are also provided, but they aren't here).
+    if request_tools_factory is not None:
+        per_req = request_tools_factory("test-client")
+        names = [t.__name__ for t in per_req]
+        assert "start_check_loop" not in names, (
+            "Sub-agent must not receive start_check_loop in per-request tools"
+        )
+
+
+def test_foreground_agent_gets_both_delegation_and_loop_tools() -> None:
+    """When both registries are provided, both tools appear in the factory."""
+    loop_registry = _loop_registry()
+    task_registry = TaskRegistry()
+    channel = _FakeDeliveryChannel()
+    settings = Settings()
+
+    agent = create_agent_from_settings(
+        settings=settings,
+        task_registry=task_registry,
+        delivery_channel=channel,
+        check_loop_registry=loop_registry,
+    )
+    assert agent._request_tools_factory is not None
+    per_req = agent._request_tools_factory("test-client")
+    tool_names = [t.__name__ for t in per_req]
+    assert "delegate_task" in tool_names
+    assert "start_check_loop" in tool_names
 
 
 # ---------------------------------------------------------------------------
@@ -481,3 +830,16 @@ def _extract_task_id(result: str) -> str:
         w.rstrip(".,!?;:'\"") for w in result.split() if len(w.rstrip(".,!?;:'\"")) >= 8
     ]
     return candidates[-1] if candidates else ""
+
+
+def _extract_loop_id(result: str) -> str:
+    """Pull a loop id from a result string.
+
+    Loop ids from ``_loop_registry()`` look like ``L0``, ``L1``, …
+    """
+    for word in result.split():
+        word = word.rstrip(".,!?;:'\"")
+        if len(word) >= 2 and word[0] == "L" and word[1:].isdigit():
+            return word
+    # Fallback: find any hex-like token (for non-stub registries).
+    return _extract_task_id(result)

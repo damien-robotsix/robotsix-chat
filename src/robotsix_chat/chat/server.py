@@ -36,6 +36,7 @@ from robotsix_chat.mill import build_mill_tools
 from robotsix_chat.refdocs import build_refdocs_tools
 
 if TYPE_CHECKING:
+    from robotsix_chat.chat.loops import CheckLoopRegistry
     from robotsix_chat.chat.runner import DeliveryChannel
 
 logger = logging.getLogger(__name__)
@@ -423,6 +424,7 @@ def create_agent_from_settings(
     *,
     task_registry: TaskRegistry | None = None,
     delivery_channel: DeliveryChannel | None = None,
+    check_loop_registry: CheckLoopRegistry | None = None,
 ) -> LlmioChatAgent:
     """Build an :class:`LlmioChatAgent` wired from *settings*.
 
@@ -447,6 +449,11 @@ def create_agent_from_settings(
     work to a background sub-agent.  Sub-agents built by the runner — which
     omits these two arguments — do **not** receive the delegation tool,
     preventing infinite recursion.
+
+    When *check_loop_registry* is provided, the ``start_check_loop`` tool is
+    added so the agent can launch a recurring check loop on the user's behalf.
+    Sub-agents (which omit it) do not receive the loop tool, preventing
+    recursion.
     """
     if settings is None:
         settings = Settings.load()
@@ -463,21 +470,35 @@ def create_agent_from_settings(
         *build_calendar_tools(settings.calendar),
         *build_refdocs_tools(settings.refdocs),
     ]
-    # Attach the delegation tool only for the foreground agent (both
-    # registry and channel are required — sub-agents get neither).
+    # Attach per-request tools from independently-gated sources so the
+    # foreground agent can delegate work and launch check loops.
     # The factory lambda is called once per stream() invocation with the
-    # request's client_id, so the delegate_task closure captures the
-    # owning client lexically — surviving the claude_sdk/MCP boundary.
+    # request's client_id, so tool closures capture the owning client
+    # lexically — surviving the claude_sdk/MCP boundary.
     request_tools_factory: Callable[[str], list[Any]] | None = None
-    if task_registry is not None and delivery_channel is not None:
-        from robotsix_chat.chat.delegation import build_delegation_tools
+    if (
+        task_registry is not None and delivery_channel is not None
+    ) or check_loop_registry is not None:
+        from robotsix_chat.chat.delegation import (
+            build_check_loop_tools,
+            build_delegation_tools,
+        )
 
-        def _make_delegation_tools(cid: str) -> list[Any]:
-            return build_delegation_tools(
-                settings, task_registry, delivery_channel, client_id=cid
-            )
+        def _make_request_tools(cid: str) -> list[Any]:
+            request_tools: list[Any] = []
+            if task_registry is not None and delivery_channel is not None:
+                request_tools.extend(
+                    build_delegation_tools(
+                        settings, task_registry, delivery_channel, client_id=cid
+                    )
+                )
+            if check_loop_registry is not None:
+                request_tools.extend(
+                    build_check_loop_tools(settings, check_loop_registry, client_id=cid)
+                )
+            return request_tools
 
-        request_tools_factory = _make_delegation_tools
+        request_tools_factory = _make_request_tools
     return LlmioChatAgent(
         model_level=settings.llmio_model_level,
         instruction=instruction,
