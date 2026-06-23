@@ -15,7 +15,8 @@ set as an environment variable.
 |---|---|---|---|
 | `llmio.model_level` | `LLMIO_MODEL_LEVEL` | `3` | LLM capability level. `1` (cheapest, OpenRouter DeepSeek Flash), `2` (OpenRouter DeepSeek Pro), `3` (Claude SDK Opus — keyless). Levels 1–2 require `llmio.api_key`. |
 | `llmio.api_key` | `LLMIO_API_KEY` | `""` | OpenRouter API key. Required for levels 1–2; ignored when using level 3 (Claude SDK, keyless). |
-| `agent.instruction` | `AGENT_INSTRUCTION` | `"You are a helpful assistant."` | System prompt sent to the LLM. Includes delegate-vs-inline guidance for background tasks. |
+| `agent.instruction` | `AGENT_INSTRUCTION` | `"You are a helpful assistant. Answer quick questions inline. When a request is judged to take a while — multi-step research, long generation, or anything that would stall your reply — call the delegate_task tool to offload it to a background sub-agent. The tool returns a task id immediately; tell the user the work is running in the background and they'll be notified when it finishes."` | System prompt sent to the LLM. Includes delegate-vs-inline guidance for background tasks. |
+| — (no YAML path) | `CHAT_CONFIG_PATH` | `"config/chat.local.yaml"` | Overrides the path to the YAML config file. Read before the cascade — this is how you point at a different config file at startup. Not a pydantic field; purely an env var. |
 | `server.host` | `SERVER_HOST` | `"127.0.0.1"` | IP address the server binds to. |
 | `server.port` | `SERVER_PORT` | `8000` | TCP port the server listens on. |
 | `server.log_level` | `LOG_LEVEL` | `"INFO"` | Python log level (`DEBUG`, `INFO`, `WARNING`, `ERROR`). |
