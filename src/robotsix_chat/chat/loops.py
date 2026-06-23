@@ -43,11 +43,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
-# Module constants
-# ---------------------------------------------------------------------------
-
-MIN_CHECK_LOOP_INTERVAL_SECONDS: float = 60.0
-
 # ---------------------------------------------------------------------------
 # Enums, errors, and dataclasses
 # ---------------------------------------------------------------------------
@@ -327,17 +322,18 @@ def spawn_check_loop(
     generated.  This lets the resume hook re-register a loop under its
     persisted id.
 
-    Raises :class:`LoopIntervalError` when *interval_seconds* is below the
-    module constant :data:`MIN_CHECK_LOOP_INTERVAL_SECONDS`.
+    Raises :class:`LoopIntervalError` when *interval_seconds* is below
+    :attr:`settings.min_check_loop_interval_seconds
+    <robotsix_chat.config.Settings.min_check_loop_interval_seconds>`.
 
     Raises :class:`LoopCapacityError` when the process-wide concurrency cap
     (``settings.max_check_loops``) has been reached.
     """
     # Validation BEFORE spawning.
-    if interval_seconds < MIN_CHECK_LOOP_INTERVAL_SECONDS:
+    if interval_seconds < settings.min_check_loop_interval_seconds:
         raise LoopIntervalError(
             f"check-loop interval must be at least "
-            f"{MIN_CHECK_LOOP_INTERVAL_SECONDS} seconds, "
+            f"{settings.min_check_loop_interval_seconds} seconds, "
             f"got {interval_seconds!r}"
         )
 
@@ -452,7 +448,7 @@ def resume_check_loops(
             continue
 
         interval_seconds = entry.get(
-            "interval_seconds", MIN_CHECK_LOOP_INTERVAL_SECONDS
+            "interval_seconds", settings.min_check_loop_interval_seconds
         )
         max_iterations = entry.get("max_iterations")
         iterations_already = entry.get("iterations", 0)
