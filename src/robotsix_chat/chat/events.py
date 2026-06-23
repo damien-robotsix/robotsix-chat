@@ -22,6 +22,11 @@ SSE_TASK_STARTED_TYPE = "task_started"
 SSE_TASK_COMPLETED_TYPE = "task_completed"
 SSE_TASK_FAILED_TYPE = "task_failed"
 
+SSE_LOOP_STARTED_TYPE = "loop_started"
+SSE_LOOP_TICK_TYPE = "loop_tick"
+SSE_LOOP_STOPPED_TYPE = "loop_stopped"
+SSE_LOOP_FAILED_TYPE = "loop_failed"
+
 # ---------------------------------------------------------------------------
 # EventSink — structural Protocol for dependency injection
 # ---------------------------------------------------------------------------
@@ -107,6 +112,121 @@ def task_failed_frame(task_id: str, error: str) -> dict[str, object]:
         "task_id": task_id,
         "status": "failed",
         "error": error,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Loop frame builders
+# ---------------------------------------------------------------------------
+
+
+def loop_started_frame(
+    loop_id: str,
+    client_id: str,
+    prompt: str,
+    interval_seconds: float,
+    max_iterations: int | None,
+) -> dict[str, object]:
+    """Build a ``loop_started`` notification frame.
+
+    Returns a dict with shape::
+
+        {
+            "type": "loop_started",
+            "loop_id": <str>,
+            "client_id": <str>,
+            "prompt": <str>,
+            "interval_seconds": <float>,
+            "max_iterations": <int | None>,
+            "status": "running",
+        }
+    """
+    return {
+        "type": SSE_LOOP_STARTED_TYPE,
+        "loop_id": loop_id,
+        "client_id": client_id,
+        "prompt": prompt,
+        "interval_seconds": interval_seconds,
+        "max_iterations": max_iterations,
+        "status": "running",
+    }
+
+
+def loop_tick_frame(
+    loop_id: str,
+    iteration: int,
+    result: str,
+    next_run: float | None,
+) -> dict[str, object]:
+    """Build a ``loop_tick`` notification frame.
+
+    Returns a dict with shape::
+
+        {
+            "type": "loop_tick",
+            "loop_id": <str>,
+            "iteration": <int>,
+            "result": <str>,
+            "next_run": <float | None>,
+            "status": "running",
+        }
+    """
+    return {
+        "type": SSE_LOOP_TICK_TYPE,
+        "loop_id": loop_id,
+        "iteration": iteration,
+        "result": result,
+        "next_run": next_run,
+        "status": "running",
+    }
+
+
+def loop_stopped_frame(
+    loop_id: str,
+    reason: str,
+    iterations: int,
+) -> dict[str, object]:
+    """Build a ``loop_stopped`` notification frame.
+
+    Returns a dict with shape::
+
+        {
+            "type": "loop_stopped",
+            "loop_id": <str>,
+            "reason": <str>,
+            "iterations": <int>,
+            "status": "stopped",
+        }
+    """
+    return {
+        "type": SSE_LOOP_STOPPED_TYPE,
+        "loop_id": loop_id,
+        "reason": reason,
+        "iterations": iterations,
+        "status": "stopped",
+    }
+
+
+def loop_failed_frame(
+    loop_id: str,
+    error: str,
+) -> dict[str, object]:
+    """Build a ``loop_failed`` notification frame.
+
+    Returns a dict with shape::
+
+        {
+            "type": "loop_failed",
+            "loop_id": <str>,
+            "error": <str>,
+            "status": "failed",
+        }
+    """
+    return {
+        "type": SSE_LOOP_FAILED_TYPE,
+        "loop_id": loop_id,
+        "error": error,
+        "status": "failed",
     }
 
 

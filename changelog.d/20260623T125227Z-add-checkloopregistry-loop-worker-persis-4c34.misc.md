@@ -1,0 +1,1 @@
+Add CheckLoopRegistry, loop worker, persistence, and loop event frames (backend core)
