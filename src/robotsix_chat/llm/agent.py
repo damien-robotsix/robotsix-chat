@@ -26,7 +26,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
-from collections.abc import AsyncIterator, Iterator
+from collections.abc import AsyncIterator, Callable, Iterator
 from typing import Any
 
 from robotsix_llmio.config import create_model
@@ -130,8 +130,16 @@ class LlmioChatAgent:
         api_key: str = "",
         memory: ChatMemory | None = None,
         tools: list[Any] | None = None,
+        request_tools_factory: Callable[[str], list[Any]] | None = None,
     ) -> None:
-        """Store the agent configuration for later ``stream`` calls."""
+        """Store the agent configuration for later ``stream`` calls.
+
+        *request_tools_factory* is called once per ``stream`` invocation with
+        the request's *client_id* to produce per-request tools (e.g. the
+        ``delegate_task`` tool whose closure captures that client_id).  It
+        keeps the module dependency acyclic: delegation tools are built fresh
+        per request inside ``stream``, not baked into the shared agent.
+        """
         self._model_level = model_level
         self._instruction = instruction
         self._api_key = api_key
@@ -140,6 +148,7 @@ class LlmioChatAgent:
         # non-empty, llmio runs a real tool loop; the final reply is still
         # returned as one block.
         self._tools = tools or None
+        self._request_tools_factory = request_tools_factory
         # Hold references to in-flight background writes so they aren't GC'd.
         self._write_tasks: set[asyncio.Task[None]] = set()
 
@@ -149,14 +158,18 @@ class LlmioChatAgent:
         *,
         history: list[Turn] | None = None,
         session_id: str | None = None,
+        client_id: str | None = None,
     ) -> AsyncIterator[str]:
         """Yield the assistant's reply to *message* as a single block.
 
         *history* is the prior ``(user, assistant)`` turns of the current
         conversation, replayed to the agent so it has multi-turn context.
         *session_id* groups this run's trace spans under one conversation in
-        Langfuse (a fresh id starts a new trace). Both are optional — with
-        neither, the agent behaves as a single stateless query.
+        Langfuse (a fresh id starts a new trace). *client_id* identifies the
+        owning browser — it is forwarded to the per-request tools factory so
+        delegation tools can tag spawned tasks correctly.  All keyword
+        arguments are optional — with none, the agent behaves as a single
+        stateless query.
 
         Transient upstream errors (OpenRouter provider failures, 5xx, network
         blips) are retried up to :data:`_MAX_RUN_ATTEMPTS` before surfacing.
@@ -179,6 +192,14 @@ class LlmioChatAgent:
         provider = create_model(level=self._model_level, **provider_kwargs)
         message_history = _build_message_history(history)
 
+        # Compute effective tools once: static tools + per-request tools from
+        # the factory (which captures client_id lexically so delegation works
+        # even across the claude_sdk/MCP execution-context boundary).
+        effective_tools: list[Any] = list(self._tools) if self._tools else []
+        if self._request_tools_factory and client_id:
+            effective_tools.extend(self._request_tools_factory(client_id))
+        tools_arg = effective_tools or None
+
         for attempt in range(1, _MAX_RUN_ATTEMPTS + 1):
             # Build a fresh handle per attempt so each try starts from a
             # clean state (the handle is always closed in the finally block
@@ -186,7 +207,7 @@ class LlmioChatAgent:
             handle = provider.build_agent(
                 level=self._model_level,
                 system_prompt=system_prompt,
-                tools=self._tools,
+                tools=tools_arg,
                 builtin_tools=False,
             )
             try:

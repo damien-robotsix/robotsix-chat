@@ -420,6 +420,10 @@ async def test_run_server_from_config_creates_agent_from_settings(
         from robotsix_chat.chat.tasks import TaskRegistry
 
         assert isinstance(task_registry, TaskRegistry)
+        event_bus = call_args[1].pop("event_bus")
+        from robotsix_chat.chat.events import EventBus
+
+        assert isinstance(event_bus, EventBus)
         assert call_args[1] == {
             "host": "127.0.0.1",
             "port": 8080,
