@@ -1,0 +1,1 @@
+Add max_check_loops and min_check_loop_interval_seconds to Settings (Epic Child 2)

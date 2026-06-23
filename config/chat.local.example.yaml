@@ -41,6 +41,8 @@ server:
   # correlation_id_header: X-Request-ID  # env override: CORRELATION_ID_HEADER
   # idle_timeout_minutes: 30   # 0 disables; UI auto-restarts conversation after N idle minutes. env: IDLE_TIMEOUT_MINUTES
   # max_background_tasks: 5  # max concurrent background sub-agents per process; env: MAX_BACKGROUND_TASKS
+  # max_check_loops: 5  # max concurrent check loops per process; env: MAX_CHECK_LOOPS
+  # min_check_loop_interval_seconds: 60.0  # min seconds between check-loop iterations; env: MIN_CHECK_LOOP_INTERVAL_SECONDS
 
 # Login — gate the browser UI and /chat behind HTTP Basic Auth. Disabled by
 # default so local runs need no credentials. Enable for any deployment that
