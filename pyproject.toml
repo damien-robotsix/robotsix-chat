@@ -109,7 +109,7 @@ line-length = 88
 exclude = ["local-deps"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "S", "D"]
+select = ["E", "F", "I", "UP", "B", "SIM", "S", "D", "FURB"]
 per-file-ignores = {"src/robotsix_chat/chat/server.py" = ["S105"], "tests/**" = ["S101", "S104", "S105", "S106", "S107"], "vulture_whitelist.py" = ["D100"]}
 
 [tool.mypy]

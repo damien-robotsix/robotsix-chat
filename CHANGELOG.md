@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Enabled Ruff's `FURB` (Refurb) ruleset to catch future idiomatic-Python
+  anti-patterns.
+
 - Replaced hardcoded frame-type strings in `runner.py`'s frame builders
   (`task_started_frame`, `task_completed_frame`, `task_failed_frame`) with
   the shared `SSE_TASK_*_TYPE` constants from `events.py`, so frame types
