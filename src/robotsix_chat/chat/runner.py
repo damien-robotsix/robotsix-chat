@@ -32,6 +32,11 @@ import logging
 from collections.abc import Callable
 from typing import Any, Protocol
 
+from robotsix_chat.chat.events import (
+    SSE_TASK_COMPLETED_TYPE,
+    SSE_TASK_FAILED_TYPE,
+    SSE_TASK_STARTED_TYPE,
+)
 from robotsix_chat.chat.server import ChatAgent, create_agent_from_settings
 from robotsix_chat.chat.tasks import TaskRegistry
 from robotsix_chat.config import Settings
@@ -72,17 +77,17 @@ class DeliveryChannel(Protocol):
 
 def task_started_frame(task_id: str, prompt: str) -> dict[str, Any]:
     """Return a ``task_started`` notification frame."""
-    return {"type": "task_started", "task_id": task_id, "prompt": prompt}
+    return {"type": SSE_TASK_STARTED_TYPE, "task_id": task_id, "prompt": prompt}
 
 
 def task_completed_frame(task_id: str, result: str) -> dict[str, Any]:
     """Return a ``task_completed`` notification frame."""
-    return {"type": "task_completed", "task_id": task_id, "result": result}
+    return {"type": SSE_TASK_COMPLETED_TYPE, "task_id": task_id, "result": result}
 
 
 def task_failed_frame(task_id: str, error: str) -> dict[str, Any]:
     """Return a ``task_failed`` notification frame."""
-    return {"type": "task_failed", "task_id": task_id, "error": error}
+    return {"type": SSE_TASK_FAILED_TYPE, "task_id": task_id, "error": error}
 
 
 # ---------------------------------------------------------------------------
