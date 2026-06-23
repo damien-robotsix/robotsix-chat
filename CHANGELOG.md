@@ -15,6 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   variables across server, auth, memory, mill, calendar, conversation,
   and refdocs settings.
 
+### Removed
+
+- Stale `docs/user-guide/configuration.md` superseded by
+  `docs/configuration.md`.
+
 ### Changed
 
 - Extracted shared `BaseBrokeredClient` base class from `MillClient` and
