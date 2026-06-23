@@ -32,6 +32,14 @@ modules:
       - src/robotsix_chat/broker_client.py
       - tests/test_broker_client.py
 
+  - id: robotsix_chat.calendar
+    description: "Calendar/tasks integration over the agent-comm broker — exposes build_calendar_tools() for querying and managing the user's calendar and tasks in natural language."
+    paths:
+      - src/robotsix_chat/calendar/__init__.py
+      - src/robotsix_chat/calendar/client.py
+      - tests/calendar/__init__.py
+      - tests/calendar/test_calendar.py
+
   - id: robotsix_chat.config
     description: "Environment-based configuration via pydantic + python-dotenv."
     paths:

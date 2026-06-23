@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Registered `robotsix_chat.calendar` in `docs/modules.yaml` (was a
+  fully-fledged module but absent from the module manifest).
+
 - Added `pytest-xdist[psutil]` to the `dev` dependency group so the CI
   reusable workflow's `-n auto` flag works without `unrecognized arguments`
   errors.
