@@ -2810,7 +2810,7 @@ wheels = [
 [[package]]
 name = "robotsix-agent-comm"
 version = "0.1.0"
-source = { git = "https://github.com/damien-robotsix/robotsix-agent-comm.git?rev=main#fcf9adab4c0aa70de8221ce6c402cf0d4c1ddc4d" }
+source = { git = "https://github.com/damien-robotsix/robotsix-agent-comm.git?rev=main#555e22eef1a3083d6735083f01313e67fa1187ca" }
 
 [[package]]
 name = "robotsix-chat"

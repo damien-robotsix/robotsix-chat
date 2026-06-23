@@ -13,7 +13,7 @@ from typing import Any
 import pytest
 
 from robotsix_chat.calendar import build_calendar_tools
-from robotsix_chat.calendar.client import CalendarClient, _reply_text
+from robotsix_chat.calendar.client import CalendarClient
 from robotsix_chat.config import CalendarSettings
 
 
@@ -39,61 +39,63 @@ def _install_fake_agent_comm(
     """Install a fake robotsix_agent_comm module tree; return a capture dict."""
     captured: dict[str, Any] = {}
 
-    class _FakeAgent:
+    class _FakeBrokeredRequester:
         def __init__(
             self,
             agent_id: str,
-            registry: Any,
+            target_agent_id: str,
             *,
-            transport: Any,
-            pull: bool,
-            timeout: float,
+            broker_host: str,
+            broker_token: str | None,
+            broker_port: int = 443,
+            broker_scheme: str = "https",
+            broker_ssl_context: object | None = None,
+            timeout: float = 30.0,
+            default_reply: str = "",
         ) -> None:
             captured["agent_id"] = agent_id
-            captured["pull"] = pull
+            captured["recipient"] = target_agent_id
+            captured["broker_host"] = broker_host
+            captured["broker_token"] = broker_token
+            self._raise_exc = raise_exc
+            self._reply = reply
+            self._default_reply = default_reply
 
-        def __enter__(self) -> _FakeAgent:
-            return self
-
-        def __exit__(self, *exc: object) -> None:
-            return None
-
-        def send_request(self, recipient: str, payload: Any, timeout: float) -> Any:
-            captured["recipient"] = recipient
+        def request(
+            self,
+            payload: dict[str, Any] | None = None,
+            *,
+            timeout: float | None = None,
+            default: str | None = None,
+        ) -> str:
             captured["payload"] = payload
-            if raise_exc is not None:
-                raise raise_exc
-            return reply
-
-    def _fake_ctp(
-        mode: str,
-        *,
-        broker_host: str,
-        broker_port: int,
-        broker_scheme: str,
-        broker_token: str,
-    ) -> tuple[object, object]:
-        captured["broker_host"] = broker_host
-        captured["broker_token"] = broker_token
-        return object(), object()
+            if self._raise_exc is not None:
+                raise self._raise_exc
+            if isinstance(self._reply, _FakeError):
+                msg = (
+                    self._reply.body.get("message")
+                    if isinstance(self._reply.body, dict)
+                    else None
+                )
+                raise RuntimeError(f"brokered request to ... failed: {msg}")
+            body = getattr(self._reply, "body", self._reply)
+            # Replicate reply_text behaviour used by the real BrokeredRequester
+            if isinstance(body, dict):
+                r = body.get("reply")
+                if r is not None and r != "":
+                    return r if isinstance(r, str) else str(r)
+                return str(body)
+            if body is None:
+                return default if default is not None else self._default_reply
+            return str(body)
 
     root = types.ModuleType("robotsix_agent_comm")
-    protocol = types.ModuleType("robotsix_agent_comm.protocol")
-    protocol.Error = _FakeError  # type: ignore[attr-defined]
     sdk = types.ModuleType("robotsix_agent_comm.sdk")
-    sdk_agent = types.ModuleType("robotsix_agent_comm.sdk.agent")
-    sdk_agent.Agent = _FakeAgent  # type: ignore[attr-defined]
-    transport = types.ModuleType("robotsix_agent_comm.transport")
-    brokered = types.ModuleType("robotsix_agent_comm.transport.brokered")
-    brokered.create_transport_pair = _fake_ctp  # type: ignore[attr-defined]
+    sdk.BrokeredRequester = _FakeBrokeredRequester  # type: ignore[attr-defined]
 
     for name, mod in {
         "robotsix_agent_comm": root,
-        "robotsix_agent_comm.protocol": protocol,
         "robotsix_agent_comm.sdk": sdk,
-        "robotsix_agent_comm.sdk.agent": sdk_agent,
-        "robotsix_agent_comm.transport": transport,
-        "robotsix_agent_comm.transport.brokered": brokered,
     }.items():
         monkeypatch.setitem(sys.modules, name, mod)
     return captured
@@ -135,6 +137,7 @@ def test_build_calendar_tools_returns_four_tools(
         "find_spec",
         lambda name: object() if name == "robotsix_agent_comm" else None,
     )
+    _install_fake_agent_comm(monkeypatch)
     tools = build_calendar_tools(_settings())
     assert len(tools) == 4
     names = [t.__name__ for t in tools]
@@ -157,7 +160,6 @@ async def test_consult_calendar_domain_sends_payload(
 
     assert out == "done"
     assert captured["agent_id"] == "robotsix-chat"
-    assert captured["pull"] is True
     assert captured["recipient"] == "calendar-agent-robotsix"
     assert captured["payload"] == {
         "message": "what's on my calendar?",
@@ -191,7 +193,7 @@ async def test_consult_blank_request_skips_broker(
     client = CalendarClient(_settings())
     out = await client.consult("   ", domain="calendar")
     assert "No request" in out
-    assert "recipient" not in captured  # never contacted the broker
+    assert "payload" not in captured  # never contacted the broker
 
 
 @pytest.mark.asyncio
@@ -216,17 +218,3 @@ async def test_consult_handles_agent_error_reply(
     client = CalendarClient(_settings())
     out = await client.consult("do a thing", domain="calendar")
     assert "nope" in out
-
-
-@pytest.mark.parametrize(
-    ("body", "expected"),
-    [
-        (None, "no reply"),
-        ({"reply": "hello there"}, "hello there"),
-        ({"status": "ok"}, "{'status': 'ok'}"),
-        ("plain string", "plain string"),
-    ],
-)
-def test_reply_text(body: Any, expected: str) -> None:
-    """Verify _reply_text extracts the expected substring from the response body."""
-    assert expected in _reply_text(body)
