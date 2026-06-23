@@ -37,7 +37,9 @@ from robotsix_chat.chat.loops import (
     spawn_check_loop,
 )
 from robotsix_chat.chat.runner import (
+    NULL_CHANNEL,
     DeliveryChannel,
+    NullDeliveryChannel,  # noqa: F401  # re-exported for external consumers
     TaskCapacityError,
     spawn_subagent_task,
     task_started_frame,
@@ -51,34 +53,23 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-# ---------------------------------------------------------------------------
-# Placeholder delivery channel — a no-op until Ticket 1 lands a concrete
-# adapter that bridges to the SSE EventBus.
-# ---------------------------------------------------------------------------
-
-
-class NullDeliveryChannel:
-    """A :class:`DeliveryChannel` that drops frames (placeholder)."""
-
-    async def publish(self, client_id: str, frame: dict[str, Any]) -> None:
-        """No-op — frames are silently dropped (debug-logged)."""
-        logger.debug(
-            "NullDeliveryChannel: dropping %r for client %s",
-            frame.get("type"),
-            client_id,
-        )
-
 
 class ConversationDeliveryChannel:
-    """Record completed/failed background-task results into ConversationStore.
+    """Record completed/failed background-task & loop results into ConversationStore.
 
     When a delegated task finishes (or fails), the foreground agent needs to
     learn about the outcome so it can relay task ids, URLs, and findings to
     the user on its **next** turn.  This channel bridges that gap by writing a
     synthetic turn into the store keyed by the originating ``client_id``.
 
-    ``task_started`` frames are intentionally ignored — the user already sees
-    those via the SSE path — so the conversation history stays clean.
+    The same mechanism is used for check-loop ticks: each tick's
+    ``loop_tick`` frame (and any ``loop_failed`` frame) is recorded as a
+    synthetic turn so the foreground agent sees the tick output in its
+    next-turn history.
+
+    ``task_started``, ``loop_started``, and ``loop_stopped`` frames are
+    intentionally ignored — the user already sees those via the SSE path —
+    so the conversation history stays clean.
 
     Constructor takes the shared :class:`ConversationStore` instance (the same
     object passed to ``run_server`` via ``app.state.conversation_store``).
@@ -98,7 +89,13 @@ class ConversationDeliveryChannel:
           in its next-turn history.
         * ``"task_failed"`` — reads ``frame["task_id"]`` and ``frame["error"]``
           and records a turn conveying the failure.
-        * ``"task_started"`` and any other/unknown type — no-op.
+        * ``"loop_tick"`` — reads ``frame["loop_id"]``,
+          ``frame["iteration"]``, and ``frame["result"]`` and records a turn
+          so the agent sees the tick output in its next-turn history.
+        * ``"loop_failed"`` — reads ``frame["loop_id"]`` and
+          ``frame["error"]`` and records a turn conveying the loop failure.
+        * ``"task_started"``, ``"loop_started"``, ``"loop_stopped"``, and any
+          other/unknown type — no-op.
         * Empty/falsy *client_id* — no-op.
 
         Best-effort: never raises out to the runner's ``_worker``.
@@ -121,6 +118,23 @@ class ConversationDeliveryChannel:
             self._store.record(
                 client_id,
                 f"[Background task {task_id} failed]",
+                f"Error: {str(error)}",
+            )
+        elif frame_type == "loop_tick":
+            loop_id = frame.get("loop_id", "")
+            iteration = frame.get("iteration")
+            result = frame.get("result", "")
+            self._store.record(
+                client_id,
+                f"[Check loop {loop_id} tick {iteration}]",
+                str(result),
+            )
+        elif frame_type == "loop_failed":
+            loop_id = frame.get("loop_id", "")
+            error = frame.get("error", "")
+            self._store.record(
+                client_id,
+                f"[Check loop {loop_id} failed]",
                 f"Error: {str(error)}",
             )
 
@@ -222,6 +236,7 @@ def build_delegation_tools(
 def build_check_loop_tools(
     settings: Settings,
     registry: CheckLoopRegistry,
+    channel: DeliveryChannel = NULL_CHANNEL,
     *,
     client_id: str = "",
     agent_factory: Callable[[Settings], ChatAgent] | None = None,
@@ -230,6 +245,11 @@ def build_check_loop_tools(
 
     When wired into the agent's tools list, the model can call
     ``start_check_loop`` to launch a recurring check on the user's behalf.
+
+    *channel* is captured lexically and forwarded to
+    :func:`~robotsix_chat.chat.loops.spawn_check_loop` so each tick's
+    result is written back into the originating conversation via
+    :class:`ConversationDeliveryChannel`.
 
     *client_id* is captured lexically in the returned tool closure so it
     survives the claude_sdk / MCP execution-context boundary — unlike a
@@ -284,6 +304,7 @@ def build_check_loop_tools(
                 registry=registry,
                 max_iterations=max_iterations,
                 agent_factory=agent_factory,
+                channel=channel,
             )
         except LoopIntervalError as exc:
             logger.info("start_check_loop rejected (interval): %s", exc)

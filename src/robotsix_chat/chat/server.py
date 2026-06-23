@@ -693,6 +693,7 @@ def create_agent_from_settings(
             build_check_loop_tools,
             build_delegation_tools,
         )
+        from robotsix_chat.chat.runner import NULL_CHANNEL
 
         def _make_request_tools(cid: str) -> list[Any]:
             request_tools: list[Any] = []
@@ -704,7 +705,12 @@ def create_agent_from_settings(
                 )
             if check_loop_registry is not None:
                 request_tools.extend(
-                    build_check_loop_tools(settings, check_loop_registry, client_id=cid)
+                    build_check_loop_tools(
+                        settings,
+                        check_loop_registry,
+                        delivery_channel or NULL_CHANNEL,
+                        client_id=cid,
+                    )
                 )
             return request_tools
 
@@ -832,7 +838,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # -- resume persisted check loops after redeploy ----------------------
     def _resume() -> None:
         """Resume any check loops that were RUNNING at last shutdown."""
-        resume_check_loops(check_loop_registry, settings)
+        resume_check_loops(check_loop_registry, settings, channel=channel)
 
     auth = (
         BasicAuthConfig(

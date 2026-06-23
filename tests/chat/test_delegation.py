@@ -578,6 +578,128 @@ class TestConversationDeliveryChannel:
         # assistant_reply is empty string (default from .get).
         assert history[0][1] == ""
 
+    # -- loop_tick / loop_failed / loop_started / loop_stopped ---------
+
+    @pytest.mark.asyncio
+    async def test_loop_tick_frame_records_turn(self) -> None:
+        """A ``loop_tick`` frame records a turn into the store."""
+        store = self._store()
+        store.begin("c-loop")
+        channel = ConversationDeliveryChannel(store)
+
+        await channel.publish(
+            "c-loop",
+            {
+                "type": "loop_tick",
+                "loop_id": "L42",
+                "iteration": 3,
+                "result": "price is $12.34",
+                "next_run": 5000.0,
+            },
+        )
+
+        history = store.history("c-loop")
+        assert len(history) == 1
+        user_msg, assistant_msg = history[0]
+        assert "L42" in user_msg
+        assert "tick 3" in user_msg
+        assert "Check loop" in user_msg
+        assert assistant_msg == "price is $12.34"
+
+    @pytest.mark.asyncio
+    async def test_loop_failed_frame_records_turn(self) -> None:
+        """A ``loop_failed`` frame records a turn with the error."""
+        store = self._store()
+        store.begin("c-loop-fail")
+        channel = ConversationDeliveryChannel(store)
+
+        await channel.publish(
+            "c-loop-fail",
+            {
+                "type": "loop_failed",
+                "loop_id": "L99",
+                "error": "connection refused",
+            },
+        )
+
+        history = store.history("c-loop-fail")
+        assert len(history) == 1
+        user_msg, assistant_msg = history[0]
+        assert "L99" in user_msg
+        assert "failed" in user_msg
+        assert "Check loop" in user_msg
+        assert assistant_msg == "Error: connection refused"
+
+    @pytest.mark.asyncio
+    async def test_loop_started_frame_is_ignored(self) -> None:
+        """A ``loop_started`` frame does NOT create a history turn."""
+        store = self._store()
+        store.begin("c-loop-start")
+        channel = ConversationDeliveryChannel(store)
+
+        await channel.publish(
+            "c-loop-start",
+            {
+                "type": "loop_started",
+                "loop_id": "L1",
+                "prompt": "check weather",
+                "interval_seconds": 120.0,
+                "max_iterations": None,
+            },
+        )
+
+        history = store.history("c-loop-start")
+        assert len(history) == 0
+
+    @pytest.mark.asyncio
+    async def test_loop_stopped_frame_is_ignored(self) -> None:
+        """A ``loop_stopped`` frame does NOT create a history turn."""
+        store = self._store()
+        store.begin("c-loop-stop")
+        channel = ConversationDeliveryChannel(store)
+
+        await channel.publish(
+            "c-loop-stop",
+            {
+                "type": "loop_stopped",
+                "loop_id": "L1",
+                "reason": "max_iterations",
+                "iterations": 5,
+            },
+        )
+
+        history = store.history("c-loop-stop")
+        assert len(history) == 0
+
+    @pytest.mark.asyncio
+    async def test_loop_tick_empty_client_id_is_noop(self) -> None:
+        """An empty ``client_id`` is a no-op for loop_tick — no turn created."""
+        store = self._store()
+        channel = ConversationDeliveryChannel(store)
+
+        await channel.publish(
+            "",
+            {"type": "loop_tick", "loop_id": "L1", "iteration": 1, "result": "x"},
+        )
+
+        assert store.history("") == []
+
+    @pytest.mark.asyncio
+    async def test_loop_tick_missing_result_defaults_to_empty(self) -> None:
+        """Missing 'result' key in loop_tick doesn't crash publish."""
+        store = self._store()
+        store.begin("c-loop-missing")
+        channel = ConversationDeliveryChannel(store)
+
+        await channel.publish(
+            "c-loop-missing",
+            {"type": "loop_tick", "loop_id": "L1", "iteration": 1},
+        )
+
+        history = store.history("c-loop-missing")
+        assert len(history) == 1
+        assert history[0][1] == ""
+
 
 # ---------------------------------------------------------------------------
 # delegate_task — concurrency cap degradation

@@ -35,6 +35,7 @@ from .events import (
     loop_stopped_frame,
     loop_tick_frame,
 )
+from .runner import NULL_CHANNEL, DeliveryChannel
 
 if TYPE_CHECKING:
     from robotsix_chat.chat.server import ChatAgent
@@ -307,6 +308,7 @@ def spawn_check_loop(
     stop_when: Callable[[str], bool] | None = None,
     agent_factory: Callable[[Settings], ChatAgent] | None = None,
     loop_id: str | None = None,
+    channel: DeliveryChannel = NULL_CHANNEL,
 ) -> str:
     """Schedule a recurring check prompt; return the loop id immediately.
 
@@ -321,6 +323,11 @@ def spawn_check_loop(
     When *loop_id* is provided it is used directly; otherwise a new id is
     generated.  This lets the resume hook re-register a loop under its
     persisted id.
+
+    Each tick's result is published through *channel* (best-effort; errors are
+    logged and swallowed) so the foreground agent sees it via
+    :class:`~robotsix_chat.chat.delegation.ConversationDeliveryChannel`.
+    Defaults to :data:`~robotsix_chat.chat.runner.NULL_CHANNEL` (no-op).
 
     Raises :class:`LoopIntervalError` when *interval_seconds* is below
     :attr:`settings.min_check_loop_interval_seconds
@@ -367,6 +374,25 @@ def spawn_check_loop(
                 if info is None:
                     return  # loop was removed
 
+                # Best-effort: publish tick result into the conversation so the
+                # foreground agent sees it in its next-turn history.
+                try:
+                    await channel.publish(
+                        client_id,
+                        loop_tick_frame(
+                            loop_id,
+                            iteration=info.iterations,
+                            result=result_text,
+                            next_run=next_run,
+                        ),
+                    )
+                except Exception:
+                    logger.exception(
+                        "DeliveryChannel.publish failed for loop %s tick %s",
+                        loop_id,
+                        info.iterations,
+                    )
+
                 # Self-stop on condition-met.
                 if stop_when is not None and stop_when(result_text):
                     registry.stop(loop_id, reason="condition_met")
@@ -385,6 +411,17 @@ def spawn_check_loop(
         except Exception as exc:
             logger.exception("Check loop %s failed", loop_id)
             registry.fail(loop_id, error=str(exc))
+            # Best-effort: publish loop failure into the conversation.
+            try:
+                await channel.publish(
+                    client_id,
+                    loop_failed_frame(loop_id, error=str(exc)),
+                )
+            except Exception:
+                logger.exception(
+                    "DeliveryChannel.publish failed for loop %s failure",
+                    loop_id,
+                )
 
     task = asyncio.create_task(_worker())
     loop_id = registry.register(
@@ -409,6 +446,7 @@ def resume_check_loops(
     settings: Settings,
     *,
     agent_factory: Callable[[Settings], ChatAgent] | None = None,
+    channel: DeliveryChannel = NULL_CHANNEL,
 ) -> list[str]:
     """Read persisted loops and restart any that were ``RUNNING``.
 
@@ -417,6 +455,9 @@ def resume_check_loops(
     The ``stop_when`` predicate is not serializable — resumed loops restart
     without a self-stop predicate.  Max-iterations and explicit stop still
     apply.
+
+    *channel* is forwarded to :func:`spawn_check_loop` so resumed loops
+    deliver tick results back into the conversation.
 
     Returns the list of loop ids that were resumed.
     """
@@ -472,6 +513,7 @@ def resume_check_loops(
                 # stop_when is intentionally None — not serializable.
                 agent_factory=agent_factory,
                 loop_id=loop_id,
+                channel=channel,
             )
         except (LoopCapacityError, LoopIntervalError) as exc:
             logger.warning("Could not resume check loop %s: %s", loop_id, exc)
