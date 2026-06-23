@@ -1067,6 +1067,7 @@
         // If a live frame already arrived for this id (race between
         // snapshot fetch and SSE delivery), live data wins.
         if (existing) {
+          loop.rowEl = existing.rowEl;               // preserve the SSE-created DOM row so renderLoopRow can clean it up
           loop.state = existing.state;
           loop.iterations = existing.iterations;
           loop.last_result = existing.last_result || loop.last_result;
