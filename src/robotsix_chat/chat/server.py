@@ -295,6 +295,49 @@ async def loops_stop_endpoint(request: Request) -> JSONResponse:
     return JSONResponse({"loop_id": loop_id, "status": "stopped"})
 
 
+async def loops_list_endpoint(request: Request) -> JSONResponse:
+    """Return all check loops for a client as JSON.
+
+    ``GET /loops?client_id=...`` returns ``{"loops": [...]}`` where each
+    entry contains every :class:`~robotsix_chat.chat.loops.LoopInfo` field
+    with ``status`` serialized as its plain string value.
+
+    Returns 400 when ``client_id`` is missing, and 503 when the check-loop
+    feature is not wired (``app.state.check_loop_registry`` is ``None``).
+    """
+    client_id = request.query_params.get("client_id")
+    if not client_id:
+        return JSONResponse(
+            {"error": "client_id query parameter is required"}, status_code=400
+        )
+
+    registry: CheckLoopRegistry | None = request.app.state.check_loop_registry
+    if registry is None:
+        return JSONResponse(
+            {"error": "check-loop feature not enabled"}, status_code=503
+        )
+
+    loops = registry.list_for_client(client_id)
+    result: list[dict[str, object]] = []
+    for info in loops:
+        result.append(
+            {
+                "id": info.id,
+                "client_id": info.client_id,
+                "prompt": info.prompt,
+                "interval_seconds": info.interval_seconds,
+                "status": info.status.value,
+                "iterations": info.iterations,
+                "max_iterations": info.max_iterations,
+                "last_result": info.last_result,
+                "next_run": info.next_run,
+                "error": info.error,
+                "stop_reason": info.stop_reason,
+            }
+        )
+    return JSONResponse({"loops": result})
+
+
 # ---------------------------------------------------------------------------
 # Error handlers
 # ---------------------------------------------------------------------------
@@ -393,6 +436,7 @@ def create_app(
         Route("/events", events_endpoint, methods=["GET"]),
         Route("/history", history_endpoint, methods=["GET"]),
         Route("/loops/{loop_id}/stop", loops_stop_endpoint, methods=["POST"]),
+        Route("/loops", loops_list_endpoint, methods=["GET"]),
     ]
     if serve_ui:
         routes.append(Route("/", ui_endpoint, methods=["GET"]))

@@ -138,6 +138,23 @@
   .task-row.state-completed { border-left: 3px solid #22c55e; }
   .task-row.state-failed    { border-left: 3px solid #ef4444; }
 
+  /* Check Loops section (mirrors .task-row) */
+  .loop-row {
+    padding: 0.5rem 0.6rem; margin-bottom: 0.4rem;
+    border-radius: 6px; font-size: 0.82rem;
+    border: 1px solid var(--composer-border);
+    background: var(--assistant-bubble-bg);
+    word-break: break-word;
+  }
+  .loop-row .loop-id    { font-family: monospace; font-size: 0.75rem; color: #94a3b8; }
+  .loop-row .loop-desc  { font-weight: 600; margin: 0.15rem 0; }
+  .loop-row .loop-meta  { font-size: 0.72rem; color: #94a3b8; }
+  .loop-row .loop-result { margin-top: 0.25rem; font-size: 0.78rem; }
+
+  .loop-row.state-running  { border-left: 3px solid #3b82f6; }
+  .loop-row.state-stopped  { border-left: 3px solid #64748b; }
+  .loop-row.state-failed   { border-left: 3px solid #ef4444; }
+
   /* ------------------------------------------------------------------ */
   /* Error banner                                                        */
   /* ------------------------------------------------------------------ */
@@ -297,6 +314,8 @@
 <div id="tasks-panel">
   <div class="tasks-header">Background tasks<button class="dismiss" aria-label="Close tasks panel">&times;</button></div>
   <div id="tasks-list"></div>
+  <div class="tasks-header" style="border-top: 2px solid var(--composer-border);">Check Loops</div>
+  <div id="loops-list"></div>
 </div>
 
 <!-- ================================================================= -->
@@ -441,6 +460,10 @@
   var tasksById = {};
   var tasksOrder = [];
 
+  // Check Loops store (mirrors tasks store; session-only, in-memory)
+  var loopsById = {};
+  var loopsOrder = [];
+
   function renderTaskRow(task) {
     // Remove old row element if re-rendering; note its DOM position
     // so we can insert the fresh row in place instead of jumping to
@@ -568,6 +591,183 @@
     renderTaskRow(task);
   }
 
+  // ---- Check Loops panel -----------------------------------------------
+  function renderLoopRow(loop) {
+    var oldRow = loop.rowEl;
+    if (oldRow) oldRow.remove();
+
+    var row = document.createElement("div");
+    row.className = "loop-row state-" + loop.state;
+
+    var idSpan = document.createElement("span");
+    idSpan.className = "loop-id";
+    idSpan.textContent = loop.id.slice(0, 8);
+    row.appendChild(idSpan);
+
+    var descDiv = document.createElement("div");
+    descDiv.className = "loop-desc";
+    descDiv.textContent = loop.prompt || "(no prompt)";
+    row.appendChild(descDiv);
+
+    var metaDiv = document.createElement("div");
+    metaDiv.className = "loop-meta";
+    var metaParts = [loop.state];
+    if (loop.iterations > 0) {
+      metaParts.push("iter " + loop.iterations);
+    }
+    if (loop.max_iterations) {
+      metaParts.push("max " + loop.max_iterations);
+    }
+    if (loop.interval_seconds) {
+      metaParts.push("every " + loop.interval_seconds + "s");
+    }
+    metaDiv.textContent = metaParts.join(" \u2022 ");
+    row.appendChild(metaDiv);
+
+    if (loop.last_result) {
+      var resultDiv = document.createElement("div");
+      resultDiv.className = "loop-result";
+      resultDiv.textContent = loop.last_result;
+      row.appendChild(resultDiv);
+    }
+    if (loop.error) {
+      var errorDiv = document.createElement("div");
+      errorDiv.className = "loop-result";
+      errorDiv.style.color = "#fca5a5";
+      errorDiv.textContent = loop.error;
+      row.appendChild(errorDiv);
+    }
+    if (loop.stop_reason && loop.state !== "running") {
+      var reasonDiv = document.createElement("div");
+      reasonDiv.className = "loop-meta";
+      reasonDiv.textContent = "Reason: " + loop.stop_reason;
+      row.appendChild(reasonDiv);
+    }
+
+    loop.rowEl = row;
+
+    var loopsList = document.getElementById("loops-list");
+    var idx = loopsOrder.indexOf(loop.id);
+    if (idx >= 0) {
+      var nextSibling = null;
+      for (var i = idx + 1; i < loopsOrder.length; i++) {
+        var n = loopsById[loopsOrder[i]];
+        if (n && n.rowEl && n.rowEl.parentNode === loopsList) {
+          nextSibling = n.rowEl;
+          break;
+        }
+      }
+      if (nextSibling) {
+        loopsList.insertBefore(row, nextSibling);
+      } else {
+        loopsList.appendChild(row);
+      }
+    } else {
+      loopsList.appendChild(row);
+    }
+  }
+
+  function updateLoopPanel(frame) {
+    var lid = frame.loop_id;
+    if (!lid) return;
+
+    var loop = loopsById[lid];
+
+    if (frame.type === "loop_started") {
+      if (!loop) {
+        loop = {
+          id: lid,
+          prompt: frame.prompt || "",
+          interval_seconds: frame.interval_seconds || 0,
+          max_iterations: frame.max_iterations || null,
+          state: "running",
+          iterations: 0,
+          last_result: null,
+          next_run: null,
+          error: null,
+          stop_reason: null,
+          rowEl: null
+        };
+        loopsById[lid] = loop;
+        loopsOrder.push(lid);
+      }
+      loop.prompt = frame.prompt || loop.prompt;
+      loop.interval_seconds = frame.interval_seconds || loop.interval_seconds;
+      if (frame.max_iterations !== undefined) {
+        loop.max_iterations = frame.max_iterations;
+      }
+      loop.state = "running";
+    } else if (frame.type === "loop_tick") {
+      if (!loop) {
+        loop = {
+          id: lid,
+          prompt: "",
+          interval_seconds: 0,
+          max_iterations: null,
+          state: "running",
+          iterations: frame.iteration || 0,
+          last_result: frame.result || null,
+          next_run: frame.next_run || null,
+          error: null,
+          stop_reason: null,
+          rowEl: null
+        };
+        loopsById[lid] = loop;
+        loopsOrder.push(lid);
+      } else {
+        loop.state = "running";
+        loop.iterations = frame.iteration || loop.iterations;
+        if (frame.result !== undefined) loop.last_result = frame.result;
+        if (frame.next_run !== undefined) loop.next_run = frame.next_run;
+      }
+    } else if (frame.type === "loop_stopped") {
+      if (!loop) {
+        loop = {
+          id: lid,
+          prompt: "",
+          interval_seconds: 0,
+          max_iterations: null,
+          state: "stopped",
+          iterations: frame.iterations || 0,
+          last_result: null,
+          next_run: null,
+          error: null,
+          stop_reason: frame.reason || null,
+          rowEl: null
+        };
+        loopsById[lid] = loop;
+        loopsOrder.push(lid);
+      } else {
+        loop.state = "stopped";
+        loop.iterations = frame.iterations || loop.iterations;
+        loop.stop_reason = frame.reason || null;
+      }
+    } else if (frame.type === "loop_failed") {
+      if (!loop) {
+        loop = {
+          id: lid,
+          prompt: "",
+          interval_seconds: 0,
+          max_iterations: null,
+          state: "failed",
+          iterations: 0,
+          last_result: null,
+          next_run: null,
+          error: frame.error || null,
+          stop_reason: null,
+          rowEl: null
+        };
+        loopsById[lid] = loop;
+        loopsOrder.push(lid);
+      } else {
+        loop.state = "failed";
+        loop.error = frame.error || null;
+      }
+    }
+
+    renderLoopRow(loop);
+  }
+
   // ---- Helpers ---------------------------------------------------------
   function scrollToBottom() {
     chatEl.scrollTop = chatEl.scrollHeight;
@@ -651,6 +851,15 @@
     } else if (frame.type === "task_failed") {
       typeClass = "failed";
       text = "[Task " + frame.task_id.slice(0, 8) + "] Failed: " + frame.error;
+    } else if (frame.type === "loop_started") {
+      typeClass = "started";
+      text = "[Loop " + frame.loop_id.slice(0, 8) + "] Started: " + frame.prompt;
+    } else if (frame.type === "loop_stopped") {
+      typeClass = "completed";
+      text = "[Loop " + frame.loop_id.slice(0, 8) + "] Stopped: " + (frame.reason || "");
+    } else if (frame.type === "loop_failed") {
+      typeClass = "failed";
+      text = "[Loop " + frame.loop_id.slice(0, 8) + "] Failed: " + (frame.error || "");
     } else {
       return; // ignore unknown types
     }
@@ -759,6 +968,15 @@
             frame.type === "task_failed") {
           addNotificationBubble(frame);
           updateTaskPanel(frame);
+        } else if (frame.type === "loop_started" ||
+                   frame.type === "loop_tick" ||
+                   frame.type === "loop_stopped" ||
+                   frame.type === "loop_failed") {
+          // Show a notification for lifecycle transitions (not ticks).
+          if (frame.type !== "loop_tick") {
+            addNotificationBubble(frame);
+          }
+          updateLoopPanel(frame);
         }
         // ignore unknown types gracefully
       },
@@ -810,6 +1028,61 @@
       scrollToBottom();
     }).catch(function () {
       // Silently ignore network errors — empty chat is fine.
+    });
+  }
+
+  // ---- Check Loops snapshot on load ------------------------------------
+  function loadLoops() {
+    var loopsUrl = getServerUrl().replace(/\/chat$/, "/loops") +
+                   "?client_id=" + encodeURIComponent(clientId);
+
+    fetch(loopsUrl, { method: "GET" }).then(function (response) {
+      if (!response.ok) return;
+      return response.json();
+    }).then(function (data) {
+      if (!data || !Array.isArray(data.loops)) return;
+      var entries = data.loops;
+      for (var i = 0; i < entries.length; i++) {
+        var entry = entries[i];
+        var lid = entry.id;
+        if (!lid) continue;
+
+        // Normalize snapshot field names to the internal store shape.
+        // Entry uses "id" / "status" (string); frames use "loop_id" / "type".
+        var existing = loopsById[lid];
+        var loop = {
+          id: lid,
+          prompt: entry.prompt || "",
+          interval_seconds: entry.interval_seconds || 0,
+          max_iterations: entry.max_iterations || null,
+          state: entry.status || "running",
+          iterations: entry.iterations || 0,
+          last_result: entry.last_result || null,
+          next_run: entry.next_run || null,
+          error: entry.error || null,
+          stop_reason: entry.stop_reason || null,
+          rowEl: null
+        };
+
+        // If a live frame already arrived for this id (race between
+        // snapshot fetch and SSE delivery), live data wins.
+        if (existing) {
+          loop.state = existing.state;
+          loop.iterations = existing.iterations;
+          loop.last_result = existing.last_result || loop.last_result;
+          loop.next_run = existing.next_run || loop.next_run;
+          loop.error = existing.error || loop.error;
+          loop.stop_reason = existing.stop_reason || loop.stop_reason;
+        }
+
+        loopsById[lid] = loop;
+        if (!existing && loopsOrder.indexOf(lid) === -1) {
+          loopsOrder.push(lid);
+        }
+        renderLoopRow(loop);
+      }
+    }).catch(function () {
+      // Silently ignore fetch failures (e.g. 503 when feature disabled).
     });
   }
 
@@ -994,6 +1267,7 @@
   resetIdleTimer();
   openEventStream();          // open persistent /events channel for task notifications
   loadHistory();              // restore prior conversation turns on page load
+  loadLoops();                // restore running check loops on page load
 })();
 </script>
 
