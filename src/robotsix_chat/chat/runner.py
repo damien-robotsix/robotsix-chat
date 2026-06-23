@@ -70,6 +70,22 @@ class DeliveryChannel(Protocol):
         ...
 
 
+class NullDeliveryChannel:
+    """A :class:`DeliveryChannel` that drops frames (placeholder)."""
+
+    async def publish(self, client_id: str, frame: dict[str, Any]) -> None:
+        """No-op — frames are silently dropped (debug-logged)."""
+        logger.debug(
+            "NullDeliveryChannel: dropping %r for client %s",
+            frame.get("type"),
+            client_id,
+        )
+
+
+# Singleton instance for use as default parameter values (avoids B008).
+NULL_CHANNEL = NullDeliveryChannel()
+
+
 # ---------------------------------------------------------------------------
 # Frame builders — small helper functions so frame shapes are testable.
 # ---------------------------------------------------------------------------

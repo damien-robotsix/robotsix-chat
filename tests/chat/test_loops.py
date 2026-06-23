@@ -1024,6 +1024,148 @@ async def test_loop_id_handshake_consistent() -> None:
 
 
 # ---------------------------------------------------------------------------
+# DeliveryChannel integration — tick results land in ConversationStore
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_spawn_with_channel_records_tick_in_store() -> None:
+    """spawn_check_loop with a ConversationDeliveryChannel records tick result."""
+    from robotsix_chat.chat.conversation import ConversationStore
+    from robotsix_chat.chat.delegation import ConversationDeliveryChannel
+
+    store = ConversationStore(
+        idle_reset_seconds=3600.0,
+        max_history_turns=10,
+        max_conversations=5,
+    )
+    store.begin("c-chan")
+    channel = ConversationDeliveryChannel(store)
+
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+
+    lid = spawn_check_loop(
+        client_id="c-chan",
+        prompt="check with channel",
+        interval_seconds=0.01,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _StubAgent(["tick result"]),
+        max_iterations=1,
+        channel=channel,
+    )
+
+    # Wait for the single iteration to complete and the loop to stop.
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        info = reg.get(lid)
+        if info and info.status != LoopStatus.RUNNING:
+            break
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.STOPPED
+
+    # The store should have one synthetic turn from the loop_tick publish.
+    history = store.history("c-chan")
+    assert len(history) >= 1, f"Expected >= 1 turns, got {len(history)}: {history}"
+    user_msg, assistant_msg = history[0]
+    assert "Check loop" in user_msg
+    assert lid in user_msg
+    assert "tick 1" in user_msg
+    assert assistant_msg == "tick result"
+
+
+@pytest.mark.asyncio
+async def test_spawn_channel_raise_does_not_kill_loop() -> None:
+    """A DeliveryChannel that raises does not kill the loop — the loop finishes."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+
+    class _BoomChannel:
+        async def publish(self, client_id: str, frame: dict[str, object]) -> None:
+            raise RuntimeError("channel offline")
+
+    boom = _BoomChannel()
+
+    lid = spawn_check_loop(
+        client_id="c-boom",
+        prompt="survive boom",
+        interval_seconds=0.01,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _StubAgent(["still ok"]),
+        max_iterations=1,
+        channel=boom,
+    )
+
+    # Wait for the loop to finish its single iteration.
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        info = reg.get(lid)
+        if info and info.status != LoopStatus.RUNNING:
+            break
+
+    info = reg.get(lid)
+    assert info is not None
+    # The loop should have completed normally (stopped by max_iterations),
+    # NOT marked as FAILED.
+    assert info.status == LoopStatus.STOPPED, (
+        f"Expected STOPPED, got {info.status} (error={info.error!r})"
+    )
+    assert info.iterations == 1
+    assert info.last_result == "still ok"
+
+
+@pytest.mark.asyncio
+async def test_spawn_with_channel_records_failure_in_store() -> None:
+    """When the agent raises, the loop_failed frame is recorded in the store."""
+    from robotsix_chat.chat.conversation import ConversationStore
+    from robotsix_chat.chat.delegation import ConversationDeliveryChannel
+
+    store = ConversationStore(
+        idle_reset_seconds=3600.0,
+        max_history_turns=10,
+        max_conversations=5,
+    )
+    store.begin("c-fail-chan")
+    channel = ConversationDeliveryChannel(store)
+
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings()
+
+    exc = ValueError("agent crash")
+    lid = spawn_check_loop(
+        client_id="c-fail-chan",
+        prompt="will fail with channel",
+        interval_seconds=60.0,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _FailingAgent(exc),
+        channel=channel,
+    )
+
+    await asyncio.sleep(0.15)
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.FAILED
+
+    # The store should have a loop_failed synthetic turn.
+    history = store.history("c-fail-chan")
+    assert len(history) == 1
+    user_msg, assistant_msg = history[0]
+    assert "Check loop" in user_msg
+    assert lid in user_msg
+    assert "failed" in user_msg
+    assert assistant_msg == "Error: agent crash"
+
+
+# ---------------------------------------------------------------------------
 # Persistence round-trip
 # ---------------------------------------------------------------------------
 

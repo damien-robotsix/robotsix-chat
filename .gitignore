@@ -43,3 +43,6 @@ local-deps/
 
 # Pip/uv-generated entry-point wrappers accidentally swept into the source tree
 src/bin/
+
+# vendored sandbox deps (build artifact)
+.deps/
