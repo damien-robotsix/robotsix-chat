@@ -208,3 +208,16 @@ added when off or when the `broker` extra is absent.
 Tests for module `robotsix_chat.<module>` live under `tests/<module>/`, mirroring the per-module source layout (e.g. `tests/chat/` for `robotsix_chat.chat`, `tests/config/` for `robotsix_chat.config`). Do not place tests directly in the `tests/` root.
 
 **Rule:** When testing a module that lazy-imports `robotsix_agent_comm`, both monkeypatch `importlib.util.find_spec` AND populate `sys.modules` with a fake module stub. Use the `_install_fake_agent_comm(monkeypatch)` helper from `tests/conftest.py` rather than only patching `find_spec` — the lazy `from robotsix_agent_comm.sdk import BrokeredRequester` import resolves at class-construction time through `sys.modules`, not through `find_spec`.
+
+## Task tracking
+
+Persistent, human-readable task tracking lives under `tasks/` at the repo root:
+
+- `tasks/TASKS.md` — active tasks (pending, in-progress, blocked).
+- `tasks/ARCHIVE.md` — completed tasks (history preserved).
+- `tasks/README.md` — documents the format and the read/add/update/archive workflow.
+
+At the start of every conversation, read `tasks/TASKS.md` to pick up any
+pending work from prior conversations.  When work is done, archive the task
+by moving its section from `TASKS.md` into `ARCHIVE.md`.  The format is
+structured Markdown — a person can inspect or edit the files by hand.

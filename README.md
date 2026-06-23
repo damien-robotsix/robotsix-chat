@@ -255,6 +255,9 @@ uv run pytest                    # tests
 See [CONTRIBUTING.md](CONTRIBUTING.md) for full contributor setup, including
 pre-commit hooks and dependency auditing.
 
+Task tracking lives under [`tasks/`](tasks/) — see
+[`tasks/README.md`](tasks/README.md) for the format and workflow.
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE).
