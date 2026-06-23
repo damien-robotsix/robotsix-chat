@@ -1632,6 +1632,7 @@
     var newWidth = resizeStartWidth + dx;
     newWidth = Math.max(260, Math.min(newWidth, window.innerWidth * 0.9));
     tasksPanel.style.width = newWidth + "px";
+    positionResizeHandle();
   });
 
   document.addEventListener("mouseup", function () {
@@ -1639,6 +1640,21 @@
     resizeDragging = false;
     tasksResizeHandle.classList.remove("active");
     document.body.style.userSelect = "";
+    positionResizeHandle();
+  });
+
+  window.addEventListener("resize", function () {
+    if (!tasksPanel.classList.contains("visible")) return;
+    // Re-clamp the panel width so it doesn't overflow the viewport after
+    // a browser window resize.  The inline width set during drag can
+    // override the CSS max-width, so we re-apply the clamp here.
+    var currentWidth = tasksPanel.getBoundingClientRect().width;
+    var maxWidth = window.innerWidth * 0.9;
+    if (currentWidth > maxWidth) {
+      tasksPanel.style.width = maxWidth + "px";
+    } else if (currentWidth < 260) {
+      tasksPanel.style.width = "260px";
+    }
     positionResizeHandle();
   });
 
