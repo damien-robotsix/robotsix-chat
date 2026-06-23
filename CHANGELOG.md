@@ -11,6 +11,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- `max_check_loops` and `min_check_loop_interval_seconds` configuration
+  fields for check-loop registry limits, with env var overrides
+  `MAX_CHECK_LOOPS` and `MIN_CHECK_LOOP_INTERVAL_SECONDS`.
+
 - Comprehensive `docs/configuration.md` documenting all ~30 environment
   variables across server, auth, memory, mill, calendar, conversation,
   and refdocs settings.

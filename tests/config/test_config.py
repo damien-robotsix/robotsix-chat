@@ -69,6 +69,8 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "REFDOCS_TIMEOUT",
         "IDLE_TIMEOUT_MINUTES",
         "MAX_BACKGROUND_TASKS",
+        "MAX_CHECK_LOOPS",
+        "MIN_CHECK_LOOP_INTERVAL_SECONDS",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -776,3 +778,157 @@ def test_max_background_tasks_one_allowed() -> None:
     """``max_background_tasks = 1`` is valid."""
     settings = Settings(max_background_tasks=1)
     assert settings.max_background_tasks == 1
+
+
+# ---------------------------------------------------------------------------
+# max_check_loops
+# ---------------------------------------------------------------------------
+
+
+def test_max_check_loops_default() -> None:
+    """``max_check_loops`` defaults to 5."""
+    settings = Settings()
+    assert settings.max_check_loops == 5
+
+
+def test_max_check_loops_from_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``server.max_check_loops`` in YAML overrides the default."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text("server:\n  max_check_loops: 3\n")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.max_check_loops == 3
+
+
+def test_max_check_loops_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``MAX_CHECK_LOOPS`` env var overrides the default."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("MAX_CHECK_LOOPS", "10")
+
+    settings = Settings.from_env()
+
+    assert settings.max_check_loops == 10
+
+
+def test_max_check_loops_env_override_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Env var ``MAX_CHECK_LOOPS`` wins over YAML value."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text("server:\n  max_check_loops: 8\n")
+    monkeypatch.setenv("MAX_CHECK_LOOPS", "2")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.max_check_loops == 2
+
+
+def test_max_check_loops_env_non_integer_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-integer ``MAX_CHECK_LOOPS`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("MAX_CHECK_LOOPS", "many")
+
+    with pytest.raises(ValueError, match="MAX_CHECK_LOOPS"):
+        Settings.from_env()
+
+
+def test_max_check_loops_zero_raises() -> None:
+    """``max_check_loops = 0`` is rejected by ``model_post_init``."""
+    with pytest.raises(ValueError, match="max_check_loops"):
+        Settings(max_check_loops=0)
+
+
+def test_max_check_loops_one_allowed() -> None:
+    """``max_check_loops = 1`` is valid."""
+    settings = Settings(max_check_loops=1)
+    assert settings.max_check_loops == 1
+
+
+# ---------------------------------------------------------------------------
+# min_check_loop_interval_seconds
+# ---------------------------------------------------------------------------
+
+
+def test_min_check_loop_interval_seconds_default() -> None:
+    """``min_check_loop_interval_seconds`` defaults to 60.0."""
+    settings = Settings()
+    assert settings.min_check_loop_interval_seconds == 60.0
+
+
+def test_min_check_loop_interval_seconds_from_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``server.min_check_loop_interval_seconds`` in YAML overrides the default."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text("server:\n  min_check_loop_interval_seconds: 30.0\n")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.min_check_loop_interval_seconds == 30.0
+
+
+def test_min_check_loop_interval_seconds_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``MIN_CHECK_LOOP_INTERVAL_SECONDS`` env var overrides the default."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("MIN_CHECK_LOOP_INTERVAL_SECONDS", "120.5")
+
+    settings = Settings.from_env()
+
+    assert settings.min_check_loop_interval_seconds == 120.5
+
+
+def test_min_check_loop_interval_seconds_env_override_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Env var ``MIN_CHECK_LOOP_INTERVAL_SECONDS`` wins over YAML value."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text("server:\n  min_check_loop_interval_seconds: 90.0\n")
+    monkeypatch.setenv("MIN_CHECK_LOOP_INTERVAL_SECONDS", "15.0")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.min_check_loop_interval_seconds == 15.0
+
+
+def test_min_check_loop_interval_seconds_env_non_float_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-float ``MIN_CHECK_LOOP_INTERVAL_SECONDS`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("MIN_CHECK_LOOP_INTERVAL_SECONDS", "fast")
+
+    with pytest.raises(ValueError, match="MIN_CHECK_LOOP_INTERVAL_SECONDS"):
+        Settings.from_env()
+
+
+def test_min_check_loop_interval_seconds_zero_raises() -> None:
+    """``min_check_loop_interval_seconds = 0.0`` is rejected by ``model_post_init``."""
+    with pytest.raises(ValueError, match="min_check_loop_interval_seconds"):
+        Settings(min_check_loop_interval_seconds=0.0)
+
+
+def test_min_check_loop_interval_seconds_negative_raises() -> None:
+    """``min_check_loop_interval_seconds = -5.0`` is rejected."""
+    with pytest.raises(ValueError, match="min_check_loop_interval_seconds"):
+        Settings(min_check_loop_interval_seconds=-5.0)
+
+
+def test_min_check_loop_interval_seconds_one_allowed() -> None:
+    """``min_check_loop_interval_seconds = 1.0`` is valid."""
+    settings = Settings(min_check_loop_interval_seconds=1.0)
+    assert settings.min_check_loop_interval_seconds == 1.0

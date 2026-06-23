@@ -86,6 +86,8 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "server.port": "server_port",
     "server.idle_timeout_minutes": "idle_timeout_minutes",
     "server.max_background_tasks": "max_background_tasks",
+    "server.max_check_loops": "max_check_loops",
+    "server.min_check_loop_interval_seconds": "min_check_loop_interval_seconds",
     "server.log_level": "log_level",
     "server.cors_allow_origins": "cors_allow_origins",
     "server.correlation_id_header": "correlation_id_header",
@@ -334,6 +336,11 @@ class Settings(BaseModel):
             Env override: ``IDLE_TIMEOUT_MINUTES``.
         max_background_tasks: Maximum number of concurrently-running background
             sub-agent tasks per process.  Env override: ``MAX_BACKGROUND_TASKS``.
+        max_check_loops: Maximum number of concurrent check loops per process.
+            Env override: ``MAX_CHECK_LOOPS``.
+        min_check_loop_interval_seconds: Minimum allowed interval between
+            check-loop iterations, in seconds. Env override:
+            ``MIN_CHECK_LOOP_INTERVAL_SECONDS``.
         log_level: Python logging level name.
         cors_allow_origins: Origins allowed to call /chat cross-origin
             (empty = none; ``["*"]`` = any). Only needed when the browser
@@ -360,6 +367,8 @@ class Settings(BaseModel):
     server_port: int = 8000
     idle_timeout_minutes: int = 30
     max_background_tasks: int = 5
+    max_check_loops: int = 5
+    min_check_loop_interval_seconds: float = 60.0
     log_level: str = "INFO"
     cors_allow_origins: list[str] = Field(default_factory=list)
     correlation_id_header: str = "X-Request-ID"
@@ -411,6 +420,15 @@ class Settings(BaseModel):
         if self.max_background_tasks < 1:
             raise ValueError(
                 f"max_background_tasks must be >= 1, got {self.max_background_tasks!r}"
+            )
+        if self.max_check_loops < 1:
+            raise ValueError(
+                f"max_check_loops must be >= 1, got {self.max_check_loops!r}"
+            )
+        if self.min_check_loop_interval_seconds < 1.0:
+            raise ValueError(
+                f"min_check_loop_interval_seconds must be >= 1.0, "
+                f"got {self.min_check_loop_interval_seconds!r}"
             )
         if self.mill.enabled:
             if not self.mill.broker_token:
@@ -573,6 +591,25 @@ class Settings(BaseModel):
             except ValueError:
                 raise ValueError(
                     f"MAX_BACKGROUND_TASKS must be an integer, got {bg_tasks_str!r}"
+                ) from None
+
+        max_loops_str = os.getenv("MAX_CHECK_LOOPS")
+        if max_loops_str is not None:
+            try:
+                raw["max_check_loops"] = int(max_loops_str)
+            except ValueError:
+                raise ValueError(
+                    f"MAX_CHECK_LOOPS must be an integer, got {max_loops_str!r}"
+                ) from None
+
+        min_interval_str = os.getenv("MIN_CHECK_LOOP_INTERVAL_SECONDS")
+        if min_interval_str is not None:
+            try:
+                raw["min_check_loop_interval_seconds"] = float(min_interval_str)
+            except ValueError:
+                raise ValueError(
+                    f"MIN_CHECK_LOOP_INTERVAL_SECONDS must be a float, "
+                    f"got {min_interval_str!r}"
                 ) from None
 
         cors_raw = os.getenv("CORS_ALLOW_ORIGINS")
