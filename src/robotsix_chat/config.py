@@ -312,6 +312,12 @@ class ConversationSettings(BaseModel):
     max_conversations: int = 1000
 
 
+# Version stamp for the agent_instruction default literal.
+# Bump on every change to Settings.agent_instruction and update
+# docs/system_prompt_changelog.md with a new entry + SHA256.
+SYSTEM_PROMPT_VERSION = 1
+
+
 class Settings(BaseModel):
     """Application settings, resolved from defaults → YAML → environment.
 
