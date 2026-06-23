@@ -16,6 +16,7 @@ from robotsix_chat.chat.runner import (
 )
 from robotsix_chat.chat.tasks import TaskRegistry, TaskStatus
 from robotsix_chat.config import Settings
+from tests.conftest import MockAgent
 
 # ---------------------------------------------------------------------------
 # Stubs / fakes
@@ -30,42 +31,6 @@ class _FakeDeliveryChannel:
 
     async def publish(self, client_id: str, frame: dict[str, Any]) -> None:
         self.frames.append((client_id, frame))
-
-
-class _StubAgent:
-    """An agent whose ``stream`` yields fixed chunks."""
-
-    def __init__(self, chunks: list[str] | None = None) -> None:
-        self.chunks = chunks or ["Hello", " ", "world!"]
-
-    async def stream(
-        self,
-        message: str,
-        *,
-        history: list[tuple[str, str]] | None = None,
-        session_id: str | None = None,
-        client_id: str | None = None,
-    ) -> AsyncIterator[str]:
-        for chunk in self.chunks:
-            yield chunk
-
-
-class _FailingAgent:
-    """An agent whose ``stream`` always raises (as an async generator)."""
-
-    def __init__(self, exc: Exception) -> None:
-        self.exc = exc
-
-    async def stream(
-        self,
-        message: str,
-        *,
-        history: list[tuple[str, str]] | None = None,
-        session_id: str | None = None,
-        client_id: str | None = None,
-    ) -> AsyncIterator[str]:
-        raise self.exc
-        yield  # make this an async generator so ``async for`` works  # pragma: no cover
 
 
 class _BoomChannel:
@@ -104,9 +69,9 @@ async def test_spawn_success_completes_and_publishes() -> None:
     channel = _FakeDeliveryChannel()
     settings = Settings()  # defaults (model_level=3)
 
-    agent = _StubAgent(["hi", " there"])
+    agent = MockAgent(["hi", " there"])
 
-    def agent_factory(s: Settings) -> _StubAgent:
+    def agent_factory(s: Settings) -> MockAgent:
         return agent
 
     tid = spawn_subagent_task(
@@ -218,9 +183,9 @@ async def test_spawn_failure_updates_registry_and_publishes() -> None:
     settings = Settings()
     exc = ValueError("bad input")
 
-    agent = _FailingAgent(exc)
+    agent = MockAgent(error=exc)
 
-    def agent_factory(s: Settings) -> _FailingAgent:
+    def agent_factory(s: Settings) -> MockAgent:
         return agent
 
     tid = spawn_subagent_task(
@@ -258,9 +223,9 @@ async def test_spawn_channel_error_is_suppressed() -> None:
     channel = _BoomChannel()
     settings = Settings()
 
-    agent = _StubAgent(["ok"])
+    agent = MockAgent(["ok"])
 
-    def agent_factory(s: Settings) -> _StubAgent:
+    def agent_factory(s: Settings) -> MockAgent:
         return agent
 
     tid = spawn_subagent_task(
@@ -295,9 +260,9 @@ async def test_agent_factory_receives_settings() -> None:
 
     received: list[Settings] = []
 
-    def spy_factory(s: Settings) -> _StubAgent:
+    def spy_factory(s: Settings) -> MockAgent:
         received.append(s)
-        return _StubAgent(["x"])
+        return MockAgent(["x"])
 
     _task_id = spawn_subagent_task(
         client_id="c4",
@@ -407,7 +372,7 @@ async def test_spawn_respects_capacity_limit() -> None:
             settings=settings,
             registry=registry,
             channel=channel,
-            agent_factory=lambda s: _StubAgent(["nope"]),
+            agent_factory=lambda s: MockAgent(["nope"]),
         )
 
     # No new task was scheduled — the registry count is unchanged.
@@ -433,7 +398,7 @@ async def test_spawn_allows_when_below_capacity() -> None:
         settings=settings,
         registry=registry,
         channel=channel,
-        agent_factory=lambda s: _StubAgent(["ok"]),
+        agent_factory=lambda s: MockAgent(["ok"]),
     )
 
     assert tid
