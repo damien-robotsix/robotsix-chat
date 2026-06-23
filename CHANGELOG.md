@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added persistent, human-readable task tracking under `tasks/`:
+  `tasks/TASKS.md` (active), `tasks/ARCHIVE.md` (completed), and
+  `tasks/README.md` (format & workflow reference).  Referenced from
+  `AGENT.md` and `README.md` for cross-conversation discoverability.
+
 - Fixed pre-existing mypy errors in `broker_client.py` (lazy import type-ignore),
   `test_broker_client.py` (mock function signature), and `test_auth.py` (missing
   `client_id` parameter in `_MockAgent.stream`).
