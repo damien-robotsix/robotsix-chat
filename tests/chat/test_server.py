@@ -486,6 +486,8 @@ async def test_ui_renders_task_notifications() -> None:
     assert '"tasks-toggle"' in response.text
     assert '"tasks-list"' in response.text
     assert "updateTaskPanel" in response.text
+    assert "Close tasks panel" in response.text  # dismiss button in tasks header
+    assert '"Escape"' in response.text  # Escape key closes tasks panel
 
 
 @pytest.mark.asyncio

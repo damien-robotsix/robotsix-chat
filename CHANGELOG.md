@@ -22,6 +22,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Changed
 
+- Background-tasks side panel now has a close button (×) and responds to
+  the Escape key; the tasks-toggle button acts as a true toggle
+  (open/close). Closing the panel preserves in-memory task history.
 - Extracted shared `BaseBrokeredClient` base class from `MillClient` and
   `CalendarClient`, eliminating ~40 lines of duplicated boilerplate.
 
