@@ -1,0 +1,1216 @@
+"""Tests for :mod:`robotsix_chat.chat.loops` — check-loop registry and worker."""
+
+from __future__ import annotations
+
+import asyncio
+import json
+from collections.abc import AsyncIterator
+from itertools import count
+from pathlib import Path
+from typing import Any
+
+import pytest
+
+from robotsix_chat.chat.events import (
+    SSE_LOOP_FAILED_TYPE,
+    SSE_LOOP_STARTED_TYPE,
+    SSE_LOOP_STOPPED_TYPE,
+    SSE_LOOP_TICK_TYPE,
+    EventBus,
+    loop_failed_frame,
+    loop_started_frame,
+    loop_stopped_frame,
+    loop_tick_frame,
+)
+from robotsix_chat.chat.loops import (
+    MIN_CHECK_LOOP_INTERVAL_SECONDS,
+    CheckLoopRegistry,
+    LoopCapacityError,
+    LoopIntervalError,
+    LoopStatus,
+    resume_check_loops,
+    spawn_check_loop,
+)
+
+# ---------------------------------------------------------------------------
+# Stubs / fakes — mirror test_tasks.py / test_runner.py patterns
+# ---------------------------------------------------------------------------
+
+
+class _FakeClock:
+    """A manually advanced monotonic clock."""
+
+    def __init__(self) -> None:
+        self.now = 1000.0
+
+    def __call__(self) -> float:
+        return self.now
+
+    def advance(self, seconds: float) -> None:
+        self.now += seconds
+
+
+class _FakeCoro:
+    """Stand-in for ``asyncio.Task[None]`` — no event loop required."""
+
+    def add_done_callback(self, _cb: object) -> None:
+        pass
+
+    def cancel(self, _msg: object = None) -> bool:
+        return False
+
+    def done(self) -> bool:
+        return False
+
+
+def _fake_coro() -> _FakeCoro:
+    """Return a stand-in for ``asyncio.Task[None]`` for non-async tests."""
+    return _FakeCoro()
+
+
+class _StubAgent:
+    """An agent whose ``stream`` yields fixed chunks."""
+
+    def __init__(self, chunks: list[str] | None = None) -> None:
+        self.chunks = chunks or ["Hello", " ", "world!"]
+
+    async def stream(
+        self,
+        message: str,
+        *,
+        history: list[tuple[str, str]] | None = None,
+        session_id: str | None = None,
+        client_id: str | None = None,
+    ) -> AsyncIterator[str]:
+        for chunk in self.chunks:
+            yield chunk
+
+
+class _FailingAgent:
+    """An agent whose ``stream`` always raises (as an async generator)."""
+
+    def __init__(self, exc: Exception) -> None:
+        self.exc = exc
+
+    async def stream(
+        self,
+        message: str,
+        *,
+        history: list[tuple[str, str]] | None = None,
+        session_id: str | None = None,
+        client_id: str | None = None,
+    ) -> AsyncIterator[str]:
+        raise self.exc
+        yield  # pragma: no cover
+
+
+class _VariableAgent:
+    """An agent that yields different results across calls.
+
+    Each call pops the next result from *responses*.  When the list is
+    exhausted, yields a default fallback.
+    """
+
+    def __init__(self, responses: list[str]) -> None:
+        self.responses = list(responses)
+        self.call_count = 0
+
+    async def stream(
+        self,
+        message: str,
+        *,
+        history: list[tuple[str, str]] | None = None,
+        session_id: str | None = None,
+        client_id: str | None = None,
+    ) -> AsyncIterator[str]:
+        self.call_count += 1
+        result = self.responses.pop(0) if self.responses else "fallback"
+        yield result
+
+
+def _stub_settings(**overrides: Any) -> Any:
+    """Build a stub settings object carrying ``max_check_loops`` and other attrs.
+
+    Uses ``types.SimpleNamespace`` so the worker only reads attributes
+    without needing the real ``Settings`` pydantic model (which does not
+    yet have ``max_check_loops`` — that field lands in the parallel Settings
+    epic child).
+    """
+    from types import SimpleNamespace
+
+    defaults: dict[str, Any] = {
+        "max_check_loops": 5,
+        "llmio_model_level": 3,
+        "llmio_api_key": "",
+    }
+    defaults.update(overrides)
+    return SimpleNamespace(**defaults)
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _registry(
+    clock: _FakeClock | None = None,
+    sink: EventBus | None = None,
+    store_path: Path | None = None,
+) -> CheckLoopRegistry:
+    """Build a registry with deterministic loop ids (``L0``, ``L1``, …).
+
+    When *store_path* is ``None``, persistence is disabled (the registry
+    does not write to disk).  Pass an explicit ``tmp_path`` location to
+    test persistence.
+    """
+    ids = count()
+    return CheckLoopRegistry(
+        clock=clock or _FakeClock(),
+        id_factory=lambda: f"L{next(ids)}",
+        event_sink=sink,
+        store_path=store_path,  # None → no persistence
+    )
+
+
+# ---------------------------------------------------------------------------
+# CheckLoopRegistry — unit tests (synchronous)
+# ---------------------------------------------------------------------------
+
+
+def test_register_returns_loop_id() -> None:
+    """Registering a loop returns a unique id."""
+    reg = _registry()
+    lid = reg.register(
+        "c1",
+        "check",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    assert lid == "L0"
+
+
+def test_register_stores_loop_info_with_running_status() -> None:
+    """A newly-registered loop has status ``RUNNING``."""
+    reg = _registry()
+    lid = reg.register(
+        "c1",
+        "check db",
+        interval_seconds=120.0,
+        max_iterations=5,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.id == lid
+    assert info.client_id == "c1"
+    assert info.prompt == "check db"
+    assert info.status == LoopStatus.RUNNING
+    assert info.interval_seconds == 120.0
+    assert info.max_iterations == 5
+    assert info.iterations == 0
+    assert info.last_result is None
+    assert info.error is None
+    assert info.stop_reason is None
+
+
+def test_register_multiple_loops_get_distinct_ids() -> None:
+    """Each registered loop receives a unique id."""
+    reg = _registry()
+    lid1 = reg.register(
+        "c1",
+        "loop 1",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    lid2 = reg.register(
+        "c1",
+        "loop 2",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    assert lid1 != lid2
+    assert reg.get(lid1) is not None
+    assert reg.get(lid2) is not None
+
+
+def test_get_nonexistent_loop_returns_none() -> None:
+    """Looking up a loop id that was never registered returns ``None``."""
+    reg = _registry()
+    assert reg.get("bogus") is None
+
+
+def test_list_for_client_returns_loops() -> None:
+    """``list_for_client`` returns all loops registered under a client."""
+    reg = _registry()
+    reg.register(
+        "c1",
+        "loop a",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    reg.register(
+        "c1",
+        "loop b",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+
+    loops = reg.list_for_client("c1")
+    assert len(loops) == 2
+    prompts = {lp.prompt for lp in loops}
+    assert prompts == {"loop a", "loop b"}
+
+
+def test_list_for_client_unknown_client_returns_empty() -> None:
+    """An unknown client yields an empty list, not an error."""
+    reg = _registry()
+    assert reg.list_for_client("nobody") == []
+
+
+def test_list_for_client_isolated_per_client() -> None:
+    """Loops for one client are not visible from another."""
+    reg = _registry()
+    reg.register(
+        "c-a",
+        "a-only",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    reg.register(
+        "c-b",
+        "b-only",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+
+    a = reg.list_for_client("c-a")
+    b = reg.list_for_client("c-b")
+    assert [lp.prompt for lp in a] == ["a-only"]
+    assert [lp.prompt for lp in b] == ["b-only"]
+
+
+def test_record_tick_increments_iteration_and_stores_result() -> None:
+    """Calling ``record_tick()`` increments iterations and stores result."""
+    reg = _registry()
+    lid = reg.register(
+        "c1",
+        "tick test",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+
+    reg.record_tick(lid, result="all good", next_run=1100.0)
+    info = reg.get(lid)
+    assert info is not None
+    assert info.iterations == 1
+    assert info.last_result == "all good"
+    assert info.next_run == 1100.0
+
+
+def test_record_tick_ignores_unknown_id() -> None:
+    """Calling ``record_tick()`` on an unknown id does not raise."""
+    reg = _registry()
+    reg.record_tick("no-such", result="x", next_run=0.0)  # no-op, no raise
+
+
+def test_stop_transitions_to_stopped() -> None:
+    """Calling ``stop()`` sets status to STOPPED."""
+    reg = _registry()
+    lid = reg.register(
+        "c1",
+        "to stop",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+
+    reg.stop(lid, reason="user_requested")
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.STOPPED
+    assert info.stop_reason == "user_requested"
+
+
+def test_stop_is_idempotent() -> None:
+    """Calling stop on an already-stopped loop is a no-op."""
+    reg = _registry()
+    lid = reg.register(
+        "c1",
+        "to stop",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+
+    reg.stop(lid, reason="first")
+    reg.stop(lid, reason="second")
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.STOPPED
+    assert info.stop_reason == "first"
+
+
+def test_stop_unknown_id_does_not_raise() -> None:
+    """Calling ``stop()`` on an unknown id does not raise."""
+    reg = _registry()
+    reg.stop("no-such", reason="x")  # no-op
+
+
+def test_stop_removes_from_running_count() -> None:
+    """After stop + done callback, the loop is no longer in ``count_running()``."""
+    reg = _registry()
+    lid = reg.register(
+        "c1",
+        "running",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    assert reg.count_running() == 1
+
+    reg.stop(lid, reason="done")
+    # _FakeCoro doesn't support real cancel, but the done callback fires
+    # and pops from _running. Simulate that:
+    reg._running.pop(lid, None)
+    assert reg.count_running() == 0
+
+
+def test_fail_transitions_to_failed() -> None:
+    """Calling ``fail()`` sets status to FAILED and stores the error."""
+    reg = _registry()
+    lid = reg.register(
+        "c1",
+        "risky",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+
+    reg.fail(lid, error="boom")
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.FAILED
+    assert info.error == "boom"
+
+
+def test_fail_does_not_transition_stopped_loop() -> None:
+    """A stopped loop is not re-marked as failed."""
+    reg = _registry()
+    lid = reg.register(
+        "c1",
+        "x",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    reg.stop(lid, reason="explicit")
+
+    reg.fail(lid, error="should be ignored")
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.STOPPED
+    assert info.error is None
+
+
+def test_fail_unknown_id_does_not_raise() -> None:
+    """Calling ``fail()`` on an unknown id does not raise."""
+    reg = _registry()
+    reg.fail("no-such", error="x")  # no-op
+
+
+def test_count_running_reflects_registered_loops() -> None:
+    """``count_running()`` returns the number of in-flight loops."""
+    reg = _registry()
+    assert reg.count_running() == 0
+    reg.register(
+        "c1",
+        "loop 1",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    assert reg.count_running() == 1
+    reg.register(
+        "c1",
+        "loop 2",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    assert reg.count_running() == 2
+
+
+def test_strong_reference_held_for_running_loop() -> None:
+    """The registry holds a strong reference so a running loop is not GC'd."""
+    reg = _registry()
+    lid = reg.register(
+        "c1",
+        "long",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    assert lid in reg._running
+
+
+# ---------------------------------------------------------------------------
+# EventSink integration — lifecycle frames
+# ---------------------------------------------------------------------------
+
+
+def test_registry_publishes_started_frame_on_register() -> None:
+    """Registering a loop publishes a ``loop_started`` frame to the EventBus."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    q = bus.subscribe("c1")
+
+    lid = reg.register(
+        "c1",
+        "check x",
+        interval_seconds=60.0,
+        max_iterations=3,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    frame = q.get_nowait()
+    assert frame == loop_started_frame(lid, "c1", "check x", 60.0, 3)
+
+
+def test_registry_publishes_tick_frame_on_record_tick() -> None:
+    """Recording a tick publishes a ``loop_tick`` frame."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    q = bus.subscribe("c1")
+
+    lid = reg.register(
+        "c1",
+        "ticking",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    q.get_nowait()  # consume started frame
+
+    reg.record_tick(lid, result="ok", next_run=1100.0)
+    frame = q.get_nowait()
+    assert frame == loop_tick_frame(lid, iteration=1, result="ok", next_run=1100.0)
+
+
+def test_registry_publishes_stopped_frame_on_stop() -> None:
+    """Stopping a loop publishes a ``loop_stopped`` frame."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    q = bus.subscribe("c1")
+
+    lid = reg.register(
+        "c1",
+        "looping",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    q.get_nowait()  # consume started frame
+
+    reg.stop(lid, reason="max_iterations")
+    frame = q.get_nowait()
+    assert frame == loop_stopped_frame(lid, reason="max_iterations", iterations=0)
+
+
+def test_registry_publishes_failed_frame_on_fail() -> None:
+    """Failing a loop publishes a ``loop_failed`` frame."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    q = bus.subscribe("c1")
+
+    lid = reg.register(
+        "c1",
+        "fragile",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    q.get_nowait()  # consume started frame
+
+    reg.fail(lid, error="timeout")
+    frame = q.get_nowait()
+    assert frame == loop_failed_frame(lid, error="timeout")
+
+
+def test_registry_no_event_sink_no_publish() -> None:
+    """When ``event_sink`` is None, no frames are published (no crash)."""
+    reg = _registry(sink=None)
+    lid = reg.register(
+        "c1",
+        "quiet",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    reg.record_tick(lid, result="x", next_run=0.0)
+    reg.stop(lid, reason="x")
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.STOPPED
+
+
+# ---------------------------------------------------------------------------
+# Frame-builder shape tests
+# ---------------------------------------------------------------------------
+
+
+def test_loop_started_frame_shape() -> None:
+    """``loop_started_frame`` returns the documented dict shape."""
+    frame = loop_started_frame("L1", "c1", "check health", 30.0, 10)
+    assert frame == {
+        "type": SSE_LOOP_STARTED_TYPE,
+        "loop_id": "L1",
+        "client_id": "c1",
+        "prompt": "check health",
+        "interval_seconds": 30.0,
+        "max_iterations": 10,
+        "status": "running",
+    }
+
+
+def test_loop_tick_frame_shape() -> None:
+    """``loop_tick_frame`` returns the documented dict shape."""
+    frame = loop_tick_frame("L1", iteration=3, result="all ok", next_run=1500.0)
+    assert frame == {
+        "type": SSE_LOOP_TICK_TYPE,
+        "loop_id": "L1",
+        "iteration": 3,
+        "result": "all ok",
+        "next_run": 1500.0,
+        "status": "running",
+    }
+
+
+def test_loop_stopped_frame_shape() -> None:
+    """``loop_stopped_frame`` returns the documented dict shape."""
+    frame = loop_stopped_frame("L1", reason="max_iterations", iterations=5)
+    assert frame == {
+        "type": SSE_LOOP_STOPPED_TYPE,
+        "loop_id": "L1",
+        "reason": "max_iterations",
+        "iterations": 5,
+        "status": "stopped",
+    }
+
+
+def test_loop_failed_frame_shape() -> None:
+    """``loop_failed_frame`` returns the documented dict shape."""
+    frame = loop_failed_frame("L1", error="connection refused")
+    assert frame == {
+        "type": SSE_LOOP_FAILED_TYPE,
+        "loop_id": "L1",
+        "error": "connection refused",
+        "status": "failed",
+    }
+
+
+# ---------------------------------------------------------------------------
+# spawn_check_loop — async integration tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_spawn_runs_first_iteration_and_publishes_tick() -> None:
+    """A stub agent runs to completion → first tick published."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings()
+
+    called: list[str] = []
+
+    class _SpyAgent:
+        async def stream(
+            self,
+            message: str,
+            *,
+            history: list[tuple[str, str]] | None = None,
+            session_id: str | None = None,
+            client_id: str | None = None,
+        ) -> AsyncIterator[str]:
+            called.append(message)
+            for c in ["all good"]:
+                yield c
+
+    lid = spawn_check_loop(
+        client_id="c1",
+        prompt="is it ok?",
+        interval_seconds=60.0,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _SpyAgent(),
+    )
+
+    assert lid
+    await asyncio.sleep(0.1)
+
+    assert len(called) >= 1
+    assert called[0] == "is it ok?"
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.RUNNING
+    assert info.iterations == 1
+    assert info.last_result == "all good"
+
+    reg.stop(lid, reason="test teardown")
+    await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_spawn_returns_immediately() -> None:
+    """spawn_check_loop returns a loop_id synchronously before the agent runs."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings()
+
+    started: asyncio.Event = asyncio.Event()
+    finish: asyncio.Event = asyncio.Event()
+
+    class _SlowAgent:
+        async def stream(
+            self,
+            message: str,
+            *,
+            history: list[tuple[str, str]] | None = None,
+            session_id: str | None = None,
+            client_id: str | None = None,
+        ) -> AsyncIterator[str]:
+            started.set()
+            await finish.wait()
+            yield "done"
+
+    agent = _SlowAgent()
+
+    lid = spawn_check_loop(
+        client_id="c1",
+        prompt="slow",
+        interval_seconds=60.0,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: agent,
+    )
+
+    assert lid
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.RUNNING
+
+    await asyncio.wait_for(started.wait(), timeout=1.0)
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.RUNNING
+
+    finish.set()
+    await asyncio.sleep(0.1)
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.iterations == 1
+    assert info.last_result == "done"
+
+    reg.stop(lid, reason="test teardown")
+    await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_explicit_stop_publishes_stopped_frame() -> None:
+    """Calling registry.stop() publishes a loop_stopped frame."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings()
+    q_sse = bus.subscribe("c1")
+
+    lid = spawn_check_loop(
+        client_id="c1",
+        prompt="loop",
+        interval_seconds=60.0,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _StubAgent(["ok"]),
+        max_iterations=100,
+    )
+
+    await asyncio.sleep(0.1)
+
+    while not q_sse.empty():
+        q_sse.get_nowait()
+
+    reg.stop(lid, reason="explicit")
+
+    stopped_frame = q_sse.get_nowait()
+    assert stopped_frame["type"] == SSE_LOOP_STOPPED_TYPE
+    assert stopped_frame["reason"] == "explicit"
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.STOPPED
+
+    await asyncio.sleep(0.1)
+    assert reg.count_running() == 0
+
+
+@pytest.mark.asyncio
+async def test_max_iterations_cap_stops_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """After exactly N iterations the loop stops with reason max_iterations."""
+    monkeypatch.setattr(
+        "robotsix_chat.chat.loops.MIN_CHECK_LOOP_INTERVAL_SECONDS", 0.001
+    )
+
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings()
+    q_sse = bus.subscribe("c1")
+
+    lid = spawn_check_loop(
+        client_id="c1",
+        prompt="tick",
+        interval_seconds=0.01,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _StubAgent(["ok"]),
+        max_iterations=2,
+    )
+
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        info = reg.get(lid)
+        if info and info.status != LoopStatus.RUNNING:
+            break
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.STOPPED
+    assert info.stop_reason == "max_iterations"
+    assert info.iterations == 2
+
+    frames = []
+    while not q_sse.empty():
+        frames.append(q_sse.get_nowait())
+    stopped_frames = [f for f in frames if f["type"] == SSE_LOOP_STOPPED_TYPE]
+    assert len(stopped_frames) == 1
+    assert stopped_frames[0]["reason"] == "max_iterations"
+    assert stopped_frames[0]["iterations"] == 2
+
+
+@pytest.mark.asyncio
+async def test_stop_when_self_stops_loop(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A stop_when predicate returning True stops the loop (reason condition_met)."""
+    monkeypatch.setattr(
+        "robotsix_chat.chat.loops.MIN_CHECK_LOOP_INTERVAL_SECONDS", 0.001
+    )
+
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings()
+
+    lid = spawn_check_loop(
+        client_id="c1",
+        prompt="check",
+        interval_seconds=0.01,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _StubAgent(["CONDITION_MET"]),
+        stop_when=lambda result: "CONDITION_MET" in result,
+    )
+
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        info = reg.get(lid)
+        if info and info.status != LoopStatus.RUNNING:
+            break
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.STOPPED
+    assert info.stop_reason == "condition_met"
+    assert info.iterations == 1
+
+
+@pytest.mark.asyncio
+async def test_min_interval_rejection() -> None:
+    """interval_seconds below MIN raises LoopIntervalError and creates no loop."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings()
+
+    assert reg.count_running() == 0
+
+    with pytest.raises(LoopIntervalError, match="interval must be at least"):
+        spawn_check_loop(
+            client_id="c1",
+            prompt="too fast",
+            interval_seconds=10.0,
+            settings=settings,
+            registry=reg,
+            agent_factory=lambda s: _StubAgent(["nope"]),
+        )
+
+    assert reg.count_running() == 0
+
+
+@pytest.mark.asyncio
+async def test_capacity_rejection() -> None:
+    """When at capacity, spawn_check_loop raises LoopCapacityError."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings(max_check_loops=1)
+
+    reg.register(
+        "c1",
+        "existing",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    assert reg.count_running() == 1
+
+    with pytest.raises(LoopCapacityError, match="check-loop limit reached"):
+        spawn_check_loop(
+            client_id="c1",
+            prompt="should reject",
+            interval_seconds=60.0,
+            settings=settings,
+            registry=reg,
+            agent_factory=lambda s: _StubAgent(["nope"]),
+        )
+
+    assert reg.count_running() == 1
+
+
+@pytest.mark.asyncio
+async def test_capacity_allows_when_below_cap() -> None:
+    """spawn_check_loop succeeds when count is below the cap."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings(max_check_loops=2)
+
+    reg.register(
+        "c1",
+        "existing",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    assert reg.count_running() == 1
+
+    lid = spawn_check_loop(
+        client_id="c1",
+        prompt="allowed",
+        interval_seconds=60.0,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _StubAgent(["ok"]),
+    )
+
+    assert lid
+    assert reg.count_running() == 2
+
+    reg.stop(lid, reason="cleanup")
+    await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_loop_failure_publishes_failed_frame() -> None:
+    """When the agent raises, the loop is marked FAILED and a frame is published."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings()
+    q_sse = bus.subscribe("c1")
+
+    exc = ValueError("something broke")
+    lid = spawn_check_loop(
+        client_id="c1",
+        prompt="will fail",
+        interval_seconds=60.0,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _FailingAgent(exc),
+    )
+
+    await asyncio.sleep(0.15)
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.FAILED
+    assert info.error == "something broke"
+
+    frames = []
+    while not q_sse.empty():
+        frames.append(q_sse.get_nowait())
+    failed_frames = [f for f in frames if f["type"] == SSE_LOOP_FAILED_TYPE]
+    assert len(failed_frames) == 1
+    assert failed_frames[0]["loop_id"] == lid
+    assert failed_frames[0]["error"] == "something broke"
+
+
+@pytest.mark.asyncio
+async def test_cancelled_error_does_not_mark_failed() -> None:
+    """When the loop task is cancelled (via registry.stop), it's STOPPED not FAILED."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings()
+
+    lid = spawn_check_loop(
+        client_id="c1",
+        prompt="will be cancelled",
+        interval_seconds=60.0,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _SpySleepAgent(),
+        max_iterations=100,
+    )
+
+    await asyncio.sleep(0.1)
+
+    reg.stop(lid, reason="user stop")
+    await asyncio.sleep(0.1)
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.STOPPED
+    assert info.stop_reason == "user stop"
+    assert info.error is None
+
+
+class _SpySleepAgent:
+    """Agent that sleeps forever — used for cancellation tests."""
+
+    async def stream(
+        self,
+        message: str,
+        *,
+        history: list[tuple[str, str]] | None = None,
+        session_id: str | None = None,
+        client_id: str | None = None,
+    ) -> AsyncIterator[str]:
+        yield "waiting"
+        await asyncio.sleep(3600)
+        yield "never"  # pragma: no cover
+
+
+# ---------------------------------------------------------------------------
+# task_id / loop_id handshake (race-free)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_loop_id_handshake_consistent() -> None:
+    """The loop_id the worker sees matches the returned id."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings()
+
+    lid = spawn_check_loop(
+        client_id="c1",
+        prompt="handshake",
+        interval_seconds=60.0,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _StubAgent(["ok"]),
+    )
+
+    await asyncio.sleep(0.1)
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.id == lid
+
+    reg.stop(lid, reason="cleanup")
+    await asyncio.sleep(0.05)
+
+
+# ---------------------------------------------------------------------------
+# Persistence round-trip
+# ---------------------------------------------------------------------------
+
+
+def test_persistence_writes_on_register_stop_fail(tmp_path: Path) -> None:
+    """Registering / stopping / failing loops writes them to the JSON store."""
+    store = tmp_path / "loops.json"
+    reg = _registry(store_path=store)
+
+    lid1 = reg.register(
+        "c1",
+        "loop 1",
+        interval_seconds=60,
+        max_iterations=3,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    lid2 = reg.register(
+        "c1",
+        "loop 2",
+        interval_seconds=120,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+
+    assert store.exists()
+    data = json.loads(store.read_text())
+    assert len(data) == 2
+    ids = {e["id"] for e in data}
+    assert ids == {lid1, lid2}
+
+    reg.stop(lid1, reason="max_iterations")
+    data = json.loads(store.read_text())
+    stopped = [e for e in data if e["id"] == lid1][0]
+    assert stopped["status"] == "stopped"
+
+    reg.fail(lid2, error="timeout")
+    data = json.loads(store.read_text())
+    failed = [e for e in data if e["id"] == lid2][0]
+    assert failed["status"] == "failed"
+
+
+def test_persistence_record_tick_updates_iterations(tmp_path: Path) -> None:
+    """record_tick increments iteration in the persisted file."""
+    store = tmp_path / "loops.json"
+    reg = _registry(store_path=store)
+
+    lid = reg.register(
+        "c1",
+        "tick persist",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    reg.record_tick(lid, result="ok", next_run=1100.0)
+
+    data = json.loads(store.read_text())
+    entry = [e for e in data if e["id"] == lid][0]
+    assert entry["iterations"] == 1
+    assert entry["last_result"] == "ok"
+
+
+@pytest.mark.asyncio
+async def test_resume_restarts_running_loops(tmp_path: Path) -> None:
+    """Resume re-registers loops that were RUNNING in the persisted file."""
+    store = tmp_path / "loops.json"
+
+    running_loop = {
+        "id": "L-run",
+        "client_id": "c1",
+        "prompt": "resume me",
+        "interval_seconds": 60.0,
+        "max_iterations": 5,
+        "iterations": 2,
+        "status": "running",
+        "last_result": "prior ok",
+    }
+    stopped_loop = {
+        "id": "L-stop",
+        "client_id": "c1",
+        "prompt": "do not resume",
+        "interval_seconds": 60.0,
+        "max_iterations": None,
+        "iterations": 3,
+        "status": "stopped",
+        "last_result": "done",
+    }
+    failed_loop = {
+        "id": "L-fail",
+        "client_id": "c1",
+        "prompt": "broken",
+        "interval_seconds": 60.0,
+        "max_iterations": None,
+        "iterations": 1,
+        "status": "failed",
+        "last_result": None,
+    }
+    store.parent.mkdir(parents=True, exist_ok=True)
+    store.write_text(json.dumps([running_loop, stopped_loop, failed_loop], indent=2))
+
+    bus = EventBus()
+    reg = _registry(sink=bus, store_path=store)
+    settings = _stub_settings()
+
+    resumed = resume_check_loops(
+        reg,
+        settings,
+        agent_factory=lambda s: _StubAgent(["resumed ok"]),
+    )
+
+    assert len(resumed) == 1
+    assert resumed[0] == "L-run"
+
+    info = reg.get("L-run")
+    assert info is not None
+    assert info.status == LoopStatus.RUNNING
+    assert info.prompt == "resume me"
+    assert info.client_id == "c1"
+    assert info.max_iterations == 3  # 5 - 2 remaining
+
+    assert reg.get("L-stop") is None
+    assert reg.get("L-fail") is None
+
+    reg.stop("L-run", reason="test cleanup")
+
+
+def test_resume_missing_file_is_noop(tmp_path: Path) -> None:
+    """When the store file does not exist, resume returns empty."""
+    store = tmp_path / "nonexistent.json"
+    reg = _registry(store_path=store)
+    settings = _stub_settings()
+
+    resumed = resume_check_loops(reg, settings)
+    assert resumed == []
+
+
+def test_resume_skips_exhausted_max_iterations(tmp_path: Path) -> None:
+    """A RUNNING loop whose iterations already reached max is not resumed."""
+    store = tmp_path / "loops.json"
+    running_loop = {
+        "id": "L-done",
+        "client_id": "c1",
+        "prompt": "should not resume",
+        "interval_seconds": 60.0,
+        "max_iterations": 2,
+        "iterations": 2,
+        "status": "running",
+        "last_result": "final",
+    }
+    store.parent.mkdir(parents=True, exist_ok=True)
+    store.write_text(json.dumps([running_loop], indent=2))
+
+    reg = _registry(store_path=store)
+    settings = _stub_settings()
+
+    resumed = resume_check_loops(
+        reg, settings, agent_factory=lambda s: _StubAgent(["ok"])
+    )
+    assert resumed == []
+    assert reg.get("L-done") is None
+
+
+def test_resume_handles_corrupt_file(tmp_path: Path) -> None:
+    """A malformed JSON file does not crash resume."""
+    store = tmp_path / "loops.json"
+    store.parent.mkdir(parents=True, exist_ok=True)
+    store.write_text("not valid json")
+
+    reg = _registry(store_path=store)
+    settings = _stub_settings()
+
+    resumed = resume_check_loops(reg, settings)
+    assert resumed == []
+
+
+# ---------------------------------------------------------------------------
+# MIN_CHECK_LOOP_INTERVAL_SECONDS constant
+# ---------------------------------------------------------------------------
+
+
+def test_min_check_loop_interval_constant() -> None:
+    """The constant is exactly 60.0 — the server ticket depends on this value."""
+    assert MIN_CHECK_LOOP_INTERVAL_SECONDS == 60.0
