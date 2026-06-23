@@ -147,9 +147,11 @@
     word-break: break-word;
   }
   .loop-row .loop-id    { font-family: monospace; font-size: 0.75rem; color: #94a3b8; }
-  .loop-row .loop-desc  { font-weight: 600; margin: 0.15rem 0; }
+  .loop-row .loop-reason { font-weight: 600; margin: 0.15rem 0;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
   .loop-row .loop-meta  { font-size: 0.72rem; color: #94a3b8; }
-  .loop-row .loop-result { margin-top: 0.25rem; font-size: 0.78rem; }
+  .loop-row .loop-result { margin-top: 0.25rem; font-size: 0.78rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
   .loop-row.state-running  { border-left: 3px solid #3b82f6; }
   .loop-row.state-stopped  { border-left: 3px solid #64748b; }
@@ -799,82 +801,90 @@
     var oldRow = loop.rowEl;
     if (oldRow) oldRow.remove();
 
+    // Only running loops are visible; stopped/failed loops disappear.
+    if (loop.state !== "running") {
+      loop.rowEl = null;
+      return;
+    }
+
     var row = document.createElement("div");
-    row.className = "loop-row state-" + loop.state;
+    row.className = "loop-row state-running";
 
     var idSpan = document.createElement("span");
     idSpan.className = "loop-id";
     idSpan.textContent = loop.id.slice(0, 8);
     row.appendChild(idSpan);
 
-    var descDiv = document.createElement("div");
-    descDiv.className = "loop-desc";
-    descDiv.textContent = loop.prompt || "(no prompt)";
-    row.appendChild(descDiv);
+    // Reason/purpose line: explicit reason or truncated prompt.
+    var reasonDiv = document.createElement("div");
+    reasonDiv.className = "loop-reason";
+    var purpose = loop.reason || truncateText(loop.prompt || "(no prompt)", 80);
+    reasonDiv.textContent = purpose;
+    row.appendChild(reasonDiv);
 
+    // Meta line: fire count + interval.
     var metaDiv = document.createElement("div");
     metaDiv.className = "loop-meta";
-    var metaParts = [loop.state];
-    if (loop.iterations > 0) {
-      metaParts.push("iter " + loop.iterations);
-    }
-    if (loop.max_iterations) {
-      metaParts.push("max " + loop.max_iterations);
-    }
+    var metaParts = ["fired " + loop.iterations + "\u00d7"];
     if (loop.interval_seconds) {
-      metaParts.push("every " + loop.interval_seconds + "s");
+      metaParts.push("every " + formatInterval(loop.interval_seconds));
     }
     metaDiv.textContent = metaParts.join(" \u2022 ");
     row.appendChild(metaDiv);
 
+    // Latest feedback (timestamped, summarized).
     if (loop.last_result) {
-      var resultDiv = document.createElement("div");
-      resultDiv.className = "loop-result";
-      resultDiv.textContent = loop.last_result;
-      row.appendChild(resultDiv);
+      var feedbackDiv = document.createElement("div");
+      feedbackDiv.className = "loop-result";
+      var ts = "";
+      if (loop.last_result_at) {
+        ts = new Date(loop.last_result_at * 1000).toLocaleString() + " — ";
+      }
+      feedbackDiv.textContent = ts + truncateText(loop.last_result, 120);
+      row.appendChild(feedbackDiv);
+    } else if (loop.iterations === 0) {
+      var noRunDiv = document.createElement("div");
+      noRunDiv.className = "loop-result";
+      noRunDiv.style.color = "#64748b";
+      noRunDiv.textContent = "no runs yet";
+      row.appendChild(noRunDiv);
     }
+
     if (loop.error) {
       var errorDiv = document.createElement("div");
       errorDiv.className = "loop-result";
       errorDiv.style.color = "#fca5a5";
-      errorDiv.textContent = loop.error;
+      errorDiv.textContent = truncateText(loop.error, 120);
       row.appendChild(errorDiv);
     }
-    if (loop.stop_reason && loop.state !== "running") {
-      var reasonDiv = document.createElement("div");
-      reasonDiv.className = "loop-meta";
-      reasonDiv.textContent = "Reason: " + loop.stop_reason;
-      row.appendChild(reasonDiv);
-    }
 
-    if (loop.state === "running") {
-      var stopBtn = document.createElement("button");
-      stopBtn.className = "loop-stop-btn";
-      stopBtn.textContent = "Stop";
-      stopBtn.addEventListener("click", function () {
-        stopBtn.disabled = true;
-        stopBtn.textContent = "Stopping\u2026";
-        fetch("/loops/" + encodeURIComponent(loop.id) + "/stop", { method: "POST" })
-          .then(function (resp) {
-            if (!resp.ok) {
-              stopBtn.disabled = false;
-              stopBtn.textContent = "Stop";
-              resp.text().then(function (body) {
-                showError("Stop failed: " + (body || resp.statusText));
-              }).catch(function () {
-                showError("Stop failed: " + resp.statusText);
-              });
-            }
-            // On success, rely on loop_stopped SSE to re-render the row.
-          })
-          .catch(function (err) {
+    // Stop button (only for running loops).
+    var stopBtn = document.createElement("button");
+    stopBtn.className = "loop-stop-btn";
+    stopBtn.textContent = "Stop";
+    stopBtn.addEventListener("click", function () {
+      stopBtn.disabled = true;
+      stopBtn.textContent = "Stopping\u2026";
+      fetch("/loops/" + encodeURIComponent(loop.id) + "/stop", { method: "POST" })
+        .then(function (resp) {
+          if (!resp.ok) {
             stopBtn.disabled = false;
             stopBtn.textContent = "Stop";
-            showError("Stop failed: " + (err.message || "Network error"));
-          });
-      });
-      row.appendChild(stopBtn);
-    }
+            resp.text().then(function (body) {
+              showError("Stop failed: " + (body || resp.statusText));
+            }).catch(function () {
+              showError("Stop failed: " + resp.statusText);
+            });
+          }
+          // On success, rely on loop_stopped SSE to re-render the row.
+        })
+        .catch(function (err) {
+          stopBtn.disabled = false;
+          stopBtn.textContent = "Stop";
+          showError("Stop failed: " + (err.message || "Network error"));
+        });
+    });
+    row.appendChild(stopBtn);
 
     loop.rowEl = row;
 
@@ -899,6 +909,19 @@
     }
   }
 
+  function truncateText(text, maxLen) {
+    if (!text) return "";
+    var firstLine = text.split("\n")[0];
+    if (firstLine.length <= maxLen) return firstLine;
+    return firstLine.slice(0, maxLen) + "\u2026";
+  }
+
+  function formatInterval(seconds) {
+    if (seconds < 60) return seconds + "s";
+    if (seconds < 3600) return (seconds / 60).toFixed(1).replace(/\.0$/, "") + "m";
+    return (seconds / 3600).toFixed(1).replace(/\.0$/, "") + "h";
+  }
+
   function updateLoopPanel(frame) {
     var lid = frame.loop_id;
     if (!lid) return;
@@ -910,11 +933,13 @@
         loop = {
           id: lid,
           prompt: frame.prompt || "",
+          reason: frame.reason || null,
           interval_seconds: frame.interval_seconds || 0,
           max_iterations: frame.max_iterations || null,
           state: "running",
           iterations: 0,
           last_result: null,
+          last_result_at: null,
           next_run: null,
           error: null,
           stop_reason: null,
@@ -924,6 +949,7 @@
         loopsOrder.push(lid);
       }
       loop.prompt = frame.prompt || loop.prompt;
+      if (frame.reason !== undefined) loop.reason = frame.reason;
       loop.interval_seconds = frame.interval_seconds || loop.interval_seconds;
       if (frame.max_iterations !== undefined) {
         loop.max_iterations = frame.max_iterations;
@@ -934,11 +960,13 @@
         loop = {
           id: lid,
           prompt: "",
+          reason: null,
           interval_seconds: 0,
           max_iterations: null,
           state: "running",
           iterations: frame.iteration || 0,
           last_result: frame.result || null,
+          last_result_at: frame.last_result_at || null,
           next_run: frame.next_run || null,
           error: null,
           stop_reason: null,
@@ -950,6 +978,7 @@
         loop.state = "running";
         loop.iterations = frame.iteration || loop.iterations;
         if (frame.result !== undefined) loop.last_result = frame.result;
+        if (frame.last_result_at !== undefined) loop.last_result_at = frame.last_result_at;
         if (frame.next_run !== undefined) loop.next_run = frame.next_run;
       }
     } else if (frame.type === "loop_stopped") {
@@ -957,11 +986,13 @@
         loop = {
           id: lid,
           prompt: "",
+          reason: null,
           interval_seconds: 0,
           max_iterations: null,
           state: "stopped",
           iterations: frame.iterations || 0,
           last_result: null,
+          last_result_at: null,
           next_run: null,
           error: null,
           stop_reason: frame.reason || null,
@@ -979,11 +1010,13 @@
         loop = {
           id: lid,
           prompt: "",
+          reason: null,
           interval_seconds: 0,
           max_iterations: null,
           state: "failed",
           iterations: 0,
           last_result: null,
+          last_result_at: null,
           next_run: null,
           error: frame.error || null,
           stop_reason: null,
@@ -1286,11 +1319,13 @@
         var loop = {
           id: lid,
           prompt: entry.prompt || "",
+          reason: entry.reason || null,
           interval_seconds: entry.interval_seconds || 0,
           max_iterations: entry.max_iterations || null,
           state: entry.status || "running",
           iterations: entry.iterations || 0,
           last_result: entry.last_result || null,
+          last_result_at: entry.last_result_at || null,
           next_run: entry.next_run || null,
           error: entry.error || null,
           stop_reason: entry.stop_reason || null,
@@ -1304,9 +1339,11 @@
           loop.state = existing.state;
           loop.iterations = existing.iterations;
           loop.last_result = existing.last_result || loop.last_result;
+          loop.last_result_at = existing.last_result_at || loop.last_result_at;
           loop.next_run = existing.next_run || loop.next_run;
           loop.error = existing.error || loop.error;
           loop.stop_reason = existing.stop_reason || loop.stop_reason;
+          loop.reason = existing.reason || loop.reason;
         }
 
         loopsById[lid] = loop;

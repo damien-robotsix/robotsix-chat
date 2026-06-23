@@ -420,6 +420,8 @@ async def loops_list_endpoint(request: Request) -> JSONResponse:
                 "next_run": info.next_run,
                 "error": info.error,
                 "stop_reason": info.stop_reason,
+                "reason": info.reason,
+                "last_result_at": info.last_result_at,
             }
         )
     return JSONResponse({"loops": result})

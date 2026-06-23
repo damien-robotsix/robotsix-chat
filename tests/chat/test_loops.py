@@ -80,6 +80,7 @@ class _StubAgent:
         history: list[tuple[str, str]] | None = None,
         session_id: str | None = None,
         client_id: str | None = None,
+        images: list[tuple[str, bytes]] | None = None,
     ) -> AsyncIterator[str]:
         for chunk in self.chunks:
             yield chunk
@@ -98,6 +99,7 @@ class _FailingAgent:
         history: list[tuple[str, str]] | None = None,
         session_id: str | None = None,
         client_id: str | None = None,
+        images: list[tuple[str, bytes]] | None = None,
     ) -> AsyncIterator[str]:
         raise self.exc
         yield  # pragma: no cover
@@ -121,6 +123,7 @@ class _VariableAgent:
         history: list[tuple[str, str]] | None = None,
         session_id: str | None = None,
         client_id: str | None = None,
+        images: list[tuple[str, bytes]] | None = None,
     ) -> AsyncIterator[str]:
         self.call_count += 1
         result = self.responses.pop(0) if self.responses else "fallback"
@@ -316,6 +319,60 @@ def test_record_tick_increments_iteration_and_stores_result() -> None:
     assert info.next_run == 1100.0
 
 
+def test_record_tick_sets_last_result_at() -> None:
+    """Calling ``record_tick()`` sets ``last_result_at`` to a positive float."""
+    import time as _time
+
+    reg = _registry()
+    before = _time.time()
+    lid = reg.register(
+        "c1",
+        "timestamp test",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    reg.record_tick(lid, result="ok", next_run=0.0)
+    after = _time.time()
+
+    info = reg.get(lid)
+    assert info is not None
+    assert isinstance(info.last_result_at, float)
+    assert info.last_result_at > 0
+    assert before <= info.last_result_at <= after
+
+
+def test_register_stores_reason() -> None:
+    """``register`` stores the optional ``reason`` field."""
+    reg = _registry()
+    lid = reg.register(
+        "c1",
+        "check stocks",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+        reason="Monitor stock prices every minute",
+    )
+    info = reg.get(lid)
+    assert info is not None
+    assert info.reason == "Monitor stock prices every minute"
+
+
+def test_register_reason_defaults_to_none() -> None:
+    """When ``reason`` is omitted, it defaults to ``None``."""
+    reg = _registry()
+    lid = reg.register(
+        "c1",
+        "silent check",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    info = reg.get(lid)
+    assert info is not None
+    assert info.reason is None
+
+
 def test_record_tick_ignores_unknown_id() -> None:
     """Calling ``record_tick()`` on an unknown id does not raise."""
     reg = _registry()
@@ -501,7 +558,15 @@ def test_registry_publishes_tick_frame_on_record_tick() -> None:
 
     reg.record_tick(lid, result="ok", next_run=1100.0)
     frame = q.get_nowait()
-    assert frame == loop_tick_frame(lid, iteration=1, result="ok", next_run=1100.0)
+    last_result_at = frame["last_result_at"]
+    assert isinstance(last_result_at, float)
+    assert frame == loop_tick_frame(
+        lid,
+        iteration=1,
+        result="ok",
+        next_run=1100.0,
+        last_result_at=last_result_at,
+    )
 
 
 def test_registry_publishes_stopped_frame_on_stop() -> None:
@@ -579,6 +644,12 @@ def test_loop_started_frame_shape() -> None:
         "status": "running",
     }
 
+    # With reason supplied.
+    frame_reason = loop_started_frame(
+        "L1", "c1", "check health", 30.0, 10, reason="Health check"
+    )
+    assert frame_reason["reason"] == "Health check"
+
 
 def test_loop_tick_frame_shape() -> None:
     """``loop_tick_frame`` returns the documented dict shape."""
@@ -590,6 +661,7 @@ def test_loop_tick_frame_shape() -> None:
         "result": "all ok",
         "next_run": 1500.0,
         "status": "running",
+        "last_result_at": None,
     }
 
 
@@ -638,6 +710,7 @@ async def test_spawn_runs_first_iteration_and_publishes_tick() -> None:
             history: list[tuple[str, str]] | None = None,
             session_id: str | None = None,
             client_id: str | None = None,
+            images: list[tuple[str, bytes]] | None = None,
         ) -> AsyncIterator[str]:
             called.append(message)
             for c in ["all good"]:
@@ -686,6 +759,7 @@ async def test_spawn_returns_immediately() -> None:
             history: list[tuple[str, str]] | None = None,
             session_id: str | None = None,
             client_id: str | None = None,
+            images: list[tuple[str, bytes]] | None = None,
         ) -> AsyncIterator[str]:
             started.set()
             await finish.wait()
@@ -986,6 +1060,7 @@ class _SpySleepAgent:
         history: list[tuple[str, str]] | None = None,
         session_id: str | None = None,
         client_id: str | None = None,
+        images: list[tuple[str, bytes]] | None = None,
     ) -> AsyncIterator[str]:
         yield "waiting"
         await asyncio.sleep(3600)
@@ -1207,24 +1282,73 @@ def test_persistence_writes_on_register_stop_fail(tmp_path: Path) -> None:
     assert failed["status"] == "failed"
 
 
-def test_persistence_record_tick_updates_iterations(tmp_path: Path) -> None:
-    """record_tick increments iteration in the persisted file."""
+def test_persistence_round_trips_reason_and_last_result_at(tmp_path: Path) -> None:
+    """``reason`` and ``last_result_at`` survive a persist→load round-trip."""
+    import json
+
     store = tmp_path / "loops.json"
     reg = _registry(store_path=store)
 
     lid = reg.register(
         "c1",
-        "tick persist",
-        interval_seconds=60,
-        max_iterations=None,
+        "persist me",
+        interval_seconds=90.0,
+        max_iterations=3,
         coro=_fake_coro(),  # type: ignore[arg-type]
+        reason="Check health every 90s",
     )
-    reg.record_tick(lid, result="ok", next_run=1100.0)
+    reg.record_tick(lid, result="ok so far", next_run=2000.0)
 
     data = json.loads(store.read_text())
-    entry = [e for e in data if e["id"] == lid][0]
-    assert entry["iterations"] == 1
-    assert entry["last_result"] == "ok"
+    entry = next(e for e in data if e["id"] == lid)
+    assert entry["reason"] == "Check health every 90s"
+    assert isinstance(entry["last_result_at"], (int, float))
+    assert entry["last_result_at"] > 0
+
+
+@pytest.mark.asyncio
+async def test_persistence_loads_missing_reason_and_last_result_at_defaults_to_none(
+    tmp_path: Path,
+) -> None:
+    """A persisted file missing ``reason`` and ``last_result_at`` loads cleanly.
+
+    The new fields default to ``None`` when absent — no error.
+    """
+    import json
+
+    store = tmp_path / "loops.json"
+    old_format_loop = {
+        "id": "L-old",
+        "client_id": "c-old",
+        "prompt": "old format loop",
+        "interval_seconds": 60.0,
+        "max_iterations": None,
+        "iterations": 0,
+        "status": "running",
+        "last_result": None,
+    }
+    store.parent.mkdir(parents=True, exist_ok=True)
+    store.write_text(json.dumps([old_format_loop], indent=2))
+
+    reg = _registry(store_path=store)
+    from robotsix_chat.chat.loops import resume_check_loops
+
+    settings = _stub_settings()
+    resumed = resume_check_loops(
+        reg,
+        settings,
+        agent_factory=lambda s: _StubAgent(["resumed"]),
+    )
+    # The old-format loop was running → should resume.
+    assert resumed == ["L-old"]
+    info = reg.get("L-old")
+    assert info is not None
+    assert info.reason is None
+    assert info.last_result_at is None
+
+    # Cleanup.
+    reg.stop("L-old", reason="test teardown")
+    await asyncio.sleep(0.05)
 
 
 @pytest.mark.asyncio

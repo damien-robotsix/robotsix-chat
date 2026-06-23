@@ -1,0 +1,1 @@
+robotsix-chat: clean up stopped check loops in the UI and make loop display more readable

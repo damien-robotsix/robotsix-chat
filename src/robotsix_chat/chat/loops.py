@@ -84,6 +84,8 @@ class LoopInfo:
     next_run: float | None = None
     error: str | None = None
     stop_reason: str | None = None
+    reason: str | None = None
+    last_result_at: float | None = None
 
 
 # ---------------------------------------------------------------------------
@@ -138,12 +140,16 @@ class CheckLoopRegistry:
         max_iterations: int | None,
         coro: asyncio.Task[None],
         loop_id: str | None = None,
+        reason: str | None = None,
     ) -> str:
         """Register a new check loop for *client_id*.
 
         *coro* must be an already-scheduled :class:`asyncio.Task` (created via
         :func:`asyncio.create_task`). The registry stores a strong reference to
         it and arranges for that reference to be dropped when the task finishes.
+
+        *reason* is an optional short human-readable summary of what this loop
+        checks for.  When absent, the UI falls back to a truncated prompt.
 
         When *loop_id* is provided it is used directly; otherwise a new id is
         generated via the ``id_factory``.  This allows the resume hook to
@@ -159,6 +165,7 @@ class CheckLoopRegistry:
             interval_seconds=interval_seconds,
             max_iterations=max_iterations,
             status=LoopStatus.RUNNING,
+            reason=reason,
         )
         self._loops[loop_id] = info
         self._running[loop_id] = coro
@@ -168,7 +175,12 @@ class CheckLoopRegistry:
             self._event_sink.publish(
                 client_id,
                 loop_started_frame(
-                    loop_id, client_id, prompt, interval_seconds, max_iterations
+                    loop_id,
+                    client_id,
+                    prompt,
+                    interval_seconds,
+                    max_iterations,
+                    reason=reason,
                 ),
             )
         self._persist()
@@ -192,11 +204,16 @@ class CheckLoopRegistry:
         info.iterations += 1
         info.last_result = result
         info.next_run = next_run
+        info.last_result_at = time.time()
         if self._event_sink is not None:
             self._event_sink.publish(
                 info.client_id,
                 loop_tick_frame(
-                    loop_id, iteration=info.iterations, result=result, next_run=next_run
+                    loop_id,
+                    iteration=info.iterations,
+                    result=result,
+                    next_run=next_run,
+                    last_result_at=info.last_result_at,
                 ),
             )
         self._persist()
@@ -284,6 +301,8 @@ class CheckLoopRegistry:
                     "iterations": info.iterations,
                     "status": info.status.value,
                     "last_result": info.last_result,
+                    "reason": info.reason,
+                    "last_result_at": info.last_result_at,
                 }
             )
         try:
@@ -309,6 +328,7 @@ def spawn_check_loop(
     agent_factory: Callable[[Settings], ChatAgent] | None = None,
     loop_id: str | None = None,
     channel: DeliveryChannel = NULL_CHANNEL,
+    reason: str | None = None,
 ) -> str:
     """Schedule a recurring check prompt; return the loop id immediately.
 
@@ -431,6 +451,7 @@ def spawn_check_loop(
         max_iterations=max_iterations,
         coro=task,
         loop_id=loop_id,
+        reason=reason,
     )
     id_future.set_result(loop_id)
     return loop_id
@@ -514,6 +535,7 @@ def resume_check_loops(
                 agent_factory=agent_factory,
                 loop_id=loop_id,
                 channel=channel,
+                reason=entry.get("reason"),
             )
         except (LoopCapacityError, LoopIntervalError) as exc:
             logger.warning("Could not resume check loop %s: %s", loop_id, exc)
