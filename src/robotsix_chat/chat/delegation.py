@@ -24,6 +24,7 @@ from typing import Any
 
 from robotsix_chat.chat.runner import (
     DeliveryChannel,
+    TaskCapacityError,
     spawn_subagent_task,
     task_started_frame,
 )
@@ -118,7 +119,16 @@ def build_delegation_tools(
         )
         if agent_factory is not None:
             kwargs["agent_factory"] = agent_factory
-        task_id = spawn_subagent_task(**kwargs)
+
+        try:
+            task_id = spawn_subagent_task(**kwargs)
+        except TaskCapacityError as exc:
+            logger.info("delegate_task rejected: %s", exc)
+            return (
+                "I couldn't start a new background task right now — too many are "
+                "already running. Ask me again once some have finished."
+            )
+
         # Best-effort: publish a task_started frame so any listening SSE
         # channel learns about the task immediately.  When the channel
         # raises, we log and swallow — the task is already registered.

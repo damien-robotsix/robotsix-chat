@@ -39,6 +39,15 @@ from robotsix_chat.config import Settings
 logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
+# Exception
+# ---------------------------------------------------------------------------
+
+
+class TaskCapacityError(RuntimeError):
+    """Raised when the background-task concurrency cap is reached."""
+
+
+# ---------------------------------------------------------------------------
 # Delivery-channel abstraction (Protocol, so any concrete events registry
 # from Ticket 1 satisfies it by duck typing — no explicit ``implements``).
 # ---------------------------------------------------------------------------
@@ -114,7 +123,17 @@ def spawn_subagent_task(
     On completion the registry is updated and a notification frame is pushed
     through *channel*. On failure the registry is updated with the error and
     a failure frame is pushed (a channel error is logged, not propagated).
+
+    Raises :class:`TaskCapacityError` when the process-wide concurrency cap
+    (``settings.max_background_tasks``) has been reached.
     """
+    # Guard: enforce the process-wide concurrency cap before scheduling anything.
+    if registry.count_running() >= settings.max_background_tasks:
+        raise TaskCapacityError(
+            f"background-task limit reached "
+            f"({settings.max_background_tasks} concurrent)"
+        )
+
     # Race-free handshake: the worker coroutine needs its own task_id, but the
     # id is only known after ``registry.register`` returns.  ``asyncio.create_task``
     # schedules the coroutine but does not run it until the next await point,

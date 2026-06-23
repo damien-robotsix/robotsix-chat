@@ -9,6 +9,7 @@ from typing import Any
 import pytest
 
 from robotsix_chat.chat.runner import (
+    TaskCapacityError,
     spawn_subagent_task,
     task_completed_frame,
     task_failed_frame,
@@ -373,3 +374,64 @@ async def test_task_id_handshake_consistent() -> None:
     assert len(channel.frames) == 1
     _, frame = channel.frames[0]
     assert frame["task_id"] == tid  # worker's id matches returned id
+
+
+# ---------------------------------------------------------------------------
+# spawn_subagent_task — concurrency cap
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_spawn_respects_capacity_limit() -> None:
+    """``spawn_subagent_task`` raises ``TaskCapacityError`` when at capacity."""
+    registry = TaskRegistry()
+    channel = _FakeDeliveryChannel()
+    settings = Settings(max_background_tasks=1)
+
+    # Inject a running task so the cap is reached.
+    _tid_existing = registry.register(
+        "c1", "existing", asyncio.create_task(asyncio.sleep(0))
+    )
+
+    assert registry.count_running() == 1
+    assert registry.count_running() >= settings.max_background_tasks
+
+    with pytest.raises(TaskCapacityError, match="background-task limit reached"):
+        spawn_subagent_task(
+            client_id="c1",
+            prompt="should be rejected",
+            settings=settings,
+            registry=registry,
+            channel=channel,
+            agent_factory=lambda s: _StubAgent(["nope"]),
+        )
+
+    # No new task was scheduled — the registry count is unchanged.
+    assert registry.count_running() == 1
+
+
+@pytest.mark.asyncio
+async def test_spawn_allows_when_below_capacity() -> None:
+    """``spawn_subagent_task`` succeeds when count is below the cap."""
+    registry = TaskRegistry()
+    channel = _FakeDeliveryChannel()
+    settings = Settings(max_background_tasks=2)
+
+    # One running task — still below the cap of 2.
+    registry.register("c1", "existing", asyncio.create_task(asyncio.sleep(0)))
+
+    assert registry.count_running() == 1
+    assert registry.count_running() < settings.max_background_tasks
+
+    tid = spawn_subagent_task(
+        client_id="c1",
+        prompt="allowed",
+        settings=settings,
+        registry=registry,
+        channel=channel,
+        agent_factory=lambda s: _StubAgent(["ok"]),
+    )
+
+    assert tid
+    # A new running entry was added (the cap wasn't hit).
+    assert registry.count_running() == 2
