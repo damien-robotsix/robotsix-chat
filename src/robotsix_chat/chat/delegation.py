@@ -8,18 +8,18 @@ Usage::
 
     from robotsix_chat.chat.delegation import (
         build_delegation_tools,
-        current_client_id,
         NullDeliveryChannel,
     )
 
-    tools = build_delegation_tools(settings, registry, channel)
+    tools = build_delegation_tools(
+        settings, registry, channel, client_id="browser-1",
+    )
 """
 
 from __future__ import annotations
 
 import logging
 from collections.abc import Callable
-from contextvars import ContextVar
 from typing import Any
 
 from robotsix_chat.chat.runner import (
@@ -33,15 +33,6 @@ from robotsix_chat.chat.tasks import TaskRegistry
 from robotsix_chat.config import Settings
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# Per-request client id — set by the chat endpoint so the delegation tool can
-# tag spawned tasks with the owning client.
-# ---------------------------------------------------------------------------
-
-current_client_id: ContextVar[str | None] = ContextVar(
-    "current_client_id", default=None
-)
 
 # ---------------------------------------------------------------------------
 # Placeholder delivery channel — a no-op until Ticket 1 lands a concrete
@@ -71,6 +62,7 @@ def build_delegation_tools(
     registry: TaskRegistry,
     channel: DeliveryChannel,
     *,
+    client_id: str = "",
     agent_factory: Callable[[Settings], ChatAgent] | None = None,
 ) -> list[Callable[..., Any]]:
     """Return the ``delegate_task`` tool for the foreground chat agent.
@@ -78,6 +70,10 @@ def build_delegation_tools(
     When wired into the agent's tools list, the model can call
     ``delegate_task`` to offload long-running work to a background sub-agent
     of the same tier.
+
+    *client_id* is captured lexically in the returned tool closure so it
+    survives the claude_sdk / MCP execution-context boundary — unlike a
+    ContextVar, which is invisible there.
 
     *agent_factory* is forwarded to
     :func:`~robotsix_chat.chat.runner.spawn_subagent_task`; when ``None``
@@ -106,7 +102,7 @@ def build_delegation_tools(
             completion.
 
         """
-        cid = current_client_id.get() or ""
+        cid = client_id
 
         # Build kwargs, omitting agent_factory when None so the runner uses
         # its own default (create_agent_from_settings, no delegation tools).

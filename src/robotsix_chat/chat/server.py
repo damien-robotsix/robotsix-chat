@@ -11,7 +11,7 @@ import contextlib
 import json
 import logging
 import logging.config
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from importlib import resources
 from typing import TYPE_CHECKING, Any, Protocol
 
@@ -71,12 +71,14 @@ class ChatAgent(Protocol):
     ``AsyncIterator[str]`` satisfies this protocol — no subclassing
     required.  (An ``async def`` generator method naturally returns an
     async iterator, so real implementations just write ``async def
-    stream(self, message: str, *, history=None, session_id=None) ->
-    AsyncIterator[str]:`` with ``yield``.)
+    stream(self, message: str, *, history=None, session_id=None,
+    client_id=None) -> AsyncIterator[str]:`` with ``yield``.)
 
-    *history* (prior ``(user, assistant)`` turns) and *session_id* (trace
-    grouping) are optional keyword arguments the server supplies for multi-turn
-    conversations; an agent free to ignore them stays a stateless single query.
+    *history* (prior ``(user, assistant)`` turns), *session_id* (trace
+    grouping), and *client_id* (owning browser) are optional keyword
+    arguments the server supplies for multi-turn conversations and
+    per-request delegation-tool scoping; an agent free to ignore them
+    stays a stateless single query.
     """
 
     def stream(
@@ -85,6 +87,7 @@ class ChatAgent(Protocol):
         *,
         history: list[tuple[str, str]] | None = None,
         session_id: str | None = None,
+        client_id: str | None = None,
     ) -> AsyncIterator[str]:
         """Yield tokens from the LLM in response to ``message``."""
         ...
@@ -150,13 +153,6 @@ async def chat_endpoint(
     else:
         session_id, history = store.new_session_id(), None
 
-    # Let any delegation tool invoked during this request tag spawned tasks
-    # with the owning client id.  Function-local import keeps the module
-    # dependency acyclic (delegation → runner → server).
-    from robotsix_chat.chat.delegation import current_client_id
-
-    current_client_id.set(client_id)
-
     # -- SSE async generator ----------------------------------------------
 
     async def sse_stream() -> AsyncIterator[bytes]:
@@ -169,7 +165,10 @@ async def chat_endpoint(
             reply_parts: list[str] = []
             try:
                 async for token in agent.stream(
-                    message, history=history, session_id=session_id
+                    message,
+                    history=history,
+                    session_id=session_id,
+                    client_id=client_id,
                 ):
                     reply_parts.append(token)
                     await queue.put((SSE_TOKEN_TYPE, token))
@@ -301,6 +300,7 @@ def create_app(
     correlation_id_header: str = "X-Request-ID",
     conversation_store: ConversationStore | None = None,
     task_registry: TaskRegistry | None = None,
+    event_bus: EventBus | None = None,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -330,6 +330,11 @@ def create_app(
             created and wired to the internal event bus.  Pass an existing
             instance to share the same registry between the foreground
             agent's delegation tool and the ``GET /events`` SSE endpoint.
+        event_bus: Per-client SSE notification bus for ``GET /events``.
+            When ``None`` (default), a fresh :class:`EventBus` is created.
+            Pass the same instance given to the :class:`TaskRegistry` so
+            lifecycle frames published by the registry reach the SSE
+            subscribers.
 
     """
     routes = [
@@ -370,7 +375,7 @@ def create_app(
     app.state.agent = agent
     app.state.conversation_store = conversation_store or ConversationStore()
     app.state.idle_timeout_minutes = idle_timeout_minutes
-    app.state.event_bus = EventBus()
+    app.state.event_bus = event_bus or EventBus()
     app.state.task_registry = task_registry or TaskRegistry(
         event_sink=app.state.event_bus
     )
@@ -389,6 +394,7 @@ def run_server(
     correlation_id_header: str = "X-Request-ID",
     conversation_store: ConversationStore | None = None,
     task_registry: TaskRegistry | None = None,
+    event_bus: EventBus | None = None,
 ) -> None:
     """Start the chat SSE server on ``host:port``.
 
@@ -406,6 +412,7 @@ def run_server(
         correlation_id_header=correlation_id_header,
         conversation_store=conversation_store,
         task_registry=task_registry,
+        event_bus=event_bus,
     )
     uvicorn.run(app, host=host, port=port)
 
@@ -458,16 +465,26 @@ def create_agent_from_settings(
     ]
     # Attach the delegation tool only for the foreground agent (both
     # registry and channel are required — sub-agents get neither).
+    # The factory lambda is called once per stream() invocation with the
+    # request's client_id, so the delegate_task closure captures the
+    # owning client lexically — surviving the claude_sdk/MCP boundary.
+    request_tools_factory: Callable[[str], list[Any]] | None = None
     if task_registry is not None and delivery_channel is not None:
         from robotsix_chat.chat.delegation import build_delegation_tools
 
-        tools.extend(build_delegation_tools(settings, task_registry, delivery_channel))
+        def _make_delegation_tools(cid: str) -> list[Any]:
+            return build_delegation_tools(
+                settings, task_registry, delivery_channel, client_id=cid
+            )
+
+        request_tools_factory = _make_delegation_tools
     return LlmioChatAgent(
         model_level=settings.llmio_model_level,
         instruction=instruction,
         api_key=api_key,
         memory=build_memory(settings.memory),
         tools=tools,
+        request_tools_factory=request_tools_factory,
     )
 
 
@@ -539,12 +556,15 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     _setup_observability()
 
     # -- shared task registry + delivery channel for delegation -----------
-    # A single TaskRegistry backs both the foreground agent's delegate_task
-    # tool and GET /events (via app.state.task_registry).  The channel is a
-    # NullDeliveryChannel until Ticket 1 lands a concrete SSE adapter.
+    # A single EventBus backs both the foreground agent's delegate_task
+    # tool (via registry.event_sink) and GET /events (via
+    # app.state.event_bus).  The channel is a NullDeliveryChannel: the
+    # registry's event_sink is the single authoritative lifecycle publisher,
+    # so no duplicate frames reach /events subscribers.
     from robotsix_chat.chat.delegation import NullDeliveryChannel
 
-    registry = TaskRegistry()
+    event_bus = EventBus()
+    registry = TaskRegistry(event_sink=event_bus)
     channel = NullDeliveryChannel()
 
     if agent is None:
@@ -576,4 +596,5 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         correlation_id_header=settings.correlation_id_header,
         conversation_store=conversation_store,
         task_registry=registry,
+        event_bus=event_bus,
     )

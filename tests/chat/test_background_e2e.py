@@ -15,7 +15,7 @@ from typing import Any
 
 import pytest
 
-from robotsix_chat.chat.delegation import build_delegation_tools, current_client_id
+from robotsix_chat.chat.delegation import build_delegation_tools
 from robotsix_chat.chat.events import EventBus
 from robotsix_chat.chat.tasks import TaskRegistry
 from robotsix_chat.config import Settings
@@ -37,6 +37,7 @@ class _StubAgent:
         *,
         history: list[tuple[str, str]] | None = None,
         session_id: str | None = None,
+        client_id: str | None = None,
     ) -> AsyncIterator[str]:
         for chunk in self.chunks:
             yield chunk
@@ -54,6 +55,7 @@ class _FailingAgent:
         *,
         history: list[tuple[str, str]] | None = None,
         session_id: str | None = None,
+        client_id: str | None = None,
     ) -> AsyncIterator[str]:
         raise self.exc
         yield  # make this an async generator  # pragma: no cover
@@ -119,17 +121,14 @@ async def test_e2e_happy_path_task_started_to_completed() -> None:
         settings,
         registry,
         channel,
+        client_id="c1",
         agent_factory=lambda s: _StubAgent(["result:", " 42"]),
     )
     delegate_task_fn = tools[0]
 
     q = bus.subscribe("c1")
 
-    current_client_id.set("c1")
-    try:
-        result = await delegate_task_fn("solve the ultimate question")
-    finally:
-        current_client_id.set(None)
+    result = await delegate_task_fn("solve the ultimate question")
 
     assert isinstance(result, str)
     assert "task" in result.lower()
@@ -175,17 +174,14 @@ async def test_e2e_failure_path_task_started_to_failed() -> None:
         settings,
         registry,
         channel,
+        client_id="c2",
         agent_factory=lambda s: _FailingAgent(exc),
     )
     delegate_task_fn = tools[0]
 
     q = bus.subscribe("c2")
 
-    current_client_id.set("c2")
-    try:
-        result = await delegate_task_fn("risky operation")
-    finally:
-        current_client_id.set(None)
+    result = await delegate_task_fn("risky operation")
 
     assert isinstance(result, str)
 
@@ -226,6 +222,7 @@ async def test_e2e_frames_isolated_per_client() -> None:
         settings,
         registry,
         channel,
+        client_id="client-a",
         agent_factory=lambda s: _StubAgent(["ok"]),
     )
     delegate_task_fn = tools[0]
@@ -233,11 +230,7 @@ async def test_e2e_frames_isolated_per_client() -> None:
     q_a = bus.subscribe("client-a")
     q_b = bus.subscribe("client-b")
 
-    current_client_id.set("client-a")
-    try:
-        await delegate_task_fn("task for a")
-    finally:
-        current_client_id.set(None)
+    await delegate_task_fn("task for a")
 
     await asyncio.sleep(0.1)
 

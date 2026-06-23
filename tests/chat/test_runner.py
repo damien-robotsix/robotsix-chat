@@ -44,6 +44,7 @@ class _StubAgent:
         *,
         history: list[tuple[str, str]] | None = None,
         session_id: str | None = None,
+        client_id: str | None = None,
     ) -> AsyncIterator[str]:
         for chunk in self.chunks:
             yield chunk
@@ -61,6 +62,7 @@ class _FailingAgent:
         *,
         history: list[tuple[str, str]] | None = None,
         session_id: str | None = None,
+        client_id: str | None = None,
     ) -> AsyncIterator[str]:
         raise self.exc
         yield  # make this an async generator so ``async for`` works  # pragma: no cover
@@ -156,6 +158,7 @@ async def test_spawn_success_returns_immediately() -> None:
             *,
             history: list[tuple[str, str]] | None = None,
             session_id: str | None = None,
+            client_id: str | None = None,
         ) -> AsyncIterator[str]:
             started.set()
             await finish.wait()
@@ -354,6 +357,7 @@ async def test_task_id_handshake_consistent() -> None:
             *,
             history: list[tuple[str, str]] | None = None,
             session_id: str | None = None,
+            client_id: str | None = None,
         ) -> AsyncIterator[str]:
             yield "captured"
 

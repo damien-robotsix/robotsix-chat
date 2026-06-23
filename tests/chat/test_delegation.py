@@ -11,7 +11,6 @@ import pytest
 from robotsix_chat.chat.delegation import (
     NullDeliveryChannel,
     build_delegation_tools,
-    current_client_id,
 )
 from robotsix_chat.chat.runner import (
     task_started_frame,
@@ -54,6 +53,7 @@ class _StubAgent:
         *,
         history: list[tuple[str, str]] | None = None,
         session_id: str | None = None,
+        client_id: str | None = None,
     ) -> AsyncIterator[str]:
         for chunk in self.chunks:
             yield chunk
@@ -133,6 +133,7 @@ async def test_delegate_task_does_not_await_completion() -> None:
             *,
             history: list[tuple[str, str]] | None = None,
             session_id: str | None = None,
+            client_id: str | None = None,
         ) -> AsyncIterator[str]:
             await finish.wait()
             yield "finally done"
@@ -174,41 +175,35 @@ async def test_delegate_task_does_not_await_completion() -> None:
 
 @pytest.mark.asyncio
 async def test_task_registered_with_correct_client_id() -> None:
-    """The registered task's client_id matches ``current_client_id``."""
+    """The registered task's client_id matches the one passed to the factory."""
     registry = TaskRegistry()
     channel = _FakeDeliveryChannel()
     settings = Settings()
 
-    current_client_id.set("browser-42")
-    try:
-        tools = build_delegation_tools(
-            settings,
-            registry,
-            channel,
-            agent_factory=lambda s: _StubAgent(["ok"]),
-        )
-        delegate_task = tools[0]
+    tools = build_delegation_tools(
+        settings,
+        registry,
+        channel,
+        client_id="browser-42",
+        agent_factory=lambda s: _StubAgent(["ok"]),
+    )
+    delegate_task = tools[0]
 
-        result = await delegate_task("client-aware work")
-        task_id = _extract_task_id(result)
+    result = await delegate_task("client-aware work")
+    task_id = _extract_task_id(result)
 
-        info = registry.get(task_id)
-        assert info is not None
-        assert info.client_id == "browser-42"
-        assert info.prompt == "client-aware work"
-    finally:
-        current_client_id.set(None)
+    info = registry.get(task_id)
+    assert info is not None
+    assert info.client_id == "browser-42"
+    assert info.prompt == "client-aware work"
 
 
 @pytest.mark.asyncio
-async def test_task_client_id_falls_back_to_empty_string() -> None:
-    """When ``current_client_id`` is unset, the task uses ``""``."""
+async def test_task_client_id_defaults_to_empty_string() -> None:
+    """When ``client_id`` is not passed to the factory, the task uses ``""``."""
     registry = TaskRegistry()
     channel = _FakeDeliveryChannel()
     settings = Settings()
-
-    # Ensure the context var is at its default.
-    current_client_id.set(None)
 
     tools = build_delegation_tools(
         settings,
@@ -358,22 +353,28 @@ def test_sub_agent_has_no_delegate_tool() -> None:
 
     A sub-agent built via ``create_agent_from_settings(settings=...)``
     — without task_registry or delivery_channel — must NOT expose a
-    ``delegate_task`` tool.
+    ``delegate_task`` tool (neither in static tools nor in the per-request
+    factory).
     """
     agent = create_agent_from_settings(settings=Settings())
     tools = agent._tools
+    request_tools_factory = agent._request_tools_factory
 
-    # With no other tools enabled (mill/calendar/refdocs disabled by default),
-    # there should be no tools at all.
+    # Static tools: no delegate_task.
     if tools is not None:
         names = [getattr(t, "__name__", str(t)) for t in tools]
         assert "delegate_task" not in names, (
-            "Sub-agent must not receive the delegate_task tool"
+            "Sub-agent must not receive the delegate_task tool statically"
         )
+
+    # Per-request factory: not set for sub-agents.
+    assert request_tools_factory is None, (
+        "Sub-agent must not have a request_tools_factory"
+    )
 
 
 def test_foreground_agent_gets_delegate_tool() -> None:
-    """A foreground agent built with registry and channel DOES get the tool."""
+    """A foreground agent built with registry and channel gets the tool."""
     registry = TaskRegistry()
     channel = _FakeDeliveryChannel()
     settings = Settings()
@@ -383,12 +384,22 @@ def test_foreground_agent_gets_delegate_tool() -> None:
         task_registry=registry,
         delivery_channel=channel,
     )
-    tools = agent._tools
-    assert tools is not None
-    names = [getattr(t, "__name__", str(t)) for t in tools]
-    assert "delegate_task" in names, (
-        "Foreground agent must receive the delegate_task tool"
+    # Static tools don't include delegate_task (it's in the per-request
+    # factory so the closure captures client_id correctly).
+    static_tools = agent._tools
+    if static_tools is not None:
+        names = [getattr(t, "__name__", str(t)) for t in static_tools]
+        assert "delegate_task" not in names, (
+            "delegate_task should be in request_tools_factory, not static tools"
+        )
+
+    # The per-request factory is set and, when called, returns the tool.
+    assert agent._request_tools_factory is not None, (
+        "Foreground agent must have a request_tools_factory"
     )
+    per_req = agent._request_tools_factory("test-client")
+    assert len(per_req) == 1
+    assert per_req[0].__name__ == "delegate_task"
 
 
 # ---------------------------------------------------------------------------
@@ -423,34 +434,31 @@ async def test_delegate_task_at_capacity_returns_friendly_message() -> None:
     registry.register("c1", "blocker", asyncio.create_task(asyncio.sleep(0)))
     assert registry.count_running() == 1
 
-    current_client_id.set("c1")
-    try:
-        tools = build_delegation_tools(
-            settings,
-            registry,
-            channel,
-            agent_factory=lambda s: _StubAgent(["ok"]),
-        )
-        delegate_task_fn = tools[0]
+    tools = build_delegation_tools(
+        settings,
+        registry,
+        channel,
+        client_id="c1",
+        agent_factory=lambda s: _StubAgent(["ok"]),
+    )
+    delegate_task_fn = tools[0]
 
-        result = await delegate_task_fn("too many tasks")
+    result = await delegate_task_fn("too many tasks")
 
-        # Returns the friendly message — no task id substring.
-        assert isinstance(result, str)
-        assert "couldn't start" in result
-        # Verify no 32-char hex task id in the response.
-        import re
+    # Returns the friendly message — no task id substring.
+    assert isinstance(result, str)
+    assert "couldn't start" in result
+    # Verify no 32-char hex task id in the response.
+    import re
 
-        assert not re.search(r"\b[0-9a-f]{32}\b", result)
+    assert not re.search(r"\b[0-9a-f]{32}\b", result)
 
-        # No task_started frame was published to the channel.
-        started_frames = [f for _, f in channel.frames if f["type"] == "task_started"]
-        assert len(started_frames) == 0
+    # No task_started frame was published to the channel.
+    started_frames = [f for _, f in channel.frames if f["type"] == "task_started"]
+    assert len(started_frames) == 0
 
-        # The registry count is still 1 (no new task was registered).
-        assert registry.count_running() == 1
-    finally:
-        current_client_id.set(None)
+    # The registry count is still 1 (no new task was registered).
+    assert registry.count_running() == 1
 
 
 # ---------------------------------------------------------------------------
