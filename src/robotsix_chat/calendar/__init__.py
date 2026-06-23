@@ -47,14 +47,17 @@ def build_calendar_tools(settings: CalendarSettings) -> list[Callable[..., Any]]
     client = CalendarClient(settings)
 
     async def query_calendar(request: str) -> str:
-        """Read and answer questions about the user's schedule and upcoming events.
+        """Read the user's schedule, upcoming events, and availability.
 
         Use this whenever the user asks "what's on my calendar", "what do I have
-        today/this week", "when is my next meeting", or similar schedule queries.
-        Pass the user's question as-is — the calendar agent interprets it.
+        today/this week", "when is my next meeting", "am I free Tuesday
+        afternoon?", "when am I next available?", or similar schedule and
+        availability queries. Pass the user's question as-is — the calendar agent
+        interprets it.
 
         Args:
-            request: A natural-language question about the user's schedule.
+            request: A natural-language question about the user's schedule or
+                availability.
 
         Returns:
             The calendar agent's reply.
