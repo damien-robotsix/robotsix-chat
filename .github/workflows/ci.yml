@@ -6,6 +6,16 @@ permissions:
   contents: read
 
 jobs:
+  lockfile:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6.8.0
+      - name: Check lockfile freshness
+        run: uv lock --check
+
   ci:
     uses: damien-robotsix/robotsix-mill/.github/workflows/python-ci.yml@main
     with:
@@ -58,7 +68,7 @@ jobs:
         run: uv run --with towncrier towncrier check --compare-with origin/${{ github.base_ref }}
 
   check:
-    needs: [ci, codeql, security]
+    needs: [lockfile, ci, codeql, security]
     runs-on: ubuntu-latest
     steps:
       - run: echo "All CI checks passed"
