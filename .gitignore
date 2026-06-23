@@ -40,6 +40,8 @@ cogney-key.secrets
 # (e.g. pip/uv install --target local-deps). Generated, never committed —
 # without this they flood the implement diff and trip scope-triage.
 local-deps/
+.deps/
+.pip-packages/
 
 # Pip/uv-generated entry-point wrappers accidentally swept into the source tree
 src/bin/
