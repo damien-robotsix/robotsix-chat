@@ -40,6 +40,7 @@ server:
   # cors_allow_origins: []
   # correlation_id_header: X-Request-ID  # env override: CORRELATION_ID_HEADER
   # idle_timeout_minutes: 30   # 0 disables; UI auto-restarts conversation after N idle minutes. env: IDLE_TIMEOUT_MINUTES
+  # max_background_tasks: 5  # max concurrent background sub-agents per process; env: MAX_BACKGROUND_TASKS
 
 # Login — gate the browser UI and /chat behind HTTP Basic Auth. Disabled by
 # default so local runs need no credentials. Enable for any deployment that
