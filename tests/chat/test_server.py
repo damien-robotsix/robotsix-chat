@@ -1005,3 +1005,150 @@ async def test_resume_hook_passed_through_mock_app() -> None:
     # (We can't easily assert it's stored because Starlette's lifespan is
     # internal, but the app was built without error.)
     assert f.app.state.check_loop_registry is None  # default
+
+
+# ---------------------------------------------------------------------------
+# GET /loops — snapshot endpoint
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_loops_list_endpoint_missing_client_id() -> None:
+    """``GET /loops`` without client_id returns 400."""
+    async with mock_app() as f:
+        response = await f.client.get("/loops")
+
+    assert response.status_code == 400
+    assert response.json() == {"error": "client_id query parameter is required"}
+
+
+@pytest.mark.asyncio
+async def test_loops_list_endpoint_no_registry_returns_503() -> None:
+    """``GET /loops?client_id=x`` returns 503 when no registry is wired."""
+    async with mock_app() as f:
+        response = await f.client.get("/loops?client_id=test-client")
+
+    assert response.status_code == 503
+    assert response.json() == {"error": "check-loop feature not enabled"}
+
+
+@pytest.mark.asyncio
+async def test_loops_list_endpoint_returns_loops_for_client() -> None:
+    """``GET /loops?client_id=x`` returns the loops for that client."""
+    import asyncio
+
+    from robotsix_chat.chat.loops import CheckLoopRegistry
+
+    reg = CheckLoopRegistry(store_path=None)
+
+    # Register two loops for client "c-a" and one for "c-b".
+    async def _noop() -> None:
+        pass
+
+    t1 = asyncio.create_task(_noop())
+    lid1 = reg.register(
+        "c-a", "check weather", interval_seconds=60.0, max_iterations=None, coro=t1
+    )
+
+    t2 = asyncio.create_task(_noop())
+    lid2 = reg.register(
+        "c-a", "check inbox", interval_seconds=30.0, max_iterations=5, coro=t2
+    )
+
+    t3 = asyncio.create_task(_noop())
+    lid3 = reg.register(
+        "c-b", "check stocks", interval_seconds=120.0, max_iterations=None, coro=t3
+    )
+
+    async with mock_app(check_loop_registry=reg) as f:
+        # Client "c-a" should see two loops.
+        response = await f.client.get("/loops?client_id=c-a")
+        assert response.status_code == 200
+        data = response.json()
+        assert isinstance(data, dict)
+        assert "loops" in data
+        loops = data["loops"]
+        assert isinstance(loops, list)
+        assert len(loops) == 2
+
+        ids = {entry["id"] for entry in loops}
+        assert ids == {lid1, lid2}
+
+        for entry in loops:
+            assert entry["client_id"] == "c-a"
+            assert entry["status"] == "running"
+            assert entry["interval_seconds"] in (60.0, 30.0)
+            assert entry["iterations"] == 0
+            assert entry["error"] is None
+            assert entry["stop_reason"] is None
+            # Every LoopInfo field must be present.
+            for field in (
+                "id",
+                "client_id",
+                "prompt",
+                "interval_seconds",
+                "status",
+                "iterations",
+                "max_iterations",
+                "last_result",
+                "next_run",
+                "error",
+                "stop_reason",
+            ):
+                assert field in entry, f"missing field {field!r}"
+
+        # Client "c-b" should see one loop.
+        response_b = await f.client.get("/loops?client_id=c-b")
+        assert response_b.status_code == 200
+        loops_b = response_b.json()["loops"]
+        assert len(loops_b) == 1
+        assert loops_b[0]["id"] == lid3
+        assert loops_b[0]["client_id"] == "c-b"
+
+    # Cleanup
+    for t in (t1, t2, t3):
+        with contextlib.suppress(asyncio.CancelledError):
+            await t
+
+
+@pytest.mark.asyncio
+async def test_loops_list_endpoint_reflects_stopped_and_failed() -> None:
+    """Status changes made via the registry appear in the snapshot."""
+    import asyncio
+
+    from robotsix_chat.chat.loops import CheckLoopRegistry
+
+    reg = CheckLoopRegistry(store_path=None)
+
+    async def _noop() -> None:
+        pass
+
+    t1 = asyncio.create_task(_noop())
+    lid1 = reg.register(
+        "c-x", "stopped loop", interval_seconds=10.0, max_iterations=None, coro=t1
+    )
+
+    t2 = asyncio.create_task(_noop())
+    lid2 = reg.register(
+        "c-x", "failed loop", interval_seconds=10.0, max_iterations=None, coro=t2
+    )
+
+    reg.stop(lid1, reason="manual")
+    reg.fail(lid2, error="something broke")
+
+    async with mock_app(check_loop_registry=reg) as f:
+        response = await f.client.get("/loops?client_id=c-x")
+        assert response.status_code == 200
+        loops = response.json()["loops"]
+        assert len(loops) == 2
+
+        by_id = {e["id"]: e for e in loops}
+        assert by_id[lid1]["status"] == "stopped"
+        assert by_id[lid1]["stop_reason"] == "manual"
+        assert by_id[lid2]["status"] == "failed"
+        assert by_id[lid2]["error"] == "something broke"
+
+    with contextlib.suppress(asyncio.CancelledError):
+        await t1
+    with contextlib.suppress(asyncio.CancelledError):
+        await t2
