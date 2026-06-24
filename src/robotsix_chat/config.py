@@ -95,6 +95,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "auth": "auth",
     "memory": "memory",
     "mill": "mill",
+    "mail": "mail",
     "calendar": "calendar",
     "conversation": "conversation",
     "refdocs": "refdocs",
@@ -251,6 +252,38 @@ class MillSettings(BaseModel):
     agent_id: str = "robotsix-chat"
     board_manager_id: str = "board-manager-robotsix-mill"
     repo_id: str = ""
+    timeout: float = 240.0
+
+
+class MailSettings(BaseModel):
+    """robotsix-auto-mail integration over the agent-comm broker. Disabled by default.
+
+    When enabled, the chat agent gains a tool that forwards natural-language
+    requests to the auto-mail board manager
+    (``board-manager-robotsix-auto-mail``) over the broker and relays its
+    reply — so a user can view, triage, or comment on mail-agent tickets
+    from chat. Mirrors the mill / ``consult_mill`` pattern exactly.
+
+    Attributes:
+        enabled: Master switch. Requires the ``broker`` extra (robotsix-agent-comm).
+        broker_host: Broker hostname (the shared agent-comm broker).
+        broker_port: Broker port (443 for the public TLS endpoint).
+        broker_scheme: ``https`` (TLS) or ``http``.
+        broker_token: This agent's bearer token, registered on the broker.
+            Required when enabled.
+        agent_id: This agent's id on the broker.
+        board_manager_id: Recipient agent id — the mail board manager.
+        timeout: Per-request timeout (seconds); generous, the recipient is an LLM.
+
+    """
+
+    enabled: bool = False
+    broker_host: str = "ai-broker.robotsix.net"
+    broker_port: int = 443
+    broker_scheme: str = "https"
+    broker_token: str = ""
+    agent_id: str = "robotsix-chat"
+    board_manager_id: str = "board-manager-robotsix-auto-mail"
     timeout: float = 240.0
 
 
@@ -506,6 +539,7 @@ class Settings(BaseModel):
     auth: AuthSettings = Field(default_factory=AuthSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     mill: MillSettings = Field(default_factory=MillSettings)
+    mail: MailSettings = Field(default_factory=MailSettings)
     calendar: CalendarSettings = Field(default_factory=CalendarSettings)
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)
     refdocs: RefDocsSettings = Field(default_factory=RefDocsSettings)
@@ -578,6 +612,17 @@ class Settings(BaseModel):
                 raise ValueError(
                     "mill.broker_host must be set when mill is enabled — provide it "
                     "via MILL_BROKER_HOST or the config file"
+                )
+        if self.mail.enabled:
+            if not self.mail.broker_token:
+                raise ValueError(
+                    "mail.broker_token must be set when mail is enabled — provide "
+                    "it via MAIL_BROKER_TOKEN or the `mail.broker_token` config field"
+                )
+            if not self.mail.broker_host:
+                raise ValueError(
+                    "mail.broker_host must be set when mail is enabled — provide it "
+                    "via MAIL_BROKER_HOST or the config file"
                 )
         if self.calendar.enabled:
             if not self.calendar.broker_token:
@@ -678,6 +723,7 @@ class Settings(BaseModel):
                 "auth",
                 "memory",
                 "mill",
+                "mail",
                 "calendar",
                 "conversation",
                 "refdocs",
@@ -807,6 +853,10 @@ class Settings(BaseModel):
         if mill_raw:
             raw["mill"] = mill_raw
 
+        mail_raw = _build_mail_raw(flat.get("mail"))
+        if mail_raw:
+            raw["mail"] = mail_raw
+
         calendar_raw = _build_calendar_raw(flat.get("calendar"))
         if calendar_raw:
             raw["calendar"] = calendar_raw
@@ -920,6 +970,49 @@ def _build_mill_raw(yaml_mill: Any) -> dict[str, Any]:
             ) from None
 
     return mill_raw
+
+
+def _build_mail_raw(yaml_mail: Any) -> dict[str, Any]:
+    """Overlay ``MAIL_*`` env vars onto the YAML ``mail`` subtree.
+
+    Returns a dict ready to parse into :class:`MailSettings`, or empty when
+    nothing is set.
+    """
+    mail_raw: dict[str, Any] = dict(yaml_mail or {})
+
+    def env_set(field: str, env_name: str) -> None:
+        value = os.getenv(env_name)
+        if value is not None:
+            mail_raw[field] = value
+
+    enabled = os.getenv("MAIL_ENABLED")
+    if enabled is not None:
+        mail_raw["enabled"] = _parse_bool(enabled)
+    env_set("broker_host", "MAIL_BROKER_HOST")
+    env_set("broker_scheme", "MAIL_BROKER_SCHEME")
+    env_set("broker_token", "MAIL_BROKER_TOKEN")
+    env_set("agent_id", "MAIL_AGENT_ID")
+    env_set("board_manager_id", "MAIL_BOARD_MANAGER_ID")
+
+    port_str = os.getenv("MAIL_BROKER_PORT")
+    if port_str is not None:
+        try:
+            mail_raw["broker_port"] = int(port_str)
+        except ValueError:
+            raise ValueError(
+                f"MAIL_BROKER_PORT must be an integer, got {port_str!r}"
+            ) from None
+
+    timeout_str = os.getenv("MAIL_TIMEOUT")
+    if timeout_str is not None:
+        try:
+            mail_raw["timeout"] = float(timeout_str)
+        except ValueError:
+            raise ValueError(
+                f"MAIL_TIMEOUT must be a number, got {timeout_str!r}"
+            ) from None
+
+    return mail_raw
 
 
 def _build_calendar_raw(yaml_calendar: Any) -> dict[str, Any]:

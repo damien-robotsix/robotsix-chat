@@ -34,6 +34,7 @@ from robotsix_chat.chat.tasks import TaskRegistry
 from robotsix_chat.config import Settings, level_needs_api_key
 from robotsix_chat.knowledge import build_knowledge_tools
 from robotsix_chat.llm import LlmioChatAgent
+from robotsix_chat.mail import build_mail_tools
 from robotsix_chat.memory import build_memory
 from robotsix_chat.mill import build_mill_tools
 from robotsix_chat.refdocs import build_refdocs_tools
@@ -782,6 +783,7 @@ def create_agent_from_settings(
     )
     tools: list[Any] = [
         *build_mill_tools(settings.mill),
+        *build_mail_tools(settings.mail),
         *build_calendar_tools(settings.calendar),
         *build_refdocs_tools(settings.refdocs),
         *build_board_reader_tools(settings.board_reader),
