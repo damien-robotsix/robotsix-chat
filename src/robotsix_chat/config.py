@@ -97,6 +97,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "calendar": "calendar",
     "conversation": "conversation",
     "refdocs": "refdocs",
+    "board_reader": "board_reader",
 }
 
 
@@ -251,6 +252,34 @@ class MillSettings(BaseModel):
     timeout: float = 240.0
 
 
+class BoardReaderSettings(BaseModel):
+    """Direct HTTP read access to the mill's board API (same endpoint the UI uses).
+
+    Lets the assistant list and read tickets from the same HTTP endpoint the
+    user's browser UI consumes, giving read parity with the user — no broker
+    indirection, no NL reinterpretation.  Writes still go through
+    ``consult_mill`` / the broker board manager.
+
+    The board API is served by the mill's management-plane FastAPI app
+    (typically on the same host at port 8077).  When *api_token* is set, it
+    is sent as a ``Bearer`` token; on localhost deployments auth is often
+    disabled (empty token = no ``Authorization`` header sent).
+
+    Attributes:
+        enabled: Master switch.  Independent of ``mill.enabled`` — the
+            board reader works over HTTP even when the broker is offline.
+        api_base_url: Base URL of the board HTTP API (no trailing slash).
+        api_token: Optional bearer token; empty means no auth header.
+        timeout: Per-request HTTP timeout in seconds.
+
+    """
+
+    enabled: bool = False
+    api_base_url: str = "http://127.0.0.1:8077"
+    api_token: str = ""
+    timeout: float = 30.0
+
+
 class CalendarSettings(BaseModel):
     """Calendar/tasks integration over the agent-comm broker. Disabled by default.
 
@@ -315,7 +344,7 @@ class ConversationSettings(BaseModel):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 1
+SYSTEM_PROMPT_VERSION = 2
 
 
 class Settings(BaseModel):
@@ -379,14 +408,21 @@ class Settings(BaseModel):
         "finishes."
         "\n\n"
         "Board/mill rules:\n"
-        "– Do all board work inline via consult_mill — never offload "
-        "board actions (create tickets, read/verify/migrate) through "
+        "– To READ board/ticket state, always use list_board_tickets or "
+        "read_board_ticket — these call the SAME HTTP endpoint the user's "
+        "browser UI consumes, so you see exactly what the user sees.  "
+        "Never narrate or fabricate ticket states; always verify with "
+        "the board reader tools first.\n"
+        "– For WRITE operations (create tickets, migrate, transition), "
+        "use consult_mill — the broker-based board manager handles writes.\n"
+        "– Do all board work inline — never offload board actions through "
         "delegate_task. Delegate-task results are never returned, so a "
         "ticket filed that way may silently fail with no feedback.\n"
         "– After creating a ticket via consult_mill, verify it landed on "
-        "the correct board. New tickets default to robotsix-mill regardless "
-        "of source; if misplaced, request a migration to the correct board "
-        "(e.g. robotsix-chat) — also inline via consult_mill.\n"
+        "the correct board with list_board_tickets. New tickets default "
+        "to robotsix-mill regardless of source; if misplaced, request a "
+        "migration to the correct board (e.g. robotsix-chat) — also "
+        "inline via consult_mill.\n"
         "– Never offer to manually promote a ticket from draft to ready. "
         "The draft→ready transition is automatic (auto-pickup); the system "
         "picks up tickets on its own once they leave draft.\n"
@@ -415,6 +451,7 @@ class Settings(BaseModel):
     calendar: CalendarSettings = Field(default_factory=CalendarSettings)
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)
     refdocs: RefDocsSettings = Field(default_factory=RefDocsSettings)
+    board_reader: BoardReaderSettings = Field(default_factory=BoardReaderSettings)
     max_images_per_message: int = 8
     max_image_bytes: int = 5_242_880
     allowed_image_media_types: list[str] = Field(
@@ -719,6 +756,10 @@ class Settings(BaseModel):
         if refdocs_raw:
             raw["refdocs"] = refdocs_raw
 
+        board_reader_raw = _build_board_reader_raw(flat.get("board_reader"))
+        if board_reader_raw:
+            raw["board_reader"] = board_reader_raw
+
         return cls(**raw)
 
 
@@ -917,6 +958,37 @@ def _build_refdocs_raw(yaml_refdocs: Any) -> dict[str, Any]:
             ) from None
 
     return refdocs_raw
+
+
+def _build_board_reader_raw(yaml_board_reader: Any) -> dict[str, Any]:
+    """Overlay ``BOARD_READER_*`` env vars onto the YAML ``board_reader`` subtree.
+
+    Returns a dict ready to parse into :class:`BoardReaderSettings`, or empty
+    when nothing is set.
+    """
+    board_reader_raw: dict[str, Any] = dict(yaml_board_reader or {})
+
+    def env_set(field: str, env_name: str) -> None:
+        value = os.getenv(env_name)
+        if value is not None:
+            board_reader_raw[field] = value
+
+    enabled = os.getenv("BOARD_READER_ENABLED")
+    if enabled is not None:
+        board_reader_raw["enabled"] = _parse_bool(enabled)
+    env_set("api_base_url", "BOARD_READER_API_BASE_URL")
+    env_set("api_token", "BOARD_READER_API_TOKEN")
+
+    timeout_str = os.getenv("BOARD_READER_TIMEOUT")
+    if timeout_str is not None:
+        try:
+            board_reader_raw["timeout"] = float(timeout_str)
+        except ValueError:
+            raise ValueError(
+                f"BOARD_READER_TIMEOUT must be a number, got {timeout_str!r}"
+            ) from None
+
+    return board_reader_raw
 
 
 def _load_dotenv() -> None:

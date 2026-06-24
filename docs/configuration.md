@@ -160,6 +160,24 @@ ingestion), and only repos in the allowlist are reachable.
 | `refdocs.base_url` | `REFDOCS_BASE_URL` | `"https://api.github.com"` | Overridable base URL for GitHub Enterprise. |
 | `refdocs.timeout` | `REFDOCS_TIMEOUT` | `30.0` | Per-request HTTP timeout (seconds). |
 
+## Board Reader (HTTP board read access)
+
+Direct HTTP read access to the mill's board API — lets the assistant list and
+read tickets from the SAME HTTP endpoint the user's browser UI uses (read parity
+with the user — no broker indirection, no NL reinterpretation). Disabled by
+default; independent of the broker-based mill integration (works even when the
+broker is offline). Writes still go through `consult_mill`.
+
+Provides two tools: `list_board_tickets` (calls `GET /tickets`) and
+`read_board_ticket` (calls `GET /tickets/{id}`).
+
+| YAML path | Env var | Default | Description |
+|---|---|---|---|
+| `board_reader.enabled` | `BOARD_READER_ENABLED` | `false` | Enable the board reader tools. |
+| `board_reader.api_base_url` | `BOARD_READER_API_BASE_URL` | `"http://127.0.0.1:8077"` | Base URL of the board's HTTP API (no trailing slash). |
+| `board_reader.api_token` | `BOARD_READER_API_TOKEN` | `""` | Optional bearer token for the board API (empty = no `Authorization` header). |
+| `board_reader.timeout` | `BOARD_READER_TIMEOUT` | `30.0` | Per-request HTTP timeout (seconds). |
+
 ## Example YAML
 
 ```yaml
