@@ -48,6 +48,14 @@ modules:
       - tests/calendar/__init__.py
       - tests/calendar/test_calendar.py
 
+  - id: robotsix_chat.component_client
+    description: "Component agent client tools for the chat LLM — exposes build_component_tools(), a factory returning LLM tools that let the chat agent enumerate, inspect, and configure remote component agents over the agent-comm broker."
+    paths:
+      - src/robotsix_chat/component_client/__init__.py
+      - src/robotsix_chat/component_client/client.py
+      - tests/component_client/__init__.py
+      - tests/component_client/test_component_client.py
+
   - id: robotsix_chat.config
     description: "Environment-based configuration via pydantic + python-dotenv."
     paths:
