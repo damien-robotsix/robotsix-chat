@@ -184,6 +184,84 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Sessions panel (left sidebar)                                       */
+  /* ------------------------------------------------------------------ */
+  #sessions-toggle {
+    background: none; border: none; color: var(--header-fg);
+    font-size: 1.2rem; cursor: pointer; line-height: 1;
+    padding: 0.2rem 0.4rem; border-radius: 4px;
+  }
+  #sessions-toggle:hover { background: rgba(255,255,255,0.15); }
+
+  #sessions-panel {
+    display: none; position: fixed; top: 0; left: 0; bottom: 0;
+    width: 300px; min-width: 220px; max-width: 80vw;
+    background: var(--composer-bg); color: var(--text-fg);
+    border-right: 1px solid var(--composer-border);
+    z-index: 20; overflow-y: auto;
+    box-shadow: 4px 0 12px rgba(0,0,0,0.25);
+  }
+  #sessions-panel.visible { display: flex; flex-direction: column; }
+
+  #sessions-resize-handle {
+    display: none; position: fixed; top: 0; bottom: 0;
+    width: 6px; cursor: ew-resize; z-index: 21;
+  }
+  #sessions-resize-handle:hover,
+  #sessions-resize-handle.active { background: rgba(59, 130, 246, 0.5); }
+
+  .sessions-header {
+    padding: 0.6rem 0.75rem; font-weight: 700; font-size: 0.95rem;
+    border-bottom: 1px solid var(--composer-border);
+    background: var(--header-bg); color: var(--header-fg);
+    flex-shrink: 0; display: flex; align-items: center;
+    justify-content: space-between;
+  }
+  .sessions-header .dismiss {
+    background: none; border: none; color: var(--header-fg);
+    font-size: 1.2rem; cursor: pointer; line-height: 1; padding: 0 0.2rem;
+    opacity: 0.7;
+  }
+  .sessions-header .dismiss:hover { opacity: 1; }
+
+  #new-chat-btn {
+    margin: 0.5rem; padding: 0.4rem 0.75rem;
+    background: var(--btn-primary-bg); color: var(--btn-primary-fg);
+    border: none; border-radius: 6px; font-size: 0.85rem;
+    font-weight: 600; cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  #new-chat-btn:hover:not(:disabled) { background: var(--btn-primary-hover); }
+  #new-chat-btn:disabled {
+    background: var(--btn-disabled-bg); cursor: not-allowed;
+  }
+
+  #sessions-list { flex: 1; overflow-y: auto; padding: 0 0.5rem 0.5rem; }
+
+  .session-row {
+    padding: 0.5rem 0.6rem; margin-bottom: 0.3rem;
+    border-radius: 6px; font-size: 0.82rem;
+    border: 1px solid var(--composer-border);
+    background: var(--assistant-bubble-bg);
+    cursor: pointer;
+    word-break: break-word;
+    transition: background 0.15s;
+  }
+  .session-row:hover { background: rgba(59, 130, 246, 0.15); }
+  .session-row.active {
+    border-color: var(--btn-primary-bg);
+    background: rgba(59, 130, 246, 0.12);
+  }
+  .session-row .session-title {
+    font-weight: 600; margin-bottom: 0.15rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .session-row .session-meta {
+    font-size: 0.72rem; color: #94a3b8;
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Error banner                                                        */
   /* ------------------------------------------------------------------ */
   #error-banner {
@@ -382,6 +460,7 @@
 <!-- ================================================================= -->
 <header id="header">
   <span class="title">{{ PROJECT_TITLE }}</span>
+  <button id="sessions-toggle" title="Chat sessions" aria-label="Chat sessions">💬</button>
   <span id="connection-dot" title="connection status"></span>
   <button id="settings-toggle" title="Server URL" aria-label="Server settings">⚙</button>
   <button id="tasks-toggle" title="Background tasks" aria-label="Background tasks">☰</button>
@@ -390,6 +469,19 @@
 <div id="settings-panel">
   <label for="server-url-input">Server URL (POST /chat)</label>
   <input type="text" id="server-url-input" placeholder="http://localhost:8000/chat">
+</div>
+
+<!-- ================================================================= -->
+<!-- Sessions panel (left sidebar)                                      -->
+<!-- ================================================================= -->
+<div id="sessions-resize-handle"></div>
+<div id="sessions-panel">
+  <div class="sessions-header">
+    <span>Sessions</span>
+    <button class="dismiss" aria-label="Close sessions panel">&times;</button>
+  </div>
+  <button id="new-chat-btn">+ New chat</button>
+  <div id="sessions-list"></div>
 </div>
 
 <div id="tasks-resize-handle"></div>
@@ -447,6 +539,11 @@
   const settingsToggle = document.getElementById("settings-toggle");
   const settingsPanel  = document.getElementById("settings-panel");
   const serverUrlInput = document.getElementById("server-url-input");
+  const sessionsToggle  = document.getElementById("sessions-toggle");
+  const sessionsPanel   = document.getElementById("sessions-panel");
+  const sessionsDismiss = sessionsPanel.querySelector(".dismiss");
+  const sessionsResizeHandle = document.getElementById("sessions-resize-handle");
+  const newChatBtn = document.getElementById("new-chat-btn");
   const tasksToggle    = document.getElementById("tasks-toggle");
   const tasksPanel     = document.getElementById("tasks-panel");
   const tasksResizeHandle = document.getElementById("tasks-resize-handle");
@@ -461,6 +558,8 @@
   var currentAssistantBubble = null;  // the <div> receiving tokens
   var typingIndicatorEl      = null;  // the animated dots element
   var messageQueue = [];       // FIFO queue of { text, el } for busy-state
+  // (currentRequestSessionId removed — unused; cross-session guard uses
+  //  the requestSessionId captured inside doPost instead.)
 
   // ---- Image attachments -----------------------------------------------
   var MAX_IMAGES = 8;
@@ -664,6 +763,162 @@
   }
 
   var clientId = getClientId();
+
+  // ---- Session management (localStorage-backed) -----------------------
+  var ACTIVE_SESSION_KEY = "{{ PROJECT_TITLE }}-active-session-id";
+  var activeSessionId = null;
+  var sessionsList = [];        // cached session list from server
+
+  function getActiveSessionId() {
+    try { return localStorage.getItem(ACTIVE_SESSION_KEY) || null; }
+    catch (_) { return null; }
+  }
+
+  function setActiveSessionId(sid) {
+    activeSessionId = sid;
+    try { localStorage.setItem(ACTIVE_SESSION_KEY, sid); } catch (_) {}
+  }
+
+  // ---- Session API helpers --------------------------------------------
+  function apiBase() {
+    return getServerUrl().replace(/\/chat$/, "");
+  }
+
+  function fetchSessions() {
+    var url = apiBase() + "/sessions?owner_id=" + encodeURIComponent(clientId);
+    return fetch(url, { method: "GET" }).then(function (r) {
+      if (!r.ok) throw new Error("Failed to fetch sessions");
+      return r.json();
+    });
+  }
+
+  function createNewSession() {
+    var url = apiBase() + "/sessions";
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ owner_id: clientId })
+    }).then(function (r) {
+      if (!r.ok) throw new Error("Failed to create session");
+      return r.json();
+    });
+  }
+
+  // ---- Session list rendering -----------------------------------------
+  function renderSessionList(data) {
+    if (!data || !Array.isArray(data.sessions)) return;
+    sessionsList = data.sessions;
+    var listEl = document.getElementById("sessions-list");
+    listEl.innerHTML = "";
+
+    for (var i = 0; i < sessionsList.length; i++) {
+      var s = sessionsList[i];
+      var row = document.createElement("div");
+      row.className = "session-row";
+      if (s.session_id === activeSessionId) {
+        row.classList.add("active");
+      }
+
+      var titleDiv = document.createElement("div");
+      titleDiv.className = "session-title";
+      titleDiv.textContent = s.title || "Untitled";
+      row.appendChild(titleDiv);
+
+      var metaDiv = document.createElement("div");
+      metaDiv.className = "session-meta";
+      var parts = [];
+      if (s.turn_count !== undefined) {
+        parts.push(s.turn_count + " turn" + (s.turn_count !== 1 ? "s" : ""));
+      }
+      if (s.last_active) {
+        parts.push(relativeTime(s.last_active));
+      }
+      metaDiv.textContent = parts.join(" · ");
+      row.appendChild(metaDiv);
+
+      // Closure to capture session_id
+      (function (sid) {
+        row.addEventListener("click", function () {
+          if (sid !== activeSessionId) {
+            switchSession(sid);
+          }
+        });
+      })(s.session_id);
+
+      listEl.appendChild(row);
+    }
+  }
+
+  function relativeTime(iso) {
+    // Return a human-readable relative time string (e.g. "2m ago", "1h ago").
+    var then = new Date(iso).getTime();
+    var now = Date.now();
+    var diffSec = Math.floor((now - then) / 1000);
+    if (diffSec < 60) return "just now";
+    var mins = Math.floor(diffSec / 60);
+    if (mins < 60) return mins + "m ago";
+    var hours = Math.floor(mins / 60);
+    if (hours < 24) return hours + "h ago";
+    var days = Math.floor(hours / 24);
+    return days + "d ago";
+  }
+
+  function updateActiveHighlight() {
+    // Re-render to refresh active highlight.
+    if (sessionsList.length > 0) {
+      renderSessionList({ sessions: sessionsList });
+    }
+  }
+
+  function refreshSessions() {
+    fetchSessions().then(function (data) {
+      renderSessionList(data);
+      // NOTE: we purposely do NOT update activeSessionId from the server's
+      // active_session_id here — that would silently clobber the user's choice
+      // when the panel is opened. The server's opinion is only used during
+      // initial bootstrap (see the fetchSessions call at the bottom).
+    }).catch(function () {
+      // Silently ignore — list may be stale but still usable.
+    });
+  }
+
+  function switchSession(sessionId) {
+    if (sessionId === activeSessionId) return;
+
+    // 1. Persist the new active session_id.
+    setActiveSessionId(sessionId);
+
+    // 2. Clear the chat DOM bubbles.
+    clearChatBubbles();
+
+    // 3. Close the current event stream and re-open for new session.
+    closeEventStream();
+    openEventStream();
+
+    // 4. Load history for the new session.
+    loadHistory();
+
+    // 5. Reload loops for the new session.
+    loadLoops();
+
+    // 6. Update the active-row highlight.
+    updateActiveHighlight();
+
+    // 7. Reset idle timer.
+    resetIdleTimer();
+  }
+
+  // ---- Event stream lifecycle -----------------------------------------
+  var eventStreamAbortController = null;
+  var eventsStreamIntentionallyClosed = false;
+
+  function closeEventStream() {
+    eventsStreamIntentionallyClosed = true;
+    if (eventStreamAbortController) {
+      eventStreamAbortController.abort();
+      eventStreamAbortController = null;
+    }
+  }
 
   // ---- Task panel store (session-only, in-memory) ----------------------
   // tasksById: maps task_id → { id, description, state, startedAt,
@@ -1095,6 +1350,23 @@
   }
 
   // ---- Message bubbles -------------------------------------------------
+  function clearChatBubbles() {
+    // Remove all bubble elements, typing indicator, and inline notices
+    // from the chat container so no messages bleed across sessions.
+    var children = chatEl.querySelectorAll(".bubble, #typing-indicator");
+    for (var i = 0; i < children.length; i++) {
+      children[i].remove();
+    }
+    currentAssistantBubble = null;
+    typingIndicatorEl = null;
+    // Also clear queued messages — they belong to the old session.
+    messageQueue = [];
+    // Reset state so the composer is not blocked.
+    if (state === "sending" || state === "streaming") {
+      state = "idle";
+    }
+  }
+
   function addUserBubble(text) {
     var div = document.createElement("div");
     div.className = "bubble user";
@@ -1227,10 +1499,10 @@
 
   // ---- Persistent /events SSE channel ----------------------------------
   function openEventStream() {
-    var serverUrl = getServerUrl();
-    // Derive events URL: replace trailing /chat with /events.
-    var eventsUrl = serverUrl.replace(/\/chat$/, "/events") +
-                    "?client_id=" + encodeURIComponent(clientId);
+    eventsStreamIntentionallyClosed = false;
+    var eventsUrl = apiBase() + "/events" +
+                    "?session_id=" + encodeURIComponent(activeSessionId) +
+                    "&owner_id=" + encodeURIComponent(clientId);
 
     var eventsController = {
       onData: function (raw) {
@@ -1256,16 +1528,25 @@
         // ignore unknown types gracefully
       },
       onDone: function () {
-        // Stream closed by server — reconnect after a short delay.
+        // Stream closed by server — reconnect after a short delay,
+        // unless the stream was intentionally closed (session switch).
+        if (eventsStreamIntentionallyClosed) return;
         setTimeout(openEventStream, 5000);
       },
       error: function (_err) {
         // Network error or stream failure — reconnect after a short delay.
+        if (eventsStreamIntentionallyClosed) return;
         setTimeout(openEventStream, 5000);
       }
     };
 
-    fetch(eventsUrl, { method: "GET" }).then(function (response) {
+    // Create a new AbortController so closeEventStream() can abort this fetch.
+    eventStreamAbortController = new AbortController();
+
+    fetch(eventsUrl, {
+      method: "GET",
+      signal: eventStreamAbortController.signal
+    }).then(function (response) {
       if (!response.ok) {
         setTimeout(openEventStream, 5000);
         return;
@@ -1277,15 +1558,18 @@
       }
       var parser = processSSEStream(response.body, eventsController);
       parser.start();
-    }).catch(function () {
+    }).catch(function (err) {
+      // Don't reconnect if aborted (session switch).
+      if (err && err.name === "AbortError") return;
       setTimeout(openEventStream, 5000);
     });
   }
 
   // ---- History loading -------------------------------------------------
   function loadHistory() {
-    var historyUrl = getServerUrl().replace(/\/chat$/, "/history") +
-                     "?client_id=" + encodeURIComponent(clientId);
+    var historyUrl = apiBase() + "/history" +
+                     "?session_id=" + encodeURIComponent(activeSessionId) +
+                     "&owner_id=" + encodeURIComponent(clientId);
 
     fetch(historyUrl, { method: "GET" }).then(function (response) {
       if (!response.ok) return;
@@ -1308,8 +1592,9 @@
 
   // ---- Check Loops snapshot on load ------------------------------------
   function loadLoops() {
-    var loopsUrl = getServerUrl().replace(/\/chat$/, "/loops") +
-                   "?client_id=" + encodeURIComponent(clientId);
+    var loopsUrl = apiBase() + "/loops" +
+                   "?session_id=" + encodeURIComponent(activeSessionId) +
+                   "&owner_id=" + encodeURIComponent(clientId);
 
     fetch(loopsUrl, { method: "GET" }).then(function (response) {
       if (!response.ok) return;
@@ -1451,8 +1736,11 @@
   }
 
   function doPost(message, encodedImages) {
+    var requestSessionId = activeSessionId;
     var streamController = {
       onData: function (raw) {
+        // Ignore frames from a request that started on a different session.
+        if (activeSessionId !== requestSessionId) return;
         var frame;
         try { frame = JSON.parse(raw); }
         catch (_) { return; /* skip unparseable frames */ }
@@ -1494,7 +1782,7 @@
 
     var url = getServerUrl();
 
-    var body = { message: message, client_id: clientId };
+    var body = { message: message, session_id: activeSessionId, owner_id: clientId };
     if (encodedImages.length > 0) {
       body.images = encodedImages;
     }
@@ -1612,7 +1900,121 @@
     if (val) setServerUrl(val);
   });
 
-  // Tasks panel toggle — no auto-close on outside click (unlike settings).
+  // ---- Session panel toggle and resize --------------------------------
+  sessionsToggle.addEventListener("click", function (e) {
+    e.stopPropagation();
+    var opening = !sessionsPanel.classList.contains("visible");
+    sessionsPanel.classList.toggle("visible");
+    if (opening) {
+      positionSessionsResizeHandle();
+      // Refresh session list from server when opening.
+      refreshSessions();
+    } else {
+      hideSessionsResizeHandle();
+    }
+  });
+
+  sessionsDismiss.addEventListener("click", function (e) {
+    e.stopPropagation();
+    sessionsPanel.classList.remove("visible");
+    hideSessionsResizeHandle();
+  });
+
+  sessionsPanel.addEventListener("click", function (e) {
+    e.stopPropagation();
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && sessionsPanel.classList.contains("visible")) {
+      sessionsPanel.classList.remove("visible");
+      hideSessionsResizeHandle();
+    }
+  });
+
+  // "New chat" button
+  newChatBtn.addEventListener("click", function () {
+    newChatBtn.disabled = true;
+    newChatBtn.textContent = "Creating\u2026";
+    createNewSession().then(function (data) {
+      newChatBtn.disabled = false;
+      newChatBtn.textContent = "+ New chat";
+      if (data && data.session_id) {
+        // Switch into the new session.  We inline the switch steps
+        // (rather than calling switchSession) to avoid a double render:
+        // switchSession calls updateActiveHighlight() on the cached
+        // (stale) list, then we'd call refreshSessions() for a second
+        // render.  Here refreshSessions() handles the list update AND
+        // the highlight in one pass.
+        setActiveSessionId(data.session_id);
+        clearChatBubbles();
+        closeEventStream();
+        openEventStream();
+        loadHistory();
+        loadLoops();
+        refreshSessions();
+        resetIdleTimer();
+      }
+    }).catch(function (err) {
+      newChatBtn.disabled = false;
+      newChatBtn.textContent = "+ New chat";
+      showError(err.message || "Failed to create session");
+    });
+  });
+
+  // ---- Sessions panel resize ------------------------------------------
+  var sessionsResizeDragging = false;
+  var sessionsResizeStartX = 0;
+  var sessionsResizeStartWidth = 0;
+
+  function positionSessionsResizeHandle() {
+    var rect = sessionsPanel.getBoundingClientRect();
+    sessionsResizeHandle.style.display = "block";
+    sessionsResizeHandle.style.left = (rect.right) + "px";
+  }
+
+  function hideSessionsResizeHandle() {
+    sessionsResizeHandle.style.display = "none";
+  }
+
+  sessionsResizeHandle.addEventListener("mousedown", function (e) {
+    e.preventDefault();
+    sessionsResizeDragging = true;
+    sessionsResizeStartX = e.clientX;
+    sessionsResizeStartWidth = sessionsPanel.getBoundingClientRect().width;
+    sessionsResizeHandle.classList.add("active");
+    document.body.style.userSelect = "none";
+  });
+
+  document.addEventListener("mousemove", function (e) {
+    if (!sessionsResizeDragging) return;
+    var dx = e.clientX - sessionsResizeStartX;
+    var newWidth = sessionsResizeStartWidth + dx;
+    newWidth = Math.max(220, Math.min(newWidth, window.innerWidth * 0.8));
+    sessionsPanel.style.width = newWidth + "px";
+    positionSessionsResizeHandle();
+  });
+
+  document.addEventListener("mouseup", function () {
+    if (!sessionsResizeDragging) return;
+    sessionsResizeDragging = false;
+    sessionsResizeHandle.classList.remove("active");
+    document.body.style.userSelect = "";
+    positionSessionsResizeHandle();
+  });
+
+  window.addEventListener("resize", function () {
+    if (!sessionsPanel.classList.contains("visible")) return;
+    var currentWidth = sessionsPanel.getBoundingClientRect().width;
+    var maxWidth = window.innerWidth * 0.8;
+    if (currentWidth > maxWidth) {
+      sessionsPanel.style.width = maxWidth + "px";
+    } else if (currentWidth < 220) {
+      sessionsPanel.style.width = "220px";
+    }
+    positionSessionsResizeHandle();
+  });
+
+  // ---- Tasks panel toggle — no auto-close on outside click (unlike settings).
   var tasksDismiss = tasksPanel.querySelector(".dismiss");
   tasksToggle.addEventListener("click", function (e) {
     e.stopPropagation();
@@ -1697,10 +2099,46 @@
 
   // ---- Initial state ---------------------------------------------------
   setConnectionStatus(true);  // optimistic green; turns red on first error
-  resetIdleTimer();
-  openEventStream();          // open persistent /events channel for task notifications
-  loadHistory();              // restore prior conversation turns on page load
-  loadLoops();                // restore running check loops on page load
+
+  // Bootstrap: fetch sessions, pick the active one, then load history/events.
+  fetchSessions().then(function (data) {
+    // Determine active session: server-reported active, or newest, or local fallback.
+    var sid = data.active_session_id;
+    if (!sid && data.sessions && data.sessions.length > 0) {
+      sid = data.sessions[0].session_id;
+    }
+    var localSid = getActiveSessionId();
+    if (localSid && data.sessions) {
+      // If the locally stored session still exists on the server, prefer it.
+      for (var i = 0; i < data.sessions.length; i++) {
+        if (data.sessions[i].session_id === localSid) {
+          sid = localSid;
+          break;
+        }
+      }
+    }
+    if (sid) {
+      setActiveSessionId(sid);
+    }
+    renderSessionList(data);
+    loadHistory();
+    loadLoops();
+    openEventStream();
+    resetIdleTimer();
+  }).catch(function () {
+    // If sessions endpoint is unavailable, fall back to local active session.
+    var localSid = getActiveSessionId();
+    if (localSid) {
+      setActiveSessionId(localSid);
+    } else {
+      // Last resort: use clientId as a fallback session_id for backwards compat.
+      setActiveSessionId(clientId);
+    }
+    loadHistory();
+    loadLoops();
+    openEventStream();
+    resetIdleTimer();
+  });
 })();
 </script>
 
