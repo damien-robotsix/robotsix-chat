@@ -42,6 +42,7 @@ cogney-key.secrets
 local-deps/
 .deps/
 .pip-packages/
+.local-packages/
 
 # Pip/uv-generated entry-point wrappers accidentally swept into the source tree
 src/bin/
