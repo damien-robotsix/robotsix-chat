@@ -207,6 +207,11 @@ SETTABLE_KEYS: dict[str, dict[str, Any]] = {
         "python_type": bool,
         "path": ["self_review", "enabled"],
     },
+    "component_agent.enabled": {
+        "type": "bool",
+        "python_type": bool,
+        "path": ["component_agent", "enabled"],
+    },
     "board_reader.enabled": {
         "type": "bool",
         "python_type": bool,

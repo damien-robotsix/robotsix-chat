@@ -279,6 +279,14 @@ class CheckLoopRegistry:
         ids = self._by_client.get(client_id, set())
         return [self._loops[lid] for lid in ids if lid in self._loops]
 
+    def snapshot(self) -> list[LoopInfo]:
+        """Return a read-only list of all loop snapshots (process-wide).
+
+        Does not mutate any internal state.  Each :class:`LoopInfo` is a
+        frozen-in-time snapshot; the caller may safely iterate.
+        """
+        return list(self._loops.values())
+
     # ------------------------------------------------------------------
     # persistence helpers
     # ------------------------------------------------------------------

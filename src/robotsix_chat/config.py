@@ -102,6 +102,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "board_reader": "board_reader",
     "knowledge": "knowledge",
     "self_review": "self_review",
+    "component_agent": "component_agent",
 }
 
 
@@ -401,6 +402,38 @@ class CalendarSettings(BaseModel):
     timeout: float = 240.0
 
 
+class ComponentAgentSettings(BaseModel):
+    """Component agent responder settings. Disabled by default.
+
+    When enabled, robotsix-chat registers itself on the agent-comm broker
+    as a discoverable component agent, serving ``monitor``, ``config-get``,
+    and ``config-set`` request kinds so external callers can inspect live
+    runtime state and mutate configuration over the existing bearer-token
+    channel — no new side channel.
+
+    Attributes:
+        enabled: Master switch. Requires the ``broker`` extra (robotsix-agent-comm).
+        broker_host: Broker hostname (the shared agent-comm broker).
+        broker_port: Broker port (443 for the public TLS endpoint).
+        broker_scheme: ``https`` (TLS) or ``http``.
+        broker_token: This agent's bearer token, registered on the broker.
+            Required when enabled.
+        agent_id: This agent's id on the broker (the responder's identity).
+            Default ``robotsix-chat-component`` — distinct from the client ids
+            used by mill/calendar.
+        timeout: Per-request timeout (seconds).
+
+    """
+
+    enabled: bool = False
+    broker_host: str = "ai-broker.robotsix.net"
+    broker_port: int = 443
+    broker_scheme: str = "https"
+    broker_token: str = ""
+    agent_id: str = "robotsix-chat-component"
+    timeout: float = 240.0
+
+
 class ConversationSettings(BaseModel):
     """Multi-session conversation continuity for the browser chat.
 
@@ -575,6 +608,9 @@ class Settings(BaseModel):
     board_reader: BoardReaderSettings = Field(default_factory=BoardReaderSettings)
     knowledge: KnowledgeSettings = Field(default_factory=KnowledgeSettings)
     self_review: SelfReviewSettings = Field(default_factory=SelfReviewSettings)
+    component_agent: ComponentAgentSettings = Field(
+        default_factory=ComponentAgentSettings
+    )
     max_images_per_message: int = 8
     max_image_bytes: int = 5_242_880
     allowed_image_media_types: list[str] = Field(
@@ -665,6 +701,20 @@ class Settings(BaseModel):
                 raise ValueError(
                     "calendar.broker_host must be set when calendar is enabled — "
                     "provide it via CALENDAR_BROKER_HOST or the config file"
+                )
+        if self.component_agent.enabled:
+            if not self.component_agent.broker_token:
+                raise ValueError(
+                    "component_agent.broker_token must be set when "
+                    "component_agent is enabled — provide it via "
+                    "COMPONENT_AGENT_BROKER_TOKEN or the "
+                    "`component_agent.broker_token` config field"
+                )
+            if not self.component_agent.broker_host:
+                raise ValueError(
+                    "component_agent.broker_host must be set when "
+                    "component_agent is enabled — provide it via "
+                    "COMPONENT_AGENT_BROKER_HOST or the config file"
                 )
         if self.refdocs.enabled and not self.refdocs.repos:
             raise ValueError(
@@ -911,6 +961,10 @@ class Settings(BaseModel):
         self_review_raw = _build_self_review_raw(flat.get("self_review"))
         if self_review_raw:
             raw["self_review"] = self_review_raw
+
+        component_agent_raw = _build_component_agent_raw(flat.get("component_agent"))
+        if component_agent_raw:
+            raw["component_agent"] = component_agent_raw
 
         return cls(**raw)
 
@@ -1232,6 +1286,48 @@ def _build_self_review_raw(yaml_self_review: Any) -> dict[str, Any]:
             ) from None
 
     return self_review_raw
+
+
+def _build_component_agent_raw(yaml_component_agent: Any) -> dict[str, Any]:
+    """Overlay ``COMPONENT_AGENT_*`` env vars onto the YAML ``component_agent`` subtree.
+
+    Returns a dict ready to parse into :class:`ComponentAgentSettings`, or empty
+    when nothing is set.
+    """
+    component_agent_raw: dict[str, Any] = dict(yaml_component_agent or {})
+
+    def env_set(field: str, env_name: str) -> None:
+        value = os.getenv(env_name)
+        if value is not None:
+            component_agent_raw[field] = value
+
+    enabled = os.getenv("COMPONENT_AGENT_ENABLED")
+    if enabled is not None:
+        component_agent_raw["enabled"] = _parse_bool(enabled)
+    env_set("broker_host", "COMPONENT_AGENT_BROKER_HOST")
+    env_set("broker_scheme", "COMPONENT_AGENT_BROKER_SCHEME")
+    env_set("broker_token", "COMPONENT_AGENT_BROKER_TOKEN")
+    env_set("agent_id", "COMPONENT_AGENT_AGENT_ID")
+
+    port_str = os.getenv("COMPONENT_AGENT_BROKER_PORT")
+    if port_str is not None:
+        try:
+            component_agent_raw["broker_port"] = int(port_str)
+        except ValueError:
+            raise ValueError(
+                f"COMPONENT_AGENT_BROKER_PORT must be an integer, got {port_str!r}"
+            ) from None
+
+    timeout_str = os.getenv("COMPONENT_AGENT_TIMEOUT")
+    if timeout_str is not None:
+        try:
+            component_agent_raw["timeout"] = float(timeout_str)
+        except ValueError:
+            raise ValueError(
+                f"COMPONENT_AGENT_TIMEOUT must be a number, got {timeout_str!r}"
+            ) from None
+
+    return component_agent_raw
 
 
 def _load_dotenv() -> None:

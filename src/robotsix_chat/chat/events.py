@@ -287,3 +287,14 @@ class EventBus:
         """
         for queue in self._subscribers.get(client_id, ()):
             queue.put_nowait(frame)
+
+    def subscriber_count(self, client_id: str | None = None) -> int:
+        """Return the number of subscribed queues (read-only).
+
+        With no argument returns the total count across all clients.  With a
+        *client_id* returns that client's count (0 if unknown).  Does not
+        mutate ``_subscribers``.
+        """
+        if client_id is None:
+            return sum(len(qs) for qs in self._subscribers.values())
+        return len(self._subscribers.get(client_id, ()))

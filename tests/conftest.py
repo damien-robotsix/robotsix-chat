@@ -120,6 +120,77 @@ class _FakeError:
         self.body = body
 
 
+class _FakeProtocolError(Exception):
+    """Stand-in for robotsix_agent_comm.protocol.Error (structured)."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.details = details or {}
+
+
+class _FakeBrokeredAgent:
+    """Fake SDK BrokeredAgent capturing registration + handler invocation."""
+
+    def __init__(
+        self,
+        agent_id: str,
+        *,
+        broker_host: str,
+        broker_token: str | None,
+        broker_port: int = 443,
+        broker_scheme: str = "https",
+        tls_ca: str | None = None,
+        ssl_context: object | None = None,
+        timeout: float = 30.0,
+        on_request: Any = None,
+        on_notification: Any = None,
+    ) -> None:
+        self.agent_id = agent_id
+        self.broker_host = broker_host
+        self.broker_token = broker_token
+        self.broker_port = broker_port
+        self.broker_scheme = broker_scheme
+        self.timeout = timeout
+        self._on_request = on_request
+        self._on_notification = on_notification
+        self._running = False
+
+    def on_request(self, handler: Any) -> Any:
+        """Register the request handler (also returns it)."""
+        self._on_request = handler
+        return handler
+
+    def on_notification(self, handler: Any) -> Any:
+        """Register the notification handler."""
+        self._on_notification = handler
+        return handler
+
+    def start(self) -> None:
+        """No-op start."""
+        self._running = True
+
+    def stop(self) -> None:
+        """No-op stop."""
+        self._running = False
+
+    def serve_forever(self) -> None:
+        """Blocking serve loop — no-op in the fake."""
+        self._running = True
+
+    def invoke_handler(self, request: Any) -> Any:
+        """Invoke the registered on_request handler directly (test hook)."""
+        if self._on_request is None:
+            raise RuntimeError("No request handler registered")
+        return self._on_request(request)
+
+
 class _Reply:
     def __init__(self, body: Any) -> None:
         self.body = body
@@ -190,7 +261,17 @@ def _install_fake_agent_comm(
 
     root = types.ModuleType("robotsix_agent_comm")
     sdk = types.ModuleType("robotsix_agent_comm.sdk")
+
+    # Give the root module a valid __spec__ and __path__ so find_spec
+    # and submodule imports work against the fake tree.
+    import importlib.machinery
+
+    root.__spec__ = importlib.machinery.ModuleSpec("robotsix_agent_comm", None)
+    root.__path__ = []  # prevent fallback to real filesystem submodules
+    sdk.__spec__ = importlib.machinery.ModuleSpec("robotsix_agent_comm.sdk", None)
+
     sdk.BrokeredRequester = _FakeBrokeredRequester  # type: ignore[attr-defined]
+    sdk.BrokeredAgent = _FakeBrokeredAgent  # type: ignore[attr-defined]
 
     for name, mod in {
         "robotsix_agent_comm": root,
