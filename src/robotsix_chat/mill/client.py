@@ -36,8 +36,9 @@ class MillClient(BaseBrokeredClient):
     ) -> str:
         """Send *request* to the board manager and return its reply as text.
 
-        Never raises: broker/timeout/board errors become a short message the
-        calling LLM can relay to the user.
+        May raise :class:`BrokerUnavailableError` (propagated from
+        :meth:`BaseBrokeredClient.consult`) when the broker cannot reach the
+        board manager.  All other errors are caught and returned as text.
         """
         extra: dict[str, str] = {}
         if self._s.repo_id:

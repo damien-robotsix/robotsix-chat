@@ -6,7 +6,7 @@ about work) in natural language. Returns no tools when mill integration is
 disabled or when the ``broker`` extra (robotsix-agent-comm) is absent, so the
 chat runs exactly as before.
 
-The tool is a plain async callable; robotsix-llmio converts it into a tool for
+The tools are plain async callables; robotsix-llmio converts them into tools for
 the underlying agent (the claude-sdk tool loop, or pydantic-ai function tools).
 """
 
@@ -37,9 +37,20 @@ def build_mill_tools(settings: MillSettings) -> list[Callable[..., Any]]:
         )
         return []
 
+    from robotsix_chat.broker_client import BrokerUnavailableError
+
     from .client import MillClient
+    from .retry_queue import BoardWriteRetryQueue
 
     client = MillClient(settings)
+
+    async def _raw_consult(request: str) -> str:
+        return await client.consult(request)
+
+    retry_queue = BoardWriteRetryQueue(consult_fn=_raw_consult)
+    # Start drain loop eagerly if there are entries persisted from a prior run
+    if retry_queue._entries:
+        retry_queue._ensure_started()
 
     async def consult_mill(request: str) -> str:
         """Consult the robotsix mill's board manager.
@@ -58,6 +69,20 @@ def build_mill_tools(settings: MillSettings) -> list[Callable[..., Any]]:
             The board manager's reply.
 
         """
-        return await client.consult(request)
+        try:
+            return await _raw_consult(request)
+        except BrokerUnavailableError:
+            return retry_queue.enqueue(request)
 
-    return [consult_mill]
+    async def get_board_write_queue_status() -> str:
+        """Return the current state of the board-write retry queue.
+
+        Shows any board writes that are pending retry after a broker-unavailability
+        failure, including their queue id, request preview, attempt count,
+        last error, and scheduled next-retry time. Returns a short message when
+        the queue is empty.
+        """
+        retry_queue._ensure_started()  # resume drain loop if needed after restart
+        return retry_queue.status()
+
+    return [consult_mill, get_board_write_queue_status]

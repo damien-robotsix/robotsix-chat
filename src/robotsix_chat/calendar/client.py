@@ -44,8 +44,9 @@ class CalendarClient(BaseBrokeredClient):
         calendar agent can route to the right CalDAV object type (``VEVENT`` vs
         ``VTODO``).
 
-        Never raises: broker/timeout/recipient errors become a short message the
-        calling LLM can relay to the user.
+        May raise :class:`BrokerUnavailableError` (propagated from
+        :meth:`BaseBrokeredClient.consult`) when the broker cannot reach the
+        calendar agent.  All other errors are caught and returned as text.
         """
         domain = str(extra_payload.pop("domain", ""))
         return await super().consult(

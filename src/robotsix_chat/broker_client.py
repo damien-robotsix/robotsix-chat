@@ -16,6 +16,29 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+__all__ = ["BaseBrokeredClient", "BrokerUnavailableError"]
+
+
+class BrokerUnavailableError(RuntimeError):
+    """Raised when the broker cannot reach the target agent.
+
+    This is a transient infrastructure error — the target agent (e.g. the
+    board manager) is temporarily unreachable through no fault of the caller.
+    """
+
+
+_BROKER_UNAVAILABLE_FRAGMENTS: tuple[str, ...] = (
+    "unknown recipient",
+    "connection refused",
+    "connection timeout",
+    "timed out",
+)
+
+
+def _is_broker_unavailable(exc: BaseException) -> bool:
+    msg = str(exc).lower()
+    return any(frag in msg for frag in _BROKER_UNAVAILABLE_FRAGMENTS)
+
 
 class BaseBrokeredClient:
     """Base for brokered clients that forward requests to an agent over the broker.
@@ -66,8 +89,9 @@ class BaseBrokeredClient:
     ) -> str:
         """Send *request* to the target agent, forwarding **extra_payload.
 
-        Never raises: broker/timeout/recipient errors become a short message
-        the calling LLM can relay to the user.
+        Raises :class:`BrokerUnavailableError` if the broker reports the target
+        agent is unreachable; all other broker/timeout/recipient errors are
+        caught and returned as a short message string.
         """
         if not request.strip():
             return empty_reply
@@ -75,5 +99,10 @@ class BaseBrokeredClient:
             payload: dict[str, object] = {self._request_key: request, **extra_payload}
             return await asyncio.to_thread(self._requester.request, payload)
         except Exception as exc:  # noqa: BLE001 — surface as text, never crash chat
+            if _is_broker_unavailable(exc):
+                logger.warning(
+                    "%s consult failed (broker unavailable): %s", error_label, exc
+                )
+                raise BrokerUnavailableError(str(exc)) from exc
             logger.warning("%s consult failed: %s", error_label, exc)
             return f"The {error_label} request could not be completed: {exc}"
