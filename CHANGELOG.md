@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Documented ``mail`` configuration in ``config/chat.local.example.yaml`` and
+  ``MAIL_*`` environment variables in ``.env.example``.
 - Refactored ``spawn_check_loop`` in ``robotsix_chat.chat.loops``: extracted
   the 147-line nested ``_worker`` coroutine into a top-level
   ``_check_loop_worker`` and the board-read gate setup into
