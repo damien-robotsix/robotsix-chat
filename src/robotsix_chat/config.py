@@ -100,6 +100,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "conversation": "conversation",
     "refdocs": "refdocs",
     "board_reader": "board_reader",
+    "version_check": "version_check",
     "knowledge": "knowledge",
     "self_review": "self_review",
     "component_agent": "component_agent",
@@ -221,6 +222,35 @@ class RefDocsSettings(BaseModel):
     github_token: str = ""
     base_url: str = "https://api.github.com"
     timeout: float = 30.0
+
+
+class VersionCheckSettings(BaseModel):
+    """Self-version-check tool: compare running version vs latest GitHub release.
+
+    Disabled by default. When enabled, the agent gains a tool that reports the
+    running ``robotsix_chat.__version__`` and the latest published release of
+    the configured GitHub repo, and flags when the deployment is out of date.
+
+    Attributes:
+        enabled: Master switch. When ``False``, no version-check tool is offered.
+        repo: GitHub ``owner/name`` (e.g. ``robotsix/robotsix-chat``). Required
+            when *enabled*.
+        github_token: Optional PAT to avoid unauthenticated rate limits.
+        base_url: Overridable base URL for GitHub Enterprise.
+        timeout: Per-request HTTP timeout in seconds.
+        cache_ttl: Seconds to cache the latest-release lookup (monotonic clock).
+
+    Note: the check is only meaningful when releases bump
+    ``robotsix_chat.__version__`` in lockstep with the GitHub release tag.
+
+    """
+
+    enabled: bool = False
+    repo: str = ""
+    github_token: str = ""
+    base_url: str = "https://api.github.com"
+    timeout: float = 30.0
+    cache_ttl: float = 300.0
 
 
 class MillSettings(BaseModel):
@@ -611,6 +641,7 @@ class Settings(BaseModel):
     component_agent: ComponentAgentSettings = Field(
         default_factory=ComponentAgentSettings
     )
+    version_check: VersionCheckSettings = Field(default_factory=VersionCheckSettings)
     max_images_per_message: int = 8
     max_image_bytes: int = 5_242_880
     allowed_image_media_types: list[str] = Field(
@@ -721,6 +752,12 @@ class Settings(BaseModel):
                 "refdocs.repos must be non-empty when refdocs is enabled — "
                 "provide it via REFDOCS_REPOS or the `refdocs.repos` config field"
             )
+        if self.version_check.enabled and not self.version_check.repo:
+            raise ValueError(
+                "version_check.repo is required when version_check.enabled is true — "
+                "provide it via VERSION_CHECK_REPO or the "
+                "`version_check.repo` config field"
+            )
 
     # ------------------------------------------------------------------
     # Factories
@@ -809,6 +846,7 @@ class Settings(BaseModel):
                 "refdocs",
                 "knowledge",
                 "self_review",
+                "version_check",
             )
         }
         auth_raw: dict[str, Any] = dict(flat.get("auth") or {})
@@ -965,6 +1003,10 @@ class Settings(BaseModel):
         component_agent_raw = _build_component_agent_raw(flat.get("component_agent"))
         if component_agent_raw:
             raw["component_agent"] = component_agent_raw
+
+        version_check_raw = _build_version_check_raw(flat.get("version_check"))
+        if version_check_raw:
+            raw["version_check"] = version_check_raw
 
         return cls(**raw)
 
@@ -1328,6 +1370,47 @@ def _build_component_agent_raw(yaml_component_agent: Any) -> dict[str, Any]:
             ) from None
 
     return component_agent_raw
+
+
+def _build_version_check_raw(yaml_version_check: Any) -> dict[str, Any]:
+    """Overlay ``VERSION_CHECK_*`` env vars onto the YAML ``version_check`` subtree.
+
+    Returns a dict ready to parse into :class:`VersionCheckSettings`, or empty
+    when nothing is set.
+    """
+    version_check_raw: dict[str, Any] = dict(yaml_version_check or {})
+
+    def env_set(field: str, env_name: str) -> None:
+        value = os.getenv(env_name)
+        if value is not None:
+            version_check_raw[field] = value
+
+    enabled = os.getenv("VERSION_CHECK_ENABLED")
+    if enabled is not None:
+        version_check_raw["enabled"] = _parse_bool(enabled)
+    env_set("repo", "VERSION_CHECK_REPO")
+    env_set("github_token", "VERSION_CHECK_GITHUB_TOKEN")
+    env_set("base_url", "VERSION_CHECK_BASE_URL")
+
+    timeout_str = os.getenv("VERSION_CHECK_TIMEOUT")
+    if timeout_str is not None:
+        try:
+            version_check_raw["timeout"] = float(timeout_str)
+        except ValueError:
+            raise ValueError(
+                f"VERSION_CHECK_TIMEOUT must be a number, got {timeout_str!r}"
+            ) from None
+
+    cache_ttl_str = os.getenv("VERSION_CHECK_CACHE_TTL")
+    if cache_ttl_str is not None:
+        try:
+            version_check_raw["cache_ttl"] = float(cache_ttl_str)
+        except ValueError:
+            raise ValueError(
+                f"VERSION_CHECK_CACHE_TTL must be a number, got {cache_ttl_str!r}"
+            ) from None
+
+    return version_check_raw
 
 
 def _load_dotenv() -> None:
