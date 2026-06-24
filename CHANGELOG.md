@@ -131,6 +131,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Registered `robotsix_chat.calendar` in `docs/modules.yaml` (was a
   fully-fledged module but absent from the module manifest).
 
+- Registered `robotsix_chat.selfreview` in `docs/modules.yaml` — a read-only
+  digest of live conversation activity via `build_recent_activity_tools()`
+  that exposes a `read_recent_activity` tool backed by the in-process
+  `ConversationStore`.
+
 - Added `pytest-xdist[psutil]` to the `dev` dependency group so the CI
   reusable workflow's `-n auto` flag works without `unrecognized arguments`
   errors.
