@@ -132,6 +132,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- Documented the ``broker_src/`` submodule layout convention in ``AGENT.md``:
+  broker features must be developed upstream in
+  ``damien-robotsix/robotsix-agent-comm`` and pinned here as a commit update,
+  not developed directly inside the submodule.
+
 - `max_check_loops` and `min_check_loop_interval_seconds` configuration
   fields for check-loop registry limits, with env var overrides
   `MAX_CHECK_LOOPS` and `MIN_CHECK_LOOP_INTERVAL_SECONDS`.
