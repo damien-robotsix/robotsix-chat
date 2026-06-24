@@ -56,8 +56,9 @@ def test_build_mill_tools_returns_consult_tool(
     )
     _install_fake_agent_comm(monkeypatch)
     tools = build_mill_tools(_settings())
-    assert len(tools) == 1
+    assert len(tools) == 2
     assert tools[0].__name__ == "consult_mill"
+    assert tools[1].__name__ == "get_board_write_queue_status"
 
 
 # ---------------------------------------------------------------------------
