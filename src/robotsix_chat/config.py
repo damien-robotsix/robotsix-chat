@@ -99,6 +99,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "conversation": "conversation",
     "refdocs": "refdocs",
     "board_reader": "board_reader",
+    "knowledge": "knowledge",
 }
 
 
@@ -281,6 +282,31 @@ class BoardReaderSettings(BaseModel):
     timeout: float = 30.0
 
 
+class KnowledgeSettings(BaseModel):
+    """Local, writable knowledge base for agent-authored operational notes.
+
+    A deliberate, explicit, agent-curated store of durable lessons and findings
+    — plain local JSON, no embeddings, no external service, always-on.  The
+    agent writes notes via five tools (``add/append/update/list/read_knowledge_note``)
+    and can re-read and revise them by id across sessions.
+
+    This store is **complementary to**, not a duplicate of, the optional cognee
+    episodic memory system (``memory/``).  cognee automatically recalls past
+    conversations by similarity; this knowledge base holds notes the agent
+    deliberately authors and addresses by id.
+
+    Attributes:
+        enabled: Master switch.  Default ``True`` — this is a purely local,
+            no-credential, no-external-dependency primitive.
+        path: Path to the JSON persistence file.  Default
+            ``.data/knowledge.json``.
+
+    """
+
+    enabled: bool = True
+    path: str = ".data/knowledge.json"
+
+
 class CalendarSettings(BaseModel):
     """Calendar/tasks integration over the agent-comm broker. Disabled by default.
 
@@ -347,7 +373,7 @@ class ConversationSettings(BaseModel):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 3
+SYSTEM_PROMPT_VERSION = 4
 
 
 class Settings(BaseModel):
@@ -411,6 +437,16 @@ class Settings(BaseModel):
     subagent_model: str | None = "sonnet"
     agent_instruction: str = (
         "You are a helpful assistant. "
+        "You have a local, durable knowledge base "
+        "(add/append/update/list/read_knowledge_note) "
+        "for operational notes and lessons you deliberately author — "
+        "consult it at the start of every session and write durable "
+        "findings to it. Unlike the stable, human-governed system "
+        "prompt (which you must not modify), these notes are yours to "
+        "author and revise by id. This store is distinct from the "
+        "automatic cognee conversation memory — cognee recalls past "
+        "exchanges by similarity, while these notes you explicitly "
+        "create and address by id. "
         "Answer quick questions inline. "
         "When a request is judged to take a while — multi-step research, "
         "long generation, or anything that would stall your reply — call "
@@ -474,6 +510,7 @@ class Settings(BaseModel):
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)
     refdocs: RefDocsSettings = Field(default_factory=RefDocsSettings)
     board_reader: BoardReaderSettings = Field(default_factory=BoardReaderSettings)
+    knowledge: KnowledgeSettings = Field(default_factory=KnowledgeSettings)
     max_images_per_message: int = 8
     max_image_bytes: int = 5_242_880
     allowed_image_media_types: list[str] = Field(
@@ -644,6 +681,7 @@ class Settings(BaseModel):
                 "calendar",
                 "conversation",
                 "refdocs",
+                "knowledge",
             )
         }
         auth_raw: dict[str, Any] = dict(flat.get("auth") or {})
@@ -784,6 +822,10 @@ class Settings(BaseModel):
         board_reader_raw = _build_board_reader_raw(flat.get("board_reader"))
         if board_reader_raw:
             raw["board_reader"] = board_reader_raw
+
+        knowledge_raw = _build_knowledge_raw(flat.get("knowledge"))
+        if knowledge_raw:
+            raw["knowledge"] = knowledge_raw
 
         return cls(**raw)
 
@@ -1018,6 +1060,25 @@ def _build_board_reader_raw(yaml_board_reader: Any) -> dict[str, Any]:
             ) from None
 
     return board_reader_raw
+
+
+def _build_knowledge_raw(yaml_knowledge: Any) -> dict[str, Any]:
+    """Overlay ``KNOWLEDGE_*`` env vars onto the YAML ``knowledge`` subtree.
+
+    Returns a dict ready to parse into :class:`KnowledgeSettings`, or empty
+    when nothing is set.
+    """
+    knowledge_raw: dict[str, Any] = dict(yaml_knowledge or {})
+
+    enabled = os.getenv("KNOWLEDGE_ENABLED")
+    if enabled is not None:
+        knowledge_raw["enabled"] = _parse_bool(enabled)
+
+    path = os.getenv("KNOWLEDGE_PATH")
+    if path is not None:
+        knowledge_raw["path"] = path
+
+    return knowledge_raw
 
 
 def _load_dotenv() -> None:

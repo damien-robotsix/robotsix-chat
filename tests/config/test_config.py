@@ -72,6 +72,8 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "MAX_BACKGROUND_TASKS",
         "MAX_CHECK_LOOPS",
         "MIN_CHECK_LOOP_INTERVAL_SECONDS",
+        "KNOWLEDGE_ENABLED",
+        "KNOWLEDGE_PATH",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -633,6 +635,59 @@ def test_refdocs_timeout_invalid_raises(monkeypatch: pytest.MonkeyPatch) -> None
 
     with pytest.raises(ValueError, match="REFDOCS_TIMEOUT"):
         Settings.from_env()
+
+
+# ---------------------------------------------------------------------------
+# Knowledge (writable knowledge base)
+# ---------------------------------------------------------------------------
+
+
+def test_knowledge_enabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Knowledge is on by default, with sensible defaults present."""
+    _wipe_env_vars(monkeypatch)
+
+    settings = Settings.from_env()
+
+    assert settings.knowledge.enabled is True
+    assert settings.knowledge.path == ".data/knowledge.json"
+
+
+def test_knowledge_disabled_ok() -> None:
+    """Knowledge can be disabled explicitly — no extra requirements."""
+    from robotsix_chat.config import KnowledgeSettings
+
+    settings = Settings(knowledge=KnowledgeSettings(enabled=False))
+    assert settings.knowledge.enabled is False
+
+
+def test_knowledge_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``KNOWLEDGE_*`` env vars populate the knowledge settings."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("KNOWLEDGE_ENABLED", "false")
+    monkeypatch.setenv("KNOWLEDGE_PATH", ".data/test_knowledge.json")
+
+    settings = Settings.from_env()
+
+    assert settings.knowledge.enabled is False
+    assert settings.knowledge.path == ".data/test_knowledge.json"
+
+
+def test_knowledge_env_overrides_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``KNOWLEDGE_*`` env vars win over YAML, field-by-field."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text(
+        "knowledge:\n  enabled: true\n  path: .data/yaml_knowledge.json\n"
+    )
+    monkeypatch.setenv("KNOWLEDGE_PATH", ".data/env_knowledge.json")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.knowledge.enabled is True  # from YAML
+    assert settings.knowledge.path == ".data/env_knowledge.json"  # env wins
 
 
 # ---------------------------------------------------------------------------
