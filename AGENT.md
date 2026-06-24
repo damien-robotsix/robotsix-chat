@@ -190,6 +190,15 @@ added when off or when the `broker` extra is absent.
   at `ai-broker.robotsix.net:443` (no custom CA).
 - **Config keys**: `mill.{enabled,broker_host,broker_port,broker_scheme,broker_token,agent_id,board_manager_id,repo_id,timeout}` — each with a `MILL_*` env override.
 
+## Submodule layout
+
+The `broker_src/` submodule vendors the `robotsix-agent-comm` repository
+(the agent-comm broker's source code).  Changes to the broker itself — new
+routes, protocol changes, the monitoring UI — must be developed in the
+`damien-robotsix/robotsix-agent-comm` repo and pinned here as a submodule
+commit update.  Do not develop broker features directly inside `broker_src/`
+within this repo.
+
 ## Key file map
 
 - `docker-compose.yml` — local dev compose (builds from Dockerfile, tag `robotsix-chat:local`)
