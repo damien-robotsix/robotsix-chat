@@ -15,6 +15,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   auth (configurable via `BOARD_READER_API_TOKEN`) and is disabled by default;
   independent of the broker-based mill integration.
 
+- Added `include_previous_result` and `suppress_when` parameters to
+  `spawn_check_loop`, enabling change-detection periodic checks where
+  the sub-agent can compare against the prior iteration's result and
+  suppress no-change tick notifications (no SSE frame, no conversation
+  turn).  The `start_check_loop` tool now accepts `include_previous_result`
+  and automatically suppresses ticks whose result is the `NO_CHANGE`
+  sentinel — so users are only notified when something actually changed.
+
+- Added `docs/periodic-checks.md` documenting how the assistant sets up,
+  lists, and cancels periodic board checks, including the recommended
+  prompt pattern for change-detection with automatic no-change suppression.
+
 - Increased default width of the background tasks slide-in panel from
   340px to 420px to improve readability of task names and status text.
   Added a drag-to-resize handle on the left edge of the panel so users

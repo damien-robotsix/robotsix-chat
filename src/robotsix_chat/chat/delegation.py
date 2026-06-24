@@ -233,6 +233,17 @@ def build_delegation_tools(
 # ---------------------------------------------------------------------------
 
 
+def _no_change_result(result: str) -> bool:
+    """Return ``True`` when *result* indicates no noteworthy change.
+
+    Matches results that are empty, whitespace-only, or start with the
+    ``NO_CHANGE`` sentinel marker.  Used as the default ``suppress_when``
+    predicate so the user is not spammed with no-op tick notifications.
+    """
+    stripped = result.strip()
+    return not stripped or stripped.upper().startswith("NO_CHANGE")
+
+
 def build_check_loop_tools(
     settings: Settings,
     registry: CheckLoopRegistry,
@@ -241,7 +252,7 @@ def build_check_loop_tools(
     client_id: str = "",
     agent_factory: Callable[[Settings], ChatAgent] | None = None,
 ) -> list[Callable[..., Any]]:
-    """Return the ``start_check_loop`` tool for the foreground chat agent.
+    """Return the check-loop tools for the foreground chat agent.
 
     When wired into the agent's tools list, the model can call
     ``start_check_loop`` to launch a recurring check on the user's behalf.
@@ -259,6 +270,12 @@ def build_check_loop_tools(
     :func:`~robotsix_chat.chat.loops.spawn_check_loop`; when ``None``
     (the default), the runner's own default factory is used — which builds
     a sub-agent with **no** loop tools (preventing infinite recursion).
+
+    Ticks whose result matches the ``NO_CHANGE`` sentinel (or are empty)
+    are suppressed — no SSE frame is published and no conversation turn is
+    recorded — so the user is only notified when something actually
+    changed.  The loop still tracks iterations and the last result
+    internally so the next tick can compare against prior state.
     """
 
     async def start_check_loop(
@@ -266,6 +283,7 @@ def build_check_loop_tools(
         interval_seconds: float,
         max_iterations: int | None = None,
         reason: str | None = None,
+        include_previous_result: bool = False,
     ) -> str:
         """Start a recurring background check that re-runs every ``interval_seconds``.
 
@@ -278,6 +296,14 @@ def build_check_loop_tools(
         The check re-runs automatically until it is explicitly stopped, reaches
         *max_iterations* (if set), or self-stops.  Every result is surfaced to
         the user as it lands.
+
+        When *include_previous_result* is ``True``, each iteration after the
+        first receives the previous tick's result prepended to the prompt so the
+        sub-agent can compare against prior state.  Use this for
+        change-detection checks: instruct the sub-agent to return a description
+        when something changed, or the exact text ``NO_CHANGE`` when nothing
+        changed (ticks marked ``NO_CHANGE`` are suppressed — no user
+        notification).
 
         Args:
             check_description: A complete, self-contained description of what
@@ -294,6 +320,9 @@ def build_check_loop_tools(
                 Displayed in the UI to help the user identify the loop at a
                 glance.  When omitted, the UI falls back to a truncated
                 prompt.
+            include_previous_result: When ``True``, each tick after the first
+                receives the previous tick's result so the sub-agent can
+                compare state across iterations.  Default ``False``.
 
         Returns:
             A message with the started loop's id; relay it to the user so they
@@ -309,6 +338,8 @@ def build_check_loop_tools(
                 settings=settings,
                 registry=registry,
                 max_iterations=max_iterations,
+                suppress_when=_no_change_result,
+                include_previous_result=include_previous_result,
                 agent_factory=agent_factory,
                 channel=channel,
                 reason=reason,

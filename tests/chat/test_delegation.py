@@ -19,6 +19,8 @@ from robotsix_chat.chat.delegation import (
 )
 from robotsix_chat.chat.events import (
     SSE_LOOP_STARTED_TYPE,
+    SSE_LOOP_STOPPED_TYPE,
+    SSE_LOOP_TICK_TYPE,
     EventBus,
 )
 from robotsix_chat.chat.loops import (
@@ -1276,6 +1278,163 @@ async def test_list_check_loops_excludes_other_clients() -> None:
     # Clean up.
     registry.stop(alice_loop_id, reason="test teardown")
     await asyncio.sleep(0.05)
+
+
+# ---------------------------------------------------------------------------
+# create_agent_from_settings — check_loop_registry gating
+# ---------------------------------------------------------------------------
+
+
+def test_no_change_result_empty() -> None:
+    """``_no_change_result`` returns True for empty/whitespace strings."""
+    from robotsix_chat.chat.delegation import _no_change_result
+
+    assert _no_change_result("") is True
+    assert _no_change_result("   ") is True
+    assert _no_change_result("\n\t") is True
+
+
+def test_no_change_result_sentinel() -> None:
+    """``_no_change_result`` returns True for strings starting with NO_CHANGE."""
+    from robotsix_chat.chat.delegation import _no_change_result
+
+    assert _no_change_result("NO_CHANGE") is True
+    assert _no_change_result("NO_CHANGE: all tickets unchanged") is True
+    assert _no_change_result("no_change — nothing new") is True
+
+
+def test_no_change_result_normal_result() -> None:
+    """``_no_change_result`` returns False for normal results."""
+    from robotsix_chat.chat.delegation import _no_change_result
+
+    assert _no_change_result("ticket X is now blocked") is False
+    assert _no_change_result("CHANGE: gate reached on ticket Y") is False
+
+
+@pytest.mark.asyncio
+async def test_start_check_loop_include_previous_result_forwarded() -> None:
+    """The include_previous_result kwarg is forwarded to spawn_check_loop."""
+    bus = EventBus()
+    registry = _loop_registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        client_id="c1",
+        agent_factory=lambda s: _StubAgent(["first"]),
+    )
+    start_check_loop = tools[0]
+
+    result = await start_check_loop(
+        "compare check",
+        interval_seconds=0.01,
+        max_iterations=2,
+        include_previous_result=True,
+    )
+    loop_id = _extract_loop_id(result)
+
+    # Let both iterations run.
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        info = registry.get(loop_id)
+        if info and info.status.value == "stopped":
+            break
+
+    info = registry.get(loop_id)
+    assert info is not None
+    assert info.iterations == 2
+    assert info.status.value == "stopped"
+
+    registry.stop(loop_id, reason="test teardown")
+    await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_start_check_loop_suppresses_no_change_ticks() -> None:
+    """When the sub-agent returns NO_CHANGE, the tick is suppressed (no SSE)."""
+    bus = EventBus()
+    registry = _loop_registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+    q_sse = bus.subscribe("c1")
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        client_id="c1",
+        agent_factory=lambda s: _StubAgent(["NO_CHANGE"]),
+    )
+    start_check_loop = tools[0]
+
+    result = await start_check_loop(
+        "board check",
+        interval_seconds=0.01,
+        max_iterations=1,
+    )
+    loop_id = _extract_loop_id(result)
+
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        info = registry.get(loop_id)
+        if info and info.status.value == "stopped":
+            break
+
+    info = registry.get(loop_id)
+    assert info is not None
+    assert info.iterations == 1
+    assert info.last_result == "NO_CHANGE"
+
+    # No loop_tick SSE frame.
+    frames: list[dict[str, Any]] = []
+    while not q_sse.empty():
+        frames.append(q_sse.get_nowait())
+    tick_frames = [f for f in frames if f["type"] == SSE_LOOP_TICK_TYPE]
+    assert len(tick_frames) == 0, (
+        f"Expected zero tick frames for NO_CHANGE result, got {tick_frames}"
+    )
+
+    # loop_started and loop_stopped still emitted.
+    started = [f for f in frames if f["type"] == SSE_LOOP_STARTED_TYPE]
+    assert len(started) == 1
+    stopped = [f for f in frames if f["type"] == SSE_LOOP_STOPPED_TYPE]
+    assert len(stopped) == 1
+
+
+@pytest.mark.asyncio
+async def test_start_check_loop_does_not_suppress_change_ticks() -> None:
+    """When the sub-agent returns a real change, the tick IS published."""
+    bus = EventBus()
+    registry = _loop_registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+    q_sse = bus.subscribe("c1")
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        client_id="c1",
+        agent_factory=lambda s: _StubAgent(["CHANGE: ticket X blocked"]),
+    )
+    start_check_loop = tools[0]
+
+    result = await start_check_loop(
+        "board check",
+        interval_seconds=0.01,
+        max_iterations=1,
+    )
+    loop_id = _extract_loop_id(result)
+
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        info = registry.get(loop_id)
+        if info and info.status.value == "stopped":
+            break
+
+    frames: list[dict[str, Any]] = []
+    while not q_sse.empty():
+        frames.append(q_sse.get_nowait())
+    tick_frames = [f for f in frames if f["type"] == SSE_LOOP_TICK_TYPE]
+    assert len(tick_frames) == 1
+    assert tick_frames[0]["result"] == "CHANGE: ticket X blocked"
 
 
 # ---------------------------------------------------------------------------

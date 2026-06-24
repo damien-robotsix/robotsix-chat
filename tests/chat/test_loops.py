@@ -1473,3 +1473,346 @@ def test_min_check_loop_interval_constant() -> None:
     """The default ``min_check_loop_interval_seconds`` in settings is 60.0."""
     settings = _stub_settings()
     assert settings.min_check_loop_interval_seconds == 60.0
+
+
+# ---------------------------------------------------------------------------
+# include_previous_result
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_include_previous_result_off_by_default() -> None:
+    """When include_previous_result is False, the prompt is passed unchanged."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+
+    prompts: list[str] = []
+
+    class _PromptSpy:
+        async def stream(
+            self,
+            message: str,
+            *,
+            history: list[tuple[str, str]] | None = None,
+            session_id: str | None = None,
+            client_id: str | None = None,
+            images: list[tuple[str, bytes]] | None = None,
+        ) -> AsyncIterator[str]:
+            prompts.append(message)
+            yield "ok"
+
+    lid = spawn_check_loop(
+        client_id="c1",
+        prompt="original prompt",
+        interval_seconds=0.01,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _PromptSpy(),
+        max_iterations=2,
+        include_previous_result=False,
+    )
+
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        info = reg.get(lid)
+        if info and info.status != LoopStatus.RUNNING:
+            break
+
+    # Both iterations received the exact same prompt.
+    assert len(prompts) >= 2, f"Expected >= 2 prompts, got {len(prompts)}: {prompts}"
+    for p in prompts:
+        assert p == "original prompt"
+
+
+@pytest.mark.asyncio
+async def test_include_previous_result_prepends_previous_to_prompt() -> None:
+    """The second iteration receives the first result prepended to the prompt."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+
+    prompts: list[str] = []
+
+    class _PromptSpy:
+        async def stream(
+            self,
+            message: str,
+            *,
+            history: list[tuple[str, str]] | None = None,
+            session_id: str | None = None,
+            client_id: str | None = None,
+            images: list[tuple[str, bytes]] | None = None,
+        ) -> AsyncIterator[str]:
+            prompts.append(message)
+            yield f"result-{len(prompts)}"
+
+    lid = spawn_check_loop(
+        client_id="c1",
+        prompt="check board",
+        interval_seconds=0.01,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _PromptSpy(),
+        max_iterations=2,
+        include_previous_result=True,
+    )
+
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        info = reg.get(lid)
+        if info and info.status != LoopStatus.RUNNING:
+            break
+
+    assert len(prompts) >= 2, f"Expected >= 2 prompts, got {len(prompts)}: {prompts}"
+    # First iteration: original prompt only.
+    assert prompts[0] == "check board"
+    # Second iteration: includes previous result.
+    assert "Previous check result:" in prompts[1]
+    assert "result-1" in prompts[1]
+    assert "Current check prompt:" in prompts[1]
+    assert "check board" in prompts[1]
+
+
+# ---------------------------------------------------------------------------
+# suppress_when
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_suppress_when_suppresses_sse_frame() -> None:
+    """When suppress_when returns True, no loop_tick SSE frame is published."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+    q_sse = bus.subscribe("c1")
+
+    lid = spawn_check_loop(
+        client_id="c1",
+        prompt="check",
+        interval_seconds=0.01,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _StubAgent(["NO_CHANGE"]),
+        max_iterations=1,
+        suppress_when=lambda r: r.strip().upper().startswith("NO_CHANGE"),
+    )
+
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        info = reg.get(lid)
+        if info and info.status != LoopStatus.RUNNING:
+            break
+
+    # The loop still recorded the tick internally.
+    info = reg.get(lid)
+    assert info is not None
+    assert info.iterations == 1
+    assert info.last_result == "NO_CHANGE"
+
+    # No loop_tick frame was published to the SSE bus.
+    frames: list[dict[str, Any]] = []
+    while not q_sse.empty():
+        frames.append(q_sse.get_nowait())
+    tick_frames = [f for f in frames if f["type"] == SSE_LOOP_TICK_TYPE]
+    assert len(tick_frames) == 0, (
+        f"Expected zero loop_tick frames when suppressed, got {tick_frames}"
+    )
+
+    # The loop_started and loop_stopped frames are still emitted.
+    started = [f for f in frames if f["type"] == SSE_LOOP_STARTED_TYPE]
+    assert len(started) == 1
+
+
+@pytest.mark.asyncio
+async def test_suppress_when_false_still_publishes() -> None:
+    """When suppress_when returns False, the tick IS published normally."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+    q_sse = bus.subscribe("c1")
+
+    lid = spawn_check_loop(
+        client_id="c1",
+        prompt="check",
+        interval_seconds=0.01,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _StubAgent(["CHANGE: ticket X blocked"]),
+        max_iterations=1,
+        suppress_when=lambda r: "NO_CHANGE" in r.upper(),
+    )
+
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        info = reg.get(lid)
+        if info and info.status != LoopStatus.RUNNING:
+            break
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.iterations == 1
+    assert info.last_result == "CHANGE: ticket X blocked"
+
+    frames: list[dict[str, Any]] = []
+    while not q_sse.empty():
+        frames.append(q_sse.get_nowait())
+    tick_frames = [f for f in frames if f["type"] == SSE_LOOP_TICK_TYPE]
+    assert len(tick_frames) == 1
+    assert tick_frames[0]["result"] == "CHANGE: ticket X blocked"
+
+
+@pytest.mark.asyncio
+async def test_suppress_when_still_records_tick_internally() -> None:
+    """Even when suppressed, the loop still tracks iterations and last_result."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+
+    lid = spawn_check_loop(
+        client_id="c1",
+        prompt="poll",
+        interval_seconds=0.01,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _StubAgent(["NO_CHANGE"]),
+        max_iterations=1,
+        suppress_when=lambda r: True,
+    )
+
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        info = reg.get(lid)
+        if info and info.status != LoopStatus.RUNNING:
+            break
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.iterations == 1
+    assert info.last_result == "NO_CHANGE"
+    # Still stopped by max_iterations (suppression doesn't affect lifecycle).
+    assert info.status == LoopStatus.STOPPED
+    assert info.stop_reason == "max_iterations"
+
+
+@pytest.mark.asyncio
+async def test_include_previous_result_and_suppress_together() -> None:
+    """include_previous_result and suppress_when work together for change detection."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+    q_sse = bus.subscribe("c1")
+
+    # Shared call counter across agent instances.
+    call_count = 0
+
+    class _AlternatingAgent:
+        async def stream(
+            self,
+            message: str,
+            *,
+            history: list[tuple[str, str]] | None = None,
+            session_id: str | None = None,
+            client_id: str | None = None,
+            images: list[tuple[str, bytes]] | None = None,
+        ) -> AsyncIterator[str]:
+            nonlocal call_count
+            call_count += 1
+            if call_count == 1:
+                yield "ticket X is open"
+            else:
+                yield "NO_CHANGE"
+
+    lid = spawn_check_loop(
+        client_id="c1",
+        prompt="check tickets",
+        interval_seconds=0.01,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _AlternatingAgent(),
+        max_iterations=2,
+        include_previous_result=True,
+        suppress_when=lambda r: r.strip().upper().startswith("NO_CHANGE"),
+    )
+
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        info = reg.get(lid)
+        if info and info.status != LoopStatus.RUNNING:
+            break
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.iterations == 2
+
+    # First tick (not suppressed) published; second tick (suppressed) did not.
+    frames: list[dict[str, Any]] = []
+    while not q_sse.empty():
+        frames.append(q_sse.get_nowait())
+    tick_frames = [f for f in frames if f["type"] == SSE_LOOP_TICK_TYPE]
+    assert len(tick_frames) == 1, (
+        f"Expected exactly 1 tick frame (first tick not suppressed, second "
+        f"suppressed), got {len(tick_frames)}: {tick_frames}"
+    )
+    assert tick_frames[0]["result"] == "ticket X is open"
+
+
+# ---------------------------------------------------------------------------
+# record_tick publish=False
+# ---------------------------------------------------------------------------
+
+
+def test_record_tick_publish_false_skips_event_sink() -> None:
+    """record_tick with publish=False updates state but doesn't publish SSE."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    q = bus.subscribe("c1")
+
+    lid = reg.register(
+        "c1",
+        "quiet",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    q.get_nowait()  # consume started frame
+
+    reg.record_tick(lid, result="suppressed result", next_run=1100.0, publish=False)
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.iterations == 1
+    assert info.last_result == "suppressed result"
+
+    # No SSE frame was published.
+    frames: list[dict[str, Any]] = []
+    while not q.empty():
+        frames.append(q.get_nowait())
+    tick_frames = [f for f in frames if f["type"] == SSE_LOOP_TICK_TYPE]
+    assert len(tick_frames) == 0
+
+
+def test_record_tick_publish_true_still_publishes() -> None:
+    """record_tick with publish=True (default) still publishes SSE frame."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    q = bus.subscribe("c1")
+
+    lid = reg.register(
+        "c1",
+        "loud",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    q.get_nowait()  # consume started frame
+
+    reg.record_tick(lid, result="visible", next_run=1100.0, publish=True)
+
+    frames: list[dict[str, Any]] = []
+    while not q.empty():
+        frames.append(q.get_nowait())
+    tick_frames = [f for f in frames if f["type"] == SSE_LOOP_TICK_TYPE]
+    assert len(tick_frames) == 1
+    assert tick_frames[0]["result"] == "visible"
+    assert tick_frames[0]["iteration"] == 1
