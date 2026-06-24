@@ -113,11 +113,58 @@ async def mock_app(
 # ---------------------------------------------------------------------------
 
 
+class _FakeMetadata:
+    """Stand-in for robotsix_agent_comm.protocol.Metadata."""
+
+    @staticmethod
+    def create(sender: str) -> _FakeMetadata:
+        return _FakeMetadata()
+
+
+class _FakeRequest:
+    """Stand-in for robotsix_agent_comm.protocol.messages.Request."""
+
+    def __init__(
+        self,
+        metadata: Any = None,
+        body: dict[str, Any] | None = None,
+    ) -> None:
+        self.metadata = metadata
+        self.body = body or {}
+
+
+class _FakeResponse:
+    """Stand-in for robotsix_agent_comm.protocol.messages.Response."""
+
+    def __init__(self, body: dict[str, Any] | None = None) -> None:
+        self.body = body or {}
+
+    @classmethod
+    def to(cls, request: Any, *, body: dict[str, Any] | None = None) -> _FakeResponse:
+        return cls(body=body)
+
+
 class _FakeError:
     """Stand-in for robotsix_agent_comm.protocol.Error."""
 
-    def __init__(self, body: Any) -> None:
-        self.body = body
+    def __init__(self, body: Any = None) -> None:
+        self.body = body or {}
+
+    @classmethod
+    def to(
+        cls,
+        request: Any,
+        *,
+        code: str,
+        message: str,
+        details: dict[str, Any] | None = None,
+        **kwargs: Any,
+    ) -> _FakeError:
+        body: dict[str, Any] = {"code": code, "message": message}
+        if details:
+            body["details"] = details
+        body.update(kwargs)
+        return cls(body=body)
 
 
 class _FakeProtocolError(Exception):
@@ -279,67 +326,16 @@ def _install_fake_agent_comm(
     sdk.BrokeredRequester = _FakeBrokeredRequester  # type: ignore[attr-defined]
     sdk.BrokeredAgent = _FakeBrokeredAgent  # type: ignore[attr-defined]
 
-    # -- Fake protocol types used by the responder and its tests ----------
-
-    class _FakeMetadata:
-        """Stand-in for robotsix_agent_comm.protocol.Metadata."""
-
-        @staticmethod
-        def create(sender: str) -> _FakeMetadata:
-            return _FakeMetadata()
-
-    class _FakeRequest:
-        """Stand-in for robotsix_agent_comm.protocol.messages.Request."""
-
-        def __init__(
-            self,
-            metadata: Any = None,
-            body: dict[str, Any] | None = None,
-        ) -> None:
-            self.metadata = metadata
-            self.body = body or {}
-
-    class _FakeResponse:
-        """Stand-in for robotsix_agent_comm.protocol.messages.Response."""
-
-        def __init__(self, body: dict[str, Any] | None = None) -> None:
-            self.body = body or {}
-
-        @classmethod
-        def to(
-            cls, request: Any, *, body: dict[str, Any] | None = None
-        ) -> _FakeResponse:
-            return cls(body=body)
-
-    class _FakeProtocolError:
-        """Stand-in for robotsix_agent_comm.protocol.messages.Error."""
-
-        def __init__(self, body: dict[str, Any] | None = None) -> None:
-            self.body = body or {}
-
-        @classmethod
-        def to(
-            cls,
-            request: Any,
-            *,
-            code: str,
-            message: str,
-            details: dict[str, Any] | None = None,
-            **kwargs: Any,
-        ) -> _FakeProtocolError:
-            body: dict[str, Any] = {"code": code, "message": message}
-            if details:
-                body["details"] = details
-            body.update(kwargs)
-            return cls(body=body)
+    # -- Fake protocol types (module-level _FakeMetadata, _FakeRequest,  ---
+    #    _FakeResponse, _FakeError) ---------------------------------------
 
     protocol.Metadata = _FakeMetadata  # type: ignore[attr-defined]
     protocol_messages.Request = _FakeRequest  # type: ignore[attr-defined]
     protocol_messages.Response = _FakeResponse  # type: ignore[attr-defined]
-    protocol_messages.Error = _FakeProtocolError  # type: ignore[attr-defined]
+    protocol_messages.Error = _FakeError  # type: ignore[attr-defined]
     # Re-export at the protocol package level so
     # ``from robotsix_agent_comm.protocol import Error, Response`` works.
-    protocol.Error = _FakeProtocolError  # type: ignore[attr-defined]
+    protocol.Error = _FakeError  # type: ignore[attr-defined]
     protocol.Response = _FakeResponse  # type: ignore[attr-defined]
 
     for name, mod in {
@@ -364,58 +360,6 @@ def _install_fake_agent_comm(
 if "robotsix_agent_comm" not in sys.modules:
     import importlib.machinery as _importlib_machinery
 
-    class _FakeMetadataCT:
-        """Import-time stand-in for robotsix_agent_comm.protocol.Metadata."""
-
-        @staticmethod
-        def create(sender: str) -> _FakeMetadataCT:
-            return _FakeMetadataCT()
-
-    class _FakeRequestCT:
-        """Import-time stand-in for robotsix_agent_comm.protocol.messages.Request."""
-
-        def __init__(
-            self,
-            metadata: Any = None,
-            body: dict[str, Any] | None = None,
-        ) -> None:
-            self.metadata = metadata
-            self.body = body or {}
-
-    class _FakeResponseCT:
-        """Import-time stand-in for robotsix_agent_comm.protocol.messages.Response."""
-
-        def __init__(self, body: dict[str, Any] | None = None) -> None:
-            self.body = body or {}
-
-        @classmethod
-        def to(
-            cls, request: Any, *, body: dict[str, Any] | None = None
-        ) -> _FakeResponseCT:
-            return cls(body=body)
-
-    class _FakeErrorCT:
-        """Import-time stand-in for robotsix_agent_comm.protocol.messages.Error."""
-
-        def __init__(self, body: dict[str, Any] | None = None) -> None:
-            self.body = body or {}
-
-        @classmethod
-        def to(
-            cls,
-            request: Any,
-            *,
-            code: str,
-            message: str,
-            details: dict[str, Any] | None = None,
-            **kwargs: Any,
-        ) -> _FakeErrorCT:
-            body: dict[str, Any] = {"code": code, "message": message}
-            if details:
-                body["details"] = details
-            body.update(kwargs)
-            return cls(body=body)
-
     _spec = _importlib_machinery.ModuleSpec
 
     _root = types.ModuleType("robotsix_agent_comm")
@@ -430,12 +374,12 @@ if "robotsix_agent_comm" not in sys.modules:
     _protocol.__path__ = []
     _protocol_messages.__spec__ = _spec("robotsix_agent_comm.protocol.messages", None)
 
-    _protocol.Metadata = _FakeMetadataCT  # type: ignore[attr-defined]
-    _protocol_messages.Request = _FakeRequestCT  # type: ignore[attr-defined]
-    _protocol_messages.Response = _FakeResponseCT  # type: ignore[attr-defined]
-    _protocol_messages.Error = _FakeErrorCT  # type: ignore[attr-defined]
-    _protocol.Error = _FakeErrorCT  # type: ignore[attr-defined]
-    _protocol.Response = _FakeResponseCT  # type: ignore[attr-defined]
+    _protocol.Metadata = _FakeMetadata  # type: ignore[attr-defined]
+    _protocol_messages.Request = _FakeRequest  # type: ignore[attr-defined]
+    _protocol_messages.Response = _FakeResponse  # type: ignore[attr-defined]
+    _protocol_messages.Error = _FakeError  # type: ignore[attr-defined]
+    _protocol.Error = _FakeError  # type: ignore[attr-defined]
+    _protocol.Response = _FakeResponse  # type: ignore[attr-defined]
 
     sys.modules["robotsix_agent_comm"] = _root
     sys.modules["robotsix_agent_comm.sdk"] = _sdk
