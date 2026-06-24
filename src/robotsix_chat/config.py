@@ -95,6 +95,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "auth": "auth",
     "memory": "memory",
     "mill": "mill",
+    "mail": "mail",
     "calendar": "calendar",
     "conversation": "conversation",
     "refdocs": "refdocs",
@@ -574,6 +575,17 @@ class Settings(BaseModel):
                 raise ValueError(
                     "mill.broker_host must be set when mill is enabled — provide it "
                     "via MILL_BROKER_HOST or the config file"
+                )
+        if self.mail.enabled:
+            if not self.mail.broker_token:
+                raise ValueError(
+                    "mail.broker_token must be set when mail is enabled — provide "
+                    "it via MAIL_BROKER_TOKEN or the `mail.broker_token` config field"
+                )
+            if not self.mail.broker_host:
+                raise ValueError(
+                    "mail.broker_host must be set when mail is enabled — provide it "
+                    "via MAIL_BROKER_HOST or the config file"
                 )
         if self.calendar.enabled:
             if not self.calendar.broker_token:

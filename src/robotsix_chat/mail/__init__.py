@@ -41,7 +41,7 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
 
     client = MailClient(settings)
 
-    async def consult_mail_board(request: str) -> str:
+    async def consult_mail(request: str) -> str:
         """Consult the robotsix auto-mail board manager.
 
         Use this when the user wants to view, list, triage, or comment on
@@ -62,4 +62,4 @@ def build_mail_tools(settings: MailSettings) -> list[Callable[..., Any]]:
         """
         return await client.consult(request)
 
-    return [consult_mail_board]
+    return [consult_mail]
