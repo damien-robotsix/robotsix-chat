@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Documented the ``broker_src/`` submodule convention in ``AGENT.md``: broker
+  features must be developed in the upstream ``robotsix-agent-comm`` repo, not
+  directly inside ``broker_src/``.
 - Added ``create_board_ticket`` tool to the board reader: a direct synchronous
   (inline) tool that creates tickets via ``POST /tickets`` on the board API,
   avoiding the token waste of spawning a background sub-agent via
