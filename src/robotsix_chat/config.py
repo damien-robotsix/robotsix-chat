@@ -81,6 +81,7 @@ def level_needs_api_key(level: int) -> bool:
 _YAML_PATH_TO_FIELD: dict[str, str] = {
     "llmio.model_level": "llmio_model_level",
     "llmio.api_key": "llmio_api_key",  # pragma: allowlist secret
+    "llmio.subagent_model": "subagent_model",
     "agent.instruction": "agent_instruction",
     "server.host": "server_host",
     "server.port": "server_port",
@@ -364,6 +365,14 @@ class Settings(BaseModel):
         llmio_api_key: Provider API key, forwarded to llmio when the chosen
             level's provider needs one (e.g. ``openrouter``); unused
             by keyless providers like ``claudeSDK``.
+        subagent_model: Bare Claude model name override for background
+            sub-agents (delegate_task and check-loop workers).  Only applied
+            when the foreground level uses the keyless ``claudeSDK`` provider
+            (level 3).  ``"sonnet"`` (default) is cheaper than Opus and
+            stays on the subscription; set ``"haiku"`` for the cheapest
+            polling, or ``null`` to disable the downgrade (sub-agents then
+            match the foreground model).  Ignored for levels 1–2
+            (OpenRouter).  Env override: ``LLMIO_SUBAGENT_MODEL``.
         agent_instruction: System instruction handed to the LLM agent.
             Includes delegate-vs-inline guidance for background tasks.
         server_host: Host address the chat SSE server binds to.
@@ -399,6 +408,7 @@ class Settings(BaseModel):
 
     llmio_model_level: int = 3
     llmio_api_key: str = ""
+    subagent_model: str | None = "sonnet"
     agent_instruction: str = (
         "You are a helpful assistant. "
         "Answer quick questions inline. "
@@ -644,6 +654,9 @@ class Settings(BaseModel):
                 raw[field] = value
 
         env_override("llmio_api_key", "LLMIO_API_KEY")
+        subagent_val = os.getenv("LLMIO_SUBAGENT_MODEL")
+        if subagent_val is not None:
+            raw["subagent_model"] = subagent_val or None
         env_override("agent_instruction", "AGENT_INSTRUCTION")
         env_override("server_host", "SERVER_HOST")
         env_override("log_level", "LOG_LEVEL")

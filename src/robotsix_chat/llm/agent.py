@@ -131,6 +131,7 @@ class LlmioChatAgent:
         memory: ChatMemory | None = None,
         tools: list[Any] | None = None,
         request_tools_factory: Callable[[str], list[Any]] | None = None,
+        model_name: str | None = None,
     ) -> None:
         """Store the agent configuration for later ``stream`` calls.
 
@@ -139,6 +140,11 @@ class LlmioChatAgent:
         ``delegate_task`` tool whose closure captures that client_id).  It
         keeps the module dependency acyclic: delegation tools are built fresh
         per request inside ``stream``, not baked into the shared agent.
+
+        *model_name* is an optional bare model name override (e.g. ``"sonnet"``
+        or ``"haiku"``) passed directly to ``provider.build_agent(model=...)``.
+        When ``None`` (the default), the model name is resolved from the level's
+        tier default — behaviour is unchanged.
         """
         self._model_level = model_level
         self._instruction = instruction
@@ -149,6 +155,9 @@ class LlmioChatAgent:
         # returned as one block.
         self._tools = tools or None
         self._request_tools_factory = request_tools_factory
+        # Bare model-name override for the provider (e.g. "sonnet" for
+        # claudeSDK-subscription sub-agents). None → resolved from tier default.
+        self._model_name = model_name
         # Hold references to in-flight background writes so they aren't GC'd.
         self._write_tasks: set[asyncio.Task[None]] = set()
 
@@ -210,6 +219,7 @@ class LlmioChatAgent:
             # below regardless of success or failure).
             handle = provider.build_agent(
                 level=self._model_level,
+                model=self._model_name,
                 system_prompt=system_prompt,
                 tools=tools_arg,
                 builtin_tools=False,

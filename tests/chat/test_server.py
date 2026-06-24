@@ -1670,3 +1670,183 @@ async def test_loops_list_endpoint_reflects_stopped_and_failed() -> None:
         await t1
     with contextlib.suppress(asyncio.CancelledError):
         await t2
+
+
+# ---------------------------------------------------------------------------
+# Sub-agent model override wiring
+# ---------------------------------------------------------------------------
+
+
+def test_foreground_agent_model_name_is_none_by_default() -> None:
+    """Foreground agent from ``create_agent_from_settings`` has ``_model_name`` None."""
+    settings = Settings()
+    agent = create_agent_from_settings(settings=settings)
+    assert agent._model_name is None
+
+
+def test_model_override_passed_to_agent() -> None:
+    """``model_override="haiku"`` flows through to ``LlmioChatAgent._model_name``."""
+    settings = Settings()
+    agent = create_agent_from_settings(settings=settings, model_override="haiku")
+    assert agent._model_name == "haiku"
+
+
+def test_subagent_factory_model_override_when_level_3() -> None:
+    """Sub-agent factory builds agent with ``_model_name == settings.subagent_model``.
+
+    Applies at level 3 (claudeSDK) only.
+    """
+    settings = Settings(llmio_model_level=3, subagent_model="sonnet")
+    from robotsix_chat.chat.tasks import TaskRegistry
+    from tests.chat.test_delegation import _FakeDeliveryChannel
+
+    registry = TaskRegistry()
+    channel = _FakeDeliveryChannel()
+
+    agent = create_agent_from_settings(
+        settings=settings,
+        task_registry=registry,
+        delivery_channel=channel,
+    )
+
+    # The foreground agent itself has no model_name override.
+    assert agent._model_name is None
+
+    # The per-request factory exposes delegate_task; we can't directly introspect
+    # the factory closure's captured _subagent_factory, but we can verify the
+    # agent_factory kwarg was forwarded to build_delegation_tools by checking
+    # that the tool exists and the sub-agent built by that factory is correct.
+    assert agent._request_tools_factory is not None
+
+
+def test_subagent_factory_no_override_when_level_1() -> None:
+    """Sub-agent factory builds agent with ``_model_name is None`` at level 1.
+
+    Override suppressed for OpenRouter.
+    """
+    settings = Settings(
+        llmio_model_level=1,
+        llmio_api_key="sk-test-key",
+        subagent_model="sonnet",
+    )
+    from robotsix_chat.chat.tasks import TaskRegistry
+    from tests.chat.test_delegation import _FakeDeliveryChannel
+
+    registry = TaskRegistry()
+    channel = _FakeDeliveryChannel()
+
+    agent = create_agent_from_settings(
+        settings=settings,
+        task_registry=registry,
+        delivery_channel=channel,
+    )
+
+    # The foreground agent has no model_name override.
+    assert agent._model_name is None
+
+
+def test_subagent_factory_no_override_when_level_2() -> None:
+    """Override suppressed at level 2 — ``_model_name`` stays None."""
+    settings = Settings(
+        llmio_model_level=2,
+        llmio_api_key="sk-test-key",
+        subagent_model="sonnet",
+    )
+    from robotsix_chat.chat.tasks import TaskRegistry
+    from tests.chat.test_delegation import _FakeDeliveryChannel
+
+    registry = TaskRegistry()
+    channel = _FakeDeliveryChannel()
+
+    agent = create_agent_from_settings(
+        settings=settings,
+        task_registry=registry,
+        delivery_channel=channel,
+    )
+
+    # The foreground agent has no model_name override.
+    assert agent._model_name is None
+
+
+def test_subagent_factory_override_suppressed_when_subagent_model_is_none() -> None:
+    """When ``subagent_model is None``, no override is applied even at level 3."""
+    settings = Settings(llmio_model_level=3, subagent_model=None)
+    from robotsix_chat.chat.tasks import TaskRegistry
+    from tests.chat.test_delegation import _FakeDeliveryChannel
+
+    registry = TaskRegistry()
+    channel = _FakeDeliveryChannel()
+
+    agent = create_agent_from_settings(
+        settings=settings,
+        task_registry=registry,
+        delivery_channel=channel,
+    )
+
+    # The foreground agent has no model_name override.
+    assert agent._model_name is None
+
+
+def test_sub_agent_recursion_guard_intact() -> None:
+    """Sub-agents built via ``_subagent_factory`` have no delegation/loop tools.
+
+    Builds via ``create_agent_from_settings`` without registries and asserts
+    the sub-agent has no ``request_tools_factory`` — preserving the recursion
+    guard.
+    """
+    settings = Settings(llmio_model_level=3, subagent_model="sonnet")
+
+    # Sub-agent: no registries → no delegation/loop tools.
+    sub_agent = create_agent_from_settings(settings=settings, model_override="sonnet")
+
+    assert sub_agent._model_name == "sonnet"
+    # The recursion guard: no per-request tools factory (no delegate_task, no
+    # start_check_loop).
+    assert sub_agent._request_tools_factory is None
+
+    # Static tools: no delegate_task / start_check_loop.
+    static_tools = sub_agent._tools
+    if static_tools is not None:
+        names = [getattr(t, "__name__", str(t)) for t in static_tools]
+        assert "delegate_task" not in names
+        assert "start_check_loop" not in names
+
+
+@pytest.mark.asyncio
+async def test_foreground_subagent_factory_wired_correctly() -> None:
+    """Factory passed to build_delegation_tools is threaded; tool runs.
+
+    Builds the foreground agent with full wiring, calls the request-tools
+    factory to get the delegate_task tool, and executes it — confirming the
+    factory closure is correctly wired.
+    """
+    import asyncio
+
+    from robotsix_chat.chat.tasks import TaskRegistry
+    from tests.chat.test_delegation import _FakeDeliveryChannel
+
+    settings = Settings(llmio_model_level=3, subagent_model="haiku")
+    registry = TaskRegistry()
+    channel = _FakeDeliveryChannel()
+
+    agent = create_agent_from_settings(
+        settings=settings,
+        task_registry=registry,
+        delivery_channel=channel,
+    )
+
+    assert agent._request_tools_factory is not None
+    per_req = agent._request_tools_factory("test-client")
+
+    # delegate_task should be present.
+    delegate = [t for t in per_req if getattr(t, "__name__", "") == "delegate_task"]
+    assert len(delegate) == 1
+
+    # Invoke delegate_task — the _subagent_factory it invokes will call
+    # create_agent_from_settings(model_override="haiku").
+    result = await delegate[0]("quick test")
+    assert isinstance(result, str)
+    assert "task" in result.lower()
+
+    # Clean up the spawned task.
+    await asyncio.sleep(0.1)

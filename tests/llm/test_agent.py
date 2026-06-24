@@ -525,3 +525,54 @@ async def test_stream_without_images_still_passes_plain_string() -> None:
     run_arg = handle.run_calls[0]["message"]
     assert isinstance(run_arg, str)
     assert run_arg == "hello"
+
+
+# ---------------------------------------------------------------------------
+# model_name passthrough
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_model_name_passed_to_build_agent() -> None:
+    """``model_name="sonnet"`` forwarded as ``model=`` to ``provider.build_agent``."""
+    create_model, _ = _patched_create_model("ok")
+    provider = create_model.return_value
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(
+            model_level=3, instruction="Be helpful.", model_name="sonnet"
+        )
+        _ = [c async for c in agent.stream("hi")]
+
+    kwargs = provider.build_agent.call_args.kwargs
+    assert kwargs["model"] == "sonnet"
+
+
+@pytest.mark.asyncio
+async def test_model_name_none_passes_none() -> None:
+    """``model_name=None`` passes ``model=None`` — existing behaviour preserved."""
+    create_model, _ = _patched_create_model("ok")
+    provider = create_model.return_value
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(
+            model_level=3, instruction="Be helpful.", model_name=None
+        )
+        _ = [c async for c in agent.stream("hi")]
+
+    kwargs = provider.build_agent.call_args.kwargs
+    assert kwargs["model"] is None
+
+
+@pytest.mark.asyncio
+async def test_model_name_default_is_none() -> None:
+    """Omitting ``model_name`` (backward-compatible) passes ``model=None``."""
+    create_model, _ = _patched_create_model("ok")
+    provider = create_model.return_value
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        _ = [c async for c in agent.stream("hi")]
+
+    kwargs = provider.build_agent.call_args.kwargs
+    assert kwargs["model"] is None
