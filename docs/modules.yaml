@@ -129,3 +129,10 @@ modules:
     description: "Browser chat UI — self-contained HTML frontend served at /."
     paths:
       - src/robotsix_chat/ui/index.html
+
+  - id: robotsix_chat.version_check
+    description: "Self-version-check tool for the agent — compares the running robotsix_chat.__version__ against the latest published GitHub release and warns the user when the deployment is behind."
+    paths:
+      - src/robotsix_chat/version_check/__init__.py
+      - src/robotsix_chat/version_check/client.py
+      - tests/test_version_check.py
