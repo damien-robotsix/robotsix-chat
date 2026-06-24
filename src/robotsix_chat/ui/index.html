@@ -332,6 +332,12 @@
     color: #fca5a5;
     border-color: #b91c1c;
   }
+  .bubble.notification.loop-tick {
+    background: #1e293b;
+    color: #fde68a;
+    border-color: #a16207;
+    font-style: italic;
+  }
 
   /* ------------------------------------------------------------------ */
   /* Composer row                                                        */
@@ -1401,6 +1407,11 @@
     } else if (frame.type === "loop_started") {
       typeClass = "started";
       text = "[Loop " + frame.loop_id.slice(0, 8) + "] Started: " + frame.prompt;
+    } else if (frame.type === "loop_tick") {
+      typeClass = "loop-tick";
+      // Visually distinct tick bubble: shows loop id, iteration, and result.
+      var iter = (frame.iteration !== undefined) ? " #" + frame.iteration : "";
+      text = "[Loop " + frame.loop_id.slice(0, 8) + iter + "] " + (frame.result || "");
     } else if (frame.type === "loop_stopped") {
       typeClass = "completed";
       text = "[Loop " + frame.loop_id.slice(0, 8) + "] Stopped: " + (frame.reason || "");
@@ -1519,11 +1530,16 @@
                    frame.type === "loop_tick" ||
                    frame.type === "loop_stopped" ||
                    frame.type === "loop_failed") {
-          // Show a notification for lifecycle transitions (not ticks).
-          if (frame.type !== "loop_tick") {
-            addNotificationBubble(frame);
-          }
+          // Show a notification bubble for all loop lifecycle frames,
+          // including loop_tick (the tick result is visible in the chat).
+          addNotificationBubble(frame);
           updateLoopPanel(frame);
+        } else if (frame.type === "loop_reply") {
+          // A tick-triggered foreground agent run completed —
+          // render the reply as a normal assistant bubble.
+          if (frame.reply && typeof frame.reply === "string") {
+            addAssistantBubble(frame.reply);
+          }
         }
         // ignore unknown types gracefully
       },

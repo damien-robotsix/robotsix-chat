@@ -26,6 +26,7 @@ SSE_LOOP_STARTED_TYPE = "loop_started"
 SSE_LOOP_TICK_TYPE = "loop_tick"
 SSE_LOOP_STOPPED_TYPE = "loop_stopped"
 SSE_LOOP_FAILED_TYPE = "loop_failed"
+SSE_LOOP_REPLY_TYPE = "loop_reply"
 
 # ---------------------------------------------------------------------------
 # EventSink — structural Protocol for dependency injection
@@ -237,6 +238,34 @@ def loop_failed_frame(
         "loop_id": loop_id,
         "error": error,
         "status": "failed",
+    }
+
+
+def loop_reply_frame(
+    loop_id: str,
+    iteration: int,
+    reply: str,
+) -> dict[str, object]:
+    """Build a ``loop_reply`` notification frame.
+
+    Emitted when a tick-triggered foreground agent run completes, carrying
+    the full assistant reply for rendering in the browser as a normal
+    assistant bubble.
+
+    Returns a dict with shape::
+
+        {
+            "type": "loop_reply",
+            "loop_id": <str>,
+            "iteration": <int>,
+            "reply": <str>,
+        }
+    """
+    return {
+        "type": SSE_LOOP_REPLY_TYPE,
+        "loop_id": loop_id,
+        "iteration": iteration,
+        "reply": reply,
     }
 
 
