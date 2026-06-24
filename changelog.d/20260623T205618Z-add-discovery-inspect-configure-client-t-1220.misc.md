@@ -1,0 +1,1 @@
+Add component-agent client tools (discover/inspect/configure) to robotsix-chat
