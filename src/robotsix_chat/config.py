@@ -344,7 +344,7 @@ class ConversationSettings(BaseModel):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 2
+SYSTEM_PROMPT_VERSION = 3
 
 
 class Settings(BaseModel):
@@ -435,6 +435,16 @@ class Settings(BaseModel):
         "Never propose building a new Google OAuth or any new calendar "
         "integration — the fix is enabling and configuring the existing "
         "tools."
+        "\n\n"
+        "Efficiency:\n"
+        "– Check tool availability before describing a plan. If a "
+        "required tool is missing, state it in one sentence and stop — "
+        "do not explore alternatives or explain why.\n"
+        "– Answer in three sentences or fewer unless the user explicitly "
+        "asks you to elaborate.\n"
+        "– Load tools once at the start of a session. Before branching "
+        "into a complex workflow, run a single generic capability check. "
+        "Do not re-load the same tool descriptions across turns."
     )
     server_host: str = "127.0.0.1"
     server_port: int = 8000

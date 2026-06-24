@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added sub-agent efficiency rules to the agent system prompt: check tool
+  availability before describing a plan and state missing tools in one
+  sentence; answer in three sentences or fewer unless elaboration is
+  requested; load tools once per session with a single capability check
+  before branching.
+
 - Added `board_reader` module with `list_board_tickets` and `read_board_ticket`
   tools that query the SAME HTTP board API endpoint the user's browser UI
   consumes, giving the assistant read parity with the user.  Uses bearer-token

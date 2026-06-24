@@ -42,6 +42,19 @@ number.  To revert to a previous prompt:
 
 ---
 
+## v3 — 2026-06-24 — 20260623T210933Z-tighten-sub-agent-prompt-efficiency-chec-5a52
+
+Add sub-agent efficiency rules (cost-analysis proposals #9 and #10):
+
+- #9: Check tool availability before describing a plan; if a required
+  tool is missing, state it in one sentence and stop.  Answer in three
+  sentences or fewer unless the user explicitly asks for elaboration.
+- #10: Load tools once at the start of a session.  Before branching into
+  a complex workflow, run a single generic capability check.  Do not
+  re-load the same tool descriptions across turns.
+
+**SHA256:** `323b644912809fda2d4ed9f80cf0e01d6742f6b6c05d5ff85d440e83e65aba52`
+
 ## v2 — 2026-06-24 — 20260624T020652Z-give-the-assistant-direct-1628
 
 Add board-reader tool guidance:
