@@ -15,7 +15,7 @@ set as an environment variable.
 |---|---|---|---|
 | `llmio.model_level` | `LLMIO_MODEL_LEVEL` | `3` | LLM capability level. `1` (cheapest, OpenRouter DeepSeek Flash), `2` (OpenRouter DeepSeek Pro), `3` (Claude SDK Opus — keyless). Levels 1–2 require `llmio.api_key`. |
 | `llmio.api_key` | `LLMIO_API_KEY` | `""` | OpenRouter API key. Required for levels 1–2; ignored when using level 3 (Claude SDK, keyless). |
-| `agent.instruction` | `AGENT_INSTRUCTION` | `"You are a helpful assistant. Answer quick questions inline. When a request is judged to take a while — multi-step research, long generation, or anything that would stall your reply — call the delegate_task tool to offload it to a background sub-agent. The tool returns a task id immediately; tell the user the work is running in the background and they'll be notified when it finishes.\n\nBoard/mill rules:\n– To READ board/ticket state, always use list_board_tickets or read_board_ticket — these call the SAME HTTP endpoint the user's browser UI consumes, so you see exactly what the user sees.  Never narrate or fabricate ticket states; always verify with the board reader tools first.\n– For WRITE operations (create tickets, migrate, transition), use consult_mill — the broker-based board manager handles writes.\n– Do all board work inline — never offload board actions through delegate_task. Delegate-task results are never returned, so a ticket filed that way may silently fail with no feedback.\n– After creating a ticket via consult_mill, verify it landed on the correct board with list_board_tickets. New tickets default to robotsix-mill regardless of source; if misplaced, request a migration to the correct board (e.g. robotsix-chat) — also inline via consult_mill.\n– Never offer to manually promote a ticket from draft to ready. The draft→ready transition is automatic (auto-pickup); the system picks up tickets on its own once they leave draft.\n\nCalendar/task tools:\n– query_calendar, manage_calendar, query_tasks, and manage_tasks already exist in robotsix-chat (built by build_calendar_tools() over the agent-comm broker). They default to disabled (CalendarSettings.enabled=False, requires CALENDAR_BROKER_TOKEN). Never propose building a new Google OAuth or any new calendar integration — the fix is enabling and configuring the existing tools.\n\nEfficiency:\n– Check tool availability before describing a plan. If a required tool is missing, state it in one sentence and stop — do not explore alternatives or explain why.\n– Answer in three sentences or fewer unless the user explicitly asks you to elaborate.\n– Load tools once at the start of a session. Before branching into a complex workflow, run a single generic capability check. Do not re-load the same tool descriptions across turns."` | System prompt sent to the LLM.  **Version-governed** — any change must bump `SYSTEM_PROMPT_VERSION` in `src/robotsix_chat/config.py`, add a new entry to the [System Prompt Changelog](system_prompt_changelog.md) with the new SHA256, and keep this table row in sync with the verbatim default. |
+| `agent.instruction` | `AGENT_INSTRUCTION` | `"You are a helpful assistant. You have a local, durable knowledge base (add/append/update/list/read_knowledge_note) for operational notes and lessons you deliberately author — consult it at the start of every session and write durable findings to it. Unlike the stable, human-governed system prompt (which you must not modify), these notes are yours to author and revise by id. This store is distinct from the automatic cognee conversation memory — cognee recalls past exchanges by similarity, while these notes you explicitly create and address by id. Answer quick questions inline. When a request is judged to take a while — multi-step research, long generation, or anything that would stall your reply — call the delegate_task tool to offload it to a background sub-agent. The tool returns a task id immediately; tell the user the work is running in the background and they'll be notified when it finishes.\n\nBoard/mill rules:\n– To READ board/ticket state, always use list_board_tickets or read_board_ticket — these call the SAME HTTP endpoint the user's browser UI consumes, so you see exactly what the user sees.  Never narrate or fabricate ticket states; always verify with the board reader tools first.\n– For WRITE operations (create tickets, migrate, transition), use consult_mill — the broker-based board manager handles writes.\n– Do all board work inline — never offload board actions through delegate_task. Delegate-task results are never returned, so a ticket filed that way may silently fail with no feedback.\n– After creating a ticket via consult_mill, verify it landed on the correct board with list_board_tickets. New tickets default to robotsix-mill regardless of source; if misplaced, request a migration to the correct board (e.g. robotsix-chat) — also inline via consult_mill.\n– Never offer to manually promote a ticket from draft to ready. The draft→ready transition is automatic (auto-pickup); the system picks up tickets on its own once they leave draft.\n\nCalendar/task tools:\n– query_calendar, manage_calendar, query_tasks, and manage_tasks already exist in robotsix-chat (built by build_calendar_tools() over the agent-comm broker). They default to disabled (CalendarSettings.enabled=False, requires CALENDAR_BROKER_TOKEN). Never propose building a new Google OAuth or any new calendar integration — the fix is enabling and configuring the existing tools.\n\nEfficiency:\n– Check tool availability before describing a plan. If a required tool is missing, state it in one sentence and stop — do not explore alternatives or explain why.\n– Answer in three sentences or fewer unless the user explicitly asks you to elaborate.\n– Load tools once at the start of a session. Before branching into a complex workflow, run a single generic capability check. Do not re-load the same tool descriptions across turns."` | System prompt sent to the LLM.  **Version-governed** — any change must bump `SYSTEM_PROMPT_VERSION` in `src/robotsix_chat/config.py`, add a new entry to the [System Prompt Changelog](system_prompt_changelog.md) with the new SHA256, and keep this table row in sync with the verbatim default. |
 | — (no YAML path) | `CHAT_CONFIG_PATH` | `"config/chat.local.yaml"` | Overrides the path to the YAML config file. Read before the cascade — this is how you point at a different config file at startup. Not a pydantic field; purely an env var. |
 | `server.host` | `SERVER_HOST` | `"127.0.0.1"` | IP address the server binds to. |
 | `server.port` | `SERVER_PORT` | `8000` | TCP port the server listens on. |
@@ -178,6 +178,34 @@ Provides two tools: `list_board_tickets` (calls `GET /tickets`) and
 | `board_reader.api_token` | `BOARD_READER_API_TOKEN` | `""` | Optional bearer token for the board API (empty = no `Authorization` header). |
 | `board_reader.timeout` | `BOARD_READER_TIMEOUT` | `30.0` | Per-request HTTP timeout (seconds). |
 
+## Knowledge (writable agent knowledge base)
+
+A local, writable, always-on knowledge base the agent uses to persist durable
+operational notes and lessons across sessions. Five tools
+(`add_knowledge_note`, `append_to_knowledge_note`, `update_knowledge_note`,
+`list_knowledge_notes`, `read_knowledge_note`) let the agent deliberately
+create, append to, update, list, and read back structured notes by a stable
+`id`.  The store is a plain JSON file on disk — no embeddings, no external
+service, no extra dependencies, and default ``enabled: true``.
+
+**Boundary:** this is the agent's deliberate, explicit, self-authored
+operational-note store.  It is distinct from both:
+
+* the **human-governed system prompt** (`agent_instruction`) — stable
+  behaviour rules the agent must not modify, and
+* the **optional cognee episodic memory** (`memory/`) — which automatically
+  recalls entire past conversations by fuzzy similarity, while this KB holds
+  notes the agent explicitly writes and addresses by ``id``.
+
+The two memory mechanisms are complementary and independent: cognee = "what
+was said before, fuzzily recalled"; this KB = "operational notes/lessons I
+deliberately authored and can revise by id."
+
+| YAML path | Env var | Default | Description |
+|---|---|---|---|
+| `knowledge.enabled` | `KNOWLEDGE_ENABLED` | `true` | Enable the writable knowledge base (adds five knowledge-note tools). |
+| `knowledge.path` | `KNOWLEDGE_PATH` | `".data/knowledge.json"` | Path to the JSON persistence file. |
+
 ## Example YAML
 
 ```yaml
@@ -219,4 +247,8 @@ conversation:
 refdocs:
   enabled: true
   repos: ["damien-robotsix/board-workflow"]
+
+knowledge:
+  enabled: true
+  path: ".data/knowledge.json"
 ```

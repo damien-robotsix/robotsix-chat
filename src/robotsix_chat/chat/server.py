@@ -32,6 +32,7 @@ from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus
 from robotsix_chat.chat.tasks import TaskRegistry
 from robotsix_chat.config import Settings, level_needs_api_key
+from robotsix_chat.knowledge import build_knowledge_tools
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.memory import build_memory
 from robotsix_chat.mill import build_mill_tools
@@ -784,6 +785,7 @@ def create_agent_from_settings(
         *build_calendar_tools(settings.calendar),
         *build_refdocs_tools(settings.refdocs),
         *build_board_reader_tools(settings.board_reader),
+        *build_knowledge_tools(settings.knowledge),
     ]
     # Attach per-request tools from independently-gated sources so the
     # foreground agent can delegate work and launch check loops.
