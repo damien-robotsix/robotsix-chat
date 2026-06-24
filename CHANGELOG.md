@@ -13,6 +13,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   the 147-line nested ``_worker`` coroutine into a top-level
   ``_check_loop_worker`` and the board-read gate setup into
   ``_setup_board_read_gate``, reducing nesting depth from 6 to 3.
+- Added ``docs/architecture.md`` — system architecture overview covering the
+  start-up flow, request lifecycle, subpackage inventory, and configuration
+  cascade.
 
 - Registered ``robotsix_chat.version_check`` package in ``docs/modules.yaml``
   module manifest.
