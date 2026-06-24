@@ -1665,3 +1665,267 @@ def test_create_agent_from_settings_no_tool_wrapper_is_noop() -> None:
     # Without tool_wrapper, the agent is constructed normally.
     # The tools may be None when all tool-gates are disabled.
     assert isinstance(agent._tools, (list, type(None)))
+
+
+# ---------------------------------------------------------------------------
+# Tick-triggered foreground agent run tests
+# ---------------------------------------------------------------------------
+
+
+class _SpyRunSerializer:
+    """A :class:`RunSerializer` stub that records lock acquisitions."""
+
+    def __init__(self) -> None:
+        self._lock = asyncio.Lock()
+        self.acquired: list[str] = []
+
+    def for_owner(self, owner_id: str) -> asyncio.Lock:
+        self.acquired.append(owner_id)
+        return self._lock
+
+
+class _RecordingAgent:
+    """An agent whose ``stream`` records the input and yields fixed chunks."""
+
+    def __init__(self, chunks: list[str] | None = None) -> None:
+        self.chunks = chunks or ["tick reply"]
+        self.calls: list[dict[str, object]] = []
+
+    async def stream(
+        self,
+        message: str,
+        *,
+        history: list[tuple[str, str]] | None = None,
+        session_id: str | None = None,
+        client_id: str | None = None,
+        images: list[tuple[str, bytes]] | None = None,
+    ) -> AsyncIterator[str]:
+        self.calls.append(
+            {
+                "message": message,
+                "history": history,
+                "session_id": session_id,
+                "client_id": client_id,
+            }
+        )
+        for chunk in self.chunks:
+            yield chunk
+
+
+class TestTickTriggeredAgentRun:
+    """Tests for the tick-triggered foreground agent run.
+
+    Covers :class:`ConversationDeliveryChannel`.
+    """
+
+    @staticmethod
+    def _store(**kwargs: Any) -> ConversationStore:
+        return ConversationStore(
+            idle_reset_seconds=3600.0,
+            max_history_turns=10,
+            max_conversations=5,
+            **kwargs,
+        )
+
+    @pytest.mark.asyncio
+    async def test_non_suppressed_tick_schedules_agent_run(self) -> None:
+        """A loop_tick frame schedules an agent run and emits loop_reply when wired."""
+        store = self._store()
+        store.create_session("c-tick-run")
+        bus = EventBus()
+        q = bus.subscribe("c-tick-run")
+        serializer = _SpyRunSerializer()
+        agent = _RecordingAgent(["tick reply"])
+
+        channel = ConversationDeliveryChannel(
+            store,
+            event_bus=bus,
+            run_serializer=serializer,
+            agent_factory=lambda s: agent,
+            settings=Settings(),
+        )
+
+        await channel.publish(
+            "c-tick-run",
+            {
+                "type": "loop_tick",
+                "loop_id": "L42",
+                "iteration": 3,
+                "result": "price is $12.34",
+                "next_run": 5000.0,
+            },
+        )
+
+        # The background task should have run by now (it's fast).
+        # Give the event loop a tick to flush the task.
+        await asyncio.sleep(0)
+
+        # Agent was invoked exactly once.
+        assert len(agent.calls) == 1
+        call = agent.calls[0]
+        assert "price is $12.34" in str(call["message"])
+        assert "L42" in str(call["message"])
+        assert "tick 3" in str(call["message"])
+        assert call["client_id"] == "c-tick-run"
+
+        # A turn was recorded: (tick_input, agent_reply).
+        sessions, active = store.list_sessions("c-tick-run")
+        history = store.history(active)
+        assert len(history) == 1
+        user_msg, assistant_msg = history[0]
+        assert "price is $12.34" in user_msg
+        assert assistant_msg == "tick reply"
+
+        # A loop_reply frame was emitted.
+        frame = q.get_nowait()
+        assert frame["type"] == "loop_reply"
+        assert frame["loop_id"] == "L42"
+        assert frame["iteration"] == 3
+        assert frame["reply"] == "tick reply"
+
+        # The serializer was consulted for this owner.
+        assert "c-tick-run" in serializer.acquired
+
+    @pytest.mark.asyncio
+    async def test_loop_tick_fallback_without_new_deps(self) -> None:
+        """Without new deps, loop_tick falls back to legacy passive recording."""
+        store = self._store()
+        store.create_session("c-legacy")
+        channel = ConversationDeliveryChannel(store)
+
+        await channel.publish(
+            "c-legacy",
+            {
+                "type": "loop_tick",
+                "loop_id": "L1",
+                "iteration": 1,
+                "result": "ok",
+            },
+        )
+
+        sessions, active = store.list_sessions("c-legacy")
+        history = store.history(active)
+        assert len(history) == 1
+        user_msg, assistant_msg = history[0]
+        assert "Check loop" in user_msg
+        assert "ok" in assistant_msg
+
+    @pytest.mark.asyncio
+    async def test_serialization_prevents_overlap(self) -> None:
+        """Two concurrent runs for the same owner do not overlap."""
+        store = self._store()
+        store.create_session("c-serial")
+        bus = EventBus()
+
+        # Use a real RunSerializer (process-local).
+        from robotsix_chat.chat.server import RunSerializer
+
+        serializer = RunSerializer()
+
+        step = asyncio.Event()
+
+        class _GatedAgent:
+            """Agent that blocks until *step* is set, then yields."""
+
+            def __init__(self) -> None:
+                self.started = 0
+                self.finished = 0
+
+            async def stream(
+                self,
+                message: str,
+                *,
+                history: list[tuple[str, str]] | None = None,
+                session_id: str | None = None,
+                client_id: str | None = None,
+                images: list[tuple[str, bytes]] | None = None,
+            ) -> AsyncIterator[str]:
+                self.started += 1
+                await step.wait()
+                self.finished += 1
+                yield message
+
+        gated = _GatedAgent()
+        channel = ConversationDeliveryChannel(
+            store,
+            event_bus=bus,
+            run_serializer=serializer,
+            agent_factory=lambda s: gated,
+            settings=Settings(),
+        )
+
+        # Publish two ticks for the SAME owner concurrently.
+        await channel.publish(
+            "c-serial",
+            {"type": "loop_tick", "loop_id": "L1", "iteration": 1, "result": "a"},
+        )
+        await channel.publish(
+            "c-serial",
+            {"type": "loop_tick", "loop_id": "L2", "iteration": 1, "result": "b"},
+        )
+
+        # Give the event loop a chance to start the first task.
+        await asyncio.sleep(0.05)
+        # Only one agent should have started — the second is waiting on the lock.
+        assert gated.started == 1
+        assert gated.finished == 0
+
+        # Release the first agent.
+        step.set()
+        await asyncio.sleep(0.05)
+        # Both should now be finished.
+        assert gated.started == 2
+        assert gated.finished == 2
+
+    @pytest.mark.asyncio
+    async def test_suppressed_tick_no_run(self) -> None:
+        """When the loop worker suppresses a tick, publish is never called."""
+        store = self._store()
+        store.create_session("c-suppressed")
+        bus = EventBus()
+        q = bus.subscribe("c-suppressed")
+
+        agent = _RecordingAgent()
+        channel = ConversationDeliveryChannel(
+            store,
+            event_bus=bus,
+            run_serializer=_SpyRunSerializer(),
+            agent_factory=lambda s: agent,
+            settings=Settings(),
+        )
+
+        # Simulate: the loop worker suppressed the tick and did NOT call
+        # channel.publish.  Verify nothing arrived.
+        assert q.empty()
+        assert len(agent.calls) == 0
+
+        # Also verify that a loop_failed frame (different type) does NOT
+        # trigger the agent run — only loop_tick does.
+        await channel.publish(
+            "c-suppressed",
+            {"type": "loop_failed", "loop_id": "L1", "error": "boom"},
+        )
+        assert len(agent.calls) == 0  # agent not invoked for loop_failed
+
+    def test_recursion_boundary_no_check_loop_tools(self) -> None:
+        """Tick-run agent factory produces an agent without check-loop tools."""
+        from robotsix_chat.chat.server import create_agent_from_settings
+
+        # Build a no-loop-tools agent the same way run_server_from_config does.
+        agent = create_agent_from_settings(
+            settings=Settings(),
+            task_registry=TaskRegistry(),
+            delivery_channel=_FakeDeliveryChannel(),
+            conversation_store=ConversationStore(),
+            # NO check_loop_registry — this is the key difference
+        )
+
+        tools = getattr(agent, "_tools", None) or []
+        tool_names = {getattr(t, "__name__", "") for t in tools}
+        assert "start_check_loop" not in tool_names
+        assert "stop_check_loop" not in tool_names
+        assert "list_check_loops" not in tool_names
+
+        # But delegation tools (delegate_task) MAY be present.
+        # (They are optional depending on wiring; we just assert loop tools
+        # are absent.)

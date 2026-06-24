@@ -50,3 +50,4 @@ src/bin/
 # vendored sandbox deps (build artifact)
 .deps/
 .pip-packages/
+.local-packages/

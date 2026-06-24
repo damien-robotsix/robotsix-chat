@@ -938,6 +938,10 @@ async def test_run_server_from_config_creates_agent_from_settings(
         from robotsix_chat.chat.loops import CheckLoopRegistry
 
         assert isinstance(check_loop_registry, CheckLoopRegistry)
+        run_serializer = call_args[1].pop("run_serializer")
+        from robotsix_chat.chat.server import RunSerializer
+
+        assert isinstance(run_serializer, RunSerializer)
         on_startup = call_args[1].pop("on_startup")
         assert callable(on_startup)
         assert call_args[1] == {

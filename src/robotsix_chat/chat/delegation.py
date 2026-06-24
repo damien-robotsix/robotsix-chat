@@ -26,10 +26,12 @@ Usage::
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
+from robotsix_chat.chat.events import loop_reply_frame
 from robotsix_chat.chat.loops import (
     CheckLoopRegistry,
     LoopCapacityError,
@@ -50,34 +52,74 @@ from robotsix_chat.config import Settings
 
 if TYPE_CHECKING:
     from robotsix_chat.chat.conversation import ConversationStore
+    from robotsix_chat.chat.events import EventBus
 
 logger = logging.getLogger(__name__)
 
 
 class ConversationDeliveryChannel:
-    """Record completed/failed background-task & loop results into ConversationStore.
+    """Record background-task & loop results, and trigger tick-driven agent runs.
 
     When a delegated task finishes (or fails), the foreground agent needs to
     learn about the outcome so it can relay task ids, URLs, and findings to
     the user on its **next** turn.  This channel bridges that gap by writing a
     synthetic turn into the store keyed by the originating ``client_id``.
 
-    The same mechanism is used for check-loop ticks: each tick's
-    ``loop_tick`` frame (and any ``loop_failed`` frame) is recorded as a
-    synthetic turn so the foreground agent sees the tick output in its
-    next-turn history.
+    For **non-suppressed check-loop ticks**, when the optional dependencies
+    (``event_bus``, ``run_serializer``, ``agent_factory``, ``settings``) are
+    wired, the channel goes further: it schedules a serialized foreground
+    agent run, records the tick result as user input plus the agent's answer
+    as a single turn, and emits the answer to the browser via the EventBus
+    as a ``loop_reply`` SSE frame.  When they are not wired, ``loop_tick``
+    falls back to the legacy behaviour of recording a passive synthetic
+    assistant turn (no agent run).
 
     ``task_started``, ``loop_started``, and ``loop_stopped`` frames are
     intentionally ignored — the user already sees those via the SSE path —
     so the conversation history stays clean.
 
-    Constructor takes the shared :class:`ConversationStore` instance (the same
-    object passed to ``run_server`` via ``app.state.conversation_store``).
+    Multi-session behaviour: the tick targets the owner's **active** session
+    (``owner.active_session_id``, the last session the owner recorded a turn
+    into).  The ``loop_tick`` and ``loop_reply`` SSE frames are delivered to
+    all of that owner's open ``/events`` subscribers (keyed by ``client_id``).
+    If the user switched to a different session in the browser, the streamed
+    bubble still arrives but the recorded turn lands in the active
+    (last-recorded) session.
     """
 
-    def __init__(self, store: ConversationStore) -> None:
-        """Create a channel that writes to *store*."""
+    def __init__(
+        self,
+        store: ConversationStore,
+        *,
+        event_bus: EventBus | None = None,
+        run_serializer: object | None = None,  # RunSerializer (avoid circular import)
+        agent_factory: Callable[[Settings], ChatAgent] | None = None,
+        settings: Settings | None = None,
+    ) -> None:
+        """Create a channel wired to *store* and optionally to *event_bus*.
+
+        When *event_bus*, *run_serializer*, *agent_factory*, and *settings*
+        are all provided, ``loop_tick`` frames trigger a serialized foreground
+        agent run (see class docstring).  When any of them is ``None``,
+        ``loop_tick`` falls back to the legacy behaviour of recording a
+        passive synthetic assistant turn (no agent run).
+        """
         self._store = store
+        self._event_bus = event_bus
+        self._run_serializer = run_serializer
+        self._agent_factory = agent_factory
+        self._settings = settings
+        # Strong references to in-flight tick-triggered runs so they are
+        # not GC'd before completion (mirrors spawn_subagent_task /
+        # spawn_check_loop keeping task refs).
+        self._pending_runs: set[asyncio.Task[None]] = set()
+        # True when all optional deps are present — enables the tick-run path.
+        self._tick_runs_enabled = (
+            event_bus is not None
+            and run_serializer is not None
+            and agent_factory is not None
+            and settings is not None
+        )
 
     async def publish(self, client_id: str, frame: dict[str, Any]) -> None:
         """Record *frame* into the conversation store for *client_id*.
@@ -88,19 +130,14 @@ class ConversationDeliveryChannel:
 
         Dispatches on ``frame["type"]``:
 
-        * ``"task_completed"`` — reads ``frame["task_id"]`` and
-          ``frame["result"]`` and records a turn so the agent sees the result
-          in its next-turn history.
-        * ``"task_failed"`` — reads ``frame["task_id"]`` and ``frame["error"]``
-          and records a turn conveying the failure.
-        * ``"loop_tick"`` — reads ``frame["loop_id"]``,
-          ``frame["iteration"]``, and ``frame["result"]`` and records a turn
-          so the agent sees the tick output in its next-turn history.
-        * ``"loop_failed"`` — reads ``frame["loop_id"]`` and
-          ``frame["error"]`` and records a turn conveying the loop failure.
-        * ``"task_started"``, ``"loop_started"``, ``"loop_stopped"``, and any
-          other/unknown type — no-op.
-        * Empty/falsy *client_id* — no-op.
+        * ``"task_completed"`` — records a turn with the task result.
+        * ``"task_failed"`` — records a turn conveying the failure.
+        * ``"loop_tick"`` — when tick runs are enabled, schedules a
+          serialized foreground agent run (records one ``(tick_input,
+          agent_answer)`` turn, emits ``loop_reply`` SSE).  Otherwise falls
+          back to recording a passive synthetic assistant turn.
+        * ``"loop_failed"`` — records a turn conveying the loop failure.
+        * Other types / empty *client_id* — no-op.
 
         Best-effort: never raises out to the runner's ``_worker``.
         """
@@ -128,11 +165,25 @@ class ConversationDeliveryChannel:
             loop_id = frame.get("loop_id", "")
             iteration = frame.get("iteration")
             result = frame.get("result", "")
-            self._store.record_for_owner(
-                client_id,
-                f"[Check loop {loop_id} tick {iteration}]",
-                str(result),
-            )
+            if self._tick_runs_enabled:
+                # Schedule a background task — best-effort, never raises.
+                task = asyncio.create_task(
+                    self._run_tick_agent(
+                        client_id=client_id,
+                        loop_id=str(loop_id),
+                        iteration=int(iteration) if iteration is not None else 0,
+                        result=str(result),
+                    )
+                )
+                self._pending_runs.add(task)
+                task.add_done_callback(self._pending_runs.discard)
+            else:
+                # Legacy path: record a passive synthetic assistant turn.
+                self._store.record_for_owner(
+                    client_id,
+                    f"[Check loop {loop_id} tick {iteration}]",
+                    str(result),
+                )
         elif frame_type == "loop_failed":
             loop_id = frame.get("loop_id", "")
             error = frame.get("error", "")
@@ -140,6 +191,86 @@ class ConversationDeliveryChannel:
                 client_id,
                 f"[Check loop {loop_id} failed]",
                 f"Error: {str(error)}",
+            )
+
+    # ------------------------------------------------------------------
+    # Tick-triggered foreground agent run
+    # ------------------------------------------------------------------
+
+    async def _run_tick_agent(
+        self,
+        *,
+        client_id: str,
+        loop_id: str,
+        iteration: int,
+        result: str,
+    ) -> None:
+        """Run the foreground agent on a tick result, record, and emit reply.
+
+        Must never raise — called as a background task from :meth:`publish`.
+        """
+        try:
+            # Acquire the per-owner serializer so this run does not overlap
+            # with a concurrent /chat request or another tick for the same owner.
+            async with self._run_serializer.for_owner(client_id):  # type: ignore[union-attr]
+                await self._run_tick_agent_locked(
+                    client_id=client_id,
+                    loop_id=loop_id,
+                    iteration=iteration,
+                    result=result,
+                )
+        except asyncio.CancelledError:
+            raise
+        except Exception:
+            logger.exception("Tick-triggered agent run failed for loop %s", loop_id)
+
+    async def _run_tick_agent_locked(
+        self,
+        *,
+        client_id: str,
+        loop_id: str,
+        iteration: int,
+        result: str,
+    ) -> None:
+        """Core of the tick-triggered run — the lock is already held."""
+        # Resolve the owner's active session id.
+        # list_sessions is used because it lazily creates a default session
+        # when the owner is unknown — ensuring we always have a session to
+        # record into.
+        _sessions, active_session_id = self._store.list_sessions(client_id)
+        if not active_session_id:
+            return  # should not happen; list_sessions always returns one
+
+        # Read history (read-only; does not touch last_activity or persist).
+        history = self._store.history(active_session_id)
+
+        # The tick result becomes the user-side input of the run turn.
+        tick_input = f"[Check loop {loop_id} tick {iteration}]\n\n{result}"
+
+        # Invoke the foreground agent (built WITHOUT check-loop tools).
+        if self._agent_factory is None or self._settings is None:
+            return  # should never happen — guarded by caller
+        agent = self._agent_factory(self._settings)
+        reply = "".join(
+            [
+                chunk
+                async for chunk in agent.stream(
+                    tick_input,
+                    history=history,
+                    session_id=active_session_id,
+                    client_id=client_id,
+                )
+            ]
+        )
+
+        # Record exactly one (tick_input, reply) turn.
+        self._store.record(active_session_id, client_id, tick_input, reply)
+
+        # Emit the reply to the browser via the EventBus.
+        if self._event_bus is not None:
+            self._event_bus.publish(
+                client_id,
+                loop_reply_frame(loop_id, iteration, reply),
             )
 
 

@@ -105,6 +105,42 @@ class ChatAgent(Protocol):
 
 
 # ---------------------------------------------------------------------------
+# Per-owner run serialization — prevents overlapping agent runs for one owner
+# ---------------------------------------------------------------------------
+
+
+class RunSerializer:
+    """Per-owner ``asyncio.Lock`` registry to serialize agent runs.
+
+    Process-local (single-worker server): locks are NOT distributed across
+    processes.  In a multi-worker setup this provides best-effort isolation
+    per worker, not cross-process mutual exclusion.
+
+    Each owner (keyed by ``client_id`` / ``owner_id``) gets a dedicated
+    ``asyncio.Lock``.  Acquire it around any agent run + store record
+    sequence so that tick-triggered runs cannot race a user message or
+    another tick for the same owner; runs queue and execute one at a time
+    per owner.
+    """
+
+    def __init__(self) -> None:
+        """Create an empty serializer with no locks."""
+        self._locks: dict[str, asyncio.Lock] = {}
+
+    def for_owner(self, owner_id: str) -> asyncio.Lock:
+        """Return (creating if needed) the lock for *owner_id*."""
+        lock = self._locks.get(owner_id)
+        if lock is None:
+            lock = asyncio.Lock()
+            self._locks[owner_id] = lock
+        return lock
+
+    def __repr__(self) -> str:
+        """Return a concise representation showing the lock count."""
+        return f"RunSerializer(locks={len(self._locks)})"
+
+
+# ---------------------------------------------------------------------------
 # Endpoints
 # ---------------------------------------------------------------------------
 
@@ -273,27 +309,35 @@ async def chat_endpoint(
         queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
 
         async def _produce() -> None:
-            reply_parts: list[str] = []
-            try:
-                async for token in agent.stream(
-                    message,
-                    history=history,
-                    session_id=session_id,
-                    client_id=client_id,
-                    images=images,
-                ):
-                    reply_parts.append(token)
-                    await queue.put((SSE_TOKEN_TYPE, token))
-                # Persist the completed exchange so the next message in this
-                # conversation sees it (only on a clean finish, not on error).
-                if session_id:
-                    store.record(session_id, owner_id, message, "".join(reply_parts))
-                await queue.put((SSE_DONE_TYPE, None))
-            except asyncio.CancelledError:
-                raise
-            except Exception as exc:
-                logger.exception("Agent stream error")
-                await queue.put((SSE_ERROR_TYPE, str(exc)))
+            # Serialize with any concurrent tick-triggered run for the same
+            # owner (the lock is process-local; see RunSerializer docstring).
+            run_serializer = request.app.state.run_serializer
+            lock_key = client_id or session_id
+            async with run_serializer.for_owner(lock_key):
+                reply_parts: list[str] = []
+                try:
+                    async for token in agent.stream(
+                        message,
+                        history=history,
+                        session_id=session_id,
+                        client_id=client_id,
+                        images=images,
+                    ):
+                        reply_parts.append(token)
+                        await queue.put((SSE_TOKEN_TYPE, token))
+                    # Persist the completed exchange so the next message in
+                    # this conversation sees it (only on a clean finish, not
+                    # on error).
+                    if session_id:
+                        store.record(
+                            session_id, owner_id, message, "".join(reply_parts)
+                        )
+                    await queue.put((SSE_DONE_TYPE, None))
+                except asyncio.CancelledError:
+                    raise
+                except Exception as exc:
+                    logger.exception("Agent stream error")
+                    await queue.put((SSE_ERROR_TYPE, str(exc)))
 
         producer = asyncio.create_task(_produce())
         try:
@@ -576,6 +620,7 @@ def create_app(
     task_registry: TaskRegistry | None = None,
     event_bus: EventBus | None = None,
     check_loop_registry: CheckLoopRegistry | None = None,
+    run_serializer: RunSerializer | None = None,
     on_startup: Callable[[], None] | None = None,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
@@ -622,6 +667,12 @@ def create_app(
             lifecycle.  Leave ``None`` (default) when check loops are
             not wired — the stop route returns 503 and the resume hook
             is skipped.
+        run_serializer: Per-owner ``RunSerializer`` that prevents
+            overlapping agent runs for the same owner.  When ``None``
+            (default), a fresh ``RunSerializer`` is created.  Pass the
+            same instance to the ``ConversationDeliveryChannel`` so
+            tick-triggered runs and user-initiated ``/chat`` requests
+            are serialized together.
         on_startup: Optional callable invoked during application startup
             (the Starlette lifespan ``startup`` phase).  Pass a closure
             that e.g. resumes persisted check loops.
@@ -682,6 +733,7 @@ def create_app(
         event_sink=app.state.event_bus
     )
     app.state.check_loop_registry = check_loop_registry  # may be None
+    app.state.run_serializer = run_serializer or RunSerializer()
     return app
 
 
@@ -702,6 +754,7 @@ def run_server(
     task_registry: TaskRegistry | None = None,
     event_bus: EventBus | None = None,
     check_loop_registry: CheckLoopRegistry | None = None,
+    run_serializer: RunSerializer | None = None,
     on_startup: Callable[[], None] | None = None,
 ) -> None:
     """Start the chat SSE server on ``host:port``.
@@ -725,6 +778,7 @@ def run_server(
         task_registry=task_registry,
         event_bus=event_bus,
         check_loop_registry=check_loop_registry,
+        run_serializer=run_serializer,
         on_startup=on_startup,
     )
     uvicorn.run(app, host=host, port=port)
@@ -972,7 +1026,34 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         max_conversations=settings.conversation.max_conversations,
         persist_path=Path(persist_path_str) if persist_path_str else None,
     )
-    channel = ConversationDeliveryChannel(conversation_store)
+
+    # Per-owner run serializer — shared between /chat requests and
+    # tick-triggered runs so they never overlap for the same owner.
+    run_serializer = RunSerializer()
+
+    # No-loop-tools foreground agent factory for tick-triggered runs.
+    # Omits check_loop_registry so a tick-triggered run can never spawn
+    # a new check loop (preserves the loop-sub-agent no-loop-tools boundary).
+    # Other foreground tools (delegation, consult_mill, etc.) remain.
+    def _tick_agent_factory(s: Settings) -> LlmioChatAgent:
+        return create_agent_from_settings(
+            settings=s,
+            task_registry=registry,
+            delivery_channel=channel,
+            check_loop_registry=None,  # NO loop tools — recursion guard
+            conversation_store=conversation_store,
+        )
+
+    # The channel uses the no-loop-tools factory for tick-triggered runs;
+    # we build the channel first, then wire it as the delivery_channel for
+    # the foreground agent (which DOES get loop tools).
+    channel = ConversationDeliveryChannel(
+        conversation_store,
+        event_bus=event_bus,
+        run_serializer=run_serializer,
+        agent_factory=_tick_agent_factory,
+        settings=settings,
+    )
 
     if agent is None:
         agent = create_agent_from_settings(
@@ -1010,5 +1091,6 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         task_registry=registry,
         event_bus=event_bus,
         check_loop_registry=check_loop_registry,
+        run_serializer=run_serializer,
         on_startup=_resume,
     )
