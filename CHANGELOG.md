@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Registered ``robotsix_chat.version_check`` package in ``docs/modules.yaml``
+  module manifest.
+
 - Registered ``robotsix_chat.component_agent`` package in ``docs/modules.yaml``
   module manifest.
 - Registered ``robotsix_chat.knowledge`` module in ``docs/modules.yaml``.
