@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added ``create_board_ticket`` tool to the board reader: a direct synchronous
+  (inline) tool that creates tickets via ``POST /tickets`` on the board API,
+  avoiding the token waste of spawning a background sub-agent via
+  ``delegate_task`` for simple ticket filing.
+
 - Added multi-session support to the chat UI: a sessions sidebar with "New
   chat" button and session list (title + last-active timestamp), click-to-switch
   with independent conversation state per session (DOM cleared, history and

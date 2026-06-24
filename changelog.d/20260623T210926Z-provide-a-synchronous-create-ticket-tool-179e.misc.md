@@ -1,0 +1,1 @@
+Provide a synchronous create-ticket tool to stop spawning delegate_task sub-agents for simple ticket filing
