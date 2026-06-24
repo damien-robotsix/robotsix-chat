@@ -42,6 +42,15 @@ number.  To revert to a previous prompt:
 
 ---
 
+## v4 — 2026-06-24 — 20260623T204239Z-robotsix-chat-give-the-assistant-a-writa-ff6c
+
+**Summary:** Add knowledge-base instructions — the agent now has a local,
+durable knowledge base (add/append/update/list/read_knowledge_note tools)
+for operational notes and lessons; it must consult it at the start of every
+session and write durable findings to it.
+
+**SHA256:** `efd64ca3849a4f0872754fa86119a18511edc0c4a1816a94206e24dc618f1e8b`
+
 ## v3 — 2026-06-24 — 20260623T210933Z-tighten-sub-agent-prompt-efficiency-chec-5a52
 
 Add sub-agent efficiency rules (cost-analysis proposals #9 and #10):
