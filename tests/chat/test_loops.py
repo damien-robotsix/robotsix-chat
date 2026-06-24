@@ -23,10 +23,12 @@ from robotsix_chat.chat.events import (
     loop_tick_frame,
 )
 from robotsix_chat.chat.loops import (
+    BoardReadProbe,
     CheckLoopRegistry,
     LoopCapacityError,
     LoopIntervalError,
     LoopStatus,
+    _apply_board_read_gate,
     resume_check_loops,
     spawn_check_loop,
 )
