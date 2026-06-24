@@ -558,7 +558,8 @@
   var currentAssistantBubble = null;  // the <div> receiving tokens
   var typingIndicatorEl      = null;  // the animated dots element
   var messageQueue = [];       // FIFO queue of { text, el } for busy-state
-  var currentRequestSessionId = null;  // session for the in-flight request
+  // (currentRequestSessionId removed — unused; cross-session guard uses
+  //  the requestSessionId captured inside doPost instead.)
 
   // ---- Image attachments -----------------------------------------------
   var MAX_IMAGES = 8;
@@ -872,8 +873,10 @@
   function refreshSessions() {
     fetchSessions().then(function (data) {
       renderSessionList(data);
-      activeSessionId = data.active_session_id || activeSessionId;
-      if (activeSessionId) setActiveSessionId(activeSessionId);
+      // NOTE: we purposely do NOT update activeSessionId from the server's
+      // active_session_id here — that would silently clobber the user's choice
+      // when the panel is opened. The server's opinion is only used during
+      // initial bootstrap (see the fetchSessions call at the bottom).
     }).catch(function () {
       // Silently ignore — list may be stale but still usable.
     });
@@ -907,8 +910,10 @@
 
   // ---- Event stream lifecycle -----------------------------------------
   var eventStreamAbortController = null;
+  var eventsStreamIntentionallyClosed = false;
 
   function closeEventStream() {
+    eventsStreamIntentionallyClosed = true;
     if (eventStreamAbortController) {
       eventStreamAbortController.abort();
       eventStreamAbortController = null;
@@ -1356,11 +1361,10 @@
     typingIndicatorEl = null;
     // Also clear queued messages — they belong to the old session.
     messageQueue = [];
-    // Reset state and in-flight request tracking so the composer is not blocked.
+    // Reset state so the composer is not blocked.
     if (state === "sending" || state === "streaming") {
       state = "idle";
     }
-    currentRequestSessionId = null;
   }
 
   function addUserBubble(text) {
@@ -1495,6 +1499,7 @@
 
   // ---- Persistent /events SSE channel ----------------------------------
   function openEventStream() {
+    eventsStreamIntentionallyClosed = false;
     var eventsUrl = apiBase() + "/events" +
                     "?session_id=" + encodeURIComponent(activeSessionId) +
                     "&owner_id=" + encodeURIComponent(clientId);
@@ -1523,11 +1528,14 @@
         // ignore unknown types gracefully
       },
       onDone: function () {
-        // Stream closed by server — reconnect after a short delay.
+        // Stream closed by server — reconnect after a short delay,
+        // unless the stream was intentionally closed (session switch).
+        if (eventsStreamIntentionallyClosed) return;
         setTimeout(openEventStream, 5000);
       },
       error: function (_err) {
         // Network error or stream failure — reconnect after a short delay.
+        if (eventsStreamIntentionallyClosed) return;
         setTimeout(openEventStream, 5000);
       }
     };
@@ -1704,7 +1712,6 @@
     setConnectionStatus(true);
 
     state = "sending";
-    currentRequestSessionId = activeSessionId;
 
     // Encode images if any; then POST.
     var encodePromise = pendingForSend.length > 0
@@ -1753,7 +1760,6 @@
           finaliseAssistantBubble();
           setConnectionStatus(true);
           state = "idle";
-          currentRequestSessionId = null;
           // Automatically dispatch the next queued message (FIFO).
           drainQueue();
         } else if (frame.type === "error") {
@@ -1761,7 +1767,6 @@
           finaliseAssistantBubble();
           showError(frame.message || "Server error");
           state = "error";
-          currentRequestSessionId = null;
           // Leave queued messages in place — the user can trigger
           // drainQueue() by submitting another message later.
         }
@@ -1771,7 +1776,6 @@
         finaliseAssistantBubble();
         showError(err.message || "Network error — is the server running?");
         state = "error";
-        currentRequestSessionId = null;
         // Same as above: queued messages stay; next submit resumes draining.
       }
     };
@@ -1935,9 +1939,20 @@
       newChatBtn.disabled = false;
       newChatBtn.textContent = "+ New chat";
       if (data && data.session_id) {
-        switchSession(data.session_id);
-        // Refresh the list to show the new session at top.
+        // Switch into the new session.  We inline the switch steps
+        // (rather than calling switchSession) to avoid a double render:
+        // switchSession calls updateActiveHighlight() on the cached
+        // (stale) list, then we'd call refreshSessions() for a second
+        // render.  Here refreshSessions() handles the list update AND
+        // the highlight in one pass.
+        setActiveSessionId(data.session_id);
+        clearChatBubbles();
+        closeEventStream();
+        openEventStream();
+        loadHistory();
+        loadLoops();
         refreshSessions();
+        resetIdleTimer();
       }
     }).catch(function (err) {
       newChatBtn.disabled = false;
