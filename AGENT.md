@@ -192,12 +192,7 @@ added when off or when the `broker` extra is absent.
 
 ## Submodule layout
 
-The `broker_src/` submodule vendors the `robotsix-agent-comm` repository
-(the agent-comm broker's source code).  Changes to the broker itself — new
-routes, protocol changes, the monitoring UI — must be developed in the
-`damien-robotsix/robotsix-agent-comm` repo and pinned here as a submodule
-commit update.  Do not develop broker features directly inside `broker_src/`
-within this repo.
+- **`broker_src/`** — vendors the `robotsix-agent-comm` repository (the agent-comm broker's source code). Changes to the broker itself — new routes, protocol changes, the monitoring UI — must be developed in the `damien-robotsix/robotsix-agent-comm` repo and pinned here as a submodule commit update. Do not develop broker features directly inside `broker_src/` within this repo.
 
 ## Key file map
 
