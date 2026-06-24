@@ -63,7 +63,9 @@ def build_calendar_tools(settings: CalendarSettings) -> list[Callable[..., Any]]
             The calendar agent's reply.
 
         """
-        return await client.consult(request, domain="calendar")
+        return await client.consult(
+            f"list calendar events: {request}", domain="calendar"
+        )
 
     async def manage_calendar(request: str) -> str:
         """Create or update calendar events.
@@ -95,7 +97,7 @@ def build_calendar_tools(settings: CalendarSettings) -> list[Callable[..., Any]]
             The calendar/tasks agent's reply listing matching tasks.
 
         """
-        return await client.consult(request, domain="tasks")
+        return await client.consult(f"list tasks: {request}", domain="tasks")
 
     async def manage_tasks(request: str) -> str:
         """Create, update, or complete tasks.
