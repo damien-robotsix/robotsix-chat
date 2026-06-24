@@ -6,6 +6,7 @@ mocked so there are no real network calls.
 
 from __future__ import annotations
 
+import time
 from typing import Any
 
 import httpx
@@ -46,11 +47,15 @@ class _MockResponse:
 def _install_mock_client(
     monkeypatch: pytest.MonkeyPatch,
     response: _MockResponse,
+    counter: list[int] | None = None,
 ) -> dict[str, Any]:
     """Replace ``httpx.AsyncClient`` with a factory returning *response*.
 
     Returns a ``captured`` dict that receives ``url``, ``headers``, and
     ``params`` from each ``get`` call for later inspection.
+
+    If *counter* is a list, its first element is incremented on every
+    ``get`` call.
     """
     captured: dict[str, Any] = {}
 
@@ -74,6 +79,8 @@ def _install_mock_client(
             captured["url"] = url
             captured["headers"] = headers
             captured["params"] = params
+            if counter is not None:
+                counter[0] += 1
             return self._resp
 
     monkeypatch.setattr(httpx, "AsyncClient", _BoundClient)
@@ -295,11 +302,15 @@ async def test_unexpected_error_returns_diagnostic(
 def _install_mock_post_client(
     monkeypatch: pytest.MonkeyPatch,
     response: _MockResponse,
+    counter: list[int] | None = None,
 ) -> dict[str, Any]:
     """Replace ``httpx.AsyncClient`` with a factory for POST requests.
 
     Returns a ``captured`` dict that receives ``url``, ``headers``, and
     ``json`` from each ``post`` call for later inspection.
+
+    If *counter* is a list, its first element is incremented on every
+    ``post`` call.
     """
     captured: dict[str, Any] = {}
 
@@ -323,6 +334,8 @@ def _install_mock_post_client(
             captured["url"] = url
             captured["headers"] = headers
             captured["json"] = json
+            if counter is not None:
+                counter[0] += 1
             return self._resp
 
     monkeypatch.setattr(httpx, "AsyncClient", _BoundPostClient)
@@ -416,3 +429,161 @@ async def test_create_ticket_http_error_returns_diagnostic(
 
     assert "409" in out
     assert "conflict" in out
+
+
+# ---------------------------------------------------------------------------
+# BoardReader cache tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_tickets_cache_hit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Second call to list_tickets with same params must hit cache (0 extra HTTP)."""
+    get_counter: list[int] = [0]
+    resp = _MockResponse(text='[{"id": "abc"}]')
+    _install_mock_client(monkeypatch, resp, counter=get_counter)
+
+    client = BoardReader(_settings(cache_ttl=60.0))
+    out1 = await client.list_tickets(repo_id="robotsix-chat")
+    out2 = await client.list_tickets(repo_id="robotsix-chat")
+
+    assert out1 == out2 == '[{"id": "abc"}]'
+    assert get_counter[0] == 1  # only the first call hit HTTP
+
+
+@pytest.mark.asyncio
+async def test_list_tickets_cache_miss_after_expiry(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """After cache_ttl seconds, a fresh HTTP call must be made."""
+    get_counter: list[int] = [0]
+    resp = _MockResponse(text="[]")
+    _install_mock_client(monkeypatch, resp, counter=get_counter)
+
+    # Control monotonic time so we can advance past cache_ttl
+    fake_time = [0.0]
+
+    class _FakeMonotonic:
+        def __call__(self) -> float:
+            return fake_time[0]
+
+    monkeypatch.setattr(time, "monotonic", _FakeMonotonic())
+
+    client = BoardReader(_settings(cache_ttl=5.0))
+
+    # First call fills cache at t=0
+    await client.list_tickets(repo_id="robotsix-chat")
+    assert get_counter[0] == 1
+
+    # Advance past cache_ttl
+    fake_time[0] = 10.0
+
+    await client.list_tickets(repo_id="robotsix-chat")
+    assert get_counter[0] == 2  # cache expired → second HTTP call
+
+
+@pytest.mark.asyncio
+async def test_list_tickets_errors_not_cached(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Error responses must not be stored; each call hits HTTP."""
+    get_counter: list[int] = [0]
+    # 500 error → response text starts with "Board API error"
+    resp = _MockResponse(text="Board API error 500 for GET /tickets: boom", status_code=500)
+    _install_mock_client(monkeypatch, resp, counter=get_counter)
+
+    client = BoardReader(_settings(cache_ttl=60.0))
+    out1 = await client.list_tickets(repo_id="x")
+    out2 = await client.list_tickets(repo_id="x")
+
+    assert "500" in out1
+    assert "500" in out2
+    assert get_counter[0] == 2  # errors not cached → both calls hit HTTP
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_invalidates_list_cache(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """create_ticket must clear _list_cache, forcing a list refetch."""
+    get_counter: list[int] = [0]
+    post_counter: list[int] = [0]
+
+    list_resp = _MockResponse(text='[{"id": "abc"}]')
+    create_resp = _MockResponse(text='{"id": "xyz"}', status_code=201)
+
+    captured: dict[str, Any] = {}
+
+    class _BothClient:
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
+        async def __aenter__(self) -> "_BothClient":
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def get(
+            self,
+            url: str,
+            *,
+            headers: dict[str, str],
+            params: dict[str, str] | None = None,
+        ) -> _MockResponse:
+            captured["url"] = url
+            captured["headers"] = headers
+            captured.setdefault("params_list", []).append(params)
+            get_counter[0] += 1
+            return list_resp
+
+        async def post(
+            self,
+            url: str,
+            *,
+            headers: dict[str, str],
+            json: dict[str, str] | None = None,
+        ) -> _MockResponse:
+            captured["post_url"] = url
+            captured["post_headers"] = headers
+            captured["post_json"] = json
+            post_counter[0] += 1
+            return create_resp
+
+    monkeypatch.setattr(httpx, "AsyncClient", _BothClient)
+
+    client = BoardReader(_settings(cache_ttl=60.0))
+
+    # 1) Populate list cache
+    await client.list_tickets(repo_id="robotsix-chat")
+    assert get_counter[0] == 1
+
+    # 2) Create a ticket → invalidates list cache
+    await client.create_ticket(
+        title="T", description="D", repo_id="robotsix-chat"
+    )
+    assert post_counter[0] == 1
+
+    # 3) List again → must refetch (cache was cleared by create)
+    await client.list_tickets(repo_id="robotsix-chat")
+    assert get_counter[0] == 2  # second list HTTP call
+    assert post_counter[0] == 1  # still exactly one POST
+
+
+@pytest.mark.asyncio
+async def test_get_ticket_cache_hit(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Second get_ticket for the same id must hit cache (0 extra HTTP)."""
+    get_counter: list[int] = [0]
+    resp = _MockResponse(text='{"id": "abc", "title": "Fix bug"}')
+    _install_mock_client(monkeypatch, resp, counter=get_counter)
+
+    client = BoardReader(_settings(cache_ttl=60.0))
+    out1 = await client.get_ticket("abc")
+    out2 = await client.get_ticket("abc")
+
+    assert out1 == out2 == '{"id": "abc", "title": "Fix bug"}'
+    assert get_counter[0] == 1  # only the first call hit HTTP

@@ -1,0 +1,1 @@
+Cache board list/ticket responses in BoardReader with a 60 s TTL

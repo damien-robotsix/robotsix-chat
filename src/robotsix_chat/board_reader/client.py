@@ -10,6 +10,7 @@ relay to the user.
 from __future__ import annotations
 
 import logging
+import time
 from typing import TYPE_CHECKING
 
 import httpx
@@ -24,10 +25,13 @@ class BoardReader:
     """Read-only HTTP client for the mill's board API."""
 
     def __init__(self, settings: BoardReaderSettings) -> None:
-        """Store the board API URL, auth token, and timeout."""
+        """Store the board API URL, auth token, timeout, and TTL cache."""
         self._base_url = settings.api_base_url.rstrip("/")
         self._token = settings.api_token
         self._timeout = settings.timeout
+        self._cache_ttl = settings.cache_ttl
+        self._list_cache: dict[tuple[str, bool, str], tuple[float, str]] = {}
+        self._ticket_cache: dict[str, tuple[float, str]] = {}
         headers: dict[str, str] = {"Accept": "application/json"}
         if self._token:
             headers["Authorization"] = f"Bearer {self._token}"
@@ -45,19 +49,38 @@ class BoardReader:
         Never raises — HTTP/parse errors become a message the assistant
         can relay.
         """
+        cache_key = (repo_id, include_closed, state)
+        now = time.monotonic()
+        if cache_key in self._list_cache:
+            ts, cached = self._list_cache[cache_key]
+            if now - ts < self._cache_ttl:
+                logger.debug("Board list cache hit (repo_id=%s)", repo_id)
+                return cached
         params: dict[str, str] = {"repo_id": repo_id}
         if include_closed:
             params["include_closed"] = "true"
         if state:
             params["state"] = state
-        return await self._get("/tickets", params=params)
+        result = await self._get("/tickets", params=params)
+        if not result.startswith(("Board API error", "Board API request")):
+            self._list_cache[cache_key] = (time.monotonic(), result)
+        return result
 
     async def get_ticket(self, ticket_id: str) -> str:
         """Call ``GET /tickets/{ticket_id}`` and return the raw JSON body as text.
 
         Never raises.
         """
-        return await self._get(f"/tickets/{ticket_id}")
+        now = time.monotonic()
+        if ticket_id in self._ticket_cache:
+            ts, cached = self._ticket_cache[ticket_id]
+            if now - ts < self._cache_ttl:
+                logger.debug("Board ticket cache hit (ticket_id=%s)", ticket_id)
+                return cached
+        result = await self._get(f"/tickets/{ticket_id}")
+        if not result.startswith(("Board API error", "Board API request")):
+            self._ticket_cache[ticket_id] = (time.monotonic(), result)
+        return result
 
     async def create_ticket(
         self,
@@ -90,7 +113,9 @@ class BoardReader:
         }
         if kind:
             payload["kind"] = kind
-        return await self._post("/tickets", json=payload)
+        result = await self._post("/tickets", json=payload)
+        self._list_cache.clear()
+        return result
 
     async def _get(
         self,

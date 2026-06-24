@@ -338,6 +338,8 @@ class BoardReaderSettings(BaseModel):
         api_base_url: Base URL of the board HTTP API (no trailing slash).
         api_token: Optional bearer token; empty means no auth header.
         timeout: Per-request HTTP timeout in seconds.
+        cache_ttl: Seconds to cache board list and ticket lookups
+            (monotonic clock). Failed fetches are never cached.
 
     """
 
@@ -345,6 +347,7 @@ class BoardReaderSettings(BaseModel):
     api_base_url: str = "http://127.0.0.1:8077"
     api_token: str = ""
     timeout: float = 30.0
+    cache_ttl: float = 60.0
 
 
 class KnowledgeSettings(BaseModel):
@@ -1355,6 +1358,15 @@ def _build_board_reader_raw(yaml_board_reader: Any) -> dict[str, Any]:
         except ValueError:
             raise ValueError(
                 f"BOARD_READER_TIMEOUT must be a number, got {timeout_str!r}"
+            ) from None
+
+    cache_ttl_str = os.getenv("BOARD_READER_CACHE_TTL")
+    if cache_ttl_str is not None:
+        try:
+            board_reader_raw["cache_ttl"] = float(cache_ttl_str)
+        except ValueError:
+            raise ValueError(
+                f"BOARD_READER_CACHE_TTL must be a number, got {cache_ttl_str!r}"
             ) from None
 
     return board_reader_raw
