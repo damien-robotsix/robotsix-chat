@@ -72,6 +72,7 @@ robotsix-chat = "robotsix_chat.chat.server:run_server_from_config"
 
 [dependency-groups]
 dev = [
+    "deptry",
     "mypy",
     "pip-audit",
     "pre-commit",
