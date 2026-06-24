@@ -42,6 +42,18 @@ number.  To revert to a previous prompt:
 
 ---
 
+## v2 — 2026-06-24 — 20260624T020652Z-give-the-assistant-direct-1628
+
+Add board-reader tool guidance:
+
+- New rule: use `list_board_tickets` / `read_board_ticket` for reading
+  board state (HTTP endpoint, same as user's UI); use `consult_mill` for
+  writes.  Never fabricate ticket states.
+- Verification: after creating a ticket via `consult_mill`, verify it
+  landed on the right board with `list_board_tickets`.
+
+**SHA256:** `33af94596b21c0f64908d3aa93eb2c8c8d1f491ed52dcab1c6287ff3c36128c5`
+
 ## v1 — 2026-06-23 — 20260623T204251Z-robotsix-chat-governance-for-assistant-s-45f3
 
 **Summary:** Baseline — the current `agent_instruction` default literal as

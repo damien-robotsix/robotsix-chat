@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added `board_reader` module with `list_board_tickets` and `read_board_ticket`
+  tools that query the SAME HTTP board API endpoint the user's browser UI
+  consumes, giving the assistant read parity with the user.  Uses bearer-token
+  auth (configurable via `BOARD_READER_API_TOKEN`) and is disabled by default;
+  independent of the broker-based mill integration.
+
 - Increased default width of the background tasks slide-in panel from
   340px to 420px to improve readability of task names and status text.
   Added a drag-to-resize handle on the left edge of the panel so users

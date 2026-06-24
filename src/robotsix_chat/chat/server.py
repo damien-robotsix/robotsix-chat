@@ -25,6 +25,7 @@ from starlette.responses import HTMLResponse, JSONResponse, StreamingResponse
 from starlette.routing import Route
 
 from robotsix_chat import PROJECT_TITLE
+from robotsix_chat.board_reader import build_board_reader_tools
 from robotsix_chat.calendar import build_calendar_tools
 from robotsix_chat.chat.auth import BasicAuthConfig, BasicAuthMiddleware
 from robotsix_chat.chat.conversation import ConversationStore
@@ -681,6 +682,7 @@ def create_agent_from_settings(
         *build_mill_tools(settings.mill),
         *build_calendar_tools(settings.calendar),
         *build_refdocs_tools(settings.refdocs),
+        *build_board_reader_tools(settings.board_reader),
     ]
     # Attach per-request tools from independently-gated sources so the
     # foreground agent can delegate work and launch check loops.
