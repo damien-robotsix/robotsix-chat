@@ -120,6 +120,77 @@ class _FakeError:
         self.body = body
 
 
+class _FakeProtocolError(Exception):
+    """Stand-in for robotsix_agent_comm.protocol.Error (structured)."""
+
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        details: dict[str, Any] | None = None,
+    ) -> None:
+        super().__init__(message)
+        self.code = code
+        self.message = message
+        self.details = details or {}
+
+
+class _FakeBrokeredAgent:
+    """Fake SDK BrokeredAgent capturing registration + handler invocation."""
+
+    def __init__(
+        self,
+        agent_id: str,
+        *,
+        broker_host: str,
+        broker_token: str | None,
+        broker_port: int = 443,
+        broker_scheme: str = "https",
+        tls_ca: str | None = None,
+        ssl_context: object | None = None,
+        timeout: float = 30.0,
+        on_request: Any = None,
+        on_notification: Any = None,
+    ) -> None:
+        self.agent_id = agent_id
+        self.broker_host = broker_host
+        self.broker_token = broker_token
+        self.broker_port = broker_port
+        self.broker_scheme = broker_scheme
+        self.timeout = timeout
+        self._on_request = on_request
+        self._on_notification = on_notification
+        self._running = False
+
+    def on_request(self, handler: Any) -> Any:
+        """Register the request handler (also returns it)."""
+        self._on_request = handler
+        return handler
+
+    def on_notification(self, handler: Any) -> Any:
+        """Register the notification handler."""
+        self._on_notification = handler
+        return handler
+
+    def start(self) -> None:
+        """No-op start."""
+        self._running = True
+
+    def stop(self) -> None:
+        """No-op stop."""
+        self._running = False
+
+    def serve_forever(self) -> None:
+        """Blocking serve loop — no-op in the fake."""
+        self._running = True
+
+    def invoke_handler(self, request: Any) -> Any:
+        """Invoke the registered on_request handler directly (test hook)."""
+        if self._on_request is None:
+            raise RuntimeError("No request handler registered")
+        return self._on_request(request)
+
+
 class _Reply:
     def __init__(self, body: Any) -> None:
         self.body = body
@@ -190,11 +261,183 @@ def _install_fake_agent_comm(
 
     root = types.ModuleType("robotsix_agent_comm")
     sdk = types.ModuleType("robotsix_agent_comm.sdk")
+    protocol = types.ModuleType("robotsix_agent_comm.protocol")
+    protocol_messages = types.ModuleType("robotsix_agent_comm.protocol.messages")
+
+    # Give the modules a valid __spec__ and __path__ so find_spec
+    # and submodule imports work against the fake tree.
+    import importlib.machinery
+
+    _spec = importlib.machinery.ModuleSpec
+    root.__spec__ = _spec("robotsix_agent_comm", None)
+    root.__path__ = []  # prevent fallback to real filesystem submodules
+    sdk.__spec__ = _spec("robotsix_agent_comm.sdk", None)
+    protocol.__spec__ = _spec("robotsix_agent_comm.protocol", None)
+    protocol.__path__ = []
+    protocol_messages.__spec__ = _spec("robotsix_agent_comm.protocol.messages", None)
+
     sdk.BrokeredRequester = _FakeBrokeredRequester  # type: ignore[attr-defined]
+    sdk.BrokeredAgent = _FakeBrokeredAgent  # type: ignore[attr-defined]
+
+    # -- Fake protocol types used by the responder and its tests ----------
+
+    class _FakeMetadata:
+        """Stand-in for robotsix_agent_comm.protocol.Metadata."""
+
+        @staticmethod
+        def create(sender: str) -> _FakeMetadata:
+            return _FakeMetadata()
+
+    class _FakeRequest:
+        """Stand-in for robotsix_agent_comm.protocol.messages.Request."""
+
+        def __init__(
+            self,
+            metadata: Any = None,
+            body: dict[str, Any] | None = None,
+        ) -> None:
+            self.metadata = metadata
+            self.body = body or {}
+
+    class _FakeResponse:
+        """Stand-in for robotsix_agent_comm.protocol.messages.Response."""
+
+        def __init__(self, body: dict[str, Any] | None = None) -> None:
+            self.body = body or {}
+
+        @classmethod
+        def to(
+            cls, request: Any, *, body: dict[str, Any] | None = None
+        ) -> _FakeResponse:
+            return cls(body=body)
+
+    class _FakeProtocolError:
+        """Stand-in for robotsix_agent_comm.protocol.messages.Error."""
+
+        def __init__(self, body: dict[str, Any] | None = None) -> None:
+            self.body = body or {}
+
+        @classmethod
+        def to(
+            cls,
+            request: Any,
+            *,
+            code: str,
+            message: str,
+            details: dict[str, Any] | None = None,
+            **kwargs: Any,
+        ) -> _FakeProtocolError:
+            body: dict[str, Any] = {"code": code, "message": message}
+            if details:
+                body["details"] = details
+            body.update(kwargs)
+            return cls(body=body)
+
+    protocol.Metadata = _FakeMetadata  # type: ignore[attr-defined]
+    protocol_messages.Request = _FakeRequest  # type: ignore[attr-defined]
+    protocol_messages.Response = _FakeResponse  # type: ignore[attr-defined]
+    protocol_messages.Error = _FakeProtocolError  # type: ignore[attr-defined]
+    # Re-export at the protocol package level so
+    # ``from robotsix_agent_comm.protocol import Error, Response`` works.
+    protocol.Error = _FakeProtocolError  # type: ignore[attr-defined]
+    protocol.Response = _FakeResponse  # type: ignore[attr-defined]
 
     for name, mod in {
         "robotsix_agent_comm": root,
         "robotsix_agent_comm.sdk": sdk,
+        "robotsix_agent_comm.protocol": protocol,
+        "robotsix_agent_comm.protocol.messages": protocol_messages,
     }.items():
         monkeypatch.setitem(sys.modules, name, mod)
     return captured
+
+
+# ---------------------------------------------------------------------------
+# Import-time fake robotsix_agent_comm modules for test collection
+# ---------------------------------------------------------------------------
+# The test suite must be collectible even when the ``broker`` extra is not
+# installed.  Install minimal stand-in modules in ``sys.modules`` at
+# conftest import time so that ``from robotsix_agent_comm.protocol import
+# Metadata`` (etc.) succeeds during discovery.  Fixtures that need a richer
+# fake (e.g. *fake_broker*) replace these via ``_install_fake_agent_comm``.
+
+if "robotsix_agent_comm" not in sys.modules:
+    import importlib.machinery as _importlib_machinery
+
+    class _FakeMetadataCT:
+        """Import-time stand-in for robotsix_agent_comm.protocol.Metadata."""
+
+        @staticmethod
+        def create(sender: str) -> _FakeMetadataCT:
+            return _FakeMetadataCT()
+
+    class _FakeRequestCT:
+        """Import-time stand-in for robotsix_agent_comm.protocol.messages.Request."""
+
+        def __init__(
+            self,
+            metadata: Any = None,
+            body: dict[str, Any] | None = None,
+        ) -> None:
+            self.metadata = metadata
+            self.body = body or {}
+
+    class _FakeResponseCT:
+        """Import-time stand-in for robotsix_agent_comm.protocol.messages.Response."""
+
+        def __init__(self, body: dict[str, Any] | None = None) -> None:
+            self.body = body or {}
+
+        @classmethod
+        def to(
+            cls, request: Any, *, body: dict[str, Any] | None = None
+        ) -> _FakeResponseCT:
+            return cls(body=body)
+
+    class _FakeErrorCT:
+        """Import-time stand-in for robotsix_agent_comm.protocol.messages.Error."""
+
+        def __init__(self, body: dict[str, Any] | None = None) -> None:
+            self.body = body or {}
+
+        @classmethod
+        def to(
+            cls,
+            request: Any,
+            *,
+            code: str,
+            message: str,
+            details: dict[str, Any] | None = None,
+            **kwargs: Any,
+        ) -> _FakeErrorCT:
+            body: dict[str, Any] = {"code": code, "message": message}
+            if details:
+                body["details"] = details
+            body.update(kwargs)
+            return cls(body=body)
+
+    _spec = _importlib_machinery.ModuleSpec
+
+    _root = types.ModuleType("robotsix_agent_comm")
+    _sdk = types.ModuleType("robotsix_agent_comm.sdk")
+    _protocol = types.ModuleType("robotsix_agent_comm.protocol")
+    _protocol_messages = types.ModuleType("robotsix_agent_comm.protocol.messages")
+
+    _root.__spec__ = _spec("robotsix_agent_comm", None)
+    _root.__path__ = []
+    _sdk.__spec__ = _spec("robotsix_agent_comm.sdk", None)
+    _protocol.__spec__ = _spec("robotsix_agent_comm.protocol", None)
+    _protocol.__path__ = []
+    _protocol_messages.__spec__ = _spec("robotsix_agent_comm.protocol.messages", None)
+
+    _protocol.Metadata = _FakeMetadataCT  # type: ignore[attr-defined]
+    _protocol_messages.Request = _FakeRequestCT  # type: ignore[attr-defined]
+    _protocol_messages.Response = _FakeResponseCT  # type: ignore[attr-defined]
+    _protocol_messages.Error = _FakeErrorCT  # type: ignore[attr-defined]
+    _protocol.Error = _FakeErrorCT  # type: ignore[attr-defined]
+    _protocol.Response = _FakeResponseCT  # type: ignore[attr-defined]
+
+    sys.modules["robotsix_agent_comm"] = _root
+    sys.modules["robotsix_agent_comm.sdk"] = _sdk
+    sys.modules["robotsix_agent_comm.protocol"] = _protocol
+    sys.modules["robotsix_agent_comm.protocol.messages"] = _protocol_messages

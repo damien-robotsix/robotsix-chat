@@ -507,6 +507,20 @@ class ConversationStore:
             )
         return result
 
+    def stats(self) -> dict[str, int]:
+        """Return a read-only summary of conversation counts.
+
+        Returns a dict with ``sessions``, ``owners``, and ``total_turns``
+        keys — no LRU ordering, ``last_activity`` timestamp, eviction, or
+        persistence side effects.
+        """
+        total_turns = sum(len(session.turns) for session in self._sessions.values())
+        return {
+            "sessions": len(self._sessions),
+            "owners": len(self._owners),
+            "total_turns": total_turns,
+        }
+
     def _persist(self) -> None:
         """Write the full conversation state to the persist file."""
         if self._persist_path is None:

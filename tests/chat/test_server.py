@@ -944,6 +944,10 @@ async def test_run_server_from_config_creates_agent_from_settings(
         assert isinstance(run_serializer, RunSerializer)
         on_startup = call_args[1].pop("on_startup")
         assert callable(on_startup)
+        on_startup_async = call_args[1].pop("on_startup_async")
+        assert callable(on_startup_async)
+        on_shutdown = call_args[1].pop("on_shutdown")
+        assert callable(on_shutdown)
         assert call_args[1] == {
             "host": "127.0.0.1",
             "port": 8080,

@@ -1,1 +1,1 @@
-"""Tests for the component-agent config contract + validation."""
+"""Tests for the component-agent package (config contract, responder)."""

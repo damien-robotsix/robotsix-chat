@@ -162,6 +162,24 @@ and relay its reply. Disabled by default; requires `uv sync --extra broker`.
 | `calendar.calendar_agent_id` | `CALENDAR_CALENDAR_AGENT_ID` | `"calendar-agent-robotsix"` | Target calendar/tasks agent ID. |
 | `calendar.timeout` | `CALENDAR_TIMEOUT` | `240.0` | Per-request timeout (seconds). Generous because the recipient is an LLM. |
 
+## Component Agent (embedded responder)
+
+When enabled, robotsix-chat registers itself on the agent-comm broker as a
+discoverable component agent, serving `monitor`, `config-get`, and
+`config-set` request kinds — so external callers can inspect live runtime
+state and mutate configuration over the existing bearer-token channel.
+Disabled by default; requires `uv sync --extra broker`.
+
+| YAML path | Env var | Default | Description |
+|---|---|---|---|
+| `component_agent.enabled` | `COMPONENT_AGENT_ENABLED` | `false` | Master switch. Requires the `broker` extra. |
+| `component_agent.broker_host` | `COMPONENT_AGENT_BROKER_HOST` | `"ai-broker.robotsix.net"` | Agent-comm broker hostname. |
+| `component_agent.broker_port` | `COMPONENT_AGENT_BROKER_PORT` | `443` | Broker TCP port. |
+| `component_agent.broker_scheme` | `COMPONENT_AGENT_BROKER_SCHEME` | `"https"` | Transport scheme (`https` or `http`). |
+| `component_agent.broker_token` | `COMPONENT_AGENT_BROKER_TOKEN` | `""` | This agent's bearer token, registered on the broker. Required when enabled. |
+| `component_agent.agent_id` | `COMPONENT_AGENT_AGENT_ID` | `"robotsix-chat-component"` | This agent's identity on the broker (the *responder's* broker id — distinct from client ids used by mill/calendar). |
+| `component_agent.timeout` | `COMPONENT_AGENT_TIMEOUT` | `240.0` | Per-request timeout (seconds). |
+
 ## Reference Docs (refdocs)
 
 Read-only reference-docs tool — lets the agent fetch documentation from
@@ -272,6 +290,10 @@ mill:
   broker_token: "..."
 
 calendar:
+  enabled: true
+  broker_token: "..."
+
+component_agent:
   enabled: true
   broker_token: "..."
 

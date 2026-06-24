@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import importlib.util
 import json
 import logging
 import logging.config
@@ -592,8 +593,11 @@ async def server_error_handler(request: Request, exc: Exception) -> JSONResponse
 @contextlib.asynccontextmanager
 async def _make_lifespan(
     on_startup: Callable[[], None] | None,
+    *,
+    on_startup_async: Callable[[], Any] | None = None,
+    on_shutdown: Callable[[], Any] | None = None,
 ) -> AsyncIterator[None]:
-    """Starlette lifespan that invokes *on_startup* (if provided) on startup.
+    """Starlette lifespan that invokes hooks on startup and shutdown.
 
     A resume failure is logged but does not crash app startup.
     """
@@ -602,7 +606,19 @@ async def _make_lifespan(
             on_startup()
         except Exception:
             logger.exception("Startup hook failed — continuing")
-    yield
+    if on_startup_async is not None:
+        try:
+            await on_startup_async()
+        except Exception:
+            logger.exception("Async startup hook failed — continuing")
+    try:
+        yield
+    finally:
+        if on_shutdown is not None:
+            try:
+                await on_shutdown()
+            except Exception:
+                logger.exception("Shutdown hook failed")
 
 
 def create_app(
@@ -622,6 +638,8 @@ def create_app(
     check_loop_registry: CheckLoopRegistry | None = None,
     run_serializer: RunSerializer | None = None,
     on_startup: Callable[[], None] | None = None,
+    on_startup_async: Callable[[], Any] | None = None,
+    on_shutdown: Callable[[], Any] | None = None,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -676,6 +694,12 @@ def create_app(
         on_startup: Optional callable invoked during application startup
             (the Starlette lifespan ``startup`` phase).  Pass a closure
             that e.g. resumes persisted check loops.
+        on_startup_async: Optional async callable invoked after *on_startup*
+            during application startup.  Pass a coroutine function that
+            e.g. starts the component-agent responder.
+        on_shutdown: Optional async callable invoked during application
+            shutdown (after ``yield``).  Pass a coroutine function that
+            e.g. stops the component-agent responder.
 
     """
     routes = [
@@ -716,7 +740,11 @@ def create_app(
             404: not_found_handler,
             500: server_error_handler,
         },
-        lifespan=lambda app: _make_lifespan(on_startup),
+        lifespan=lambda app: _make_lifespan(
+            on_startup,
+            on_startup_async=on_startup_async,
+            on_shutdown=on_shutdown,
+        ),
     )
     app.state.agent = agent
     app.state.conversation_store = conversation_store or ConversationStore()
@@ -756,6 +784,8 @@ def run_server(
     check_loop_registry: CheckLoopRegistry | None = None,
     run_serializer: RunSerializer | None = None,
     on_startup: Callable[[], None] | None = None,
+    on_startup_async: Callable[[], Any] | None = None,
+    on_shutdown: Callable[[], Any] | None = None,
 ) -> None:
     """Start the chat SSE server on ``host:port``.
 
@@ -780,6 +810,8 @@ def run_server(
         check_loop_registry=check_loop_registry,
         run_serializer=run_serializer,
         on_startup=on_startup,
+        on_startup_async=on_startup_async,
+        on_shutdown=on_shutdown,
     )
     uvicorn.run(app, host=host, port=port)
 
@@ -1069,6 +1101,42 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         """Resume any check loops that were RUNNING at last shutdown."""
         resume_check_loops(check_loop_registry, settings, channel=channel)
 
+    # -- component-agent responder (disabled by default; gated on the -----
+    # -- optional broker extra) -------------------------------------------
+    async def _start_responder() -> None:
+        """Start the component-agent responder when enabled + broker present."""
+        if not settings.component_agent.enabled:
+            return
+        try:
+            found = importlib.util.find_spec("robotsix_agent_comm")
+        except (ValueError, ModuleNotFoundError):
+            found = None
+        if not found:
+            logger.info(
+                "component_agent.enabled=True but the broker extra "
+                "(robotsix-agent-comm) is not installed — responder not started."
+            )
+            return
+        from robotsix_chat.component_agent.responder import (
+            ComponentAgentResponder,
+        )
+
+        _responder = ComponentAgentResponder(
+            settings,
+            check_loop_registry=check_loop_registry,
+            conversation_store=conversation_store,
+            event_bus=event_bus,
+        )
+        # Stash on the function so _stop_responder can reach it.
+        _start_responder._responder = _responder  # type: ignore[attr-defined]
+        await _responder.start()
+
+    async def _stop_responder() -> None:
+        """Stop the component-agent responder if it was started."""
+        responder = getattr(_start_responder, "_responder", None)
+        if responder is not None:
+            await responder.stop()
+
     auth = (
         BasicAuthConfig(
             username=settings.auth.username, password=settings.auth.password
@@ -1093,4 +1161,6 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         check_loop_registry=check_loop_registry,
         run_serializer=run_serializer,
         on_startup=_resume,
+        on_startup_async=_start_responder,
+        on_shutdown=_stop_responder,
     )
