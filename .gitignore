@@ -51,3 +51,7 @@ src/bin/
 .deps/
 .pip-packages/
 .local-packages/
+# Catch dotted/new variants of the uv-install vendored dirs (recurring flood)
+.local-deps/
+*-deps/
+*-packages/
