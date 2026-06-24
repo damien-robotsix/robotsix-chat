@@ -14,6 +14,7 @@ from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.delegation import (
     ConversationDeliveryChannel,
     NullDeliveryChannel,
+    _is_board_action,
     build_check_loop_tools,
     build_delegation_tools,
 )
@@ -1929,3 +1930,237 @@ class TestTickTriggeredAgentRun:
         # But delegation tools (delegate_task) MAY be present.
         # (They are optional depending on wiring; we just assert loop tools
         # are absent.)
+
+
+# ---------------------------------------------------------------------------
+# _is_board_action — unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_is_board_action_positive_file_ticket() -> None:
+    """_is_board_action returns True for 'File a ticket to fix the login bug'."""
+    assert _is_board_action("File a ticket to fix the login bug") is True
+
+
+def test_is_board_action_positive_triage_board() -> None:
+    """_is_board_action returns True for 'triage the open board items'."""
+    assert _is_board_action("triage the open board items") is True
+
+
+def test_is_board_action_positive_consult_mill() -> None:
+    """_is_board_action returns True for 'consult_mill about ticket status'."""
+    assert _is_board_action("consult_mill about ticket status") is True
+
+
+def test_is_board_action_positive_epics() -> None:
+    """_is_board_action returns True for a description mentioning epics."""
+    assert _is_board_action("list all epics on the board") is True
+
+
+def test_is_board_action_positive_mill() -> None:
+    """_is_board_action returns True for a description mentioning mill."""
+    assert _is_board_action("check the mill for new tickets") is True
+
+
+def test_is_board_action_positive_backlog() -> None:
+    """_is_board_action returns True for a description mentioning backlog."""
+    assert _is_board_action("review the backlog items") is True
+
+
+def test_is_board_action_positive_create_ticket() -> None:
+    """_is_board_action returns True for 'create a ticket for the bug'."""
+    assert _is_board_action("create a ticket for the bug") is True
+
+
+def test_is_board_action_positive_open_issue() -> None:
+    """_is_board_action returns True for 'open an issue to track the work'."""
+    assert _is_board_action("open an issue to track the work") is True
+
+
+def test_is_board_action_positive_log_bug() -> None:
+    """_is_board_action returns True for 'log a bug about the crash'."""
+    assert _is_board_action("log a bug about the crash") is True
+
+
+def test_is_board_action_positive_report_bug() -> None:
+    """_is_board_action returns True for 'report a bug for the login failure'."""
+    assert _is_board_action("report a bug for the login failure") is True
+
+
+def test_is_board_action_positive_file_a_ticket() -> None:
+    """_is_board_action returns True for 'file a ticket for the feature request'."""
+    assert _is_board_action("file a ticket for the feature request") is True
+
+
+# -- negative (must NOT match) -------------------------------------------
+
+
+def test_is_board_action_negative_summarize_pdf() -> None:
+    """_is_board_action returns False for 'Summarize this 50-page PDF'."""
+    assert _is_board_action("Summarize this 50-page PDF") is False
+
+
+def test_is_board_action_negative_quantum_research() -> None:
+    """_is_board_action returns False for a multi-step web research description."""
+    assert (
+        _is_board_action("Run a multi-step web research on quantum computing") is False
+    )
+
+
+def test_is_board_action_negative_long_generation() -> None:
+    """_is_board_action returns False for ordinary delegation descriptions."""
+    assert _is_board_action("Generate a 500-word summary of the meeting notes") is False
+
+
+def test_is_board_action_negative_code_review() -> None:
+    """_is_board_action returns False for code review delegation."""
+    assert (
+        _is_board_action("Review the entire codebase for security vulnerabilities")
+        is False
+    )
+
+
+def test_is_board_action_negative_data_analysis() -> None:
+    """_is_board_action returns False for data analysis delegation."""
+    assert _is_board_action("Analyze this 10MB CSV and produce a report") is False
+
+
+def test_is_board_action_negative_false_positive_ticket_word_in_context() -> None:
+    """_is_board_action is careful with 'ticket' in non-board contexts.
+
+    The word 'ticket' alone triggers a match (by design; regex matching
+    is intentionally broad).  However, phrases that coincidentally
+    contain the word should still be checked for false positives.
+    """
+    # This one DOES trigger because 'ticket' is in the regex alternation.
+    # That's acceptable — better to err on the side of blocking.
+    assert _is_board_action("Help me buy a plane ticket") is True
+
+
+# ---------------------------------------------------------------------------
+# delegate_task — board-action guardrail (tool-level test)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_delegate_task_board_action_returns_guardrail_message() -> None:
+    """Calling delegate_task with a board-action description returns the guardrail."""
+    registry = TaskRegistry()
+    channel = _FakeDeliveryChannel()
+    settings = Settings()
+
+    tools = build_delegation_tools(
+        settings,
+        registry,
+        channel,
+        agent_factory=lambda s: _StubAgent(["ok"]),
+    )
+    delegate_task = tools[0]
+
+    result = await delegate_task("File a ticket to fix the login bug")
+
+    # Returns the guardrail string (NOT a task id).
+    assert isinstance(result, str)
+    assert "can't delegate" in result
+    assert "consult_mill" in result
+
+    # No task_started frame was published.
+    started_frames = [f for _, f in channel.frames if f["type"] == "task_started"]
+    assert len(started_frames) == 0
+
+    # No task was registered (registry count should be 0).
+    assert registry.count_running() == 0
+
+
+@pytest.mark.asyncio
+async def test_delegate_task_board_action_does_not_spawn_subagent(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A board-action description must never call spawn_subagent_task."""
+    from robotsix_chat.chat import delegation as del_mod
+
+    registry = TaskRegistry()
+    channel = _FakeDeliveryChannel()
+    settings = Settings()
+
+    spawn_calls: list[dict[str, Any]] = []
+
+    def _fake_spawn(**kwargs: Any) -> str:
+        spawn_calls.append(kwargs)
+        return "should-not-reach"
+
+    monkeypatch.setattr(del_mod, "spawn_subagent_task", _fake_spawn)
+
+    tools = build_delegation_tools(
+        settings,
+        registry,
+        channel,
+        agent_factory=lambda s: _StubAgent(["ok"]),
+    )
+    delegate_task = tools[0]
+
+    result = await delegate_task("File a ticket to fix the login bug")
+
+    assert "consult_mill" in result
+    assert len(spawn_calls) == 0, (
+        "spawn_subagent_task must not be called for board-action descriptions"
+    )
+
+
+@pytest.mark.asyncio
+async def test_delegate_task_board_action_logs_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """A board-action description emits a logger.warning."""
+    registry = TaskRegistry()
+    channel = _FakeDeliveryChannel()
+    settings = Settings()
+
+    tools = build_delegation_tools(
+        settings,
+        registry,
+        channel,
+        agent_factory=lambda s: _StubAgent(["ok"]),
+    )
+    delegate_task = tools[0]
+
+    with caplog.at_level("WARNING", logger="robotsix_chat.chat.delegation"):
+        result = await delegate_task("triage the open board items")
+
+    assert "consult_mill" in result
+    assert "delegate_task blocked" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_delegate_task_non_board_still_spawns() -> None:
+    """Calling delegate_task with a non-board description still spawns a sub-agent.
+
+    This guards against false-positives in the board-action detector breaking
+    normal delegation.
+    """
+    registry = TaskRegistry()
+    channel = _FakeDeliveryChannel()
+    settings = Settings()
+
+    tools = build_delegation_tools(
+        settings,
+        registry,
+        channel,
+        agent_factory=lambda s: _StubAgent(["done"]),
+    )
+    delegate_task = tools[0]
+
+    result = await delegate_task("Summarize this 50-page PDF")
+    assert isinstance(result, str)
+    # Should contain a task id (normal path).
+    task_id = _extract_task_id(result)
+    assert task_id
+
+    # Task is registered.
+    info = registry.get(task_id)
+    assert info is not None
+    assert info.status in (TaskStatus.RUNNING, TaskStatus.COMPLETED)
+
+    # A task_started frame was published.
+    started_frames = [f for _, f in channel.frames if f["type"] == "task_started"]
+    assert len(started_frames) == 1
