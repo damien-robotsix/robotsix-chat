@@ -637,6 +637,7 @@ def create_agent_from_settings(
     task_registry: TaskRegistry | None = None,
     delivery_channel: DeliveryChannel | None = None,
     check_loop_registry: CheckLoopRegistry | None = None,
+    model_override: str | None = None,
 ) -> LlmioChatAgent:
     """Build an :class:`LlmioChatAgent` wired from *settings*.
 
@@ -644,6 +645,10 @@ def create_agent_from_settings(
     (``settings.llmio_model_level``) — the level encodes the transport + model.
     ``settings.llmio_api_key`` is forwarded only when that level's transport
     needs a key (so keyless levels like claude-sdk never receive one).
+
+    *model_override* is a bare model name (e.g. ``"sonnet"``) passed through
+    to :class:`LlmioChatAgent` as ``model_name=``.  When ``None`` (the
+    default), the model is resolved from the level's tier default.
 
     When *settings* is ``None``, ``Settings.load()`` resolves configuration
     from the YAML config file and environment. When *instruction* is ``None``,
@@ -697,12 +702,39 @@ def create_agent_from_settings(
         )
         from robotsix_chat.chat.runner import NULL_CHANNEL
 
+        # Compute the sub-agent model override ONCE.  The override is only
+        # meaningful for the keyless claudeSDK provider (level 3); for
+        # OpenRouter levels (1–2) a bare "sonnet"/"haiku" is not a valid
+        # model name, so the override is suppressed.
+        subagent_model = (
+            settings.subagent_model
+            if (
+                settings.subagent_model
+                and not level_needs_api_key(settings.llmio_model_level)
+            )
+            else None
+        )
+
+        def _subagent_factory(s: Settings) -> LlmioChatAgent:
+            """Build a sub-agent with the downgraded model.
+
+            When the override is suppressed the foreground model is used.
+            Omits task_registry, delivery_channel, and check_loop_registry so
+            sub-agents get neither delegate_task nor start_check_loop tools —
+            preserving the recursion guard.
+            """
+            return create_agent_from_settings(settings=s, model_override=subagent_model)
+
         def _make_request_tools(cid: str) -> list[Any]:
             request_tools: list[Any] = []
             if task_registry is not None and delivery_channel is not None:
                 request_tools.extend(
                     build_delegation_tools(
-                        settings, task_registry, delivery_channel, client_id=cid
+                        settings,
+                        task_registry,
+                        delivery_channel,
+                        client_id=cid,
+                        agent_factory=_subagent_factory,
                     )
                 )
             if check_loop_registry is not None:
@@ -712,6 +744,7 @@ def create_agent_from_settings(
                         check_loop_registry,
                         delivery_channel or NULL_CHANNEL,
                         client_id=cid,
+                        agent_factory=_subagent_factory,
                     )
                 )
             return request_tools
@@ -724,6 +757,7 @@ def create_agent_from_settings(
         memory=build_memory(settings.memory),
         tools=tools,
         request_tools_factory=request_tools_factory,
+        model_name=model_override,
     )
 
 

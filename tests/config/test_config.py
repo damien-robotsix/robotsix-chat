@@ -26,6 +26,7 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
     for name in (
         "LLMIO_MODEL_LEVEL",
         "LLMIO_API_KEY",
+        "LLMIO_SUBAGENT_MODEL",
         "AGENT_INSTRUCTION",
         "SERVER_HOST",
         "SERVER_PORT",
@@ -932,3 +933,91 @@ def test_min_check_loop_interval_seconds_one_allowed() -> None:
     """``min_check_loop_interval_seconds = 1.0`` is valid."""
     settings = Settings(min_check_loop_interval_seconds=1.0)
     assert settings.min_check_loop_interval_seconds == 1.0
+
+
+# ---------------------------------------------------------------------------
+# subagent_model
+# ---------------------------------------------------------------------------
+
+
+def test_subagent_model_default() -> None:
+    """``subagent_model`` defaults to ``"sonnet"``."""
+    settings = Settings()
+    assert settings.subagent_model == "sonnet"
+
+
+def test_subagent_model_explicit() -> None:
+    """``subagent_model`` can be set to ``"haiku"``."""
+    settings = Settings(subagent_model="haiku")
+    assert settings.subagent_model == "haiku"
+
+
+def test_subagent_model_null_disables_downgrade() -> None:
+    """``subagent_model=None`` disables the downgrade (None stored)."""
+    settings = Settings(subagent_model=None)
+    assert settings.subagent_model is None
+
+
+def test_subagent_model_from_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``llmio.subagent_model`` in YAML overrides the default."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text("llmio:\n  subagent_model: haiku\n")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.subagent_model == "haiku"
+
+
+def test_subagent_model_yaml_null_stores_none(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``llmio.subagent_model: null`` in YAML results in ``None``."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text("llmio:\n  subagent_model: null\n")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.subagent_model is None
+
+
+def test_subagent_model_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``LLMIO_SUBAGENT_MODEL`` env var overrides the default."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("LLMIO_SUBAGENT_MODEL", "haiku")
+
+    settings = Settings.from_env()
+
+    assert settings.subagent_model == "haiku"
+
+
+def test_subagent_model_env_empty_string_is_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty ``LLMIO_SUBAGENT_MODEL`` is treated as ``None`` (no override)."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("LLMIO_SUBAGENT_MODEL", "")
+
+    settings = Settings.from_env()
+
+    assert settings.subagent_model is None
+
+
+def test_subagent_model_env_overrides_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Env ``LLMIO_SUBAGENT_MODEL`` wins over YAML ``llmio.subagent_model``."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text("llmio:\n  subagent_model: sonnet\n")
+    monkeypatch.setenv("LLMIO_SUBAGENT_MODEL", "haiku")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.subagent_model == "haiku"
