@@ -42,6 +42,18 @@ number.  To revert to a previous prompt:
 
 ---
 
+## v6 — 2026-06-24 — 20260624T212708Z-chat-agents-enforce-the-three-sentences-236a
+
+Tighten conciseness rule: name prohibited output shapes explicitly.
+
+- Extended the three-sentence bullet to explicitly gate multi-row markdown
+  tables, timeline/audit dumps, and recap lists behind an explicit user
+  request.
+- Added prohibition on repeating content already shown in the same
+  conversation.
+
+**SHA256:** `344e725c838591049557069cd1aa654422d886e13ece396b2016b9aeb4657dc7`
+
 ## v5 — 2026-06-24 — 20260623T210918Z-gate-sub-agent-status-output-behind-a-ma-e2f0
 
 **Summary:** Added a bullet to the Board/mill rules instructing the foreground

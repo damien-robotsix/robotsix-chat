@@ -540,7 +540,7 @@ class ConversationSettings(BaseModel):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 5
+SYSTEM_PROMPT_VERSION = 6
 
 
 class Settings(BaseModel):
@@ -661,7 +661,11 @@ class Settings(BaseModel):
         "required tool is missing, state it in one sentence and stop — "
         "do not explore alternatives or explain why.\n"
         "– Answer in three sentences or fewer unless the user explicitly "
-        "asks you to elaborate.\n"
+        "asks you to elaborate. Do NOT volunteer multi-row markdown tables, "
+        "timeline/audit dumps, or recap lists — emit those formats ONLY when "
+        "the user explicitly requests them (e.g. 'show me a table', 'give me "
+        "the full audit'). Never repeat content already shown earlier in the "
+        "same conversation.\n"
         "– Load tools once at the start of a session. Before branching "
         "into a complex workflow, run a single generic capability check. "
         "Do not re-load the same tool descriptions across turns."

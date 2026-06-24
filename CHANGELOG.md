@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Strengthened the ``agent_instruction`` Efficiency bullet to name prohibited
+  output shapes (multi-row markdown tables, timeline/audit dumps, recap lists)
+  and forbid repeating content already shown in the same conversation.
 - Documented ``mail`` configuration in ``config/chat.local.example.yaml`` and
   ``MAIL_*`` environment variables in ``.env.example``.
 - Refactored ``spawn_check_loop`` in ``robotsix_chat.chat.loops``: extracted
