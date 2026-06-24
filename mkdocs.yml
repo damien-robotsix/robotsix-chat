@@ -19,6 +19,7 @@ nav:
   - Getting Started: getting-started.md
   - User Guide:
       - Configuration: configuration.md
+      - Periodic Checks: periodic-checks.md
       - Deployment: user-guide/deployment.md
   - API Reference:
       - robotsix_chat: api/robotsix_chat.md

@@ -192,11 +192,15 @@ class CheckLoopRegistry:
         *,
         result: str,
         next_run: float | None,
+        publish: bool = True,
     ) -> None:
         """Record a completed iteration of *loop_id*.
 
         Increments ``iterations``, stores *result* and *next_run*, and
         publishes a ``loop_tick`` frame keyed by the loop's ``client_id``.
+
+        When *publish* is ``False`` the internal state is updated but no
+        SSE frame is emitted — useful for suppressed (no-change) ticks.
         """
         info = self._loops.get(loop_id)
         if info is None:
@@ -205,7 +209,7 @@ class CheckLoopRegistry:
         info.last_result = result
         info.next_run = next_run
         info.last_result_at = time.time()
-        if self._event_sink is not None:
+        if publish and self._event_sink is not None:
             self._event_sink.publish(
                 info.client_id,
                 loop_tick_frame(
@@ -325,6 +329,8 @@ def spawn_check_loop(
     registry: CheckLoopRegistry,
     max_iterations: int | None = None,
     stop_when: Callable[[str], bool] | None = None,
+    suppress_when: Callable[[str], bool] | None = None,
+    include_previous_result: bool = False,
     agent_factory: Callable[[Settings], ChatAgent] | None = None,
     loop_id: str | None = None,
     channel: DeliveryChannel = NULL_CHANNEL,
@@ -340,12 +346,22 @@ def spawn_check_loop(
     stops when one of: explicit :meth:`CheckLoopRegistry.stop`, *max_iterations*
     is reached, or *stop_when* returns ``True`` for the latest result.
 
+    When *include_previous_result* is ``True``, each iteration after the first
+    prepends the previous tick's result to the prompt so the sub-agent can
+    compare against prior state.
+
+    When *suppress_when* returns ``True`` for a result, the tick is recorded
+    internally (iterations + last_result are updated) but NO SSE frame or
+    conversation-store turn is published — the user sees no notification.
+    This is useful for no-change checks where the result is uninteresting.
+
     When *loop_id* is provided it is used directly; otherwise a new id is
     generated.  This lets the resume hook re-register a loop under its
     persisted id.
 
-    Each tick's result is published through *channel* (best-effort; errors are
-    logged and swallowed) so the foreground agent sees it via
+    Each non-suppressed tick's result is published through *channel*
+    (best-effort; errors are logged and swallowed) so the foreground agent
+    sees it via
     :class:`~robotsix_chat.chat.delegation.ConversationDeliveryChannel`.
     Defaults to :data:`~robotsix_chat.chat.runner.NULL_CHANNEL` (no-op).
 
@@ -381,13 +397,31 @@ def spawn_check_loop(
     async def _worker() -> None:
         loop_id = await id_future
         clock = registry._clock
+        previous_result: str | None = None
         try:
             while True:
+                # Build the effective prompt, optionally including the
+                # previous iteration's result so the sub-agent can compare.
+                effective_prompt = prompt
+                if include_previous_result and previous_result is not None:
+                    effective_prompt = (
+                        f"Previous check result:\n{previous_result}\n\n"
+                        f"---\n\nCurrent check prompt:\n{prompt}"
+                    )
+
                 agent = agent_factory(settings)
-                result_text = "".join([chunk async for chunk in agent.stream(prompt)])
+                result_text = "".join(
+                    [chunk async for chunk in agent.stream(effective_prompt)]
+                )
 
                 next_run = clock() + interval_seconds
-                registry.record_tick(loop_id, result=result_text, next_run=next_run)
+                suppressed = suppress_when is not None and suppress_when(result_text)
+                registry.record_tick(
+                    loop_id,
+                    result=result_text,
+                    next_run=next_run,
+                    publish=not suppressed,
+                )
 
                 # Re-read after record_tick (which incremented iterations).
                 info = registry.get(loop_id)
@@ -396,22 +430,27 @@ def spawn_check_loop(
 
                 # Best-effort: publish tick result into the conversation so the
                 # foreground agent sees it in its next-turn history.
-                try:
-                    await channel.publish(
-                        client_id,
-                        loop_tick_frame(
+                # Skip when suppressed — the user shouldn't see no-change ticks.
+                if not suppressed:
+                    try:
+                        await channel.publish(
+                            client_id,
+                            loop_tick_frame(
+                                loop_id,
+                                iteration=info.iterations,
+                                result=result_text,
+                                next_run=next_run,
+                            ),
+                        )
+                    except Exception:
+                        logger.exception(
+                            "DeliveryChannel.publish failed for loop %s tick %s",
                             loop_id,
-                            iteration=info.iterations,
-                            result=result_text,
-                            next_run=next_run,
-                        ),
-                    )
-                except Exception:
-                    logger.exception(
-                        "DeliveryChannel.publish failed for loop %s tick %s",
-                        loop_id,
-                        info.iterations,
-                    )
+                            info.iterations,
+                        )
+
+                # Store for the next iteration's comparison.
+                previous_result = result_text
 
                 # Self-stop on condition-met.
                 if stop_when is not None and stop_when(result_text):
