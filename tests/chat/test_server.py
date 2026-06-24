@@ -493,18 +493,21 @@ async def test_sessions_survive_store_reload() -> None:
 
 def test_idle_does_not_wipe_history() -> None:
     """Advancing past idle_reset_seconds does NOT clear session history."""
-    from tests.chat.test_conversation import _store
+    from tests.chat.test_conversation import _FakeWallClock, _store
 
-    store = _store()
+    clock = _FakeWallClock()
+    store = _store(wall_clock=clock, idle_reset_seconds=10.0)
     sid = cast(str, store.create_session("owner-x")["session_id"])
     store.record(sid, "owner-x", "hello", "hi")
 
-    # Simulate passing the idle threshold — history must remain intact.
-    history = store.history(sid)
-    assert history == [("hello", "hi")]
-    # begin() returns the full history, not an empty one.
+    # Advance well past the idle threshold — history must remain intact.
+    clock.advance(999.0)
+
     _, history_begin = store.begin(sid)
     assert history_begin == [("hello", "hi")]
+
+    history = store.history(sid)
+    assert history == [("hello", "hi")]
 
 
 # ---------------------------------------------------------------------------

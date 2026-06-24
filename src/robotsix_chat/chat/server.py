@@ -250,6 +250,11 @@ async def chat_endpoint(
     # If session_id is given without owner_id, derive owner_id from session.
     if not owner_id and session_id:
         owner_id = session_id
+    # Derive client_id from session_id when not explicitly provided,
+    # so delegation tools, EventBus, and check-loop routing still scope
+    # correctly when the new session_id+owner_id fields are used alone.
+    if not client_id and session_id:
+        client_id = session_id
 
     if session_id:
         session_id, history = store.begin(session_id)
