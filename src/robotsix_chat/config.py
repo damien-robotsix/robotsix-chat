@@ -101,6 +101,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "refdocs": "refdocs",
     "board_reader": "board_reader",
     "knowledge": "knowledge",
+    "self_review": "self_review",
 }
 
 
@@ -339,6 +340,30 @@ class KnowledgeSettings(BaseModel):
     path: str = ".data/knowledge.json"
 
 
+class SelfReviewSettings(BaseModel):
+    """Self-review tool — a read-only digest of live conversation activity.
+
+    When enabled, the agent gains a ``read_recent_activity`` tool that
+    reads the in-process :class:`~robotsix_chat.chat.conversation.ConversationStore`
+    (short-lived per-client conversation turns) and returns a human-readable
+    multi-session digest.  This is a deliberate, explicit, cross-client
+    snapshot — complementary to, but independent of, the optional cognee
+    episodic memory subsystem (``src/robotsix_chat/memory/``).
+
+    Default-disabled so behaviour is unchanged unless explicitly turned on.
+
+    Attributes:
+        enabled: Master switch. When ``True``, the ``read_recent_activity``
+            tool is attached to the agent.
+        recent_activity_limit: Maximum number of conversations returned by
+            the tool (clamps the caller's ``limit`` argument).
+
+    """
+
+    enabled: bool = False
+    recent_activity_limit: int = 20
+
+
 class CalendarSettings(BaseModel):
     """Calendar/tasks integration over the agent-comm broker. Disabled by default.
 
@@ -544,6 +569,7 @@ class Settings(BaseModel):
     refdocs: RefDocsSettings = Field(default_factory=RefDocsSettings)
     board_reader: BoardReaderSettings = Field(default_factory=BoardReaderSettings)
     knowledge: KnowledgeSettings = Field(default_factory=KnowledgeSettings)
+    self_review: SelfReviewSettings = Field(default_factory=SelfReviewSettings)
     max_images_per_message: int = 8
     max_image_bytes: int = 5_242_880
     allowed_image_media_types: list[str] = Field(
@@ -727,6 +753,7 @@ class Settings(BaseModel):
                 "conversation",
                 "refdocs",
                 "knowledge",
+                "self_review",
             )
         }
         auth_raw: dict[str, Any] = dict(flat.get("auth") or {})
@@ -875,6 +902,10 @@ class Settings(BaseModel):
         knowledge_raw = _build_knowledge_raw(flat.get("knowledge"))
         if knowledge_raw:
             raw["knowledge"] = knowledge_raw
+
+        self_review_raw = _build_self_review_raw(flat.get("self_review"))
+        if self_review_raw:
+            raw["self_review"] = self_review_raw
 
         return cls(**raw)
 
@@ -1171,6 +1202,31 @@ def _build_knowledge_raw(yaml_knowledge: Any) -> dict[str, Any]:
         knowledge_raw["path"] = path
 
     return knowledge_raw
+
+
+def _build_self_review_raw(yaml_self_review: Any) -> dict[str, Any]:
+    """Overlay ``SELF_REVIEW_*`` env vars onto the YAML ``self_review`` subtree.
+
+    Returns a dict ready to parse into :class:`SelfReviewSettings`, or empty
+    when nothing is set.
+    """
+    self_review_raw: dict[str, Any] = dict(yaml_self_review or {})
+
+    enabled = os.getenv("SELF_REVIEW_ENABLED")
+    if enabled is not None:
+        self_review_raw["enabled"] = _parse_bool(enabled)
+
+    limit_str = os.getenv("SELF_REVIEW_RECENT_ACTIVITY_LIMIT")
+    if limit_str is not None:
+        try:
+            self_review_raw["recent_activity_limit"] = int(limit_str)
+        except ValueError:
+            raise ValueError(
+                f"SELF_REVIEW_RECENT_ACTIVITY_LIMIT must be an integer, "
+                f"got {limit_str!r}"
+            ) from None
+
+    return self_review_raw
 
 
 def _load_dotenv() -> None:

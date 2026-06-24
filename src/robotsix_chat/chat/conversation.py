@@ -32,6 +32,7 @@ from collections import OrderedDict
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -463,6 +464,48 @@ class ConversationStore:
                 active_session_id=active_sid,
                 session_ids=session_ids,
             )
+
+    def recent_activity(
+        self, *, limit: int = 20, max_turns: int = 6
+    ) -> list[dict[str, Any]]:
+        """Return a read-only snapshot of recent cross-session activity.
+
+        Iterates over sessions in most-recently-active-first order
+        (``reversed(self._sessions)`` — ``begin``, ``record``, and
+        ``create_session`` all call ``move_to_end`` so insertion order is
+        oldest → newest).  Returns at most *limit* entries, each a ``dict``
+        with ``client_id`` (the owner id, falling back to session id),
+        ``session_id``, and ``turns`` (the last *max_turns* turns as a
+        **copy**).
+
+        This method is **read-only**: it does not update LRU ordering,
+        ``last_activity`` timestamps, or trigger eviction or persistence.
+
+        Complements, but is independent of, the optional cognee episodic
+        memory subsystem (``src/robotsix_chat/memory/``) — this returns
+        the live, in-process conversation turns; cognee recalls by
+        similarity across past sessions.
+        """
+        result: list[dict[str, Any]] = []
+        for session_id, session in reversed(self._sessions.items()):
+            if len(result) >= limit:
+                break
+            # Resolve the owner id for this session.
+            owner_id: str | None = None
+            for oid, ostate in self._owners.items():
+                if session_id in ostate.session_ids:
+                    owner_id = oid
+                    break
+            client_id = owner_id if owner_id is not None else session_id
+            turns = list(session.turns[-max_turns:]) if session.turns else []
+            result.append(
+                {
+                    "client_id": client_id,
+                    "session_id": session_id,
+                    "turns": turns,
+                }
+            )
+        return result
 
     def _persist(self) -> None:
         """Write the full conversation state to the persist file."""

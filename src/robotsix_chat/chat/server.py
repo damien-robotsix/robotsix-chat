@@ -38,6 +38,7 @@ from robotsix_chat.mail import build_mail_tools
 from robotsix_chat.memory import build_memory
 from robotsix_chat.mill import build_mill_tools
 from robotsix_chat.refdocs import build_refdocs_tools
+from robotsix_chat.selfreview import build_recent_activity_tools
 
 if TYPE_CHECKING:
     from robotsix_chat.chat.loops import CheckLoopRegistry
@@ -736,6 +737,7 @@ def create_agent_from_settings(
     task_registry: TaskRegistry | None = None,
     delivery_channel: DeliveryChannel | None = None,
     check_loop_registry: CheckLoopRegistry | None = None,
+    conversation_store: ConversationStore | None = None,
     model_override: str | None = None,
 ) -> LlmioChatAgent:
     """Build an :class:`LlmioChatAgent` wired from *settings*.
@@ -757,7 +759,9 @@ def create_agent_from_settings(
     (otherwise a no-op memory is used and the agent stays stateless). The mill
     consult tool is attached when ``settings.mill.enabled`` is set; the calendar
     and task tools are attached when ``settings.calendar.enabled`` is set; the
-    reference-docs tools are attached when ``settings.refdocs.enabled`` is set
+    reference-docs tools are attached when ``settings.refdocs.enabled`` is set;
+    the self-review ``read_recent_activity`` tool is attached when
+    ``settings.self_review.enabled`` is set and *conversation_store* is provided
     (otherwise no tools are added).
 
     When both *task_registry* and *delivery_channel* are provided, the
@@ -788,6 +792,7 @@ def create_agent_from_settings(
         *build_refdocs_tools(settings.refdocs),
         *build_board_reader_tools(settings.board_reader),
         *build_knowledge_tools(settings.knowledge),
+        *build_recent_activity_tools(settings.self_review, conversation_store),
     ]
     # Attach per-request tools from independently-gated sources so the
     # foreground agent can delegate work and launch check loops.
@@ -972,6 +977,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             task_registry=registry,
             delivery_channel=channel,
             check_loop_registry=check_loop_registry,
+            conversation_store=conversation_store,
         )
 
     # -- resume persisted check loops after redeploy ----------------------

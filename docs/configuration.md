@@ -198,6 +198,21 @@ Provides three tools: `list_board_tickets` (calls `GET /tickets`),
 | `board_reader.api_token` | `BOARD_READER_API_TOKEN` | `""` | Optional bearer token for the board API (empty = no `Authorization` header). |
 | `board_reader.timeout` | `BOARD_READER_TIMEOUT` | `30.0` | Per-request HTTP timeout (seconds). |
 
+## Self-review
+
+A read-only digest of live conversation activity from the in-process
+:class:`~robotsix_chat.chat.conversation.ConversationStore`. When enabled, the
+agent gains a ``read_recent_activity`` tool that returns a human-readable
+multi-session summary of recent cross-client conversation turns. This is a
+deliberate, explicit snapshot — complementary to, but independent of, the
+optional cognee episodic memory subsystem (``src/robotsix_chat/memory/``).
+Default-disabled so behaviour is unchanged unless explicitly turned on.
+
+| YAML path | Env var | Default | Description |
+|---|---|---|---|
+| `self_review.enabled` | `SELF_REVIEW_ENABLED` | `false` | Master switch — enables the ``read_recent_activity`` tool. |
+| `self_review.recent_activity_limit` | `SELF_REVIEW_RECENT_ACTIVITY_LIMIT` | `20` | Maximum number of conversations returned by the tool. |
+
 ## Knowledge (writable agent knowledge base)
 
 A local, writable, always-on knowledge base the agent uses to persist durable
