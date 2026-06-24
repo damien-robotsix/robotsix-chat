@@ -40,6 +40,7 @@ from robotsix_chat.memory import build_memory
 from robotsix_chat.mill import build_mill_tools
 from robotsix_chat.refdocs import build_refdocs_tools
 from robotsix_chat.selfreview import build_recent_activity_tools
+from robotsix_chat.version_check import build_version_check_tools
 
 if TYPE_CHECKING:
     from robotsix_chat.chat.loops import CheckLoopRegistry
@@ -880,6 +881,7 @@ def create_agent_from_settings(
         *build_board_reader_tools(settings.board_reader),
         *build_knowledge_tools(settings.knowledge),
         *build_recent_activity_tools(settings.self_review, conversation_store),
+        *build_version_check_tools(settings.version_check),
     ]
     if tool_wrapper is not None:
         tools = tool_wrapper(tools)
