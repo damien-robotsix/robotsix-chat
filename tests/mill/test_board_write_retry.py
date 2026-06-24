@@ -10,18 +10,17 @@ from typing import Any
 import pytest
 
 from robotsix_chat.broker_client import (
+    BaseBrokeredClient,
     BrokerUnavailableError,
     _is_broker_unavailable,
-    BaseBrokeredClient,
 )
 from robotsix_chat.mill.retry_queue import (
+    _INITIAL_DELAY,
+    _JITTER_FRACTION,
+    _MAX_DELAY,
     BoardWriteRetryQueue,
     _next_delay,
-    _INITIAL_DELAY,
-    _MAX_DELAY,
-    _JITTER_FRACTION,
 )
-
 
 # ---------------------------------------------------------------------------
 # _is_broker_unavailable() classification
@@ -40,7 +39,7 @@ from robotsix_chat.mill.retry_queue import (
     ],
 )
 def test_is_broker_unavailable_classification(msg: str, expected: bool) -> None:
-    """_is_broker_unavailable returns True only for known broker-unavailable fragments."""
+    """_is_broker_unavailable is True only for broker-unavailable fragments."""
     assert _is_broker_unavailable(RuntimeError(msg)) is expected
 
 
@@ -53,7 +52,7 @@ def test_is_broker_unavailable_classification(msg: str, expected: bool) -> None:
 async def test_consult_raises_on_broker_unavailability(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """consult() raises BrokerUnavailableError when broker reports unreachable target."""
+    """consult() raises BrokerUnavailableError on unreachable-target errors."""
     _install_fake_agent_comm(
         monkeypatch,
         raise_exc=RuntimeError("unknown recipient: board-manager-robotsix-mill"),
@@ -88,8 +87,10 @@ async def test_consult_returns_string_for_non_broker_errors(
 
 
 @pytest.mark.asyncio
-async def test_consult_mill_enqueues_on_broker_unavailable_error(tmp_path: Path) -> None:
-    """consult_mill enqueues the write when _raw_consult raises BrokerUnavailableError."""
+async def test_consult_mill_enqueues_on_broker_unavailable_error(
+    tmp_path: Path,
+) -> None:
+    """consult_mill enqueues write when _raw_consult raises BrokerUnavailableError."""
     call_count = 0
 
     async def _failing_consult(request: str) -> str:
@@ -97,7 +98,9 @@ async def test_consult_mill_enqueues_on_broker_unavailable_error(tmp_path: Path)
         call_count += 1
         raise BrokerUnavailableError("unreachable")
 
-    q = BoardWriteRetryQueue(consult_fn=_failing_consult, queue_path=tmp_path / "q.json")
+    q = BoardWriteRetryQueue(
+        consult_fn=_failing_consult, queue_path=tmp_path / "q.json"
+    )
     result = q.enqueue("create ticket: fix login bug")
     assert "queued" in result
     assert len(q._entries) == 1
@@ -124,7 +127,11 @@ def test_next_delay_initial() -> None:
     """_next_delay(0) is within INITIAL_DELAY ± JITTER_FRACTION."""
     for _ in range(50):
         d = _next_delay(0)
-        assert _INITIAL_DELAY * (1 - _JITTER_FRACTION) <= d <= _INITIAL_DELAY * (1 + _JITTER_FRACTION)
+        assert (
+            _INITIAL_DELAY * (1 - _JITTER_FRACTION)
+            <= d
+            <= (_INITIAL_DELAY * (1 + _JITTER_FRACTION))
+        )
 
 
 def test_next_delay_fourth_attempt() -> None:
@@ -132,7 +139,11 @@ def test_next_delay_fourth_attempt() -> None:
     for _ in range(50):
         d = _next_delay(4)
         # raw = 900 * 2^4 = 14400, which equals _MAX_DELAY
-        assert _MAX_DELAY * (1 - _JITTER_FRACTION) <= d <= _MAX_DELAY * (1 + _JITTER_FRACTION)
+        assert (
+            _MAX_DELAY * (1 - _JITTER_FRACTION)
+            <= d
+            <= (_MAX_DELAY * (1 + _JITTER_FRACTION))
+        )
 
 
 def test_next_delay_capped_at_max() -> None:
@@ -172,7 +183,7 @@ async def test_drain_loop_removes_successful_entry(tmp_path: Path) -> None:
 
 @pytest.mark.asyncio
 async def test_drain_loop_backs_off_on_broker_unavailable(tmp_path: Path) -> None:
-    """On BrokerUnavailableError, attempt_count increments and next_attempt moves forward."""
+    """On BrokerUnavailableError the entry is bumped to a later attempt."""
     call_count = 0
 
     async def _fail_unavailable(request: str) -> str:
@@ -187,10 +198,10 @@ async def test_drain_loop_backs_off_on_broker_unavailable(tmp_path: Path) -> Non
     entry_before = list(q._entries.values())[0]
     assert entry_before["attempt_count"] == 0
 
-    from datetime import datetime, timezone
-    now_before = datetime.now(timezone.utc)
+    from datetime import UTC, datetime
+
+    now_before = datetime.now(UTC)
     await _drain_one_iteration(q)
-    now_after = datetime.now(timezone.utc)
 
     entry = list(q._entries.values())[0]
     assert entry["attempt_count"] == 1
@@ -207,6 +218,7 @@ async def test_drain_loop_backs_off_on_broker_unavailable(tmp_path: Path) -> Non
 @pytest.mark.asyncio
 async def test_drain_loop_marks_non_broker_error_as_failed(tmp_path: Path) -> None:
     """Non-BrokerUnavailableError exceptions mark the entry as failed, no retry."""
+
     async def _fail_bad(req: str) -> str:
         raise ValueError("bad payload")
 
@@ -366,9 +378,9 @@ async def _drain_one_iteration(q: BoardWriteRetryQueue) -> None:
     Overwrites the entry's ``next_attempt_at`` to be "now" so it's immediately
     eligible, then runs ``_attempt`` directly.
     """
-    from datetime import datetime, timezone
+    from datetime import UTC, datetime
 
     for entry in list(q._entries.values()):
         if entry["status"] == "pending":
-            entry["next_attempt_at"] = datetime.now(timezone.utc).isoformat()
+            entry["next_attempt_at"] = datetime.now(UTC).isoformat()
     await q._attempt(list(q._entries.values())[0])

@@ -31,9 +31,7 @@ _JITTER_FRACTION = 0.2  # ±20 %
 
 def _next_delay(attempt_count: int) -> float:
     """Compute retry delay for *attempt_count* with exponential backoff and jitter."""
-    raw: float = min(
-        _INITIAL_DELAY * (_BACKOFF_FACTOR ** attempt_count), _MAX_DELAY
-    )
+    raw: float = min(_INITIAL_DELAY * (_BACKOFF_FACTOR**attempt_count), _MAX_DELAY)
     return raw * random.uniform(  # noqa: S311 — jitter, not cryptography
         1 - _JITTER_FRACTION, 1 + _JITTER_FRACTION
     )
@@ -162,9 +160,7 @@ class BoardWriteRetryQueue:
     async def _drain_loop(self) -> None:
         """Continuously process pending entries as their retry time arrives."""
         while True:
-            pending = [
-                e for e in self._entries.values() if e["status"] == "pending"
-            ]
+            pending = [e for e in self._entries.values() if e["status"] == "pending"]
             if not pending:
                 break
 
@@ -172,9 +168,7 @@ class BoardWriteRetryQueue:
             wait_secs = max(
                 0.0,
                 min(
-                    (
-                        datetime.fromisoformat(e["next_attempt_at"]) - now
-                    ).total_seconds()
+                    (datetime.fromisoformat(e["next_attempt_at"]) - now).total_seconds()
                     for e in pending
                 ),
             )
