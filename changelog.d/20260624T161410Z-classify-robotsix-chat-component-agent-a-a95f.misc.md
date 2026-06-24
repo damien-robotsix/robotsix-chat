@@ -1,0 +1,1 @@
+Classify robotsix_chat.component_agent: add as a new module in docs/modules.yaml
