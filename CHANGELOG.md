@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added ``fail_under = 88`` coverage threshold to ``pyproject.toml``
+  (``[tool.coverage.report]``) to ratchet-floor coverage and block regressions
+  in CI.
+
 - Documented the ``broker_src/`` submodule convention in ``AGENT.md``: broker
   features must be developed in the upstream ``robotsix-agent-comm`` repo, not
   directly inside ``broker_src/``.
