@@ -90,13 +90,14 @@ def test_build_board_reader_tools_disabled() -> None:
     assert build_board_reader_tools(BoardReaderSettings(enabled=False)) == []
 
 
-def test_build_board_reader_tools_returns_two_tools() -> None:
-    """Verify that enabled board reader returns list and read tools."""
+def test_build_board_reader_tools_returns_three_tools() -> None:
+    """Verify that enabled board reader returns list, read, and create tools."""
     tools = build_board_reader_tools(_settings())
-    assert len(tools) == 2
+    assert len(tools) == 3
     names = [t.__name__ for t in tools]
     assert "list_board_tickets" in names
     assert "read_board_ticket" in names
+    assert "create_board_ticket" in names
 
 
 # ---------------------------------------------------------------------------
@@ -284,3 +285,134 @@ async def test_unexpected_error_returns_diagnostic(
 
     assert "failed" in out.lower()
     assert "something crashed" in out
+
+
+# ---------------------------------------------------------------------------
+# BoardReader.create_ticket
+# ---------------------------------------------------------------------------
+
+
+def _install_mock_post_client(
+    monkeypatch: pytest.MonkeyPatch,
+    response: _MockResponse,
+) -> dict[str, Any]:
+    """Replace ``httpx.AsyncClient`` with a factory for POST requests.
+
+    Returns a ``captured`` dict that receives ``url``, ``headers``, and
+    ``json`` from each ``post`` call for later inspection.
+    """
+    captured: dict[str, Any] = {}
+
+    class _BoundPostClient:
+        def __init__(self, **kwargs: Any) -> None:
+            self._resp = response
+
+        async def __aenter__(self) -> _BoundPostClient:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def post(
+            self,
+            url: str,
+            *,
+            headers: dict[str, str],
+            json: dict[str, str] | None = None,
+        ) -> _MockResponse:
+            captured["url"] = url
+            captured["headers"] = headers
+            captured["json"] = json
+            return self._resp
+
+    monkeypatch.setattr(httpx, "AsyncClient", _BoundPostClient)
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_calls_post_tickets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify that create_ticket calls POST /tickets with correct payload."""
+    resp = _MockResponse(
+        text='{"id": "abc", "title": "New ticket", "state": "draft"}',
+        status_code=201,
+    )
+    captured = _install_mock_post_client(monkeypatch, resp)
+
+    client = BoardReader(_settings(api_base_url="http://127.0.0.1:8077"))
+    out = await client.create_ticket(
+        title="New ticket",
+        description="A test ticket",
+        repo_id="robotsix-chat",
+    )
+
+    assert out == resp.text
+    assert captured["url"] == "http://127.0.0.1:8077/tickets"
+    assert captured["json"] == {
+        "title": "New ticket",
+        "description": "A test ticket",
+        "repo_id": "robotsix-chat",
+    }
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_with_kind(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify that kind is included in payload when provided."""
+    resp = _MockResponse(text='{"id": "xyz", "kind": "bug"}', status_code=201)
+    captured = _install_mock_post_client(monkeypatch, resp)
+
+    client = BoardReader(_settings())
+    await client.create_ticket(
+        title="Bug report",
+        description="Something broke",
+        repo_id="robotsix-mill",
+        kind="bug",
+    )
+
+    assert captured["json"] == {
+        "title": "Bug report",
+        "description": "Something broke",
+        "repo_id": "robotsix-mill",
+        "kind": "bug",
+    }
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_omits_kind_when_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify that kind is omitted from payload when empty string."""
+    resp = _MockResponse(text='{"id": "abc"}', status_code=201)
+    captured = _install_mock_post_client(monkeypatch, resp)
+
+    client = BoardReader(_settings())
+    await client.create_ticket(
+        title="T",
+        description="D",
+        repo_id="r",
+        kind="",
+    )
+
+    assert "kind" not in captured["json"]
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_http_error_returns_diagnostic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify that create_ticket HTTP errors become text, never raised."""
+    resp = _MockResponse(text="conflict", status_code=409)
+    _install_mock_post_client(monkeypatch, resp)
+
+    client = BoardReader(_settings())
+    out = await client.create_ticket(
+        title="Dup",
+        description="Duplicate",
+        repo_id="x",
+    )
+
+    assert "409" in out
+    assert "conflict" in out

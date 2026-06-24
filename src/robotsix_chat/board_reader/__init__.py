@@ -1,9 +1,10 @@
-"""Direct HTTP read access to the mill's board API.
+"""Direct HTTP access to the mill's board API.
 
 Exposes :func:`build_board_reader_tools` — a factory returning the LLM tools
-that let the assistant list and read tickets from the SAME HTTP endpoint the
-user's browser UI consumes, giving read parity with the user.  Returns no tools
-when the board reader is disabled, so the chat runs exactly as before.
+that let the assistant list, read, and create tickets from the SAME HTTP
+endpoint the user's browser UI consumes, giving read/write parity with the
+user.  Returns no tools when the board reader is disabled, so the chat runs
+exactly as before.
 
 The tools are plain async callables; robotsix-llmio converts them into tools for
 the underlying agent (the claude-sdk tool loop, or pydantic-ai function tools).
@@ -89,4 +90,42 @@ def build_board_reader_tools(
         """
         return await client.get_ticket(ticket_id)
 
-    return [list_board_tickets, read_board_ticket]
+    async def create_board_ticket(
+        title: str,
+        description: str,
+        repo_id: str,
+        kind: str = "",
+    ) -> str:
+        """Create a new ticket on the board directly.
+
+        Calls the board's ``POST /tickets`` endpoint — the same one the board
+        manager uses internally.  This is a direct, synchronous (inline) call:
+        no broker indirection, no background sub-agent.  Use this whenever the
+        user asks you to file a ticket, create a task, or report a bug on the
+        board.
+
+        Prefer this over ``delegate_task`` for simple ticket creation — it is
+        faster and uses fewer tokens.
+
+        Args:
+            title: Short, descriptive title for the ticket (required).
+            description: Full description / body — be thorough; include
+                context, steps, and any relevant details (required).
+            repo_id: The board's repo identifier (e.g. ``"robotsix-chat"``,
+                ``"robotsix-mill"``).  Required.
+            kind: Optional ticket kind hint (e.g. ``"task"``, ``"bug"``,
+                ``"epic"``).  Empty string = board default (usually "task").
+
+        Returns:
+            The board API's JSON response as a text string (the created
+            ticket), or an error message on failure.
+
+        """
+        return await client.create_ticket(
+            title=title,
+            description=description,
+            repo_id=repo_id,
+            kind=kind,
+        )
+
+    return [list_board_tickets, read_board_ticket, create_board_ticket]

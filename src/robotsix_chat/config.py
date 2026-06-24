@@ -288,12 +288,11 @@ class MailSettings(BaseModel):
 
 
 class BoardReaderSettings(BaseModel):
-    """Direct HTTP read access to the mill's board API (same endpoint the UI uses).
+    """Direct HTTP access to the mill's board API (same endpoint the UI uses).
 
-    Lets the assistant list and read tickets from the same HTTP endpoint the
-    user's browser UI consumes, giving read parity with the user — no broker
-    indirection, no NL reinterpretation.  Writes still go through
-    ``consult_mill`` / the broker board manager.
+    Lets the assistant list, read, and create tickets from the same HTTP
+    endpoint the user's browser UI consumes, giving read/write parity with
+    the user — no broker indirection, no NL reinterpretation.
 
     The board API is served by the mill's management-plane FastAPI app
     (typically on the same host at port 8077).  When *api_token* is set, it

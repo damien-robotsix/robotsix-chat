@@ -181,14 +181,15 @@ ingestion), and only repos in the allowlist are reachable.
 
 ## Board Reader (HTTP board read access)
 
-Direct HTTP read access to the mill's board API — lets the assistant list and
-read tickets from the SAME HTTP endpoint the user's browser UI uses (read parity
-with the user — no broker indirection, no NL reinterpretation). Disabled by
+Direct HTTP access to the mill's board API — lets the assistant list, read, and
+create tickets from the SAME HTTP endpoint the user's browser UI uses (read/write
+parity with the user — no broker indirection, no NL reinterpretation). Disabled by
 default; independent of the broker-based mill integration (works even when the
-broker is offline). Writes still go through `consult_mill`.
+broker is offline).
 
-Provides two tools: `list_board_tickets` (calls `GET /tickets`) and
-`read_board_ticket` (calls `GET /tickets/{id}`).
+Provides three tools: `list_board_tickets` (calls `GET /tickets`),
+`read_board_ticket` (calls `GET /tickets/{id}`), and `create_board_ticket`
+(calls `POST /tickets`).
 
 | YAML path | Env var | Default | Description |
 |---|---|---|---|

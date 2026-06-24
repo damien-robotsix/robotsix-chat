@@ -1,9 +1,10 @@
-"""Thin async HTTP client for the mill's board read API.
+"""Thin async HTTP client for the mill's board API.
 
 Talks directly to the board's FastAPI app (``GET /tickets``,
-``GET /tickets/{id}``) over HTTP — no broker indirection, no NL
-reinterpretation.  Degrades gracefully: HTTP/timeout/parse errors
-become short strings the assistant can relay to the user.
+``GET /tickets/{id}``, ``POST /tickets``) over HTTP — no broker
+indirection, no NL reinterpretation.  Degrades gracefully:
+HTTP/timeout/parse errors become short strings the assistant can
+relay to the user.
 """
 
 from __future__ import annotations
@@ -58,6 +59,39 @@ class BoardReader:
         """
         return await self._get(f"/tickets/{ticket_id}")
 
+    async def create_ticket(
+        self,
+        *,
+        title: str,
+        description: str,
+        repo_id: str,
+        kind: str = "",
+    ) -> str:
+        """Call ``POST /tickets`` and return the raw JSON body as text.
+
+        Creates a new ticket on the board.  This is a direct synchronous
+        call — no broker indirection, no background sub-agent.
+
+        Never raises — HTTP/parse errors become a message the assistant
+        can relay.
+
+        Args:
+            title: Short title for the ticket.
+            description: Full description / body of the ticket.
+            repo_id: The board repo identifier (e.g. ``"robotsix-chat"``).
+            kind: Optional ticket kind (e.g. ``"task"``, ``"bug"``).
+                Empty string = board default.
+
+        """
+        payload: dict[str, str] = {
+            "title": title,
+            "description": description,
+            "repo_id": repo_id,
+        }
+        if kind:
+            payload["kind"] = kind
+        return await self._post("/tickets", json=payload)
+
     async def _get(
         self,
         path: str,
@@ -90,6 +124,43 @@ class BoardReader:
             body = exc.response.text[:500] if exc.response.text else "(empty body)"
             status = exc.response.status_code
             req_method = getattr(exc.request, "method", "GET")
+            req_url = getattr(exc.request, "url", url)
+            return f"Board API error {status} for {req_method} {req_url}: {body}"
+        except httpx.TimeoutException:
+            logger.warning("Board API timed out for %s", url)
+            return f"Board API request timed out after {self._timeout}s: {url}"
+        except Exception as exc:  # noqa: BLE001 — surface as text, never crash chat
+            logger.warning("Board API request failed for %s: %s", url, exc)
+            return f"Board API request failed: {exc}"
+
+    async def _post(
+        self,
+        path: str,
+        *,
+        json: dict[str, str] | None = None,
+    ) -> str:
+        """Perform a POST request and return the text body.
+
+        On any error (timeout, connection refused, non-2xx, parse failure)
+        returns a short diagnostic string — never raises into the chat path.
+        """
+        url = f"{self._base_url}{path}"
+        try:
+            async with httpx.AsyncClient(timeout=self._timeout) as client:
+                response = await client.post(
+                    url,
+                    headers=self._headers,
+                    json=json,
+                )
+                response.raise_for_status()
+                return response.text
+        except httpx.HTTPStatusError as exc:
+            logger.warning(
+                "Board API returned %d for %s", exc.response.status_code, url
+            )
+            body = exc.response.text[:500] if exc.response.text else "(empty body)"
+            status = exc.response.status_code
+            req_method = getattr(exc.request, "method", "POST")
             req_url = getattr(exc.request, "url", url)
             return f"Board API error {status} for {req_method} {req_url}: {body}"
         except httpx.TimeoutException:
