@@ -104,6 +104,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "knowledge": "knowledge",
     "self_review": "self_review",
     "component_agent": "component_agent",
+    "component_client": "component_client",
 }
 
 
@@ -464,6 +465,52 @@ class ComponentAgentSettings(BaseModel):
     timeout: float = 240.0
 
 
+class ComponentTarget(BaseModel):
+    """A single component agent that the chat may inspect or configure.
+
+    Attributes:
+        agent_id: Broker agent id of the target component.
+        label: Optional human-readable label shown in discovery output.
+
+    """
+
+    agent_id: str
+    label: str = ""
+
+
+class ComponentClientSettings(BaseModel):
+    """Component agent client settings — inspect and configure remote agents.
+
+    When enabled, the chat agent gains four tools: ``list_component_agents``,
+    ``get_component_telemetry``, ``get_component_config``, and
+    ``set_component_config`` so it can enumerate configured component agents,
+    read live telemetry, and read/update configuration on demand.
+
+    Attributes:
+        enabled: Master switch. Requires the ``broker`` extra (robotsix-agent-comm).
+        broker_host: Broker hostname (the shared agent-comm broker).
+        broker_port: Broker port (443 for the public TLS endpoint).
+        broker_scheme: ``https`` (TLS) or ``http``.
+        broker_token: This agent's bearer token, registered on the broker.
+            Required when enabled.
+        agent_id: This agent's id on the broker (the requester identity).
+            Default ``robotsix-chat``.
+        timeout: Per-request timeout (seconds).
+        components: Allowlist of component agents the chat may contact.
+            Each entry has an ``agent_id`` and an optional ``label``.
+
+    """
+
+    enabled: bool = False
+    broker_host: str = "ai-broker.robotsix.net"
+    broker_port: int = 443
+    broker_scheme: str = "https"
+    broker_token: str = ""
+    agent_id: str = "robotsix-chat"
+    timeout: float = 240.0
+    components: list[ComponentTarget] = Field(default_factory=list)
+
+
 class ConversationSettings(BaseModel):
     """Multi-session conversation continuity for the browser chat.
 
@@ -642,6 +689,9 @@ class Settings(BaseModel):
         default_factory=ComponentAgentSettings
     )
     version_check: VersionCheckSettings = Field(default_factory=VersionCheckSettings)
+    component_client: ComponentClientSettings = Field(
+        default_factory=ComponentClientSettings
+    )
     max_images_per_message: int = 8
     max_image_bytes: int = 5_242_880
     allowed_image_media_types: list[str] = Field(
@@ -747,6 +797,20 @@ class Settings(BaseModel):
                     "component_agent is enabled — provide it via "
                     "COMPONENT_AGENT_BROKER_HOST or the config file"
                 )
+        if self.component_client.enabled:
+            if not self.component_client.broker_token:
+                raise ValueError(
+                    "component_client.broker_token must be set when "
+                    "component_client is enabled — provide it via "
+                    "COMPONENT_CLIENT_BROKER_TOKEN or the "
+                    "`component_client.broker_token` config field"
+                )
+            if not self.component_client.broker_host:
+                raise ValueError(
+                    "component_client.broker_host must be set when "
+                    "component_client is enabled — provide it via "
+                    "COMPONENT_CLIENT_BROKER_HOST or the config file"
+                )
         if self.refdocs.enabled and not self.refdocs.repos:
             raise ValueError(
                 "refdocs.repos must be non-empty when refdocs is enabled — "
@@ -847,6 +911,8 @@ class Settings(BaseModel):
                 "knowledge",
                 "self_review",
                 "version_check",
+                "component_agent",
+                "component_client",
             )
         }
         auth_raw: dict[str, Any] = dict(flat.get("auth") or {})
@@ -1007,6 +1073,10 @@ class Settings(BaseModel):
         version_check_raw = _build_version_check_raw(flat.get("version_check"))
         if version_check_raw:
             raw["version_check"] = version_check_raw
+
+        component_client_raw = _build_component_client_raw(flat.get("component_client"))
+        if component_client_raw:
+            raw["component_client"] = component_client_raw
 
         return cls(**raw)
 
@@ -1411,6 +1481,48 @@ def _build_version_check_raw(yaml_version_check: Any) -> dict[str, Any]:
             ) from None
 
     return version_check_raw
+
+
+def _build_component_client_raw(yaml_component_client: Any) -> dict[str, Any]:
+    """Overlay ``COMPONENT_CLIENT_*`` env vars onto the ``component_client`` subtree.
+
+    Returns a dict ready to parse into
+    :class:`ComponentClientSettings`, or empty when nothing is set.
+    """
+    cc_raw: dict[str, Any] = dict(yaml_component_client or {})
+
+    def env_set(field: str, env_name: str) -> None:
+        value = os.getenv(env_name)
+        if value is not None:
+            cc_raw[field] = value
+
+    enabled = os.getenv("COMPONENT_CLIENT_ENABLED")
+    if enabled is not None:
+        cc_raw["enabled"] = _parse_bool(enabled)
+    env_set("broker_host", "COMPONENT_CLIENT_BROKER_HOST")
+    env_set("broker_scheme", "COMPONENT_CLIENT_BROKER_SCHEME")
+    env_set("broker_token", "COMPONENT_CLIENT_BROKER_TOKEN")
+    env_set("agent_id", "COMPONENT_CLIENT_AGENT_ID")
+
+    port_str = os.getenv("COMPONENT_CLIENT_BROKER_PORT")
+    if port_str is not None:
+        try:
+            cc_raw["broker_port"] = int(port_str)
+        except ValueError:
+            raise ValueError(
+                f"COMPONENT_CLIENT_BROKER_PORT must be an integer, got {port_str!r}"
+            ) from None
+
+    timeout_str = os.getenv("COMPONENT_CLIENT_TIMEOUT")
+    if timeout_str is not None:
+        try:
+            cc_raw["timeout"] = float(timeout_str)
+        except ValueError:
+            raise ValueError(
+                f"COMPONENT_CLIENT_TIMEOUT must be a number, got {timeout_str!r}"
+            ) from None
+
+    return cc_raw
 
 
 def _load_dotenv() -> None:
