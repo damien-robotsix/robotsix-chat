@@ -78,6 +78,13 @@ modules:
       - tests/component_agent/test_config_contract.py
       - tests/component_agent/test_responder.py
 
+  - id: robotsix_chat.knowledge
+    description: "Writable knowledge-base tools for the agent — exposes build_knowledge_tools(), a factory that returns five tools the agent can call to add, append, update, list, and read durable notes across sessions. Entirely local JSON storage, no embeddings."
+    paths:
+      - src/robotsix_chat/knowledge/__init__.py
+      - src/robotsix_chat/knowledge/store.py
+      - tests/knowledge/test_knowledge.py
+
   - id: robotsix_chat.llm
     description: "LLM-powered agent — streaming wrapper around llmio.Agent."
     paths:
