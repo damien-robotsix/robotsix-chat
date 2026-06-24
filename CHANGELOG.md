@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added multi-session support to the chat UI: a sessions sidebar with "New
+  chat" button and session list (title + last-active timestamp), click-to-switch
+  with independent conversation state per session (DOM cleared, history and
+  events stream re-keyed on session_id).  All /chat, /history, /events, /loops
+  calls now send session_id + owner_id.  Page load auto-selects the server's
+  active session (falling back to newest or locally stored).
+
 - Added sub-agent efficiency rules to the agent system prompt: check tool
   availability before describing a plan and state missing tools in one
   sentence; answer in three sentences or fewer unless elaboration is
