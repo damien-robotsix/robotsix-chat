@@ -150,4 +150,5 @@ modules:
     paths:
       - src/robotsix_chat/version_check/__init__.py
       - src/robotsix_chat/version_check/client.py
-      - tests/test_version_check.py
+      - tests/version_check/__init__.py
+      - tests/version_check/test_version_check.py
