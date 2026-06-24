@@ -766,7 +766,7 @@ async def test_delegate_task_at_capacity_returns_friendly_message() -> None:
 
 
 def _stub_settings(**overrides: Any) -> Any:
-    """Build a stub settings object carrying ``max_check_loops`` and other attrs.
+    """Build a stub settings object carrying all attrs needed by loops/agents.
 
     Uses ``types.SimpleNamespace`` so the worker only reads attributes
     without needing the real ``Settings`` pydantic model.
@@ -778,6 +778,11 @@ def _stub_settings(**overrides: Any) -> Any:
         "min_check_loop_interval_seconds": 60.0,
         "llmio_model_level": 3,
         "llmio_api_key": "",
+        "agent_instruction": "You are a test agent.",
+        "mill": SimpleNamespace(enabled=False),
+        "memory": SimpleNamespace(enabled=False),
+        "calendar": SimpleNamespace(enabled=False),
+        "refdocs": SimpleNamespace(enabled=False),
     }
     defaults.update(overrides)
     return SimpleNamespace(**defaults)
@@ -1549,3 +1554,114 @@ def _extract_loop_id(result: str) -> str:
             return word
     # Fallback: find any hex-like token (for non-stub registries).
     return _extract_task_id(result)
+
+
+# ---------------------------------------------------------------------------
+# start_check_loop — verify_via_board parameter wiring
+# ---------------------------------------------------------------------------
+
+
+def test_start_check_loop_docstring_mentions_verify_via_board() -> None:
+    """The updated docstring documents the ``verify_via_board`` parameter."""
+    registry = _loop_registry()
+    settings = _stub_settings()
+
+    tools = build_check_loop_tools(settings, registry)
+    doc = tools[0].__doc__
+    assert doc is not None
+    assert "verify_via_board" in doc
+    assert "consult_mill" in doc
+
+
+@pytest.mark.asyncio
+async def test_start_check_loop_forwards_verify_via_board_true() -> None:
+    """When verify_via_board=True is passed, the loop is registered with it."""
+    bus = EventBus()
+    registry = _loop_registry(sink=bus)
+    settings = _stub_settings()
+    settings.mill = type("MillStub", (), {"enabled": True})()
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        client_id="c-vvb",
+        agent_factory=lambda s: _StubAgent(["ok"]),
+    )
+    start_check_loop = tools[0]
+
+    result = await start_check_loop(
+        "gated status check",
+        interval_seconds=120.0,
+        verify_via_board=True,
+    )
+    loop_id = _extract_loop_id(result)
+
+    info = registry.get(loop_id)
+    assert info is not None
+    assert info.verify_via_board is True
+
+    registry.stop(loop_id, reason="test teardown")
+    await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_start_check_loop_verify_via_board_defaults_false() -> None:
+    """When verify_via_board is omitted, the loop's flag is False."""
+    bus = EventBus()
+    registry = _loop_registry(sink=bus)
+    settings = _stub_settings()
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        client_id="c-vvb2",
+        agent_factory=lambda s: _StubAgent(["ok"]),
+    )
+    start_check_loop = tools[0]
+
+    result = await start_check_loop(
+        "non-gated check",
+        interval_seconds=120.0,
+    )
+    loop_id = _extract_loop_id(result)
+
+    info = registry.get(loop_id)
+    assert info is not None
+    assert info.verify_via_board is False
+
+    registry.stop(loop_id, reason="test teardown")
+    await asyncio.sleep(0.05)
+
+
+# ---------------------------------------------------------------------------
+# create_agent_from_settings — tool_wrapper parameter
+# ---------------------------------------------------------------------------
+
+
+def test_create_agent_from_settings_applies_tool_wrapper() -> None:
+    """When tool_wrapper is provided, it is applied to the tools list."""
+    from robotsix_chat.chat.server import create_agent_from_settings
+
+    wrapper_called: list[int] = [0]
+
+    def _spy_wrapper(tools: list[Any]) -> list[Any]:
+        wrapper_called[0] += 1
+        return tools  # identity, just count calls
+
+    _agent = create_agent_from_settings(
+        settings=Settings(),
+        tool_wrapper=_spy_wrapper,
+    )
+    assert wrapper_called[0] == 1
+    # The tools list may be None (LlmioChatAgent normalises [] → None).
+    # That's fine — what matters is that the wrapper was called.
+
+
+def test_create_agent_from_settings_no_tool_wrapper_is_noop() -> None:
+    """When tool_wrapper is omitted (default None), tools are unchanged."""
+    from robotsix_chat.chat.server import create_agent_from_settings
+
+    agent = create_agent_from_settings(settings=Settings())
+    # Without tool_wrapper, the agent is constructed normally.
+    # The tools may be None when all tool-gates are disabled.
+    assert isinstance(agent._tools, (list, type(None)))

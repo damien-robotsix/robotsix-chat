@@ -405,7 +405,7 @@ class ConversationSettings(BaseModel):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 4
+SYSTEM_PROMPT_VERSION = 5
 
 
 class Settings(BaseModel):
@@ -506,6 +506,11 @@ class Settings(BaseModel):
         "– Never offer to manually promote a ticket from draft to ready. "
         "The draft→ready transition is automatic (auto-pickup); the system "
         "picks up tickets on its own once they leave draft.\n"
+        "– When launching a check loop (start_check_loop) that monitors "
+        "mill/board/thread/ticket status, set verify_via_board=True. "
+        "Never assert board/thread status without a fresh consult_mill read "
+        "— fabricating or narrating status without reading the board is "
+        "prohibited.\n"
         "\n"
         "Calendar/task tools:\n"
         "– query_calendar, manage_calendar, query_tasks, and manage_tasks "

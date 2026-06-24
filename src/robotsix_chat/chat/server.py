@@ -737,6 +737,7 @@ def create_agent_from_settings(
     delivery_channel: DeliveryChannel | None = None,
     check_loop_registry: CheckLoopRegistry | None = None,
     model_override: str | None = None,
+    tool_wrapper: Callable[[list[Any]], list[Any]] | None = None,
 ) -> LlmioChatAgent:
     """Build an :class:`LlmioChatAgent` wired from *settings*.
 
@@ -789,6 +790,8 @@ def create_agent_from_settings(
         *build_board_reader_tools(settings.board_reader),
         *build_knowledge_tools(settings.knowledge),
     ]
+    if tool_wrapper is not None:
+        tools = tool_wrapper(tools)
     # Attach per-request tools from independently-gated sources so the
     # foreground agent can delegate work and launch check loops.
     # The factory lambda is called once per stream() invocation with the
