@@ -175,14 +175,14 @@ async def test_chat_endpoint_invalid_client_id() -> None:
 
 @pytest.mark.asyncio
 async def test_history_endpoint_returns_stored_turns() -> None:
-    """``GET /history?client_id=`` returns the client's recorded turns as JSON."""
+    """``GET /history?session_id=`` returns the session's recorded turns as JSON."""
     store = ConversationStore()
-    store.begin("c1")
-    store.record("c1", "hi", "hello")
-    store.record("c1", "how are you", "I'm fine")
+    store.begin("s1")
+    store.record("s1", None, "hi", "hello")
+    store.record("s1", None, "how are you", "I'm fine")
 
     async with mock_app(conversation_store=store) as f:
-        response = await f.client.get("/history?client_id=c1")
+        response = await f.client.get("/history?session_id=s1")
 
     assert response.status_code == 200
     data = response.json()
@@ -202,34 +202,33 @@ async def test_history_endpoint_unknown_client_returns_200_empty() -> None:
 
 @pytest.mark.asyncio
 async def test_history_endpoint_missing_client_id_returns_400() -> None:
-    """``GET /history`` without a ``client_id`` query param returns 400."""
+    """``GET /history`` without a ``session_id`` query param returns 400."""
     async with mock_app() as f:
         response = await f.client.get("/history")
 
     assert response.status_code == 400
     data = response.json()
     assert "error" in data
-    assert "client_id" in data["error"]
+    assert "session_id" in data["error"]
 
 
 @pytest.mark.asyncio
 async def test_history_read_is_non_mutating() -> None:
-    """Reading history does not refresh last-activity or reset an idle conversation."""
+    """Reading history does not update session metadata or turn count."""
     from tests.chat.test_conversation import _FakeClock, _store
 
     clock = _FakeClock()
     store = _store(clock)
-    store.begin("c1")
-    store.record("c1", "q", "a")
+    store.begin("s1")
+    store.record("s1", None, "q", "a")
 
-    # Read history — this must not count as activity.
-    turns = store.history("c1")
+    # Read history — this must not count as activity or mutation.
+    turns = store.history("s1")
     assert turns == [("q", "a")]
 
-    # Advance past the default idle window and assert begin() resets.
-    clock.advance(1801)
-    session_id, history = store.begin("c1")
-    assert history == []  # history was read-only; idle window still expired
+    # The session still has exactly 1 turn after the read.
+    _, history_after = store.begin("s1")
+    assert history_after == [("q", "a")]
 
 
 # ---------------------------------------------------------------------------
@@ -1252,12 +1251,12 @@ async def test_resume_hook_passed_through_mock_app() -> None:
 
 @pytest.mark.asyncio
 async def test_loops_list_endpoint_missing_client_id() -> None:
-    """``GET /loops`` without client_id returns 400."""
+    """``GET /loops`` without session_id returns 400."""
     async with mock_app() as f:
         response = await f.client.get("/loops")
 
     assert response.status_code == 400
-    assert response.json() == {"error": "client_id query parameter is required"}
+    assert response.json() == {"error": "session_id query parameter is required"}
 
 
 @pytest.mark.asyncio

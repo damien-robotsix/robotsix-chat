@@ -228,8 +228,8 @@ async def test_e2e_conversation_delivery_channel_completed() -> None:
         idle_reset_seconds=3600.0,
         max_history_turns=10,
     )
-    # Begin the conversation so the store knows about client "c-e2e".
-    store.begin("c-e2e")
+    # Create an owner + default session (simulates first GET /sessions).
+    store.create_session("c-e2e")
 
     channel = ConversationDeliveryChannel(store)
     settings = Settings()
@@ -249,8 +249,9 @@ async def test_e2e_conversation_delivery_channel_completed() -> None:
     # Let the worker finish (it writes to the store via the channel).
     await asyncio.sleep(0.1)
 
-    # The store now contains the synthetic turn.
-    history = store.history("c-e2e")
+    # The store now contains the synthetic turn in the active session.
+    sessions, active_id = store.list_sessions("c-e2e")
+    history = store.history(active_id)
     assert len(history) >= 1
 
     # The turn conveys the completed task result.
@@ -269,7 +270,7 @@ async def test_e2e_conversation_delivery_channel_failed() -> None:
         idle_reset_seconds=3600.0,
         max_history_turns=10,
     )
-    store.begin("c-e2e-fail")
+    store.create_session("c-e2e-fail")
 
     channel = ConversationDeliveryChannel(store)
     settings = Settings()
@@ -289,7 +290,8 @@ async def test_e2e_conversation_delivery_channel_failed() -> None:
 
     await asyncio.sleep(0.1)
 
-    history = store.history("c-e2e-fail")
+    sessions, active_id = store.list_sessions("c-e2e-fail")
+    history = store.history(active_id)
     assert len(history) >= 1
 
     user_msg, assistant_msg = history[-1]

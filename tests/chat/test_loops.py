@@ -1114,7 +1114,7 @@ async def test_spawn_with_channel_records_tick_in_store() -> None:
         max_history_turns=10,
         max_conversations=5,
     )
-    store.begin("c-chan")
+    store.create_session("c-chan")
     channel = ConversationDeliveryChannel(store)
 
     bus = EventBus()
@@ -1144,7 +1144,8 @@ async def test_spawn_with_channel_records_tick_in_store() -> None:
     assert info.status == LoopStatus.STOPPED
 
     # The store should have one synthetic turn from the loop_tick publish.
-    history = store.history("c-chan")
+    sessions, active_id = store.list_sessions("c-chan")
+    history = store.history(active_id)
     assert len(history) >= 1, f"Expected >= 1 turns, got {len(history)}: {history}"
     user_msg, assistant_msg = history[0]
     assert "Check loop" in user_msg
@@ -1206,7 +1207,7 @@ async def test_spawn_with_channel_records_failure_in_store() -> None:
         max_history_turns=10,
         max_conversations=5,
     )
-    store.begin("c-fail-chan")
+    store.create_session("c-fail-chan")
     channel = ConversationDeliveryChannel(store)
 
     bus = EventBus()
@@ -1231,7 +1232,8 @@ async def test_spawn_with_channel_records_failure_in_store() -> None:
     assert info.status == LoopStatus.FAILED
 
     # The store should have a loop_failed synthetic turn.
-    history = store.history("c-fail-chan")
+    sessions, active_id = store.list_sessions("c-fail-chan")
+    history = store.history(active_id)
     assert len(history) == 1
     user_msg, assistant_msg = history[0]
     assert "Check loop" in user_msg

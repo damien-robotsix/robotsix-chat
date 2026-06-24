@@ -1,18 +1,25 @@
-"""In-memory multi-turn conversation tracking for the chat server.
+"""In-memory multi-session conversation tracking for the chat server.
 
 The chat agent is stateless per call, so on its own it treats every message as a
-brand-new conversation. :class:`ConversationStore` adds short-lived continuity:
-it keys conversations by a per-browser ``client_id`` and, for messages that
-arrive within an idle window, replays the prior turns to the agent and keeps
-them under one trace *session id*. After the idle window a fresh conversation
-starts — a new session id with empty history — so an abandoned chat that's
-resumed 30 minutes later is correctly a new conversation (and a new trace),
-exactly as the agent would treat it anyway.
+brand-new conversation. :class:`ConversationStore` adds session-scoped continuity:
+conversations are now addressable by ``session_id`` and grouped under an
+``owner_id`` (the stable per-browser identity).  Each owner can have multiple
+named sessions; the store maintains per-session turn history and per-owner
+metadata (title, last-active timestamp, turn count, active session).
+
+Sessions are **persistent**: history is never wiped on idle timeout.  The
+``idle_reset_seconds`` parameter is retained for caller compatibility but
+no longer triggers a destructive reset — sessions survive idle/restart
+indefinitely.
 
 The store is process-local and unsynchronised: it is sized for the single-worker
-``uvicorn.run`` the server uses. Running multiple workers would split a client's
-conversation across processes — acceptable degradation (each worker just sees
-fewer turns), never corruption.
+``uvicorn.run`` the server uses. Running multiple workers would split an owner's
+sessions across processes — acceptable degradation (each worker just sees fewer
+turns), never corruption.
+
+The ``max_conversations`` bound is now a cap on total tracked **sessions**
+(LRU-evicted).  There is no per-owner minimum retention — simple global LRU is
+used.
 """
 
 from __future__ import annotations
@@ -31,24 +38,56 @@ logger = logging.getLogger(__name__)
 # A single exchanged turn: ``(user_message, assistant_reply)``.
 Turn = tuple[str, str]
 
+# Default title for a freshly-created session.
+_DEFAULT_TITLE = "New chat"
+
+# Max characters for auto-derived titles (first user message, truncated).
+_MAX_TITLE_CHARS = 60
+
+
+def _derive_title(first_user_message: str) -> str:
+    """Derive a session title from the first user message.
+
+    Collapses whitespace, truncates to ~60 chars.
+    """
+    single_line = " ".join(first_user_message.split())
+    if len(single_line) <= _MAX_TITLE_CHARS:
+        return single_line
+    return single_line[:_MAX_TITLE_CHARS].rstrip() + "\u2026"
+
 
 @dataclass
-class _Conversation:
-    """One client's live conversation: session id, recent turns, last-activity."""
+class Session:
+    """One session: id, metadata, and turn history."""
 
     session_id: str
-    last_activity: float
+    title: str = _DEFAULT_TITLE
+    wall_last_active: float = 0.0
     turns: list[Turn] = field(default_factory=list)
+    turn_count: int = 0
+
+
+@dataclass
+class _OwnerState:
+    """Per-owner registry: active session id and session lookup."""
+
+    active_session_id: str
+    # session_id → Session (backref into the store's global _sessions dict,
+    # kept as a set for fast membership test)
+    session_ids: set[str] = field(default_factory=set)
 
 
 class ConversationStore:
-    """Track per-client conversation history with idle-based reset.
+    """Track per-session conversation history with owner grouping.
 
-    Conversations are keyed by an opaque ``client_id`` (supplied by the
-    browser). A conversation resets — new session id, empty history — when more
-    than ``idle_reset_seconds`` elapse between messages. History is capped at
-    ``max_history_turns`` recent turns and the number of tracked clients at
-    ``max_conversations`` (LRU eviction), so the store stays bounded.
+    Sessions are keyed by ``session_id`` and grouped under ``owner_id``.
+    Each owner maintains an ``active_session_id`` and a set of owned
+    session ids.  History is capped at ``max_history_turns`` per session
+    and the total number of sessions at ``max_conversations`` (global LRU).
+
+    The store supports optional JSON persistence via *persist_path*:
+    after every ``record()`` the full state is written to disk so
+    sessions survive container restarts.
     """
 
     def __init__(
@@ -60,97 +99,252 @@ class ConversationStore:
         clock: Callable[[], float] = time.monotonic,
         session_factory: Callable[[], str] | None = None,
         persist_path: Path | None = None,
+        wall_clock: Callable[[], float] = time.time,
     ) -> None:
-        """Configure store bounds, clock, session factory, and optional disk persist.
+        """Configure store bounds, clocks, session factory, and optional persistence.
 
-        When *persist_path* is given, the store loads any previously-saved
-        conversations on startup and writes the full state to that JSON file
-        after every ``record()`` — so chat history survives a container
-        restart when the path is on a persistent volume mount (e.g.
-        ``.data/conversations.json``).
+        *idle_reset_seconds* is retained for caller compatibility but no longer
+        triggers destructive history reset — sessions are persistent.
+
+        *wall_clock* provides wall-clock timestamps for ``last_active`` metadata;
+        defaults to ``time.time`` so tests can inject deterministic values.
         """
         self._idle_reset_seconds = idle_reset_seconds
         self._max_history_turns = max_history_turns
         self._max_conversations = max_conversations
         self._clock = clock
+        self._wall_clock = wall_clock
         self._session_factory = session_factory or (lambda: uuid.uuid4().hex)
         self._persist_path = persist_path
-        # Insertion-ordered so the oldest-touched conversation is evicted first.
-        self._conversations: OrderedDict[str, _Conversation] = OrderedDict()
+
+        # session_id → Session  (global, insertion-ordered for LRU)
+        self._sessions: OrderedDict[str, Session] = OrderedDict()
+        # owner_id → _OwnerState
+        self._owners: dict[str, _OwnerState] = {}
+
         if self._persist_path is not None:
             self._load_from_disk()
 
+    # ------------------------------------------------------------------
+    # Public API
+    # ------------------------------------------------------------------
+
     def new_session_id(self) -> str:
-        """Return a fresh trace session id (for untracked / ephemeral callers)."""
+        """Return a fresh session id."""
         return self._session_factory()
 
-    def begin(self, client_id: str) -> tuple[str, list[Turn]]:
-        """Start handling a message for *client_id*.
+    def begin(self, session_id: str) -> tuple[str, list[Turn]]:
+        """Return the current state of *session_id*.
 
-        Returns the conversation's current ``(session_id, history)`` where
-        *history* is a snapshot of the recent turns to replay to the agent.
-        When the client is new, or has been idle longer than the configured
-        window, a new conversation is started (fresh session id, empty history).
+        Returns ``(session_id, history)`` where *history* is a snapshot
+        of the session's recent turns.  If the session does not exist it
+        is lazily created (empty history).
+
+        Moves the session to the LRU end and evicts overflow.
         """
-        now = self._clock()
-        conversation = self._conversations.get(client_id)
-        if conversation is None or self._is_expired(conversation, now):
-            conversation = _Conversation(
-                session_id=self._session_factory(), last_activity=now
+        session = self._sessions.get(session_id)
+        if session is None:
+            session = Session(
+                session_id=session_id,
+                wall_last_active=self._wall_clock(),
             )
-            self._conversations[client_id] = conversation
+            self._sessions[session_id] = session
         else:
-            conversation.last_activity = now
+            session.wall_last_active = self._wall_clock()
 
-        self._conversations.move_to_end(client_id)
+        self._sessions.move_to_end(session_id)
         self._evict_overflow()
-        # Return a copy so the caller can't mutate stored state by reference.
-        return conversation.session_id, list(conversation.turns)
+        return session.session_id, list(session.turns)
 
-    def record(self, client_id: str, user_message: str, assistant_reply: str) -> None:
-        """Append a completed exchange to *client_id*'s conversation.
+    def record(
+        self,
+        session_id: str,
+        owner_id: str | None,
+        user_message: str,
+        assistant_reply: str,
+    ) -> None:
+        """Append a completed exchange to *session_id*.
 
-        Called after the agent's reply is fully streamed. Trims history to the
-        configured cap. If the client was evicted between :meth:`begin` and now,
-        the turn is dropped (its session simply won't accumulate) rather than
-        resurrecting an evicted conversation.
+        Updates the session's title (on the first turn), ``wall_last_active``,
+        ``turn_count``, and — when *owner_id* is provided — the owner's
+        ``active_session_id``.  Trims history to ``max_history_turns``.
 
-        When a *persist_path* was configured, writes the full store state to
-        disk after recording.
+        If the session was evicted, the turn is silently dropped.
+        Persists to disk when configured.
         """
-        conversation = self._conversations.get(client_id)
-        if conversation is None:
+        session = self._sessions.get(session_id)
+        if session is None:
             return
-        conversation.turns.append((user_message, assistant_reply))
-        if len(conversation.turns) > self._max_history_turns:
-            del conversation.turns[: -self._max_history_turns]
-        conversation.last_activity = self._clock()
-        self._conversations.move_to_end(client_id)
+
+        # Derive title from the first user message.
+        if session.turn_count == 0 and user_message.strip():
+            session.title = _derive_title(user_message)
+
+        session.turns.append((user_message, assistant_reply))
+        if len(session.turns) > self._max_history_turns:
+            del session.turns[: -self._max_history_turns]
+        session.turn_count += 1
+        session.wall_last_active = self._wall_clock()
+        self._sessions.move_to_end(session_id)
+
+        if owner_id:
+            owner = self._owners.get(owner_id)
+            if owner is not None:
+                owner.active_session_id = session_id
+                owner.session_ids.add(session_id)
+
         if self._persist_path is not None:
             self._persist()
 
-    def history(self, client_id: str) -> list[Turn]:
-        """Return a snapshot copy of *client_id*'s recorded turns.
+    def record_for_owner(
+        self, owner_id: str, user_message: str, assistant_reply: str
+    ) -> None:
+        """Record a turn into *owner_id*'s active session.
 
-        Read-only: does not update last-activity, LRU order, or reset an
-        expired conversation. Returns an empty list for unknown clients.
+        Best-effort: if the owner has no active session the turn is dropped.
         """
-        conversation = self._conversations.get(client_id)
-        if conversation is None:
-            return []
-        return list(conversation.turns)
+        owner = self._owners.get(owner_id)
+        if owner is None:
+            return
+        self.record(owner.active_session_id, owner_id, user_message, assistant_reply)
 
-    def _is_expired(self, conversation: _Conversation, now: float) -> bool:
-        return now - conversation.last_activity > self._idle_reset_seconds
+    def history(self, session_id: str) -> list[Turn]:
+        """Return a snapshot copy of *session_id*'s recorded turns.
+
+        Read-only: does not update any metadata or LRU order.
+        Returns an empty list for unknown sessions.
+        """
+        session = self._sessions.get(session_id)
+        if session is None:
+            return []
+        return list(session.turns)
+
+    def list_sessions(self, owner_id: str) -> tuple[list[dict[str, object]], str]:
+        """Return ``(sessions, active_session_id)`` for *owner_id*.
+
+        *sessions* is a list of session-metadata dicts sorted by
+        ``last_active`` descending.  Each dict contains ``session_id``,
+        ``title``, ``last_active`` (wall-clock float), and ``turn_count``.
+
+        If the owner has zero sessions, a default empty session is lazily
+        created, marked active, and returned (so the list is never empty
+        and the client always has a default active session).  This
+        side effect is idempotent.
+        """
+        owner = self._owners.get(owner_id)
+        if owner is None:
+            # Lazy default session on first access.
+            sid = self._session_factory()
+            new_session = Session(
+                session_id=sid,
+                wall_last_active=self._wall_clock(),
+            )
+            self._sessions[sid] = new_session
+            self._owners[owner_id] = _OwnerState(
+                active_session_id=sid,
+                session_ids={sid},
+            )
+            self._evict_overflow()
+            if self._persist_path is not None:
+                self._persist()
+            return (
+                [
+                    {
+                        "session_id": sid,
+                        "title": _DEFAULT_TITLE,
+                        "last_active": new_session.wall_last_active,
+                        "turn_count": 0,
+                    }
+                ],
+                sid,
+            )
+
+        result: list[dict[str, object]] = []
+        for sid in owner.session_ids:
+            sess = self._sessions.get(sid)
+            if sess is not None:
+                result.append(
+                    {
+                        "session_id": sess.session_id,
+                        "title": sess.title,
+                        "last_active": sess.wall_last_active,
+                        "turn_count": sess.turn_count,
+                    }
+                )
+        # Sort by last_active descending.
+        result.sort(key=lambda s: s["last_active"], reverse=True)  # type: ignore[arg-type,return-value]
+        return result, owner.active_session_id
+
+    def create_session(self, owner_id: str) -> dict[str, object]:
+        """Create a new empty session for *owner_id*, mark it active.
+
+        Returns the session metadata dict.
+        """
+        sid = self._session_factory()
+        now = self._wall_clock()
+        session = Session(session_id=sid, wall_last_active=now)
+        self._sessions[sid] = session
+
+        owner = self._owners.get(owner_id)
+        if owner is None:
+            self._owners[owner_id] = _OwnerState(
+                active_session_id=sid,
+                session_ids={sid},
+            )
+        else:
+            owner.active_session_id = sid
+            owner.session_ids.add(sid)
+
+        self._sessions.move_to_end(sid)
+        self._evict_overflow()
+
+        if self._persist_path is not None:
+            self._persist()
+
+        return {
+            "session_id": sid,
+            "title": _DEFAULT_TITLE,
+            "last_active": now,
+            "turn_count": 0,
+        }
+
+    # ------------------------------------------------------------------
+    # Internals
+    # ------------------------------------------------------------------
 
     def _evict_overflow(self) -> None:
-        while len(self._conversations) > self._max_conversations:
-            self._conversations.popitem(last=False)
+        while len(self._sessions) > self._max_conversations:
+            evicted_sid, _ = self._sessions.popitem(last=False)
+            # Remove from all owner registries.
+            for owner_state in self._owners.values():
+                owner_state.session_ids.discard(evicted_sid)
+
+    def _get_or_create_owner_active(self, owner_id: str) -> str:
+        """Return *owner_id*'s active session id, creating defaults if needed."""
+        owner = self._owners.get(owner_id)
+        if owner is not None:
+            return owner.active_session_id
+
+        sid = self._session_factory()
+        session = Session(session_id=sid, wall_last_active=self._wall_clock())
+        self._sessions[sid] = session
+        self._owners[owner_id] = _OwnerState(
+            active_session_id=sid,
+            session_ids={sid},
+        )
+        self._evict_overflow()
+        if self._persist_path is not None:
+            self._persist()
+        return sid
 
     # -- on-disk persistence ----------------------------------------------
 
     def _load_from_disk(self) -> None:
-        """Restore conversations from the persist file (best-effort)."""
+        """Restore sessions from the persist file (best-effort).
+
+        Supports both the legacy ``{client_id: {session_id, turns}}`` format
+        (migrated on load) and the current owner→sessions format.
+        """
         if self._persist_path is None:  # only called when configured
             return
         try:
@@ -158,14 +352,35 @@ class ConversationStore:
         except FileNotFoundError:
             return  # first run — no saved state yet
         except (OSError, json.JSONDecodeError):
-            logger.exception(
-                "Failed to load conversation history from %s", self._persist_path
-            )
+            logger.exception("Failed to load conversations from %s", self._persist_path)
             return
 
-        now = self._clock()
         if not isinstance(raw, dict):
             return
+
+        now = self._wall_clock()
+
+        # Detect format: if top-level values are dicts with "turns" (no
+        # "active_session_id" or "sessions" sub-object), it's the legacy
+        # {client_id: {session_id, turns}} format.
+        is_legacy = False
+        for entry in raw.values():
+            if isinstance(entry, dict) and "turns" in entry:
+                is_legacy = True
+            break
+
+        if is_legacy:
+            self._load_legacy_format(raw, now)
+        else:
+            self._load_current_format(raw, now)
+
+    def _load_legacy_format(self, raw: dict[str, object], now: float) -> None:
+        """Migrate the legacy ``{client_id: {session_id, turns}}`` format.
+
+        Each top-level key becomes an ``owner_id`` whose single session
+        (``session_id`` from the stored value or the key itself) becomes
+        that owner's default active session.
+        """
         for client_id, entry in raw.items():
             if not isinstance(entry, dict):
                 continue
@@ -178,29 +393,127 @@ class ConversationStore:
                     turns.append((str(t[0]), str(t[1])))
             if not turns:
                 continue
-            # Cap to the configured limit on restore (the limit may have
-            # been lowered since the data was saved).
+
             if len(turns) > self._max_history_turns:
                 turns = turns[-self._max_history_turns :]
-            self._conversations[client_id] = _Conversation(
-                session_id=str(entry.get("session_id", self._session_factory())),
-                last_activity=now,  # reset activity clock on load
+
+            session_id = str(entry.get("session_id", client_id))
+            title = _DEFAULT_TITLE
+            if turns:
+                title = _derive_title(turns[0][0])
+
+            session = Session(
+                session_id=session_id,
+                title=title,
+                wall_last_active=now,
                 turns=turns,
+                turn_count=len(turns),
+            )
+            self._sessions[session_id] = session
+            self._owners[client_id] = _OwnerState(
+                active_session_id=session_id,
+                session_ids={session_id},
+            )
+
+    def _load_current_format(self, raw: dict[str, object], now: float) -> None:
+        """Restore from the current owner→sessions format.
+
+        Expected shape::
+
+            {
+              "<owner_id>": {
+                "active_session_id": "...",
+                "sessions": [
+                  {"session_id": "...", "title": "...",
+                   "last_active": 1.0, "turn_count": 3,
+                   "turns": [["q", "a"], ...]},
+                  ...
+                ]
+              }
+            }
+        """
+        for owner_id, owner_raw in raw.items():
+            if not isinstance(owner_raw, dict):
+                continue
+            active = owner_raw.get("active_session_id")
+            sessions_raw = owner_raw.get("sessions")
+            if not isinstance(sessions_raw, list):
+                continue
+
+            session_ids: set[str] = set()
+            for sraw in sessions_raw:
+                if not isinstance(sraw, dict):
+                    continue
+                sid = sraw.get("session_id")
+                if not isinstance(sid, str):
+                    continue
+                turns_raw = sraw.get("turns")
+                turns: list[Turn] = []
+                if isinstance(turns_raw, list):
+                    for t in turns_raw:
+                        if isinstance(t, list) and len(t) == 2:
+                            turns.append((str(t[0]), str(t[1])))
+                if len(turns) > self._max_history_turns:
+                    turns = turns[-self._max_history_turns :]
+
+                title = str(sraw.get("title", _DEFAULT_TITLE))
+                last_active = sraw.get("last_active")
+                if not isinstance(last_active, (int, float)):
+                    last_active = now
+
+                session = Session(
+                    session_id=sid,
+                    title=title,
+                    wall_last_active=float(last_active),
+                    turns=turns,
+                    turn_count=int(sraw.get("turn_count", len(turns))),
+                )
+                self._sessions[sid] = session
+                session_ids.add(sid)
+
+            if not session_ids:
+                continue
+
+            active_sid = (
+                str(active)
+                if isinstance(active, str) and active in session_ids
+                else next(iter(session_ids))
+            )
+            self._owners[owner_id] = _OwnerState(
+                active_session_id=active_sid,
+                session_ids=session_ids,
             )
 
     def _persist(self) -> None:
         """Write the full conversation state to the persist file."""
         if self._persist_path is None:
             return
+
         data: dict[str, dict[str, object]] = {}
-        for client_id, conv in self._conversations.items():
-            data[client_id] = {
-                "session_id": conv.session_id,
-                "turns": [list(t) for t in conv.turns],
-            }
+        for owner_id, owner_state in self._owners.items():
+            sessions_list: list[dict[str, object]] = []
+            for sid in owner_state.session_ids:
+                session = self._sessions.get(sid)
+                if session is None:
+                    continue
+                sessions_list.append(
+                    {
+                        "session_id": session.session_id,
+                        "title": session.title,
+                        "last_active": session.wall_last_active,
+                        "turn_count": session.turn_count,
+                        "turns": [list(t) for t in session.turns],
+                    }
+                )
+            if sessions_list:
+                data[owner_id] = {
+                    "active_session_id": owner_state.active_session_id,
+                    "sessions": sessions_list,
+                }
+
         try:
             self._persist_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
         except OSError:
             logger.exception(
-                "Failed to persist conversation history to %s", self._persist_path
+                "Failed to persist conversations to %s", self._persist_path
             )
