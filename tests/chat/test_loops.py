@@ -1818,3 +1818,316 @@ def test_record_tick_publish_true_still_publishes() -> None:
     assert len(tick_frames) == 1
     assert tick_frames[0]["result"] == "visible"
     assert tick_frames[0]["iteration"] == 1
+
+
+# Board-read gate — unit tests
+# ---------------------------------------------------------------------------
+
+GUARDRAIL_NOTICE = (
+    "[guardrail] Status suppressed: the check "
+    "produced a status report without reading "
+    "the board (consult_mill was not called). "
+    "No verified status is available this tick."
+)
+
+
+def test_gate_suppresses_when_no_board_read() -> None:
+    """When verify_via_board=True and probe.count==0, result is suppressed."""
+    probe = BoardReadProbe()
+    result = _apply_board_read_gate(
+        "board status: awaiting user", probe, verify_via_board=True, loop_id="L-test"
+    )
+    assert result == GUARDRAIL_NOTICE
+
+
+def test_gate_passes_through_when_board_read() -> None:
+    """When verify_via_board=True and probe.count>0, result passes through."""
+    probe = BoardReadProbe()
+    probe.note()
+    result = _apply_board_read_gate(
+        "board status: ok", probe, verify_via_board=True, loop_id="L-test"
+    )
+    assert result == "board status: ok"
+
+
+def test_gate_passes_multiple_reads() -> None:
+    """Multiple board reads still produce a verified result."""
+    probe = BoardReadProbe()
+    probe.note()
+    probe.note()
+    probe.note()
+    result = _apply_board_read_gate(
+        "all clear", probe, verify_via_board=True, loop_id="L-test"
+    )
+    assert result == "all clear"
+
+
+def test_gate_noop_when_verify_via_board_false() -> None:
+    """When verify_via_board=False, the gate is a no-op regardless of probe count."""
+    probe = BoardReadProbe()
+    result = _apply_board_read_gate(
+        "fabricated status", probe, verify_via_board=False, loop_id="L-test"
+    )
+    assert result == "fabricated status"
+
+    probe.note()
+    result = _apply_board_read_gate(
+        "real status", probe, verify_via_board=False, loop_id="L-test"
+    )
+    assert result == "real status"
+
+
+def test_gate_noop_when_probe_is_none() -> None:
+    """When probe is None, the gate is a no-op (non-gated path)."""
+    result = _apply_board_read_gate(
+        "some text", None, verify_via_board=True, loop_id="L-test"
+    )
+    assert result == "some text"
+
+
+def test_gate_noop_when_result_is_empty() -> None:
+    """An empty result is not suppressed — it passes through unchanged."""
+    probe = BoardReadProbe()
+    result = _apply_board_read_gate("", probe, verify_via_board=True, loop_id="L-test")
+    assert result == ""
+
+
+# ---------------------------------------------------------------------------
+# Board-read gate — integration tests via spawn_check_loop
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_gated_loop_no_board_read_suppresses_tick() -> None:
+    """A gated loop whose sub-agent never calls consult_mill publishes guardrail."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+    settings.mill = type("MillStub", (), {"enabled": True})()
+
+    lid = spawn_check_loop(
+        client_id="c-gate-1",
+        prompt="report board status",
+        interval_seconds=0.01,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _StubAgent(["board is in state X at 12:34"]),
+        max_iterations=1,
+        verify_via_board=True,
+    )
+
+    # Wait for the single iteration to complete.
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        info = reg.get(lid)
+        if info and info.status != LoopStatus.RUNNING:
+            break
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.STOPPED
+    # The result should be the guardrail notice, NOT the fabricated text.
+    assert info.last_result == GUARDRAIL_NOTICE
+    assert "board is in state X" not in (info.last_result or "")
+
+
+class _BoardReadingAgent:
+    """A stub agent that calls its own consult_mill tool during stream.
+
+    Used to test the verified tick path — the gated factory wraps
+    consult_mill in-place, so calling it increments the probe.
+    """
+
+    def __init__(self, tools: list[Any] | None = None) -> None:
+        self._tools = tools or []
+
+    async def stream(
+        self,
+        message: str,
+        *,
+        history: list[tuple[str, str]] | None = None,
+        session_id: str | None = None,
+        client_id: str | None = None,
+        images: list[tuple[str, bytes]] | None = None,
+    ) -> AsyncIterator[str]:
+        # Actually call consult_mill if present, so the probe sees it.
+        for tool in self._tools:
+            if getattr(tool, "__name__", None) == "consult_mill":
+                await tool("check board status")
+                break
+        yield "board status verified: all normal"
+
+
+@pytest.mark.asyncio
+async def test_gated_loop_with_board_read_passes_through() -> None:
+    """A gated loop whose sub-agent calls consult_mill → result passes through."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+    settings.mill = type("MillStub", (), {"enabled": True})()
+
+    # Provide a factory that returns a _BoardReadingAgent with a fake
+    # consult_mill.  The gated factory will wrap it in-place so the probe
+    # increments.
+    def _factory(s: Any) -> _BoardReadingAgent:
+        async def _fake_consult(request: str) -> str:
+            return "board OK"
+
+        _fake_consult.__name__ = "consult_mill"
+        return _BoardReadingAgent(tools=[_fake_consult])
+
+    lid = spawn_check_loop(
+        client_id="c-gate-verify",
+        prompt="report board status",
+        interval_seconds=0.01,
+        settings=settings,
+        registry=reg,
+        agent_factory=_factory,
+        max_iterations=1,
+        verify_via_board=True,
+    )
+
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        info = reg.get(lid)
+        if info and info.status != LoopStatus.RUNNING:
+            break
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.STOPPED
+    # The verified result passes through unchanged.
+    assert info.last_result == "board status verified: all normal"
+    assert "guardrail" not in (info.last_result or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_gated_loop_no_board_read_stop_when_sees_guardrail() -> None:
+    """stop_when runs against the effective (suppressed) result, not fabricated text."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+    settings.mill = type("MillStub", (), {"enabled": True})()
+
+    # A stop_when that would match the fabricated text — must NOT fire.
+    lid = spawn_check_loop(
+        client_id="c-gate-2",
+        prompt="report board status",
+        interval_seconds=0.01,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _StubAgent(["CONDITION_MET: done"]),
+        stop_when=lambda r: "CONDITION_MET" in r,
+        max_iterations=None,  # no cap — only stop_when should stop it
+        verify_via_board=True,
+    )
+
+    # Let a few ticks run; the fake text should be suppressed each time
+    # so stop_when never sees "CONDITION_MET".
+    await asyncio.sleep(0.3)
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.RUNNING  # not stopped by fabricated text
+    assert info.iterations >= 1
+    # Each tick result should be the guardrail notice.
+    assert info.last_result == GUARDRAIL_NOTICE
+
+    # Cleanup.
+    reg.stop(lid, reason="test teardown")
+    await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
+async def test_non_gated_loop_unchanged() -> None:
+    """When verify_via_board=False (default), tick behavior is unchanged."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+
+    lid = spawn_check_loop(
+        client_id="c-ungated",
+        prompt="report whatever",
+        interval_seconds=0.01,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _StubAgent(["fabricated status without board read"]),
+        max_iterations=1,
+        # verify_via_board defaults to False
+    )
+
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        info = reg.get(lid)
+        if info and info.status != LoopStatus.RUNNING:
+            break
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.STOPPED
+    # The fabricated text passes through unchanged (no gate).
+    assert info.last_result == "fabricated status without board read"
+
+
+# ---------------------------------------------------------------------------
+# Board-read gate — flag round-trips through persist/resume
+# ---------------------------------------------------------------------------
+
+
+def test_verify_via_board_round_trips_through_persist(tmp_path: Path) -> None:
+    """``verify_via_board`` survives a persist→load→resume round-trip."""
+    import json
+
+    store = tmp_path / "loops.json"
+    reg = _registry(store_path=store)
+
+    lid = reg.register(
+        "c1",
+        "gated check",
+        interval_seconds=90.0,
+        max_iterations=3,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+        reason="Check ticket status",
+        verify_via_board=True,
+    )
+
+    data = json.loads(store.read_text())
+    entry = next(e for e in data if e["id"] == lid)
+    assert entry["verify_via_board"] is True
+
+
+@pytest.mark.asyncio
+async def test_verify_via_board_defaults_to_false_when_missing(tmp_path: Path) -> None:
+    """A persisted entry without ``verify_via_board`` defaults to ``False``."""
+    import json
+
+    store = tmp_path / "loops.json"
+    old_format = {
+        "id": "L-old2",
+        "client_id": "c-old2",
+        "prompt": "old format loop",
+        "interval_seconds": 60.0,
+        "max_iterations": None,
+        "iterations": 0,
+        "status": "running",
+        "last_result": None,
+        "reason": None,
+    }
+    store.parent.mkdir(parents=True, exist_ok=True)
+    store.write_text(json.dumps([old_format], indent=2))
+
+    reg = _registry(store_path=store)
+    settings = _stub_settings()
+
+    resumed = resume_check_loops(
+        reg,
+        settings,
+        agent_factory=lambda s: _StubAgent(["resumed"]),
+    )
+    assert resumed == ["L-old2"]
+    info = reg.get("L-old2")
+    assert info is not None
+    assert info.verify_via_board is False
+
+    reg.stop("L-old2", reason="test teardown")
+    await asyncio.sleep(0.05)

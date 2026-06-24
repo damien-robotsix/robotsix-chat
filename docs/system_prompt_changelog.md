@@ -42,6 +42,21 @@ number.  To revert to a previous prompt:
 
 ---
 
+## v5 — 2026-06-24 — 20260623T210918Z-gate-sub-agent-status-output-behind-a-ma-e2f0
+
+**Summary:** Added a bullet to the Board/mill rules instructing the foreground
+agent to set ``verify_via_board=True`` when launching a check loop that monitors
+mill/board/thread/ticket status, and to never assert board status without a
+fresh ``consult_mill`` read.
+
+**Rationale:** Prevents fabricated status reports from check-loop sub-agents
+by enforcing a board-read gate.  The new bullet is defense-in-depth alongside
+the programmatic gate in ``loops.py``.
+
+**SHA256:** `2188c9422da9d5a9db8cf024095d8717b0e779391b25903c91482109ceff75ff`
+
+---
+
 ## v4 — 2026-06-24 — 20260623T204239Z-robotsix-chat-give-the-assistant-a-writa-ff6c
 
 **Summary:** Add knowledge-base instructions — the agent now has a local,

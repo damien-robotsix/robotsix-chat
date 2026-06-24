@@ -288,6 +288,7 @@ def build_check_loop_tools(
         max_iterations: int | None = None,
         reason: str | None = None,
         include_previous_result: bool = False,
+        verify_via_board: bool = False,
     ) -> str:
         """Start a recurring background check that re-runs every ``interval_seconds``.
 
@@ -327,6 +328,11 @@ def build_check_loop_tools(
             include_previous_result: When ``True``, each tick after the first
                 receives the previous tick's result so the sub-agent can
                 compare state across iterations.  Default ``False``.
+            verify_via_board: Set ``True`` when this check reports mill/board/
+                thread/ticket status; the loop will then be required to read the
+                board (consult_mill) each tick before reporting, and unverified
+                status is suppressed.  Leave ``False`` (the default) for checks
+                that never read the board (e.g. price/endpoint polling).
 
         Returns:
             A message with the started loop's id; relay it to the user so they
@@ -347,6 +353,7 @@ def build_check_loop_tools(
                 agent_factory=agent_factory,
                 channel=channel,
                 reason=reason,
+                verify_via_board=verify_via_board,
             )
         except LoopIntervalError as exc:
             logger.info("start_check_loop rejected (interval): %s", exc)

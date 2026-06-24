@@ -26,7 +26,7 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from enum import StrEnum
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any, cast
 
 from .events import (
     EventSink,
@@ -86,6 +86,7 @@ class LoopInfo:
     stop_reason: str | None = None
     reason: str | None = None
     last_result_at: float | None = None
+    verify_via_board: bool = False
 
 
 # ---------------------------------------------------------------------------
@@ -141,6 +142,7 @@ class CheckLoopRegistry:
         coro: asyncio.Task[None],
         loop_id: str | None = None,
         reason: str | None = None,
+        verify_via_board: bool = False,
     ) -> str:
         """Register a new check loop for *client_id*.
 
@@ -166,6 +168,7 @@ class CheckLoopRegistry:
             max_iterations=max_iterations,
             status=LoopStatus.RUNNING,
             reason=reason,
+            verify_via_board=verify_via_board,
         )
         self._loops[loop_id] = info
         self._running[loop_id] = coro
@@ -307,12 +310,92 @@ class CheckLoopRegistry:
                     "last_result": info.last_result,
                     "reason": info.reason,
                     "last_result_at": info.last_result_at,
+                    "verify_via_board": info.verify_via_board,
                 }
             )
         try:
             self._store_path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
         except OSError:
             logger.exception("Failed to persist check loops to %s", self._store_path)
+
+
+# ---------------------------------------------------------------------------
+# BoardReadProbe — lightweight counter for consult_mill invocations
+# ---------------------------------------------------------------------------
+
+
+class BoardReadProbe:
+    """Lightweight counter for tracking consult_mill invocations during a tick.
+
+    A fresh instance (or reset via ``count = 0``) is used per check-loop
+    iteration so each tick starts from zero.
+    """
+
+    def __init__(self) -> None:
+        """Create a probe with ``count`` at zero."""
+        self.count = 0
+
+    def note(self) -> None:
+        """Increment the invocation counter."""
+        self.count += 1
+
+
+def _wrap_consult_in_place(tools: list[Any], probe: BoardReadProbe) -> None:
+    """Replace any ``consult_mill`` tool in *tools* with a probe-instrumented version.
+
+    The wrapped tool preserves the original's name, docstring, and return
+    value.  Each invocation increments *probe*.  When no ``consult_mill``
+    is found, *tools* is left unchanged.
+    """
+    for idx, t in enumerate(tools):
+        if getattr(t, "__name__", None) == "consult_mill":
+            _original = t
+
+            async def _instrumented(
+                request: str,
+                _orig: Any = _original,
+            ) -> str:
+                probe.note()
+                return cast(str, await _orig(request))
+
+            _instrumented.__name__ = "consult_mill"
+            _instrumented.__doc__ = _original.__doc__
+            tools[idx] = _instrumented
+            return  # only one consult_mill expected
+
+
+def _apply_board_read_gate(
+    result_text: str,
+    probe: BoardReadProbe | None,
+    verify_via_board: bool,
+    loop_id: str,
+) -> str:
+    """Apply the board-read gate to *result_text*.
+
+    When *verify_via_board* is ``True`` and *probe* recorded zero
+    ``consult_mill`` invocations during the tick, *result_text* is suppressed
+    and replaced with a guardrail notice.  Otherwise it passes through
+    unchanged.
+
+    Returns the (possibly suppressed) result text.
+    """
+    if not verify_via_board or probe is None:
+        return result_text
+    if probe.count == 0 and result_text:
+        logger.warning(
+            "Check loop %s tick: status suppressed — "
+            "consult_mill was not called. "
+            "verify_via_board=True but the sub-agent "
+            "produced output without reading the board.",
+            loop_id,
+        )
+        return (
+            "[guardrail] Status suppressed: the check "
+            "produced a status report without reading "
+            "the board (consult_mill was not called). "
+            "No verified status is available this tick."
+        )
+    return result_text
 
 
 # ---------------------------------------------------------------------------
@@ -335,6 +418,7 @@ def spawn_check_loop(
     loop_id: str | None = None,
     channel: DeliveryChannel = NULL_CHANNEL,
     reason: str | None = None,
+    verify_via_board: bool = False,
 ) -> str:
     """Schedule a recurring check prompt; return the loop id immediately.
 
@@ -391,28 +475,75 @@ def spawn_check_loop(
 
         agent_factory = _default_agent_factory
 
+    # When verify_via_board is True, build a probe and wrap the agent factory
+    # so consult_mill invocations are counted.  Also warn once when the mill
+    # is disabled (no board tool available → every tick will be suppressed).
+    probe: BoardReadProbe | None = None
+    _guardrail_header = (
+        "Before reporting ANY status (state, timestamps, ticket/thread state), "
+        "you MUST call the consult_mill board-read tool and base your report "
+        "solely on its reply. Never invent, assume, or narrate a state change "
+        "or timestamp you have not read from the board. If you cannot read the "
+        "board, say so explicitly instead of guessing.\n\n"
+    )
+    if verify_via_board:
+        probe = BoardReadProbe()
+        _base_factory = agent_factory
+        # Check early whether the mill is even enabled — if not, the probe
+        # will always see 0 and every tick will be suppressed.
+        if not settings.mill.enabled:
+            logger.warning(
+                "Check loop %s: verify_via_board=True but mill is "
+                "disabled — no consult_mill tool is available; "
+                "every tick will be suppressed.",
+                loop_id,
+            )
+
+        def _gated_agent_factory(s: Settings) -> ChatAgent:
+            agent = _base_factory(s)
+            # Instrument the agent's tools list in-place so consult_mill
+            # invocations are counted by the probe.  Works for
+            # LlmioChatAgent (which stores tools as ``_tools``).
+            if hasattr(agent, "_tools") and agent._tools is not None:
+                _wrap_consult_in_place(agent._tools, probe)
+            return agent
+
+        agent_factory = _gated_agent_factory
+
     # Race-free handshake: same pattern as spawn_subagent_task.
     id_future: asyncio.Future[str] = asyncio.Future()
 
     async def _worker() -> None:
+        nonlocal probe
         loop_id = await id_future
         clock = registry._clock
         previous_result: str | None = None
         try:
             while True:
-                # Build the effective prompt, optionally including the
-                # previous iteration's result so the sub-agent can compare.
+                if verify_via_board and probe is not None:
+                    probe.count = 0  # reset per tick
+
+                # Build the effective prompt, combining the guardrail header
+                # (when gated) with the previous result (when comparing).
                 effective_prompt = prompt
+                if verify_via_board:
+                    effective_prompt = _guardrail_header + effective_prompt
                 if include_previous_result and previous_result is not None:
                     effective_prompt = (
                         f"Previous check result:\n{previous_result}\n\n"
-                        f"---\n\nCurrent check prompt:\n{prompt}"
+                        f"---\n\nCurrent check prompt:\n{effective_prompt}"
                     )
 
                 agent = agent_factory(settings)
                 result_text = "".join(
                     [chunk async for chunk in agent.stream(effective_prompt)]
                 )
+
+                # --- gate: suppress unverified status ---
+                if verify_via_board:
+                    result_text = _apply_board_read_gate(
+                        result_text, probe, verify_via_board, loop_id
+                    )
 
                 next_run = clock() + interval_seconds
                 suppressed = suppress_when is not None and suppress_when(result_text)
@@ -491,6 +622,7 @@ def spawn_check_loop(
         coro=task,
         loop_id=loop_id,
         reason=reason,
+        verify_via_board=verify_via_board,
     )
     id_future.set_result(loop_id)
     return loop_id
@@ -575,6 +707,7 @@ def resume_check_loops(
                 loop_id=loop_id,
                 channel=channel,
                 reason=entry.get("reason"),
+                verify_via_board=entry.get("verify_via_board", False),
             )
         except (LoopCapacityError, LoopIntervalError) as exc:
             logger.warning("Could not resume check loop %s: %s", loop_id, exc)
