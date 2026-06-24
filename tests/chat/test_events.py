@@ -161,7 +161,7 @@ def test_event_bus_unsubscribe_keeps_other_queues() -> None:
 
 
 def _make_request(client_id: str, app: object) -> Request:
-    """Build a minimal Starlette ``Request`` for ``GET /events?client_id=...``."""
+    """Build a minimal Starlette ``Request`` for ``GET /events?session_id=...``."""
     scope: dict[str, object] = {
         "type": "http",
         "http_version": "1.1",
@@ -170,7 +170,7 @@ def _make_request(client_id: str, app: object) -> Request:
         "server": ("testserver", 80),
         "client": ("testclient", 50000),
         "path": "/events",
-        "query_string": f"client_id={client_id}".encode(),
+        "query_string": f"session_id={client_id}".encode(),
         "headers": [],
         "app": app,
     }
@@ -189,22 +189,22 @@ def _parse_data_line(line: str) -> dict[str, object]:
 
 @pytest.mark.asyncio
 async def test_events_endpoint_missing_client_id() -> None:
-    """``GET /events`` without a ``client_id`` query param returns 400."""
+    """``GET /events`` without a ``session_id`` query param returns 400."""
     async with mock_app() as f:
         response = await f.client.get("/events")
 
     assert response.status_code == 400
-    assert response.json() == {"error": "client_id query parameter is required"}
+    assert response.json() == {"error": "session_id query parameter is required"}
 
 
 @pytest.mark.asyncio
 async def test_events_endpoint_empty_client_id() -> None:
-    """``GET /events?client_id=`` (empty value) returns 400."""
+    """``GET /events?session_id=`` (empty value) returns 400."""
     async with mock_app() as f:
-        response = await f.client.get("/events", params={"client_id": ""})
+        response = await f.client.get("/events", params={"session_id": ""})
 
     assert response.status_code == 400
-    assert response.json() == {"error": "client_id query parameter is required"}
+    assert response.json() == {"error": "session_id query parameter is required"}
 
 
 @pytest.mark.asyncio

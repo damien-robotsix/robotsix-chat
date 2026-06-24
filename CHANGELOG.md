@@ -22,6 +22,18 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   requested; load tools once per session with a single capability check
   before branching.
 
+- Added multi-session support to the conversation store: conversations are now
+  addressable by ``session_id`` and grouped under ``owner_id``, with per-owner
+  session metadata (title, last-active timestamp, turn count) and an active
+  session pointer.  Sessions are persistent — history is never wiped on idle
+  timeout.  New ``GET /sessions`` and ``POST /sessions`` HTTP endpoints enable
+  listing and creating sessions.  Existing endpoints (``POST /chat``,
+  ``GET /history``, ``GET /events``, ``GET /loops``) accept ``session_id`` with
+  backward-compatible ``client_id`` fallback.  Persistence uses the same
+  ``.data/conversations.json`` mechanism (legacy format auto-migrated on load).
+  Added ``persist_path`` to ``ConversationSettings`` (configurable via
+  ``CONVERSATION_PERSIST_PATH``).
+
 - Added `board_reader` module with `list_board_tickets` and `read_board_ticket`
   tools that query the SAME HTTP board API endpoint the user's browser UI
   consumes, giving the assistant read parity with the user.  Uses bearer-token

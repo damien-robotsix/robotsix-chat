@@ -448,11 +448,21 @@ class TestConversationDeliveryChannel:
             **kwargs,
         )
 
+    @staticmethod
+    def _active_history(
+        store: ConversationStore, owner_id: str
+    ) -> list[tuple[str, str]]:
+        """Return the history of *owner_id*'s active session."""
+        sessions, active_id = store.list_sessions(owner_id)
+        if not active_id:
+            return []
+        return store.history(active_id)
+
     @pytest.mark.asyncio
     async def test_completed_frame_records_turn(self) -> None:
         """A ``task_completed`` frame records a turn into the store."""
         store = self._store()
-        store.begin("c1")  # ensure the conversation exists
+        store.create_session("c1")  # ensure the owner + default session exists
         channel = ConversationDeliveryChannel(store)
 
         await channel.publish(
@@ -460,7 +470,7 @@ class TestConversationDeliveryChannel:
             {"type": "task_completed", "task_id": "t42", "result": "done: 42"},
         )
 
-        history = store.history("c1")
+        history = self._active_history(store, "c1")
         assert len(history) == 1
         user_msg, assistant_msg = history[0]
         assert "t42" in user_msg
@@ -472,7 +482,7 @@ class TestConversationDeliveryChannel:
     async def test_failed_frame_records_turn(self) -> None:
         """A ``task_failed`` frame records a turn with the error."""
         store = self._store()
-        store.begin("c2")
+        store.create_session("c2")
         channel = ConversationDeliveryChannel(store)
 
         await channel.publish(
@@ -480,7 +490,7 @@ class TestConversationDeliveryChannel:
             {"type": "task_failed", "task_id": "t99", "error": "timeout"},
         )
 
-        history = store.history("c2")
+        history = self._active_history(store, "c2")
         assert len(history) == 1
         user_msg, assistant_msg = history[0]
         assert "t99" in user_msg
@@ -491,7 +501,7 @@ class TestConversationDeliveryChannel:
     async def test_started_frame_is_ignored(self) -> None:
         """A ``task_started`` frame does NOT create a history turn."""
         store = self._store()
-        store.begin("c3")
+        store.create_session("c3")
         channel = ConversationDeliveryChannel(store)
 
         await channel.publish(
@@ -499,19 +509,19 @@ class TestConversationDeliveryChannel:
             {"type": "task_started", "task_id": "t1", "prompt": "do stuff"},
         )
 
-        history = store.history("c3")
+        history = self._active_history(store, "c3")
         assert len(history) == 0
 
     @pytest.mark.asyncio
     async def test_unknown_frame_is_ignored(self) -> None:
         """An unknown frame type does NOT create a history turn."""
         store = self._store()
-        store.begin("c4")
+        store.create_session("c4")
         channel = ConversationDeliveryChannel(store)
 
         await channel.publish("c4", {"type": "some_unknown", "x": 1})
 
-        history = store.history("c4")
+        history = self._active_history(store, "c4")
         assert len(history) == 0
 
     @pytest.mark.asyncio
@@ -525,29 +535,29 @@ class TestConversationDeliveryChannel:
             {"type": "task_completed", "task_id": "t42", "result": "x"},
         )
 
-        # No conversation was ever begun for "".
+        # No conversation was ever created for "".
         assert store.history("") == []
 
     @pytest.mark.asyncio
     async def test_nonexistent_client_is_dropped_by_store(self) -> None:
-        """Publishing for a client never begun is silently dropped by the store."""
+        """Publishing for an owner never seen is silently dropped by the store."""
         store = self._store()
         channel = ConversationDeliveryChannel(store)
 
-        # The store never had a begin() call for "ghost".
+        # The store never had a create_session() call for "ghost".
         await channel.publish(
             "ghost",
             {"type": "task_completed", "task_id": "t1", "result": "nope"},
         )
 
-        # record() is a no-op for unknown clients.
+        # record_for_owner is a no-op for unknown owners.
         assert store.history("ghost") == []
 
     @pytest.mark.asyncio
     async def test_completed_then_failed_only_last_recorded(self) -> None:
         """Two frames for the same client both land in history."""
         store = self._store()
-        store.begin("c5")
+        store.create_session("c5")
         channel = ConversationDeliveryChannel(store)
 
         await channel.publish(
@@ -559,7 +569,7 @@ class TestConversationDeliveryChannel:
             {"type": "task_failed", "task_id": "tb", "error": "second"},
         )
 
-        history = store.history("c5")
+        history = self._active_history(store, "c5")
         assert len(history) == 2
         assert history[0][1] == "first"
         assert "Error: second" in history[1][1]
@@ -568,7 +578,7 @@ class TestConversationDeliveryChannel:
     async def test_publish_does_not_raise_on_missing_keys(self) -> None:
         """Missing 'result' or 'error' keys don't crash publish."""
         store = self._store()
-        store.begin("c6")
+        store.create_session("c6")
         channel = ConversationDeliveryChannel(store)
 
         # task_completed without 'result' key — should default to "".
@@ -577,7 +587,7 @@ class TestConversationDeliveryChannel:
             {"type": "task_completed", "task_id": "t1"},
         )
 
-        history = store.history("c6")
+        history = self._active_history(store, "c6")
         assert len(history) == 1
         # assistant_reply is empty string (default from .get).
         assert history[0][1] == ""
@@ -588,7 +598,7 @@ class TestConversationDeliveryChannel:
     async def test_loop_tick_frame_records_turn(self) -> None:
         """A ``loop_tick`` frame records a turn into the store."""
         store = self._store()
-        store.begin("c-loop")
+        store.create_session("c-loop")
         channel = ConversationDeliveryChannel(store)
 
         await channel.publish(
@@ -602,7 +612,7 @@ class TestConversationDeliveryChannel:
             },
         )
 
-        history = store.history("c-loop")
+        history = self._active_history(store, "c-loop")
         assert len(history) == 1
         user_msg, assistant_msg = history[0]
         assert "L42" in user_msg
@@ -614,7 +624,7 @@ class TestConversationDeliveryChannel:
     async def test_loop_failed_frame_records_turn(self) -> None:
         """A ``loop_failed`` frame records a turn with the error."""
         store = self._store()
-        store.begin("c-loop-fail")
+        store.create_session("c-loop-fail")
         channel = ConversationDeliveryChannel(store)
 
         await channel.publish(
@@ -626,7 +636,7 @@ class TestConversationDeliveryChannel:
             },
         )
 
-        history = store.history("c-loop-fail")
+        history = self._active_history(store, "c-loop-fail")
         assert len(history) == 1
         user_msg, assistant_msg = history[0]
         assert "L99" in user_msg
@@ -638,7 +648,7 @@ class TestConversationDeliveryChannel:
     async def test_loop_started_frame_is_ignored(self) -> None:
         """A ``loop_started`` frame does NOT create a history turn."""
         store = self._store()
-        store.begin("c-loop-start")
+        store.create_session("c-loop-start")
         channel = ConversationDeliveryChannel(store)
 
         await channel.publish(
@@ -652,14 +662,14 @@ class TestConversationDeliveryChannel:
             },
         )
 
-        history = store.history("c-loop-start")
+        history = self._active_history(store, "c-loop-start")
         assert len(history) == 0
 
     @pytest.mark.asyncio
     async def test_loop_stopped_frame_is_ignored(self) -> None:
         """A ``loop_stopped`` frame does NOT create a history turn."""
         store = self._store()
-        store.begin("c-loop-stop")
+        store.create_session("c-loop-stop")
         channel = ConversationDeliveryChannel(store)
 
         await channel.publish(
@@ -672,7 +682,7 @@ class TestConversationDeliveryChannel:
             },
         )
 
-        history = store.history("c-loop-stop")
+        history = self._active_history(store, "c-loop-stop")
         assert len(history) == 0
 
     @pytest.mark.asyncio
@@ -692,7 +702,7 @@ class TestConversationDeliveryChannel:
     async def test_loop_tick_missing_result_defaults_to_empty(self) -> None:
         """Missing 'result' key in loop_tick doesn't crash publish."""
         store = self._store()
-        store.begin("c-loop-missing")
+        store.create_session("c-loop-missing")
         channel = ConversationDeliveryChannel(store)
 
         await channel.publish(
@@ -700,7 +710,7 @@ class TestConversationDeliveryChannel:
             {"type": "loop_tick", "loop_id": "L1", "iteration": 1},
         )
 
-        history = store.history("c-loop-missing")
+        history = self._active_history(store, "c-loop-missing")
         assert len(history) == 1
         assert history[0][1] == ""
 

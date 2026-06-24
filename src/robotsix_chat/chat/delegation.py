@@ -82,6 +82,10 @@ class ConversationDeliveryChannel:
     async def publish(self, client_id: str, frame: dict[str, Any]) -> None:
         """Record *frame* into the conversation store for *client_id*.
 
+        *client_id* is the owning browser identity (``owner_id`` in the
+        multi-session model).  The frame is recorded into that owner's
+        current active session.
+
         Dispatches on ``frame["type"]``:
 
         * ``"task_completed"`` — reads ``frame["task_id"]`` and
@@ -108,14 +112,14 @@ class ConversationDeliveryChannel:
 
         if frame_type == "task_completed":
             result = frame.get("result", "")
-            self._store.record(
+            self._store.record_for_owner(
                 client_id,
                 f"[Background task {task_id} completed]",
                 str(result),
             )
         elif frame_type == "task_failed":
             error = frame.get("error", "")
-            self._store.record(
+            self._store.record_for_owner(
                 client_id,
                 f"[Background task {task_id} failed]",
                 f"Error: {str(error)}",
@@ -124,7 +128,7 @@ class ConversationDeliveryChannel:
             loop_id = frame.get("loop_id", "")
             iteration = frame.get("iteration")
             result = frame.get("result", "")
-            self._store.record(
+            self._store.record_for_owner(
                 client_id,
                 f"[Check loop {loop_id} tick {iteration}]",
                 str(result),
@@ -132,7 +136,7 @@ class ConversationDeliveryChannel:
         elif frame_type == "loop_failed":
             loop_id = frame.get("loop_id", "")
             error = frame.get("error", "")
-            self._store.record(
+            self._store.record_for_owner(
                 client_id,
                 f"[Check loop {loop_id} failed]",
                 f"Error: {str(error)}",

@@ -1,4 +1,4 @@
-"""Tests for :class:`ConversationStore` — per-client history with idle reset."""
+"""Tests for :class:`ConversationStore` — per-session history with owner grouping."""
 
 from __future__ import annotations
 
@@ -6,17 +6,16 @@ import json
 import tempfile
 from itertools import count
 from pathlib import Path
-
-import pytest
+from typing import cast
 
 from robotsix_chat.chat.conversation import ConversationStore
 
 
-class _FakeClock:
-    """A manually advanced monotonic clock."""
+class _FakeWallClock:
+    """A manually advanced wall clock."""
 
     def __init__(self) -> None:
-        self.now = 1000.0
+        self.now = 2000.0
 
     def __call__(self) -> float:
         return self.now
@@ -25,156 +24,200 @@ class _FakeClock:
         self.now += seconds
 
 
-def _store(clock: _FakeClock, **kwargs: object) -> ConversationStore:
+def _store(
+    wall_clock: _FakeWallClock | None = None,
+    **kwargs: object,
+) -> ConversationStore:
     """Build a store with deterministic session ids (``s0``, ``s1``, …)."""
     ids = count()
     return ConversationStore(
-        clock=clock,
+        wall_clock=wall_clock or _FakeWallClock(),
         session_factory=lambda: f"s{next(ids)}",
         **kwargs,  # type: ignore[arg-type]
     )
 
 
-def test_first_message_starts_fresh_conversation() -> None:
-    """A brand-new client gets a fresh session id and empty history."""
-    clock = _FakeClock()
-    store = _store(clock)
+# -- core session tests -------------------------------------------------
 
-    session_id, history = store.begin("client-a")
+
+def test_first_message_starts_fresh_conversation() -> None:
+    """A brand-new session returns empty history."""
+    store = _store()
+
+    session_id, history = store.begin("s0")
 
     assert session_id == "s0"
     assert history == []
 
 
 def test_consecutive_messages_share_session_and_accumulate_history() -> None:
-    """Messages within the idle window share a session and replay prior turns."""
-    clock = _FakeClock()
-    store = _store(clock)
+    """Messages recorded into the same session accumulate and are replayed."""
+    store = _store()
 
-    session_id, history = store.begin("client-a")
+    session_id, history = store.begin("s0")
     assert history == []
-    store.record("client-a", "hello", "hi there")
+    store.record("s0", None, "hello", "hi there")
 
-    clock.advance(60)  # a minute later — same conversation
-    session_id_2, history_2 = store.begin("client-a")
+    session_id_2, history_2 = store.begin("s0")
 
-    assert session_id_2 == session_id  # same trace session
+    assert session_id_2 == session_id
     assert history_2 == [("hello", "hi there")]
-
-
-def test_idle_gap_resets_to_new_conversation() -> None:
-    """Past the idle window, the next message starts a new session + history."""
-    clock = _FakeClock()
-    store = _store(clock, idle_reset_seconds=1800)
-
-    first_session, _ = store.begin("client-a")
-    store.record("client-a", "hello", "hi there")
-
-    clock.advance(1801)  # just past the 30-minute window
-    new_session, history = store.begin("client-a")
-
-    assert new_session != first_session  # a new trace session
-    assert history == []  # prior turns dropped
-
-
-def test_within_window_after_record_does_not_reset() -> None:
-    """Idle is measured from the last activity, including the last record()."""
-    clock = _FakeClock()
-    store = _store(clock, idle_reset_seconds=100)
-
-    store.begin("client-a")
-    clock.advance(90)
-    store.record("client-a", "q", "a")  # refreshes last activity
-    clock.advance(90)  # 180s since begin, but only 90s since record
-
-    session_id, history = store.begin("client-a")
-    assert history == [("q", "a")]  # not reset
-    assert session_id == "s0"
 
 
 def test_history_trimmed_to_max_turns() -> None:
     """History keeps only the most recent ``max_history_turns`` turns."""
-    clock = _FakeClock()
-    store = _store(clock, max_history_turns=2)
+    store = _store(max_history_turns=2)
 
-    store.begin("client-a")
+    store.begin("s0")
     for i in range(4):
-        store.record("client-a", f"q{i}", f"a{i}")
+        store.record("s0", None, f"q{i}", f"a{i}")
 
-    _, history = store.begin("client-a")
-    assert history == [("q2", "a2"), ("q3", "a3")]  # only the last two
+    _, history = store.begin("s0")
+    assert history == [("q2", "a2"), ("q3", "a3")]
 
 
-def test_separate_clients_have_independent_conversations() -> None:
-    """Different client ids keep separate sessions and histories."""
-    clock = _FakeClock()
-    store = _store(clock)
+def test_separate_sessions() -> None:
+    """Different session ids keep separate histories."""
+    store = _store()
 
-    sa, _ = store.begin("client-a")
-    store.record("client-a", "qa", "aa")
-    sb, hb = store.begin("client-b")
+    store.begin("sa")
+    store.record("sa", None, "qa", "aa")
+    _, hb = store.begin("sb")
 
-    assert sb != sa
     assert hb == []
-    _, ha = store.begin("client-a")
+    _, ha = store.begin("sa")
     assert ha == [("qa", "aa")]
 
 
-def test_lru_eviction_bounds_tracked_clients() -> None:
-    """Tracking more than ``max_conversations`` clients evicts the oldest."""
-    clock = _FakeClock()
-    store = _store(clock, max_conversations=2)
+def test_lru_eviction_bounds_session_count() -> None:
+    """Tracking more than ``max_conversations`` sessions evicts the oldest."""
+    store = _store(max_conversations=2)
 
-    store.begin("client-a")
-    store.record("client-a", "qa", "aa")
-    store.begin("client-b")
-    store.begin("client-c")  # evicts the least-recently-used (client-a)
+    store.begin("s0")
+    store.record("s0", None, "qa", "aa")
+    store.begin("s1")
+    store.begin("s2")  # evicts the least-recently-used (s0)
 
-    # client-a was evicted — record() is a no-op and begin() starts fresh.
-    store.record("client-a", "late", "drop")
-    _, history = store.begin("client-a")
+    # s0 was evicted — begin recreates it with empty history.
+    _, history = store.begin("s0")
     assert history == []
 
 
 def test_new_session_id_is_unique() -> None:
     """Each ``new_session_id`` call returns a distinct id."""
-    clock = _FakeClock()
-    store = _store(clock)
+    store = _store()
 
     assert store.new_session_id() != store.new_session_id()
 
 
 def test_returned_history_is_a_copy() -> None:
     """Mutating the returned history must not corrupt stored state."""
-    clock = _FakeClock()
-    store = _store(clock)
+    store = _store()
 
-    store.begin("client-a")
-    store.record("client-a", "q", "a")
-    _, history = store.begin("client-a")
+    store.begin("s0")
+    store.record("s0", None, "q", "a")
+    _, history = store.begin("s0")
     history.append(("injected", "evil"))
 
-    _, history_again = store.begin("client-a")
+    _, history_again = store.begin("s0")
     assert history_again == [("q", "a")]
 
 
-@pytest.mark.parametrize("client_turns", [1, 5, 20])
-def test_default_idle_window_is_thirty_minutes(client_turns: int) -> None:
-    """A real-default store keeps turns under 30 min and resets just past it."""
-    clock = _FakeClock()
-    store = ConversationStore(clock=clock)  # defaults: 1800s
+def test_default_max_history_turns_is_50() -> None:
+    """The default cap matches the acceptance criterion of 50 most recent."""
+    store = ConversationStore()
+    assert store._max_history_turns == 50
 
-    store.begin("c")
-    for i in range(client_turns):
-        store.record("c", f"q{i}", f"a{i}")
 
-    clock.advance(1799)
-    _, kept = store.begin("c")
-    assert kept  # still the same conversation
+# -- owner / multi-session tests ----------------------------------------
 
-    clock.advance(1801)
-    _, reset = store.begin("c")
-    assert reset == []
+
+def test_list_sessions_returns_owner_sessions() -> None:
+    """``list_sessions`` returns all sessions for an owner, sorted by last_active."""
+    wall_clock = _FakeWallClock()
+    store = _store(wall_clock=wall_clock)
+
+    sid1 = cast(str, store.create_session("c1")["session_id"])
+    wall_clock.advance(10)
+    sid2 = cast(str, store.create_session("c1")["session_id"])
+
+    sessions, active = store.list_sessions("c1")
+    assert len(sessions) == 2
+    assert active == sid2  # most recently created is active
+    sids = [cast(str, s["session_id"]) for s in sessions]
+    assert sids == [sid2, sid1]  # sorted by last_active descending
+
+
+def test_list_sessions_lazy_creates_default() -> None:
+    """``list_sessions`` for an unknown owner lazily creates a default session."""
+    store = _store()
+
+    sessions, active = store.list_sessions("new-owner")
+    assert len(sessions) == 1
+    assert cast(str, sessions[0]["session_id"]) == active
+    assert sessions[0]["title"] == "New chat"
+    assert sessions[0]["turn_count"] == 0
+
+
+def test_create_session_marks_active() -> None:
+    """``create_session`` returns metadata and marks the session active."""
+    store = _store()
+
+    meta = store.create_session("c1")
+    sid = cast(str, meta["session_id"])
+    _, active = store.list_sessions("c1")
+    assert active == sid
+
+
+def test_record_updates_owner_active() -> None:
+    """Recording into a session with an owner_id updates the owner's active session."""
+    store = _store()
+
+    sid1 = cast(str, store.create_session("c1")["session_id"])
+    sid2 = cast(str, store.create_session("c1")["session_id"])
+    # active is sid2 after the second create_session
+    _, active = store.list_sessions("c1")
+    assert active == sid2
+
+    # record into sid1 with owner_id="c1" makes sid1 active
+    store.record(sid1, "c1", "q", "a")
+    _, active = store.list_sessions("c1")
+    assert active == sid1
+
+
+def test_record_derives_title_from_first_message() -> None:
+    """The first user message in a session becomes the session title."""
+    store = _store()
+
+    sid = cast(str, store.create_session("c1")["session_id"])
+    store.record(sid, "c1", "Hello world, this is a test", "reply")
+
+    sessions, _ = store.list_sessions("c1")
+    assert sessions[0]["title"] == "Hello world, this is a test"
+
+
+def test_record_for_owner_writes_to_active_session() -> None:
+    """``record_for_owner`` records into the owner's active session."""
+    store = _store()
+
+    sid = cast(str, store.create_session("c1")["session_id"])
+    store.record_for_owner("c1", "hello", "hi")
+
+    assert store.history(sid) == [("hello", "hi")]
+
+
+def test_two_sessions_independent_history() -> None:
+    """Two sessions under the same owner keep independent histories."""
+    store = _store()
+
+    sid1 = cast(str, store.create_session("c1")["session_id"])
+    sid2 = cast(str, store.create_session("c1")["session_id"])
+
+    store.record(sid1, "c1", "q1", "a1")
+    store.record(sid2, "c1", "q2", "a2")
+
+    assert store.history(sid1) == [("q1", "a1")]
+    assert store.history(sid2) == [("q2", "a2")]
 
 
 # -- on-disk persistence -------------------------------------------------
@@ -182,28 +225,29 @@ def test_default_idle_window_is_thirty_minutes(client_turns: int) -> None:
 
 def test_persist_writes_to_file_on_record() -> None:
     """record() writes the full store state to the persist file."""
-    clock = _FakeClock()
+    wall_clock = _FakeWallClock()
     with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
         persist_path = Path(f.name)
 
     try:
-        store = _store(clock, persist_path=persist_path)
-        store.begin("c1")
-        store.record("c1", "hello", "hi there")
+        store = _store(wall_clock=wall_clock, persist_path=persist_path)
+        sid = cast(str, store.create_session("c1")["session_id"])
+        store.record(sid, "c1", "hello", "hi there")
 
         raw = json.loads(persist_path.read_text(encoding="utf-8"))
         assert "c1" in raw
-        assert raw["c1"]["turns"] == [["hello", "hi there"]]
+        assert raw["c1"]["active_session_id"] == sid
+        assert raw["c1"]["sessions"][0]["turns"] == [["hello", "hi there"]]
     finally:
         persist_path.unlink(missing_ok=True)
 
 
-def test_load_restores_history_from_disk() -> None:
-    """On init, previously persisted conversations are loaded back."""
+def test_load_legacy_format_migrates() -> None:
+    """Legacy ``{client_id: {session_id, turns}}`` format is migrated on load."""
     data = {
         "c1": {
-            "session_id": "saved-session",
-            "turns": [["q1", "a1"], ["q2", "a2"]],
+            "session_id": "old-sid",
+            "turns": [["hello", "hi"], ["how", "fine"]],
         }
     }
     with tempfile.NamedTemporaryFile(
@@ -213,19 +257,88 @@ def test_load_restores_history_from_disk() -> None:
         persist_path = Path(f.name)
 
     try:
-        clock = _FakeClock()
-        store = _store(clock, persist_path=persist_path)
-        session_id, history = store.begin("c1")
-        assert history == [("q1", "a1"), ("q2", "a2")]
+        store = _store(persist_path=persist_path)
+
+        sessions, active = store.list_sessions("c1")
+        assert active == "old-sid"
+        assert len(sessions) == 1
+        assert store.history("old-sid") == [("hello", "hi"), ("how", "fine")]
+    finally:
+        persist_path.unlink(missing_ok=True)
+
+
+def test_load_current_format_roundtrips() -> None:
+    """The current owner→sessions format round-trips through load."""
+    data = {
+        "c1": {
+            "active_session_id": "s1",
+            "sessions": [
+                {
+                    "session_id": "s1",
+                    "title": "Test Chat",
+                    "last_active": 2000.0,
+                    "turn_count": 2,
+                    "turns": [["q1", "a1"], ["q2", "a2"]],
+                }
+            ],
+        }
+    }
+    with tempfile.NamedTemporaryFile(
+        mode="w", suffix=".json", delete=False, encoding="utf-8"
+    ) as f:
+        json.dump(data, f)
+        persist_path = Path(f.name)
+
+    try:
+        store = _store(persist_path=persist_path)
+
+        sessions, active = store.list_sessions("c1")
+        assert active == "s1"
+        assert len(sessions) == 1
+        assert sessions[0]["title"] == "Test Chat"
+        assert sessions[0]["turn_count"] == 2
+        assert store.history("s1") == [("q1", "a1"), ("q2", "a2")]
+    finally:
+        persist_path.unlink(missing_ok=True)
+
+
+def test_persist_roundtrip_preserves_all_metadata() -> None:
+    """A store persisted and reloaded preserves all session metadata."""
+    wall_clock = _FakeWallClock()
+
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        persist_path = Path(f.name)
+
+    try:
+        store = _store(wall_clock=wall_clock, persist_path=persist_path)
+        sid = cast(str, store.create_session("c1")["session_id"])
+        store.record(sid, "c1", "First message", "First reply")
+        wall_clock.advance(10)
+        store.record(sid, "c1", "Second message", "Second reply")
+
+        # Reload into a fresh store using the same persist file.
+        store2 = _store(wall_clock=wall_clock, persist_path=persist_path)
+
+        sessions, active = store2.list_sessions("c1")
+        assert active == sid
+        assert len(sessions) == 1
+        s = sessions[0]
+        assert s["session_id"] == sid
+        assert s["title"] == "First message"
+        assert s["turn_count"] == 2
+        assert s["last_active"] == wall_clock.now
+        assert store2.history(sid) == [
+            ("First message", "First reply"),
+            ("Second message", "Second reply"),
+        ]
     finally:
         persist_path.unlink(missing_ok=True)
 
 
 def test_load_missing_file_is_graceful() -> None:
     """A missing persist file is not an error — store starts empty."""
-    clock = _FakeClock()
-    store = _store(clock, persist_path=Path("/nonexistent/conversations.json"))
-    session_id, history = store.begin("c1")
+    store = _store(persist_path=Path("/nonexistent/conversations.json"))
+    session_id, history = store.begin("s0")
     assert history == []
 
 
@@ -233,8 +346,16 @@ def test_load_trims_to_max_history_turns() -> None:
     """On load, turns beyond max_history_turns are trimmed."""
     data = {
         "c1": {
-            "session_id": "s",
-            "turns": [["q0", "a0"], ["q1", "a1"], ["q2", "a2"]],
+            "active_session_id": "s",
+            "sessions": [
+                {
+                    "session_id": "s",
+                    "title": "Test",
+                    "last_active": 2000.0,
+                    "turn_count": 3,
+                    "turns": [["q0", "a0"], ["q1", "a1"], ["q2", "a2"]],
+                }
+            ],
         }
     }
     with tempfile.NamedTemporaryFile(
@@ -244,9 +365,8 @@ def test_load_trims_to_max_history_turns() -> None:
         persist_path = Path(f.name)
 
     try:
-        clock = _FakeClock()
-        store = _store(clock, max_history_turns=2, persist_path=persist_path)
-        _, history = store.begin("c1")
+        store = _store(max_history_turns=2, persist_path=persist_path)
+        _, history = store.begin("s")
         assert history == [("q1", "a1"), ("q2", "a2")]
     finally:
         persist_path.unlink(missing_ok=True)
@@ -261,47 +381,8 @@ def test_load_malformed_json_is_graceful() -> None:
         persist_path = Path(f.name)
 
     try:
-        clock = _FakeClock()
-        store = _store(clock, persist_path=persist_path)
-        _, history = store.begin("c1")
+        store = _store(persist_path=persist_path)
+        _, history = store.begin("s0")
         assert history == []
     finally:
         persist_path.unlink(missing_ok=True)
-
-
-def test_persist_preserves_idle_reset_behaviour() -> None:
-    """Idle reset still works after loading from disk."""
-    data = {
-        "c1": {
-            "session_id": "old-session",
-            "turns": [["q1", "a1"]],
-        }
-    }
-    with tempfile.NamedTemporaryFile(
-        mode="w", suffix=".json", delete=False, encoding="utf-8"
-    ) as f:
-        json.dump(data, f)
-        persist_path = Path(f.name)
-
-    try:
-        clock = _FakeClock()
-        store = _store(clock, idle_reset_seconds=100, persist_path=persist_path)
-
-        # Loaded conversation should be active right after load.
-        sid1, hist1 = store.begin("c1")
-        assert hist1 == [("q1", "a1")]
-
-        # Advance past idle window — conversation resets.
-        clock.advance(101)
-        sid2, hist2 = store.begin("c1")
-        assert sid2 != sid1
-        assert hist2 == []
-    finally:
-        persist_path.unlink(missing_ok=True)
-
-
-def test_default_max_history_turns_is_50() -> None:
-    """The default cap matches the acceptance criterion of 50 most recent."""
-    clock = _FakeClock()
-    store = ConversationStore(clock=clock)
-    assert store._max_history_turns == 50

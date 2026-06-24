@@ -7,7 +7,7 @@ import contextlib
 import json
 from collections.abc import AsyncGenerator
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -175,14 +175,14 @@ async def test_chat_endpoint_invalid_client_id() -> None:
 
 @pytest.mark.asyncio
 async def test_history_endpoint_returns_stored_turns() -> None:
-    """``GET /history?client_id=`` returns the client's recorded turns as JSON."""
+    """``GET /history?session_id=`` returns the session's recorded turns as JSON."""
     store = ConversationStore()
-    store.begin("c1")
-    store.record("c1", "hi", "hello")
-    store.record("c1", "how are you", "I'm fine")
+    store.begin("s1")
+    store.record("s1", None, "hi", "hello")
+    store.record("s1", None, "how are you", "I'm fine")
 
     async with mock_app(conversation_store=store) as f:
-        response = await f.client.get("/history?client_id=c1")
+        response = await f.client.get("/history?session_id=s1")
 
     assert response.status_code == 200
     data = response.json()
@@ -202,34 +202,312 @@ async def test_history_endpoint_unknown_client_returns_200_empty() -> None:
 
 @pytest.mark.asyncio
 async def test_history_endpoint_missing_client_id_returns_400() -> None:
-    """``GET /history`` without a ``client_id`` query param returns 400."""
+    """``GET /history`` without a ``session_id`` query param returns 400."""
     async with mock_app() as f:
         response = await f.client.get("/history")
 
     assert response.status_code == 400
     data = response.json()
     assert "error" in data
-    assert "client_id" in data["error"]
+    assert "session_id" in data["error"]
 
 
 @pytest.mark.asyncio
 async def test_history_read_is_non_mutating() -> None:
-    """Reading history does not refresh last-activity or reset an idle conversation."""
-    from tests.chat.test_conversation import _FakeClock, _store
+    """Reading history does not update session metadata or turn count."""
+    from tests.chat.test_conversation import _store
 
-    clock = _FakeClock()
-    store = _store(clock)
-    store.begin("c1")
-    store.record("c1", "q", "a")
+    store = _store()
+    store.begin("s1")
+    store.record("s1", None, "q", "a")
 
-    # Read history — this must not count as activity.
-    turns = store.history("c1")
+    # Read history — this must not count as activity or mutation.
+    turns = store.history("s1")
     assert turns == [("q", "a")]
 
-    # Advance past the default idle window and assert begin() resets.
-    clock.advance(1801)
-    session_id, history = store.begin("c1")
-    assert history == []  # history was read-only; idle window still expired
+    # The session still has exactly 1 turn after the read.
+    _, history_after = store.begin("s1")
+    assert history_after == [("q", "a")]
+
+
+# ---------------------------------------------------------------------------
+# Sessions endpoints — GET /sessions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sessions_list_returns_owner_sessions() -> None:
+    """``GET /sessions?owner_id=X`` returns the owner sessions sorted by last_active."""
+    store = ConversationStore()
+    sid1 = cast(str, store.create_session("owner-a")["session_id"])
+    sid2 = cast(str, store.create_session("owner-a")["session_id"])
+
+    async with mock_app(conversation_store=store) as f:
+        response = await f.client.get("/sessions?owner_id=owner-a")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert "sessions" in data
+    assert "active_session_id" in data
+    sessions = data["sessions"]
+    assert len(sessions) == 2
+    # sorted by last_active descending — sid2 was created last so it should be first
+    assert sessions[0]["session_id"] == sid2
+    assert sessions[1]["session_id"] == sid1
+    assert data["active_session_id"] == sid2
+
+
+@pytest.mark.asyncio
+async def test_sessions_list_lazy_creates_default() -> None:
+    """``GET /sessions`` for a new owner lazily creates a default active session."""
+    async with mock_app() as f:
+        response = await f.client.get("/sessions?owner_id=new-owner")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert len(data["sessions"]) == 1
+    s = data["sessions"][0]
+    assert s["title"] == "New chat"
+    assert s["turn_count"] == 0
+    assert isinstance(s["session_id"], str)
+    assert s["session_id"] == data["active_session_id"]
+
+
+@pytest.mark.asyncio
+async def test_sessions_list_lazy_create_is_idempotent() -> None:
+    """A second ``GET /sessions`` returns the same default session — no duplication."""
+    store = ConversationStore()
+
+    async with mock_app(conversation_store=store) as f:
+        r1 = await f.client.get("/sessions?owner_id=o1")
+        r2 = await f.client.get("/sessions?owner_id=o1")
+
+    s1 = r1.json()["sessions"]
+    s2 = r2.json()["sessions"]
+    assert len(s1) == 1
+    assert len(s2) == 1
+    assert s1[0]["session_id"] == s2[0]["session_id"]
+
+
+@pytest.mark.asyncio
+async def test_sessions_list_missing_owner_id_returns_400() -> None:
+    """``GET /sessions`` without ``owner_id`` returns 400."""
+    async with mock_app() as f:
+        response = await f.client.get("/sessions")
+
+    assert response.status_code == 400
+    assert "owner_id" in response.json()["error"]
+
+
+# ---------------------------------------------------------------------------
+# Sessions endpoints — POST /sessions
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sessions_create_returns_new_session() -> None:
+    """``POST /sessions`` creates a new empty session and marks it active."""
+    store = ConversationStore()
+
+    async with mock_app(conversation_store=store) as f:
+        response = await f.client.post("/sessions", json={"owner_id": "owner-b"})
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["title"] == "New chat"
+    assert data["turn_count"] == 0
+    assert isinstance(data["session_id"], str)
+    assert isinstance(data["last_active"], (int, float))
+
+    # Verify the session is tracked as active.
+    sessions, active = store.list_sessions("owner-b")
+    assert active == data["session_id"]
+    sids = [cast(str, s["session_id"]) for s in sessions]
+    assert data["session_id"] in sids
+
+
+@pytest.mark.asyncio
+async def test_sessions_create_missing_owner_id_returns_400() -> None:
+    """``POST /sessions`` without ``owner_id`` returns 400."""
+    async with mock_app() as f:
+        response = await f.client.post("/sessions", json={})
+
+    assert response.status_code == 400
+    assert "owner_id" in response.json()["error"]
+
+
+@pytest.mark.asyncio
+async def test_sessions_create_invalid_json_returns_400() -> None:
+    """``POST /sessions`` with invalid JSON returns 400."""
+    async with mock_app() as f:
+        response = await f.client.post(
+            "/sessions",
+            content=b"not json",
+            headers={"Content-Type": "application/json"},
+        )
+
+    assert response.status_code == 400
+    assert "error" in response.json()
+
+
+# ---------------------------------------------------------------------------
+# Per-session isolation via /chat and /history
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_chat_two_sessions_independent_history() -> None:
+    """Two sessions under the same owner keep independent conversation histories."""
+    store = ConversationStore()
+    sid_a = cast(str, store.create_session("owner-c")["session_id"])
+    sid_b = cast(str, store.create_session("owner-c")["session_id"])
+
+    async with mock_app(tokens=["reply A"], conversation_store=store) as f:
+        await f.client.post(
+            "/chat",
+            json={"message": "msg A", "session_id": sid_a, "owner_id": "owner-c"},
+        )
+
+    async with mock_app(tokens=["reply B"], conversation_store=store) as f:
+        await f.client.post(
+            "/chat",
+            json={"message": "msg B", "session_id": sid_b, "owner_id": "owner-c"},
+        )
+
+    assert store.history(sid_a) == [("msg A", "reply A")]
+    assert store.history(sid_b) == [("msg B", "reply B")]
+
+
+@pytest.mark.asyncio
+async def test_history_endpoint_session_scoped() -> None:
+    """``GET /history?session_id=X`` returns only that session's turns."""
+    store = ConversationStore()
+    sid_a = cast(str, store.create_session("owner-d")["session_id"])
+    sid_b = cast(str, store.create_session("owner-d")["session_id"])
+
+    store.record(sid_a, "owner-d", "qa", "aa")
+    store.record(sid_b, "owner-d", "qb", "ab")
+
+    async with mock_app(conversation_store=store) as f:
+        ra = await f.client.get(f"/history?session_id={sid_a}")
+        rb = await f.client.get(f"/history?session_id={sid_b}")
+
+    assert ra.json() == {"turns": [["qa", "aa"]]}
+    assert rb.json() == {"turns": [["qb", "ab"]]}
+
+
+# ---------------------------------------------------------------------------
+# Legacy client_id backward compatibility
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_chat_legacy_client_id_fallback() -> None:
+    """``POST /chat`` with only ``client_id`` treats it as both owner and session."""
+    async with mock_app(tokens=["ok"]) as f:
+        await f.client.post(
+            "/chat", json={"message": "legacy msg", "client_id": "legacy-1"}
+        )
+
+    # Should have threaded via client_id as session_id.
+    assert f.agent.session_id == "legacy-1"
+    assert f.agent.history == []
+
+    # A second call with the same client_id sees the first turn.
+    async with mock_app(
+        tokens=["ok"], conversation_store=f.app.state.conversation_store
+    ) as f2:
+        await f2.client.post(
+            "/chat", json={"message": "legacy msg 2", "client_id": "legacy-1"}
+        )
+        assert f2.agent.history == [("legacy msg", "ok")]
+
+
+@pytest.mark.asyncio
+async def test_history_legacy_client_id_fallback() -> None:
+    """``GET /history?client_id=X`` works as a legacy fallback."""
+    store = ConversationStore()
+    store.begin("legacy-c")
+    store.record("legacy-c", None, "hello", "hi")
+
+    async with mock_app(conversation_store=store) as f:
+        response = await f.client.get("/history?client_id=legacy-c")
+
+    assert response.status_code == 200
+    assert response.json() == {"turns": [["hello", "hi"]]}
+
+
+# ---------------------------------------------------------------------------
+# Persistence of sessions across store reload
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sessions_survive_store_reload() -> None:
+    """Sessions created via the endpoints survive a fresh ConversationStore load."""
+    import tempfile
+
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tf:
+        persist_path = Path(tf.name)
+
+    try:
+        store1 = ConversationStore(persist_path=persist_path)
+        async with mock_app(conversation_store=store1) as f:
+            # Create a session via POST
+            r = await f.client.post("/sessions", json={"owner_id": "o-persist"})
+            sid = r.json()["session_id"]
+
+            # Post a chat message to populate history and title
+            await f.client.post(
+                "/chat",
+                json={
+                    "message": "persist me",
+                    "session_id": sid,
+                    "owner_id": "o-persist",
+                },
+            )
+
+        # Reload from the same persist file
+        store2 = ConversationStore(persist_path=persist_path)
+        async with mock_app(conversation_store=store2) as f:
+            r2 = await f.client.get("/sessions?owner_id=o-persist")
+            data = r2.json()
+            assert len(data["sessions"]) == 1
+            s = data["sessions"][0]
+            assert s["session_id"] == sid
+            assert s["title"] == "persist me"
+            assert s["turn_count"] == 1
+            assert data["active_session_id"] == sid
+
+            # History is also preserved
+            r3 = await f.client.get(f"/history?session_id={sid}")
+            assert r3.json() == {"turns": [["persist me", "Hello world!"]]}
+    finally:
+        persist_path.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# Idle does NOT wipe history
+# ---------------------------------------------------------------------------
+
+
+def test_idle_does_not_wipe_history() -> None:
+    """Advancing past idle_reset_seconds does NOT clear session history."""
+    from tests.chat.test_conversation import _FakeWallClock, _store
+
+    clock = _FakeWallClock()
+    store = _store(wall_clock=clock, idle_reset_seconds=10.0)
+    sid = cast(str, store.create_session("owner-x")["session_id"])
+    store.record(sid, "owner-x", "hello", "hi")
+
+    # Advance well past the idle threshold — history must remain intact.
+    clock.advance(999.0)
+
+    _, history_begin = store.begin(sid)
+    assert history_begin == [("hello", "hi")]
+
+    history = store.history(sid)
+    assert history == [("hello", "hi")]
 
 
 # ---------------------------------------------------------------------------
@@ -1252,12 +1530,12 @@ async def test_resume_hook_passed_through_mock_app() -> None:
 
 @pytest.mark.asyncio
 async def test_loops_list_endpoint_missing_client_id() -> None:
-    """``GET /loops`` without client_id returns 400."""
+    """``GET /loops`` without session_id returns 400."""
     async with mock_app() as f:
         response = await f.client.get("/loops")
 
     assert response.status_code == 400
-    assert response.json() == {"error": "client_id query parameter is required"}
+    assert response.json() == {"error": "session_id query parameter is required"}
 
 
 @pytest.mark.asyncio

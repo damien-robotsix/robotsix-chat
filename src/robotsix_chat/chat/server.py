@@ -229,15 +229,35 @@ async def chat_endpoint(
     if not message:
         message = ""
 
-    # Optional per-browser conversation key. When present, the message joins the
-    # client's ongoing conversation (recent turns replayed, spans grouped under
-    # one trace session) unless it has been idle long enough to reset. Without
-    # it, each request is an independent, untracked single query.
+    # Resolve session identity — accept session_id + owner_id (new) or
+    # client_id (legacy fallback: client_id becomes both owner and session).
+    session_id = body.get("session_id")
+    owner_id = body.get("owner_id")
     client_id = body.get("client_id")
+
     if client_id is not None and not isinstance(client_id, str):
         return JSONResponse({"error": "invalid 'client_id' field"}, status_code=400)
-    if client_id:
-        session_id, history = store.begin(client_id)
+    if session_id is not None and not isinstance(session_id, str):
+        return JSONResponse({"error": "invalid 'session_id' field"}, status_code=400)
+    if owner_id is not None and not isinstance(owner_id, str):
+        return JSONResponse({"error": "invalid 'owner_id' field"}, status_code=400)
+
+    # Backward compat: client_id alone → both owner and session.
+    if not session_id and client_id:
+        session_id = client_id
+    if not owner_id and client_id:
+        owner_id = client_id
+    # If session_id is given without owner_id, derive owner_id from session.
+    if not owner_id and session_id:
+        owner_id = session_id
+    # Derive client_id from session_id when not explicitly provided,
+    # so delegation tools, EventBus, and check-loop routing still scope
+    # correctly when the new session_id+owner_id fields are used alone.
+    if not client_id and session_id:
+        client_id = session_id
+
+    if session_id:
+        session_id, history = store.begin(session_id)
     else:
         session_id, history = store.new_session_id(), None
 
@@ -263,8 +283,8 @@ async def chat_endpoint(
                     await queue.put((SSE_TOKEN_TYPE, token))
                 # Persist the completed exchange so the next message in this
                 # conversation sees it (only on a clean finish, not on error).
-                if client_id:
-                    store.record(client_id, message, "".join(reply_parts))
+                if session_id:
+                    store.record(session_id, owner_id, message, "".join(reply_parts))
                 await queue.put((SSE_DONE_TYPE, None))
             except asyncio.CancelledError:
                 raise
@@ -307,37 +327,45 @@ async def chat_endpoint(
 
 
 async def history_endpoint(request: Request) -> JSONResponse:
-    """Return a client's stored conversation history as JSON.
+    """Return a session's stored conversation history as JSON.
 
-    ``GET /history?client_id=...`` returns ``{"turns": [[user, assistant], ...]}``.
+    ``GET /history?session_id=...`` returns ``{"turns": [[user, assistant], ...]}``.
+    Also tolerates ``client_id`` as a legacy fallback (treated as ``session_id``).
     """
-    client_id = request.query_params.get("client_id")
-    if not client_id:
+    session_id = request.query_params.get("session_id")
+    if not session_id:
+        # Legacy fallback: treat client_id as session_id.
+        session_id = request.query_params.get("client_id")
+    if not session_id:
         return JSONResponse(
-            {"error": "client_id query parameter is required"}, status_code=400
+            {"error": "session_id query parameter is required"}, status_code=400
         )
 
     store: ConversationStore = request.app.state.conversation_store
-    turns = store.history(client_id)
+    turns = store.history(session_id)
     return JSONResponse({"turns": turns})
 
 
 async def events_endpoint(request: Request) -> JSONResponse | StreamingResponse:
     """Open a persistent SSE channel for background-task lifecycle events.
 
-    ``GET /events?client_id=...`` opens a never-closing ``text/event-stream``
+    ``GET /events?session_id=...`` opens a never-closing ``text/event-stream``
     that delivers ``task_started``, ``task_completed``, and ``task_failed``
     frames pushed via :class:`~robotsix_chat.chat.events.EventBus`.  Heartbeat
     comments keep the connection alive during quiet periods.
+
+    Tolerates ``client_id`` as a legacy fallback (treated as ``session_id``).
     """
-    client_id = request.query_params.get("client_id")
-    if not client_id:
+    session_id = request.query_params.get("session_id")
+    if not session_id:
+        session_id = request.query_params.get("client_id")
+    if not session_id:
         return JSONResponse(
-            {"error": "client_id query parameter is required"}, status_code=400
+            {"error": "session_id query parameter is required"}, status_code=400
         )
 
     async def event_stream() -> AsyncIterator[bytes]:
-        queue = request.app.state.event_bus.subscribe(client_id)
+        queue = request.app.state.event_bus.subscribe(session_id)
         try:
             yield _SSE_HEARTBEAT_FRAME  # first byte immediately
             while True:
@@ -350,7 +378,7 @@ async def events_endpoint(request: Request) -> JSONResponse | StreamingResponse:
                     continue
                 yield _sse_frame(frame)
         finally:
-            request.app.state.event_bus.unsubscribe(client_id, queue)
+            request.app.state.event_bus.unsubscribe(session_id, queue)
 
     return StreamingResponse(
         event_stream(),
@@ -384,19 +412,23 @@ async def loops_stop_endpoint(request: Request) -> JSONResponse:
 
 
 async def loops_list_endpoint(request: Request) -> JSONResponse:
-    """Return all check loops for a client as JSON.
+    """Return all check loops for a session as JSON.
 
-    ``GET /loops?client_id=...`` returns ``{"loops": [...]}`` where each
+    ``GET /loops?session_id=...`` returns ``{"loops": [...]}`` where each
     entry contains every :class:`~robotsix_chat.chat.loops.LoopInfo` field
     with ``status`` serialized as its plain string value.
 
-    Returns 400 when ``client_id`` is missing, and 503 when the check-loop
+    Tolerates ``client_id`` as a legacy fallback (treated as ``session_id``).
+
+    Returns 400 when ``session_id`` is missing, and 503 when the check-loop
     feature is not wired (``app.state.check_loop_registry`` is ``None``).
     """
-    client_id = request.query_params.get("client_id")
-    if not client_id:
+    session_id = request.query_params.get("session_id")
+    if not session_id:
+        session_id = request.query_params.get("client_id")
+    if not session_id:
         return JSONResponse(
-            {"error": "client_id query parameter is required"}, status_code=400
+            {"error": "session_id query parameter is required"}, status_code=400
         )
 
     registry: CheckLoopRegistry | None = request.app.state.check_loop_registry
@@ -405,7 +437,7 @@ async def loops_list_endpoint(request: Request) -> JSONResponse:
             {"error": "check-loop feature not enabled"}, status_code=503
         )
 
-    loops = registry.list_for_client(client_id)
+    loops = registry.list_for_client(session_id)
     result: list[dict[str, object]] = []
     for info in loops:
         result.append(
@@ -426,6 +458,68 @@ async def loops_list_endpoint(request: Request) -> JSONResponse:
             }
         )
     return JSONResponse({"loops": result})
+
+
+# ---------------------------------------------------------------------------
+# Sessions endpoints
+# ---------------------------------------------------------------------------
+
+
+async def sessions_list_endpoint(request: Request) -> JSONResponse:
+    """List all sessions for an owner.
+
+    ``GET /sessions?owner_id=...`` returns::
+
+        {
+          "sessions": [
+            {"session_id": "...", "title": "...", "last_active": 1.0, "turn_count": 3},
+            ...
+          ],
+          "active_session_id": "..."
+        }
+
+    Sorted by ``last_active`` descending.  If the owner has no sessions, a
+    default empty session is lazily created and returned (so the list is
+    never empty).
+    """
+    owner_id = request.query_params.get("owner_id")
+    if not owner_id:
+        return JSONResponse(
+            {"error": "owner_id query parameter is required"}, status_code=400
+        )
+
+    store: ConversationStore = request.app.state.conversation_store
+    sessions, active_id = store.list_sessions(owner_id)
+    return JSONResponse({"sessions": sessions, "active_session_id": active_id})
+
+
+async def sessions_create_endpoint(request: Request) -> JSONResponse:
+    """Create a new empty session for an owner.
+
+    ``POST /sessions`` with body ``{"owner_id": "..."}`` returns::
+
+        {"session_id": "...", "title": "New chat", "last_active": 1.0, "turn_count": 0}
+
+    The new session is marked as the owner's active session.
+    """
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, ValueError):
+        return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "expected a JSON object"}, status_code=400)
+
+    owner_id = body.get("owner_id")
+    if not owner_id or not isinstance(owner_id, str):
+        return JSONResponse(
+            {"error": "'owner_id' field is required and must be a string"},
+            status_code=400,
+        )
+
+    store: ConversationStore = request.app.state.conversation_store
+    session = store.create_session(owner_id)
+    return JSONResponse(session)
 
 
 # ---------------------------------------------------------------------------
@@ -537,6 +631,8 @@ def create_app(
         Route("/history", history_endpoint, methods=["GET"]),
         Route("/loops/{loop_id}/stop", loops_stop_endpoint, methods=["POST"]),
         Route("/loops", loops_list_endpoint, methods=["GET"]),
+        Route("/sessions", sessions_list_endpoint, methods=["GET"]),
+        Route("/sessions", sessions_create_endpoint, methods=["POST"]),
     ]
     if serve_ui:
         routes.append(Route("/", ui_endpoint, methods=["GET"]))
@@ -823,11 +919,12 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     registry = TaskRegistry(event_sink=event_bus)
     check_loop_registry = CheckLoopRegistry(event_sink=event_bus)
 
+    persist_path_str = settings.conversation.persist_path
     conversation_store = ConversationStore(
         idle_reset_seconds=settings.conversation.idle_reset_seconds,
         max_history_turns=settings.conversation.max_history_turns,
         max_conversations=settings.conversation.max_conversations,
-        persist_path=Path(".data/conversations.json"),
+        persist_path=Path(persist_path_str) if persist_path_str else None,
     )
     channel = ConversationDeliveryChannel(conversation_store)
 

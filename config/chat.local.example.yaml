@@ -115,12 +115,15 @@ calendar:
 # After the idle window a fresh conversation starts (new trace, empty history),
 # matching how an abandoned-then-resumed chat should behave.
 conversation:
-  # idle_reset_seconds: 1800       # start a new conversation after this idle gap
-                                   #   (30 min); env: CONVERSATION_IDLE_RESET_SECONDS
-  # max_history_turns: 50          # recent turns replayed per conversation;
+  # idle_reset_seconds: 1800       # retained for compatibility; no longer triggers
+                                   #   history reset (sessions are explicit & persistent)
+                                   #   env: CONVERSATION_IDLE_RESET_SECONDS
+  # max_history_turns: 50          # recent turns replayed per session;
                                    #   env: CONVERSATION_MAX_HISTORY_TURNS
-  # max_conversations: 1000        # tracked clients (LRU-capped); bounds memory.
+  # max_conversations: 1000        # tracked sessions (LRU-capped); bounds memory.
                                    #   Env override: CONVERSATION_MAX_CONVERSATIONS
+  # persist_path: .data/conversations.json  # JSON persistence file; set to "" to disable.
+                                   #   Env override: CONVERSATION_PERSIST_PATH
 
 # Reference-docs tool — lets the agent read documentation from allowlisted
 # team GitHub repos on demand. Primarily used to consult the board-workflow
