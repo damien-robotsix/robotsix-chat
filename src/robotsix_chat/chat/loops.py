@@ -407,6 +407,177 @@ def _apply_board_read_gate(
 
 
 # ---------------------------------------------------------------------------
+# Guardrail header — prepended to the prompt when verify_via_board is active
+# ---------------------------------------------------------------------------
+
+_GUARDRAIL_HEADER = (
+    "Before reporting ANY status (state, timestamps, ticket/thread state), "
+    "you MUST call the consult_mill board-read tool and base your report "
+    "solely on its reply. Never invent, assume, or narrate a state change "
+    "or timestamp you have not read from the board. If you cannot read the "
+    "board, say so explicitly instead of guessing.\n\n"
+)
+
+
+# ---------------------------------------------------------------------------
+# Board-read gate setup helper
+# ---------------------------------------------------------------------------
+
+
+def _setup_board_read_gate(
+    settings: Settings,
+    agent_factory: Callable[[Settings], ChatAgent],
+    loop_id: str | None,
+) -> tuple[BoardReadProbe, Callable[[Settings], ChatAgent]]:
+    """Build board-read-probe instrumentation when ``verify_via_board`` is enabled.
+
+    Returns ``(probe, agent_factory)`` where *agent_factory* is wrapped to
+    count ``consult_mill`` invocations via the *probe*.  Also warns when the
+    mill is disabled (no board tool → every tick will be suppressed).
+    """
+    probe = BoardReadProbe()
+    _base_factory = agent_factory
+
+    if not settings.mill.enabled:
+        logger.warning(
+            "Check loop %s: verify_via_board=True but mill is "
+            "disabled — no consult_mill tool is available; "
+            "every tick will be suppressed.",
+            loop_id,
+        )
+
+    def _gated_agent_factory(s: Settings) -> ChatAgent:
+        agent = _base_factory(s)
+        if hasattr(agent, "_tools") and agent._tools is not None:
+            _wrap_consult_in_place(agent._tools, probe)
+        return agent
+
+    return probe, _gated_agent_factory
+
+
+# ---------------------------------------------------------------------------
+# check-loop worker — top-level async function (was a 227-line nested closure)
+# ---------------------------------------------------------------------------
+
+
+async def _check_loop_worker(
+    *,
+    id_future: asyncio.Future[str],
+    probe: BoardReadProbe | None,
+    registry: CheckLoopRegistry,
+    settings: Settings,
+    agent_factory: Callable[[Settings], ChatAgent],
+    client_id: str,
+    prompt: str,
+    include_previous_result: bool,
+    verify_via_board: bool,
+    interval_seconds: float,
+    suppress_when: Callable[[str], bool] | None,
+    stop_when: Callable[[str], bool] | None,
+    max_iterations: int | None,
+    channel: DeliveryChannel,
+) -> None:
+    """Run the recurring check-loop tick cycle until stopped or capped."""
+    loop_id = await id_future
+    clock = registry._clock
+    previous_result: str | None = None
+    try:
+        while True:
+            if verify_via_board and probe is not None:
+                probe.count = 0  # reset per tick
+
+            # Build the effective prompt, combining the guardrail header
+            # (when gated) with the previous result (when comparing).
+            effective_prompt = prompt
+            if verify_via_board:
+                effective_prompt = _GUARDRAIL_HEADER + effective_prompt
+            if include_previous_result and previous_result is not None:
+                effective_prompt = (
+                    f"Previous check result:\n{previous_result}\n\n"
+                    f"---\n\nCurrent check prompt:\n{effective_prompt}"
+                )
+
+            agent = agent_factory(settings)
+            result_text = "".join(
+                [chunk async for chunk in agent.stream(effective_prompt)]
+            )
+
+            # --- gate: suppress unverified status ---
+            if verify_via_board:
+                result_text = _apply_board_read_gate(
+                    result_text, probe, verify_via_board, loop_id
+                )
+
+            next_run = clock() + interval_seconds
+            suppressed = suppress_when is not None and suppress_when(result_text)
+            registry.record_tick(
+                loop_id,
+                result=result_text,
+                next_run=next_run,
+                publish=not suppressed,
+            )
+
+            # Re-read after record_tick (which incremented iterations).
+            info = registry.get(loop_id)
+            if info is None:
+                return  # loop was removed
+
+            # Best-effort: publish tick result into the conversation so the
+            # foreground agent sees it in its next-turn history.
+            # Skip when suppressed — the user shouldn't see no-change ticks.
+            if not suppressed:
+                try:
+                    await channel.publish(
+                        client_id,
+                        loop_tick_frame(
+                            loop_id,
+                            iteration=info.iterations,
+                            result=result_text,
+                            next_run=next_run,
+                        ),
+                    )
+                except Exception:
+                    logger.exception(
+                        "DeliveryChannel.publish failed for loop %s tick %s",
+                        loop_id,
+                        info.iterations,
+                    )
+
+            # Store for the next iteration's comparison.
+            previous_result = result_text
+
+            # Self-stop on condition-met.
+            if stop_when is not None and stop_when(result_text):
+                registry.stop(loop_id, reason="condition_met")
+                return
+
+            # Max-iterations cap.
+            if max_iterations is not None and info.iterations >= max_iterations:
+                registry.stop(loop_id, reason="max_iterations")
+                return
+
+            # Wait for the next interval.
+            await asyncio.sleep(interval_seconds)
+
+    except asyncio.CancelledError:
+        raise
+    except Exception as exc:
+        logger.exception("Check loop %s failed", loop_id)
+        registry.fail(loop_id, error=str(exc))
+        # Best-effort: publish loop failure into the conversation.
+        try:
+            await channel.publish(
+                client_id,
+                loop_failed_frame(loop_id, error=str(exc)),
+            )
+        except Exception:
+            logger.exception(
+                "DeliveryChannel.publish failed for loop %s failure",
+                loop_id,
+            )
+
+
+# ---------------------------------------------------------------------------
 # spawn_check_loop — worker
 # ---------------------------------------------------------------------------
 
@@ -484,144 +655,32 @@ def spawn_check_loop(
         agent_factory = _default_agent_factory
 
     # When verify_via_board is True, build a probe and wrap the agent factory
-    # so consult_mill invocations are counted.  Also warn once when the mill
-    # is disabled (no board tool available → every tick will be suppressed).
-    probe: BoardReadProbe | None = None
-    _guardrail_header = (
-        "Before reporting ANY status (state, timestamps, ticket/thread state), "
-        "you MUST call the consult_mill board-read tool and base your report "
-        "solely on its reply. Never invent, assume, or narrate a state change "
-        "or timestamp you have not read from the board. If you cannot read the "
-        "board, say so explicitly instead of guessing.\n\n"
-    )
+    # so consult_mill invocations are counted.
     if verify_via_board:
-        probe = BoardReadProbe()
-        _base_factory = agent_factory
-        # Check early whether the mill is even enabled — if not, the probe
-        # will always see 0 and every tick will be suppressed.
-        if not settings.mill.enabled:
-            logger.warning(
-                "Check loop %s: verify_via_board=True but mill is "
-                "disabled — no consult_mill tool is available; "
-                "every tick will be suppressed.",
-                loop_id,
-            )
-
-        def _gated_agent_factory(s: Settings) -> ChatAgent:
-            agent = _base_factory(s)
-            # Instrument the agent's tools list in-place so consult_mill
-            # invocations are counted by the probe.  Works for
-            # LlmioChatAgent (which stores tools as ``_tools``).
-            if hasattr(agent, "_tools") and agent._tools is not None:
-                _wrap_consult_in_place(agent._tools, probe)
-            return agent
-
-        agent_factory = _gated_agent_factory
+        probe, agent_factory = _setup_board_read_gate(settings, agent_factory, loop_id)
+    else:
+        probe = None
 
     # Race-free handshake: same pattern as spawn_subagent_task.
     id_future: asyncio.Future[str] = asyncio.Future()
-
-    async def _worker() -> None:
-        nonlocal probe
-        loop_id = await id_future
-        clock = registry._clock
-        previous_result: str | None = None
-        try:
-            while True:
-                if verify_via_board and probe is not None:
-                    probe.count = 0  # reset per tick
-
-                # Build the effective prompt, combining the guardrail header
-                # (when gated) with the previous result (when comparing).
-                effective_prompt = prompt
-                if verify_via_board:
-                    effective_prompt = _guardrail_header + effective_prompt
-                if include_previous_result and previous_result is not None:
-                    effective_prompt = (
-                        f"Previous check result:\n{previous_result}\n\n"
-                        f"---\n\nCurrent check prompt:\n{effective_prompt}"
-                    )
-
-                agent = agent_factory(settings)
-                result_text = "".join(
-                    [chunk async for chunk in agent.stream(effective_prompt)]
-                )
-
-                # --- gate: suppress unverified status ---
-                if verify_via_board:
-                    result_text = _apply_board_read_gate(
-                        result_text, probe, verify_via_board, loop_id
-                    )
-
-                next_run = clock() + interval_seconds
-                suppressed = suppress_when is not None and suppress_when(result_text)
-                registry.record_tick(
-                    loop_id,
-                    result=result_text,
-                    next_run=next_run,
-                    publish=not suppressed,
-                )
-
-                # Re-read after record_tick (which incremented iterations).
-                info = registry.get(loop_id)
-                if info is None:
-                    return  # loop was removed
-
-                # Best-effort: publish tick result into the conversation so the
-                # foreground agent sees it in its next-turn history.
-                # Skip when suppressed — the user shouldn't see no-change ticks.
-                if not suppressed:
-                    try:
-                        await channel.publish(
-                            client_id,
-                            loop_tick_frame(
-                                loop_id,
-                                iteration=info.iterations,
-                                result=result_text,
-                                next_run=next_run,
-                            ),
-                        )
-                    except Exception:
-                        logger.exception(
-                            "DeliveryChannel.publish failed for loop %s tick %s",
-                            loop_id,
-                            info.iterations,
-                        )
-
-                # Store for the next iteration's comparison.
-                previous_result = result_text
-
-                # Self-stop on condition-met.
-                if stop_when is not None and stop_when(result_text):
-                    registry.stop(loop_id, reason="condition_met")
-                    return
-
-                # Max-iterations cap.
-                if max_iterations is not None and info.iterations >= max_iterations:
-                    registry.stop(loop_id, reason="max_iterations")
-                    return
-
-                # Wait for the next interval.
-                await asyncio.sleep(interval_seconds)
-
-        except asyncio.CancelledError:
-            raise
-        except Exception as exc:
-            logger.exception("Check loop %s failed", loop_id)
-            registry.fail(loop_id, error=str(exc))
-            # Best-effort: publish loop failure into the conversation.
-            try:
-                await channel.publish(
-                    client_id,
-                    loop_failed_frame(loop_id, error=str(exc)),
-                )
-            except Exception:
-                logger.exception(
-                    "DeliveryChannel.publish failed for loop %s failure",
-                    loop_id,
-                )
-
-    task = asyncio.create_task(_worker())
+    task = asyncio.create_task(
+        _check_loop_worker(
+            id_future=id_future,
+            probe=probe,
+            registry=registry,
+            settings=settings,
+            agent_factory=agent_factory,
+            client_id=client_id,
+            prompt=prompt,
+            include_previous_result=include_previous_result,
+            verify_via_board=verify_via_board,
+            interval_seconds=interval_seconds,
+            suppress_when=suppress_when,
+            stop_when=stop_when,
+            max_iterations=max_iterations,
+            channel=channel,
+        )
+    )
     loop_id = registry.register(
         client_id,
         prompt,
