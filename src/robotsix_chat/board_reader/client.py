@@ -91,10 +91,7 @@ class BoardReader:
             status = exc.response.status_code
             req_method = getattr(exc.request, "method", "GET")
             req_url = getattr(exc.request, "url", url)
-            return (
-                f"Board API error {status} for "
-                f"{req_method} {req_url}: {body}"
-            )
+            return f"Board API error {status} for {req_method} {req_url}: {body}"
         except httpx.TimeoutException:
             logger.warning("Board API timed out for %s", url)
             return f"Board API request timed out after {self._timeout}s: {url}"
