@@ -148,6 +148,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   variables across server, auth, memory, mill, calendar, conversation,
   and refdocs settings.
 
+### Fixed
+
+- `query_tasks` and `query_calendar` tools now send domain-specific instruction
+  strings (`"list tasks: …"` and `"list calendar events: …"`) so the upstream
+  `robotsix-calendar` intent classifier correctly routes them to `list_tasks`
+  and `list_events` respectively. Fixes `query_tasks` returning VEVENT calendar
+  entries and `query_calendar` returning "No events found" for real events.
+
 ### Removed
 
 - Stale `docs/user-guide/configuration.md` superseded by
