@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Registered ``robotsix_chat.component_agent`` package in ``docs/modules.yaml``
+  module manifest.
+
 - Added ``fail_under = 88`` coverage threshold to ``pyproject.toml``
   (``[tool.coverage.report]``) to ratchet-floor coverage and block regressions
   in CI.

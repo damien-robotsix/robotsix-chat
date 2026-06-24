@@ -68,6 +68,16 @@ modules:
       - tests/chat/test_conversation.py
       - tests/chat/test_server.py
 
+  - id: robotsix_chat.component_agent
+    description: "Component agent package — contains the config contract + validation module and the broker responder that registers this component as an embedded agent on the agent-comm broker, serving monitor, config-get, and config-set request kinds."
+    paths:
+      - src/robotsix_chat/component_agent/__init__.py
+      - src/robotsix_chat/component_agent/config_contract.py
+      - src/robotsix_chat/component_agent/responder.py
+      - tests/component_agent/__init__.py
+      - tests/component_agent/test_config_contract.py
+      - tests/component_agent/test_responder.py
+
   - id: robotsix_chat.llm
     description: "LLM-powered agent — streaming wrapper around llmio.Agent."
     paths:
