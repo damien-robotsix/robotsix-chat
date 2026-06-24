@@ -125,6 +125,25 @@ ask status) from chat. Disabled by default; requires `uv sync --extra broker`.
 | `mill.repo_id` | `MILL_REPO_ID` | `""` | Optional target repo to scope requests to. Empty = board manager picks the target repo from the conversation. |
 | `mill.timeout` | `MILL_TIMEOUT` | `240.0` | Per-request timeout (seconds). Generous because the recipient is an LLM. |
 
+## Mail board
+
+robotsix-auto-mail integration over the agent-comm broker. When enabled, the chat
+agent gains a `consult_mail_board` tool that forwards natural-language requests to
+the auto-mail board manager (`board-manager-robotsix-auto-mail`) and relays its
+reply — so a user can view, triage, or comment on mail-agent tickets from chat.
+Disabled by default; requires `uv sync --extra broker`.
+
+| YAML path | Env var | Default | Description |
+|---|---|---|---|
+| `mail.enabled` | `MAIL_ENABLED` | `false` | Master switch. Requires the `broker` extra. |
+| `mail.broker_host` | `MAIL_BROKER_HOST` | `ai-broker.robotsix.net` | Shared broker hostname. |
+| `mail.broker_port` | `MAIL_BROKER_PORT` | `443` | Broker port. |
+| `mail.broker_scheme` | `MAIL_BROKER_SCHEME` | `https` | `https` or `http`. |
+| `mail.broker_token` | `MAIL_BROKER_TOKEN` | — | Bearer token (required when enabled). |
+| `mail.agent_id` | `MAIL_AGENT_ID` | `robotsix-chat` | This agent's broker identity. |
+| `mail.board_manager_id` | `MAIL_BOARD_MANAGER_ID` | `board-manager-robotsix-auto-mail` | Target board manager agent ID. |
+| `mail.timeout` | `MAIL_TIMEOUT` | `240.0` | Per-request timeout (seconds). |
+
 ## Calendar (broker integration)
 
 Calendar/tasks integration over the agent-comm broker. When enabled, the chat
