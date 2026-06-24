@@ -1,0 +1,1 @@
+chat agents: enforce the "three sentences / no unprompted elaboration" conciseness rule
