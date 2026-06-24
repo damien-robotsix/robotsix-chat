@@ -18,8 +18,10 @@ from robotsix_chat.mill.retry_queue import (
     _INITIAL_DELAY,
     _JITTER_FRACTION,
     _MAX_DELAY,
+    _MAX_RETRY_REQUEST_CHARS,
     BoardWriteRetryQueue,
     _next_delay,
+    _trim_request,
 )
 
 # ---------------------------------------------------------------------------
@@ -272,6 +274,123 @@ def test_status_with_entries(tmp_path: Path) -> None:
     assert "pending" in s
     assert "create ticket: fix critical bug in auth" in s
     assert "in " in s or "overdue" in s  # relative time
+
+
+# ---------------------------------------------------------------------------
+# _trim_request helper
+# ---------------------------------------------------------------------------
+
+
+def test_trim_request_short_unchanged() -> None:
+    """A request shorter than the cap is returned unchanged."""
+    short = "hello"
+    assert _trim_request(short, 4000) == short
+
+
+def test_trim_request_exactly_at_cap() -> None:
+    """A request exactly at the cap is returned unchanged."""
+    exact = "x" * _MAX_RETRY_REQUEST_CHARS
+    assert _trim_request(exact, _MAX_RETRY_REQUEST_CHARS) == exact
+
+
+def test_trim_request_long_is_trimmed() -> None:
+    """A request longer than the cap is shorter than input and contains the marker."""
+    long = "abc" * 2000  # 6000 chars > 4000 cap
+    result = _trim_request(long, _MAX_RETRY_REQUEST_CHARS)
+    assert len(result) < len(long)
+    assert "[retry-trim:" in result
+    # Head preserved
+    assert result.startswith(long[: 2 * _MAX_RETRY_REQUEST_CHARS // 3])
+    # Tail preserved
+    tail_len = _MAX_RETRY_REQUEST_CHARS // 3
+    assert result.endswith(long[-tail_len:])
+    # Length ≤ cap + generous marker overhead (~60 chars max for any digit count)
+    assert len(result) <= _MAX_RETRY_REQUEST_CHARS + 60
+
+
+def test_trim_request_preserves_head_and_tail() -> None:
+    """The trimmed result starts with original head and ends with original tail."""
+    head_content = "PREFIX_IMPORTANT_STUFF"
+    tail_content = "SUFFIX_RECENT_CONTEXT"
+    body = "MIDDLE" * 2000
+    long = head_content + body + tail_content
+    result = _trim_request(long, _MAX_RETRY_REQUEST_CHARS)
+    assert result.startswith(head_content)
+    assert result.endswith(tail_content)
+    assert "[retry-trim:" in result
+
+
+# ---------------------------------------------------------------------------
+# enqueue trimming behaviour
+# ---------------------------------------------------------------------------
+
+
+def test_enqueue_trims_long_request(tmp_path: Path) -> None:
+    """Enqueuing a request longer than max_request_chars stores a trimmed entry."""
+    cap = 500
+    q = BoardWriteRetryQueue(
+        consult_fn=_noop_consult,
+        queue_path=tmp_path / "q.json",
+        max_request_chars=cap,
+    )
+    long_req = "x" * 2000
+    result = q.enqueue(long_req)
+    assert "queued" in result
+    assert len(q._entries) == 1
+    entry = list(q._entries.values())[0]
+    stored = entry["request"]
+    assert len(stored) < len(long_req)
+    assert "[retry-trim:" in stored
+    assert len(stored) <= cap + 60
+
+
+def test_enqueue_short_request_stored_unchanged(tmp_path: Path) -> None:
+    """A short request is stored unchanged (no trimming)."""
+    q = BoardWriteRetryQueue(consult_fn=_noop_consult, queue_path=tmp_path / "q.json")
+    short_req = "create ticket: fix bug"
+    q.enqueue(short_req)
+    entry = list(q._entries.values())[0]
+    assert entry["request"] == short_req
+
+
+@pytest.mark.asyncio
+async def test_drain_resends_trimmed_request(tmp_path: Path) -> None:
+    """After enqueuing an over-long request, the drain path sends the trimmed text."""
+    cap = 500
+    captured: list[str] = []
+
+    async def _capture(request: str) -> str:
+        captured.append(request)
+        return "ok"
+
+    q = BoardWriteRetryQueue(
+        consult_fn=_capture,
+        queue_path=tmp_path / "q.json",
+        max_request_chars=cap,
+    )
+    long_req = "y" * 2000
+    q.enqueue(long_req)
+    await _drain_one_iteration(q)
+    assert len(captured) == 1
+    assert captured[0] != long_req
+    assert "[retry-trim:" in captured[0]
+    assert len(captured[0]) < len(long_req)
+
+
+def test_enqueue_dedup_with_trimming(tmp_path: Path) -> None:
+    """Identical long requests trim identically → only one entry."""
+    cap = 500
+    q = BoardWriteRetryQueue(
+        consult_fn=_noop_consult,
+        queue_path=tmp_path / "q.json",
+        max_request_chars=cap,
+    )
+    long_req = "z" * 2000
+    r1 = q.enqueue(long_req)
+    r2 = q.enqueue(long_req)
+    assert "queued" in r1
+    assert "already queued" in r2.lower()
+    assert len(q._entries) == 1
 
 
 # ---------------------------------------------------------------------------

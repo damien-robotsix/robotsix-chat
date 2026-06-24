@@ -12,6 +12,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Strengthened the ``agent_instruction`` Efficiency bullet to name prohibited
   output shapes (multi-row markdown tables, timeline/audit dumps, recap lists)
   and forbid repeating content already shown in the same conversation.
+- Reduced ``mill.timeout`` default from 240 s to 120 s; still generous for an
+  LLM board-manager reply but avoids doubled wasted-wait on stuck audits.
+- Added request trimming to the mill retry queue: ``BoardWriteRetryQueue``
+  now drops the middle of over-long requests before persistence and resend
+  (head+tail preservation with an omission marker), cutting ~4–5k-token
+  broker retry calls down to ~1k tokens. Configurable via a new
+  ``max_request_chars`` constructor parameter (default 4000).
 - Documented ``mail`` configuration in ``config/chat.local.example.yaml`` and
   ``MAIL_*`` environment variables in ``.env.example``.
 - Refactored ``spawn_check_loop`` in ``robotsix_chat.chat.loops``: extracted
