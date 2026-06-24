@@ -1,5 +1,7 @@
 # robotsix-chat
 
+[![Coverage](https://raw.githubusercontent.com/damien-robotsix/robotsix-chat/main/badges/coverage.svg)](https://github.com/damien-robotsix/robotsix-chat/actions/workflows/ci.yml)
+
 **Browser + SSE chat server for an LLM agent** — exposes an LLM agent to
 human users over HTTP, with a self-contained browser chat UI.
 

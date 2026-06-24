@@ -85,3 +85,24 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - run: echo "All CI checks passed"
+
+  coverage-report:
+    if: github.event_name == 'pull_request'
+    needs: [ci]
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6.8.0
+      - name: Install dependencies
+        run: uv sync
+      - name: Run tests with coverage XML
+        run: uv run pytest --cov=robotsix_chat --cov-report=xml --cov-report=term
+      - name: Coverage comment & badge
+        uses: py-cov-action/python-coverage-comment-action@50d15ff8768f6d897b04e5a0805bd1a98f7096c4  # v3
+        with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
+          coverage-path: coverage.xml
+          min-coverage: 88
