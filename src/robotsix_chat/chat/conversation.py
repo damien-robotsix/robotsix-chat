@@ -96,12 +96,11 @@ class ConversationStore:
         idle_reset_seconds: float = 1800.0,
         max_history_turns: int = 50,
         max_conversations: int = 1000,
-        clock: Callable[[], float] = time.monotonic,
         session_factory: Callable[[], str] | None = None,
         persist_path: Path | None = None,
         wall_clock: Callable[[], float] = time.time,
     ) -> None:
-        """Configure store bounds, clocks, session factory, and optional persistence.
+        """Configure store bounds, session factory, and optional persistence.
 
         *idle_reset_seconds* is retained for caller compatibility but no longer
         triggers destructive history reset — sessions are persistent.
@@ -112,7 +111,6 @@ class ConversationStore:
         self._idle_reset_seconds = idle_reset_seconds
         self._max_history_turns = max_history_turns
         self._max_conversations = max_conversations
-        self._clock = clock
         self._wall_clock = wall_clock
         self._session_factory = session_factory or (lambda: uuid.uuid4().hex)
         self._persist_path = persist_path
@@ -318,24 +316,6 @@ class ConversationStore:
             # Remove from all owner registries.
             for owner_state in self._owners.values():
                 owner_state.session_ids.discard(evicted_sid)
-
-    def _get_or_create_owner_active(self, owner_id: str) -> str:
-        """Return *owner_id*'s active session id, creating defaults if needed."""
-        owner = self._owners.get(owner_id)
-        if owner is not None:
-            return owner.active_session_id
-
-        sid = self._session_factory()
-        session = Session(session_id=sid, wall_last_active=self._wall_clock())
-        self._sessions[sid] = session
-        self._owners[owner_id] = _OwnerState(
-            active_session_id=sid,
-            session_ids={sid},
-        )
-        self._evict_overflow()
-        if self._persist_path is not None:
-            self._persist()
-        return sid
 
     # -- on-disk persistence ----------------------------------------------
 
