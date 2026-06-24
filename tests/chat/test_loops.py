@@ -32,6 +32,7 @@ from robotsix_chat.chat.loops import (
     resume_check_loops,
     spawn_check_loop,
 )
+from tests.chat import _fake_coro
 
 # ---------------------------------------------------------------------------
 # Stubs / fakes — mirror test_tasks.py / test_runner.py patterns
@@ -49,24 +50,6 @@ class _FakeClock:
 
     def advance(self, seconds: float) -> None:
         self.now += seconds
-
-
-class _FakeCoro:
-    """Stand-in for ``asyncio.Task[None]`` — no event loop required."""
-
-    def add_done_callback(self, _cb: object) -> None:
-        pass
-
-    def cancel(self, _msg: object = None) -> bool:
-        return False
-
-    def done(self) -> bool:
-        return False
-
-
-def _fake_coro() -> _FakeCoro:
-    """Return a stand-in for ``asyncio.Task[None]`` for non-async tests."""
-    return _FakeCoro()
 
 
 class _StubAgent:

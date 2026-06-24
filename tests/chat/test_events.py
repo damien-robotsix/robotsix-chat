@@ -21,6 +21,7 @@ from robotsix_chat.chat.events import (
 )
 from robotsix_chat.chat.server import SSE_CONTENT_TYPE, events_endpoint
 from robotsix_chat.chat.tasks import TaskRegistry, TaskStatus
+from tests.chat import _fake_coro
 from tests.conftest import mock_app
 
 # ---------------------------------------------------------------------------
@@ -293,27 +294,6 @@ async def test_events_endpoint_unsubscribes_on_disconnect() -> None:
 # ---------------------------------------------------------------------------
 # TaskRegistry → EventBus integration (unit-level)
 # ---------------------------------------------------------------------------
-
-
-class _FakeCoro:
-    """Stand-in for ``asyncio.Task[None]`` — no event loop required.
-
-    Copied from ``tests/chat/test_tasks.py`` so this module stays self-contained.
-    """
-
-    def add_done_callback(self, _cb: object) -> None:
-        pass
-
-    def cancel(self, _msg: object = None) -> bool:
-        return False
-
-    def done(self) -> bool:
-        return False
-
-
-def _fake_coro() -> _FakeCoro:
-    """Return a stand-in for ``asyncio.Task[None]`` for non-async tests."""
-    return _FakeCoro()
 
 
 def test_task_registry_publishes_started_frame_on_register() -> None:

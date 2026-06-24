@@ -8,6 +8,7 @@ from itertools import count
 import pytest
 
 from robotsix_chat.chat.tasks import TaskRegistry, TaskStatus
+from tests.chat import _fake_coro
 
 
 class _FakeClock:
@@ -30,28 +31,6 @@ def _registry(clock: _FakeClock | None = None) -> TaskRegistry:
         clock=clock or _FakeClock(),
         id_factory=lambda: f"t{next(ids)}",
     )
-
-
-# Flimsy mock to satisfy the ``asyncio.Task[None]`` type without needing a
-# running event loop.  Only the ``add_done_callback`` facet is exercised by
-# the registry; callers that need a real lifecycle use ``asyncio.create_task``
-# inside an ``@pytest.mark.asyncio`` test.
-class _FakeCoro:
-    """Stand-in for ``asyncio.Task[None]`` — no event loop required."""
-
-    def add_done_callback(self, _cb: object) -> None:
-        pass
-
-    def cancel(self, _msg: object = None) -> bool:
-        return False
-
-    def done(self) -> bool:
-        return False
-
-
-def _fake_coro() -> _FakeCoro:
-    """Return a stand-in for ``asyncio.Task[None]`` for non-async tests."""
-    return _FakeCoro()
 
 
 # ---------------------------------------------------------------------------
