@@ -118,6 +118,13 @@ modules:
       - src/robotsix_chat/refdocs/client.py
       - tests/refdocs/__init__.py
       - tests/refdocs/test_refdocs.py
+  - id: robotsix_chat.selfreview
+    description: "Self-review tools — a read-only digest of live conversation activity. Exposes build_recent_activity_tools(), a factory that returns a single read_recent_activity tool that reads from the in-process ConversationStore."
+    paths:
+      - src/robotsix_chat/selfreview/__init__.py
+      - src/robotsix_chat/selfreview/read.py
+      - tests/selfreview/__init__.py
+      - tests/selfreview/test_read.py
   - id: robotsix_chat.ui
     description: "Browser chat UI — self-contained HTML frontend served at /."
     paths:
