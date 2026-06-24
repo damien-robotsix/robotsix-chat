@@ -1,0 +1,1 @@
+Implement ConversationStore.recent_activity() + self-review read-tool scaffold (re-do of mis-closed 6d24)
