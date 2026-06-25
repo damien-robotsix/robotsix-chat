@@ -237,9 +237,6 @@ async def test_unexpected_error_returns_diagnostic(
 # ---------------------------------------------------------------------------
 
 
-
-
-
 @pytest.mark.asyncio
 async def test_create_ticket_calls_post_tickets(
     monkeypatch: pytest.MonkeyPatch,
