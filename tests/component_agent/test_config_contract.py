@@ -558,6 +558,7 @@ def test_settable_keys_excludes_startup_only_fields():
         "board_reader.api_base_url",
         "board_reader.api_token",
         "board_reader.timeout",
+        "board_reader.cache_ttl",
         "knowledge.path",
         "self_review.recent_activity_limit",
         "conversation.idle_reset_seconds",
