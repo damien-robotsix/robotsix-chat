@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Documented `server.min_check_loop_interval_seconds` / `MIN_CHECK_LOOP_INTERVAL_SECONDS` in configuration table.
 - Documented ``CONVERSATION_PERSIST_PATH`` / ``conversation.persist_path`` in
   configuration reference.
+- Added ``server.max_check_loops`` / ``MAX_CHECK_LOOPS`` to docs.
 - Enabled ``env_doc_sync`` periodic workflow via
   ``.robotsix-mill/periodic/env_doc_sync.yaml`` presence file.
 - Documented ``VERSION_CHECK_*`` env vars (6 vars) in ``docs/configuration.md``
