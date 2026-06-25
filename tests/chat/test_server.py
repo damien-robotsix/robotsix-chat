@@ -413,6 +413,115 @@ async def test_sessions_delete_missing_owner_id_returns_400() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Sessions close endpoint — POST /sessions/{id}/close
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sessions_close_stops_loops_and_marks_closed() -> None:
+    """``POST /sessions/{id}/close`` stops loops + cancels tasks + marks closed."""
+    store = ConversationStore()
+    sid = str(store.create_session("owner-close")["session_id"])
+    loop_reg = CheckLoopRegistry(store_path=None)
+    loop_reg.register(
+        sid,
+        "watch something",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    task_reg = TaskRegistry()
+    task_reg.register(
+        sid,
+        "do work",
+        _fake_coro(),  # type: ignore[arg-type]
+    )
+
+    async with mock_app(
+        conversation_store=store,
+        check_loop_registry=loop_reg,
+        task_registry=task_reg,
+    ) as f:
+        response = await f.client.post(f"/sessions/{sid}/close?owner_id=owner-close")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["closed"] is True
+    assert data["session_id"] == sid
+    assert data["loops_stopped"] == 1
+    assert data["tasks_cancelled"] == 1
+
+    # Session still exists, marked closed.
+    assert store.is_session_closed(sid) is True
+    sessions, _ = store.list_sessions("owner-close")
+    assert sid in [s["session_id"] for s in sessions]
+    assert sessions[0]["closed"] is True
+
+    # Loops and tasks are stopped/cancelled.
+    assert all(
+        loop.status.value == "stopped" for loop in loop_reg.list_for_session(sid)
+    )
+    assert all(
+        t.status.value == "failed" for t in task_reg.list_for_session(sid)
+    )
+
+
+@pytest.mark.asyncio
+async def test_sessions_close_unknown_returns_404() -> None:
+    """``POST /sessions/{id}/close`` of an unknown session returns 404."""
+    store = ConversationStore()
+    store.create_session("owner-e")
+    async with mock_app(conversation_store=store) as f:
+        response = await f.client.post("/sessions/ghost/close?owner_id=owner-e")
+    assert response.status_code == 404
+    data = response.json()
+    assert "error" in data
+
+
+@pytest.mark.asyncio
+async def test_sessions_close_missing_owner_id_returns_400() -> None:
+    """``POST /sessions/{id}/close`` without ``owner_id`` returns 400."""
+    async with mock_app() as f:
+        response = await f.client.post("/sessions/whatever/close")
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_sessions_close_cleans_orphaned_loops() -> None:
+    """Close endpoint stops loops even when the session is not owned by the caller."""
+    store = ConversationStore()
+    store.create_session("real-owner")  # registers the owner
+    loop_reg = CheckLoopRegistry(store_path=None)
+    # Register a loop for a session that belongs to a different owner.
+    loop_reg.register(
+        "orphan-sid",
+        "orphan check",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+
+    async with mock_app(
+        conversation_store=store,
+        check_loop_registry=loop_reg,
+    ) as f:
+        # Call close with the real owner but an orphan session id.
+        response = await f.client.post(
+            "/sessions/orphan-sid/close?owner_id=real-owner"
+        )
+
+    # Session not found for this owner → 404, but loop was still cleaned up.
+    assert response.status_code == 404
+    data = response.json()
+    assert data["loops_stopped"] == 1
+    # The loop registry still cleared it.
+    assert all(
+        loop.status.value == "stopped"
+        for loop in loop_reg.list_for_session("orphan-sid")
+    )
+
+
+# ---------------------------------------------------------------------------
 # Per-session isolation via /chat and /history
 # ---------------------------------------------------------------------------
 

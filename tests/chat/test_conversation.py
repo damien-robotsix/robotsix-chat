@@ -452,3 +452,76 @@ def test_delete_session_unknown_is_noop() -> None:
     # The real session is untouched.
     sessions, _ = store.list_sessions("o1")
     assert [s["session_id"] for s in sessions] == [a]
+
+
+# -- close session tests --------------------------------------------------
+
+
+def test_close_session_marks_session_closed() -> None:
+    """Closing a session sets its closed flag and preserves all data."""
+    store = _store()
+    sid = str(store.create_session("owner-1")["session_id"])
+    store.record(sid, "owner-1", "hello", "hi there")
+
+    result = store.close_session("owner-1", sid)
+    assert result == {"closed": True}
+    assert store.is_session_closed(sid) is True
+
+    # History and metadata are preserved.
+    sessions, _ = store.list_sessions("owner-1")
+    s = sessions[0]
+    assert s["session_id"] == sid
+    assert s["turn_count"] == 1
+    assert s["closed"] is True
+
+    history = store.history(sid)
+    assert history == [("hello", "hi there")]
+
+
+def test_close_session_unknown_owner_returns_closed_false() -> None:
+    """Closing a session for an unknown owner returns closed=False."""
+    store = _store()
+    store.create_session("owner-1")
+
+    result = store.close_session("nobody", "whatever")
+    assert result == {"closed": False, "reason": "session not found"}
+    assert store.is_session_closed("whatever") is False
+
+
+def test_close_session_unknown_session_returns_closed_false() -> None:
+    """Closing a session not owned by the owner returns closed=False."""
+    store = _store()
+    store.create_session("owner-1")
+
+    result = store.close_session("owner-1", "not-mine")
+    assert result == {"closed": False, "reason": "session not found"}
+
+
+def test_close_session_is_idempotent() -> None:
+    """Closing an already-closed session succeeds and is a no-op."""
+    store = _store()
+    sid = str(store.create_session("owner-1")["session_id"])
+
+    assert store.close_session("owner-1", sid) == {"closed": True}
+    assert store.close_session("owner-1", sid) == {"closed": True}
+    assert store.is_session_closed(sid) is True
+
+
+def test_is_session_closed_unknown_session_returns_false() -> None:
+    """An unknown/never-created session is treated as not closed."""
+    store = _store()
+    assert store.is_session_closed("ghost") is False
+
+
+def test_close_session_persists_closed_flag(tmp_path: Path) -> None:
+    """The closed flag survives a persist→load round-trip."""
+    path = tmp_path / "conversations.json"
+    store1 = _store(persist_path=path)
+    sid = str(store1.create_session("owner-1")["session_id"])
+    store1.close_session("owner-1", sid)
+
+    # Load into a fresh store.
+    store2 = _store(persist_path=path)
+    assert store2.is_session_closed(sid) is True
+    sessions, _ = store2.list_sessions("owner-1")
+    assert sessions[0]["closed"] is True

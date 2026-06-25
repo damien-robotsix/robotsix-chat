@@ -2171,3 +2171,148 @@ async def test_delegate_task_non_board_still_spawns() -> None:
     # A task_started frame was published.
     started_frames = [f for _, f in channel.frames if f["type"] == "task_started"]
     assert len(started_frames) == 1
+
+
+# ---------------------------------------------------------------------------
+# Closed-session gating
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_delegate_task_refuses_closed_session() -> None:
+    """``delegate_task`` returns a refusal message when the session is closed."""
+    store = ConversationStore()
+    sid = str(store.create_session("owner-1")["session_id"])
+    store.close_session("owner-1", sid)
+
+    registry = TaskRegistry()
+    channel = _FakeDeliveryChannel()
+    settings = Settings()
+
+    tools = build_delegation_tools(
+        settings,
+        registry,
+        channel,
+        session_id=sid,
+        conversation_store=store,
+    )
+    delegate_task = tools[0]
+
+    result = await delegate_task("Summarize this document")
+    assert "closed" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_delegate_task_allows_open_session() -> None:
+    """``delegate_task`` spawns work normally when the session is not closed."""
+    store = ConversationStore()
+    sid = str(store.create_session("owner-1")["session_id"])
+
+    registry = TaskRegistry()
+    channel = _FakeDeliveryChannel()
+    settings = Settings()
+
+    tools = build_delegation_tools(
+        settings,
+        registry,
+        channel,
+        session_id=sid,
+        conversation_store=store,
+        agent_factory=lambda s: _StubAgent(["done"]),
+    )
+    delegate_task = tools[0]
+
+    result = await delegate_task("Summarize this document")
+    task_id = _extract_task_id(result)
+    assert task_id
+    assert registry.get(task_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_start_check_loop_refuses_closed_session() -> None:
+    """``start_check_loop`` returns a refusal message when the session is closed."""
+    store = ConversationStore()
+    sid = str(store.create_session("owner-1")["session_id"])
+    store.close_session("owner-1", sid)
+
+    registry = CheckLoopRegistry(store_path=None)
+    settings = Settings()
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        session_id=sid,
+        conversation_store=store,
+    )
+    start_check_loop = tools[0]
+
+    result = await start_check_loop(
+        "Monitor something", interval_seconds=120
+    )
+    assert "closed" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_start_check_loop_allows_open_session() -> None:
+    """``start_check_loop`` spawns normally when the session is not closed."""
+    store = ConversationStore()
+    sid = str(store.create_session("owner-1")["session_id"])
+
+    registry = CheckLoopRegistry(store_path=None)
+    settings = Settings()
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        session_id=sid,
+        conversation_store=store,
+    )
+    start_check_loop = tools[0]
+
+    result = await start_check_loop(
+        "Monitor something", interval_seconds=120
+    )
+    assert "started" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_delegate_task_no_store_still_spawns() -> None:
+    """``delegate_task`` works when conversation_store is None (not provided)."""
+    registry = TaskRegistry()
+    channel = _FakeDeliveryChannel()
+    settings = Settings()
+
+    tools = build_delegation_tools(
+        settings,
+        registry,
+        channel,
+        session_id="s1",
+        conversation_store=None,
+        agent_factory=lambda s: _StubAgent(["done"]),
+    )
+    delegate_task = tools[0]
+
+    result = await delegate_task("Summarize this document")
+    task_id = _extract_task_id(result)
+    assert task_id
+    assert registry.get(task_id) is not None
+
+
+@pytest.mark.asyncio
+async def test_start_check_loop_no_store_still_spawns() -> None:
+    """``start_check_loop`` works normally when conversation_store is None."""
+    registry = CheckLoopRegistry(store_path=None)
+    settings = Settings()
+
+    tools = build_check_loop_tools(
+        settings,
+        registry,
+        session_id="s1",
+        conversation_store=None,
+    )
+    start_check_loop = tools[0]
+
+    result = await start_check_loop(
+        "Monitor something", interval_seconds=120
+    )
+    assert "started" in result.lower()

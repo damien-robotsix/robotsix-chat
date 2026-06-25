@@ -281,6 +281,7 @@ def build_delegation_tools(
     *,
     session_id: str = "",
     agent_factory: Callable[[Settings], ChatAgent] | None = None,
+    conversation_store: Any = None,
 ) -> list[Callable[..., Any]]:
     """Return the ``delegate_task`` tool for the foreground chat agent.
 
@@ -298,6 +299,10 @@ def build_delegation_tools(
     (the default), the runner's own default factory is used — which builds
     a sub-agent via :func:`~robotsix_chat.chat.server.create_agent_from_settings`
     with **no** delegation tools (preventing infinite recursion).
+
+    *conversation_store* is an optional :class:`ConversationStore` used to
+    gate task spawning: when the session is marked ``closed`` the tool
+    refuses to spawn new work and returns an explanatory message.
     """
 
     async def delegate_task(task_description: str) -> str:
@@ -331,6 +336,27 @@ def build_delegation_tools(
                 "those results are never returned. Use the consult_mill tool "
                 "to perform this board action inline instead."
             )
+
+        # Gate: refuse to spawn work in a closed session.
+        if conversation_store is not None:
+            try:
+                if conversation_store.is_session_closed(session_id):
+                    logger.info(
+                        "delegate_task blocked: session %s is closed", session_id
+                    )
+                    return (
+                        "I can't start a new background task — this session "
+                        "has been closed. No new work can be spawned."
+                    )
+            except Exception:
+                # If the store check itself fails (e.g. the store was torn
+                # down), let the task attempt proceed — the registry will
+                # still enforce capacity.
+                logger.debug(
+                    "delegate_task: session-closed check failed for session %s",
+                    session_id,
+                    exc_info=True,
+                )
 
         sid = session_id
 
@@ -423,6 +449,7 @@ def build_check_loop_tools(
     *,
     session_id: str = "",
     agent_factory: Callable[[Settings], ChatAgent] | None = None,
+    conversation_store: Any = None,
 ) -> list[Callable[..., Any]]:
     """Return the check-loop tools for the foreground chat agent.
 
@@ -443,6 +470,10 @@ def build_check_loop_tools(
     :func:`~robotsix_chat.chat.loops.spawn_check_loop`; when ``None``
     (the default), the runner's own default factory is used — which builds
     a sub-agent with **no** loop tools (preventing infinite recursion).
+
+    *conversation_store* is an optional :class:`ConversationStore` used to
+    gate loop spawning: when the session is marked ``closed`` the tool
+    refuses to spawn new work and returns an explanatory message.
 
     Ticks whose result matches the ``NO_CHANGE`` sentinel (or are empty)
     are suppressed — no SSE frame is published and no conversation turn is
@@ -509,6 +540,25 @@ def build_check_loop_tools(
 
         """
         sid = session_id
+
+        # Gate: refuse to spawn work in a closed session.
+        if conversation_store is not None:
+            try:
+                if conversation_store.is_session_closed(sid):
+                    logger.info(
+                        "start_check_loop blocked: session %s is closed", sid
+                    )
+                    return (
+                        "I can't start a new check loop — this session "
+                        "has been closed. No new work can be spawned."
+                    )
+            except Exception:
+                logger.debug(
+                    "start_check_loop: session-closed check failed for session %s",
+                    sid,
+                    exc_info=True,
+                )
+
         try:
             loop_id = spawn_check_loop(
                 session_id=sid,
