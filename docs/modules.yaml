@@ -62,6 +62,7 @@ modules:
       - src/robotsix_chat/config.py
       - tests/config/__init__.py
       - tests/config/test_config.py
+      - tests/config/test_system_prompt_governance.py
 
   - id: robotsix_chat.chat
     description: "Chat SSE server — HTTP + Server-Sent Events bridge for human-to-agent chat."
