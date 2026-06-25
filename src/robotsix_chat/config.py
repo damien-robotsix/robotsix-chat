@@ -274,7 +274,13 @@ class MillSettings(BaseModel):
         board_manager_id: Recipient agent id — the mill's NL board manager.
         repo_id: Optional repo to scope requests to; empty lets the board manager
             choose the target repo from the conversation.
-        timeout: Per-request timeout (seconds); generous, the recipient is an LLM.
+        timeout: Per-request timeout (seconds). The board manager is a
+            multi-turn LLM agent that legitimately takes tens of seconds — and
+            longer when its replies queue behind other mill work — so this is
+            deliberately generous. A fast pre-flight reachability check (see
+            ``BaseBrokeredClient``) fails in seconds when the broker/recipient
+            is actually unreachable, so this long timeout only governs a
+            reachable-but-slow board manager.
 
     """
 
@@ -286,7 +292,7 @@ class MillSettings(BaseModel):
     agent_id: str = "robotsix-chat"
     board_manager_id: str = "board-manager-robotsix-mill"
     repo_id: str = ""
-    timeout: float = 120.0
+    timeout: float = 300.0
 
 
 class MailSettings(BaseModel):
