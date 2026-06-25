@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Removed 123 vendored ``.local-deps/`` files (anyio, starlette, idna,
+  asgi_correlation_id) that were incorrectly committed; ``.gitignore`` already
+  covers ``local-deps/`` and ``*-deps/`` patterns.
 - Extracted shared ``safe_http_request`` helper to ``robotsix_chat.common.http``,
   consolidating the duplicated 3-way ``except (HTTPStatusError, TimeoutException,
   Exception)`` cascade that appeared verbatim in ``board_reader``, ``refdocs``,
