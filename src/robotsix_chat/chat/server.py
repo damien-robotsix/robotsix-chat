@@ -524,7 +524,10 @@ async def sessions_list_endpoint(request: Request) -> JSONResponse:
 
         {
           "sessions": [
-            {"session_id": "...", "title": "...", "last_active": 1.0, "turn_count": 3},
+            {
+              "session_id": "...", "title": "...",
+              "last_active": 1.0, "turn_count": 3, "closed": false
+            },
             ...
           ],
           "active_session_id": "..."
@@ -633,6 +636,76 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
         {
             "deleted": True,
             "active_session_id": result.get("active_session_id", ""),
+            "loops_stopped": loops_stopped,
+            "tasks_cancelled": tasks_cancelled,
+        }
+    )
+
+
+async def sessions_close_endpoint(request: Request) -> JSONResponse:
+    """Close (mark as closed) a session and stop its background work.
+
+    ``POST /sessions/{session_id}/close?owner_id=...`` stops every check loop
+    and cancels every in-flight background task owned by the session, marks
+    the session as ``closed`` (preventing it from spawning new work), and
+    returns::
+
+        {
+          "closed": true,
+          "session_id": "...",
+          "loops_stopped": 1,
+          "tasks_cancelled": 0
+        }
+
+    ``owner_id`` is required (query param).  Returns 404 when the session is
+    not found / not owned by *owner_id*.  Stopping loops/tasks is best-effort
+    and runs even when the session is not found (so orphaned work can still be
+    cleaned up).
+
+    Unlike ``DELETE /sessions/{session_id}``, closing preserves the session's
+    history and metadata — the session cannot spawn new background work but
+    its conversation history remains available.
+    """
+    session_id = request.path_params["session_id"]
+    owner_id = request.query_params.get("owner_id")
+    if not owner_id:
+        return JSONResponse(
+            {"error": "owner_id query parameter is required"}, status_code=400
+        )
+
+    # 1. Stop the session's check loops (registry may be unwired → None).
+    loops_stopped = 0
+    loop_registry = request.app.state.check_loop_registry
+    if loop_registry is not None:
+        loops_stopped = loop_registry.stop_all_for_session(
+            session_id, reason="session closed"
+        )
+
+    # 2. Cancel the session's in-flight background tasks.
+    tasks_cancelled = 0
+    task_registry = request.app.state.task_registry
+    if task_registry is not None:
+        tasks_cancelled = task_registry.cancel_all_for_session(session_id)
+
+    # 3. Mark the session as closed in the conversation store.
+    store: ConversationStore = request.app.state.conversation_store
+    result = store.close_session(owner_id, session_id)
+
+    if not result.get("closed"):
+        return JSONResponse(
+            {
+                "error": "session not found",
+                "session_id": session_id,
+                "loops_stopped": loops_stopped,
+                "tasks_cancelled": tasks_cancelled,
+            },
+            status_code=404,
+        )
+
+    return JSONResponse(
+        {
+            "closed": True,
+            "session_id": session_id,
             "loops_stopped": loops_stopped,
             "tasks_cancelled": tasks_cancelled,
         }
@@ -845,6 +918,11 @@ def create_app(
             "/sessions/{session_id}",
             sessions_delete_endpoint,
             methods=["DELETE"],
+        ),
+        Route(
+            "/sessions/{session_id}/close",
+            sessions_close_endpoint,
+            methods=["POST"],
         ),
         Route("/pending-questions", pending_questions_list_endpoint, methods=["GET"]),
         Route(
@@ -1084,6 +1162,7 @@ def create_agent_from_settings(
                         delivery_channel,
                         session_id=session_id,
                         agent_factory=_subagent_factory,
+                        conversation_store=conversation_store,
                     )
                 )
             if check_loop_registry is not None:
@@ -1094,6 +1173,7 @@ def create_agent_from_settings(
                         delivery_channel or NULL_CHANNEL,
                         session_id=session_id,
                         agent_factory=_subagent_factory,
+                        conversation_store=conversation_store,
                     )
                 )
             if pq_store is not None:

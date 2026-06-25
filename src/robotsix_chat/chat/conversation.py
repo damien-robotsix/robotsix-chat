@@ -66,6 +66,7 @@ class Session:
     wall_last_active: float = 0.0
     turns: list[Turn] = field(default_factory=list)
     turn_count: int = 0
+    closed: bool = False
 
 
 @dataclass
@@ -278,6 +279,7 @@ class ConversationStore:
                         "title": _DEFAULT_TITLE,
                         "last_active": new_session.wall_last_active,
                         "turn_count": 0,
+                        "closed": False,
                     }
                 ],
                 sid,
@@ -293,6 +295,7 @@ class ConversationStore:
                         "title": sess.title,
                         "last_active": sess.wall_last_active,
                         "turn_count": sess.turn_count,
+                        "closed": sess.closed,
                     }
                 )
         # Sort by last_active descending.
@@ -330,6 +333,7 @@ class ConversationStore:
             "title": _DEFAULT_TITLE,
             "last_active": now,
             "turn_count": 0,
+            "closed": False,
         }
 
     def delete_session(self, owner_id: str, session_id: str) -> dict[str, object]:
@@ -380,6 +384,40 @@ class ConversationStore:
             self._persist()
 
         return {"deleted": True, "active_session_id": owner.active_session_id}
+
+    def close_session(self, owner_id: str, session_id: str) -> dict[str, object]:
+        """Mark *session_id* as closed for *owner_id*.
+
+        A closed session cannot spawn new background tasks or check loops
+        (the tools gate on this flag).  Its history and metadata are preserved
+        — only the ``closed`` flag is set and no session data is removed.
+
+        Returns ``{"closed": True}`` on success, or
+        ``{"closed": False, "reason": "<explanation>"}`` when the owner is
+        unknown or the session is not owned by it.  Idempotent: closing an
+        already-closed session succeeds but is a no-op.
+        """
+        owner = self._owners.get(owner_id)
+        if owner is None or session_id not in owner.session_ids:
+            return {"closed": False, "reason": "session not found"}
+        session = self._sessions.get(session_id)
+        if session is None:
+            return {"closed": False, "reason": "session not found"}
+        session.closed = True
+        if self._persist_path is not None:
+            self._persist()
+        return {"closed": True}
+
+    def is_session_closed(self, session_id: str) -> bool:
+        """Return ``True`` when *session_id* is marked closed.
+
+        Unknown sessions (never created, or evicted) are treated as
+        **not closed** — they have no lifecycle flag to honour.
+        """
+        session = self._sessions.get(session_id)
+        if session is None:
+            return False
+        return session.closed
 
     # ------------------------------------------------------------------
     # Internals
@@ -522,6 +560,7 @@ class ConversationStore:
                     wall_last_active=float(last_active),
                     turns=turns,
                     turn_count=int(sraw.get("turn_count", len(turns))),
+                    closed=bool(sraw.get("closed", False)),
                 )
                 self._sessions[sid] = session
                 session_ids.add(sid)
@@ -614,6 +653,7 @@ class ConversationStore:
                         "last_active": session.wall_last_active,
                         "turn_count": session.turn_count,
                         "turns": [list(t) for t in session.turns],
+                        "closed": session.closed,
                     }
                 )
             if sessions_list:

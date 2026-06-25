@@ -9,6 +9,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added ``POST /sessions/{session_id}/close`` endpoint that marks a session as
+  closed, stops all its check loops, and cancels all its in-flight background
+  tasks.  The response reports counts of stopped loops and cancelled tasks.
+- Closed sessions are prevented from spawning new background work:
+  ``delegate_task`` and ``start_check_loop`` tools refuse to operate when the
+  session is marked closed.
+- The ``closed`` flag is persisted across restarts and visible in the session
+  list metadata.
+
 - Added Pending Questions panel above the chat input: the agent can raise
   structured questions via ``add_pending_question`` / ``update_pending_question`` /
   ``remove_pending_question`` tools, the user sees them in real time over the
