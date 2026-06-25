@@ -28,6 +28,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -324,6 +325,18 @@ def build_delegation_tools(
             completion.
 
         """
+        if _is_board_action(task_description):
+            logger.warning(
+                "delegate_task blocked: board action routed to consult_mill "
+                "(task_description preview: %.80s)",
+                task_description,
+            )
+            return (
+                "I can't delegate board/ticket work to a background task — "
+                "those results are never returned. Use the consult_mill tool "
+                "to perform this board action inline instead."
+            )
+
         cid = client_id
 
         # Build kwargs, omitting agent_factory when None so the runner uses
@@ -366,6 +379,35 @@ def build_delegation_tools(
 # ---------------------------------------------------------------------------
 # Check-loop tool factory
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Board-action detector — hard-blocks delegate_task from offloading
+# board/mill work to a background sub-agent (whose result is never
+# returned to the foreground).  Such work must be done inline via
+# consult_mill.
+# ---------------------------------------------------------------------------
+
+
+_BOARD_ACTION_PATTERNS = re.compile(
+    r"\b("
+    r"tickets?|board|mill|triage|epics?|backlog|"
+    r"consult_mill|file\s+(?:a|an)\b|log\s+(?:a|an)?\s*bug|"
+    r"report\s+(?:a|an)?\s*bug|open\s+(?:a|an)?\s*(?:ticket|issue)|"
+    r"create\s+(?:a|an)?\s*(?:ticket|issue)"
+    r")\b",
+    re.IGNORECASE,
+)
+
+
+def _is_board_action(task_description: str) -> bool:
+    """Return ``True`` when *task_description* describes a board/mill action.
+
+    Used to hard-block ``delegate_task`` from offloading board work to a
+    background sub-agent (whose result is never returned to the foreground).
+    Such work must be done inline via ``consult_mill``.
+    """
+    return bool(_BOARD_ACTION_PATTERNS.search(task_description))
 
 
 def _no_change_result(result: str) -> bool:

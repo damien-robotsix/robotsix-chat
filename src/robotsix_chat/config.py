@@ -543,7 +543,7 @@ class ConversationSettings(BaseModel):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 8
+SYSTEM_PROMPT_VERSION = 9
 
 
 class Settings(BaseModel):
@@ -635,7 +635,9 @@ class Settings(BaseModel):
         "use consult_mill — the broker-based board manager handles writes.\n"
         "– Do all board work inline — never offload board actions through "
         "delegate_task. Delegate-task results are never returned, so a "
-        "ticket filed that way may silently fail with no feedback.\n"
+        "ticket filed that way may silently fail with no feedback. "
+        "This is now enforced — delegate_task will refuse board/ticket "
+        "work and direct you to consult_mill.\n"
         "– Before filing ANY new ticket, list_board_tickets for the target "
         "repo and check whether an existing OPEN ticket already covers the "
         "same intent; comment on / reuse it instead of filing a duplicate. "
