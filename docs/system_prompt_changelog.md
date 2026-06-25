@@ -42,6 +42,18 @@ number.  To revert to a previous prompt:
 
 ---
 
+## v7 — 2026-06-24 — 20260624T212702Z-chat-agent-dedup-ticket-filing-before-su-6ed5
+
+**Summary:** Add dedup rule before ticket filing — the agent must check for
+existing open tickets covering the same intent before creating a new one, and
+act on `create_board_ticket`'s built-in duplicate warnings.
+
+**Rationale:** Prevents duplicate ticket creation by enforcing a pre-flight
+board read and requiring the agent to reuse existing tickets rather than filing
+duplicates.
+
+**SHA256:** `ae70fa569e48c2ef71d35a731a112ad0e4b490434ef2ddc8d0a19173e8a4099e`
+
 ## v6 — 2026-06-24 — 20260624T212708Z-chat-agents-enforce-the-three-sentences-236a
 
 Tighten conciseness rule: name prohibited output shapes explicitly.
