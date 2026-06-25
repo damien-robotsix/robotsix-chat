@@ -31,6 +31,7 @@ modules:
     paths:
       - src/robotsix_chat/board_reader/__init__.py
       - src/robotsix_chat/board_reader/client.py
+      - src/robotsix_chat/board_reader/dedup.py
       - tests/board_reader/__init__.py
       - tests/board_reader/test_board_reader.py
 
