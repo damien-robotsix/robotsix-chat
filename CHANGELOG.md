@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Enabled periodic ``board_cleanup`` workflow to expire stale retry-queue
+  entries, detect cache inconsistencies, and flag abandoned board duplicates.
 - Added ``POST /sessions/{session_id}/close`` endpoint that marks a session as
   closed, stops all its check loops, and cancels all its in-flight background
   tasks.  The response reports counts of stopped loops and cancelled tasks.
