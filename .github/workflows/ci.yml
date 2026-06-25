@@ -20,7 +20,7 @@ jobs:
         run: uv lock --check
 
   ci:
-    uses: damien-robotsix/robotsix-mill/.github/workflows/python-ci.yml@main
+    uses: damien-robotsix/robotsix-mill/.github/workflows/python-ci.yml@84de006ddcaee4926124edd588c0eaf06d7a61ec  # main
     with:
       python-version: "3.14"
       cov-package: "robotsix_chat"
@@ -50,7 +50,7 @@ jobs:
       - uses: github/codeql-action/analyze@dd903d2e4f5405488e5ef1422510ee31c8b32357  # v3
 
   security:
-    uses: damien-robotsix/robotsix-mill/.github/workflows/python-security.yml@main
+    uses: damien-robotsix/robotsix-mill/.github/workflows/python-security.yml@84de006ddcaee4926124edd588c0eaf06d7a61ec  # main
     with:
       install-extras: ""
       trufflehog-pr-diff: true
