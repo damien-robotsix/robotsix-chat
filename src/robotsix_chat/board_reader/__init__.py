@@ -95,6 +95,7 @@ def build_board_reader_tools(
         description: str,
         repo_id: str,
         kind: str = "",
+        force: bool = False,
     ) -> str:
         """Create a new ticket on the board directly.
 
@@ -107,6 +108,13 @@ def build_board_reader_tools(
         Prefer this over ``delegate_task`` for simple ticket creation — it is
         faster and uses fewer tokens.
 
+        Before creating, this tool checks for likely duplicates among OPEN
+        tickets on the target repo and surfaces candidates so you can comment
+        on / reuse the existing ticket instead.  If a candidate is flagged,
+        the tool returns a descriptive warning WITHOUT posting; you should
+        then ``read_board_ticket`` the candidate(s) and decide whether to
+        comment/reuse or to override by re-calling with ``force=True``.
+
         Args:
             title: Short, descriptive title for the ticket (required).
             description: Full description / body — be thorough; include
@@ -115,12 +123,66 @@ def build_board_reader_tools(
                 ``"robotsix-mill"``).  Required.
             kind: Optional ticket kind hint (e.g. ``"task"``, ``"bug"``,
                 ``"epic"``).  Empty string = board default (usually "task").
+            force: Set ``force=True`` ONLY after confirming via
+                ``read_board_ticket`` that the existing candidate(s) are
+                genuinely a different intent.
 
         Returns:
             The board API's JSON response as a text string (the created
-            ticket), or an error message on failure.
+            ticket), or an error message on failure, OR a duplicate-warning
+            message listing candidate ticket(s) to review.
 
         """
+        import json
+
+        from .dedup import find_duplicate_candidates
+
+        if not force:
+            raw = await client.list_tickets(
+                repo_id=repo_id,
+                include_closed=False,
+            )
+            tickets: list[dict[str, Any]] = []
+            parse_ok = True
+            try:
+                parsed = json.loads(raw)
+                if isinstance(parsed, list):
+                    tickets = parsed
+                else:
+                    parse_ok = False
+            except (json.JSONDecodeError, TypeError):
+                parse_ok = False
+
+            if not parse_ok:
+                logger.warning(
+                    "create_board_ticket: list_tickets returned non-JSON list; "
+                    "proceeding to create (fail-open). raw=%r",
+                    raw[:200] if isinstance(raw, str) else repr(raw)[:200],
+                )
+            else:
+                candidates = find_duplicate_candidates(title, tickets)
+                if candidates:
+                    lines = [
+                        "⚠️ Likely duplicate ticket(s) found — NOT created.",
+                        "",
+                        "Existing OPEN ticket(s) with a similar title:",
+                    ]
+                    for c in candidates:
+                        cid = c.get("id", "?")
+                        ctitle = c.get("title", "?")
+                        cstate = c.get("state", "?")
+                        lines.append(f'  – {cid}  state={cstate}  title="{ctitle}"')
+                    lines.append("")
+                    lines.append(
+                        "ACTION: Use read_board_ticket to inspect the "
+                        "candidate(s). If they cover the same intent, "
+                        "comment on / reuse the existing ticket instead "
+                        "of filing a duplicate. If your intent is "
+                        "genuinely distinct, re-call "
+                        "create_board_ticket with force=True."
+                    )
+                    return "\n".join(lines)
+
         return await client.create_ticket(
             title=title,
             description=description,

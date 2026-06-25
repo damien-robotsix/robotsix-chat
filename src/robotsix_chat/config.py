@@ -543,7 +543,7 @@ class ConversationSettings(BaseModel):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 6
+SYSTEM_PROMPT_VERSION = 7
 
 
 class Settings(BaseModel):
@@ -636,6 +636,11 @@ class Settings(BaseModel):
         "– Do all board work inline — never offload board actions through "
         "delegate_task. Delegate-task results are never returned, so a "
         "ticket filed that way may silently fail with no feedback.\n"
+        "– Before filing ANY new ticket, list_board_tickets for the target "
+        "repo and check whether an existing OPEN ticket already covers the "
+        "same intent; comment on / reuse it instead of filing a duplicate. "
+        "create_board_ticket does this for you automatically and will warn "
+        "if a similar ticket exists — act on that warning.\n"
         "– After creating a ticket via consult_mill, verify it landed on "
         "the correct board with list_board_tickets. New tickets default "
         "to robotsix-mill regardless of source; if misplaced, request a "
