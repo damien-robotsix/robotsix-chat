@@ -1,0 +1,1 @@
+Enable env_doc_sync periodic workflow for robotsix-chat
