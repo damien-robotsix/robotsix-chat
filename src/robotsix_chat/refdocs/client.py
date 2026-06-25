@@ -8,11 +8,13 @@ returned as concise strings — nothing raises to the agent loop.
 from __future__ import annotations
 
 import base64
+import json
 import logging
 from typing import Any
 
 import httpx
 
+from robotsix_chat.common.http import safe_http_request
 from robotsix_chat.config import RefDocsSettings
 
 logger = logging.getLogger(__name__)
@@ -125,7 +127,13 @@ class RefDocsClient:
         headers: dict[str, str] = {"Accept": "application/vnd.github+json"}
         if self._s.github_token:
             headers["Authorization"] = f"Bearer {self._s.github_token}"
-        async with httpx.AsyncClient(timeout=self._s.timeout) as client:
-            resp = await client.get(url, headers=headers)
-            resp.raise_for_status()
-            return resp.json()
+        result = await safe_http_request(
+            "GET",
+            url,
+            headers=headers,
+            timeout=self._s.timeout,
+            label="RefDocs",
+        )
+        if result.error:
+            raise RuntimeError(result.error)
+        return json.loads(result.text)  # type: ignore[arg-type]
