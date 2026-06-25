@@ -25,6 +25,7 @@ set as an environment variable.
 | `server.idle_timeout_minutes` | `IDLE_TIMEOUT_MINUTES` | `30` | Minutes of no user activity before the UI auto-restarts the conversation. `0` disables the feature. |
 | `server.max_background_tasks` | `MAX_BACKGROUND_TASKS` | `5` | Maximum number of concurrently-running background sub-agent tasks per process. |
 | `server.min_check_loop_interval_seconds` | `MIN_CHECK_LOOP_INTERVAL_SECONDS` | `60.0` | Minimum allowed interval between check-loop iterations, in seconds. |
+| `server.max_check_loops` | `MAX_CHECK_LOOPS` | `5` | Maximum number of concurrent check loops per process. |
 
 ## Image attachments
 
