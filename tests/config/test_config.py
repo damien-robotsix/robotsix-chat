@@ -8,12 +8,20 @@ import pytest
 
 from robotsix_chat.config import (
     AuthSettings,
+    BoardReaderSettings,
+    CalendarSettings,
+    ComponentAgentSettings,
+    ComponentClientSettings,
+    MailSettings,
     MemoryEmbeddingSettings,
     MemoryLlmSettings,
     MemorySettings,
     MillSettings,
+    PendingQuestionsSettings,
     RefDocsSettings,
+    SelfReviewSettings,
     Settings,
+    VersionCheckSettings,
 )
 
 # ---------------------------------------------------------------------------
@@ -74,6 +82,52 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "MIN_CHECK_LOOP_INTERVAL_SECONDS",
         "KNOWLEDGE_ENABLED",
         "KNOWLEDGE_PATH",
+        "BOARD_READER_ENABLED",
+        "BOARD_READER_API_BASE_URL",
+        "BOARD_READER_API_TOKEN",
+        "BOARD_READER_TIMEOUT",
+        "BOARD_READER_CACHE_TTL",
+        "CALENDAR_ENABLED",
+        "CALENDAR_BROKER_HOST",
+        "CALENDAR_BROKER_PORT",
+        "CALENDAR_BROKER_SCHEME",
+        "CALENDAR_BROKER_TOKEN",
+        "CALENDAR_AGENT_ID",
+        "CALENDAR_CALENDAR_AGENT_ID",
+        "CALENDAR_TIMEOUT",
+        "COMPONENT_AGENT_ENABLED",
+        "COMPONENT_AGENT_BROKER_HOST",
+        "COMPONENT_AGENT_BROKER_PORT",
+        "COMPONENT_AGENT_BROKER_SCHEME",
+        "COMPONENT_AGENT_BROKER_TOKEN",
+        "COMPONENT_AGENT_AGENT_ID",
+        "COMPONENT_AGENT_TIMEOUT",
+        "COMPONENT_CLIENT_ENABLED",
+        "COMPONENT_CLIENT_BROKER_HOST",
+        "COMPONENT_CLIENT_BROKER_PORT",
+        "COMPONENT_CLIENT_BROKER_SCHEME",
+        "COMPONENT_CLIENT_BROKER_TOKEN",
+        "COMPONENT_CLIENT_AGENT_ID",
+        "COMPONENT_CLIENT_TIMEOUT",
+        "MAIL_ENABLED",
+        "MAIL_BROKER_HOST",
+        "MAIL_BROKER_PORT",
+        "MAIL_BROKER_SCHEME",
+        "MAIL_BROKER_TOKEN",
+        "MAIL_AGENT_ID",
+        "MAIL_BOARD_MANAGER_ID",
+        "MAIL_TIMEOUT",
+        "MAX_IMAGES_PER_MESSAGE",
+        "MAX_IMAGE_BYTES",
+        "ALLOWED_IMAGE_MEDIA_TYPES",
+        "SELF_REVIEW_ENABLED",
+        "SELF_REVIEW_RECENT_ACTIVITY_LIMIT",
+        "VERSION_CHECK_ENABLED",
+        "VERSION_CHECK_REPO",
+        "VERSION_CHECK_GITHUB_TOKEN",
+        "VERSION_CHECK_BASE_URL",
+        "VERSION_CHECK_TIMEOUT",
+        "VERSION_CHECK_CACHE_TTL",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -1076,3 +1130,653 @@ def test_subagent_model_env_overrides_yaml(
     settings = Settings.load(config_path=config_file)
 
     assert settings.subagent_model == "haiku"
+
+
+# ---------------------------------------------------------------------------
+# Mail (broker integration)
+# ---------------------------------------------------------------------------
+
+
+def test_mail_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mail integration is off by default, with broker defaults present."""
+    _wipe_env_vars(monkeypatch)
+
+    settings = Settings.from_env()
+
+    assert settings.mail.enabled is False
+    assert settings.mail.broker_host == "ai-broker.robotsix.net"
+    assert settings.mail.broker_port == 443
+    assert settings.mail.broker_scheme == "https"
+    assert settings.mail.agent_id == "robotsix-chat"
+    assert settings.mail.board_manager_id == "board-manager-robotsix-auto-mail"
+    assert settings.mail.timeout == 240.0
+
+
+def test_mail_enabled_requires_token() -> None:
+    """Enabling mail without a broker token is rejected."""
+    with pytest.raises(ValueError, match="mail.broker_token"):
+        Settings(mail=MailSettings(enabled=True))
+
+
+def test_mail_enabled_with_token_ok() -> None:
+    """Mail constructs once a broker token is present."""
+    settings = Settings(mail=MailSettings(enabled=True, broker_token="tok"))
+    assert settings.mail.enabled is True
+
+
+def test_mail_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``MAIL_*`` env vars populate the nested mail settings."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("MAIL_ENABLED", "true")
+    monkeypatch.setenv("MAIL_BROKER_TOKEN", "sek")
+    monkeypatch.setenv("MAIL_BROKER_PORT", "8443")
+    monkeypatch.setenv("MAIL_BOARD_MANAGER_ID", "board-manager-custom")
+
+    settings = Settings.from_env()
+
+    assert settings.mail.enabled is True
+    assert settings.mail.broker_token == "sek"  # pragma: allowlist secret
+    assert settings.mail.broker_port == 8443
+    assert settings.mail.board_manager_id == "board-manager-custom"
+
+
+def test_mail_port_invalid_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-numeric ``MAIL_BROKER_PORT`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("MAIL_BROKER_PORT", "https")
+
+    with pytest.raises(ValueError, match="MAIL_BROKER_PORT"):
+        Settings.from_env()
+
+
+def test_mail_env_overrides_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``MAIL_*`` env vars win over YAML, field-by-field."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text(
+        "mail:\n  enabled: true\n  broker_host: yaml-host\n  broker_token: yaml-tok\n"
+    )
+    monkeypatch.setenv("MAIL_BROKER_HOST", "env-host")
+    monkeypatch.setenv("MAIL_BROKER_TOKEN", "env-tok")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.mail.enabled is True
+    assert settings.mail.broker_host == "env-host"
+    assert settings.mail.broker_token == "env-tok"  # pragma: allowlist secret
+
+
+# ---------------------------------------------------------------------------
+# Calendar (broker integration)
+# ---------------------------------------------------------------------------
+
+
+def test_calendar_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Calendar integration is off by default, with broker defaults present."""
+    _wipe_env_vars(monkeypatch)
+
+    settings = Settings.from_env()
+
+    assert settings.calendar.enabled is False
+    assert settings.calendar.broker_host == "ai-broker.robotsix.net"
+    assert settings.calendar.broker_port == 443
+    assert settings.calendar.broker_scheme == "https"
+    assert settings.calendar.agent_id == "robotsix-chat"
+    assert settings.calendar.calendar_agent_id == "robotsix-calendar"
+    assert settings.calendar.timeout == 240.0
+
+
+def test_calendar_enabled_requires_token() -> None:
+    """Enabling calendar without a broker token is rejected."""
+    with pytest.raises(ValueError, match="calendar.broker_token"):
+        Settings(calendar=CalendarSettings(enabled=True))
+
+
+def test_calendar_enabled_with_token_ok() -> None:
+    """Calendar constructs once a broker token is present."""
+    settings = Settings(calendar=CalendarSettings(enabled=True, broker_token="tok"))
+    assert settings.calendar.enabled is True
+
+
+def test_calendar_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``CALENDAR_*`` env vars populate the nested calendar settings."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("CALENDAR_ENABLED", "true")
+    monkeypatch.setenv("CALENDAR_BROKER_TOKEN", "sek")
+    monkeypatch.setenv("CALENDAR_BROKER_PORT", "8443")
+    monkeypatch.setenv("CALENDAR_CALENDAR_AGENT_ID", "my-cal-agent")
+
+    settings = Settings.from_env()
+
+    assert settings.calendar.enabled is True
+    assert settings.calendar.broker_token == "sek"  # pragma: allowlist secret
+    assert settings.calendar.broker_port == 8443
+    assert settings.calendar.calendar_agent_id == "my-cal-agent"
+
+
+def test_calendar_port_invalid_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-numeric ``CALENDAR_BROKER_PORT`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("CALENDAR_BROKER_PORT", "https")
+
+    with pytest.raises(ValueError, match="CALENDAR_BROKER_PORT"):
+        Settings.from_env()
+
+
+def test_calendar_env_overrides_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``CALENDAR_*`` env vars win over YAML, field-by-field."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text(
+        "calendar:\n"
+        "  enabled: true\n"
+        "  broker_host: yaml-host\n"
+        "  broker_token: yaml-tok\n"
+    )
+    monkeypatch.setenv("CALENDAR_BROKER_HOST", "env-host")
+    monkeypatch.setenv("CALENDAR_BROKER_TOKEN", "env-tok")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.calendar.enabled is True
+    assert settings.calendar.broker_host == "env-host"
+    assert settings.calendar.broker_token == "env-tok"  # pragma: allowlist secret
+
+
+# ---------------------------------------------------------------------------
+# Board reader (direct HTTP board API)
+# ---------------------------------------------------------------------------
+
+
+def test_board_reader_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Board reader is off by default, with sensible defaults present."""
+    _wipe_env_vars(monkeypatch)
+
+    settings = Settings.from_env()
+
+    assert settings.board_reader.enabled is False
+    assert settings.board_reader.api_base_url == "http://127.0.0.1:8077"
+    assert settings.board_reader.api_token == ""
+    assert settings.board_reader.timeout == 30.0
+    assert settings.board_reader.cache_ttl == 60.0
+
+
+def test_board_reader_enabled_ok() -> None:
+    """Board reader constructs with no extra requirements beyond enabled."""
+    settings = Settings(board_reader=BoardReaderSettings(enabled=True))
+    assert settings.board_reader.enabled is True
+
+
+def test_board_reader_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``BOARD_READER_*`` env vars populate the nested board reader settings."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("BOARD_READER_ENABLED", "true")
+    monkeypatch.setenv("BOARD_READER_API_BASE_URL", "http://board:8077")
+    monkeypatch.setenv("BOARD_READER_API_TOKEN", "bsek")
+    monkeypatch.setenv("BOARD_READER_TIMEOUT", "15.5")
+    monkeypatch.setenv("BOARD_READER_CACHE_TTL", "120.0")
+
+    settings = Settings.from_env()
+
+    assert settings.board_reader.enabled is True
+    assert settings.board_reader.api_base_url == "http://board:8077"
+    assert settings.board_reader.api_token == "bsek"  # pragma: allowlist secret
+    assert settings.board_reader.timeout == 15.5
+    assert settings.board_reader.cache_ttl == 120.0
+
+
+def test_board_reader_timeout_invalid_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-numeric ``BOARD_READER_TIMEOUT`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("BOARD_READER_TIMEOUT", "slow")
+
+    with pytest.raises(ValueError, match="BOARD_READER_TIMEOUT"):
+        Settings.from_env()
+
+
+def test_board_reader_env_overrides_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``BOARD_READER_*`` env vars win over YAML, field-by-field."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text(
+        "board_reader:\n"
+        "  enabled: true\n"
+        "  api_base_url: http://yaml:8077\n"
+        "  timeout: 10.0\n"
+    )
+    monkeypatch.setenv("BOARD_READER_API_BASE_URL", "http://env:8077")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.board_reader.enabled is True
+    assert settings.board_reader.api_base_url == "http://env:8077"
+    assert settings.board_reader.timeout == 10.0  # un-overridden YAML
+
+
+# ---------------------------------------------------------------------------
+# Self review
+# ---------------------------------------------------------------------------
+
+
+def test_self_review_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Self review is off by default, with sensible defaults present."""
+    _wipe_env_vars(monkeypatch)
+
+    settings = Settings.from_env()
+
+    assert settings.self_review.enabled is False
+    assert settings.self_review.recent_activity_limit == 20
+
+
+def test_self_review_disabled_ok() -> None:
+    """Self review can be disabled explicitly — no extra requirements."""
+    settings = Settings(self_review=SelfReviewSettings(enabled=False))
+    assert settings.self_review.enabled is False
+
+
+def test_self_review_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``SELF_REVIEW_*`` env vars populate the nested self review settings."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("SELF_REVIEW_ENABLED", "true")
+    monkeypatch.setenv("SELF_REVIEW_RECENT_ACTIVITY_LIMIT", "50")
+
+    settings = Settings.from_env()
+
+    assert settings.self_review.enabled is True
+    assert settings.self_review.recent_activity_limit == 50
+
+
+def test_self_review_limit_invalid_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-numeric ``SELF_REVIEW_RECENT_ACTIVITY_LIMIT`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("SELF_REVIEW_RECENT_ACTIVITY_LIMIT", "many")
+
+    with pytest.raises(ValueError, match="SELF_REVIEW_RECENT_ACTIVITY_LIMIT"):
+        Settings.from_env()
+
+
+def test_self_review_env_overrides_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``SELF_REVIEW_*`` env vars win over YAML, field-by-field."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text(
+        "self_review:\n  enabled: false\n  recent_activity_limit: 10\n"
+    )
+    monkeypatch.setenv("SELF_REVIEW_RECENT_ACTIVITY_LIMIT", "30")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.self_review.enabled is False  # from YAML
+    assert settings.self_review.recent_activity_limit == 30  # env wins
+
+
+# ---------------------------------------------------------------------------
+# Version check
+# ---------------------------------------------------------------------------
+
+
+def test_version_check_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Version check is off by default, with sensible defaults present."""
+    _wipe_env_vars(monkeypatch)
+
+    settings = Settings.from_env()
+
+    assert settings.version_check.enabled is False
+    assert settings.version_check.repo == ""
+    assert settings.version_check.github_token == ""
+    assert settings.version_check.base_url == "https://api.github.com"
+    assert settings.version_check.timeout == 30.0
+    assert settings.version_check.cache_ttl == 300.0
+
+
+def test_version_check_enabled_requires_repo() -> None:
+    """Enabling version check without a repo is rejected."""
+    with pytest.raises(ValueError, match="version_check.repo"):
+        Settings(version_check=VersionCheckSettings(enabled=True))
+
+
+def test_version_check_enabled_with_repo_ok() -> None:
+    """Version check constructs once a repo is present."""
+    settings = Settings(
+        version_check=VersionCheckSettings(enabled=True, repo="robotsix/robotsix-chat")
+    )
+    assert settings.version_check.enabled is True
+
+
+def test_version_check_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``VERSION_CHECK_*`` env vars populate the nested version check settings."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("VERSION_CHECK_ENABLED", "true")
+    monkeypatch.setenv("VERSION_CHECK_REPO", "org/repo")
+    monkeypatch.setenv("VERSION_CHECK_GITHUB_TOKEN", "ghp_test")
+    monkeypatch.setenv("VERSION_CHECK_BASE_URL", "https://ghe.example.com/api/v3")
+    monkeypatch.setenv("VERSION_CHECK_TIMEOUT", "15.0")
+    monkeypatch.setenv("VERSION_CHECK_CACHE_TTL", "600.0")
+
+    settings = Settings.from_env()
+
+    assert settings.version_check.enabled is True
+    assert settings.version_check.repo == "org/repo"
+    assert settings.version_check.github_token == "ghp_test"  # pragma: allowlist secret
+    assert settings.version_check.base_url == "https://ghe.example.com/api/v3"
+    assert settings.version_check.timeout == 15.0
+    assert settings.version_check.cache_ttl == 600.0
+
+
+def test_version_check_timeout_invalid_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-numeric ``VERSION_CHECK_TIMEOUT`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("VERSION_CHECK_TIMEOUT", "slow")
+
+    with pytest.raises(ValueError, match="VERSION_CHECK_TIMEOUT"):
+        Settings.from_env()
+
+
+def test_version_check_env_overrides_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``VERSION_CHECK_*`` env vars win over YAML, field-by-field."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text(
+        "version_check:\n  enabled: true\n  repo: yaml/repo\n  timeout: 10.0\n"
+    )
+    monkeypatch.setenv("VERSION_CHECK_REPO", "env/repo")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.version_check.enabled is True
+    assert settings.version_check.repo == "env/repo"
+    assert settings.version_check.timeout == 10.0  # un-overridden YAML
+
+
+# ---------------------------------------------------------------------------
+# Component agent (broker responder)
+# ---------------------------------------------------------------------------
+
+
+def test_component_agent_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Component agent responder is off by default, with broker defaults."""
+    _wipe_env_vars(monkeypatch)
+
+    settings = Settings.from_env()
+
+    assert settings.component_agent.enabled is False
+    assert settings.component_agent.broker_host == "ai-broker.robotsix.net"
+    assert settings.component_agent.broker_port == 443
+    assert settings.component_agent.broker_scheme == "https"
+    assert settings.component_agent.agent_id == "robotsix-chat-component"
+    assert settings.component_agent.timeout == 240.0
+
+
+def test_component_agent_enabled_requires_token() -> None:
+    """Enabling component agent without a broker token is rejected."""
+    with pytest.raises(ValueError, match="component_agent.broker_token"):
+        Settings(component_agent=ComponentAgentSettings(enabled=True))
+
+
+def test_component_agent_enabled_with_token_ok() -> None:
+    """Component agent constructs once a broker token is present."""
+    settings = Settings(
+        component_agent=ComponentAgentSettings(enabled=True, broker_token="tok")
+    )
+    assert settings.component_agent.enabled is True
+
+
+def test_component_agent_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``COMPONENT_AGENT_*`` env vars populate the component agent settings."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("COMPONENT_AGENT_ENABLED", "true")
+    monkeypatch.setenv("COMPONENT_AGENT_BROKER_TOKEN", "sek")
+    monkeypatch.setenv("COMPONENT_AGENT_BROKER_PORT", "8443")
+    monkeypatch.setenv("COMPONENT_AGENT_AGENT_ID", "my-component")
+
+    settings = Settings.from_env()
+
+    assert settings.component_agent.enabled is True
+    assert settings.component_agent.broker_token == "sek"  # pragma: allowlist secret
+    assert settings.component_agent.broker_port == 8443
+    assert settings.component_agent.agent_id == "my-component"
+
+
+def test_component_agent_port_invalid_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-numeric ``COMPONENT_AGENT_BROKER_PORT`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("COMPONENT_AGENT_BROKER_PORT", "https")
+
+    with pytest.raises(ValueError, match="COMPONENT_AGENT_BROKER_PORT"):
+        Settings.from_env()
+
+
+def test_component_agent_env_overrides_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``COMPONENT_AGENT_*`` env vars win over YAML, field-by-field."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text(
+        "component_agent:\n"
+        "  enabled: true\n"
+        "  broker_host: yaml-host\n"
+        "  broker_token: yaml-tok\n"
+    )
+    monkeypatch.setenv("COMPONENT_AGENT_BROKER_HOST", "env-host")
+    monkeypatch.setenv("COMPONENT_AGENT_BROKER_TOKEN", "env-tok")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.component_agent.enabled is True
+    assert settings.component_agent.broker_host == "env-host"
+    assert (
+        settings.component_agent.broker_token == "env-tok"
+    )  # pragma: allowlist secret
+
+
+# ---------------------------------------------------------------------------
+# Component client (broker requester)
+# ---------------------------------------------------------------------------
+
+
+def test_component_client_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Component client is off by default, with broker defaults present."""
+    _wipe_env_vars(monkeypatch)
+
+    settings = Settings.from_env()
+
+    assert settings.component_client.enabled is False
+    assert settings.component_client.broker_host == "ai-broker.robotsix.net"
+    assert settings.component_client.broker_port == 443
+    assert settings.component_client.broker_scheme == "https"
+    assert settings.component_client.agent_id == "robotsix-chat"
+    assert settings.component_client.timeout == 240.0
+    assert settings.component_client.components == []
+
+
+def test_component_client_enabled_requires_token() -> None:
+    """Enabling component client without a broker token is rejected."""
+    with pytest.raises(ValueError, match="component_client.broker_token"):
+        Settings(component_client=ComponentClientSettings(enabled=True))
+
+
+def test_component_client_enabled_with_token_ok() -> None:
+    """Component client constructs once a broker token is present."""
+    settings = Settings(
+        component_client=ComponentClientSettings(enabled=True, broker_token="tok")
+    )
+    assert settings.component_client.enabled is True
+
+
+def test_component_client_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``COMPONENT_CLIENT_*`` env vars populate the component client settings."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("COMPONENT_CLIENT_ENABLED", "true")
+    monkeypatch.setenv("COMPONENT_CLIENT_BROKER_TOKEN", "sek")
+    monkeypatch.setenv("COMPONENT_CLIENT_BROKER_PORT", "8443")
+    monkeypatch.setenv("COMPONENT_CLIENT_AGENT_ID", "my-client")
+
+    settings = Settings.from_env()
+
+    assert settings.component_client.enabled is True
+    assert settings.component_client.broker_token == "sek"  # pragma: allowlist secret
+    assert settings.component_client.broker_port == 8443
+    assert settings.component_client.agent_id == "my-client"
+
+
+def test_component_client_port_invalid_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-numeric ``COMPONENT_CLIENT_BROKER_PORT`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("COMPONENT_CLIENT_BROKER_PORT", "https")
+
+    with pytest.raises(ValueError, match="COMPONENT_CLIENT_BROKER_PORT"):
+        Settings.from_env()
+
+
+def test_component_client_env_overrides_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``COMPONENT_CLIENT_*`` env vars win over YAML, field-by-field."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text(
+        "component_client:\n"
+        "  enabled: true\n"
+        "  broker_host: yaml-host\n"
+        "  broker_token: yaml-tok\n"
+    )
+    monkeypatch.setenv("COMPONENT_CLIENT_BROKER_HOST", "env-host")
+    monkeypatch.setenv("COMPONENT_CLIENT_BROKER_TOKEN", "env-tok")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.component_client.enabled is True
+    assert settings.component_client.broker_host == "env-host"
+    assert (
+        settings.component_client.broker_token == "env-tok"
+    )  # pragma: allowlist secret
+
+
+# ---------------------------------------------------------------------------
+# Pending questions
+# ---------------------------------------------------------------------------
+
+
+def test_pending_questions_enabled_by_default(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Pending questions is on by default."""
+    _wipe_env_vars(monkeypatch)
+
+    settings = Settings.from_env()
+
+    assert settings.pending_questions.enabled is True
+
+
+def test_pending_questions_disabled_ok() -> None:
+    """Pending questions can be disabled explicitly — no extra requirements."""
+    settings = Settings(pending_questions=PendingQuestionsSettings(enabled=False))
+    assert settings.pending_questions.enabled is False
+
+
+# ---------------------------------------------------------------------------
+# Top-level image attachment fields
+# ---------------------------------------------------------------------------
+
+
+def test_max_images_per_message_default() -> None:
+    """``max_images_per_message`` defaults to 8."""
+    settings = Settings()
+    assert settings.max_images_per_message == 8
+
+
+def test_max_images_per_message_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``MAX_IMAGES_PER_MESSAGE`` env var overrides the default."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("MAX_IMAGES_PER_MESSAGE", "16")
+
+    settings = Settings.from_env()
+
+    assert settings.max_images_per_message == 16
+
+
+def test_max_images_per_message_env_non_integer_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-integer ``MAX_IMAGES_PER_MESSAGE`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("MAX_IMAGES_PER_MESSAGE", "many")
+
+    with pytest.raises(ValueError, match="MAX_IMAGES_PER_MESSAGE"):
+        Settings.from_env()
+
+
+def test_max_image_bytes_default() -> None:
+    """``max_image_bytes`` defaults to 5_242_880 (5 MiB)."""
+    settings = Settings()
+    assert settings.max_image_bytes == 5_242_880
+
+
+def test_max_image_bytes_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``MAX_IMAGE_BYTES`` env var overrides the default."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("MAX_IMAGE_BYTES", "2097152")
+
+    settings = Settings.from_env()
+
+    assert settings.max_image_bytes == 2097152
+
+
+def test_max_image_bytes_env_non_integer_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-integer ``MAX_IMAGE_BYTES`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("MAX_IMAGE_BYTES", "big")
+
+    with pytest.raises(ValueError, match="MAX_IMAGE_BYTES"):
+        Settings.from_env()
+
+
+def test_allowed_image_media_types_default() -> None:
+    """``allowed_image_media_types`` defaults to four common image types."""
+    settings = Settings()
+    assert settings.allowed_image_media_types == [
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp",
+    ]
+
+
+def test_allowed_image_media_types_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``ALLOWED_IMAGE_MEDIA_TYPES`` env var (comma-separated) overrides default."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("ALLOWED_IMAGE_MEDIA_TYPES", "image/png, image/webp")
+
+    settings = Settings.from_env()
+
+    assert settings.allowed_image_media_types == ["image/png", "image/webp"]
