@@ -1176,6 +1176,11 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         settings=settings,
     )
 
+    # Shared pending-questions store wired to the event bus so the
+    # frontend panel receives real-time SSE updates when the agent
+    # adds / updates / removes entries.
+    pq_store = PendingQuestionsStore(event_bus=event_bus)
+
     if agent is None:
         agent = create_agent_from_settings(
             settings=settings,
@@ -1183,6 +1188,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             delivery_channel=channel,
             check_loop_registry=check_loop_registry,
             conversation_store=conversation_store,
+            pq_store=pq_store,
         )
 
     # -- resume persisted check loops after redeploy ----------------------
@@ -1249,6 +1255,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         event_bus=event_bus,
         check_loop_registry=check_loop_registry,
         run_serializer=run_serializer,
+        pq_store=pq_store,
         on_startup=_resume,
         on_startup_async=_start_responder,
         on_shutdown=_stop_responder,
