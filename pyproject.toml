@@ -164,6 +164,7 @@ strict = true
 testpaths = ["tests"]
 filterwarnings = ["error"]
 
+
 [tool.coverage.run]
 source = ["robotsix_chat"]
 branch = true

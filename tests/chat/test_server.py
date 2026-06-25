@@ -948,6 +948,10 @@ async def test_run_server_from_config_creates_agent_from_settings(
         assert callable(on_startup_async)
         on_shutdown = call_args[1].pop("on_shutdown")
         assert callable(on_shutdown)
+        pq_store = call_args[1].pop("pq_store")
+        from robotsix_chat.pending_questions.store import PendingQuestionsStore
+
+        assert isinstance(pq_store, PendingQuestionsStore)
         assert call_args[1] == {
             "host": "127.0.0.1",
             "port": 8080,

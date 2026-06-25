@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added Pending Questions panel above the chat input: the agent can raise
+  structured questions via ``add_pending_question`` / ``update_pending_question`` /
+  ``remove_pending_question`` tools, the user sees them in real time over the
+  existing SSE channel, and inline answers are fed back into the conversation.
 - Documented ``LLMIO_SUBAGENT_MODEL`` env var in ``docs/configuration.md``.
 - Documented `server.min_check_loop_interval_seconds` / `MIN_CHECK_LOOP_INTERVAL_SECONDS` in configuration table.
 - Documented ``CONVERSATION_PERSIST_PATH`` / ``conversation.persist_path`` in

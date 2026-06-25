@@ -29,6 +29,10 @@ SSE_LOOP_STOPPED_TYPE = "loop_stopped"
 SSE_LOOP_FAILED_TYPE = "loop_failed"
 SSE_LOOP_REPLY_TYPE = "loop_reply"
 
+SSE_PENDING_QUESTION_ADDED_TYPE = "pending_question_added"
+SSE_PENDING_QUESTION_UPDATED_TYPE = "pending_question_updated"
+SSE_PENDING_QUESTION_REMOVED_TYPE = "pending_question_removed"
+
 # ---------------------------------------------------------------------------
 # EventSink — structural Protocol for dependency injection
 # ---------------------------------------------------------------------------
@@ -267,6 +271,100 @@ def loop_reply_frame(
         "loop_id": loop_id,
         "iteration": iteration,
         "reply": reply,
+    }
+
+
+# ---------------------------------------------------------------------------
+# Pending-question frame builders
+# ---------------------------------------------------------------------------
+
+
+def pending_question_added_frame(
+    question_id: str,
+    session_id: str,
+    text: str,
+    *,
+    detail: str = "",
+    status: str = "pending",
+    created_at: float = 0.0,
+) -> dict[str, object]:
+    """Build a ``pending_question_added`` notification frame.
+
+    Returns a dict with shape::
+
+        {
+            "type": "pending_question_added",
+            "question_id": <str>,
+            "session_id": <str>,
+            "text": <str>,
+            "detail": <str>,
+            "status": <str>,
+            "created_at": <float>,
+        }
+    """
+    return {
+        "type": SSE_PENDING_QUESTION_ADDED_TYPE,
+        "question_id": question_id,
+        "session_id": session_id,
+        "text": text,
+        "detail": detail,
+        "status": status,
+        "created_at": created_at,
+    }
+
+
+def pending_question_updated_frame(
+    question_id: str,
+    session_id: str,
+    text: str,
+    *,
+    detail: str = "",
+    status: str = "pending",
+    created_at: float = 0.0,
+) -> dict[str, object]:
+    """Build a ``pending_question_updated`` notification frame.
+
+    Returns a dict with shape::
+
+        {
+            "type": "pending_question_updated",
+            "question_id": <str>,
+            "session_id": <str>,
+            "text": <str>,
+            "detail": <str>,
+            "status": <str>,
+            "created_at": <float>,
+        }
+    """
+    return {
+        "type": SSE_PENDING_QUESTION_UPDATED_TYPE,
+        "question_id": question_id,
+        "session_id": session_id,
+        "text": text,
+        "detail": detail,
+        "status": status,
+        "created_at": created_at,
+    }
+
+
+def pending_question_removed_frame(
+    question_id: str,
+    session_id: str,
+) -> dict[str, object]:
+    """Build a ``pending_question_removed`` notification frame.
+
+    Returns a dict with shape::
+
+        {
+            "type": "pending_question_removed",
+            "question_id": <str>,
+            "session_id": <str>,
+        }
+    """
+    return {
+        "type": SSE_PENDING_QUESTION_REMOVED_TYPE,
+        "question_id": question_id,
+        "session_id": session_id,
     }
 
 
