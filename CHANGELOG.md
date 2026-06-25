@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Documented ``LLMIO_SUBAGENT_MODEL`` env var in ``docs/configuration.md``.
 - Documented `server.min_check_loop_interval_seconds` / `MIN_CHECK_LOOP_INTERVAL_SECONDS` in configuration table.
+- Documented ``CONVERSATION_PERSIST_PATH`` / ``conversation.persist_path`` in
+  configuration reference.
 - Enabled ``env_doc_sync`` periodic workflow via
   ``.robotsix-mill/periodic/env_doc_sync.yaml`` presence file.
 - Removed 123 vendored ``.local-deps/`` files (anyio, starlette, idna,
