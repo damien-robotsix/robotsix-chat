@@ -123,7 +123,9 @@ modules:
     paths:
       - src/robotsix_chat/mill/__init__.py
       - src/robotsix_chat/mill/client.py
+      - src/robotsix_chat/mill/retry_queue.py
       - tests/mill/__init__.py
+      - tests/mill/test_board_write_retry.py
       - tests/mill/test_mill.py
 
   - id: robotsix_chat.mail
