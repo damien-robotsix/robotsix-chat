@@ -42,6 +42,21 @@ number.  To revert to a previous prompt:
 
 ---
 
+## v10 — 2026-06-25 — 20260625T123055Z-system-prompt-contains-internal-python-i-d0a8
+
+**Summary:** Replace calendar/task tools paragraph — remove three
+developer-facing identifiers (``build_calendar_tools()``,
+``CalendarSettings.enabled=False``, ``CALENDAR_BROKER_TOKEN``) that don't
+belong in an LLM system prompt, replacing them with LLM-appropriate language.
+
+**Rationale:** The prior text was copy-pasted from a development ticket
+without adaptation for the LLM audience.  The new text describes the tools'
+purpose and behaviour in terms the model can act on (availability,
+disabling, and the instruction to briefly note unavailability rather than
+proposing alternatives).
+
+**SHA256:** `1d0ec5213cf5931aff7ec8e7abe4f46f8320ac4c13bbba1ef1aa96040d3f4c37`
+
 ## v9 — 2026-06-25 — 20260624T212653Z-chat-agent-hard-block-delegate-task-for-0619
 
 **Summary:** Add enforcement note — ``delegate_task`` now refuses board/ticket
