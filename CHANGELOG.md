@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add `Makefile` with phony targets (`install`, `test`, `lint`, `format`,
+  `format-check`, `typecheck`, `security`, `clean`, `all`) wrapping common
+  `uv run` developer commands.
+
 - Add cost reconciliation periodic work (`.robotsix-mill/periodic/cost_reconciliation.yaml`) for automated LLM cost tracking and reconciliation.
 
 - Extracted image validation from ``chat_endpoint`` into a module-level

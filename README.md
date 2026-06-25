@@ -245,6 +245,18 @@ satisfies the `ChatAgent` protocol.
 ## Development
 
 ```bash
+make install                     # uv sync --all-extras
+make lint                        # ruff check
+make format-check                # ruff format --check
+make typecheck                   # mypy (strict)
+make test                        # pytest
+make all                         # lint + format-check + typecheck + test
+```
+
+Or use the raw `uv run` commands directly — the `Makefile` targets are
+thin wrappers with no hidden logic:
+
+```bash
 uv sync
 uv run ruff check .              # lint
 uv run ruff format --check .     # formatting

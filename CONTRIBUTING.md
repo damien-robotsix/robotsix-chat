@@ -10,7 +10,7 @@
 ```bash
 git clone https://github.com/robotsix/robotsix-chat.git
 cd robotsix-chat
-uv sync
+make install          # or: uv sync --all-extras
 pre-commit install
 ```
 
@@ -20,14 +20,21 @@ bandit, pip-audit, and detect-secrets.
 
 ## Running checks manually
 
-| Tool | Command | What it checks |
-|---|---|---|
-| ruff (lint) | `uv run ruff check .` | Code style, lint, and docstring rules |
-| ruff (format) | `uv run ruff format --check .` | Code formatting |
-| mypy | `uv run mypy .` | Static type checking (strict mode) |
-| bandit | `uv run bandit -c pyproject.toml -r src/` | Security linting |
-| pip-audit | `uv run pip-audit` | Known vulnerabilities in dependencies |
-| pytest | `uv run pytest` | Test suite |
+The `Makefile` provides convenient shorthand targets for common operations.
+`make lint`, `make typecheck`, `make test`, and `make all` (which runs
+lint + format-check + typecheck + test) are the quickest way to validate a
+change. Developers who prefer raw `uv run` can continue using the commands
+below; the Makefile targets are simple wrappers with no hidden logic.
+
+| Tool | `make` target | Raw command | What it checks |
+|---|---|---|---|
+| ruff (lint) | `make lint` | `uv run ruff check src/robotsix_chat tests` | Code style, lint, and docstring rules |
+| ruff (format check) | `make format-check` | `uv run ruff format --check src/robotsix_chat tests && uv run ruff check src/robotsix_chat tests` | Code formatting |
+| mypy | `make typecheck` | `uv run mypy src/robotsix_chat tests` | Static type checking (strict mode) |
+| bandit | `make security` | `uv run bandit -c pyproject.toml -r src/` | Security linting |
+| pip-audit | *(no target — use raw command)* | `uv run pip-audit` | Known vulnerabilities in dependencies |
+| pytest | `make test` | `uv run pytest` | Test suite |
+| all of the above | `make all` | *(runs lint, format-check, typecheck, test)* | Pre-PR validation |
 
 ## Testing conventions
 
