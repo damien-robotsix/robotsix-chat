@@ -285,7 +285,7 @@ class MillSettings(BaseModel):
     agent_id: str = "robotsix-chat"
     board_manager_id: str = "board-manager-robotsix-mill"
     repo_id: str = ""
-    timeout: float = 240.0
+    timeout: float = 120.0
 
 
 class MailSettings(BaseModel):

@@ -27,6 +27,7 @@ _INITIAL_DELAY = 900  # 15 min
 _MAX_DELAY = 14_400  # 4 hr
 _BACKOFF_FACTOR = 2
 _JITTER_FRACTION = 0.2  # ±20 %
+_MAX_RETRY_REQUEST_CHARS = 4000  # ~1k tokens; avoids re-sending full context on retry
 
 
 def _next_delay(attempt_count: int) -> float:
@@ -47,6 +48,22 @@ def _now_iso_after_delay(delay_seconds: float) -> str:
     return (datetime.now(UTC) + timedelta(seconds=delay_seconds)).isoformat()
 
 
+def _trim_request(request: str, max_chars: int) -> str:
+    """Return *request* unchanged if short enough, else drop the middle.
+
+    When the request exceeds *max_chars*, the returned string keeps the
+    first ``2 * max_chars // 3`` chars and the last ``max_chars // 3``
+    chars, joined by a marker noting how many chars were omitted.
+    """
+    if len(request) <= max_chars:
+        return request
+    head_len = 2 * max_chars // 3
+    tail_len = max_chars // 3
+    dropped = len(request) - head_len - tail_len
+    marker = f"\n…[retry-trim: omitted {dropped} chars of context]…\n"
+    return request[:head_len] + marker + request[-tail_len:]
+
+
 class BoardWriteRetryQueue:
     """Persistent queue that retries board writes after broker-unavailability failures.
 
@@ -59,10 +76,15 @@ class BoardWriteRetryQueue:
         self,
         consult_fn: Callable[[str], Awaitable[str]],
         queue_path: Path = _QUEUE_PATH,
+        max_request_chars: int = _MAX_RETRY_REQUEST_CHARS,
     ) -> None:
-        """Store *consult_fn* and *queue_path*, load any persisted entries."""
+        """Store *consult_fn*, *queue_path*, and *max_request_chars*.
+
+        Load any persisted entries.
+        """
         self._consult_fn = consult_fn
         self._queue_path = queue_path
+        self._max_request_chars = max_request_chars
         self._entries: dict[str, dict[str, Any]] = {}
         self._task: asyncio.Task[None] | None = None
         self._load()
@@ -77,7 +99,13 @@ class BoardWriteRetryQueue:
         If an entry with the same request hash is already pending (or
         failed), a short "already queued" message is returned instead of
         creating a duplicate.
+
+        The request is trimmed to *self._max_request_chars* before
+        deduplication and storage, so identical full requests always
+        produce the same entry id and each retry carries only the
+        trimmed context.
         """
+        request = _trim_request(request, self._max_request_chars)
         entry_id = hashlib.sha256(request.encode()).hexdigest()[:16]
         if entry_id in self._entries:
             existing = self._entries[entry_id]

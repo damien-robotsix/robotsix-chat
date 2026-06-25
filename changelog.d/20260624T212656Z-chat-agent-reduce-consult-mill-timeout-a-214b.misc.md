@@ -1,0 +1,1 @@
+chat agent: reduce consult_mill timeout and send trimmed context on retry (not full transcript)
