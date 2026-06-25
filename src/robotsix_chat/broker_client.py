@@ -14,9 +14,17 @@ import asyncio
 import logging
 from typing import Any
 
+import httpx
+
 logger = logging.getLogger(__name__)
 
 __all__ = ["BaseBrokeredClient", "BrokerUnavailableError"]
+
+# Short timeout for the pre-flight reachability probe (``GET /agents``). It
+# only does a cheap registry lookup, so a few seconds is plenty — the point is
+# to fail fast when the broker/recipient is down instead of waiting out the
+# full (long) request timeout.
+_PREFLIGHT_TIMEOUT_SECONDS = 5.0
 
 
 class BrokerUnavailableError(RuntimeError):
@@ -68,6 +76,7 @@ class BaseBrokeredClient:
         from robotsix_agent_comm.sdk import BrokeredRequester  # noqa: I001
 
         self._s = settings
+        self._target_agent_id = target_agent_id
         self._requester = BrokeredRequester(
             settings.agent_id,
             target_agent_id,
@@ -79,6 +88,43 @@ class BaseBrokeredClient:
             default_reply=default_reply,
         )
 
+    def _check_reachable(self) -> tuple[bool, str]:
+        """Pre-flight check that the broker is reachable and target registered.
+
+        Does a cheap authenticated ``GET /agents`` (short timeout) so a
+        genuinely-down broker or an offline recipient fails in a few seconds
+        instead of waiting out the full request timeout.  Returns
+        ``(ok, reason)``: ``ok=False`` means fail fast with *reason*.
+
+        Best-effort: any ambiguous outcome (non-200, unparseable body,
+        unexpected error) returns ``(True, "")`` so a flaky probe never blocks
+        an otherwise-valid request.  Blocking (uses ``httpx``); call via
+        :func:`asyncio.to_thread`.
+        """
+        s = self._s
+        url = f"{s.broker_scheme}://{s.broker_host}:{s.broker_port}/agents"
+        try:
+            resp = httpx.get(
+                url,
+                headers={"Authorization": f"Bearer {s.broker_token}"},
+                timeout=_PREFLIGHT_TIMEOUT_SECONDS,
+            )
+        except httpx.HTTPError as exc:
+            return False, f"broker unreachable ({exc})"
+
+        if resp.status_code != 200:
+            # Auth/rate-limit/other hiccup — don't block the real request on it.
+            return True, ""
+        try:
+            agents = {a.get("agent_id") for a in resp.json().get("agents", [])}
+        except (ValueError, AttributeError, TypeError):
+            return True, ""
+        if self._target_agent_id not in agents:
+            return False, (
+                f"agent '{self._target_agent_id}' is not registered on the broker"
+            )
+        return True, ""
+
     async def consult(
         self,
         request: str,
@@ -89,12 +135,22 @@ class BaseBrokeredClient:
     ) -> str:
         """Send *request* to the target agent, forwarding **extra_payload.
 
-        Raises :class:`BrokerUnavailableError` if the broker reports the target
-        agent is unreachable; all other broker/timeout/recipient errors are
-        caught and returned as a short message string.
+        Runs a fast pre-flight reachability check first; raises
+        :class:`BrokerUnavailableError` (in seconds) when the broker is down or
+        the target agent is not registered.  Otherwise sends the request with
+        the configured (generous) timeout.  Other broker/timeout/recipient
+        errors are caught and returned as a short message string.
         """
         if not request.strip():
             return empty_reply
+
+        # Fail fast on a down broker / offline recipient instead of hanging for
+        # the full request timeout.
+        ok, reason = await asyncio.to_thread(self._check_reachable)
+        if not ok:
+            logger.warning("%s preflight failed: %s", error_label, reason)
+            raise BrokerUnavailableError(reason)
+
         try:
             payload: dict[str, object] = {self._request_key: request, **extra_payload}
             return await asyncio.to_thread(self._requester.request, payload)

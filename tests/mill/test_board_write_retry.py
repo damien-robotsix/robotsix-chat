@@ -62,6 +62,7 @@ async def test_consult_raises_on_broker_unavailability(
     client = BaseBrokeredClient(
         _settings(), target_agent_id="t", default_reply="default"
     )
+    monkeypatch.setattr(client, "_check_reachable", lambda: (True, ""))
     with pytest.raises(BrokerUnavailableError) as exc_info:
         await client.consult("hello", empty_reply="E", error_label="test")
     assert "unknown recipient" in str(exc_info.value)
@@ -79,6 +80,7 @@ async def test_consult_returns_string_for_non_broker_errors(
     client = BaseBrokeredClient(
         _settings(), target_agent_id="t", default_reply="default"
     )
+    monkeypatch.setattr(client, "_check_reachable", lambda: (True, ""))
     out = await client.consult("hello", empty_reply="E", error_label="test")
     assert out.startswith("The test request could not be completed:")
 
