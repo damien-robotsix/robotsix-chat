@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Pinned all reusable workflow references to immutable commit SHAs and added CI workflow pinning conventions to ``AGENT.md``.
+
 - Enabled periodic ``board_cleanup`` workflow to expire stale retry-queue
   entries, detect cache inconsistencies, and flag abandoned board duplicates.
 - Added ``POST /sessions/{session_id}/close`` endpoint that marks a session as

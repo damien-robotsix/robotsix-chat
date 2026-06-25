@@ -207,6 +207,12 @@ added when off or when the `broker` extra is absent.
 - `src/robotsix_chat/chat/server.py` — Starlette ASGI app; `GET /`, `POST /chat`, `GET /health`
 - `.github/workflows/release-image.yml` — GHCR publish workflow (triggers on `main` push, `v*` tag, manual dispatch)
 
+## CI workflow conventions
+
+**Rule:** All third-party GitHub Actions must be pinned by immutable 40-character commit SHA with the semantic version as a trailing comment (e.g. `actions/checkout@11bd71901bbe5b1630ceea73d27597364c9af683  # v4.2.2`). Do not use mutable tags (`@v4`, `@v3`) without a SHA. Dependabot's `package-ecosystem: github-actions` will auto-update SHAs on new releases.
+
+**Rule:** All reusable workflow references (distinguishable by the `.github/workflows/` path component in the `uses:` value) must use the full 40-character commit SHA of the target repo's current HEAD on its default branch. Never use mutable refs (`@main`, `@master`, `@v1`, `@latest`). Add a trailing version comment for readability (e.g. `# v0.2.0` or `# main`).
+
 ## Testing conventions
 
 Tests for module `robotsix_chat.<module>` live under `tests/<module>/`, mirroring the per-module source layout (e.g. `tests/chat/` for `robotsix_chat.chat`, `tests/config/` for `robotsix_chat.config`). Do not place tests directly in the `tests/` root.
