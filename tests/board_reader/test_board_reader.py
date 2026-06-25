@@ -15,76 +15,14 @@ import pytest
 from robotsix_chat.board_reader import build_board_reader_tools
 from robotsix_chat.board_reader.client import BoardReader
 from robotsix_chat.config import BoardReaderSettings
+from tests.common.mock_helpers import MockResponse as _MockResponse
+from tests.common.mock_helpers import install_mock_client as _install_mock_client
 
 
 def _settings(**kw: Any) -> BoardReaderSettings:
     base: dict[str, Any] = {"enabled": True}
     base.update(kw)
     return BoardReaderSettings(**base)
-
-
-# ---------------------------------------------------------------------------
-# Shared mock helpers
-# ---------------------------------------------------------------------------
-
-
-class _MockResponse:
-    """Minimal httpx.Response stand-in for testing."""
-
-    def __init__(self, text: str = "", status_code: int = 200) -> None:
-        self.text = text
-        self.status_code = status_code
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise httpx.HTTPStatusError(
-                f"HTTP {self.status_code}",
-                request=object(),  # type: ignore[arg-type]
-                response=self,  # type: ignore[arg-type]
-            )
-
-
-def _install_mock_client(
-    monkeypatch: pytest.MonkeyPatch,
-    response: _MockResponse,
-    counter: list[int] | None = None,
-) -> dict[str, Any]:
-    """Replace ``httpx.AsyncClient`` with a factory returning *response*.
-
-    Returns a ``captured`` dict that receives ``url``, ``headers``, and
-    ``params`` from each ``get`` call for later inspection.
-
-    If *counter* is a list, its first element is incremented on every
-    ``get`` call.
-    """
-    captured: dict[str, Any] = {}
-
-    class _BoundClient:
-        def __init__(self, **kwargs: Any) -> None:
-            self._resp = response
-
-        async def __aenter__(self) -> _BoundClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(
-            self,
-            url: str,
-            *,
-            headers: dict[str, str],
-            params: dict[str, str] | None = None,
-        ) -> _MockResponse:
-            captured["url"] = url
-            captured["headers"] = headers
-            captured["params"] = params
-            if counter is not None:
-                counter[0] += 1
-            return self._resp
-
-    monkeypatch.setattr(httpx, "AsyncClient", _BoundClient)
-    return captured
 
 
 # ---------------------------------------------------------------------------
@@ -299,49 +237,6 @@ async def test_unexpected_error_returns_diagnostic(
 # ---------------------------------------------------------------------------
 
 
-def _install_mock_post_client(
-    monkeypatch: pytest.MonkeyPatch,
-    response: _MockResponse,
-    counter: list[int] | None = None,
-) -> dict[str, Any]:
-    """Replace ``httpx.AsyncClient`` with a factory for POST requests.
-
-    Returns a ``captured`` dict that receives ``url``, ``headers``, and
-    ``json`` from each ``post`` call for later inspection.
-
-    If *counter* is a list, its first element is incremented on every
-    ``post`` call.
-    """
-    captured: dict[str, Any] = {}
-
-    class _BoundPostClient:
-        def __init__(self, **kwargs: Any) -> None:
-            self._resp = response
-
-        async def __aenter__(self) -> _BoundPostClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def post(
-            self,
-            url: str,
-            *,
-            headers: dict[str, str],
-            json: dict[str, str] | None = None,
-        ) -> _MockResponse:
-            captured["url"] = url
-            captured["headers"] = headers
-            captured["json"] = json
-            if counter is not None:
-                counter[0] += 1
-            return self._resp
-
-    monkeypatch.setattr(httpx, "AsyncClient", _BoundPostClient)
-    return captured
-
-
 @pytest.mark.asyncio
 async def test_create_ticket_calls_post_tickets(
     monkeypatch: pytest.MonkeyPatch,
@@ -351,7 +246,7 @@ async def test_create_ticket_calls_post_tickets(
         text='{"id": "abc", "title": "New ticket", "state": "draft"}',
         status_code=201,
     )
-    captured = _install_mock_post_client(monkeypatch, resp)
+    captured = _install_mock_client(monkeypatch, resp)
 
     client = BoardReader(_settings(api_base_url="http://127.0.0.1:8077"))
     out = await client.create_ticket(
@@ -375,7 +270,7 @@ async def test_create_ticket_with_kind(
 ) -> None:
     """Verify that kind is included in payload when provided."""
     resp = _MockResponse(text='{"id": "xyz", "kind": "bug"}', status_code=201)
-    captured = _install_mock_post_client(monkeypatch, resp)
+    captured = _install_mock_client(monkeypatch, resp)
 
     client = BoardReader(_settings())
     await client.create_ticket(
@@ -399,7 +294,7 @@ async def test_create_ticket_omits_kind_when_empty(
 ) -> None:
     """Verify that kind is omitted from payload when empty string."""
     resp = _MockResponse(text='{"id": "abc"}', status_code=201)
-    captured = _install_mock_post_client(monkeypatch, resp)
+    captured = _install_mock_client(monkeypatch, resp)
 
     client = BoardReader(_settings())
     await client.create_ticket(
@@ -418,7 +313,7 @@ async def test_create_ticket_http_error_returns_diagnostic(
 ) -> None:
     """Verify that create_ticket HTTP errors become text, never raised."""
     resp = _MockResponse(text="conflict", status_code=409)
-    _install_mock_post_client(monkeypatch, resp)
+    _install_mock_client(monkeypatch, resp)
 
     client = BoardReader(_settings())
     out = await client.create_ticket(

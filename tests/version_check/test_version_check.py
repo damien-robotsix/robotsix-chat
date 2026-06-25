@@ -19,6 +19,7 @@ from robotsix_chat.version_check.client import (
     _parse_version,
     compare_versions,
 )
+from tests.common.mock_helpers import MockResponse as _MockResponse
 
 
 def _settings(**kw: Any) -> VersionCheckSettings:
@@ -33,31 +34,6 @@ def _settings(**kw: Any) -> VersionCheckSettings:
 # ---------------------------------------------------------------------------
 # Shared mock helpers (mirrors the refdocs / board_reader pattern)
 # ---------------------------------------------------------------------------
-
-
-class _MockResponse:
-    """Minimal httpx.Response stand-in for testing."""
-
-    def __init__(self, json_data: Any, status_code: int = 200) -> None:
-        self._json_data = json_data
-        self.status_code = status_code
-
-    @property
-    def text(self) -> str:
-        import json as _json
-
-        return _json.dumps(self._json_data)
-
-    def json(self) -> Any:
-        return self._json_data
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise httpx.HTTPStatusError(
-                f"HTTP {self.status_code}",
-                request=object(),  # type: ignore[arg-type]
-                response=self,  # type: ignore[arg-type]
-            )
 
 
 def _install_mock_client(
