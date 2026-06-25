@@ -42,6 +42,20 @@ number.  To revert to a previous prompt:
 
 ---
 
+## v9 — 2026-06-25 — 20260624T212653Z-chat-agent-hard-block-delegate-task-for-0619
+
+**Summary:** Add enforcement note — ``delegate_task`` now refuses board/ticket
+work and directs the agent to use ``consult_mill`` instead.
+
+**Rationale:** Previously the prompt warned that delegate-task results are
+never returned and a ticket filed that way may silently fail.  The
+programmatic gate is now in place — ``delegate_task`` actively rejects
+board/ticket requests — and the prompt reflects this enforcement so the agent
+does not attempt the now-blocked path.  Ticket:
+20260624T212653Z-chat-agent-hard-block-delegate-task-for-0619.
+
+**SHA256:** `15cad9cc4a5854fa5c4682f0921cd534d21fb4542b89b722c28dfa44476257de`
+
 ## v8 — 2026-06-24 — 20260624T212711Z-chat-agent-stop-redundant-tool-loading-n-a0f3
 
 **Summary:** Remove the misleading "Load tools once / run a capability check"
