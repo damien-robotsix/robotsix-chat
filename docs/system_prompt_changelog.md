@@ -42,6 +42,22 @@ number.  To revert to a previous prompt:
 
 ---
 
+## v8 — 2026-06-24 — 20260624T212711Z-chat-agent-stop-redundant-tool-loading-n-a0f3
+
+**Summary:** Remove the misleading "Load tools once / run a capability check"
+directive and replace it with an instruction that all tools are already
+available and narration of loading/preparing/fetching tools is forbidden.
+
+**Rationale:** The previous directive ("Load tools once at the start of a
+session. Before branching into a complex workflow, run a single generic
+capability check.") actively invited dead narration like "I'll load the
+tools…" / "Let me load the task management tool first" — wasting ~150–200
+output tokens per trace. Tools are assembled once at startup and never
+reloaded per-turn; the prompt now reflects reality and explicitly forbids
+the narration. Ticket: 20260624T212711Z-chat-agent-stop-redundant-tool-loading-n-a0f3.
+
+**SHA256:** `8aaf695d4004ff37872c8f183954324aacc1f6bb6d6e8a3b91033f0463d81ef2`
+
 ## v7 — 2026-06-24 — 20260624T212702Z-chat-agent-dedup-ticket-filing-before-su-6ed5
 
 **Summary:** Add dedup rule before ticket filing — the agent must check for
