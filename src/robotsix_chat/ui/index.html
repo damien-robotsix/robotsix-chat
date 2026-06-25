@@ -450,6 +450,111 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Pending Questions panel                                            */
+  /* ------------------------------------------------------------------ */
+  #pending-panel {
+    display: none;
+    background: var(--composer-bg);
+    border-top: 1px solid var(--composer-border);
+    padding: 0.5rem 1rem;
+    flex-shrink: 0;
+    max-height: 40vh;
+    overflow-y: auto;
+  }
+  #pending-panel.visible { display: block; }
+
+  #pending-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.5rem;
+  }
+
+  .pq-entry {
+    background: var(--assistant-bubble-bg);
+    border: 1px solid var(--composer-border);
+    border-radius: 8px;
+    padding: 0.5rem 0.75rem;
+    font-size: 0.88rem;
+    position: relative;
+  }
+
+  .pq-dismiss-btn {
+    position: absolute;
+    top: 0.35rem;
+    right: 0.45rem;
+    background: none;
+    border: none;
+    color: #94a3b8;
+    font-size: 0.85rem;
+    cursor: pointer;
+    line-height: 1;
+    padding: 0.1rem 0.25rem;
+    border-radius: 3px;
+  }
+  .pq-dismiss-btn:hover { color: #fca5a5; background: rgba(239, 68, 68, 0.15); }
+
+  .pq-text {
+    font-weight: 600;
+    margin-bottom: 0.2rem;
+    color: var(--text-fg);
+  }
+
+  .pq-detail {
+    font-size: 0.8rem;
+    color: #94a3b8;
+    margin-bottom: 0.25rem;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .pq-meta {
+    font-size: 0.7rem;
+    color: #64748b;
+    margin-bottom: 0.4rem;
+  }
+
+  .pq-answer-row {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+  }
+
+  .pq-answer-row input[type="text"] {
+    flex: 1;
+    background: var(--chat-bg);
+    color: var(--text-fg);
+    border: 1px solid var(--composer-border);
+    border-radius: 6px;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.82rem;
+    font-family: inherit;
+    outline: none;
+  }
+  .pq-answer-row input[type="text"]:focus {
+    border-color: var(--btn-primary-bg);
+  }
+
+  .pq-answer-row button {
+    background: var(--btn-primary-bg);
+    color: var(--btn-primary-fg);
+    border: none;
+    border-radius: 6px;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.82rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s;
+  }
+  .pq-answer-row button:hover:not(:disabled) {
+    background: var(--btn-primary-hover);
+  }
+  .pq-answer-row button:disabled {
+    background: var(--btn-disabled-bg);
+    cursor: not-allowed;
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Responsive tweaks                                                   */
   /* ------------------------------------------------------------------ */
   @media (max-width: 480px) {
@@ -512,6 +617,13 @@
 <div id="chat" aria-live="polite"></div>
 
 <!-- ================================================================= -->
+<!-- Pending Questions panel                                            -->
+<!-- ================================================================= -->
+<div id="pending-panel">
+  <div id="pending-list"></div>
+</div>
+
+<!-- ================================================================= -->
 <!-- Preview tray                                                       -->
 <!-- ================================================================= -->
 <div id="preview-tray" aria-label="Image attachments"></div>
@@ -558,6 +670,8 @@
   const fileInput      = document.getElementById("file-input");
   const previewTray    = document.getElementById("preview-tray");
   const attachErrorEl  = document.getElementById("attach-error");
+  var   pendingPanel   = document.getElementById("pending-panel");
+  var   pendingList    = document.getElementById("pending-list");
 
   // ---- State -----------------------------------------------------------
   var state = "idle";          // idle | sending | streaming | error
@@ -1859,8 +1973,7 @@
 
   function clearPendingQuestions() {
     // Remove all rows from the DOM.
-    var list = document.getElementById("pending-list");
-    if (list) list.innerHTML = "";
+    if (pendingList) pendingList.innerHTML = "";
     pendingQuestionsById = {};
     pendingQuestionsOrder = [];
     refreshPendingPanelVisibility();
