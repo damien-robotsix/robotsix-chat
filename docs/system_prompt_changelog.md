@@ -54,6 +54,23 @@ duplicates.
 
 **SHA256:** `ae70fa569e48c2ef71d35a731a112ad0e4b490434ef2ddc8d0a19173e8a4099e`
 
+## v8 — 2026-06-24 — 20260624T212711Z-chat-agent-stop-redundant-tool-loading-n-a0f3
+
+**Summary:** Remove the misleading "Load tools once / run a capability check"
+directive and replace it with an instruction that all tools are already
+available and narration of loading/preparing/fetching tools is forbidden.
+
+**Rationale:** The previous directive ("Load tools once at the start of a
+session. Before branching into a complex workflow, run a single generic
+capability check.") actively invited dead narration like "I'll load the
+tools…" / "Let me load the task management tool first" — wasting ~150–200
+output tokens per trace. Tools are assembled once at startup and never
+reloaded per-turn; the prompt now reflects reality and explicitly forbids
+the narration. Ticket: 20260624T212711Z-chat-agent-stop-redundant-tool-loading-n-a0f3.
+
+**SHA256:** `8aaf695d4004ff37872c8f183954324aacc1f6bb6d6e8a3b91033f0463d81ef2`
+(mill: chat agent: rewrite system-prompt Efficiency directive to stop tool-loading narration (20260624T212711Z-chat-agent-stop-redundant-tool-loading-n-a0f3) [WIP])
+
 ## v6 — 2026-06-24 — 20260624T212708Z-chat-agents-enforce-the-three-sentences-236a
 
 Tighten conciseness rule: name prohibited output shapes explicitly.
