@@ -2116,3 +2116,302 @@ async def test_verify_via_board_defaults_to_false_when_missing(tmp_path: Path) -
 
     reg.stop("L-old2", reason="test teardown")
     await asyncio.sleep(0.05)
+
+
+# ---------------------------------------------------------------------------
+# Dedup — (client_id, prompt) supersede on register
+# ---------------------------------------------------------------------------
+
+
+def test_dedup_supersedes_same_prompt_same_client() -> None:
+    """AC1: registering a same-(client_id, prompt) loop stops the old one."""
+    reg = _registry()
+    lid1 = reg.register(
+        "c1",
+        "check health",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+
+    assert reg.get(lid1) is not None
+    info1 = reg.get(lid1)
+    assert info1 is not None
+    assert info1.status == LoopStatus.RUNNING
+
+    lid2 = reg.register(
+        "c1",
+        "  check health  ",  # different whitespace, same stripped
+        interval_seconds=120,
+        max_iterations=3,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+
+    # Old loop is STOPPED with supersede reason.
+    info1 = reg.get(lid1)
+    assert info1 is not None
+    assert info1.status == LoopStatus.STOPPED
+    assert info1.stop_reason == "superseded by a newer check loop"
+
+    # New loop is RUNNING.
+    info2 = reg.get(lid2)
+    assert info2 is not None
+    assert info2.status == LoopStatus.RUNNING
+    assert info2.prompt == "  check health  "  # original prompt preserved
+    assert info2.interval_seconds == 120
+    assert info2.max_iterations == 3
+
+    # Exactly one RUNNING loop for this (client_id, prompt).
+    running = [
+        lp
+        for lp in reg.list_for_client("c1")
+        if lp.status == LoopStatus.RUNNING and lp.prompt.strip() == "check health"
+    ]
+    assert len(running) == 1
+    assert running[0].id == lid2
+
+
+@pytest.mark.asyncio
+async def test_dedup_supersedes_cancels_task() -> None:
+    """AC1: superseding a loop cancels its tracked asyncio.Task."""
+    reg = _registry()
+
+    # Create a real asyncio task that sleeps.
+    async def _sleep_forever() -> None:
+        try:
+            await asyncio.sleep(3600)
+        except asyncio.CancelledError:
+            raise
+
+    task1 = asyncio.create_task(_sleep_forever())
+    lid1 = reg.register(
+        "c1",
+        "cancel me",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=task1,
+    )
+
+    assert not task1.done()
+    assert not task1.cancelled()
+
+    task2 = asyncio.create_task(_sleep_forever())
+    lid2 = reg.register(
+        "c1",
+        "cancel me",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=task2,
+    )
+
+    # Old task should be cancelled.
+    await asyncio.sleep(0.05)
+    assert task1.cancelled() or task1.done()
+
+    # Old loop is STOPPED.
+    info1 = reg.get(lid1)
+    assert info1 is not None
+    assert info1.status == LoopStatus.STOPPED
+    assert info1.stop_reason == "superseded by a newer check loop"
+
+    # New loop is RUNNING.
+    info2 = reg.get(lid2)
+    assert info2 is not None
+    assert info2.status == LoopStatus.RUNNING
+
+    # Cleanup: cancel the new task too.
+    task2.cancel()
+    await asyncio.sleep(0.05)
+
+
+def test_dedup_distinct_prompts_coexist() -> None:
+    """AC2: two loops under same client_id with different prompts both stay RUNNING."""
+    reg = _registry()
+    lid1 = reg.register(
+        "c1",
+        "loop one",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    lid2 = reg.register(
+        "c1",
+        "loop two",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+
+    info1 = reg.get(lid1)
+    assert info1 is not None
+    assert info1.status == LoopStatus.RUNNING
+    info2 = reg.get(lid2)
+    assert info2 is not None
+    assert info2.status == LoopStatus.RUNNING
+    assert len(reg.list_for_client("c1")) == 2
+
+
+def test_dedup_same_prompt_different_client_coexist() -> None:
+    """AC3: two loops with same prompt but different client_id both stay RUNNING."""
+    reg = _registry()
+    lid_a = reg.register(
+        "client-a",
+        "check db",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    lid_b = reg.register(
+        "client-b",
+        "check db",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+
+    info_a = reg.get(lid_a)
+    assert info_a is not None
+    assert info_a.status == LoopStatus.RUNNING
+    info_b = reg.get(lid_b)
+    assert info_b is not None
+    assert info_b.status == LoopStatus.RUNNING
+
+    # Each client sees only its own loop.
+    assert len(reg.list_for_client("client-a")) == 1
+    assert len(reg.list_for_client("client-b")) == 1
+
+
+def test_dedup_terminal_loops_ignored() -> None:
+    """AC4: STOPPED/FAILED same-prompt loops are not re-stopped and don't block."""
+    reg = _registry()
+
+    # Register and stop a loop.
+    lid_stopped = reg.register(
+        "c1",
+        "check x",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    reg.stop(lid_stopped, reason="user request")
+    info_stopped_pre = reg.get(lid_stopped)
+    assert info_stopped_pre is not None
+    assert info_stopped_pre.status == LoopStatus.STOPPED
+
+    # Register and fail a loop.
+    lid_failed = reg.register(
+        "c1",
+        "check x",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    reg.fail(lid_failed, error="boom")
+    info_failed_pre = reg.get(lid_failed)
+    assert info_failed_pre is not None
+    assert info_failed_pre.status == LoopStatus.FAILED
+
+    # Register a third loop with the same prompt — neither terminal loop
+    # should be re-stopped, and the new loop registers successfully.
+    lid_new = reg.register(
+        "c1",
+        "check x",
+        interval_seconds=120,
+        max_iterations=5,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+
+    # Terminal loops unchanged.
+    info_stopped = reg.get(lid_stopped)
+    assert info_stopped is not None
+    assert info_stopped.status == LoopStatus.STOPPED
+    assert info_stopped.stop_reason == "user request"
+    info_failed = reg.get(lid_failed)
+    assert info_failed is not None
+    assert info_failed.status == LoopStatus.FAILED
+    assert info_failed.error == "boom"
+
+    # New loop is RUNNING.
+    info_new = reg.get(lid_new)
+    assert info_new is not None
+    assert info_new.status == LoopStatus.RUNNING
+
+    # Only the new one is RUNNING for this prompt.
+    running = [
+        lp
+        for lp in reg.list_for_client("c1")
+        if lp.status == LoopStatus.RUNNING and lp.prompt.strip() == "check x"
+    ]
+    assert len(running) == 1
+    assert running[0].id == lid_new
+
+
+def test_dedup_false_skips_supersede() -> None:
+    """AC5: register(..., dedup=False) never supersedes existing loops."""
+    reg = _registry()
+    lid1 = reg.register(
+        "c1",
+        "no dedup check",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+
+    # Register again with dedup=False — old loop should stay RUNNING.
+    lid2 = reg.register(
+        "c1",
+        "no dedup check",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+        dedup=False,
+    )
+
+    # Both loops are RUNNING.
+    info1 = reg.get(lid1)
+    assert info1 is not None
+    assert info1.status == LoopStatus.RUNNING
+    info2 = reg.get(lid2)
+    assert info2 is not None
+    assert info2.status == LoopStatus.RUNNING
+
+    # Two loops for this client.
+    assert len(reg.list_for_client("c1")) == 2
+
+
+def test_dedup_event_sink_publishes_stopped_frame() -> None:
+    """Superseding publishes a loop_stopped frame via the event sink."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    q = bus.subscribe("c1")
+
+    lid1 = reg.register(
+        "c1",
+        "with events",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    q.get_nowait()  # consume started frame
+
+    lid2 = reg.register(
+        "c1",
+        "with events",
+        interval_seconds=120,
+        max_iterations=5,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+
+    # The stopped frame should be published for lid1.
+    frames: list[dict[str, Any]] = []
+    while not q.empty():
+        frames.append(q.get_nowait())
+
+    # We should see: started(lid2) and also stopped(lid1).
+    started = [f for f in frames if f["type"] == SSE_LOOP_STARTED_TYPE]
+    stopped = [f for f in frames if f["type"] == SSE_LOOP_STOPPED_TYPE]
+    assert len(started) == 1
+    assert started[0]["loop_id"] == lid2
+    assert len(stopped) == 1
+    assert stopped[0]["loop_id"] == lid1
+    assert stopped[0]["reason"] == "superseded by a newer check loop"

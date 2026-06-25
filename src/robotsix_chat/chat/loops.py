@@ -143,6 +143,7 @@ class CheckLoopRegistry:
         loop_id: str | None = None,
         reason: str | None = None,
         verify_via_board: bool = False,
+        dedup: bool = True,
     ) -> str:
         """Register a new check loop for *client_id*.
 
@@ -157,8 +158,25 @@ class CheckLoopRegistry:
         generated via the ``id_factory``.  This allows the resume hook to
         re-register a loop under its persisted id.
 
+        When *dedup* is ``True`` (the default), any existing ``RUNNING`` loop
+        for the same *client_id* and *prompt* (``prompt.strip()``) is stopped
+        before the new loop is registered — preventing duplicate check loops.
+        Pass ``dedup=False`` when restoring persisted loops on startup so
+        siblings being resumed in the same pass are not superseded.
+
         Returns the loop id.
         """
+        if dedup:
+            new_key = prompt.strip()
+            for existing_id in list(self._by_client.get(client_id, ())):
+                existing = self._loops.get(existing_id)
+                if (
+                    existing is not None
+                    and existing.status is LoopStatus.RUNNING
+                    and existing.prompt.strip() == new_key
+                ):
+                    self.stop(existing_id, reason="superseded by a newer check loop")
+
         loop_id = loop_id if loop_id is not None else self._id_factory()
         info = LoopInfo(
             id=loop_id,
@@ -598,6 +616,7 @@ def spawn_check_loop(
     channel: DeliveryChannel = NULL_CHANNEL,
     reason: str | None = None,
     verify_via_board: bool = False,
+    dedup: bool = True,
 ) -> str:
     """Schedule a recurring check prompt; return the loop id immediately.
 
@@ -627,6 +646,11 @@ def spawn_check_loop(
     sees it via
     :class:`~robotsix_chat.chat.delegation.ConversationDeliveryChannel`.
     Defaults to :data:`~robotsix_chat.chat.runner.NULL_CHANNEL` (no-op).
+
+    When *dedup* is ``True`` (the default), :meth:`CheckLoopRegistry.register`
+    stops any existing ``RUNNING`` loop with the same *client_id* and *prompt*
+    before registering the new one.  This prevents duplicate check loops.
+    Pass ``dedup=False`` when restoring persisted loops on startup.
 
     Raises :class:`LoopIntervalError` when *interval_seconds* is below
     :attr:`settings.min_check_loop_interval_seconds
@@ -690,6 +714,7 @@ def spawn_check_loop(
         loop_id=loop_id,
         reason=reason,
         verify_via_board=verify_via_board,
+        dedup=dedup,
     )
     id_future.set_result(loop_id)
     return loop_id
@@ -775,6 +800,7 @@ def resume_check_loops(
                 channel=channel,
                 reason=entry.get("reason"),
                 verify_via_board=entry.get("verify_via_board", False),
+                dedup=False,
             )
         except (LoopCapacityError, LoopIntervalError) as exc:
             logger.warning("Could not resume check loop %s: %s", loop_id, exc)
