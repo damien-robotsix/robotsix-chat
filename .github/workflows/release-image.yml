@@ -35,7 +35,7 @@ jobs:
 
   docker:
     needs: verify
-    uses: damien-robotsix/robotsix-mill/.github/workflows/docker-release.yml@main
+    uses: damien-robotsix/robotsix-mill/.github/workflows/docker-release.yml@84de006ddcaee4926124edd588c0eaf06d7a61ec  # main
     permissions:
       contents: read
       packages: write
