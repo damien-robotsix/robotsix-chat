@@ -105,6 +105,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "self_review": "self_review",
     "component_agent": "component_agent",
     "component_client": "component_client",
+    "pending_questions": "pending_questions",
 }
 
 
@@ -514,6 +515,22 @@ class ComponentClientSettings(BaseModel):
     components: list[ComponentTarget] = Field(default_factory=list)
 
 
+class PendingQuestionsSettings(BaseModel):
+    """Pending-questions panel and agent tool for awaiting-user prompts.
+
+    When enabled (default), the agent can raise structured questions the user
+    needs to answer — they appear in a panel above the chat input, update in
+    real time, and the user's inline answer is fed back into the conversation.
+
+    Attributes:
+        enabled: Master switch.  Default ``True`` — this is a core UI/agent
+            primitive with no external dependencies.
+
+    """
+
+    enabled: bool = True
+
+
 class ConversationSettings(BaseModel):
     """Multi-session conversation continuity for the browser chat.
 
@@ -708,6 +725,9 @@ class Settings(BaseModel):
     version_check: VersionCheckSettings = Field(default_factory=VersionCheckSettings)
     component_client: ComponentClientSettings = Field(
         default_factory=ComponentClientSettings
+    )
+    pending_questions: PendingQuestionsSettings = Field(
+        default_factory=PendingQuestionsSettings
     )
     max_images_per_message: int = 8
     max_image_bytes: int = 5_242_880

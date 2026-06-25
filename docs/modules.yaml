@@ -134,6 +134,15 @@ modules:
       - tests/mail/__init__.py
       - tests/mail/test_build_mail_tools.py
 
+  - id: robotsix_chat.pending_questions
+    description: "Pending-questions panel and agent tool — real-time tracker for awaiting-user items above chat input."
+    paths:
+      - src/robotsix_chat/pending_questions/__init__.py
+      - src/robotsix_chat/pending_questions/store.py
+      - tests/pending_questions/__init__.py
+      - tests/pending_questions/test_store.py
+      - tests/pending_questions/test_tools.py
+
   - id: robotsix_chat.refdocs
     description: "Read-only reference-docs tool — lets the chat agent read team repos."
     paths:

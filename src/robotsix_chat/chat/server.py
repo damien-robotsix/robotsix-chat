@@ -39,6 +39,8 @@ from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.mail import build_mail_tools
 from robotsix_chat.memory import build_memory
 from robotsix_chat.mill import build_mill_tools
+from robotsix_chat.pending_questions import build_pending_questions_tools
+from robotsix_chat.pending_questions.store import PendingQuestionsStore
 from robotsix_chat.refdocs import build_refdocs_tools
 from robotsix_chat.selfreview import build_recent_activity_tools
 from robotsix_chat.version_check import build_version_check_tools
@@ -573,6 +575,62 @@ async def sessions_create_endpoint(request: Request) -> JSONResponse:
 
 
 # ---------------------------------------------------------------------------
+# Pending questions endpoints
+# ---------------------------------------------------------------------------
+
+
+async def pending_questions_list_endpoint(request: Request) -> JSONResponse:
+    """Return all pending questions for a session as JSON.
+
+    ``GET /pending-questions?session_id=...`` returns
+    ``{"questions": [...]}`` with each entry containing question_id, text,
+    detail, status, and created_at.
+    """
+    session_id = request.query_params.get("session_id")
+    if not session_id:
+        session_id = request.query_params.get("client_id")
+    if not session_id:
+        return JSONResponse(
+            {"error": "session_id query parameter is required"}, status_code=400
+        )
+
+    store: PendingQuestionsStore = request.app.state.pq_store
+    entries = store.list_for_session(session_id)
+    return JSONResponse(
+        {
+            "questions": [
+                {
+                    "question_id": q.question_id,
+                    "session_id": q.session_id,
+                    "text": q.text,
+                    "detail": q.detail,
+                    "status": q.status,
+                    "created_at": q.created_at,
+                }
+                for q in entries
+            ]
+        }
+    )
+
+
+async def pending_questions_delete_endpoint(request: Request) -> JSONResponse:
+    """Remove a pending question by id.
+
+    ``DELETE /pending-questions/{question_id}`` removes the question and
+    returns a 200 JSON ack.  Returns 404 when the question id is unknown.
+    """
+    question_id = request.path_params["question_id"]
+    store: PendingQuestionsStore = request.app.state.pq_store
+    entry = store.remove(question_id)
+    if entry is None:
+        return JSONResponse(
+            {"error": "unknown question", "question_id": question_id},
+            status_code=404,
+        )
+    return JSONResponse({"question_id": question_id, "status": "removed"})
+
+
+# ---------------------------------------------------------------------------
 # Error handlers
 # ---------------------------------------------------------------------------
 
@@ -639,6 +697,7 @@ def create_app(
     event_bus: EventBus | None = None,
     check_loop_registry: CheckLoopRegistry | None = None,
     run_serializer: RunSerializer | None = None,
+    pq_store: PendingQuestionsStore | None = None,
     on_startup: Callable[[], None] | None = None,
     on_startup_async: Callable[[], Any] | None = None,
     on_shutdown: Callable[[], Any] | None = None,
@@ -693,6 +752,10 @@ def create_app(
             same instance to the ``ConversationDeliveryChannel`` so
             tick-triggered runs and user-initiated ``/chat`` requests
             are serialized together.
+        pq_store: Per-server pending-questions store for the real-time
+            agent-questions panel.  When ``None`` (default), a fresh
+            :class:`PendingQuestionsStore` is created and wired to the
+            internal event bus.  Pass an existing instance to share state.
         on_startup: Optional callable invoked during application startup
             (the Starlette lifespan ``startup`` phase).  Pass a closure
             that e.g. resumes persisted check loops.
@@ -713,6 +776,12 @@ def create_app(
         Route("/loops", loops_list_endpoint, methods=["GET"]),
         Route("/sessions", sessions_list_endpoint, methods=["GET"]),
         Route("/sessions", sessions_create_endpoint, methods=["POST"]),
+        Route("/pending-questions", pending_questions_list_endpoint, methods=["GET"]),
+        Route(
+            "/pending-questions/{question_id}",
+            pending_questions_delete_endpoint,
+            methods=["DELETE"],
+        ),
     ]
     if serve_ui:
         routes.append(Route("/", ui_endpoint, methods=["GET"]))
@@ -764,6 +833,9 @@ def create_app(
     )
     app.state.check_loop_registry = check_loop_registry  # may be None
     app.state.run_serializer = run_serializer or RunSerializer()
+    app.state.pq_store = pq_store or PendingQuestionsStore(
+        event_bus=app.state.event_bus
+    )
     return app
 
 
@@ -785,6 +857,7 @@ def run_server(
     event_bus: EventBus | None = None,
     check_loop_registry: CheckLoopRegistry | None = None,
     run_serializer: RunSerializer | None = None,
+    pq_store: PendingQuestionsStore | None = None,
     on_startup: Callable[[], None] | None = None,
     on_startup_async: Callable[[], Any] | None = None,
     on_shutdown: Callable[[], Any] | None = None,
@@ -811,6 +884,7 @@ def run_server(
         event_bus=event_bus,
         check_loop_registry=check_loop_registry,
         run_serializer=run_serializer,
+        pq_store=pq_store,
         on_startup=on_startup,
         on_startup_async=on_startup_async,
         on_shutdown=on_shutdown,
@@ -828,6 +902,7 @@ def create_agent_from_settings(
     conversation_store: ConversationStore | None = None,
     model_override: str | None = None,
     tool_wrapper: Callable[[list[Any]], list[Any]] | None = None,
+    pq_store: PendingQuestionsStore | None = None,
 ) -> LlmioChatAgent:
     """Build an :class:`LlmioChatAgent` wired from *settings*.
 
@@ -947,6 +1022,14 @@ def create_agent_from_settings(
                         delivery_channel or NULL_CHANNEL,
                         session_id=session_id,
                         agent_factory=_subagent_factory,
+                    )
+                )
+            if pq_store is not None:
+                request_tools.extend(
+                    build_pending_questions_tools(
+                        settings.pending_questions,
+                        pq_store,
+                        session_id=session_id,
                     )
                 )
             return request_tools

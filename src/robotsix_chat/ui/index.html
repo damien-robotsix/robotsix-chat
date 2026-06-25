@@ -573,6 +573,10 @@
   var ALLOWED_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
   var pendingImages = [];  // { file, objectURL, mediaType }
 
+  // ---- Pending Questions state -----------------------------------------
+  var pendingQuestionsById = {};    // question_id → { id, text, detail, status, created_at, rowEl }
+  var pendingQuestionsOrder = [];   // insertion order of question ids
+
   function clearAttachError() {
     attachErrorEl.classList.remove("visible");
     attachErrorEl.textContent = "";
@@ -900,6 +904,9 @@
     // 2b. Reset the per-session Tasks/Check Loops panels.
     clearBackgroundPanels();
 
+    // 2c. Clear and reload pending questions for the new session.
+    clearPendingQuestions();
+
     // 3. Close the current event stream and re-open for new session.
     closeEventStream();
     openEventStream();
@@ -909,6 +916,9 @@
 
     // 5. Reload loops for the new session.
     loadLoops();
+
+    // 6. Load pending questions for the new session.
+    loadPendingQuestions();
 
     // 6. Update the active-row highlight.
     updateActiveHighlight();
@@ -1558,6 +1568,10 @@
           if (frame.reply && typeof frame.reply === "string") {
             addAssistantBubble(frame.reply);
           }
+        } else if (frame.type === "pending_question_added" ||
+                   frame.type === "pending_question_updated" ||
+                   frame.type === "pending_question_removed") {
+          updatePendingPanel(frame);
         }
         // ignore unknown types gracefully
       },
@@ -1622,6 +1636,234 @@
     }).catch(function () {
       // Silently ignore network errors — empty chat is fine.
     });
+  }
+
+  // ---- Pending Questions rendering ------------------------------------
+  function updatePendingPanel(frame) {
+    var qid = frame.question_id;
+    if (!qid) return;
+
+    var entry = pendingQuestionsById[qid];
+
+    if (frame.type === "pending_question_added") {
+      if (!entry) {
+        entry = {
+          id: qid,
+          text: frame.text || "",
+          detail: frame.detail || "",
+          status: frame.status || "pending",
+          created_at: frame.created_at || 0,
+          rowEl: null
+        };
+        pendingQuestionsById[qid] = entry;
+        pendingQuestionsOrder.push(qid);
+      }
+      entry.text = frame.text || entry.text;
+      entry.detail = frame.detail || entry.detail;
+      entry.status = frame.status || entry.status;
+    } else if (frame.type === "pending_question_updated") {
+      if (!entry) {
+        entry = {
+          id: qid,
+          text: frame.text || "",
+          detail: frame.detail || "",
+          status: frame.status || "pending",
+          created_at: frame.created_at || 0,
+          rowEl: null
+        };
+        pendingQuestionsById[qid] = entry;
+        pendingQuestionsOrder.push(qid);
+      } else {
+        if (frame.text !== undefined) entry.text = frame.text;
+        if (frame.detail !== undefined) entry.detail = frame.detail;
+        if (frame.status !== undefined) entry.status = frame.status;
+      }
+    } else if (frame.type === "pending_question_removed") {
+      if (entry) {
+        if (entry.rowEl) entry.rowEl.remove();
+        delete pendingQuestionsById[qid];
+        var idx = pendingQuestionsOrder.indexOf(qid);
+        if (idx >= 0) pendingQuestionsOrder.splice(idx, 1);
+      }
+      refreshPendingPanelVisibility();
+      return;
+    }
+
+    renderPendingEntry(entry);
+    refreshPendingPanelVisibility();
+  }
+
+  function renderPendingEntry(entry) {
+    var oldRow = entry.rowEl;
+    if (oldRow) oldRow.remove();
+
+    var row = document.createElement("div");
+    row.className = "pq-entry";
+
+    // Dismiss button
+    var dismissBtn = document.createElement("button");
+    dismissBtn.className = "pq-dismiss-btn";
+    dismissBtn.textContent = "\u2715";
+    dismissBtn.title = "Dismiss this question";
+    dismissBtn.addEventListener("click", function () {
+      submitPendingAnswer(entry.id, "");
+    });
+    row.appendChild(dismissBtn);
+
+    // Question text
+    var textDiv = document.createElement("div");
+    textDiv.className = "pq-text";
+    textDiv.textContent = entry.text;
+    row.appendChild(textDiv);
+
+    // Detail (if any)
+    if (entry.detail) {
+      var detailDiv = document.createElement("div");
+      detailDiv.className = "pq-detail";
+      detailDiv.textContent = entry.detail;
+      row.appendChild(detailDiv);
+    }
+
+    // Meta line
+    var metaDiv = document.createElement("div");
+    metaDiv.className = "pq-meta";
+    var metaParts = [];
+    if (entry.status) metaParts.push(entry.status);
+    if (entry.created_at) {
+      metaParts.push(new Date(entry.created_at * 1000).toLocaleTimeString());
+    }
+    metaDiv.textContent = metaParts.join(" \u2022 ");
+    row.appendChild(metaDiv);
+
+    // Answer input row
+    var answerRow = document.createElement("div");
+    answerRow.className = "pq-answer-row";
+
+    var answerInput = document.createElement("input");
+    answerInput.type = "text";
+    answerInput.placeholder = "Type your answer\u2026";
+    answerInput.setAttribute("aria-label", "Answer for: " + entry.text);
+
+    var answerBtn = document.createElement("button");
+    answerBtn.textContent = "Answer";
+
+    answerBtn.addEventListener("click", function () {
+      var answer = answerInput.value.trim();
+      if (!answer) return;
+      answerBtn.disabled = true;
+      answerBtn.textContent = "Sending\u2026";
+      submitPendingAnswer(entry.id, answer);
+    });
+
+    answerInput.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        answerBtn.click();
+      }
+    });
+
+    answerRow.appendChild(answerInput);
+    answerRow.appendChild(answerBtn);
+    row.appendChild(answerRow);
+
+    entry.rowEl = row;
+
+    // Insert in order
+    var idx = pendingQuestionsOrder.indexOf(entry.id);
+    if (idx >= 0) {
+      var nextSibling = null;
+      for (var i = idx + 1; i < pendingQuestionsOrder.length; i++) {
+        var n = pendingQuestionsById[pendingQuestionsOrder[i]];
+        if (n && n.rowEl && n.rowEl.parentNode === pendingList) {
+          nextSibling = n.rowEl;
+          break;
+        }
+      }
+      if (nextSibling) {
+        pendingList.insertBefore(row, nextSibling);
+      } else {
+        pendingList.appendChild(row);
+      }
+    } else {
+      pendingList.appendChild(row);
+    }
+  }
+
+  function refreshPendingPanelVisibility() {
+    var hasVisible = false;
+    for (var i = 0; i < pendingQuestionsOrder.length; i++) {
+      if (pendingQuestionsById[pendingQuestionsOrder[i]]) {
+        hasVisible = true;
+        break;
+      }
+    }
+    if (hasVisible) {
+      pendingPanel.classList.add("visible");
+    } else {
+      pendingPanel.classList.remove("visible");
+    }
+  }
+
+  function submitPendingAnswer(questionId, answer) {
+    // Feed the answer (or dismissal) back into the conversation via the
+    // existing message queue so the agent sees it as a regular turn.
+    var prefix = answer ? "[pending question " + questionId + "]: " : "";
+    var displayText = answer || "(dismissed)";
+    var fullMessage = prefix + displayText;
+
+    // Add user bubble and push to the message queue.
+    var el = addUserBubble(displayText);
+    messageQueue.push({ text: fullMessage, el: el, images: [] });
+    drainQueue();
+
+    // Remove the question on the server side as well.
+    var deleteUrl = apiBase() + "/pending-questions/" + encodeURIComponent(questionId);
+    fetch(deleteUrl, { method: "DELETE" }).catch(function () {
+      // Silently ignore — the question is already gone from the panel.
+    });
+
+    // Remove the question from panel immediately (optimistic).
+    var entry = pendingQuestionsById[questionId];
+    if (entry && entry.rowEl) entry.rowEl.remove();
+    delete pendingQuestionsById[questionId];
+    var idx = pendingQuestionsOrder.indexOf(questionId);
+    if (idx >= 0) pendingQuestionsOrder.splice(idx, 1);
+    refreshPendingPanelVisibility();
+  }
+
+  // ---- Pending Questions snapshot on load ------------------------------
+  function loadPendingQuestions() {
+    var pqUrl = apiBase() + "/pending-questions" +
+                "?session_id=" + encodeURIComponent(activeSessionId);
+
+    fetch(pqUrl, { method: "GET" }).then(function (response) {
+      if (!response.ok) return;
+      return response.json();
+    }).then(function (data) {
+      if (!data || !Array.isArray(data.questions)) return;
+      var entries = data.questions;
+      for (var i = 0; i < entries.length; i++) {
+        updatePendingPanel({
+          type: "pending_question_added",
+          question_id: entries[i].question_id,
+          text: entries[i].text,
+          detail: entries[i].detail,
+          status: entries[i].status,
+          created_at: entries[i].created_at,
+        });
+      }
+    }).catch(function () {
+      // Silently ignore network errors.
+    });
+  }
+
+  function clearPendingQuestions() {
+    // Remove all rows from the DOM.
+    var list = document.getElementById("pending-list");
+    if (list) list.innerHTML = "";
+    pendingQuestionsById = {};
+    pendingQuestionsOrder = [];
+    refreshPendingPanelVisibility();
   }
 
   // ---- Check Loops snapshot on load ------------------------------------
@@ -1985,6 +2227,7 @@
         openEventStream();
         loadHistory();
         loadLoops();
+        loadPendingQuestions();
         refreshSessions();
         resetIdleTimer();
       }
@@ -2157,6 +2400,7 @@
     renderSessionList(data);
     loadHistory();
     loadLoops();
+    loadPendingQuestions();
     openEventStream();
     resetIdleTimer();
   }).catch(function () {
@@ -2170,6 +2414,7 @@
     }
     loadHistory();
     loadLoops();
+    loadPendingQuestions();
     openEventStream();
     resetIdleTimer();
   });
