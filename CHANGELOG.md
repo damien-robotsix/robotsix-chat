@@ -18,6 +18,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Extracted image validation from ``chat_endpoint`` into a module-level
   ``_parse_and_validate_images`` helper in ``chat/server.py``.
 - Pinned all reusable workflow references to immutable commit SHAs and added CI workflow pinning conventions to ``AGENT.md``.
+
+- Optimised check-loop tool-use policy: when a tick includes a previous
+  board-verified result, the guardrail no longer forces a redundant
+  ``consult_mill`` call.  Calendar/task query results are now cached
+  per-session (TTL-driven, invalidated by mutations), eliminating
+  repeated broker round-trips on steady-state ticks.
 - Extracted duplicated ``_MockResponse`` / ``_install_mock_client`` mock helpers
   from four test files into a shared ``tests/common/mock_helpers.py`` module.
 

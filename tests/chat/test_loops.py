@@ -2119,6 +2119,117 @@ async def test_verify_via_board_defaults_to_false_when_missing(tmp_path: Path) -
 
 
 # ---------------------------------------------------------------------------
+# Board-read gate — previous_result bypass
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_gated_loop_previous_result_bypasses_gate() -> None:
+    """When include_previous_result=True, ticks after the first bypass the gate.
+
+    The first tick has no previous_result → guardrail forces a board read.
+    Subsequent ticks have a previous_result (which embodies a recent board
+    view) → the soft guardrail allows the agent to skip consult_mill, and
+    the gate passes through without suppression.
+    """
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+    settings.mill = type("MillStub", (), {"enabled": True})()
+
+    # An agent that NEVER calls consult_mill — would be suppressed on
+    # every tick without the previous_result bypass.
+    lid = spawn_check_loop(
+        session_id="c-gate-prev",
+        prompt="report board status",
+        interval_seconds=0.01,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _StubAgent(["status: no change"]),
+        max_iterations=3,
+        verify_via_board=True,
+        include_previous_result=True,
+    )
+
+    # Wait for all iterations to complete.
+    for _ in range(80):
+        await asyncio.sleep(0.05)
+        info = reg.get(lid)
+        if info and info.status != LoopStatus.RUNNING:
+            break
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.STOPPED
+    assert info.iterations == 3
+
+    # First tick: no previous result → guardrail suppresses output.
+    # Second and third ticks: previous result exists → soft guardrail
+    # allows pass-through.  The last_result should be the agent's
+    # actual output (not the guardrail notice), because the gate
+    # allowed it through.
+    assert info.last_result == "status: no change"
+    assert "guardrail" not in (info.last_result or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_gated_loop_first_tick_still_gated() -> None:
+    """Even with include_previous_result=True, the very first tick is gated.
+
+    No previous_result exists yet → the guardrail header forces a board
+    read, and the gate suppresses unverified output.
+    """
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+    settings.mill = type("MillStub", (), {"enabled": True})()
+
+    lid = spawn_check_loop(
+        session_id="c-gate-first",
+        prompt="report board status",
+        interval_seconds=0.01,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _StubAgent(["fabricated status"]),
+        max_iterations=1,
+        verify_via_board=True,
+        include_previous_result=True,
+    )
+
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        info = reg.get(lid)
+        if info and info.status != LoopStatus.RUNNING:
+            break
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.STOPPED
+    # First tick: no previous_result yet → gate suppresses.
+    assert "guardrail" in (info.last_result or "").lower()
+    assert "fabricated status" not in (info.last_result or "")
+
+
+# ---------------------------------------------------------------------------
+# Soft guardrail header — unit test
+# ---------------------------------------------------------------------------
+
+
+def test_gate_bypasses_when_has_previous_result() -> None:
+    """When has_previous_result=True, the gate passes through regardless of probe."""
+    probe = BoardReadProbe()
+    # probe.count == 0, but has_previous_result=True → passthrough
+    result = _apply_board_read_gate(
+        "status unchanged",
+        probe,
+        verify_via_board=True,
+        loop_id="L-test",
+        has_previous_result=True,
+    )
+    assert result == "status unchanged"
+
+
+# ---------------------------------------------------------------------------
 # Dedup — (client_id, prompt) supersede on register
 # ---------------------------------------------------------------------------
 

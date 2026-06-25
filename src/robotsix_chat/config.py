@@ -430,6 +430,11 @@ class CalendarSettings(BaseModel):
         agent_id: This agent's id on the broker.
         calendar_agent_id: Recipient agent id — the calendar/tasks agent.
         timeout: Per-request timeout (seconds); generous, the recipient is an LLM.
+        cache_ttl: How long to cache query results (seconds).  Query calls
+            (``query_calendar``, ``query_tasks``) within this window return
+            the cached result without a broker round-trip.  Manage calls
+            (``manage_calendar``, ``manage_tasks``) invalidate the cache
+            for their domain.
 
     """
 
@@ -441,6 +446,7 @@ class CalendarSettings(BaseModel):
     agent_id: str = "robotsix-chat"
     calendar_agent_id: str = "robotsix-calendar"
     timeout: float = 240.0
+    cache_ttl: float = 60.0
 
 
 class ComponentAgentSettings(BaseModel):

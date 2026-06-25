@@ -81,6 +81,7 @@ def build_calendar_tools(settings: CalendarSettings) -> list[Callable[..., Any]]
             The calendar agent's reply confirming the change (or an error).
 
         """
+        client.invalidate_cache("calendar")
         return await client.consult(request, domain="calendar")
 
     async def query_tasks(request: str) -> str:
@@ -113,6 +114,7 @@ def build_calendar_tools(settings: CalendarSettings) -> list[Callable[..., Any]]
             The calendar/tasks agent's reply confirming the change (or an error).
 
         """
+        client.invalidate_cache("tasks")
         return await client.consult(request, domain="tasks")
 
     return [query_calendar, manage_calendar, query_tasks, manage_tasks]
