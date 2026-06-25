@@ -103,7 +103,7 @@ def build_pending_questions_tools(
                 "No fields to update — supply at least one of text, detail, or status."
             )
 
-        entry = store.update(question_id, **updates)  # type: ignore[arg-type]
+        entry = store.update(question_id, **updates)
         if entry is None:
             return f"Unknown question id: {question_id!r}"
         return f"Updated question {question_id!r}."
