@@ -233,6 +233,23 @@ Default-disabled so behaviour is unchanged unless explicitly turned on.
 | `self_review.enabled` | `SELF_REVIEW_ENABLED` | `false` | Master switch — enables the ``read_recent_activity`` tool. |
 | `self_review.recent_activity_limit` | `SELF_REVIEW_RECENT_ACTIVITY_LIMIT` | `20` | Maximum number of conversations returned by the tool. |
 
+## Version Check
+
+Self-version-check tool — lets the agent compare the running
+``robotsix_chat.__version__`` against the latest published GitHub release of a
+configured repo, and flags when the deployment is out of date. Disabled by
+default. The check is only meaningful when releases bump
+``robotsix_chat.__version__`` in lockstep with the GitHub release tag.
+
+| YAML path | Env var | Default | Description |
+|---|---|---|---|
+| `version_check.enabled` | `VERSION_CHECK_ENABLED` | `false` | Master switch. When ``False``, no version-check tool is offered. |
+| `version_check.repo` | `VERSION_CHECK_REPO` | `""` | GitHub ``owner/name`` (e.g. ``robotsix/robotsix-chat``). Required when enabled. |
+| `version_check.github_token` | `VERSION_CHECK_GITHUB_TOKEN` | `""` | Optional PAT to avoid unauthenticated rate limits. |
+| `version_check.base_url` | `VERSION_CHECK_BASE_URL` | `"https://api.github.com"` | Overridable base URL for GitHub Enterprise. |
+| `version_check.timeout` | `VERSION_CHECK_TIMEOUT` | `30.0` | Per-request HTTP timeout in seconds. |
+| `version_check.cache_ttl` | `VERSION_CHECK_CACHE_TTL` | `300.0` | Seconds to cache the latest-release lookup (monotonic clock). |
+
 ## Knowledge (writable agent knowledge base)
 
 A local, writable, always-on knowledge base the agent uses to persist durable

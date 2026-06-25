@@ -15,6 +15,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   configuration reference.
 - Enabled ``env_doc_sync`` periodic workflow via
   ``.robotsix-mill/periodic/env_doc_sync.yaml`` presence file.
+- Documented ``VERSION_CHECK_*`` env vars (6 vars) in ``docs/configuration.md``
+  under a new "Version Check" section.
 - Removed 123 vendored ``.local-deps/`` files (anyio, starlette, idna,
   asgi_correlation_id) that were incorrectly committed; ``.gitignore`` already
   covers ``local-deps/`` and ``*-deps/`` patterns.
