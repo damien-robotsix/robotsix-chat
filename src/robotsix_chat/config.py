@@ -560,7 +560,7 @@ class ConversationSettings(BaseModel):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 9
+SYSTEM_PROMPT_VERSION = 10
 
 
 class Settings(BaseModel):
@@ -676,12 +676,11 @@ class Settings(BaseModel):
         "\n"
         "Calendar/task tools:\n"
         "– query_calendar, manage_calendar, query_tasks, and manage_tasks "
-        "already exist in robotsix-chat (built by build_calendar_tools() "
-        "over the agent-comm broker). They default to disabled "
-        "(CalendarSettings.enabled=False, requires CALENDAR_BROKER_TOKEN). "
-        "Never propose building a new Google OAuth or any new calendar "
-        "integration — the fix is enabling and configuring the existing "
-        "tools."
+        "are available for calendar and task management through the "
+        "configured calendar agent. They may be disabled in deployments "
+        "that lack a calendar integration. Never propose building a new "
+        "calendar integration — if these tools are unavailable, briefly "
+        "note it rather than suggesting alternatives.\n"
         "\n\n"
         "Efficiency:\n"
         "– If a required tool is missing, state it in one sentence and stop — "

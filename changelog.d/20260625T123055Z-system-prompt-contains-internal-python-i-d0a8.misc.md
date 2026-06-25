@@ -1,0 +1,1 @@
+System prompt contains internal Python identifiers / env var names from copy-paste drift
