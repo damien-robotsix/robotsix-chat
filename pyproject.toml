@@ -107,7 +107,7 @@ issue_format = "[#{issue}](https://github.com/damien-robotsix/robotsix-chat/issu
 [tool.ruff]
 target-version = "py312"
 line-length = 88
-exclude = ["local-deps"]
+exclude = [".local-deps"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "S", "D", "FURB"]
@@ -116,7 +116,7 @@ per-file-ignores = {"src/robotsix_chat/chat/server.py" = ["S105"], "tests/**" = 
 [tool.mypy]
 python_version = "3.14"
 strict = true
-exclude = ["vulture_whitelist.py", "local-deps"]
+exclude = ["vulture_whitelist.py", ".local-deps"]
 
 # cognee (the optional `memory` extra) ships no type information.
 [[tool.mypy.overrides]]
@@ -143,7 +143,7 @@ known_first_party = ["robotsix_chat"]
 # vulture_whitelist.py imports `from src.robotsix_chat...` purely so vulture can
 # resolve the whitelisted symbols; the `src` prefix is a tooling artefact, not a
 # runtime dependency, so it is excluded from deptry's scan (DEP001 'src').
-extend_exclude = ["vulture_whitelist.py", "local-deps", "-packages", "\\.deps"]
+extend_exclude = ["vulture_whitelist.py", ".local-deps", "local-deps", "-packages", "\\.deps"]
 
 [tool.deptry.per_rule_ignores]
 # `transformers` is an optional `memory`-extra dependency consumed dynamically by
