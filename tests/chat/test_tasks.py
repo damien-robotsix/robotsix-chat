@@ -238,3 +238,47 @@ def test_count_running_drops_after_done_callback() -> None:
     # Simulate the done callback firing.
     reg._running.pop(tid, None)
     assert reg.count_running() == 0
+
+
+# ---------------------------------------------------------------------------
+# cancel_all_for_session — session-close cleanup
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_cancel_all_for_session_cancels_only_that_session() -> None:
+    """Cancels in-flight tasks for one session, leaving others running."""
+    reg = _registry()
+
+    async def _block() -> None:
+        await asyncio.sleep(3600)
+
+    ta = asyncio.create_task(_block())
+    tb = asyncio.create_task(_block())
+    tc = asyncio.create_task(_block())
+    reg.register("sess-a", "a1", ta)
+    reg.register("sess-a", "a2", tb)
+    reg.register("sess-b", "b1", tc)
+
+    cancelled = reg.cancel_all_for_session("sess-a")
+    assert cancelled == 2
+    await asyncio.sleep(0)  # let the cancellations propagate
+
+    assert ta.cancelled() and tb.cancelled()
+    assert not tc.cancelled()
+    assert all(
+        info.status == TaskStatus.FAILED and "session closed" in (info.error or "")
+        for info in reg.list_for_session("sess-a")
+    )
+    assert all(
+        info.status == TaskStatus.RUNNING for info in reg.list_for_session("sess-b")
+    )
+
+    tc.cancel()  # cleanup
+
+
+@pytest.mark.asyncio
+async def test_cancel_all_for_session_unknown_returns_zero() -> None:
+    """Cancelling a session with no tasks is a harmless no-op."""
+    reg = _registry()
+    assert reg.cancel_all_for_session("ghost") == 0

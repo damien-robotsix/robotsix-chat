@@ -297,6 +297,22 @@ class CheckLoopRegistry:
         ids = self._by_session.get(session_id, set())
         return [self._loops[lid] for lid in ids if lid in self._loops]
 
+    def stop_all_for_session(self, session_id: str, *, reason: str) -> int:
+        """Stop every ``RUNNING`` loop owned by *session_id*.
+
+        Used when a session is closed/deleted so its recurring checks do not
+        outlive it.  Each loop is stopped via :meth:`stop` (cancels the task,
+        publishes a ``loop_stopped`` frame, persists).  Already-stopped loops
+        are skipped.  Returns the number of loops actually stopped.
+        """
+        stopped = 0
+        for loop_id in list(self._by_session.get(session_id, ())):
+            info = self._loops.get(loop_id)
+            if info is not None and info.status is LoopStatus.RUNNING:
+                self.stop(loop_id, reason=reason)
+                stopped += 1
+        return stopped
+
     def snapshot(self) -> list[LoopInfo]:
         """Return a read-only list of all loop snapshots (process-wide).
 

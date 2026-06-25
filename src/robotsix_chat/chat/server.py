@@ -574,6 +574,71 @@ async def sessions_create_endpoint(request: Request) -> JSONResponse:
     return JSONResponse(session)
 
 
+async def sessions_delete_endpoint(request: Request) -> JSONResponse:
+    """Close (delete) a session and stop its background work.
+
+    ``DELETE /sessions/{session_id}?owner_id=...`` stops every check loop and
+    cancels every in-flight background task owned by the session, deletes the
+    session and its history, and returns::
+
+        {
+          "deleted": true,
+          "active_session_id": "...",   # the owner's new active session
+          "loops_stopped": 1,
+          "tasks_cancelled": 0
+        }
+
+    ``owner_id`` is required (query param).  Returns 404 when the session is
+    not found / not owned by *owner_id*.  Stopping loops/tasks is best-effort
+    and runs even when the conversation delete is a no-op (so an orphaned loop
+    can still be cleaned up).
+    """
+    session_id = request.path_params["session_id"]
+    owner_id = request.query_params.get("owner_id")
+    if not owner_id:
+        return JSONResponse(
+            {"error": "owner_id query parameter is required"}, status_code=400
+        )
+
+    # 1. Stop the session's check loops (registry may be unwired → None).
+    loops_stopped = 0
+    loop_registry = request.app.state.check_loop_registry
+    if loop_registry is not None:
+        loops_stopped = loop_registry.stop_all_for_session(
+            session_id, reason="session closed"
+        )
+
+    # 2. Cancel the session's in-flight background tasks.
+    tasks_cancelled = 0
+    task_registry = request.app.state.task_registry
+    if task_registry is not None:
+        tasks_cancelled = task_registry.cancel_all_for_session(session_id)
+
+    # 3. Delete the conversation/session itself.
+    store: ConversationStore = request.app.state.conversation_store
+    result = store.delete_session(owner_id, session_id)
+
+    if not result.get("deleted"):
+        return JSONResponse(
+            {
+                "error": "session not found",
+                "session_id": session_id,
+                "loops_stopped": loops_stopped,
+                "tasks_cancelled": tasks_cancelled,
+            },
+            status_code=404,
+        )
+
+    return JSONResponse(
+        {
+            "deleted": True,
+            "active_session_id": result.get("active_session_id", ""),
+            "loops_stopped": loops_stopped,
+            "tasks_cancelled": tasks_cancelled,
+        }
+    )
+
+
 # ---------------------------------------------------------------------------
 # Pending questions endpoints
 # ---------------------------------------------------------------------------
@@ -776,6 +841,11 @@ def create_app(
         Route("/loops", loops_list_endpoint, methods=["GET"]),
         Route("/sessions", sessions_list_endpoint, methods=["GET"]),
         Route("/sessions", sessions_create_endpoint, methods=["POST"]),
+        Route(
+            "/sessions/{session_id}",
+            sessions_delete_endpoint,
+            methods=["DELETE"],
+        ),
         Route("/pending-questions", pending_questions_list_endpoint, methods=["GET"]),
         Route(
             "/pending-questions/{question_id}",

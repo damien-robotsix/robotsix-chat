@@ -240,6 +240,7 @@
   #sessions-list { flex: 1; overflow-y: auto; padding: 0 0.5rem 0.5rem; }
 
   .session-row {
+    position: relative;
     padding: 0.5rem 0.6rem; margin-bottom: 0.3rem;
     border-radius: 6px; font-size: 0.82rem;
     border: 1px solid var(--composer-border);
@@ -249,6 +250,18 @@
     transition: background 0.15s;
   }
   .session-row:hover { background: rgba(59, 130, 246, 0.15); }
+  .session-delete-btn {
+    position: absolute; top: 4px; right: 4px;
+    background: transparent; border: none; color: #94a3b8;
+    font-size: 1.05rem; line-height: 1; cursor: pointer;
+    padding: 1px 6px; border-radius: 4px;
+    opacity: 0; transition: opacity 0.1s, color 0.1s, background 0.1s;
+  }
+  .session-row:hover .session-delete-btn,
+  .session-row.active .session-delete-btn { opacity: 1; }
+  .session-delete-btn:hover {
+    color: #ef4444; background: rgba(239, 68, 68, 0.12);
+  }
   .session-row.active {
     border-color: var(--btn-primary-bg);
     background: rgba(59, 130, 246, 0.12);
@@ -960,17 +973,56 @@
       metaDiv.textContent = parts.join(" · ");
       row.appendChild(metaDiv);
 
-      // Closure to capture session_id
-      (function (sid) {
+      // Delete (close) button — stops the session's check loops + tasks.
+      var delBtn = document.createElement("button");
+      delBtn.className = "session-delete-btn";
+      delBtn.type = "button";
+      delBtn.title = "Close session (stops its check loops)";
+      delBtn.setAttribute("aria-label", "Close session");
+      delBtn.textContent = "×";
+      row.appendChild(delBtn);
+
+      // Closure to capture session_id / title
+      (function (sid, title) {
         row.addEventListener("click", function () {
           if (sid !== activeSessionId) {
             switchSession(sid);
           }
         });
-      })(s.session_id);
+        delBtn.addEventListener("click", function (ev) {
+          ev.stopPropagation();
+          var label = title || "Untitled";
+          if (window.confirm(
+            "Close session “" + label + "”?\n\n" +
+            "This stops its check loops and background tasks and deletes " +
+            "its history. This cannot be undone."
+          )) {
+            deleteSession(sid);
+          }
+        });
+      })(s.session_id, s.title);
 
       listEl.appendChild(row);
     }
+  }
+
+  function deleteSession(sid) {
+    var url = apiBase() + "/sessions/" + encodeURIComponent(sid) +
+              "?owner_id=" + encodeURIComponent(clientId);
+    return fetch(url, { method: "DELETE" }).then(function (r) {
+      if (!r.ok && r.status !== 404) throw new Error("delete failed");
+      return r.json().catch(function () { return {}; });
+    }).then(function (data) {
+      // If we closed the active session, switch to the server-chosen
+      // replacement (it always returns one) so the chat view stays valid.
+      if (sid === activeSessionId && data && data.active_session_id) {
+        switchSession(data.active_session_id);
+      }
+      refreshSessions();
+    }).catch(function () {
+      // Best-effort: refresh anyway so the list reflects server state.
+      refreshSessions();
+    });
   }
 
   function relativeTime(iso) {

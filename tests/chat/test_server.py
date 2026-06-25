@@ -13,6 +13,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from robotsix_chat.chat.conversation import ConversationStore
+from robotsix_chat.chat.loops import CheckLoopRegistry
 from robotsix_chat.chat.server import (
     SSE_CONTENT_TYPE,
     SSE_DONE_TYPE,
@@ -21,8 +22,10 @@ from robotsix_chat.chat.server import (
     create_agent_from_settings,
     run_server_from_config,
 )
+from robotsix_chat.chat.tasks import TaskRegistry
 from robotsix_chat.config import Settings
 from robotsix_chat.llm import LlmioChatAgent
+from tests.chat import _fake_coro
 from tests.conftest import mock_app
 
 
@@ -348,6 +351,65 @@ async def test_sessions_create_invalid_json_returns_400() -> None:
 
     assert response.status_code == 400
     assert "error" in response.json()
+
+
+# ---------------------------------------------------------------------------
+# Sessions endpoints — DELETE /sessions/{id}
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_sessions_delete_stops_loops_and_removes_session() -> None:
+    """``DELETE /sessions/{id}`` stops the session's loops and deletes it."""
+    store = ConversationStore()
+    sid_a = cast(str, store.create_session("owner-del")["session_id"])
+    sid_b = cast(str, store.create_session("owner-del")["session_id"])  # active
+    loop_reg = CheckLoopRegistry(store_path=None)
+    loop_reg.register(
+        sid_a,
+        "watch",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+
+    async with mock_app(
+        conversation_store=store,
+        check_loop_registry=loop_reg,
+        task_registry=TaskRegistry(),
+    ) as f:
+        response = await f.client.delete(f"/sessions/{sid_a}?owner_id=owner-del")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["deleted"] is True
+    assert data["loops_stopped"] == 1
+    assert data["active_session_id"] == sid_b
+
+    # Session a is gone; its loop is stopped.
+    sessions, _ = store.list_sessions("owner-del")
+    assert sid_a not in [s["session_id"] for s in sessions]
+    assert all(
+        loop.status.value == "stopped" for loop in loop_reg.list_for_session(sid_a)
+    )
+
+
+@pytest.mark.asyncio
+async def test_sessions_delete_unknown_returns_404() -> None:
+    """``DELETE`` of an unknown session returns 404."""
+    store = ConversationStore()
+    store.create_session("owner-e")
+    async with mock_app(conversation_store=store) as f:
+        response = await f.client.delete("/sessions/ghost?owner_id=owner-e")
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_sessions_delete_missing_owner_id_returns_400() -> None:
+    """``DELETE`` without ``owner_id`` returns 400."""
+    async with mock_app() as f:
+        response = await f.client.delete("/sessions/whatever")
+    assert response.status_code == 400
 
 
 # ---------------------------------------------------------------------------
