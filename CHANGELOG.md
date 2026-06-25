@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add cost reconciliation periodic work (`.robotsix-mill/periodic/cost_reconciliation.yaml`) for automated LLM cost tracking and reconciliation.
+
 - Extracted image validation from ``chat_endpoint`` into a module-level
   ``_parse_and_validate_images`` helper in ``chat/server.py``.
 - Pinned all reusable workflow references to immutable commit SHAs and added CI workflow pinning conventions to ``AGENT.md``.
