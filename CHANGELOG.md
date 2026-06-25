@@ -13,6 +13,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   `format-check`, `typecheck`, `security`, `clean`, `all`) wrapping common
   `uv run` developer commands.
 
+- Add `list_pending_questions` and `get_pending_question` agent tools for reading the Pending Questions panel state (complementing the existing add/update/remove tools).
+
 - Add cost reconciliation periodic work (`.robotsix-mill/periodic/cost_reconciliation.yaml`) for automated LLM cost tracking and reconciliation.
 
 - Extracted image validation from ``chat_endpoint`` into a module-level
