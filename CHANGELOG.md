@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Extracted shared ``safe_http_request`` helper to ``robotsix_chat.common.http``,
+  consolidating the duplicated 3-way ``except (HTTPStatusError, TimeoutException,
+  Exception)`` cascade that appeared verbatim in ``board_reader``, ``refdocs``,
+  and ``version_check`` HTTP clients.  Callers now import ``safe_http_request``
+  and inspect the returned ``HttpResult`` instead of writing their own
+  error-formatting boilerplate (~40 lines eliminated).
 - Strengthened the ``agent_instruction`` Efficiency bullet to name prohibited
   output shapes (multi-row markdown tables, timeline/audit dumps, recap lists)
   and forbid repeating content already shown in the same conversation.

@@ -13,7 +13,7 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
-import httpx
+from robotsix_chat.common.http import safe_http_request
 
 if TYPE_CHECKING:
     from robotsix_chat.config import BoardReaderSettings
@@ -129,34 +129,21 @@ class BoardReader:
         returns a short diagnostic string — never raises into the chat path.
         """
         url = f"{self._base_url}{path}"
-        try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.get(
-                    url,
-                    headers=self._headers,
-                    params=params,
-                )
-                response.raise_for_status()
-                # Return the raw body as text so the LLM can inspect it.
-                # We intentionally do NOT parse JSON here — the LLM is
-                # better at summarising raw structured text than we are at
-                # picking which fields to excerpt.
-                return response.text
-        except httpx.HTTPStatusError as exc:
-            logger.warning(
-                "Board API returned %d for %s", exc.response.status_code, url
-            )
-            body = exc.response.text[:500] if exc.response.text else "(empty body)"
-            status = exc.response.status_code
-            req_method = getattr(exc.request, "method", "GET")
-            req_url = getattr(exc.request, "url", url)
-            return f"Board API error {status} for {req_method} {req_url}: {body}"
-        except httpx.TimeoutException:
-            logger.warning("Board API timed out for %s", url)
-            return f"Board API request timed out after {self._timeout}s: {url}"
-        except Exception as exc:  # noqa: BLE001 — surface as text, never crash chat
-            logger.warning("Board API request failed for %s: %s", url, exc)
-            return f"Board API request failed: {exc}"
+        result = await safe_http_request(
+            "GET",
+            url,
+            headers=self._headers,
+            timeout=self._timeout,
+            params=params,
+            label="Board API",
+        )
+        if result.error:
+            return result.error
+        # Return the raw body as text so the LLM can inspect it.
+        # We intentionally do NOT parse JSON here — the LLM is
+        # better at summarising raw structured text than we are at
+        # picking which fields to excerpt.
+        return result.text  # type: ignore[return-value]
 
     async def _post(
         self,
@@ -170,27 +157,14 @@ class BoardReader:
         returns a short diagnostic string — never raises into the chat path.
         """
         url = f"{self._base_url}{path}"
-        try:
-            async with httpx.AsyncClient(timeout=self._timeout) as client:
-                response = await client.post(
-                    url,
-                    headers=self._headers,
-                    json=json,
-                )
-                response.raise_for_status()
-                return response.text
-        except httpx.HTTPStatusError as exc:
-            logger.warning(
-                "Board API returned %d for %s", exc.response.status_code, url
-            )
-            body = exc.response.text[:500] if exc.response.text else "(empty body)"
-            status = exc.response.status_code
-            req_method = getattr(exc.request, "method", "POST")
-            req_url = getattr(exc.request, "url", url)
-            return f"Board API error {status} for {req_method} {req_url}: {body}"
-        except httpx.TimeoutException:
-            logger.warning("Board API timed out for %s", url)
-            return f"Board API request timed out after {self._timeout}s: {url}"
-        except Exception as exc:  # noqa: BLE001 — surface as text, never crash chat
-            logger.warning("Board API request failed for %s: %s", url, exc)
-            return f"Board API request failed: {exc}"
+        result = await safe_http_request(
+            "POST",
+            url,
+            headers=self._headers,
+            timeout=self._timeout,
+            json_body=json,
+            label="Board API",
+        )
+        if result.error:
+            return result.error
+        return result.text  # type: ignore[return-value]

@@ -8,12 +8,12 @@ caught and returned as concise strings — nothing raises to the agent loop.
 
 from __future__ import annotations
 
+import json
 import logging
 import time
 from typing import Any
 
-import httpx
-
+from robotsix_chat.common.http import safe_http_request
 from robotsix_chat.config import VersionCheckSettings
 
 logger = logging.getLogger(__name__)
@@ -129,51 +129,42 @@ class VersionCheckClient:
             headers["Authorization"] = f"Bearer {self._s.github_token}"
 
         url = f"{self._base_url}/repos/{self._s.repo}/releases/latest"
-
-        try:
-            async with httpx.AsyncClient(timeout=self._s.timeout) as client:
-                resp = await client.get(url, headers=headers)
-                if resp.status_code == 404:
-                    # No published releases yet — try the tags endpoint.
-                    return await self._fetch_first_tag(client, headers)
-                resp.raise_for_status()
-                data: dict[str, Any] = resp.json()
-                tag = data.get("tag_name", "")
-                if tag:
-                    return tag, "releases/latest"
-                return None, "releases/latest response had no tag_name"
-        except httpx.HTTPStatusError as exc:
-            logger.debug("version_check HTTP error: %s", exc)
-            return None, f"HTTP {exc.response.status_code}"
-        except httpx.TimeoutException:
-            logger.debug("version_check timeout")
-            return None, "GitHub API request timed out"
-        except Exception as exc:
-            logger.debug("version_check unexpected error: %s", exc)
-            return None, str(exc)
+        result = await safe_http_request(
+            "GET",
+            url,
+            headers=headers,
+            timeout=self._s.timeout,
+            label="GitHub API",
+        )
+        if result.error:
+            if result.status_code == 404:
+                # No published releases yet — try the tags endpoint.
+                return await self._fetch_first_tag(headers)
+            return None, result.error
+        data: dict[str, Any] = json.loads(result.text)  # type: ignore[arg-type]
+        tag = data.get("tag_name", "")
+        if tag:
+            return tag, "releases/latest"
+        return None, "releases/latest response had no tag_name"
 
     async def _fetch_first_tag(
         self,
-        client: httpx.AsyncClient,
         headers: dict[str, str],
     ) -> tuple[str | None, str]:
         """Fallback: GET /repos/{repo}/tags and return the first tag name."""
         url = f"{self._base_url}/repos/{self._s.repo}/tags"
-        try:
-            resp = await client.get(url, headers=headers)
-            resp.raise_for_status()
-            data: list[dict[str, Any]] = resp.json()
-            if data and isinstance(data, list):
-                first = data[0].get("name", "")
-                if first:
-                    return first, "tags (no releases found)"
-            return None, "no tags or releases found in repo"
-        except httpx.HTTPStatusError as exc:
-            logger.debug("version_check tags error: %s", exc)
-            return None, f"tags endpoint: HTTP {exc.response.status_code}"
-        except httpx.TimeoutException:
-            logger.debug("version_check tags timeout")
-            return None, "tags endpoint: timed out"
-        except Exception as exc:
-            logger.debug("version_check tags unexpected: %s", exc)
-            return None, f"tags endpoint: {exc}"
+        result = await safe_http_request(
+            "GET",
+            url,
+            headers=headers,
+            timeout=self._s.timeout,
+            label="tags endpoint",
+        )
+        if result.error:
+            return None, result.error
+        data: list[dict[str, Any]] = json.loads(result.text)  # type: ignore[arg-type]
+        if data and isinstance(data, list):
+            first = data[0].get("name", "")
+            if first:
+                return first, "tags (no releases found)"
+        return None, "no tags or releases found in repo"

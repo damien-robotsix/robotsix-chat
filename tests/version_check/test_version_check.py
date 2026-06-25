@@ -42,6 +42,12 @@ class _MockResponse:
         self._json_data = json_data
         self.status_code = status_code
 
+    @property
+    def text(self) -> str:
+        import json as _json
+
+        return _json.dumps(self._json_data)
+
     def json(self) -> Any:
         return self._json_data
 
