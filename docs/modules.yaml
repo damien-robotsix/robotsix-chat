@@ -69,12 +69,22 @@ modules:
       - src/robotsix_chat/chat/__init__.py
       - src/robotsix_chat/chat/auth.py
       - src/robotsix_chat/chat/conversation.py
+      - src/robotsix_chat/chat/delegation.py
+      - src/robotsix_chat/chat/events.py
+      - src/robotsix_chat/chat/loops.py
+      - src/robotsix_chat/chat/runner.py
       - src/robotsix_chat/chat/server.py
       - src/robotsix_chat/chat/tasks.py
       - tests/chat/__init__.py
       - tests/chat/test_auth.py
+      - tests/chat/test_background_e2e.py
       - tests/chat/test_conversation.py
+      - tests/chat/test_delegation.py
+      - tests/chat/test_events.py
+      - tests/chat/test_loops.py
+      - tests/chat/test_runner.py
       - tests/chat/test_server.py
+      - tests/chat/test_tasks.py
 
   - id: robotsix_chat.common
     description: "Shared utilities — provides safe_http_request() for consistent httpx error handling across HTTP clients."
