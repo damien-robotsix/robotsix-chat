@@ -971,8 +971,10 @@ def create_agent_from_settings(
     # scoped to the session that spawned them.
     request_tools_factory: Callable[[str], list[Any]] | None = None
     if (
-        task_registry is not None and delivery_channel is not None
-    ) or check_loop_registry is not None or pq_store is not None:
+        (task_registry is not None and delivery_channel is not None)
+        or check_loop_registry is not None
+        or pq_store is not None
+    ):
         from robotsix_chat.chat.delegation import (
             build_check_loop_tools,
             build_delegation_tools,

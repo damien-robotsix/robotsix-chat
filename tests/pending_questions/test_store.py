@@ -119,7 +119,8 @@ def test_remove_deletes_entry():
 def test_remove_unknown_returns_none():
     """remove() on an unknown id returns None."""
     store = PendingQuestionsStore()
-    assert store.remove("nonexistent") is None
+    result = store.remove("nonexistent")
+    assert result is None
 
 
 def test_wall_clock_override():

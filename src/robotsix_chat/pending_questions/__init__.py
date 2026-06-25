@@ -100,8 +100,7 @@ def build_pending_questions_tools(
             updates["status"] = status
         if not updates:
             return (
-                "No fields to update — supply at least one of "
-                "text, detail, or status."
+                "No fields to update — supply at least one of text, detail, or status."
             )
 
         entry = store.update(question_id, **updates)  # type: ignore[arg-type]
