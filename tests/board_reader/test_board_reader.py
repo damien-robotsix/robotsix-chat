@@ -587,3 +587,441 @@ async def test_get_ticket_cache_hit(
 
     assert out1 == out2 == '{"id": "abc", "title": "Fix bug"}'
     assert get_counter[0] == 1  # only the first call hit HTTP
+        repo_id="x",
+    )
+
+    assert "409" in out
+    assert "conflict" in out
+
+
+# ---------------------------------------------------------------------------
+# dedup helpers — unit tests
+# ---------------------------------------------------------------------------
+
+
+from robotsix_chat.board_reader.dedup import (  # noqa: E402 — deliberately after mock helpers
+    SIMILARITY_THRESHOLD,
+    find_duplicate_candidates,
+    normalize_title,
+    title_similarity,
+)
+
+
+def test_normalize_title_lowercase() -> None:
+    """Lowercase the title."""
+    assert normalize_title("Add Image Support") == "add image support"
+
+
+def test_normalize_title_strip_punctuation() -> None:
+    """Strip punctuation characters."""
+    result = normalize_title("Hello, world! How's it going?")
+    assert result == "hello world how s it going"
+
+
+def test_normalize_title_collapse_whitespace() -> None:
+    """Collapse multiple whitespace into single spaces."""
+    assert normalize_title("  too   many   spaces  ") == "too many spaces"
+
+
+def test_normalize_title_empty_string() -> None:
+    """Empty string returns empty string."""
+    assert normalize_title("") == ""
+
+
+def test_normalize_title_only_punctuation() -> None:
+    """All-punctuation string returns empty string."""
+    assert normalize_title("!!! ??? ...") == ""
+
+
+def test_title_similarity_identical() -> None:
+    """Identical titles have similarity 1.0."""
+    assert title_similarity("Add image support", "Add image support") == 1.0
+
+
+def test_title_similarity_punctuation_insensitive() -> None:
+    """Punctuation differences do not affect similarity."""
+    assert title_similarity("Add image support", "Add image support!!!") == 1.0
+
+
+def test_title_similarity_case_insensitive() -> None:
+    """Case differences do not affect similarity."""
+    assert title_similarity("ADD IMAGE SUPPORT", "add image support") == 1.0
+
+
+def test_title_similarity_no_overlap() -> None:
+    """Completely different titles have similarity 0.0."""
+    assert title_similarity("Fix login bug", "Add image support") == 0.0
+
+
+def test_title_similarity_partial_overlap() -> None:
+    """Partially overlapping token sets yield a fractional score."""
+    # "image support" vs "support images"
+    # tokens: {image, support} vs {support, images}
+    # intersection=1, union=3 → 0.333...
+    sim = title_similarity("image support", "support images")
+    assert 0.3 < sim < 0.4
+
+
+def test_title_similarity_empty_a() -> None:
+    """Similarity is 0.0 when first title is empty."""
+    assert title_similarity("", "something") == 0.0
+
+
+def test_title_similarity_empty_b() -> None:
+    """Similarity is 0.0 when second title is empty."""
+    assert title_similarity("something", "") == 0.0
+
+
+def test_title_similarity_both_punctuation_only() -> None:
+    """Similarity is 0.0 when both titles are pure punctuation."""
+    assert title_similarity("!!!", "???") == 0.0
+
+
+def test_find_dup_equal_title_match() -> None:
+    """Exact title match returns the candidate."""
+    tickets = [
+        {"id": "abc", "title": "Add image support", "state": "ready"},
+        {"id": "xyz", "title": "Fix login bug", "state": "draft"},
+    ]
+    result = find_duplicate_candidates("Add image support", tickets)
+    assert len(result) == 1
+    assert result[0]["id"] == "abc"
+
+
+def test_find_dup_normalized_equal_match() -> None:
+    """Normalization-equal titles (punctuation difference) still match."""
+    tickets = [
+        {"id": "abc", "title": "Add image support!!!", "state": "ready"},
+    ]
+    result = find_duplicate_candidates("add image support", tickets)
+    assert len(result) == 1
+    assert result[0]["id"] == "abc"
+
+
+def test_find_dup_substring_match() -> None:
+    """When new title is a normalized substring of an existing title."""
+    tickets = [
+        {"id": "abc", "title": "Add image support to the chat", "state": "ready"},
+    ]
+    result = find_duplicate_candidates("image support", tickets)
+    assert len(result) == 1
+    assert result[0]["id"] == "abc"
+
+
+def test_find_dup_reverse_substring_match() -> None:
+    """When existing title is a normalized substring of the new title."""
+    tickets = [
+        {"id": "abc", "title": "image support", "state": "ready"},
+    ]
+    result = find_duplicate_candidates("Add image support to the chat", tickets)
+    assert len(result) == 1
+    assert result[0]["id"] == "abc"
+
+
+def test_find_dup_above_threshold() -> None:
+    """Token overlap at or above SIMILARITY_THRESHOLD returns a candidate."""
+    # "image support for chat" vs "add image support in chat"
+    # normalized: "image support for chat" vs "add image support in chat"
+    # tokens: {image,support,for,chat} vs {add,image,support,in,chat}
+    # intersection=3, union=6 → 0.5  → at threshold (>=) should match
+    tickets = [
+        {"id": "abc", "title": "add image support in chat", "state": "ready"},
+    ]
+    result = find_duplicate_candidates("image support for chat", tickets)
+    assert len(result) == 1
+    assert result[0]["id"] == "abc"
+
+
+def test_find_dup_below_threshold() -> None:
+    """Token overlap below threshold returns no candidates."""
+    tickets = [
+        {"id": "abc", "title": "fix login bug", "state": "ready"},
+    ]
+    result = find_duplicate_candidates("image support", tickets)
+    assert len(result) == 0
+
+
+def test_find_dup_custom_threshold() -> None:
+    """Custom threshold changes what is flagged."""
+    tickets = [
+        {"id": "abc", "title": "image support", "state": "ready"},
+    ]
+    # "image support" vs "support images": sim ~0.333
+    result_strict = find_duplicate_candidates("support images", tickets, threshold=0.5)
+    assert len(result_strict) == 0
+    result_loose = find_duplicate_candidates("support images", tickets, threshold=0.3)
+    assert len(result_loose) == 1
+
+
+def test_find_dup_skips_missing_title() -> None:
+    """Tickets with missing or empty title are skipped."""
+    tickets = [
+        {"id": "abc", "state": "ready"},
+        {"id": "xyz", "title": "", "state": "draft"},
+    ]
+    result = find_duplicate_candidates("image support", tickets)
+    assert len(result) == 0
+
+
+def test_find_dup_skips_non_string_title() -> None:
+    """Tickets with non-string title are skipped."""
+    tickets = [
+        {"id": "abc", "title": 123, "state": "ready"},
+    ]
+    result = find_duplicate_candidates("image support", tickets)
+    assert len(result) == 0
+
+
+def test_find_dup_sorted_by_descending_similarity() -> None:
+    """Candidates are sorted descending by similarity score."""
+    tickets = [
+        {"id": "a", "title": "something else entirely", "state": "draft"},
+        {"id": "b", "title": "image support", "state": "ready"},
+        {"id": "c", "title": "add image support to chat", "state": "draft"},
+    ]
+    result = find_duplicate_candidates("image support", tickets)
+    # "image support" exact match (score 1.0)
+    # "add image support to chat" substring match (score 1.0)
+    # Both score 1.0, stable sort → b first, then c
+    assert len(result) == 2
+    assert result[0]["id"] == "b"
+    assert result[1]["id"] == "c"
+
+
+def test_find_dup_empty_new_title() -> None:
+    """Empty new title returns no candidates."""
+    tickets = [{"id": "abc", "title": "image support", "state": "ready"}]
+    result = find_duplicate_candidates("", tickets)
+    assert len(result) == 0
+
+
+def test_find_dup_empty_tickets() -> None:
+    """Empty ticket list returns no candidates."""
+    result = find_duplicate_candidates("image support", [])
+    assert len(result) == 0
+
+
+def test_similarity_threshold_constant() -> None:
+    """SIMILARITY_THRESHOLD is 0.5 float."""
+    assert isinstance(SIMILARITY_THRESHOLD, float)
+    assert SIMILARITY_THRESHOLD == 0.5
+
+
+# ---------------------------------------------------------------------------
+# create_board_ticket — duplicate guard (tool-level)
+# ---------------------------------------------------------------------------
+
+
+def _install_mock_dual_client(
+    monkeypatch: pytest.MonkeyPatch,
+    get_response: _MockResponse,
+    post_response: _MockResponse,
+) -> dict[str, Any]:
+    """Replace ``httpx.AsyncClient`` with a factory that handles both GET and POST.
+
+    Returns a ``captured`` dict with ``get`` and ``post`` sub-dicts that
+    collect ``url``, ``headers``, and ``params``/``json`` for inspection.
+    """
+    captured: dict[str, Any] = {"get": {}, "post": {}}
+
+    class _BoundDualClient:
+        def __init__(self, **kwargs: Any) -> None:
+            self._get_resp = get_response
+            self._post_resp = post_response
+
+        async def __aenter__(self) -> _BoundDualClient:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def get(
+            self,
+            url: str,
+            *,
+            headers: dict[str, str],
+            params: dict[str, str] | None = None,
+        ) -> _MockResponse:
+            captured["get"]["url"] = url
+            captured["get"]["headers"] = headers
+            captured["get"]["params"] = params
+            return self._get_resp
+
+        async def post(
+            self,
+            url: str,
+            *,
+            headers: dict[str, str],
+            json: dict[str, str] | None = None,
+        ) -> _MockResponse:
+            captured["post"]["url"] = url
+            captured["post"]["headers"] = headers
+            captured["post"]["json"] = json
+            return self._post_resp
+
+    monkeypatch.setattr(httpx, "AsyncClient", _BoundDualClient)
+    return captured
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_blocks_on_duplicate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Near-duplicate open ticket blocks POST and returns a warning."""
+    get_resp = _MockResponse(
+        text='[{"id": "existing-1", "title": "Add image support", "state": "ready"}]'
+    )
+    post_resp = _MockResponse(text="SHOULD NOT BE CALLED", status_code=201)
+
+    tools = build_board_reader_tools(_settings(api_base_url="http://127.0.0.1:8077"))
+    create_fn = [t for t in tools if t.__name__ == "create_board_ticket"][0]
+    captured = _install_mock_dual_client(monkeypatch, get_resp, post_resp)
+
+    out = await create_fn(
+        title="image support",
+        description="We need image support",
+        repo_id="robotsix-chat",
+    )
+
+    # Must NOT have POSTed.
+    assert "url" not in captured["post"]
+    # Warning must be present.
+    assert "⚠️" in out
+    assert "existing-1" in out
+    assert "read_board_ticket" in out
+    assert "force=True" in out
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_proceeds_when_no_duplicate(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With force=False and no similar open tickets, the tool POSTs normally."""
+    get_resp = _MockResponse(
+        text='[{"id": "abc", "title": "Fix login bug", "state": "ready"}]'
+    )
+    post_resp = _MockResponse(
+        text='{"id": "new-1", "title": "Support images", "state": "draft"}',
+        status_code=201,
+    )
+
+    tools = build_board_reader_tools(_settings(api_base_url="http://127.0.0.1:8077"))
+    create_fn = [t for t in tools if t.__name__ == "create_board_ticket"][0]
+    captured = _install_mock_dual_client(monkeypatch, get_resp, post_resp)
+
+    out = await create_fn(
+        title="Support images",
+        description="We need image support",
+        repo_id="robotsix-chat",
+    )
+
+    # POST must have been called.
+    assert captured["post"]["url"] == "http://127.0.0.1:8077/tickets"
+    assert out == post_resp.text
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_force_bypasses_dedup(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """With force=True, the dedup check is skipped and the tool POSTs immediately."""
+    get_resp = _MockResponse(
+        text='[{"id": "existing-1", "title": "Add image support"}]'
+    )
+    post_resp = _MockResponse(
+        text='{"id": "new-2", "title": "Support images", "state": "draft"}',
+        status_code=201,
+    )
+
+    tools = build_board_reader_tools(_settings(api_base_url="http://127.0.0.1:8077"))
+    create_fn = [t for t in tools if t.__name__ == "create_board_ticket"][0]
+    captured = _install_mock_dual_client(monkeypatch, get_resp, post_resp)
+
+    out = await create_fn(
+        title="Support images",
+        description="We need image support",
+        repo_id="robotsix-chat",
+        force=True,
+    )
+
+    # GET should NOT have been called (we never listed tickets).
+    assert "url" not in captured["get"]
+    # POST must have been called.
+    assert captured["post"]["url"] == "http://127.0.0.1:8077/tickets"
+    assert out == post_resp.text
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_fail_open_on_non_json_list(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Board-read error (diagnostic string) → fail-open POST."""
+    get_resp = _MockResponse(text="Board API request timed out after 5.0s: ...")
+    post_resp = _MockResponse(
+        text='{"id": "new-3", "title": "Support images", "state": "draft"}',
+        status_code=201,
+    )
+
+    tools = build_board_reader_tools(_settings(api_base_url="http://127.0.0.1:8077"))
+    create_fn = [t for t in tools if t.__name__ == "create_board_ticket"][0]
+    captured = _install_mock_dual_client(monkeypatch, get_resp, post_resp)
+
+    out = await create_fn(
+        title="Support images",
+        description="We need image support",
+        repo_id="robotsix-chat",
+    )
+
+    # GET was called, POST also was called (fail-open).
+    assert captured["get"]["url"] == "http://127.0.0.1:8077/tickets"
+    assert captured["post"]["url"] == "http://127.0.0.1:8077/tickets"
+    assert out == post_resp.text
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_fail_open_on_json_object(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Board-read returns a JSON object (not list) → fail-open POST."""
+    get_resp = _MockResponse(text='{"error": "something went wrong"}')
+    post_resp = _MockResponse(
+        text='{"id": "new-4", "title": "Fix bug", "state": "draft"}',
+        status_code=201,
+    )
+
+    tools = build_board_reader_tools(_settings(api_base_url="http://127.0.0.1:8077"))
+    create_fn = [t for t in tools if t.__name__ == "create_board_ticket"][0]
+    captured = _install_mock_dual_client(monkeypatch, get_resp, post_resp)
+
+    out = await create_fn(
+        title="Fix bug",
+        description="Something broke",
+        repo_id="robotsix-chat",
+    )
+
+    assert captured["post"]["url"] == "http://127.0.0.1:8077/tickets"
+    assert out == post_resp.text
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_duplicate_listing_includes_state(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The duplicate warning includes state for each candidate."""
+    get_resp = _MockResponse(
+        text='[{"id": "dup-1", "title": "Add image support", "state": "in_progress"}]'
+    )
+    post_resp = _MockResponse(text="SHOULD NOT BE CALLED", status_code=201)
+
+    tools = build_board_reader_tools(_settings())
+    create_fn = [t for t in tools if t.__name__ == "create_board_ticket"][0]
+    _install_mock_dual_client(monkeypatch, get_resp, post_resp)
+
+    out = await create_fn(
+        title="Add image support",
+        description="Need images",
+        repo_id="robotsix-chat",
+    )
+
+    assert "in_progress" in out
+    assert "dup-1" in out
