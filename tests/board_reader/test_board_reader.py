@@ -491,7 +491,9 @@ async def test_list_tickets_errors_not_cached(
     """Error responses must not be stored; each call hits HTTP."""
     get_counter: list[int] = [0]
     # 500 error → response text starts with "Board API error"
-    resp = _MockResponse(text="Board API error 500 for GET /tickets: boom", status_code=500)
+    resp = _MockResponse(
+        text="Board API error 500 for GET /tickets: boom", status_code=500
+    )
     _install_mock_client(monkeypatch, resp, counter=get_counter)
 
     client = BoardReader(_settings(cache_ttl=60.0))
@@ -520,7 +522,7 @@ async def test_create_ticket_invalidates_list_cache(
         def __init__(self, **kwargs: Any) -> None:
             pass
 
-        async def __aenter__(self) -> "_BothClient":
+        async def __aenter__(self) -> _BothClient:
             return self
 
         async def __aexit__(self, *exc: object) -> None:
@@ -561,9 +563,7 @@ async def test_create_ticket_invalidates_list_cache(
     assert get_counter[0] == 1
 
     # 2) Create a ticket → invalidates list cache
-    await client.create_ticket(
-        title="T", description="D", repo_id="robotsix-chat"
-    )
+    await client.create_ticket(title="T", description="D", repo_id="robotsix-chat")
     assert post_counter[0] == 1
 
     # 3) List again → must refetch (cache was cleared by create)
