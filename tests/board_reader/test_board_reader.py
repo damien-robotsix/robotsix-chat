@@ -588,6 +588,7 @@ async def test_get_ticket_cache_hit(
     assert out1 == out2 == '{"id": "abc", "title": "Fix bug"}'
     assert get_counter[0] == 1  # only the first call hit HTTP
 
+
 # ---------------------------------------------------------------------------
 # dedup helpers — unit tests
 # ---------------------------------------------------------------------------
