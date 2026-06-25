@@ -67,6 +67,7 @@ expires a fresh conversation starts with empty history.
 | `conversation.idle_reset_seconds` | `CONVERSATION_IDLE_RESET_SECONDS` | `1800` | Idle gap (seconds) after which the next message starts a new conversation. Default 1800 = 30 minutes. |
 | `conversation.max_history_turns` | `CONVERSATION_MAX_HISTORY_TURNS` | `50` | Most recent user/assistant turn-pairs kept per conversation and replayed to the agent (bounds prompt size). |
 | `conversation.max_conversations` | `CONVERSATION_MAX_CONVERSATIONS` | `1000` | Maximum number of distinct clients tracked at once (LRU-evicted). Bounds the in-memory store. |
+| `conversation.persist_path` | `CONVERSATION_PERSIST_PATH` | `".data/conversations.json"` | Path to the JSON persistence file for conversation sessions. Set to empty string to disable persistence. |
 
 ## Memory (cognee)
 
