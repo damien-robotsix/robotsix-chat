@@ -15,6 +15,8 @@ import pytest
 from robotsix_chat.config import RefDocsSettings
 from robotsix_chat.refdocs import build_refdocs_tools
 from robotsix_chat.refdocs.client import RefDocsClient
+from tests.common.mock_helpers import MockResponse as _MockResponse
+from tests.common.mock_helpers import install_mock_client as _install_mock_client
 
 
 def _settings(**kw: Any) -> RefDocsSettings:
@@ -48,61 +50,6 @@ def _failing_client(exc: type[Exception], msg: str) -> type:
             raise exc(msg)
 
     return _FailingClient
-
-
-class _MockResponse:
-    """Minimal httpx.Response stand-in for testing."""
-
-    def __init__(self, json_data: Any, status_code: int = 200) -> None:
-        self._json_data = json_data
-        self.status_code = status_code
-
-    @property
-    def text(self) -> str:
-        import json as _json
-
-        return _json.dumps(self._json_data)
-
-    def json(self) -> Any:
-        return self._json_data
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise httpx.HTTPStatusError(
-                f"HTTP {self.status_code}",
-                request=object(),  # type: ignore[arg-type]
-                response=self,  # type: ignore[arg-type]
-            )
-
-
-def _install_mock_client(
-    monkeypatch: pytest.MonkeyPatch,
-    response: _MockResponse,
-) -> dict[str, Any]:
-    """Replace ``httpx.AsyncClient`` with a factory returning *response*.
-
-    Returns a ``captured`` dict that receives ``url`` and ``headers`` from
-    each ``get`` call for later inspection.
-    """
-    captured: dict[str, Any] = {}
-
-    class _BoundClient:
-        def __init__(self, **kwargs: Any) -> None:
-            self._resp = response
-
-        async def __aenter__(self) -> _BoundClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(self, url: str, *, headers: dict[str, str]) -> _MockResponse:
-            captured["url"] = url
-            captured["headers"] = headers
-            return self._resp
-
-    monkeypatch.setattr(httpx, "AsyncClient", _BoundClient)
-    return captured
 
 
 # ---------------------------------------------------------------------------

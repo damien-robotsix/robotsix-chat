@@ -12,79 +12,8 @@ import httpx
 import pytest
 
 from robotsix_chat.common.http import HttpResult, safe_http_request
-
-# ---------------------------------------------------------------------------
-# Shared mock helpers
-# ---------------------------------------------------------------------------
-
-
-class _MockResponse:
-    """Minimal httpx.Response stand-in for testing."""
-
-    def __init__(self, text: str = "", status_code: int = 200) -> None:
-        self.text = text
-        self.status_code = status_code
-
-    def raise_for_status(self) -> None:
-        if self.status_code >= 400:
-            raise httpx.HTTPStatusError(
-                f"HTTP {self.status_code}",
-                request=object(),  # type: ignore[arg-type]
-                response=self,  # type: ignore[arg-type]
-            )
-
-
-def _install_mock_client(
-    monkeypatch: pytest.MonkeyPatch,
-    response: _MockResponse,
-) -> dict[str, Any]:
-    """Replace ``httpx.AsyncClient`` with a factory returning *response*.
-
-    Returns a ``captured`` dict that receives ``url``, ``headers``,
-    ``params``, and ``json`` from each call for later inspection.
-    """
-    captured: dict[str, Any] = {}
-
-    class _BoundClient:
-        def __init__(self, **kwargs: Any) -> None:
-            captured["client_kwargs"] = kwargs
-            self._resp = response
-
-        async def __aenter__(self) -> _BoundClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(
-            self,
-            url: str,
-            *,
-            headers: dict[str, str] | None = None,
-            params: dict[str, str] | None = None,
-        ) -> _MockResponse:
-            captured["method"] = "GET"
-            captured["url"] = url
-            captured["headers"] = headers
-            captured["params"] = params
-            return self._resp
-
-        async def post(
-            self,
-            url: str,
-            *,
-            headers: dict[str, str] | None = None,
-            json: dict[str, Any] | None = None,
-        ) -> _MockResponse:
-            captured["method"] = "POST"
-            captured["url"] = url
-            captured["headers"] = headers
-            captured["json"] = json
-            return self._resp
-
-    monkeypatch.setattr(httpx, "AsyncClient", _BoundClient)
-    return captured
-
+from tests.common.mock_helpers import MockResponse as _MockResponse
+from tests.common.mock_helpers import install_mock_client as _install_mock_client
 
 # ---------------------------------------------------------------------------
 # HttpResult
@@ -194,7 +123,7 @@ async def test_passes_timeout_to_client(
 ) -> None:
     """The timeout parameter is forwarded to httpx.AsyncClient."""
     resp = _MockResponse(text="ok")
-    captured = _install_mock_client(monkeypatch, resp)
+    captured = _install_mock_client(monkeypatch, resp, capture_kwargs=True)
 
     await safe_http_request("GET", "https://example.com/api", timeout=12.5)
 

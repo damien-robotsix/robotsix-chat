@@ -10,6 +10,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 - Pinned all reusable workflow references to immutable commit SHAs and added CI workflow pinning conventions to ``AGENT.md``.
+- Extracted duplicated ``_MockResponse`` / ``_install_mock_client`` mock helpers
+  from four test files into a shared ``tests/common/mock_helpers.py`` module.
 
 - Enabled periodic ``board_cleanup`` workflow to expire stale retry-queue
   entries, detect cache inconsistencies, and flag abandoned board duplicates.
