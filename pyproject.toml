@@ -163,7 +163,7 @@ exclude_dirs = ["tests"]
 strict = true
 testpaths = ["tests"]
 filterwarnings = ["error"]
-asyncio_mode = "auto"
+
 
 [tool.coverage.run]
 source = ["robotsix_chat"]
