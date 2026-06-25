@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Documented ``LLMIO_SUBAGENT_MODEL`` env var in ``docs/configuration.md``.
 - Enabled ``env_doc_sync`` periodic workflow via
   ``.robotsix-mill/periodic/env_doc_sync.yaml`` presence file.
 - Removed 123 vendored ``.local-deps/`` files (anyio, starlette, idna,
