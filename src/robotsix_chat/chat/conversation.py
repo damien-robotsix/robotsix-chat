@@ -332,6 +332,55 @@ class ConversationStore:
             "turn_count": 0,
         }
 
+    def delete_session(self, owner_id: str, session_id: str) -> dict[str, object]:
+        """Delete *session_id* (and its history) for *owner_id*.
+
+        When the deleted session was the owner's active session, the
+        most-recently-active remaining session becomes active; if none remain
+        a fresh empty session is created so the owner always has an active
+        session.  Returns ``{"deleted": bool, "active_session_id": str}`` —
+        ``deleted`` is ``False`` (no-op) when the owner is unknown or the
+        session is not owned by it.
+
+        Note: this only removes conversation state.  Stopping the session's
+        background tasks / check loops is the caller's responsibility (the
+        ``DELETE /sessions`` endpoint does both).
+        """
+        owner = self._owners.get(owner_id)
+        if owner is None or session_id not in owner.session_ids:
+            return {
+                "deleted": False,
+                "active_session_id": owner.active_session_id if owner else "",
+            }
+
+        owner.session_ids.discard(session_id)
+        self._sessions.pop(session_id, None)
+
+        if owner.active_session_id == session_id:
+            remaining = [
+                self._sessions[s] for s in owner.session_ids if s in self._sessions
+            ]
+            if remaining:
+                newest = max(remaining, key=lambda s: s.wall_last_active)
+                owner.active_session_id = newest.session_id
+            else:
+                # No sessions left — create a fresh empty active session so the
+                # owner always has one (mirrors list_sessions' lazy default).
+                sid = self._session_factory()
+                self._sessions[sid] = Session(
+                    session_id=sid,
+                    wall_last_active=self._wall_clock(),
+                )
+                self._sessions.move_to_end(sid)
+                owner.session_ids.add(sid)
+                owner.active_session_id = sid
+                self._evict_overflow()
+
+        if self._persist_path is not None:
+            self._persist()
+
+        return {"deleted": True, "active_session_id": owner.active_session_id}
+
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------

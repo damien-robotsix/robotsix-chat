@@ -135,6 +135,26 @@ class TaskRegistry:
         ids = self._by_session.get(session_id, set())
         return [self._tasks[tid] for tid in ids if tid in self._tasks]
 
+    def cancel_all_for_session(self, session_id: str) -> int:
+        """Cancel every in-flight background task owned by *session_id*.
+
+        Used when a session is closed/deleted so its background sub-agents do
+        not outlive it.  Each still-running :class:`asyncio.Task` is cancelled
+        and its snapshot flipped to ``FAILED`` (cancelled).  Already-finished
+        tasks are skipped.  Returns the number of tasks actually cancelled.
+        """
+        cancelled = 0
+        for task_id in list(self._by_session.get(session_id, ())):
+            task = self._running.get(task_id)
+            if task is not None and not task.done():
+                task.cancel()
+                info = self._tasks.get(task_id)
+                if info is not None and info.status is TaskStatus.RUNNING:
+                    info.status = TaskStatus.FAILED
+                    info.error = "cancelled: session closed"
+                cancelled += 1
+        return cancelled
+
     def complete(self, task_id: str, result: str) -> None:
         """Mark *task_id* as completed with the given *result*."""
         info = self._tasks.get(task_id)

@@ -2415,3 +2415,65 @@ def test_dedup_event_sink_publishes_stopped_frame() -> None:
     assert len(stopped) == 1
     assert stopped[0]["loop_id"] == lid1
     assert stopped[0]["reason"] == "superseded by a newer check loop"
+
+
+# ---------------------------------------------------------------------------
+# stop_all_for_session — session-close cleanup
+# ---------------------------------------------------------------------------
+
+
+def test_stop_all_for_session_stops_only_that_session() -> None:
+    """Stops every RUNNING loop for the session, leaving other sessions alone."""
+    reg = _registry()
+    reg.register(
+        "sess-a",
+        "loop a1",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    reg.register(
+        "sess-a",
+        "loop a2",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    reg.register(
+        "sess-b",
+        "loop b1",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+
+    stopped = reg.stop_all_for_session("sess-a", reason="session closed")
+
+    assert stopped == 2
+    assert all(
+        loop.status == LoopStatus.STOPPED and loop.stop_reason == "session closed"
+        for loop in reg.list_for_session("sess-a")
+    )
+    assert all(
+        loop.status == LoopStatus.RUNNING for loop in reg.list_for_session("sess-b")
+    )
+
+
+def test_stop_all_for_session_unknown_returns_zero() -> None:
+    """Stopping a session with no loops is a harmless no-op."""
+    reg = _registry()
+    assert reg.stop_all_for_session("ghost", reason="x") == 0
+
+
+def test_stop_all_for_session_skips_already_stopped() -> None:
+    """An already-stopped loop is not re-counted."""
+    reg = _registry()
+    lid = reg.register(
+        "sess-a",
+        "loop",
+        interval_seconds=60,
+        max_iterations=None,
+        coro=_fake_coro(),  # type: ignore[arg-type]
+    )
+    reg.stop(lid, reason="manual")
+    assert reg.stop_all_for_session("sess-a", reason="session closed") == 0

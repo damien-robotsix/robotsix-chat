@@ -386,3 +386,69 @@ def test_load_malformed_json_is_graceful() -> None:
         assert history == []
     finally:
         persist_path.unlink(missing_ok=True)
+
+
+# ---------------------------------------------------------------------------
+# delete_session
+# ---------------------------------------------------------------------------
+
+
+def test_delete_session_non_active_removes_it() -> None:
+    """Deleting a non-active session removes it; active is unchanged."""
+    store = _store()
+    a = str(store.create_session("o1")["session_id"])
+    b = str(store.create_session("o1")["session_id"])  # b becomes active
+
+    result = store.delete_session("o1", a)
+
+    assert result["deleted"] is True
+    assert result["active_session_id"] == b
+    sessions, active = store.list_sessions("o1")
+    assert [s["session_id"] for s in sessions] == [b]
+    assert active == b
+    assert store.history(a) == []
+
+
+def test_delete_active_session_reassigns_to_most_recent() -> None:
+    """Deleting the active session promotes the most-recently-active remainder."""
+    clock = _FakeWallClock()
+    store = _store(wall_clock=clock)
+    a = str(store.create_session("o1")["session_id"])
+    clock.advance(10)
+    b = str(store.create_session("o1")["session_id"])  # active, newest
+    clock.advance(10)
+    # Touch a so it is the most-recently-active of the remaining after b is gone.
+    store.record(a, "o1", "hi", "there")
+
+    result = store.delete_session("o1", b)
+
+    assert result["deleted"] is True
+    assert result["active_session_id"] == a
+
+
+def test_delete_last_session_creates_fresh_active() -> None:
+    """Deleting the only session yields a fresh empty active session."""
+    store = _store()
+    only = str(store.create_session("o1")["session_id"])
+
+    result = store.delete_session("o1", only)
+
+    assert result["deleted"] is True
+    new_active = result["active_session_id"]
+    assert new_active != only
+    sessions, active = store.list_sessions("o1")
+    assert active == new_active
+    assert len(sessions) == 1
+    assert sessions[0]["turn_count"] == 0
+
+
+def test_delete_session_unknown_is_noop() -> None:
+    """Deleting an unknown owner/session returns deleted=False."""
+    store = _store()
+    a = str(store.create_session("o1")["session_id"])
+
+    assert store.delete_session("nobody", "whatever")["deleted"] is False
+    assert store.delete_session("o1", "not-owned")["deleted"] is False
+    # The real session is untouched.
+    sessions, _ = store.list_sessions("o1")
+    assert [s["session_id"] for s in sessions] == [a]
