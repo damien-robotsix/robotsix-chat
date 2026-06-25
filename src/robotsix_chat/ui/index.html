@@ -897,6 +897,9 @@
     // 2. Clear the chat DOM bubbles.
     clearChatBubbles();
 
+    // 2b. Reset the per-session Tasks/Check Loops panels.
+    clearBackgroundPanels();
+
     // 3. Close the current event stream and re-open for new session.
     closeEventStream();
     openEventStream();
@@ -1371,6 +1374,21 @@
     if (state === "sending" || state === "streaming") {
       state = "idle";
     }
+  }
+
+  function clearBackgroundPanels() {
+    // Reset the per-session Tasks and Check Loops panels so background work
+    // from a previous session does not bleed into the one we switched to.
+    // Loops are reloaded for the new session via loadLoops(); tasks are
+    // session-only/in-memory and simply start empty until new ones arrive.
+    tasksById = {};
+    tasksOrder = [];
+    loopsById = {};
+    loopsOrder = [];
+    var tasksListEl = document.getElementById("tasks-list");
+    if (tasksListEl) tasksListEl.innerHTML = "";
+    var loopsListEl = document.getElementById("loops-list");
+    if (loopsListEl) loopsListEl.innerHTML = "";
   }
 
   function addUserBubble(text) {

@@ -206,7 +206,7 @@ class ComponentAgentResponder:
             loop_summary.append(
                 {
                     "id": info.id,
-                    "client_id": info.client_id,
+                    "session_id": info.session_id,
                     "prompt": info.prompt,
                     "interval_seconds": info.interval_seconds,
                     "status": info.status.value,

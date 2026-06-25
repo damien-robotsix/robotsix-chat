@@ -1433,7 +1433,7 @@ async def test_resume_check_loops_restarts_persisted_running_loop(
     info = reg.get(persisted_id)
     assert info is not None
     assert info.status == LoopStatus.RUNNING
-    assert info.client_id == persisted_client
+    assert info.session_id == persisted_client
     assert info.prompt == persisted_prompt
 
     # Cleanup — stop the resumed loop so its asyncio task cancels.
@@ -1599,7 +1599,7 @@ async def test_loops_list_endpoint_returns_loops_for_client() -> None:
         assert ids == {lid1, lid2}
 
         for entry in loops:
-            assert entry["client_id"] == "c-a"
+            assert entry["session_id"] == "c-a"
             assert entry["status"] == "running"
             assert entry["interval_seconds"] in (60.0, 30.0)
             assert entry["iterations"] == 0
@@ -1608,7 +1608,7 @@ async def test_loops_list_endpoint_returns_loops_for_client() -> None:
             # Every LoopInfo field must be present.
             for field in (
                 "id",
-                "client_id",
+                "session_id",
                 "prompt",
                 "interval_seconds",
                 "status",
@@ -1629,7 +1629,7 @@ async def test_loops_list_endpoint_returns_loops_for_client() -> None:
         loops_b = response_b.json()["loops"]
         assert len(loops_b) == 1
         assert loops_b[0]["id"] == lid3
-        assert loops_b[0]["client_id"] == "c-b"
+        assert loops_b[0]["session_id"] == "c-b"
 
     # Cleanup
     for t in (t1, t2, t3):

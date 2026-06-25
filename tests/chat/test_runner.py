@@ -75,7 +75,7 @@ async def test_spawn_success_completes_and_publishes() -> None:
         return agent
 
     tid = spawn_subagent_task(
-        client_id="c1",
+        session_id="c1",
         prompt="greet",
         settings=settings,
         registry=registry,
@@ -135,7 +135,7 @@ async def test_spawn_success_returns_immediately() -> None:
         return agent
 
     tid = spawn_subagent_task(
-        client_id="c1",
+        session_id="c1",
         prompt="slow",
         settings=settings,
         registry=registry,
@@ -189,7 +189,7 @@ async def test_spawn_failure_updates_registry_and_publishes() -> None:
         return agent
 
     tid = spawn_subagent_task(
-        client_id="c2",
+        session_id="c2",
         prompt="will fail",
         settings=settings,
         registry=registry,
@@ -229,7 +229,7 @@ async def test_spawn_channel_error_is_suppressed() -> None:
         return agent
 
     tid = spawn_subagent_task(
-        client_id="c3",
+        session_id="c3",
         prompt="boom channel",
         settings=settings,
         registry=registry,
@@ -265,7 +265,7 @@ async def test_agent_factory_receives_settings() -> None:
         return MockAgent(["x"])
 
     _task_id = spawn_subagent_task(
-        client_id="c4",
+        session_id="c4",
         prompt="tier check",
         settings=settings,
         registry=registry,
@@ -330,7 +330,7 @@ async def test_task_id_handshake_consistent() -> None:
     # returned id. The frame is built *inside* the worker, so it uses the
     # id the worker read from the future.
     tid = spawn_subagent_task(
-        client_id="c5",
+        session_id="c5",
         prompt="handshake",
         settings=settings,
         registry=registry,
@@ -367,7 +367,7 @@ async def test_spawn_respects_capacity_limit() -> None:
 
     with pytest.raises(TaskCapacityError, match="background-task limit reached"):
         spawn_subagent_task(
-            client_id="c1",
+            session_id="c1",
             prompt="should be rejected",
             settings=settings,
             registry=registry,
@@ -393,7 +393,7 @@ async def test_spawn_allows_when_below_capacity() -> None:
     assert registry.count_running() < settings.max_background_tasks
 
     tid = spawn_subagent_task(
-        client_id="c1",
+        session_id="c1",
         prompt="allowed",
         settings=settings,
         registry=registry,

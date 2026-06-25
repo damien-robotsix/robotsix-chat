@@ -457,7 +457,7 @@ async def test_check_loop_registry_snapshot_is_read_only():
     snap2 = registry.snapshot()
     assert snap1 == snap2
     assert len(snap1) == 1
-    assert snap1[0].client_id == "c1"
-    # Calling snapshot doesn't change count_running or list_for_client.
+    assert snap1[0].session_id == "c1"
+    # Calling snapshot doesn't change count_running or list_for_session.
     assert registry.count_running() == 1
-    assert len(registry.list_for_client("c1")) == 1
+    assert len(registry.list_for_session("c1")) == 1

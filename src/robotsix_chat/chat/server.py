@@ -487,13 +487,13 @@ async def loops_list_endpoint(request: Request) -> JSONResponse:
             {"error": "check-loop feature not enabled"}, status_code=503
         )
 
-    loops = registry.list_for_client(session_id)
+    loops = registry.list_for_session(session_id)
     result: list[dict[str, object]] = []
     for info in loops:
         result.append(
             {
                 "id": info.id,
-                "client_id": info.client_id,
+                "session_id": info.session_id,
                 "prompt": info.prompt,
                 "interval_seconds": info.interval_seconds,
                 "status": info.status.value,
@@ -890,8 +890,10 @@ def create_agent_from_settings(
     # Attach per-request tools from independently-gated sources so the
     # foreground agent can delegate work and launch check loops.
     # The factory lambda is called once per stream() invocation with the
-    # request's client_id, so tool closures capture the owning client
-    # lexically — surviving the claude_sdk/MCP boundary.
+    # request's session id (passed via stream()'s client_id argument), so tool
+    # closures capture the owning session lexically — surviving the
+    # claude_sdk/MCP boundary.  Background tasks and check loops are therefore
+    # scoped to the session that spawned them.
     request_tools_factory: Callable[[str], list[Any]] | None = None
     if (
         task_registry is not None and delivery_channel is not None
@@ -925,7 +927,7 @@ def create_agent_from_settings(
             """
             return create_agent_from_settings(settings=s, model_override=subagent_model)
 
-        def _make_request_tools(cid: str) -> list[Any]:
+        def _make_request_tools(session_id: str) -> list[Any]:
             request_tools: list[Any] = []
             if task_registry is not None and delivery_channel is not None:
                 request_tools.extend(
@@ -933,7 +935,7 @@ def create_agent_from_settings(
                         settings,
                         task_registry,
                         delivery_channel,
-                        client_id=cid,
+                        session_id=session_id,
                         agent_factory=_subagent_factory,
                     )
                 )
@@ -943,7 +945,7 @@ def create_agent_from_settings(
                         settings,
                         check_loop_registry,
                         delivery_channel or NULL_CHANNEL,
-                        client_id=cid,
+                        session_id=session_id,
                         agent_factory=_subagent_factory,
                     )
                 )
@@ -1037,9 +1039,9 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     #    connected browser.  This path is unchanged.
     #
     # 2. ConversationDeliveryChannel → ConversationStore → agent history
-    #    The runner's _worker also calls channel.publish(client_id, frame).
+    #    The runner's _worker also calls channel.publish(session_id, frame).
     #    This channel records completed/failed task results into the
-    #    ConversationStore keyed by the originating client_id, so the
+    #    ConversationStore keyed by the originating session_id, so the
     #    foreground agent sees them in its next-turn history and can relay
     #    task IDs / URLs / findings to the user.
     #

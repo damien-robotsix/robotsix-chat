@@ -54,7 +54,7 @@ def test_register_stores_task_info_with_running_status() -> None:
     info = reg.get(tid)
     assert info is not None
     assert info.id == tid
-    assert info.client_id == "client-a"
+    assert info.session_id == "client-a"
     assert info.prompt == "compute answer"
     assert info.status == TaskStatus.RUNNING
     assert info.result is None
@@ -84,34 +84,34 @@ def test_get_nonexistent_task_returns_none() -> None:
     assert reg.get("bogus") is None
 
 
-def test_list_for_client_returns_tasks() -> None:
-    """``list_for_client`` returns all tasks registered under a client."""
+def test_list_for_session_returns_tasks() -> None:
+    """``list_for_session`` returns all tasks registered under a client."""
     reg = _registry()
 
     reg.register("client-a", "task a1", _fake_coro())  # type: ignore[arg-type]
     reg.register("client-a", "task a2", _fake_coro())  # type: ignore[arg-type]
 
-    tasks = reg.list_for_client("client-a")
+    tasks = reg.list_for_session("client-a")
     assert len(tasks) == 2
     prompts = {t.prompt for t in tasks}
     assert prompts == {"task a1", "task a2"}
 
 
-def test_list_for_client_unknown_client_returns_empty() -> None:
+def test_list_for_session_unknown_client_returns_empty() -> None:
     """An unknown client yields an empty list, not an error."""
     reg = _registry()
-    assert reg.list_for_client("nobody") == []
+    assert reg.list_for_session("nobody") == []
 
 
-def test_list_for_client_isolated_per_client() -> None:
+def test_list_for_session_isolated_per_client() -> None:
     """Tasks for one client are not visible from another."""
     reg = _registry()
 
     reg.register("client-a", "a-only", _fake_coro())  # type: ignore[arg-type]
     reg.register("client-b", "b-only", _fake_coro())  # type: ignore[arg-type]
 
-    a_tasks = reg.list_for_client("client-a")
-    b_tasks = reg.list_for_client("client-b")
+    a_tasks = reg.list_for_session("client-a")
+    b_tasks = reg.list_for_session("client-b")
 
     assert [t.prompt for t in a_tasks] == ["a-only"]
     assert [t.prompt for t in b_tasks] == ["b-only"]

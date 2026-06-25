@@ -70,11 +70,11 @@ class LoopInfo:
     """Public snapshot of a single check loop.
 
     Returned by :meth:`CheckLoopRegistry.get` and
-    :meth:`CheckLoopRegistry.list_for_client`.
+    :meth:`CheckLoopRegistry.list_for_session`.
     """
 
     id: str
-    client_id: str
+    session_id: str
     prompt: str
     interval_seconds: float
     status: LoopStatus
@@ -95,7 +95,7 @@ class LoopInfo:
 
 
 class CheckLoopRegistry:
-    """Track per-client check loops in memory with optional event publishing.
+    """Track per-session check loops in memory with optional event publishing.
 
     Holds a strong reference to every in-flight :class:`asyncio.Task` so it is
     not garbage-collected before completion — mirroring
@@ -125,8 +125,8 @@ class CheckLoopRegistry:
         self._loops: dict[str, LoopInfo] = {}
         # loop_id → asyncio.Task (strong reference to prevent GC).
         self._running: dict[str, asyncio.Task[None]] = {}
-        # client_id → set of loop_ids.
-        self._by_client: dict[str, set[str]] = defaultdict(set)
+        # session_id → set of loop_ids.
+        self._by_session: dict[str, set[str]] = defaultdict(set)
 
     # ------------------------------------------------------------------
     # public API
@@ -134,7 +134,7 @@ class CheckLoopRegistry:
 
     def register(
         self,
-        client_id: str,
+        session_id: str,
         prompt: str,
         *,
         interval_seconds: float,
@@ -145,7 +145,7 @@ class CheckLoopRegistry:
         verify_via_board: bool = False,
         dedup: bool = True,
     ) -> str:
-        """Register a new check loop for *client_id*.
+        """Register a new check loop for *session_id*.
 
         *coro* must be an already-scheduled :class:`asyncio.Task` (created via
         :func:`asyncio.create_task`). The registry stores a strong reference to
@@ -159,7 +159,7 @@ class CheckLoopRegistry:
         re-register a loop under its persisted id.
 
         When *dedup* is ``True`` (the default), any existing ``RUNNING`` loop
-        for the same *client_id* and *prompt* (``prompt.strip()``) is stopped
+        for the same *session_id* and *prompt* (``prompt.strip()``) is stopped
         before the new loop is registered — preventing duplicate check loops.
         Pass ``dedup=False`` when restoring persisted loops on startup so
         siblings being resumed in the same pass are not superseded.
@@ -168,7 +168,7 @@ class CheckLoopRegistry:
         """
         if dedup:
             new_key = prompt.strip()
-            for existing_id in list(self._by_client.get(client_id, ())):
+            for existing_id in list(self._by_session.get(session_id, ())):
                 existing = self._loops.get(existing_id)
                 if (
                     existing is not None
@@ -180,7 +180,7 @@ class CheckLoopRegistry:
         loop_id = loop_id if loop_id is not None else self._id_factory()
         info = LoopInfo(
             id=loop_id,
-            client_id=client_id,
+            session_id=session_id,
             prompt=prompt,
             interval_seconds=interval_seconds,
             max_iterations=max_iterations,
@@ -190,14 +190,14 @@ class CheckLoopRegistry:
         )
         self._loops[loop_id] = info
         self._running[loop_id] = coro
-        self._by_client[client_id].add(loop_id)
+        self._by_session[session_id].add(loop_id)
         coro.add_done_callback(lambda _t: self._running.pop(loop_id, None))
         if self._event_sink is not None:
             self._event_sink.publish(
-                client_id,
+                session_id,
                 loop_started_frame(
                     loop_id,
-                    client_id,
+                    session_id,
                     prompt,
                     interval_seconds,
                     max_iterations,
@@ -218,7 +218,7 @@ class CheckLoopRegistry:
         """Record a completed iteration of *loop_id*.
 
         Increments ``iterations``, stores *result* and *next_run*, and
-        publishes a ``loop_tick`` frame keyed by the loop's ``client_id``.
+        publishes a ``loop_tick`` frame keyed by the loop's ``session_id``.
 
         When *publish* is ``False`` the internal state is updated but no
         SSE frame is emitted — useful for suppressed (no-change) ticks.
@@ -232,7 +232,7 @@ class CheckLoopRegistry:
         info.last_result_at = time.time()
         if publish and self._event_sink is not None:
             self._event_sink.publish(
-                info.client_id,
+                info.session_id,
                 loop_tick_frame(
                     loop_id,
                     iteration=info.iterations,
@@ -260,7 +260,7 @@ class CheckLoopRegistry:
             task.cancel()
         if self._event_sink is not None:
             self._event_sink.publish(
-                info.client_id,
+                info.session_id,
                 loop_stopped_frame(loop_id, reason=reason, iterations=info.iterations),
             )
         self._persist()
@@ -279,7 +279,7 @@ class CheckLoopRegistry:
         info.error = error
         if self._event_sink is not None:
             self._event_sink.publish(
-                info.client_id,
+                info.session_id,
                 loop_failed_frame(loop_id, error=error),
             )
         self._persist()
@@ -292,9 +292,9 @@ class CheckLoopRegistry:
         """Return the number of in-flight check loops (process-wide)."""
         return len(self._running)
 
-    def list_for_client(self, client_id: str) -> list[LoopInfo]:
-        """Return all loops for *client_id*."""
-        ids = self._by_client.get(client_id, set())
+    def list_for_session(self, session_id: str) -> list[LoopInfo]:
+        """Return all loops for *session_id*."""
+        ids = self._by_session.get(session_id, set())
         return [self._loops[lid] for lid in ids if lid in self._loops]
 
     def snapshot(self) -> list[LoopInfo]:
@@ -327,7 +327,7 @@ class CheckLoopRegistry:
             entries.append(
                 {
                     "id": info.id,
-                    "client_id": info.client_id,
+                    "session_id": info.session_id,
                     "prompt": info.prompt,
                     "interval_seconds": info.interval_seconds,
                     "max_iterations": info.max_iterations,
@@ -485,7 +485,7 @@ async def _check_loop_worker(
     registry: CheckLoopRegistry,
     settings: Settings,
     agent_factory: Callable[[Settings], ChatAgent],
-    client_id: str,
+    session_id: str,
     prompt: str,
     include_previous_result: bool,
     verify_via_board: bool,
@@ -546,7 +546,7 @@ async def _check_loop_worker(
             if not suppressed:
                 try:
                     await channel.publish(
-                        client_id,
+                        session_id,
                         loop_tick_frame(
                             loop_id,
                             iteration=info.iterations,
@@ -585,7 +585,7 @@ async def _check_loop_worker(
         # Best-effort: publish loop failure into the conversation.
         try:
             await channel.publish(
-                client_id,
+                session_id,
                 loop_failed_frame(loop_id, error=str(exc)),
             )
         except Exception:
@@ -602,7 +602,7 @@ async def _check_loop_worker(
 
 def spawn_check_loop(
     *,
-    client_id: str,
+    session_id: str,
     prompt: str,
     interval_seconds: float,
     settings: Settings,
@@ -648,7 +648,7 @@ def spawn_check_loop(
     Defaults to :data:`~robotsix_chat.chat.runner.NULL_CHANNEL` (no-op).
 
     When *dedup* is ``True`` (the default), :meth:`CheckLoopRegistry.register`
-    stops any existing ``RUNNING`` loop with the same *client_id* and *prompt*
+    stops any existing ``RUNNING`` loop with the same *session_id* and *prompt*
     before registering the new one.  This prevents duplicate check loops.
     Pass ``dedup=False`` when restoring persisted loops on startup.
 
@@ -694,7 +694,7 @@ def spawn_check_loop(
             registry=registry,
             settings=settings,
             agent_factory=agent_factory,
-            client_id=client_id,
+            session_id=session_id,
             prompt=prompt,
             include_previous_result=include_previous_result,
             verify_via_board=verify_via_board,
@@ -706,7 +706,7 @@ def spawn_check_loop(
         )
     )
     loop_id = registry.register(
-        client_id,
+        session_id,
         prompt,
         interval_seconds=interval_seconds,
         max_iterations=max_iterations,
@@ -763,11 +763,15 @@ def resume_check_loops(
             continue
 
         loop_id = entry.get("id")
-        client_id = entry.get("client_id")
+        # Read the current "session_id" key, falling back to the legacy
+        # "client_id" key for loops persisted before session-scoping landed.
+        session_id = entry.get("session_id")
+        if session_id is None:
+            session_id = entry.get("client_id")
         prompt = entry.get("prompt")
         if (
             not isinstance(loop_id, str)
-            or not isinstance(client_id, str)
+            or not isinstance(session_id, str)
             or not isinstance(prompt, str)
         ):
             continue
@@ -788,7 +792,7 @@ def resume_check_loops(
 
         try:
             spawn_check_loop(
-                client_id=client_id,
+                session_id=session_id,
                 prompt=prompt,
                 interval_seconds=float(interval_seconds),
                 settings=settings,

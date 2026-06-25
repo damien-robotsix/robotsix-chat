@@ -35,7 +35,7 @@ def test_task_started_frame_shape() -> None:
     assert frame == {
         "type": SSE_TASK_STARTED_TYPE,
         "task_id": "t1",
-        "client_id": "c1",
+        "session_id": "c1",
         "prompt": "summarise",
         "status": "running",
     }

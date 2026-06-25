@@ -191,8 +191,8 @@ async def test_delegate_task_does_not_await_completion() -> None:
 
 
 @pytest.mark.asyncio
-async def test_task_registered_with_correct_client_id() -> None:
-    """The registered task's client_id matches the one passed to the factory."""
+async def test_task_registered_with_correct_session_id() -> None:
+    """The registered task's session_id matches the one passed to the factory."""
     registry = TaskRegistry()
     channel = _FakeDeliveryChannel()
     settings = Settings()
@@ -201,23 +201,23 @@ async def test_task_registered_with_correct_client_id() -> None:
         settings,
         registry,
         channel,
-        client_id="browser-42",
+        session_id="session-42",
         agent_factory=lambda s: _StubAgent(["ok"]),
     )
     delegate_task = tools[0]
 
-    result = await delegate_task("client-aware work")
+    result = await delegate_task("session-aware work")
     task_id = _extract_task_id(result)
 
     info = registry.get(task_id)
     assert info is not None
-    assert info.client_id == "browser-42"
-    assert info.prompt == "client-aware work"
+    assert info.session_id == "session-42"
+    assert info.prompt == "session-aware work"
 
 
 @pytest.mark.asyncio
-async def test_task_client_id_defaults_to_empty_string() -> None:
-    """When ``client_id`` is not passed to the factory, the task uses ``""``."""
+async def test_task_session_id_defaults_to_empty_string() -> None:
+    """When ``session_id`` is not passed to the factory, the task uses ``""``."""
     registry = TaskRegistry()
     channel = _FakeDeliveryChannel()
     settings = Settings()
@@ -235,7 +235,7 @@ async def test_task_client_id_defaults_to_empty_string() -> None:
 
     info = registry.get(task_id)
     assert info is not None
-    assert info.client_id == ""
+    assert info.session_id == ""
 
 
 @pytest.mark.asyncio
@@ -451,13 +451,15 @@ class TestConversationDeliveryChannel:
 
     @staticmethod
     def _active_history(
-        store: ConversationStore, owner_id: str
+        store: ConversationStore, session_id: str
     ) -> list[tuple[str, str]]:
-        """Return the history of *owner_id*'s active session."""
-        sessions, active_id = store.list_sessions(owner_id)
-        if not active_id:
-            return []
-        return store.history(active_id)
+        """Return the history of *session_id*.
+
+        Background-task and loop results are recorded into the exact session
+        that spawned them (``record_for_session``), so the published id IS the
+        recording session id.
+        """
+        return store.history(session_id)
 
     @pytest.mark.asyncio
     async def test_completed_frame_records_turn(self) -> None:
@@ -540,19 +542,26 @@ class TestConversationDeliveryChannel:
         assert store.history("") == []
 
     @pytest.mark.asyncio
-    async def test_nonexistent_client_is_dropped_by_store(self) -> None:
-        """Publishing for an owner never seen is silently dropped by the store."""
+    async def test_nonexistent_session_is_lazily_created(self) -> None:
+        """Publishing for a never-seen session lazily creates it and records.
+
+        Under session-scoping a result is never silently dropped: if the tick
+        fires for a session the store has not recorded a turn into yet, the
+        session is created on demand so the result still lands.
+        """
         store = self._store()
         channel = ConversationDeliveryChannel(store)
 
         # The store never had a create_session() call for "ghost".
         await channel.publish(
             "ghost",
-            {"type": "task_completed", "task_id": "t1", "result": "nope"},
+            {"type": "task_completed", "task_id": "t1", "result": "landed"},
         )
 
-        # record_for_owner is a no-op for unknown owners.
-        assert store.history("ghost") == []
+        # record_for_session lazily creates the session and records the turn.
+        history = store.history("ghost")
+        assert len(history) == 1
+        assert history[0][1] == "landed"
 
     @pytest.mark.asyncio
     async def test_completed_then_failed_only_last_recorded(self) -> None:
@@ -739,7 +748,7 @@ async def test_delegate_task_at_capacity_returns_friendly_message() -> None:
         settings,
         registry,
         channel,
-        client_id="c1",
+        session_id="c1",
         agent_factory=lambda s: _StubAgent(["ok"]),
     )
     delegate_task_fn = tools[0]
@@ -847,7 +856,7 @@ async def test_start_check_loop_returns_string_with_loop_id() -> None:
     tools = build_check_loop_tools(
         settings,
         registry,
-        client_id="browser-42",
+        session_id="browser-42",
         agent_factory=lambda s: _StubAgent(["check result"]),
     )
     start_check_loop = tools[0]
@@ -859,8 +868,8 @@ async def test_start_check_loop_returns_string_with_loop_id() -> None:
 
 
 @pytest.mark.asyncio
-async def test_start_check_loop_registers_with_correct_client_id() -> None:
-    """The registered loop's client_id matches the one passed to the factory."""
+async def test_start_check_loop_registers_with_correct_session_id() -> None:
+    """The registered loop's session_id matches the one passed to the factory."""
     bus = EventBus()
     registry = _loop_registry(sink=bus)
     settings = _stub_settings()
@@ -868,18 +877,18 @@ async def test_start_check_loop_registers_with_correct_client_id() -> None:
     tools = build_check_loop_tools(
         settings,
         registry,
-        client_id="browser-42",
+        session_id="session-42",
         agent_factory=lambda s: _StubAgent(["ok"]),
     )
     start_check_loop = tools[0]
 
-    result = await start_check_loop("client-aware check", interval_seconds=120.0)
+    result = await start_check_loop("session-aware check", interval_seconds=120.0)
     loop_id = _extract_loop_id(result)
 
     info = registry.get(loop_id)
     assert info is not None
-    assert info.client_id == "browser-42"
-    assert info.prompt == "client-aware check"
+    assert info.session_id == "session-42"
+    assert info.prompt == "session-aware check"
 
 
 @pytest.mark.asyncio
@@ -1066,7 +1075,7 @@ async def test_start_check_loop_does_not_publish_loop_started_frame() -> None:
     tools = build_check_loop_tools(
         settings,
         registry,
-        client_id="c1",
+        session_id="c1",
         agent_factory=lambda s: _StubAgent(["check done"]),
     )
     start_check_loop = tools[0]
@@ -1087,7 +1096,7 @@ async def test_start_check_loop_does_not_publish_loop_started_frame() -> None:
 
     # The loop_started frame came from the registry, not the tool.
     frame = started_frames[0]
-    assert frame["client_id"] == "c1"
+    assert frame["session_id"] == "c1"
 
     # Clean up.
     loop_id = frame["loop_id"]
@@ -1110,7 +1119,7 @@ async def test_stop_check_loop_stops_running_loop() -> None:
     tools = build_check_loop_tools(
         settings,
         registry,
-        client_id="c1",
+        session_id="c1",
         agent_factory=lambda s: _StubAgent(["ok"]),
     )
     start_check_loop = tools[0]
@@ -1141,7 +1150,7 @@ async def test_stop_check_loop_different_client_not_stopped() -> None:
     tools_owner = build_check_loop_tools(
         settings,
         registry,
-        client_id="owner",
+        session_id="owner",
         agent_factory=lambda s: _StubAgent(["ok"]),
     )
     result = await tools_owner[0]("loop for owner", interval_seconds=120.0)
@@ -1151,7 +1160,7 @@ async def test_stop_check_loop_different_client_not_stopped() -> None:
     tools_intruder = build_check_loop_tools(
         settings,
         registry,
-        client_id="intruder",
+        session_id="intruder",
         agent_factory=lambda s: _StubAgent(["nope"]),
     )
     stop_result = await tools_intruder[1](loop_id)
@@ -1173,7 +1182,7 @@ async def test_stop_check_loop_unknown_id_returns_message() -> None:
     registry = _loop_registry()
     settings = _stub_settings()
 
-    tools = build_check_loop_tools(settings, registry, client_id="c1")
+    tools = build_check_loop_tools(settings, registry, session_id="c1")
     _, stop_check_loop, _ = tools
 
     result = await stop_check_loop("nonexistent-99")
@@ -1191,7 +1200,7 @@ async def test_stop_check_loop_idempotent() -> None:
     tools = build_check_loop_tools(
         settings,
         registry,
-        client_id="c1",
+        session_id="c1",
         agent_factory=lambda s: _StubAgent(["ok"]),
     )
     start_check_loop = tools[0]
@@ -1222,7 +1231,7 @@ async def test_list_check_loops_empty() -> None:
     registry = _loop_registry()
     settings = _stub_settings()
 
-    tools = build_check_loop_tools(settings, registry, client_id="c1")
+    tools = build_check_loop_tools(settings, registry, session_id="c1")
     _, _, list_check_loops = tools
 
     result = await list_check_loops()
@@ -1240,7 +1249,7 @@ async def test_list_check_loops_includes_owned_loop_ids() -> None:
     tools = build_check_loop_tools(
         settings,
         registry,
-        client_id="c1",
+        session_id="c1",
         agent_factory=lambda s: _StubAgent(["ok"]),
     )
     start_check_loop = tools[0]
@@ -1276,14 +1285,14 @@ async def test_list_check_loops_excludes_other_clients() -> None:
     tools_alice = build_check_loop_tools(
         settings,
         registry,
-        client_id="alice",
+        session_id="alice",
         agent_factory=lambda s: _StubAgent(["alice's check"]),
     )
     r = await tools_alice[0]("alice loop", interval_seconds=120.0)
     alice_loop_id = _extract_loop_id(r)
 
     # List as "bob".
-    tools_bob = build_check_loop_tools(settings, registry, client_id="bob")
+    tools_bob = build_check_loop_tools(settings, registry, session_id="bob")
     _, _, list_check_loops = tools_bob
 
     result = await list_check_loops()
@@ -1337,7 +1346,7 @@ async def test_start_check_loop_include_previous_result_forwarded() -> None:
     tools = build_check_loop_tools(
         settings,
         registry,
-        client_id="c1",
+        session_id="c1",
         agent_factory=lambda s: _StubAgent(["first"]),
     )
     start_check_loop = tools[0]
@@ -1377,7 +1386,7 @@ async def test_start_check_loop_suppresses_no_change_ticks() -> None:
     tools = build_check_loop_tools(
         settings,
         registry,
-        client_id="c1",
+        session_id="c1",
         agent_factory=lambda s: _StubAgent(["NO_CHANGE"]),
     )
     start_check_loop = tools[0]
@@ -1427,7 +1436,7 @@ async def test_start_check_loop_does_not_suppress_change_ticks() -> None:
     tools = build_check_loop_tools(
         settings,
         registry,
-        client_id="c1",
+        session_id="c1",
         agent_factory=lambda s: _StubAgent(["CHANGE: ticket X blocked"]),
     )
     start_check_loop = tools[0]
@@ -1585,7 +1594,7 @@ async def test_start_check_loop_forwards_verify_via_board_true() -> None:
     tools = build_check_loop_tools(
         settings,
         registry,
-        client_id="c-vvb",
+        session_id="c-vvb",
         agent_factory=lambda s: _StubAgent(["ok"]),
     )
     start_check_loop = tools[0]
@@ -1615,7 +1624,7 @@ async def test_start_check_loop_verify_via_board_defaults_false() -> None:
     tools = build_check_loop_tools(
         settings,
         registry,
-        client_id="c-vvb2",
+        session_id="c-vvb2",
         agent_factory=lambda s: _StubAgent(["ok"]),
     )
     start_check_loop = tools[0]
@@ -1769,9 +1778,8 @@ class TestTickTriggeredAgentRun:
         assert "tick 3" in str(call["message"])
         assert call["client_id"] == "c-tick-run"
 
-        # A turn was recorded: (tick_input, agent_reply).
-        sessions, active = store.list_sessions("c-tick-run")
-        history = store.history(active)
+        # A turn was recorded into the exact session that owns the loop.
+        history = store.history("c-tick-run")
         assert len(history) == 1
         user_msg, assistant_msg = history[0]
         assert "price is $12.34" in user_msg
@@ -1804,8 +1812,7 @@ class TestTickTriggeredAgentRun:
             },
         )
 
-        sessions, active = store.list_sessions("c-legacy")
-        history = store.history(active)
+        history = store.history("c-legacy")
         assert len(history) == 1
         user_msg, assistant_msg = history[0]
         assert "Check loop" in user_msg

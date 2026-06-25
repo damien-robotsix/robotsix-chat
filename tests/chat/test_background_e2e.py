@@ -88,7 +88,7 @@ async def test_e2e_happy_path_task_started_to_completed() -> None:
         settings,
         registry,
         channel,
-        client_id="c1",
+        session_id="c1",
         agent_factory=lambda s: MockAgent(tokens=["result:", " 42"]),
     )
     delegate_task_fn = tools[0]
@@ -141,7 +141,7 @@ async def test_e2e_failure_path_task_started_to_failed() -> None:
         settings,
         registry,
         channel,
-        client_id="c2",
+        session_id="c2",
         agent_factory=lambda s: MockAgent(error=exc),
     )
     delegate_task_fn = tools[0]
@@ -189,7 +189,7 @@ async def test_e2e_frames_isolated_per_client() -> None:
         settings,
         registry,
         channel,
-        client_id="client-a",
+        session_id="client-a",
         agent_factory=lambda s: MockAgent(["ok"]),
     )
     delegate_task_fn = tools[0]
@@ -238,7 +238,7 @@ async def test_e2e_conversation_delivery_channel_completed() -> None:
         settings,
         registry,
         channel,
-        client_id="c-e2e",
+        session_id="c-e2e",
         agent_factory=lambda s: MockAgent(tokens=["findings: 99"]),
     )
     delegate_task_fn = tools[0]
@@ -249,9 +249,8 @@ async def test_e2e_conversation_delivery_channel_completed() -> None:
     # Let the worker finish (it writes to the store via the channel).
     await asyncio.sleep(0.1)
 
-    # The store now contains the synthetic turn in the active session.
-    sessions, active_id = store.list_sessions("c-e2e")
-    history = store.history(active_id)
+    # The store now contains the synthetic turn in the originating session.
+    history = store.history("c-e2e")
     assert len(history) >= 1
 
     # The turn conveys the completed task result.
@@ -281,7 +280,7 @@ async def test_e2e_conversation_delivery_channel_failed() -> None:
         settings,
         registry,
         channel,
-        client_id="c-e2e-fail",
+        session_id="c-e2e-fail",
         agent_factory=lambda s: MockAgent(error=exc),
     )
     delegate_task_fn = tools[0]
@@ -290,8 +289,7 @@ async def test_e2e_conversation_delivery_channel_failed() -> None:
 
     await asyncio.sleep(0.1)
 
-    sessions, active_id = store.list_sessions("c-e2e-fail")
-    history = store.history(active_id)
+    history = store.history("c-e2e-fail")
     assert len(history) >= 1
 
     user_msg, assistant_msg = history[-1]

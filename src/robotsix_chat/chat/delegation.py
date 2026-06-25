@@ -17,10 +17,10 @@ Usage::
     )
 
     tools = build_delegation_tools(
-        settings, registry, channel, client_id="browser-1",
+        settings, registry, channel, session_id="session-1",
     )
     loop_tools = build_check_loop_tools(
-        settings, check_loop_registry, client_id="browser-1",
+        settings, check_loop_registry, session_id="session-1",
     )
 """
 
@@ -64,7 +64,8 @@ class ConversationDeliveryChannel:
     When a delegated task finishes (or fails), the foreground agent needs to
     learn about the outcome so it can relay task ids, URLs, and findings to
     the user on its **next** turn.  This channel bridges that gap by writing a
-    synthetic turn into the store keyed by the originating ``client_id``.
+    synthetic turn into the **exact session** that spawned the work
+    (``session_id``).
 
     For **non-suppressed check-loop ticks**, when the optional dependencies
     (``event_bus``, ``run_serializer``, ``agent_factory``, ``settings``) are
@@ -79,13 +80,12 @@ class ConversationDeliveryChannel:
     intentionally ignored — the user already sees those via the SSE path —
     so the conversation history stays clean.
 
-    Multi-session behaviour: the tick targets the owner's **active** session
-    (``owner.active_session_id``, the last session the owner recorded a turn
-    into).  The ``loop_tick`` and ``loop_reply`` SSE frames are delivered to
-    all of that owner's open ``/events`` subscribers (keyed by ``client_id``).
-    If the user switched to a different session in the browser, the streamed
-    bubble still arrives but the recorded turn lands in the active
-    (last-recorded) session.
+    Session scoping: background tasks and check loops are tied to the
+    ``session_id`` that spawned them.  Both the recorded turn and the
+    ``loop_tick`` / ``loop_reply`` SSE frames target that exact session — so a
+    result always lands in the conversation it belongs to, even if the user has
+    since switched to a different session in the browser.  The run is
+    serialized against concurrent ``/chat`` requests for the **same session**.
     """
 
     def __init__(
@@ -122,12 +122,12 @@ class ConversationDeliveryChannel:
             and settings is not None
         )
 
-    async def publish(self, client_id: str, frame: dict[str, Any]) -> None:
-        """Record *frame* into the conversation store for *client_id*.
+    async def publish(self, session_id: str, frame: dict[str, Any]) -> None:
+        """Record *frame* into the conversation store for *session_id*.
 
-        *client_id* is the owning browser identity (``owner_id`` in the
-        multi-session model).  The frame is recorded into that owner's
-        current active session.
+        *session_id* is the chat session that spawned the background work.
+        The frame is recorded into that exact session (not an owner's active
+        session), so results land in the conversation they belong to.
 
         Dispatches on ``frame["type"]``:
 
@@ -138,11 +138,11 @@ class ConversationDeliveryChannel:
           agent_answer)`` turn, emits ``loop_reply`` SSE).  Otherwise falls
           back to recording a passive synthetic assistant turn.
         * ``"loop_failed"`` — records a turn conveying the loop failure.
-        * Other types / empty *client_id* — no-op.
+        * Other types / empty *session_id* — no-op.
 
         Best-effort: never raises out to the runner's ``_worker``.
         """
-        if not client_id:
+        if not session_id:
             return
 
         frame_type = frame.get("type")
@@ -150,15 +150,15 @@ class ConversationDeliveryChannel:
 
         if frame_type == "task_completed":
             result = frame.get("result", "")
-            self._store.record_for_owner(
-                client_id,
+            self._store.record_for_session(
+                session_id,
                 f"[Background task {task_id} completed]",
                 str(result),
             )
         elif frame_type == "task_failed":
             error = frame.get("error", "")
-            self._store.record_for_owner(
-                client_id,
+            self._store.record_for_session(
+                session_id,
                 f"[Background task {task_id} failed]",
                 f"Error: {str(error)}",
             )
@@ -170,7 +170,7 @@ class ConversationDeliveryChannel:
                 # Schedule a background task — best-effort, never raises.
                 task = asyncio.create_task(
                     self._run_tick_agent(
-                        client_id=client_id,
+                        session_id=session_id,
                         loop_id=str(loop_id),
                         iteration=int(iteration) if iteration is not None else 0,
                         result=str(result),
@@ -180,16 +180,16 @@ class ConversationDeliveryChannel:
                 task.add_done_callback(self._pending_runs.discard)
             else:
                 # Legacy path: record a passive synthetic assistant turn.
-                self._store.record_for_owner(
-                    client_id,
+                self._store.record_for_session(
+                    session_id,
                     f"[Check loop {loop_id} tick {iteration}]",
                     str(result),
                 )
         elif frame_type == "loop_failed":
             loop_id = frame.get("loop_id", "")
             error = frame.get("error", "")
-            self._store.record_for_owner(
-                client_id,
+            self._store.record_for_session(
+                session_id,
                 f"[Check loop {loop_id} failed]",
                 f"Error: {str(error)}",
             )
@@ -201,7 +201,7 @@ class ConversationDeliveryChannel:
     async def _run_tick_agent(
         self,
         *,
-        client_id: str,
+        session_id: str,
         loop_id: str,
         iteration: int,
         result: str,
@@ -211,11 +211,12 @@ class ConversationDeliveryChannel:
         Must never raise — called as a background task from :meth:`publish`.
         """
         try:
-            # Acquire the per-owner serializer so this run does not overlap
-            # with a concurrent /chat request or another tick for the same owner.
-            async with self._run_serializer.for_owner(client_id):  # type: ignore[union-attr]
+            # Acquire the per-session serializer so this run does not overlap
+            # with a concurrent /chat request or another tick for the same
+            # session.
+            async with self._run_serializer.for_owner(session_id):  # type: ignore[union-attr]
                 await self._run_tick_agent_locked(
-                    client_id=client_id,
+                    session_id=session_id,
                     loop_id=loop_id,
                     iteration=iteration,
                     result=result,
@@ -228,22 +229,15 @@ class ConversationDeliveryChannel:
     async def _run_tick_agent_locked(
         self,
         *,
-        client_id: str,
+        session_id: str,
         loop_id: str,
         iteration: int,
         result: str,
     ) -> None:
         """Core of the tick-triggered run — the lock is already held."""
-        # Resolve the owner's active session id.
-        # list_sessions is used because it lazily creates a default session
-        # when the owner is unknown — ensuring we always have a session to
-        # record into.
-        _sessions, active_session_id = self._store.list_sessions(client_id)
-        if not active_session_id:
-            return  # should not happen; list_sessions always returns one
-
-        # Read history (read-only; does not touch last_activity or persist).
-        history = self._store.history(active_session_id)
+        # Read history for the exact session that owns the loop (read-only;
+        # does not touch last_activity or persist).
+        history = self._store.history(session_id)
 
         # The tick result becomes the user-side input of the run turn.
         tick_input = f"[Check loop {loop_id} tick {iteration}]\n\n{result}"
@@ -258,19 +252,19 @@ class ConversationDeliveryChannel:
                 async for chunk in agent.stream(
                     tick_input,
                     history=history,
-                    session_id=active_session_id,
-                    client_id=client_id,
+                    session_id=session_id,
+                    client_id=session_id,
                 )
             ]
         )
 
-        # Record exactly one (tick_input, reply) turn.
-        self._store.record(active_session_id, client_id, tick_input, reply)
+        # Record exactly one (tick_input, reply) turn into that session.
+        self._store.record_for_session(session_id, tick_input, reply)
 
         # Emit the reply to the browser via the EventBus.
         if self._event_bus is not None:
             self._event_bus.publish(
-                client_id,
+                session_id,
                 loop_reply_frame(loop_id, iteration, reply),
             )
 
@@ -285,7 +279,7 @@ def build_delegation_tools(
     registry: TaskRegistry,
     channel: DeliveryChannel,
     *,
-    client_id: str = "",
+    session_id: str = "",
     agent_factory: Callable[[Settings], ChatAgent] | None = None,
 ) -> list[Callable[..., Any]]:
     """Return the ``delegate_task`` tool for the foreground chat agent.
@@ -294,9 +288,10 @@ def build_delegation_tools(
     ``delegate_task`` to offload long-running work to a background sub-agent
     of the same tier.
 
-    *client_id* is captured lexically in the returned tool closure so it
+    *session_id* is captured lexically in the returned tool closure so it
     survives the claude_sdk / MCP execution-context boundary — unlike a
-    ContextVar, which is invisible there.
+    ContextVar, which is invisible there.  The spawned task is scoped to this
+    session.
 
     *agent_factory* is forwarded to
     :func:`~robotsix_chat.chat.runner.spawn_subagent_task`; when ``None``
@@ -337,12 +332,12 @@ def build_delegation_tools(
                 "to perform this board action inline instead."
             )
 
-        cid = client_id
+        sid = session_id
 
         # Build kwargs, omitting agent_factory when None so the runner uses
         # its own default (create_agent_from_settings, no delegation tools).
         kwargs: dict[str, Any] = dict(
-            client_id=cid,
+            session_id=sid,
             prompt=task_description,
             settings=settings,
             registry=registry,
@@ -364,7 +359,7 @@ def build_delegation_tools(
         # channel learns about the task immediately.  When the channel
         # raises, we log and swallow — the task is already registered.
         try:
-            await channel.publish(cid, task_started_frame(task_id, task_description))
+            await channel.publish(sid, task_started_frame(task_id, task_description))
         except Exception:
             logger.exception("Failed to publish task_started for %s", task_id)
 
@@ -426,7 +421,7 @@ def build_check_loop_tools(
     registry: CheckLoopRegistry,
     channel: DeliveryChannel = NULL_CHANNEL,
     *,
-    client_id: str = "",
+    session_id: str = "",
     agent_factory: Callable[[Settings], ChatAgent] | None = None,
 ) -> list[Callable[..., Any]]:
     """Return the check-loop tools for the foreground chat agent.
@@ -439,9 +434,10 @@ def build_check_loop_tools(
     result is written back into the originating conversation via
     :class:`ConversationDeliveryChannel`.
 
-    *client_id* is captured lexically in the returned tool closure so it
+    *session_id* is captured lexically in the returned tool closure so it
     survives the claude_sdk / MCP execution-context boundary — unlike a
-    ContextVar, which is invisible there.
+    ContextVar, which is invisible there.  Loops started, stopped, and listed
+    by these tools are scoped to this session.
 
     *agent_factory* is forwarded to
     :func:`~robotsix_chat.chat.loops.spawn_check_loop`; when ``None``
@@ -512,10 +508,10 @@ def build_check_loop_tools(
             know the check is running and how often it will re-run.
 
         """
-        cid = client_id
+        sid = session_id
         try:
             loop_id = spawn_check_loop(
-                client_id=cid,
+                session_id=sid,
                 prompt=check_description,
                 interval_seconds=interval_seconds,
                 settings=settings,
@@ -572,9 +568,11 @@ def build_check_loop_tools(
 
         """
         info = registry.get(loop_id)
-        if info is None or info.client_id != client_id:
+        if info is None or info.session_id != session_id:
             logger.info(
-                "stop_check_loop: loop %s not found for client %s", loop_id, client_id
+                "stop_check_loop: loop %s not found for session %s",
+                loop_id,
+                session_id,
             )
             return (
                 f"I don't see a check loop with id '{loop_id}' that belongs "
@@ -599,7 +597,7 @@ def build_check_loop_tools(
             snippet — or a message that there are none.
 
         """
-        loops = registry.list_for_client(client_id)
+        loops = registry.list_for_session(session_id)
         if not loops:
             return "There are no check loops running in this conversation."
         lines: list[str] = []

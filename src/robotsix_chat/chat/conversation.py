@@ -207,6 +207,31 @@ class ConversationStore:
             return
         self.record(owner.active_session_id, owner_id, user_message, assistant_reply)
 
+    def record_for_session(
+        self, session_id: str, user_message: str, assistant_reply: str
+    ) -> None:
+        """Record a turn into the exact *session_id*.
+
+        Unlike :meth:`record_for_owner`, this targets one specific session
+        rather than an owner's *active* session — so background-task and
+        check-loop results land in the session that spawned them, even if the
+        user has since switched to a different session.
+
+        The session is lazily created if missing (e.g. a tick fires before the
+        first turn was persisted), so the turn is never silently dropped.  The
+        owner's active-session pointer is intentionally **not** moved.
+        """
+        if session_id not in self._sessions:
+            self._sessions[session_id] = Session(
+                session_id=session_id,
+                wall_last_active=self._wall_clock(),
+            )
+            self._sessions.move_to_end(session_id)
+            self._evict_overflow()
+        # owner_id=None: append to the session without moving any owner's
+        # active-session pointer.
+        self.record(session_id, None, user_message, assistant_reply)
+
     def history(self, session_id: str) -> list[Turn]:
         """Return a snapshot copy of *session_id*'s recorded turns.
 

@@ -1,8 +1,9 @@
-"""In-memory per-client SSE event bus for background-task lifecycle events.
+"""In-memory per-session SSE event bus for background-task lifecycle events.
 
 Provides frame builders, type constants, and a publish/subscribe registry so
 the chat server can push ``task_started`` / ``task_completed`` / ``task_failed``
-notification frames to connected browsers via a persistent SSE channel.
+notification frames to connected browsers via a persistent SSE channel, scoped
+to the chat session that owns the work.
 
 This module must NOT import from ``tasks.py`` — the dependency is one-way:
 ``tasks.py`` → ``events.py``, never a cycle.
@@ -34,15 +35,15 @@ SSE_LOOP_REPLY_TYPE = "loop_reply"
 
 
 class EventSink(Protocol):
-    """Structural interface for publishing lifecycle frames to a client.
+    """Structural interface for publishing lifecycle frames to a session.
 
     ``TaskRegistry`` depends on this protocol (dependency injection) so it
     never imports the concrete :class:`EventBus` — any object with a matching
     ``publish`` method satisfies the contract.
     """
 
-    def publish(self, client_id: str, frame: dict[str, object]) -> None:
-        """Deliver *frame* to the owner of *client_id*."""
+    def publish(self, session_id: str, frame: dict[str, object]) -> None:
+        """Deliver *frame* to subscribers of *session_id*."""
         ...
 
 
@@ -54,7 +55,7 @@ class EventSink(Protocol):
 # ---------------------------------------------------------------------------
 
 
-def task_started_frame(task_id: str, client_id: str, prompt: str) -> dict[str, object]:
+def task_started_frame(task_id: str, session_id: str, prompt: str) -> dict[str, object]:
     """Build a ``task_started`` notification frame.
 
     Returns a dict with shape::
@@ -62,7 +63,7 @@ def task_started_frame(task_id: str, client_id: str, prompt: str) -> dict[str, o
         {
             "type": "task_started",
             "task_id": <str>,
-            "client_id": <str>,
+            "session_id": <str>,
             "prompt": <str>,
             "status": "running",
         }
@@ -70,7 +71,7 @@ def task_started_frame(task_id: str, client_id: str, prompt: str) -> dict[str, o
     return {
         "type": SSE_TASK_STARTED_TYPE,
         "task_id": task_id,
-        "client_id": client_id,
+        "session_id": session_id,
         "prompt": prompt,
         "status": "running",
     }
@@ -123,7 +124,7 @@ def task_failed_frame(task_id: str, error: str) -> dict[str, object]:
 
 def loop_started_frame(
     loop_id: str,
-    client_id: str,
+    session_id: str,
     prompt: str,
     interval_seconds: float,
     max_iterations: int | None,
@@ -137,7 +138,7 @@ def loop_started_frame(
         {
             "type": "loop_started",
             "loop_id": <str>,
-            "client_id": <str>,
+            "session_id": <str>,
             "prompt": <str>,
             "interval_seconds": <float>,
             "max_iterations": <int | None>,
@@ -148,7 +149,7 @@ def loop_started_frame(
     result: dict[str, object] = {
         "type": SSE_LOOP_STARTED_TYPE,
         "loop_id": loop_id,
-        "client_id": client_id,
+        "session_id": session_id,
         "prompt": prompt,
         "interval_seconds": interval_seconds,
         "max_iterations": max_iterations,
@@ -275,14 +276,15 @@ def loop_reply_frame(
 
 
 class EventBus:
-    """Per-client :class:`asyncio.Queue` registry for SSE notification frames.
+    """Per-session :class:`asyncio.Queue` registry for SSE notification frames.
 
-    Callers publish frames to a ``client_id``; every queue currently subscribed
-    for that id receives the frame.  A browser that (re)connects re-syncs
-    current state via ``TaskRegistry.list_for_client(client_id)`` rather than
-    replaying a buffer — so when no queue is subscribed for a ``client_id``,
-    :meth:`publish` **silently drops the frame** (no buffering).  The in-memory
-    model favours bounded memory over guaranteed delivery.
+    Callers publish frames to a ``session_id``; every queue currently
+    subscribed for that id receives the frame.  A browser that (re)connects
+    re-syncs current state via ``TaskRegistry.list_for_session(session_id)``
+    rather than replaying a buffer — so when no queue is subscribed for a
+    ``session_id``, :meth:`publish` **silently drops the frame** (no
+    buffering).  The in-memory model favours bounded memory over guaranteed
+    delivery.
     """
 
     def __init__(self) -> None:
@@ -291,39 +293,39 @@ class EventBus:
             defaultdict(set)
         )
 
-    def subscribe(self, client_id: str) -> asyncio.Queue[dict[str, object]]:
-        """Create a fresh queue, add to *client_id*'s subscribers, return it."""
+    def subscribe(self, session_id: str) -> asyncio.Queue[dict[str, object]]:
+        """Create a fresh queue, add to *session_id*'s subscribers, return it."""
         queue: asyncio.Queue[dict[str, object]] = asyncio.Queue()
-        self._subscribers[client_id].add(queue)
+        self._subscribers[session_id].add(queue)
         return queue
 
     def unsubscribe(
-        self, client_id: str, queue: asyncio.Queue[dict[str, object]]
+        self, session_id: str, queue: asyncio.Queue[dict[str, object]]
     ) -> None:
-        """Discard *queue*; drop the *client_id* key when its set becomes empty."""
-        subscribers = self._subscribers.get(client_id)
+        """Discard *queue*; drop the *session_id* key when its set becomes empty."""
+        subscribers = self._subscribers.get(session_id)
         if subscribers is None:
             return
         subscribers.discard(queue)
         if not subscribers:
-            del self._subscribers[client_id]
+            del self._subscribers[session_id]
 
-    def publish(self, client_id: str, frame: dict[str, object]) -> None:
-        """Put *frame* on every queue currently subscribed for *client_id*.
+    def publish(self, session_id: str, frame: dict[str, object]) -> None:
+        """Put *frame* on every queue currently subscribed for *session_id*.
 
         If no queue is subscribed, the frame is dropped silently — it is
         **not** buffered.  See the class docstring for the rationale.
         """
-        for queue in self._subscribers.get(client_id, ()):
+        for queue in self._subscribers.get(session_id, ()):
             queue.put_nowait(frame)
 
-    def subscriber_count(self, client_id: str | None = None) -> int:
+    def subscriber_count(self, session_id: str | None = None) -> int:
         """Return the number of subscribed queues (read-only).
 
-        With no argument returns the total count across all clients.  With a
-        *client_id* returns that client's count (0 if unknown).  Does not
+        With no argument returns the total count across all sessions.  With a
+        *session_id* returns that session's count (0 if unknown).  Does not
         mutate ``_subscribers``.
         """
-        if client_id is None:
+        if session_id is None:
             return sum(len(qs) for qs in self._subscribers.values())
-        return len(self._subscribers.get(client_id, ()))
+        return len(self._subscribers.get(session_id, ()))

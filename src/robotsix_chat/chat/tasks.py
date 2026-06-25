@@ -1,15 +1,16 @@
 """In-memory task registry for background sub-agent tasks.
 
-Tracks spawned background sub-agent tasks per ``client_id`` so the server can
-report their status to the browser. Each task is assigned a unique id and holds
-its current status (``running`` / ``completed`` / ``failed``), result or error,
-and a strong reference to the owning ``asyncio.Task`` — preventing the event
-loop from garbage-collecting an in-flight task that has no other referent.
+Tracks spawned background sub-agent tasks per ``session_id`` so the server can
+report their status to the browser, scoped to the chat session that spawned
+them. Each task is assigned a unique id and holds its current status
+(``running`` / ``completed`` / ``failed``), result or error, and a strong
+reference to the owning ``asyncio.Task`` — preventing the event loop from
+garbage-collecting an in-flight task that has no other referent.
 
 The registry is process-local and unsynchronised: it is sized for the
 single-worker ``uvicorn.run`` the server uses. Running multiple workers would
-split a client's tasks across processes — each worker would only see the subset
-it spawned.
+split a session's tasks across processes — each worker would only see the
+subset it spawned.
 """
 
 from __future__ import annotations
@@ -43,11 +44,11 @@ class TaskInfo:
     """Public snapshot of a single background task.
 
     Returned by :meth:`TaskRegistry.get` and
-    :meth:`TaskRegistry.list_for_client`.
+    :meth:`TaskRegistry.list_for_session`.
     """
 
     id: str
-    client_id: str
+    session_id: str
     prompt: str
     status: TaskStatus
     result: str | None = None
@@ -55,7 +56,7 @@ class TaskInfo:
 
 
 class TaskRegistry:
-    """Track per-client background sub-agent tasks in memory.
+    """Track per-session background sub-agent tasks in memory.
 
     Holds a strong reference to every in-flight :class:`asyncio.Task` so it is
     not garbage-collected before completion — mirroring the ``_write_tasks``
@@ -82,8 +83,8 @@ class TaskRegistry:
         self._tasks: dict[str, TaskInfo] = {}
         # task_id → asyncio.Task (strong reference to prevent GC).
         self._running: dict[str, asyncio.Task[None]] = {}
-        # client_id → set of task_ids.
-        self._by_client: dict[str, set[str]] = defaultdict(set)
+        # session_id → set of task_ids.
+        self._by_session: dict[str, set[str]] = defaultdict(set)
 
     # ------------------------------------------------------------------
     # public API
@@ -91,11 +92,11 @@ class TaskRegistry:
 
     def register(
         self,
-        client_id: str,
+        session_id: str,
         prompt: str,
         coro: asyncio.Task[None],
     ) -> str:
-        """Register a new *coro* as a background task for *client_id*.
+        """Register a new *coro* as a background task for *session_id*.
 
         *coro* must be an already-scheduled :class:`asyncio.Task` (created via
         :func:`asyncio.create_task`). The registry stores a strong reference to
@@ -107,17 +108,17 @@ class TaskRegistry:
         task_id = self._id_factory()
         info = TaskInfo(
             id=task_id,
-            client_id=client_id,
+            session_id=session_id,
             prompt=prompt,
             status=TaskStatus.RUNNING,
         )
         self._tasks[task_id] = info
         self._running[task_id] = coro
-        self._by_client[client_id].add(task_id)
+        self._by_session[session_id].add(task_id)
         coro.add_done_callback(lambda _t: self._running.pop(task_id, None))
         if self._event_sink is not None:
             self._event_sink.publish(
-                client_id, task_started_frame(task_id, client_id, prompt)
+                session_id, task_started_frame(task_id, session_id, prompt)
             )
         return task_id
 
@@ -129,9 +130,9 @@ class TaskRegistry:
         """Return the number of in-flight background tasks (process-wide)."""
         return len(self._running)
 
-    def list_for_client(self, client_id: str) -> list[TaskInfo]:
-        """Return all tasks for *client_id*."""
-        ids = self._by_client.get(client_id, set())
+    def list_for_session(self, session_id: str) -> list[TaskInfo]:
+        """Return all tasks for *session_id*."""
+        ids = self._by_session.get(session_id, set())
         return [self._tasks[tid] for tid in ids if tid in self._tasks]
 
     def complete(self, task_id: str, result: str) -> None:
@@ -142,7 +143,7 @@ class TaskRegistry:
             info.result = result
             if self._event_sink is not None:
                 self._event_sink.publish(
-                    info.client_id, task_completed_frame(task_id, result)
+                    info.session_id, task_completed_frame(task_id, result)
                 )
 
     def fail(self, task_id: str, error: str) -> None:
@@ -153,5 +154,5 @@ class TaskRegistry:
             info.error = error
             if self._event_sink is not None:
                 self._event_sink.publish(
-                    info.client_id, task_failed_frame(task_id, error)
+                    info.session_id, task_failed_frame(task_id, error)
                 )

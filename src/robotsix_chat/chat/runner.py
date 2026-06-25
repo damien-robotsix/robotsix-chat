@@ -16,7 +16,7 @@ Protocol by duck typing — no change needed here.
 Usage::
 
     task_id = spawn_subagent_task(
-        client_id="browser-1",
+        session_id="session-1",
         prompt="Summarise the last 3 conversations",
         settings=settings,
         registry=task_registry,
@@ -65,20 +65,20 @@ class DeliveryChannel(Protocol):
     satisfies this protocol without any change to this module.
     """
 
-    async def publish(self, client_id: str, frame: dict[str, Any]) -> None:
-        """Deliver *frame* to the owner of *client_id*."""
+    async def publish(self, session_id: str, frame: dict[str, Any]) -> None:
+        """Deliver *frame* to the session *session_id*."""
         ...
 
 
 class NullDeliveryChannel:
     """A :class:`DeliveryChannel` that drops frames (placeholder)."""
 
-    async def publish(self, client_id: str, frame: dict[str, Any]) -> None:
+    async def publish(self, session_id: str, frame: dict[str, Any]) -> None:
         """No-op — frames are silently dropped (debug-logged)."""
         logger.debug(
-            "NullDeliveryChannel: dropping %r for client %s",
+            "NullDeliveryChannel: dropping %r for session %s",
             frame.get("type"),
-            client_id,
+            session_id,
         )
 
 
@@ -127,7 +127,7 @@ def _default_agent_factory(settings: Settings) -> ChatAgent:
 
 def spawn_subagent_task(
     *,
-    client_id: str,
+    session_id: str,
     prompt: str,
     settings: Settings,
     registry: TaskRegistry,
@@ -169,7 +169,7 @@ def spawn_subagent_task(
             registry.complete(task_id, result_text)
             try:
                 await channel.publish(
-                    client_id, task_completed_frame(task_id, result_text)
+                    session_id, task_completed_frame(task_id, result_text)
                 )
             except Exception:
                 logger.exception(
@@ -182,13 +182,13 @@ def spawn_subagent_task(
             logger.exception("Sub-agent task %s failed", task_id)
             registry.fail(task_id, str(exc))
             try:
-                await channel.publish(client_id, task_failed_frame(task_id, str(exc)))
+                await channel.publish(session_id, task_failed_frame(task_id, str(exc)))
             except Exception:
                 logger.exception(
                     "DeliveryChannel.publish failed for failed task %s", task_id
                 )
 
     task = asyncio.create_task(_worker())
-    task_id = registry.register(client_id, prompt, task)
+    task_id = registry.register(session_id, prompt, task)
     id_future.set_result(task_id)
     return task_id

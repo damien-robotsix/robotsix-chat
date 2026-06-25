@@ -192,7 +192,7 @@ def test_register_stores_loop_info_with_running_status() -> None:
     info = reg.get(lid)
     assert info is not None
     assert info.id == lid
-    assert info.client_id == "c1"
+    assert info.session_id == "c1"
     assert info.prompt == "check db"
     assert info.status == LoopStatus.RUNNING
     assert info.interval_seconds == 120.0
@@ -231,8 +231,8 @@ def test_get_nonexistent_loop_returns_none() -> None:
     assert reg.get("bogus") is None
 
 
-def test_list_for_client_returns_loops() -> None:
-    """``list_for_client`` returns all loops registered under a client."""
+def test_list_for_session_returns_loops() -> None:
+    """``list_for_session`` returns all loops registered under a client."""
     reg = _registry()
     reg.register(
         "c1",
@@ -249,19 +249,19 @@ def test_list_for_client_returns_loops() -> None:
         coro=_fake_coro(),  # type: ignore[arg-type]
     )
 
-    loops = reg.list_for_client("c1")
+    loops = reg.list_for_session("c1")
     assert len(loops) == 2
     prompts = {lp.prompt for lp in loops}
     assert prompts == {"loop a", "loop b"}
 
 
-def test_list_for_client_unknown_client_returns_empty() -> None:
+def test_list_for_session_unknown_client_returns_empty() -> None:
     """An unknown client yields an empty list, not an error."""
     reg = _registry()
-    assert reg.list_for_client("nobody") == []
+    assert reg.list_for_session("nobody") == []
 
 
-def test_list_for_client_isolated_per_client() -> None:
+def test_list_for_session_isolated_per_client() -> None:
     """Loops for one client are not visible from another."""
     reg = _registry()
     reg.register(
@@ -279,8 +279,8 @@ def test_list_for_client_isolated_per_client() -> None:
         coro=_fake_coro(),  # type: ignore[arg-type]
     )
 
-    a = reg.list_for_client("c-a")
-    b = reg.list_for_client("c-b")
+    a = reg.list_for_session("c-a")
+    b = reg.list_for_session("c-b")
     assert [lp.prompt for lp in a] == ["a-only"]
     assert [lp.prompt for lp in b] == ["b-only"]
 
@@ -622,7 +622,7 @@ def test_loop_started_frame_shape() -> None:
     assert frame == {
         "type": SSE_LOOP_STARTED_TYPE,
         "loop_id": "L1",
-        "client_id": "c1",
+        "session_id": "c1",
         "prompt": "check health",
         "interval_seconds": 30.0,
         "max_iterations": 10,
@@ -702,7 +702,7 @@ async def test_spawn_runs_first_iteration_and_publishes_tick() -> None:
                 yield c
 
     lid = spawn_check_loop(
-        client_id="c1",
+        session_id="c1",
         prompt="is it ok?",
         interval_seconds=60.0,
         settings=settings,
@@ -753,7 +753,7 @@ async def test_spawn_returns_immediately() -> None:
     agent = _SlowAgent()
 
     lid = spawn_check_loop(
-        client_id="c1",
+        session_id="c1",
         prompt="slow",
         interval_seconds=60.0,
         settings=settings,
@@ -792,7 +792,7 @@ async def test_explicit_stop_publishes_stopped_frame() -> None:
     q_sse = bus.subscribe("c1")
 
     lid = spawn_check_loop(
-        client_id="c1",
+        session_id="c1",
         prompt="loop",
         interval_seconds=60.0,
         settings=settings,
@@ -829,7 +829,7 @@ async def test_max_iterations_cap_stops_loop() -> None:
     q_sse = bus.subscribe("c1")
 
     lid = spawn_check_loop(
-        client_id="c1",
+        session_id="c1",
         prompt="tick",
         interval_seconds=0.01,
         settings=settings,
@@ -867,7 +867,7 @@ async def test_stop_when_self_stops_loop() -> None:
     settings = _stub_settings(min_check_loop_interval_seconds=0.001)
 
     lid = spawn_check_loop(
-        client_id="c1",
+        session_id="c1",
         prompt="check",
         interval_seconds=0.01,
         settings=settings,
@@ -900,7 +900,7 @@ async def test_min_interval_rejection() -> None:
 
     with pytest.raises(LoopIntervalError, match="interval must be at least"):
         spawn_check_loop(
-            client_id="c1",
+            session_id="c1",
             prompt="too fast",
             interval_seconds=10.0,
             settings=settings,
@@ -929,7 +929,7 @@ async def test_capacity_rejection() -> None:
 
     with pytest.raises(LoopCapacityError, match="check-loop limit reached"):
         spawn_check_loop(
-            client_id="c1",
+            session_id="c1",
             prompt="should reject",
             interval_seconds=60.0,
             settings=settings,
@@ -957,7 +957,7 @@ async def test_capacity_allows_when_below_cap() -> None:
     assert reg.count_running() == 1
 
     lid = spawn_check_loop(
-        client_id="c1",
+        session_id="c1",
         prompt="allowed",
         interval_seconds=60.0,
         settings=settings,
@@ -982,7 +982,7 @@ async def test_loop_failure_publishes_failed_frame() -> None:
 
     exc = ValueError("something broke")
     lid = spawn_check_loop(
-        client_id="c1",
+        session_id="c1",
         prompt="will fail",
         interval_seconds=60.0,
         settings=settings,
@@ -1014,7 +1014,7 @@ async def test_cancelled_error_does_not_mark_failed() -> None:
     settings = _stub_settings()
 
     lid = spawn_check_loop(
-        client_id="c1",
+        session_id="c1",
         prompt="will be cancelled",
         interval_seconds=60.0,
         settings=settings,
@@ -1065,7 +1065,7 @@ async def test_loop_id_handshake_consistent() -> None:
     settings = _stub_settings()
 
     lid = spawn_check_loop(
-        client_id="c1",
+        session_id="c1",
         prompt="handshake",
         interval_seconds=60.0,
         settings=settings,
@@ -1107,7 +1107,7 @@ async def test_spawn_with_channel_records_tick_in_store() -> None:
     settings = _stub_settings(min_check_loop_interval_seconds=0.001)
 
     lid = spawn_check_loop(
-        client_id="c-chan",
+        session_id="c-chan",
         prompt="check with channel",
         interval_seconds=0.01,
         settings=settings,
@@ -1128,9 +1128,9 @@ async def test_spawn_with_channel_records_tick_in_store() -> None:
     assert info is not None
     assert info.status == LoopStatus.STOPPED
 
-    # The store should have one synthetic turn from the loop_tick publish.
-    sessions, active_id = store.list_sessions("c-chan")
-    history = store.history(active_id)
+    # The store should have one synthetic turn from the loop_tick publish,
+    # recorded into the exact session that spawned the loop.
+    history = store.history("c-chan")
     assert len(history) >= 1, f"Expected >= 1 turns, got {len(history)}: {history}"
     user_msg, assistant_msg = history[0]
     assert "Check loop" in user_msg
@@ -1153,7 +1153,7 @@ async def test_spawn_channel_raise_does_not_kill_loop() -> None:
     boom = _BoomChannel()
 
     lid = spawn_check_loop(
-        client_id="c-boom",
+        session_id="c-boom",
         prompt="survive boom",
         interval_seconds=0.01,
         settings=settings,
@@ -1201,7 +1201,7 @@ async def test_spawn_with_channel_records_failure_in_store() -> None:
 
     exc = ValueError("agent crash")
     lid = spawn_check_loop(
-        client_id="c-fail-chan",
+        session_id="c-fail-chan",
         prompt="will fail with channel",
         interval_seconds=60.0,
         settings=settings,
@@ -1216,9 +1216,9 @@ async def test_spawn_with_channel_records_failure_in_store() -> None:
     assert info is not None
     assert info.status == LoopStatus.FAILED
 
-    # The store should have a loop_failed synthetic turn.
-    sessions, active_id = store.list_sessions("c-fail-chan")
-    history = store.history(active_id)
+    # The store should have a loop_failed synthetic turn, recorded into the
+    # exact session that spawned the loop.
+    history = store.history("c-fail-chan")
     assert len(history) == 1
     user_msg, assistant_msg = history[0]
     assert "Check loop" in user_msg
@@ -1393,7 +1393,7 @@ async def test_resume_restarts_running_loops(tmp_path: Path) -> None:
     assert info is not None
     assert info.status == LoopStatus.RUNNING
     assert info.prompt == "resume me"
-    assert info.client_id == "c1"
+    assert info.session_id == "c1"
     assert info.max_iterations == 3  # 5 - 2 remaining
 
     assert reg.get("L-stop") is None
@@ -1490,7 +1490,7 @@ async def test_include_previous_result_off_by_default() -> None:
             yield "ok"
 
     lid = spawn_check_loop(
-        client_id="c1",
+        session_id="c1",
         prompt="original prompt",
         interval_seconds=0.01,
         settings=settings,
@@ -1535,7 +1535,7 @@ async def test_include_previous_result_prepends_previous_to_prompt() -> None:
             yield f"result-{len(prompts)}"
 
     lid = spawn_check_loop(
-        client_id="c1",
+        session_id="c1",
         prompt="check board",
         interval_seconds=0.01,
         settings=settings,
@@ -1575,7 +1575,7 @@ async def test_suppress_when_suppresses_sse_frame() -> None:
     q_sse = bus.subscribe("c1")
 
     lid = spawn_check_loop(
-        client_id="c1",
+        session_id="c1",
         prompt="check",
         interval_seconds=0.01,
         settings=settings,
@@ -1620,7 +1620,7 @@ async def test_suppress_when_false_still_publishes() -> None:
     q_sse = bus.subscribe("c1")
 
     lid = spawn_check_loop(
-        client_id="c1",
+        session_id="c1",
         prompt="check",
         interval_seconds=0.01,
         settings=settings,
@@ -1657,7 +1657,7 @@ async def test_suppress_when_still_records_tick_internally() -> None:
     settings = _stub_settings(min_check_loop_interval_seconds=0.001)
 
     lid = spawn_check_loop(
-        client_id="c1",
+        session_id="c1",
         prompt="poll",
         interval_seconds=0.01,
         settings=settings,
@@ -1711,7 +1711,7 @@ async def test_include_previous_result_and_suppress_together() -> None:
                 yield "NO_CHANGE"
 
     lid = spawn_check_loop(
-        client_id="c1",
+        session_id="c1",
         prompt="check tickets",
         interval_seconds=0.01,
         settings=settings,
@@ -1891,7 +1891,7 @@ async def test_gated_loop_no_board_read_suppresses_tick() -> None:
     settings.mill = type("MillStub", (), {"enabled": True})()
 
     lid = spawn_check_loop(
-        client_id="c-gate-1",
+        session_id="c-gate-1",
         prompt="report board status",
         interval_seconds=0.01,
         settings=settings,
@@ -1962,7 +1962,7 @@ async def test_gated_loop_with_board_read_passes_through() -> None:
         return _BoardReadingAgent(tools=[_fake_consult])
 
     lid = spawn_check_loop(
-        client_id="c-gate-verify",
+        session_id="c-gate-verify",
         prompt="report board status",
         interval_seconds=0.01,
         settings=settings,
@@ -1996,7 +1996,7 @@ async def test_gated_loop_no_board_read_stop_when_sees_guardrail() -> None:
 
     # A stop_when that would match the fabricated text — must NOT fire.
     lid = spawn_check_loop(
-        client_id="c-gate-2",
+        session_id="c-gate-2",
         prompt="report board status",
         interval_seconds=0.01,
         settings=settings,
@@ -2031,7 +2031,7 @@ async def test_non_gated_loop_unchanged() -> None:
     settings = _stub_settings(min_check_loop_interval_seconds=0.001)
 
     lid = spawn_check_loop(
-        client_id="c-ungated",
+        session_id="c-ungated",
         prompt="report whatever",
         interval_seconds=0.01,
         settings=settings,
@@ -2164,7 +2164,7 @@ def test_dedup_supersedes_same_prompt_same_client() -> None:
     # Exactly one RUNNING loop for this (client_id, prompt).
     running = [
         lp
-        for lp in reg.list_for_client("c1")
+        for lp in reg.list_for_session("c1")
         if lp.status == LoopStatus.RUNNING and lp.prompt.strip() == "check health"
     ]
     assert len(running) == 1
@@ -2248,7 +2248,7 @@ def test_dedup_distinct_prompts_coexist() -> None:
     info2 = reg.get(lid2)
     assert info2 is not None
     assert info2.status == LoopStatus.RUNNING
-    assert len(reg.list_for_client("c1")) == 2
+    assert len(reg.list_for_session("c1")) == 2
 
 
 def test_dedup_same_prompt_different_client_coexist() -> None:
@@ -2277,8 +2277,8 @@ def test_dedup_same_prompt_different_client_coexist() -> None:
     assert info_b.status == LoopStatus.RUNNING
 
     # Each client sees only its own loop.
-    assert len(reg.list_for_client("client-a")) == 1
-    assert len(reg.list_for_client("client-b")) == 1
+    assert len(reg.list_for_session("client-a")) == 1
+    assert len(reg.list_for_session("client-b")) == 1
 
 
 def test_dedup_terminal_loops_ignored() -> None:
@@ -2339,7 +2339,7 @@ def test_dedup_terminal_loops_ignored() -> None:
     # Only the new one is RUNNING for this prompt.
     running = [
         lp
-        for lp in reg.list_for_client("c1")
+        for lp in reg.list_for_session("c1")
         if lp.status == LoopStatus.RUNNING and lp.prompt.strip() == "check x"
     ]
     assert len(running) == 1
@@ -2376,7 +2376,7 @@ def test_dedup_false_skips_supersede() -> None:
     assert info2.status == LoopStatus.RUNNING
 
     # Two loops for this client.
-    assert len(reg.list_for_client("c1")) == 2
+    assert len(reg.list_for_session("c1")) == 2
 
 
 def test_dedup_event_sink_publishes_stopped_frame() -> None:
