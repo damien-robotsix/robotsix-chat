@@ -7,6 +7,7 @@ a self-contained browser chat UI from the same origin.
 from __future__ import annotations
 
 import asyncio
+import base64
 import contextlib
 import importlib.util
 import json
@@ -171,6 +172,91 @@ async def ui_endpoint(request: Request) -> HTMLResponse:
     return HTMLResponse(_load_ui_html(timeout))
 
 
+def _parse_and_validate_images(
+    body: dict[str, Any],
+    max_per_msg: int,
+    max_bytes: int,
+    allowed_types: list[str],
+) -> tuple[list[tuple[str, bytes]] | None, JSONResponse | None]:
+    """Parse and validate the ``images`` field from a chat request body.
+
+    Returns ``(images, error_response)`` where exactly one is ``None``:
+    - On success: ``(list_of_tuples, None)`` — each tuple is
+      ``(media_type, raw_bytes)``.
+    - On validation failure: ``(None, JSONResponse)`` — an HTTP 400 error
+      ready to return to the client.
+
+    When the body has no ``images`` key, returns ``(None, None)``.
+    """
+    raw_images = body.get("images")
+    if raw_images is None:
+        return None, None
+
+    if not isinstance(raw_images, list):
+        return None, JSONResponse(
+            {"error": "'images' must be a JSON array"}, status_code=400
+        )
+    if len(raw_images) > max_per_msg:
+        return None, JSONResponse(
+            {
+                "error": (
+                    f"too many images: got {len(raw_images)}, maximum {max_per_msg}"
+                )
+            },
+            status_code=400,
+        )
+
+    images: list[tuple[str, bytes]] = []
+    for idx, img in enumerate(raw_images):
+        if not isinstance(img, dict):
+            return None, JSONResponse(
+                {"error": f"images[{idx}]: expected a JSON object"},
+                status_code=400,
+            )
+        media_type = img.get("media_type")
+        if not isinstance(media_type, str) or not media_type:
+            return None, JSONResponse(
+                {"error": f"images[{idx}]: missing or invalid 'media_type'"},
+                status_code=400,
+            )
+        if media_type not in allowed_types:
+            return None, JSONResponse(
+                {
+                    "error": (
+                        f"images[{idx}]: media_type {media_type!r} not "
+                        f"allowed (allowed: {allowed_types})"
+                    )
+                },
+                status_code=400,
+            )
+        data_b64 = img.get("data")
+        if not isinstance(data_b64, str) or not data_b64:
+            return None, JSONResponse(
+                {"error": f"images[{idx}]: missing or invalid 'data'"},
+                status_code=400,
+            )
+        try:
+            raw_bytes = base64.b64decode(data_b64, validate=True)
+        except Exception:
+            return None, JSONResponse(
+                {"error": f"images[{idx}]: 'data' is not valid base64"},
+                status_code=400,
+            )
+        if len(raw_bytes) > max_bytes:
+            return None, JSONResponse(
+                {
+                    "error": (
+                        f"images[{idx}]: decoded size {len(raw_bytes)} "
+                        f"exceeds maximum {max_bytes}"
+                    )
+                },
+                status_code=400,
+            )
+        images.append((media_type, raw_bytes))
+
+    return images, None
+
+
 async def chat_endpoint(
     request: Request,
 ) -> JSONResponse | StreamingResponse:
@@ -194,75 +280,14 @@ async def chat_endpoint(
         )
 
     # -- parse & validate images (optional) -------------------------------
-    max_per_msg: int = request.app.state.max_images_per_message
-    max_bytes: int = request.app.state.max_image_bytes
-    allowed_types: list[str] = request.app.state.allowed_image_media_types
-
-    raw_images = body.get("images")
-    images: list[tuple[str, bytes]] | None = None
-    if raw_images is not None:
-        if not isinstance(raw_images, list):
-            return JSONResponse(
-                {"error": "'images' must be a JSON array"}, status_code=400
-            )
-        if len(raw_images) > max_per_msg:
-            return JSONResponse(
-                {
-                    "error": (
-                        f"too many images: got {len(raw_images)}, maximum {max_per_msg}"
-                    )
-                },
-                status_code=400,
-            )
-        images = []
-        import base64
-
-        for idx, img in enumerate(raw_images):
-            if not isinstance(img, dict):
-                return JSONResponse(
-                    {"error": f"images[{idx}]: expected a JSON object"},
-                    status_code=400,
-                )
-            media_type = img.get("media_type")
-            if not isinstance(media_type, str) or not media_type:
-                return JSONResponse(
-                    {"error": (f"images[{idx}]: missing or invalid 'media_type'")},
-                    status_code=400,
-                )
-            if media_type not in allowed_types:
-                return JSONResponse(
-                    {
-                        "error": (
-                            f"images[{idx}]: media_type {media_type!r} not "
-                            f"allowed (allowed: {allowed_types})"
-                        )
-                    },
-                    status_code=400,
-                )
-            data_b64 = img.get("data")
-            if not isinstance(data_b64, str) or not data_b64:
-                return JSONResponse(
-                    {"error": f"images[{idx}]: missing or invalid 'data'"},
-                    status_code=400,
-                )
-            try:
-                raw_bytes = base64.b64decode(data_b64, validate=True)
-            except Exception:
-                return JSONResponse(
-                    {"error": f"images[{idx}]: 'data' is not valid base64"},
-                    status_code=400,
-                )
-            if len(raw_bytes) > max_bytes:
-                return JSONResponse(
-                    {
-                        "error": (
-                            f"images[{idx}]: decoded size {len(raw_bytes)} "
-                            f"exceeds maximum {max_bytes}"
-                        )
-                    },
-                    status_code=400,
-                )
-            images.append((media_type, raw_bytes))
+    images, err_resp = _parse_and_validate_images(
+        body,
+        max_per_msg=request.app.state.max_images_per_message,
+        max_bytes=request.app.state.max_image_bytes,
+        allowed_types=request.app.state.allowed_image_media_types,
+    )
+    if err_resp is not None:
+        return err_resp
 
     # -- require at least one of message or images -----------------------
     if not message and not images:
