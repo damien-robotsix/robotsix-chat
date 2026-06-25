@@ -1096,13 +1096,33 @@
   // ---- Event stream lifecycle -----------------------------------------
   var eventStreamAbortController = null;
   var eventsStreamIntentionallyClosed = false;
+  var eventStreamReconnectTimer = null;
 
   function closeEventStream() {
     eventsStreamIntentionallyClosed = true;
+    if (eventStreamReconnectTimer) {
+      clearTimeout(eventStreamReconnectTimer);
+      eventStreamReconnectTimer = null;
+    }
     if (eventStreamAbortController) {
       eventStreamAbortController.abort();
       eventStreamAbortController = null;
     }
+  }
+
+  // Schedule exactly one reconnect. Without the guard, stacked onDone/error
+  // callbacks (or repeated failures) each queue their own openEventStream(),
+  // and since openEventStream() never aborted the prior stream, multiple live
+  // /events fetches accumulated — each holding a server-side EventBus
+  // subscription, so every loop/task frame was delivered (and rendered) once
+  // per leaked subscription. That is the duplicate-bubble bug.
+  function scheduleEventReconnect() {
+    if (eventsStreamIntentionallyClosed) return;
+    if (eventStreamReconnectTimer) return;  // one reconnect at a time
+    eventStreamReconnectTimer = setTimeout(function () {
+      eventStreamReconnectTimer = null;
+      openEventStream();
+    }, 5000);
   }
 
   // ---- Task panel store (session-only, in-memory) ----------------------
@@ -1705,6 +1725,17 @@
   // ---- Persistent /events SSE channel ----------------------------------
   function openEventStream() {
     eventsStreamIntentionallyClosed = false;
+    // Abort any prior stream before opening a new one so we never run two
+    // /events fetches at once (each would hold its own server-side EventBus
+    // subscription → duplicate frames). Also cancel a pending reconnect.
+    if (eventStreamReconnectTimer) {
+      clearTimeout(eventStreamReconnectTimer);
+      eventStreamReconnectTimer = null;
+    }
+    if (eventStreamAbortController) {
+      try { eventStreamAbortController.abort(); } catch (_) {}
+      eventStreamAbortController = null;
+    }
     var eventsUrl = apiBase() + "/events" +
                     "?session_id=" + encodeURIComponent(activeSessionId) +
                     "&owner_id=" + encodeURIComponent(clientId);
@@ -1745,12 +1776,12 @@
         // Stream closed by server — reconnect after a short delay,
         // unless the stream was intentionally closed (session switch).
         if (eventsStreamIntentionallyClosed) return;
-        setTimeout(openEventStream, 5000);
+        scheduleEventReconnect();
       },
       error: function (_err) {
         // Network error or stream failure — reconnect after a short delay.
         if (eventsStreamIntentionallyClosed) return;
-        setTimeout(openEventStream, 5000);
+        scheduleEventReconnect();
       }
     };
 
@@ -1762,12 +1793,12 @@
       signal: eventStreamAbortController.signal
     }).then(function (response) {
       if (!response.ok) {
-        setTimeout(openEventStream, 5000);
+        scheduleEventReconnect();
         return;
       }
       var contentType = response.headers.get("content-type") || "";
       if (contentType.indexOf("text/event-stream") === -1) {
-        setTimeout(openEventStream, 5000);
+        scheduleEventReconnect();
         return;
       }
       var parser = processSSEStream(response.body, eventsController);
@@ -1775,7 +1806,7 @@
     }).catch(function (err) {
       // Don't reconnect if aborted (session switch).
       if (err && err.name === "AbortError") return;
-      setTimeout(openEventStream, 5000);
+      scheduleEventReconnect();
     });
   }
 
