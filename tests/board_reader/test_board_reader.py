@@ -587,12 +587,6 @@ async def test_get_ticket_cache_hit(
 
     assert out1 == out2 == '{"id": "abc", "title": "Fix bug"}'
     assert get_counter[0] == 1  # only the first call hit HTTP
-        repo_id="x",
-    )
-
-    assert "409" in out
-    assert "conflict" in out
-
 
 # ---------------------------------------------------------------------------
 # dedup helpers — unit tests
