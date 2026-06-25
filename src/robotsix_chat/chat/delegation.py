@@ -545,9 +545,7 @@ def build_check_loop_tools(
         if conversation_store is not None:
             try:
                 if conversation_store.is_session_closed(sid):
-                    logger.info(
-                        "start_check_loop blocked: session %s is closed", sid
-                    )
+                    logger.info("start_check_loop blocked: session %s is closed", sid)
                     return (
                         "I can't start a new check loop — this session "
                         "has been closed. No new work can be spawned."

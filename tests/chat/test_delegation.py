@@ -2246,9 +2246,7 @@ async def test_start_check_loop_refuses_closed_session() -> None:
     )
     start_check_loop = tools[0]
 
-    result = await start_check_loop(
-        "Monitor something", interval_seconds=120
-    )
+    result = await start_check_loop("Monitor something", interval_seconds=120)
     assert "closed" in result.lower()
 
 
@@ -2269,9 +2267,7 @@ async def test_start_check_loop_allows_open_session() -> None:
     )
     start_check_loop = tools[0]
 
-    result = await start_check_loop(
-        "Monitor something", interval_seconds=120
-    )
+    result = await start_check_loop("Monitor something", interval_seconds=120)
     assert "started" in result.lower()
 
 
@@ -2312,7 +2308,5 @@ async def test_start_check_loop_no_store_still_spawns() -> None:
     )
     start_check_loop = tools[0]
 
-    result = await start_check_loop(
-        "Monitor something", interval_seconds=120
-    )
+    result = await start_check_loop("Monitor something", interval_seconds=120)
     assert "started" in result.lower()

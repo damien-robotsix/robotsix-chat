@@ -461,9 +461,7 @@ async def test_sessions_close_stops_loops_and_marks_closed() -> None:
     assert all(
         loop.status.value == "stopped" for loop in loop_reg.list_for_session(sid)
     )
-    assert all(
-        t.status.value == "failed" for t in task_reg.list_for_session(sid)
-    )
+    assert all(t.status.value == "failed" for t in task_reg.list_for_session(sid))
 
 
 @pytest.mark.asyncio
@@ -506,9 +504,7 @@ async def test_sessions_close_cleans_orphaned_loops() -> None:
         check_loop_registry=loop_reg,
     ) as f:
         # Call close with the real owner but an orphan session id.
-        response = await f.client.post(
-            "/sessions/orphan-sid/close?owner_id=real-owner"
-        )
+        response = await f.client.post("/sessions/orphan-sid/close?owner_id=real-owner")
 
     # Session not found for this owner → 404, but loop was still cleaned up.
     assert response.status_code == 404
