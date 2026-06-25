@@ -15,4 +15,4 @@ jobs:
     # the reusable-workflow call with a startup_failure.
     permissions:
       contents: write
-    uses: damien-robotsix/robotsix-mill/.github/workflows/python-docs.yml@main
+    uses: damien-robotsix/robotsix-mill/.github/workflows/python-docs.yml@84de006ddcaee4926124edd588c0eaf06d7a61ec  # main

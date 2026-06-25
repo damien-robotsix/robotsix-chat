@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   deps-bump:
-    uses: damien-robotsix/robotsix-mill/.github/workflows/deps-bump.yml@main
+    uses: damien-robotsix/robotsix-mill/.github/workflows/deps-bump.yml@84de006ddcaee4926124edd588c0eaf06d7a61ec  # main
     permissions:
       contents: write
       pull-requests: write
