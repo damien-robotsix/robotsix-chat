@@ -411,17 +411,22 @@ def _apply_board_read_gate(
     probe: BoardReadProbe | None,
     verify_via_board: bool,
     loop_id: str,
+    *,
+    has_previous_result: bool = False,
 ) -> str:
     """Apply the board-read gate to *result_text*.
 
     When *verify_via_board* is ``True`` and *probe* recorded zero
     ``consult_mill`` invocations during the tick, *result_text* is suppressed
-    and replaced with a guardrail notice.  Otherwise it passes through
-    unchanged.
+    and replaced with a guardrail notice — **unless** *has_previous_result* is
+    ``True``, in which case the previous tick already embodies a board-verified
+    status and the agent is allowed to rely on it without a fresh board read.
 
     Returns the (possibly suppressed) result text.
     """
     if not verify_via_board or probe is None:
+        return result_text
+    if has_previous_result:
         return result_text
     if probe.count == 0 and result_text:
         logger.warning(
@@ -450,6 +455,12 @@ _GUARDRAIL_HEADER = (
     "solely on its reply. Never invent, assume, or narrate a state change "
     "or timestamp you have not read from the board. If you cannot read the "
     "board, say so explicitly instead of guessing.\n\n"
+)
+
+_SOFT_GUARDRAIL_HEADER = (
+    "The previous check result below contains a recent board view — you may "
+    "rely on it without re-reading the board.  Only call consult_mill if you "
+    "need the absolute latest state or the previous result is explicitly stale.\n\n"
 )
 
 
@@ -524,7 +535,10 @@ async def _check_loop_worker(
             # (when gated) with the previous result (when comparing).
             effective_prompt = prompt
             if verify_via_board:
-                effective_prompt = _GUARDRAIL_HEADER + effective_prompt
+                if include_previous_result and previous_result is not None:
+                    effective_prompt = _SOFT_GUARDRAIL_HEADER + effective_prompt
+                else:
+                    effective_prompt = _GUARDRAIL_HEADER + effective_prompt
             if include_previous_result and previous_result is not None:
                 effective_prompt = (
                     f"Previous check result:\n{previous_result}\n\n"
@@ -539,7 +553,13 @@ async def _check_loop_worker(
             # --- gate: suppress unverified status ---
             if verify_via_board:
                 result_text = _apply_board_read_gate(
-                    result_text, probe, verify_via_board, loop_id
+                    result_text,
+                    probe,
+                    verify_via_board,
+                    loop_id,
+                    has_previous_result=(
+                        include_previous_result and previous_result is not None
+                    ),
                 )
 
             next_run = clock() + interval_seconds
