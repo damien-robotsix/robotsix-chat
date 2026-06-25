@@ -14,7 +14,7 @@ jobs:
       checks: read
       contents: read
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
         with:
           persist-credentials: false
       - name: Verify tag matches pyproject.toml version
@@ -31,7 +31,7 @@ jobs:
             exit 1
           fi
       - name: Verify CI status
-        uses: actions/github-script@v9
+        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3  # v9
         with:
           script: |
             const fn = require('./.github/scripts/verify-ci.js');
