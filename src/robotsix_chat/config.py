@@ -292,7 +292,7 @@ class MillSettings(BaseModel):
     agent_id: str = "robotsix-chat"
     board_manager_id: str = "board-manager-robotsix-mill"
     repo_id: str = ""
-    timeout: float = 300.0
+    timeout: float = 600.0  # 10 min — synthesis legitimately exceeds 5 min
 
 
 class MailSettings(BaseModel):
