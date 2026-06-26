@@ -1744,6 +1744,77 @@ async def test_include_previous_result_and_suppress_together() -> None:
     assert tick_frames[0]["result"] == "ticket X is open"
 
 
+@pytest.mark.asyncio
+async def test_unchanged_loop_skips_llm_after_first_no_change() -> None:
+    """N consecutive unchanged polls produce 1 (not N) substantive LLM calls.
+
+    When the previous tick's result matches the no-change predicate, the
+    worker skips the LLM invocation entirely on subsequent ticks — reusing
+    the previous result — so input tokens are not wasted on a foregone
+    NO_CHANGE reply.
+    """
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+    q_sse = bus.subscribe("c1")  # subscribe before spawning so events are captured
+
+    # Shared call counter across agent instances (factory creates a fresh
+    # instance each tick, but the counter is captured by closure).
+    call_count = 0
+
+    class _CountingNoChangeAgent:
+        async def stream(
+            self,
+            message: str,
+            *,
+            history: list[tuple[str, str]] | None = None,
+            session_id: str | None = None,
+            client_id: str | None = None,
+            images: list[tuple[str, bytes]] | None = None,
+        ) -> AsyncIterator[str]:
+            nonlocal call_count
+            call_count += 1
+            yield "NO_CHANGE"
+
+    lid = spawn_check_loop(
+        session_id="c1",
+        prompt="check status",
+        interval_seconds=0.01,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _CountingNoChangeAgent(),
+        max_iterations=5,
+        suppress_when=lambda r: r.strip().upper().startswith("NO_CHANGE"),
+    )
+
+    for _ in range(80):
+        await asyncio.sleep(0.05)
+        info = reg.get(lid)
+        if info and info.status != LoopStatus.RUNNING:
+            break
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.STOPPED
+    assert info.stop_reason == "max_iterations"
+
+    # All 5 iterations were recorded internally …
+    assert info.iterations == 5, (
+        f"Expected 5 iterations recorded, got {info.iterations}"
+    )
+    # … but the LLM was invoked only once (the first tick).
+    assert call_count == 1, f"Expected 1 LLM call (first tick), got {call_count}"
+
+    # All ticks produced NO_CHANGE → all suppressed → zero published frames.
+    frames: list[dict[str, Any]] = []
+    while not q_sse.empty():
+        frames.append(q_sse.get_nowait())
+    tick_frames = [f for f in frames if f["type"] == SSE_LOOP_TICK_TYPE]
+    assert len(tick_frames) == 0, (
+        f"Expected 0 published tick frames, got {len(tick_frames)}"
+    )
+
+
 # ---------------------------------------------------------------------------
 # record_tick publish=False
 # ---------------------------------------------------------------------------

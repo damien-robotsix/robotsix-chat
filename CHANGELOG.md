@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Check-loop worker now skips the LLM invocation when the previous tick's
+  result matched the no-change predicate, reusing the prior result instead
+  of re-sending the full prompt for a foregone NO_CHANGE reply.  Saves
+  ~80% of monitoring-loop input tokens on static/unchanged items.
 - Consolidated duplicated ``_added_frame``, ``_updated_frame``, and
   ``_answered_frame`` builders into a single ``_frame_for`` helper in
   ``src/robotsix_chat/pending_questions/store.py``, eliminating ~30 lines

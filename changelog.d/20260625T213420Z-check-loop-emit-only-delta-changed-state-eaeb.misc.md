@@ -1,0 +1,1 @@
+Check-loop: emit only delta/changed state, suppress redundant NO_CHANGE re-reports
