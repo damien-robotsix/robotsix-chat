@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Increase font sizes in the Pending Questions panel for improved readability.
+
 - Document `board_reader.cache_ttl` / `BOARD_READER_CACHE_TTL` in the Board Reader section of `docs/configuration.md`.
 
 - Fix docs: change `mail.broker_port` default from quoted `"443"` to unquoted
