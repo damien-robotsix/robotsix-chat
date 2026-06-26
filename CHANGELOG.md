@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Reorganized ``tests/test_broker_client.py`` into per-module subdirectory
+  ``tests/broker_client/``, aligning with the convention used by all other
+  modules.
+
 - Add ``CALENDAR_CACHE_TTL`` env-var override for ``CalendarSettings.cache_ttl``,
   matching the existing ``BOARD_READER_CACHE_TTL`` and ``VERSION_CHECK_CACHE_TTL``
   sibling patterns.

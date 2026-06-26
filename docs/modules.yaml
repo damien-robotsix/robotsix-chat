@@ -39,7 +39,8 @@ modules:
     description: "Shared base for brokered agent-comm clients — lazy import, common __init__ pattern, and thread-offloaded consult()."
     paths:
       - src/robotsix_chat/broker_client.py
-      - tests/test_broker_client.py
+      - tests/broker_client/__init__.py
+      - tests/broker_client/test_broker_client.py
 
   - id: robotsix_chat.calendar
     description: "Calendar/tasks integration over the agent-comm broker — exposes build_calendar_tools() for querying and managing the user's calendar and tasks in natural language."

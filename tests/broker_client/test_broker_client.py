@@ -16,7 +16,7 @@ import pytest
 from robotsix_chat import broker_client
 from robotsix_chat.broker_client import BaseBrokeredClient, BrokerUnavailableError
 
-from .conftest import _install_fake_agent_comm, _Reply
+from ..conftest import _install_fake_agent_comm, _Reply
 
 
 class _FakeResp:
