@@ -2029,3 +2029,125 @@ async def test_foreground_subagent_factory_wired_correctly() -> None:
 
     # Clean up the spawned task.
     await asyncio.sleep(0.1)
+
+
+# ---------------------------------------------------------------------------
+# Pending questions endpoints
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_pending_questions_answer_endpoint_returns_200() -> None:
+    """POST /pending-questions/{id}/answer records an answer and returns 200."""
+    from robotsix_chat.pending_questions.store import PendingQuestionsStore
+
+    pq_store = PendingQuestionsStore()
+    entry = pq_store.add("sess-1", "What is your name?")
+
+    async with mock_app(pq_store=pq_store) as f:
+        response = await f.client.post(
+            f"/pending-questions/{entry.question_id}/answer",
+            json={"answer": "Damien"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["question_id"] == entry.question_id
+    assert data["status"] == "answered"
+    assert data["answer"] == "Damien"
+
+
+@pytest.mark.asyncio
+async def test_pending_questions_answer_endpoint_question_remains_listable() -> None:
+    """After answering, the question still appears in GET /pending-questions."""
+    from robotsix_chat.pending_questions.store import PendingQuestionsStore
+
+    pq_store = PendingQuestionsStore()
+    entry = pq_store.add("sess-1", "Q1")
+
+    async with mock_app(pq_store=pq_store) as f:
+        # Answer the question.
+        await f.client.post(
+            f"/pending-questions/{entry.question_id}/answer",
+            json={"answer": "A1"},
+        )
+
+        # List questions for the session.
+        list_resp = await f.client.get("/pending-questions?session_id=sess-1")
+
+    assert list_resp.status_code == 200
+    data = list_resp.json()
+    assert len(data["questions"]) == 1
+    q = data["questions"][0]
+    assert q["question_id"] == entry.question_id
+    assert q["status"] == "answered"
+    assert q["answer"] == "A1"
+    assert q["answered_at"] > 0
+
+
+@pytest.mark.asyncio
+async def test_pending_questions_answer_unknown_id_returns_404() -> None:
+    """POST /pending-questions/{id}/answer on unknown id returns 404."""
+    from robotsix_chat.pending_questions.store import PendingQuestionsStore
+
+    pq_store = PendingQuestionsStore()
+
+    async with mock_app(pq_store=pq_store) as f:
+        response = await f.client.post(
+            "/pending-questions/nonexistent/answer",
+            json={"answer": "ignored"},
+        )
+
+    assert response.status_code == 404
+    data = response.json()
+    assert data["error"] == "unknown question"
+    assert data["question_id"] == "nonexistent"
+
+
+@pytest.mark.asyncio
+async def test_pending_questions_delete_still_removes() -> None:
+    """DELETE /pending-questions/{id} still removes the question."""
+    from robotsix_chat.pending_questions.store import PendingQuestionsStore
+
+    pq_store = PendingQuestionsStore()
+    entry = pq_store.add("sess-1", "Q1")
+
+    async with mock_app(pq_store=pq_store) as f:
+        resp = await f.client.delete(f"/pending-questions/{entry.question_id}")
+
+    assert resp.status_code == 200
+    assert resp.json() == {
+        "question_id": entry.question_id,
+        "status": "removed",
+    }
+    assert len(pq_store.list_for_session("sess-1")) == 0
+
+
+@pytest.mark.asyncio
+async def test_pending_questions_list_includes_answer_fields() -> None:
+    """GET /pending-questions returns answer and answered_at for each entry."""
+    from robotsix_chat.pending_questions.store import PendingQuestionsStore
+
+    pq_store = PendingQuestionsStore()
+    pq_store.add("sess-1", "Q1")
+    entry2 = pq_store.add("sess-1", "Q2")
+    pq_store.answer(entry2.question_id, "A2")
+
+    async with mock_app(pq_store=pq_store) as f:
+        resp = await f.client.get("/pending-questions?session_id=sess-1")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["questions"]) == 2
+
+    # Q1 is pending — no answer.
+    q1 = [q for q in data["questions"] if q["text"] == "Q1"][0]
+    assert q1["status"] == "pending"
+    assert q1["answer"] == ""
+    assert q1["answered_at"] == 0.0
+
+    # Q2 is answered.
+    q2 = [q for q in data["questions"] if q["text"] == "Q2"][0]
+    assert q2["status"] == "answered"
+    assert q2["answer"] == "A2"
+    assert q2["answered_at"] > 0

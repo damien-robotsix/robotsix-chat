@@ -214,6 +214,38 @@ async def test_get_tool_returns_question():
     assert "What is your name?" in result
     assert "need name" in result
     assert "pending" in result
+    # Not answered — answer line should not appear.
+    assert "answer:" not in result
+
+
+@pytest.mark.anyio
+async def test_get_tool_includes_answer_after_answer():
+    """After store.answer(), the get tool includes the answer in its output."""
+    settings = PendingQuestionsSettings(enabled=True)
+    store = PendingQuestionsStore()
+    tools = build_pending_questions_tools(settings, store, session_id="sess-1")
+    add_fn, get_fn = tools[0], tools[4]
+
+    qid = await add_fn("Q1")
+    store.answer(qid, "my answer")
+    result = await get_fn(qid)
+    assert "answered" in result
+    assert "answer: my answer" in result
+
+
+@pytest.mark.anyio
+async def test_remove_after_answer_still_works():
+    """remove_pending_question still closes the question after it has been answered."""
+    settings = PendingQuestionsSettings(enabled=True)
+    store = PendingQuestionsStore()
+    tools = build_pending_questions_tools(settings, store, session_id="sess-1")
+    add_fn, remove_fn = tools[0], tools[2]
+
+    qid = await add_fn("Q1")
+    store.answer(qid, "A1")
+    result = await remove_fn(qid)
+    assert "Removed" in result
+    assert len(store.list_for_session("sess-1")) == 0
 
 
 @pytest.mark.anyio

@@ -25,6 +25,8 @@ class PendingQuestion:
     text: str
     detail: str = ""
     status: str = "pending"
+    answer: str = ""
+    answered_at: float = 0.0
     created_at: float = 0.0
 
 
@@ -104,6 +106,34 @@ class PendingQuestionsStore:
         self._publish(_updated_frame(entry))
         return entry
 
+    def answer(
+        self,
+        question_id: str,
+        answer_text: str,
+        *,
+        wall_clock: float | None = None,
+    ) -> PendingQuestion | None:
+        """Record an answer for a pending question without removing it.
+
+        Sets ``status="answered"``, stores the answer text, and publishes a
+        ``pending_question_answered`` frame so connected browsers update in
+        real time.  The entry stays in the store — call :meth:`remove` to
+        explicitly close it after the assistant has read and acted on the
+        answer.
+
+        Returns the updated entry, or ``None`` when *question_id* is unknown.
+        """
+        import time
+
+        entry = self._find(question_id)
+        if entry is None:
+            return None
+        entry.answer = answer_text.strip()
+        entry.status = "answered"
+        entry.answered_at = wall_clock if wall_clock is not None else time.time()
+        self._publish(_answered_frame(entry))
+        return entry
+
     def remove(self, question_id: str) -> PendingQuestion | None:
         """Remove a pending question by id.
 
@@ -162,6 +192,8 @@ def _added_frame(entry: PendingQuestion) -> dict[str, object]:
         "text": entry.text,
         "detail": entry.detail,
         "status": entry.status,
+        "answer": entry.answer,
+        "answered_at": entry.answered_at,
         "created_at": entry.created_at,
     }
 
@@ -174,6 +206,22 @@ def _updated_frame(entry: PendingQuestion) -> dict[str, object]:
         "text": entry.text,
         "detail": entry.detail,
         "status": entry.status,
+        "answer": entry.answer,
+        "answered_at": entry.answered_at,
+        "created_at": entry.created_at,
+    }
+
+
+def _answered_frame(entry: PendingQuestion) -> dict[str, object]:
+    return {
+        "type": "pending_question_answered",
+        "question_id": entry.question_id,
+        "session_id": entry.session_id,
+        "text": entry.text,
+        "detail": entry.detail,
+        "status": entry.status,
+        "answer": entry.answer,
+        "answered_at": entry.answered_at,
         "created_at": entry.created_at,
     }
 
