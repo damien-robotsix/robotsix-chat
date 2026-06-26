@@ -65,8 +65,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Strengthened the ``agent_instruction`` Efficiency bullet to name prohibited
   output shapes (multi-row markdown tables, timeline/audit dumps, recap lists)
   and forbid repeating content already shown in the same conversation.
-- Reduced ``mill.timeout`` default from 240 s to 120 s; still generous for an
-  LLM board-manager reply but avoids doubled wasted-wait on stuck audits.
+- Raised ``mill.timeout`` default from 300 s to 600 s (10 min); the board
+  manager's synthesis legitimately exceeds 5 minutes in many cases, so the
+  previous 5‑minute timeout caused spurious failures and client retries.
 - Added request trimming to the mill retry queue: ``BoardWriteRetryQueue``
   now drops the middle of over-long requests before persistence and resend
   (head+tail preservation with an omission marker), cutting ~4–5k-token

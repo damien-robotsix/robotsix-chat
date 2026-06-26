@@ -126,7 +126,7 @@ ask status) from chat. Disabled by default; requires `uv sync --extra broker`.
 | `mill.agent_id` | `MILL_AGENT_ID` | `"robotsix-chat"` | This agent's identity on the broker. |
 | `mill.board_manager_id` | `MILL_BOARD_MANAGER_ID` | `"board-manager-robotsix-mill"` | Target board manager agent ID. |
 | `mill.repo_id` | `MILL_REPO_ID` | `""` | Optional target repo to scope requests to. Empty = board manager picks the target repo from the conversation. |
-| `mill.timeout` | `MILL_TIMEOUT` | `240.0` | Per-request timeout (seconds). Generous because the recipient is an LLM. |
+| `mill.timeout` | `MILL_TIMEOUT` | `600.0` | Per-request timeout (seconds). Generous because the recipient is a multi-turn LLM agent whose synthesis legitimately exceeds 5 minutes. |
 
 ## Mail
 
