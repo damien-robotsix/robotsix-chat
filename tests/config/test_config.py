@@ -1249,6 +1249,7 @@ def test_calendar_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("CALENDAR_BROKER_TOKEN", "sek")
     monkeypatch.setenv("CALENDAR_BROKER_PORT", "8443")
     monkeypatch.setenv("CALENDAR_CALENDAR_AGENT_ID", "my-cal-agent")
+    monkeypatch.setenv("CALENDAR_CACHE_TTL", "120.0")
 
     settings = Settings.from_env()
 
@@ -1256,6 +1257,7 @@ def test_calendar_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.calendar.broker_token == "sek"  # pragma: allowlist secret
     assert settings.calendar.broker_port == 8443
     assert settings.calendar.calendar_agent_id == "my-cal-agent"
+    assert settings.calendar.cache_ttl == 120.0
 
 
 def test_calendar_port_invalid_raises(monkeypatch: pytest.MonkeyPatch) -> None:
