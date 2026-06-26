@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Consolidated duplicated ``_added_frame``, ``_updated_frame``, and
+  ``_answered_frame`` builders into a single ``_frame_for`` helper in
+  ``src/robotsix_chat/pending_questions/store.py``, eliminating ~30 lines
+  of near-identical dict literal construction.
 - Reorganized ``tests/test_broker_client.py`` into per-module subdirectory
   ``tests/broker_client/``, aligning with the convention used by all other
   modules.

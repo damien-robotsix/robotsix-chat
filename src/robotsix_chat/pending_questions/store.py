@@ -78,7 +78,7 @@ class PendingQuestionsStore:
             created_at=wall_clock if wall_clock is not None else time.time(),
         )
         self._questions[session_id][question_id] = entry
-        self._publish(_added_frame(entry))
+        self._publish(_frame_for(entry, "pending_question_added"))
         return entry
 
     def update(
@@ -103,7 +103,7 @@ class PendingQuestionsStore:
             entry.detail = detail.strip()
         if status is not None:
             entry.status = status
-        self._publish(_updated_frame(entry))
+        self._publish(_frame_for(entry, "pending_question_updated"))
         return entry
 
     def answer(
@@ -131,7 +131,7 @@ class PendingQuestionsStore:
         entry.answer = answer_text.strip()
         entry.status = "answered"
         entry.answered_at = wall_clock if wall_clock is not None else time.time()
-        self._publish(_answered_frame(entry))
+        self._publish(_frame_for(entry, "pending_question_answered"))
         return entry
 
     def remove(self, question_id: str) -> PendingQuestion | None:
@@ -184,37 +184,9 @@ class PendingQuestionsStore:
 # ------------------------------------------------------------------
 
 
-def _added_frame(entry: PendingQuestion) -> dict[str, object]:
+def _frame_for(entry: PendingQuestion, event_type: str) -> dict[str, object]:
     return {
-        "type": "pending_question_added",
-        "question_id": entry.question_id,
-        "session_id": entry.session_id,
-        "text": entry.text,
-        "detail": entry.detail,
-        "status": entry.status,
-        "answer": entry.answer,
-        "answered_at": entry.answered_at,
-        "created_at": entry.created_at,
-    }
-
-
-def _updated_frame(entry: PendingQuestion) -> dict[str, object]:
-    return {
-        "type": "pending_question_updated",
-        "question_id": entry.question_id,
-        "session_id": entry.session_id,
-        "text": entry.text,
-        "detail": entry.detail,
-        "status": entry.status,
-        "answer": entry.answer,
-        "answered_at": entry.answered_at,
-        "created_at": entry.created_at,
-    }
-
-
-def _answered_frame(entry: PendingQuestion) -> dict[str, object]:
-    return {
-        "type": "pending_question_answered",
+        "type": event_type,
         "question_id": entry.question_id,
         "session_id": entry.session_id,
         "text": entry.text,
