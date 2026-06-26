@@ -109,6 +109,7 @@ calendar:
   # agent_id: robotsix-chat        # this agent's id on the broker; env: CALENDAR_AGENT_ID
   # calendar_agent_id: calendar-agent-robotsix  # recipient; env: CALENDAR_CALENDAR_AGENT_ID
   # timeout: 240                   # per-request seconds; env: CALENDAR_TIMEOUT
+  # cache_ttl: 60.0                # Seconds to cache calendar API responses; env: CALENDAR_CACHE_TTL
 
 # robotsix-auto-mail integration over the agent-comm broker. Disabled by default;
 # requires `uv sync --extra broker`. When enabled, the agent gains a tool that

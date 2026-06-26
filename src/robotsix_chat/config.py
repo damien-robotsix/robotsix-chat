@@ -1304,6 +1304,15 @@ def _build_calendar_raw(yaml_calendar: Any) -> dict[str, Any]:
                 f"CALENDAR_TIMEOUT must be a number, got {timeout_str!r}"
             ) from None
 
+    cache_ttl_str = os.getenv("CALENDAR_CACHE_TTL")
+    if cache_ttl_str is not None:
+        try:
+            calendar_raw["cache_ttl"] = float(cache_ttl_str)
+        except ValueError:
+            raise ValueError(
+                f"CALENDAR_CACHE_TTL must be a number, got {cache_ttl_str!r}"
+            ) from None
+
     return calendar_raw
 
 

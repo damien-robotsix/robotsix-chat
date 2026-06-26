@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Add ``CALENDAR_CACHE_TTL`` env-var override for ``CalendarSettings.cache_ttl``,
+  matching the existing ``BOARD_READER_CACHE_TTL`` and ``VERSION_CHECK_CACHE_TTL``
+  sibling patterns.
+
 - Sync `agent.instruction` row in `docs/configuration.md` with the live
   `Settings.agent_instruction` default (add missing v9 enforcement sentence
   and a missing newline before the Efficiency section).

@@ -95,6 +95,7 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "CALENDAR_AGENT_ID",
         "CALENDAR_CALENDAR_AGENT_ID",
         "CALENDAR_TIMEOUT",
+        "CALENDAR_CACHE_TTL",
         "COMPONENT_AGENT_ENABLED",
         "COMPONENT_AGENT_BROKER_HOST",
         "COMPONENT_AGENT_BROKER_PORT",
