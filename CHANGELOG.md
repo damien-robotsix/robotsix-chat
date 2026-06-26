@@ -11,6 +11,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Document `board_reader.cache_ttl` / `BOARD_READER_CACHE_TTL` in the Board Reader section of `docs/configuration.md`.
 
+- Fix docs: change `mail.broker_port` default from quoted `"443"` to unquoted
+  `443` to match the actual code default and other `broker_port` entries.
 - Add `Makefile` with phony targets (`install`, `test`, `lint`, `format`,
   `format-check`, `typecheck`, `security`, `clean`, `all`) wrapping common
   `uv run` developer commands.

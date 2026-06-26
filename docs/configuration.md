@@ -140,7 +140,7 @@ Disabled by default; requires `uv sync --extra broker`.
 |---|---|---|---|
 | `mail.enabled` | `MAIL_ENABLED` | `false` | Master switch. Requires the `broker` extra. |
 | `mail.broker_host` | `MAIL_BROKER_HOST` | `ai-broker.robotsix.net` | Shared broker hostname. |
-| `mail.broker_port` | `MAIL_BROKER_PORT` | `"443"` | Broker port. |
+| `mail.broker_port` | `MAIL_BROKER_PORT` | `443` | Broker port. |
 | `mail.broker_scheme` | `MAIL_BROKER_SCHEME` | `https` | `https` or `http`. |
 | `mail.broker_token` | `MAIL_BROKER_TOKEN` | `""` | Bearer token (required when enabled). |
 | `mail.agent_id` | `MAIL_AGENT_ID` | `robotsix-chat` | This agent's broker identity. |
