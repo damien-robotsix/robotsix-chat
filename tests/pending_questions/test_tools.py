@@ -17,12 +17,12 @@ def test_disabled_returns_empty():
     assert tools == []
 
 
-def test_enabled_returns_three_tools():
-    """Enabled settings produce three tools (add, update, remove)."""
+def test_enabled_returns_five_tools():
+    """Enabled settings produce five tools (add, update, remove, list, get)."""
     settings = PendingQuestionsSettings(enabled=True)
     store = PendingQuestionsStore()
     tools = build_pending_questions_tools(settings, store, session_id="sess-1")
-    assert len(tools) == 3
+    assert len(tools) == 5
 
 
 @pytest.mark.anyio
@@ -124,8 +124,8 @@ def test_session_isolation():
     # Just verify the tools are created; session routing tested via add/remove.
     tools_a = build_pending_questions_tools(settings, store, session_id="sess-a")
     tools_b = build_pending_questions_tools(settings, store, session_id="sess-b")
-    assert len(tools_a) == 3
-    assert len(tools_b) == 3
+    assert len(tools_a) == 5
+    assert len(tools_b) == 5
     assert len(store.list_for_session("sess-a")) == 0
     assert len(store.list_for_session("sess-b")) == 0
 
@@ -145,3 +145,83 @@ async def test_status_update():
     entry = store.get(qid)
     assert entry is not None
     assert entry.status == "answered"
+
+
+@pytest.mark.anyio
+async def test_list_tool_returns_all_questions():
+    """The list tool returns every pending question for the session."""
+    settings = PendingQuestionsSettings(enabled=True)
+    store = PendingQuestionsStore()
+    tools = build_pending_questions_tools(settings, store, session_id="sess-1")
+    add_fn, list_fn = tools[0], tools[3]
+
+    qid1 = await add_fn("Q1")
+    qid2 = await add_fn("Q2", "detail two")
+    result = await list_fn()
+    assert qid1 in result
+    assert qid2 in result
+    assert "Q1" in result
+    assert "Q2" in result
+    assert "detail two" in result
+    assert "[pending]" in result
+
+
+@pytest.mark.anyio
+async def test_list_tool_empty_session():
+    """The list tool returns a clear message when there are no questions."""
+    settings = PendingQuestionsSettings(enabled=True)
+    store = PendingQuestionsStore()
+    tools = build_pending_questions_tools(settings, store, session_id="sess-1")
+    list_fn = tools[3]
+    result = await list_fn()
+    assert "No pending questions" in result
+
+
+@pytest.mark.anyio
+async def test_list_tool_session_isolation():
+    """The list tool only returns questions for its own session."""
+    settings = PendingQuestionsSettings(enabled=True)
+    store = PendingQuestionsStore()
+    tools_a = build_pending_questions_tools(settings, store, session_id="sess-a")
+    tools_b = build_pending_questions_tools(settings, store, session_id="sess-b")
+
+    add_a, list_a = tools_a[0], tools_a[3]
+    add_b, list_b = tools_b[0], tools_b[3]
+
+    qid_a = await add_a("Q-A")
+    qid_b = await add_b("Q-B")
+
+    result_a = await list_a()
+    assert qid_a in result_a
+    assert qid_b not in result_a
+
+    result_b = await list_b()
+    assert qid_b in result_b
+    assert qid_a not in result_b
+
+
+@pytest.mark.anyio
+async def test_get_tool_returns_question():
+    """The get tool returns a single question by id."""
+    settings = PendingQuestionsSettings(enabled=True)
+    store = PendingQuestionsStore()
+    tools = build_pending_questions_tools(settings, store, session_id="sess-1")
+    add_fn, get_fn = tools[0], tools[4]
+
+    qid = await add_fn("What is your name?", "need name")
+    result = await get_fn(qid)
+    assert qid in result
+    assert "What is your name?" in result
+    assert "need name" in result
+    assert "pending" in result
+
+
+@pytest.mark.anyio
+async def test_get_tool_unknown_id():
+    """The get tool returns an error for unknown ids."""
+    settings = PendingQuestionsSettings(enabled=True)
+    store = PendingQuestionsStore()
+    tools = build_pending_questions_tools(settings, store, session_id="sess-1")
+    get_fn = tools[4]
+    result = await get_fn("nonexistent")
+    assert "Unknown" in result
