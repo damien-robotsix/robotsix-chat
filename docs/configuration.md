@@ -183,6 +183,28 @@ Disabled by default; requires `uv sync --extra broker`.
 | `component_agent.agent_id` | `COMPONENT_AGENT_AGENT_ID` | `"robotsix-chat-component"` | This agent's identity on the broker (the *responder's* broker id — distinct from client ids used by mill/calendar). |
 | `component_agent.timeout` | `COMPONENT_AGENT_TIMEOUT` | `240.0` | Per-request timeout (seconds). |
 
+## Component Client
+
+When enabled, the chat agent gains four tools (`list_component_agents`,
+`get_component_telemetry`, `get_component_config`, and
+`set_component_config`) so it can enumerate configured component agents,
+read live telemetry, and read/update configuration on demand.
+Disabled by default; requires `uv sync --extra broker`.
+
+| YAML path | Env var | Default | Description |
+|---|---|---|---|
+| `component_client.enabled` | `COMPONENT_CLIENT_ENABLED` | `false` | Master switch. Requires the `broker` extra (robotsix-agent-comm). |
+| `component_client.broker_host` | `COMPONENT_CLIENT_BROKER_HOST` | `"ai-broker.robotsix.net"` | Agent-comm broker hostname. |
+| `component_client.broker_port` | `COMPONENT_CLIENT_BROKER_PORT` | `443` | Broker TCP port. |
+| `component_client.broker_scheme` | `COMPONENT_CLIENT_BROKER_SCHEME` | `"https"` | Transport scheme (`https` or `http`). |
+| `component_client.broker_token` | `COMPONENT_CLIENT_BROKER_TOKEN` | `""` | This agent's bearer token, registered on the broker. Required when enabled. |
+| `component_client.agent_id` | `COMPONENT_CLIENT_AGENT_ID` | `"robotsix-chat"` | This agent's identity on the broker (the requester). |
+| `component_client.timeout` | `COMPONENT_CLIENT_TIMEOUT` | `240.0` | Per-request timeout (seconds). |
+
+The `component_client.components` sub-field (list of `ComponentTarget`, each
+with an `agent_id` and optional `label`) is YAML-only and has no env-var
+exposure.
+
 ## Reference Docs (refdocs)
 
 Read-only reference-docs tool — lets the agent fetch documentation from
