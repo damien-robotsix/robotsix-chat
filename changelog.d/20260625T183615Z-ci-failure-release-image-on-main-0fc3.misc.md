@@ -1,0 +1,1 @@
+Fix CI: disable SBOM in release-image workflow to remove Docker Hub dependency
