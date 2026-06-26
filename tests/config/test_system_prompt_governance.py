@@ -97,3 +97,56 @@ def test_agent_instruction_starts_with_helpful_prefix() -> None:
     assert default.startswith("You are a helpful assistant."), (
         "agent_instruction default must start with 'You are a helpful assistant.'"
     )
+
+
+def _extract_docs_agent_instruction(docs_text: str) -> str:
+    r"""Extract the ``agent.instruction`` value from the configuration table.
+
+    The value lives in the third column of the table row, backtick-wrapped,
+    with ``\\n`` representing embedded newlines.  Returns the unescaped string.
+    """
+    start_marker = 'AGENT_INSTRUCTION` | `"'
+    start_idx = docs_text.find(start_marker)
+    if start_idx < 0:
+        raise ValueError(
+            "Could not find agent.instruction row start marker in "
+            "docs/configuration.md. Has the table format changed?"
+        )
+    after_start = docs_text[start_idx + len(start_marker) :]
+
+    end_marker = '"` | System prompt'
+    end_idx = after_start.find(end_marker)
+    if end_idx < 0:
+        raise ValueError(
+            "Could not find agent.instruction row end marker in "
+            "docs/configuration.md. Has the table format changed?"
+        )
+
+    raw_value = after_start[:end_idx]
+    # The table cell uses literal \\n to represent embedded newlines.
+    return raw_value.replace("\\n", "\n")
+
+
+def test_docs_configuration_md_mirrors_agent_instruction_default() -> None:
+    """``docs/configuration.md`` ``agent.instruction`` row mirrors the live default.
+
+    Governance item #4 (from docs/system_prompt_changelog.md) requires the
+    docs table to stay verbatim in sync with the pydantic field default.
+    This test enforces that automatically.
+    """
+    docs_path = Path("docs") / "configuration.md"
+    if not docs_path.exists():
+        raise FileNotFoundError(
+            f"docs/configuration.md not found at {docs_path.resolve()}"
+        )
+    docs_text = docs_path.read_text()
+
+    docs_default = _extract_docs_agent_instruction(docs_text)
+    code_default = Settings.model_fields["agent_instruction"].default
+
+    assert docs_default == code_default, (
+        f"docs/configuration.md agent.instruction row does not match the "
+        f"Settings.agent_instruction default. Update the docs table row to "
+        f"reflect any changes to the default literal.\n\n"
+        f"Docs length: {len(docs_default)}, Code length: {len(code_default)}"
+    )

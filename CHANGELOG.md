@@ -9,6 +9,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Sync `agent.instruction` row in `docs/configuration.md` with the live
+  `Settings.agent_instruction` default (add missing v9 enforcement sentence
+  and a missing newline before the Efficiency section).
+
+- Add CI enforcement test verifying `docs/configuration.md` mirrors the
+  `agent.instruction` field default verbatim.
+
 - Increase font sizes in the Pending Questions panel for improved readability.
 
 - Document `board_reader.cache_ttl` / `BOARD_READER_CACHE_TTL` in the Board Reader section of `docs/configuration.md`.
