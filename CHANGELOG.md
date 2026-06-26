@@ -65,6 +65,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   ``_answered_frame`` builders into a single ``_frame_for`` helper in
   ``src/robotsix_chat/pending_questions/store.py``, eliminating ~30 lines
   of near-identical dict literal construction.
+- Split ``src/robotsix_chat/config.py`` into a ``config/`` package
+  (``constants``, ``models``, ``settings``, ``env_builders``) with
+  backward-compatible re-exports from ``config/__init__.py``.
 - Reorganized ``tests/test_broker_client.py`` into per-module subdirectory
   ``tests/broker_client/``, aligning with the convention used by all other
   modules.
