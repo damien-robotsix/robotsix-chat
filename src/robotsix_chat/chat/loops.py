@@ -531,36 +531,49 @@ async def _check_loop_worker(
             if verify_via_board and probe is not None:
                 probe.count = 0  # reset per tick
 
-            # Build the effective prompt, combining the guardrail header
-            # (when gated) with the previous result (when comparing).
-            effective_prompt = prompt
-            if verify_via_board:
+            # --- skip LLM when previous result was unchanged ---
+            # When the previous tick's result already matched the no-change
+            # predicate, re-running the full prompt would waste input tokens
+            # for a foregone 1-token NO_CHANGE reply.  Reuse the previous
+            # result so the loop still advances its iteration counter and
+            # re-schedule without a new LLM invocation.
+            if (
+                suppress_when is not None
+                and previous_result is not None
+                and suppress_when(previous_result)
+            ):
+                result_text = previous_result
+            else:
+                # Build the effective prompt, combining the guardrail header
+                # (when gated) with the previous result (when comparing).
+                effective_prompt = prompt
+                if verify_via_board:
+                    if include_previous_result and previous_result is not None:
+                        effective_prompt = _SOFT_GUARDRAIL_HEADER + effective_prompt
+                    else:
+                        effective_prompt = _GUARDRAIL_HEADER + effective_prompt
                 if include_previous_result and previous_result is not None:
-                    effective_prompt = _SOFT_GUARDRAIL_HEADER + effective_prompt
-                else:
-                    effective_prompt = _GUARDRAIL_HEADER + effective_prompt
-            if include_previous_result and previous_result is not None:
-                effective_prompt = (
-                    f"Previous check result:\n{previous_result}\n\n"
-                    f"---\n\nCurrent check prompt:\n{effective_prompt}"
+                    effective_prompt = (
+                        f"Previous check result:\n{previous_result}\n\n"
+                        f"---\n\nCurrent check prompt:\n{effective_prompt}"
+                    )
+
+                agent = agent_factory(settings)
+                result_text = "".join(
+                    [chunk async for chunk in agent.stream(effective_prompt)]
                 )
 
-            agent = agent_factory(settings)
-            result_text = "".join(
-                [chunk async for chunk in agent.stream(effective_prompt)]
-            )
-
-            # --- gate: suppress unverified status ---
-            if verify_via_board:
-                result_text = _apply_board_read_gate(
-                    result_text,
-                    probe,
-                    verify_via_board,
-                    loop_id,
-                    has_previous_result=(
-                        include_previous_result and previous_result is not None
-                    ),
-                )
+                # --- gate: suppress unverified status ---
+                if verify_via_board:
+                    result_text = _apply_board_read_gate(
+                        result_text,
+                        probe,
+                        verify_via_board,
+                        loop_id,
+                        has_previous_result=(
+                            include_previous_result and previous_result is not None
+                        ),
+                    )
 
             next_run = clock() + interval_seconds
             suppressed = suppress_when is not None and suppress_when(result_text)
