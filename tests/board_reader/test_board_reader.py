@@ -15,8 +15,15 @@ import pytest
 from robotsix_chat.board_reader import build_board_reader_tools
 from robotsix_chat.board_reader.client import BoardReader
 from robotsix_chat.config import BoardReaderSettings
-from tests.common.mock_helpers import MockResponse as _MockResponse
-from tests.common.mock_helpers import install_mock_client as _install_mock_client
+from tests.common.mock_helpers import (
+    MockResponse as _MockResponse,
+)
+from tests.common.mock_helpers import (
+    install_mock_client as _install_mock_client,
+)
+from tests.common.mock_helpers import (
+    install_mock_dual_client as _install_mock_dual_client,
+)
 
 
 def _settings(**kw: Any) -> BoardReaderSettings:
@@ -700,57 +707,6 @@ def test_similarity_threshold_constant() -> None:
 # ---------------------------------------------------------------------------
 # create_board_ticket — duplicate guard (tool-level)
 # ---------------------------------------------------------------------------
-
-
-def _install_mock_dual_client(
-    monkeypatch: pytest.MonkeyPatch,
-    get_response: _MockResponse,
-    post_response: _MockResponse,
-) -> dict[str, Any]:
-    """Replace ``httpx.AsyncClient`` with a factory that handles both GET and POST.
-
-    Returns a ``captured`` dict with ``get`` and ``post`` sub-dicts that
-    collect ``url``, ``headers``, and ``params``/``json`` for inspection.
-    """
-    captured: dict[str, Any] = {"get": {}, "post": {}}
-
-    class _BoundDualClient:
-        def __init__(self, **kwargs: Any) -> None:
-            self._get_resp = get_response
-            self._post_resp = post_response
-
-        async def __aenter__(self) -> _BoundDualClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(
-            self,
-            url: str,
-            *,
-            headers: dict[str, str],
-            params: dict[str, str] | None = None,
-        ) -> _MockResponse:
-            captured["get"]["url"] = url
-            captured["get"]["headers"] = headers
-            captured["get"]["params"] = params
-            return self._get_resp
-
-        async def post(
-            self,
-            url: str,
-            *,
-            headers: dict[str, str],
-            json: dict[str, str] | None = None,
-        ) -> _MockResponse:
-            captured["post"]["url"] = url
-            captured["post"]["headers"] = headers
-            captured["post"]["json"] = json
-            return self._post_resp
-
-    monkeypatch.setattr(httpx, "AsyncClient", _BoundDualClient)
-    return captured
 
 
 @pytest.mark.asyncio

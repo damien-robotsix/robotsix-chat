@@ -127,3 +127,54 @@ def install_mock_client(
 
     monkeypatch.setattr(httpx, "AsyncClient", _BoundClient)
     return captured
+
+
+def install_mock_dual_client(
+    monkeypatch: pytest.MonkeyPatch,
+    get_response: MockResponse,
+    post_response: MockResponse,
+) -> dict[str, Any]:
+    """Replace ``httpx.AsyncClient`` with a factory that handles both GET and POST.
+
+    Returns a ``captured`` dict with ``get`` and ``post`` sub-dicts that
+    collect ``url``, ``headers``, and ``params``/``json`` for inspection.
+    """
+    captured: dict[str, Any] = {"get": {}, "post": {}}
+
+    class _BoundDualClient:
+        def __init__(self, **kwargs: Any) -> None:
+            self._get_resp = get_response
+            self._post_resp = post_response
+
+        async def __aenter__(self) -> _BoundDualClient:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            return None
+
+        async def get(
+            self,
+            url: str,
+            *,
+            headers: dict[str, str],
+            params: dict[str, str] | None = None,
+        ) -> MockResponse:
+            captured["get"]["url"] = url
+            captured["get"]["headers"] = headers
+            captured["get"]["params"] = params
+            return self._get_resp
+
+        async def post(
+            self,
+            url: str,
+            *,
+            headers: dict[str, str],
+            json: dict[str, str] | None = None,
+        ) -> MockResponse:
+            captured["post"]["url"] = url
+            captured["post"]["headers"] = headers
+            captured["post"]["json"] = json
+            return self._post_resp
+
+    monkeypatch.setattr(httpx, "AsyncClient", _BoundDualClient)
+    return captured
