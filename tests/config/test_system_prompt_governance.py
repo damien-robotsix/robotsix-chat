@@ -112,7 +112,7 @@ def _extract_docs_agent_instruction(docs_text: str) -> str:
             "Could not find agent.instruction row start marker in "
             "docs/configuration.md. Has the table format changed?"
         )
-    after_start = docs_text[start_idx + len(start_marker):]
+    after_start = docs_text[start_idx + len(start_marker) :]
 
     end_marker = '"` | System prompt'
     end_idx = after_start.find(end_marker)
