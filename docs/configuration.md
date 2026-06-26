@@ -218,6 +218,7 @@ Provides three tools: `list_board_tickets` (calls `GET /tickets`),
 | `board_reader.api_base_url` | `BOARD_READER_API_BASE_URL` | `"http://127.0.0.1:8077"` | Base URL of the board's HTTP API (no trailing slash). |
 | `board_reader.api_token` | `BOARD_READER_API_TOKEN` | `""` | Optional bearer token for the board API (empty = no `Authorization` header). |
 | `board_reader.timeout` | `BOARD_READER_TIMEOUT` | `30.0` | Per-request HTTP timeout (seconds). |
+| `board_reader.cache_ttl` | `BOARD_READER_CACHE_TTL` | `60.0` | Seconds to cache board API responses (monotonic clock). Controls how often the agent re-fetches ticket data rather than using a stale in-memory snapshot. |
 
 ## Self-review
 

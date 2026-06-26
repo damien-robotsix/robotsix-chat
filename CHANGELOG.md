@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Document `board_reader.cache_ttl` / `BOARD_READER_CACHE_TTL` in the Board Reader section of `docs/configuration.md`.
+
 - Add `Makefile` with phony targets (`install`, `test`, `lint`, `format`,
   `format-check`, `typecheck`, `security`, `clean`, `all`) wrapping common
   `uv run` developer commands.
