@@ -128,3 +128,88 @@ def test_wall_clock_override():
     store = PendingQuestionsStore()
     entry = store.add("sess-1", "Q1", wall_clock=12345.0)
     assert entry.created_at == 12345.0
+
+
+# ---------------------------------------------------------------------------
+# answer()
+# ---------------------------------------------------------------------------
+
+
+def test_answer_sets_answered_status():
+    """answer() sets status='answered' and stores the answer text."""
+    store = PendingQuestionsStore()
+    entry = store.add("sess-1", "What is your name?")
+    result = store.answer(entry.question_id, "Damien")
+    assert result is not None
+    assert result.status == "answered"
+    assert result.answer == "Damien"
+    assert result.answered_at > 0
+
+
+def test_answer_leaves_entry_retrievable():
+    """After answer(), entry is still retrievable via get() and list_for_session()."""
+    store = PendingQuestionsStore()
+    entry = store.add("sess-1", "Q1")
+    store.answer(entry.question_id, "A1")
+
+    found = store.get(entry.question_id)
+    assert found is not None
+    assert found.answer == "A1"
+    assert found.status == "answered"
+
+    entries = store.list_for_session("sess-1")
+    assert len(entries) == 1
+    assert entries[0].answer == "A1"
+
+
+def test_answer_unknown_returns_none():
+    """answer() on an unknown id returns None."""
+    store = PendingQuestionsStore()
+    result = store.answer("nonexistent", "answer")
+    assert result is None
+
+
+def test_answer_strips_whitespace():
+    """answer() strips whitespace from the answer text."""
+    store = PendingQuestionsStore()
+    entry = store.add("sess-1", "Q1")
+    result = store.answer(entry.question_id, "  trimmed  ")
+    assert result is not None
+    assert result.answer == "trimmed"
+
+
+def test_answer_wall_clock_override():
+    """The wall_clock parameter controls answered_at."""
+    store = PendingQuestionsStore()
+    entry = store.add("sess-1", "Q1", wall_clock=100.0)
+    result = store.answer(entry.question_id, "A1", wall_clock=200.0)
+    assert result is not None
+    assert result.answered_at == 200.0
+
+
+def test_answer_publishes_frame():
+    """With an event bus wired, answer() publishes a pending_question_answered frame."""
+    from robotsix_chat.chat.events import EventBus
+
+    bus = EventBus()
+    store = PendingQuestionsStore(event_bus=bus)
+    entry = store.add("sess-1", "Q1")
+
+    frames: list[dict[str, object]] = []
+    q = bus.subscribe("sess-1")
+
+    store.answer(entry.question_id, "A1")
+
+    # Drain the queue without blocking; the frames are already published.
+    while not q.empty():
+        frames.append(q.get_nowait())
+
+    bus.unsubscribe("sess-1", q)
+
+    answered_frames = [
+        f for f in frames if f.get("type") == "pending_question_answered"
+    ]
+    assert len(answered_frames) == 1
+    assert answered_frames[0]["question_id"] == entry.question_id
+    assert answered_frames[0]["answer"] == "A1"
+    assert answered_frames[0]["status"] == "answered"

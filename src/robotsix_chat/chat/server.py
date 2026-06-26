@@ -747,7 +747,7 @@ async def pending_questions_list_endpoint(request: Request) -> JSONResponse:
 
     ``GET /pending-questions?session_id=...`` returns
     ``{"questions": [...]}`` with each entry containing question_id, text,
-    detail, status, and created_at.
+    detail, status, answer, answered_at, and created_at.
     """
     session_id = request.query_params.get("session_id")
     if not session_id:
@@ -768,10 +768,53 @@ async def pending_questions_list_endpoint(request: Request) -> JSONResponse:
                     "text": q.text,
                     "detail": q.detail,
                     "status": q.status,
+                    "answer": q.answer,
+                    "answered_at": q.answered_at,
                     "created_at": q.created_at,
                 }
                 for q in entries
             ]
+        }
+    )
+
+
+async def pending_questions_answer_endpoint(request: Request) -> JSONResponse:
+    """Record an answer for a pending question.
+
+    ``POST /pending-questions/{question_id}/answer`` with JSON body
+    ``{"answer": "..."}`` sets the question's ``status`` to ``"answered"``
+    and stores the answer text.  The question stays in the store (and the
+    panel) until the assistant explicitly removes it.
+
+    Returns 200 with the question data on success, or 404 when the id is
+    unknown.
+    """
+    question_id = request.path_params["question_id"]
+    store: PendingQuestionsStore = request.app.state.pq_store
+
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, ValueError):
+        return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "expected a JSON object"}, status_code=400)
+
+    answer_text = body.get("answer", "")
+    if not isinstance(answer_text, str):
+        return JSONResponse({"error": "'answer' must be a string"}, status_code=400)
+
+    entry = store.answer(question_id, answer_text)
+    if entry is None:
+        return JSONResponse(
+            {"error": "unknown question", "question_id": question_id},
+            status_code=404,
+        )
+    return JSONResponse(
+        {
+            "question_id": entry.question_id,
+            "status": entry.status,
+            "answer": entry.answer,
         }
     )
 
@@ -950,6 +993,11 @@ def create_app(
             methods=["POST"],
         ),
         Route("/pending-questions", pending_questions_list_endpoint, methods=["GET"]),
+        Route(
+            "/pending-questions/{question_id}/answer",
+            pending_questions_answer_endpoint,
+            methods=["POST"],
+        ),
         Route(
             "/pending-questions/{question_id}",
             pending_questions_delete_endpoint,

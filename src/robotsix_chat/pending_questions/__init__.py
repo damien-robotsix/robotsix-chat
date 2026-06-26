@@ -109,10 +109,12 @@ def build_pending_questions_tools(
         return f"Updated question {question_id!r}."
 
     async def remove_pending_question(question_id: str) -> str:
-        """Remove (resolve / clear) a pending question from the user's panel.
+        """Close a pending question after reading and acting on its answer.
 
-        Use this when the user has answered the question (verbally or
-        through the panel) or when the question is no longer relevant.
+        Call this after you have used ``get_pending_question`` to read the
+        question text **and** the user's answer, and you have acknowledged
+        or acted on it.  This permanently removes the question from the
+        panel.
 
         Args:
             question_id: The id returned by ``add_pending_question``.
@@ -152,26 +154,33 @@ def build_pending_questions_tools(
         """Read a single pending question by its id.
 
         Use this when you have a question id (e.g. from ``list_pending_questions``)
-        and want to inspect its full record before updating or removing it.
+        and want to inspect its full record — including any answer the user has
+        already submitted — before updating or closing it.
 
         Args:
             question_id: The id returned by ``add_pending_question``.
 
         Returns:
-            A formatted summary of the question, or an error if the id
-            is unknown.
+            A formatted summary of the question including text, detail, status,
+            answer (if answered), and timestamps, or an error if the id is
+            unknown.
 
         """
         entry = store.get(question_id)
         if entry is None:
             return f"Unknown question id: {question_id!r}"
-        return (
-            f"id: {entry.question_id}\n"
-            f"status: {entry.status}\n"
-            f"text: {entry.text}\n"
-            f"detail: {entry.detail}\n"
-            f"created_at: {entry.created_at}"
-        )
+        parts = [
+            f"id: {entry.question_id}",
+            f"status: {entry.status}",
+            f"text: {entry.text}",
+            f"detail: {entry.detail}",
+        ]
+        if entry.status == "answered" or entry.answer:
+            parts.append(f"answer: {entry.answer}")
+        if entry.answered_at:
+            parts.append(f"answered_at: {entry.answered_at}")
+        parts.append(f"created_at: {entry.created_at}")
+        return "\n".join(parts)
 
     return [
         add_pending_question,

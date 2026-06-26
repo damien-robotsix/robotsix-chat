@@ -1767,6 +1767,7 @@
           }
         } else if (frame.type === "pending_question_added" ||
                    frame.type === "pending_question_updated" ||
+                   frame.type === "pending_question_answered" ||
                    frame.type === "pending_question_removed") {
           updatePendingPanel(frame);
         }
@@ -1849,6 +1850,8 @@
           text: frame.text || "",
           detail: frame.detail || "",
           status: frame.status || "pending",
+          answer: frame.answer || "",
+          answered_at: frame.answered_at || 0,
           created_at: frame.created_at || 0,
           rowEl: null
         };
@@ -1858,6 +1861,8 @@
       entry.text = frame.text || entry.text;
       entry.detail = frame.detail || entry.detail;
       entry.status = frame.status || entry.status;
+      if (frame.answer !== undefined) entry.answer = frame.answer;
+      if (frame.answered_at !== undefined) entry.answered_at = frame.answered_at;
     } else if (frame.type === "pending_question_updated") {
       if (!entry) {
         entry = {
@@ -1865,6 +1870,8 @@
           text: frame.text || "",
           detail: frame.detail || "",
           status: frame.status || "pending",
+          answer: frame.answer || "",
+          answered_at: frame.answered_at || 0,
           created_at: frame.created_at || 0,
           rowEl: null
         };
@@ -1874,6 +1881,29 @@
         if (frame.text !== undefined) entry.text = frame.text;
         if (frame.detail !== undefined) entry.detail = frame.detail;
         if (frame.status !== undefined) entry.status = frame.status;
+        if (frame.answer !== undefined) entry.answer = frame.answer;
+        if (frame.answered_at !== undefined) entry.answered_at = frame.answered_at;
+      }
+    } else if (frame.type === "pending_question_answered") {
+      if (!entry) {
+        entry = {
+          id: qid,
+          text: frame.text || "",
+          detail: frame.detail || "",
+          status: frame.status || "answered",
+          answer: frame.answer || "",
+          answered_at: frame.answered_at || 0,
+          created_at: frame.created_at || 0,
+          rowEl: null
+        };
+        pendingQuestionsById[qid] = entry;
+        pendingQuestionsOrder.push(qid);
+      } else {
+        entry.status = frame.status || "answered";
+        entry.answer = frame.answer || "";
+        if (frame.answered_at !== undefined) entry.answered_at = frame.answered_at;
+        if (frame.text !== undefined) entry.text = frame.text;
+        if (frame.detail !== undefined) entry.detail = frame.detail;
       }
     } else if (frame.type === "pending_question_removed") {
       if (entry) {
@@ -1894,8 +1924,13 @@
     var oldRow = entry.rowEl;
     if (oldRow) oldRow.remove();
 
+    var isAnswered = entry.status === "answered" || !!entry.answer;
+
     var row = document.createElement("div");
     row.className = "pq-entry";
+    if (isAnswered) {
+      row.style.opacity = "0.75";
+    }
 
     // Dismiss button
     var dismissBtn = document.createElement("button");
@@ -1932,36 +1967,47 @@
     metaDiv.textContent = metaParts.join(" \u2022 ");
     row.appendChild(metaDiv);
 
-    // Answer input row
-    var answerRow = document.createElement("div");
-    answerRow.className = "pq-answer-row";
+    // If answered, show the submitted answer.
+    if (isAnswered) {
+      var answerDiv = document.createElement("div");
+      answerDiv.className = "pq-detail";
+      answerDiv.style.color = "#86efac";
+      answerDiv.textContent = "Answer: " + (entry.answer || "(empty)");
+      row.appendChild(answerDiv);
+    }
 
-    var answerInput = document.createElement("input");
-    answerInput.type = "text";
-    answerInput.placeholder = "Type your answer\u2026";
-    answerInput.setAttribute("aria-label", "Answer for: " + entry.text);
+    // Answer input row — hidden/disabled when already answered.
+    if (!isAnswered) {
+      var answerRow = document.createElement("div");
+      answerRow.className = "pq-answer-row";
 
-    var answerBtn = document.createElement("button");
-    answerBtn.textContent = "Answer";
+      var answerInput = document.createElement("input");
+      answerInput.type = "text";
+      answerInput.placeholder = "Type your answer\u2026";
+      answerInput.setAttribute("aria-label", "Answer for: " + entry.text);
 
-    answerBtn.addEventListener("click", function () {
-      var answer = answerInput.value.trim();
-      if (!answer) return;
-      answerBtn.disabled = true;
-      answerBtn.textContent = "Sending\u2026";
-      submitPendingAnswer(entry.id, answer);
-    });
+      var answerBtn = document.createElement("button");
+      answerBtn.textContent = "Answer";
 
-    answerInput.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        answerBtn.click();
-      }
-    });
+      answerBtn.addEventListener("click", function () {
+        var answer = answerInput.value.trim();
+        if (!answer) return;
+        answerBtn.disabled = true;
+        answerBtn.textContent = "Sending\u2026";
+        submitPendingAnswer(entry.id, answer);
+      });
 
-    answerRow.appendChild(answerInput);
-    answerRow.appendChild(answerBtn);
-    row.appendChild(answerRow);
+      answerInput.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          answerBtn.click();
+        }
+      });
+
+      answerRow.appendChild(answerInput);
+      answerRow.appendChild(answerBtn);
+      row.appendChild(answerRow);
+    }
 
     entry.rowEl = row;
 
@@ -2013,19 +2059,45 @@
     messageQueue.push({ text: fullMessage, el: el, images: [] });
     drainQueue();
 
-    // Remove the question on the server side as well.
-    var deleteUrl = apiBase() + "/pending-questions/" + encodeURIComponent(questionId);
-    fetch(deleteUrl, { method: "DELETE" }).catch(function () {
-      // Silently ignore — the question is already gone from the panel.
-    });
+    if (answer) {
+      // Non-empty answer → POST /answer to record it; question stays open.
+      var answerUrl = apiBase() + "/pending-questions/" + encodeURIComponent(questionId) + "/answer";
+      fetch(answerUrl, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ answer: answer })
+      }).then(function (resp) {
+        if (!resp.ok && resp.status !== 404) {
+          showError("Failed to record answer (HTTP " + resp.status + ")");
+        }
+      }).catch(function () {
+        // Silently ignore — the SSE frame will still update the panel.
+      });
 
-    // Remove the question from panel immediately (optimistic).
-    var entry = pendingQuestionsById[questionId];
-    if (entry && entry.rowEl) entry.rowEl.remove();
-    delete pendingQuestionsById[questionId];
-    var idx = pendingQuestionsOrder.indexOf(questionId);
-    if (idx >= 0) pendingQuestionsOrder.splice(idx, 1);
-    refreshPendingPanelVisibility();
+      // Optimistic local update: mark as answered so the row re-renders
+      // in the answered state immediately.
+      var entry = pendingQuestionsById[questionId];
+      if (entry) {
+        entry.status = "answered";
+        entry.answer = answer;
+        renderPendingEntry(entry);
+        refreshPendingPanelVisibility();
+      }
+    } else {
+      // Empty answer (dismiss) → DELETE to close the question immediately.
+      var deleteUrl = apiBase() + "/pending-questions/" + encodeURIComponent(questionId);
+      fetch(deleteUrl, { method: "DELETE" }).catch(function () {
+        // Silently ignore — the question is already gone from the panel.
+      });
+
+      // Remove the question from panel immediately (optimistic).
+      var dismissEntry = pendingQuestionsById[questionId];
+      if (dismissEntry && dismissEntry.rowEl) dismissEntry.rowEl.remove();
+      delete pendingQuestionsById[questionId];
+      var idx = pendingQuestionsOrder.indexOf(questionId);
+      if (idx >= 0) pendingQuestionsOrder.splice(idx, 1);
+      refreshPendingPanelVisibility();
+    }
   }
 
   // ---- Pending Questions snapshot on load ------------------------------
@@ -2046,6 +2118,8 @@
           text: entries[i].text,
           detail: entries[i].detail,
           status: entries[i].status,
+          answer: entries[i].answer,
+          answered_at: entries[i].answered_at,
           created_at: entries[i].created_at,
         });
       }
