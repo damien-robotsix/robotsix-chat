@@ -7,6 +7,23 @@ import pytest
 from robotsix_chat.pending_questions.store import PendingQuestionsStore
 
 
+def _setup_store_with_bus(
+    session_id: str = "sess-1", text: str = "Q1"
+) -> tuple[object, object, object, list[dict[str, object]], object]:
+    """Create a store with a real EventBus, add a question, and subscribe.
+
+    Returns (bus, store, entry, frames, q).
+    """
+    from robotsix_chat.chat.events import EventBus
+
+    bus = EventBus()
+    store = PendingQuestionsStore(event_bus=bus)
+    entry = store.add(session_id, text)
+    frames: list[dict[str, object]] = []
+    q = bus.subscribe(session_id)
+    return bus, store, entry, frames, q
+
+
 def test_add_returns_entry_with_id():
     """Adding a question returns a populated PendingQuestion."""
     store = PendingQuestionsStore()
@@ -193,14 +210,7 @@ def test_answer_wall_clock_override():
 
 def test_answer_publishes_frame():
     """With an event bus wired, answer() publishes a pending_question_answered frame."""
-    from robotsix_chat.chat.events import EventBus
-
-    bus = EventBus()
-    store = PendingQuestionsStore(event_bus=bus)
-    entry = store.add("sess-1", "Q1")
-
-    frames: list[dict[str, object]] = []
-    q = bus.subscribe("sess-1")
+    bus, store, entry, frames, q = _setup_store_with_bus()
 
     store.answer(entry.question_id, "A1")
 
@@ -282,14 +292,7 @@ def test_append_to_thread_wall_clock_override():
 
 def test_append_to_thread_publishes_frame():
     """With an event bus wired, append_to_thread() publishes a frame."""
-    from robotsix_chat.chat.events import EventBus
-
-    bus = EventBus()
-    store = PendingQuestionsStore(event_bus=bus)
-    entry = store.add("sess-1", "Q1")
-
-    frames: list[dict[str, object]] = []
-    q = bus.subscribe("sess-1")
+    bus, store, entry, frames, q = _setup_store_with_bus()
 
     store.append_to_thread(entry.question_id, "assistant", "Hello")
 
@@ -354,14 +357,7 @@ def test_append_to_thread_deduplicates_identical_message():
     during ``_process_thread_message`` and the background task also tries
     to post the same reply.
     """
-    from robotsix_chat.chat.events import EventBus
-
-    bus = EventBus()
-    store = PendingQuestionsStore(event_bus=bus)
-    entry = store.add("sess-1", "Q1")
-
-    frames: list[dict[str, object]] = []
-    q = bus.subscribe("sess-1")
+    bus, store, entry, frames, q = _setup_store_with_bus()
 
     # Drain the add() frames (pending_question_added + thread message).
     while not q.empty():
