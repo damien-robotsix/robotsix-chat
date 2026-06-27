@@ -76,8 +76,12 @@ modules:
       - src/robotsix_chat/chat/events.py
       - src/robotsix_chat/chat/loops.py
       - src/robotsix_chat/chat/runner.py
-      - src/robotsix_chat/chat/server.py
+      - src/robotsix_chat/chat/server/__init__.py
+      - src/robotsix_chat/chat/server/app.py
+      - src/robotsix_chat/chat/server/cli.py
+      - src/robotsix_chat/chat/server/routes.py
       - src/robotsix_chat/chat/tasks.py
+      - docs/api/robotsix_chat/server.md
       - tests/chat/__init__.py
       - tests/chat/test_auth.py
       - tests/chat/test_background_e2e.py
