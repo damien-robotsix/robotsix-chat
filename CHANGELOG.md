@@ -302,6 +302,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Extracted shared `BaseBrokeredClient` base class from `MillClient` and
   `CalendarClient`, eliminating ~40 lines of duplicated boilerplate.
 
+### Removed
+- Deleted four orphaned ``pending_question_*_frame()`` functions from ``chat/events.py``
+  (``pending_question_added_frame``, ``pending_question_updated_frame``,
+  ``pending_question_removed_frame``, ``pending_question_thread_message_frame``) —
+  never called anywhere; ``pending_questions/store.py`` builds its own frames with
+  additional ``answer``/``answered_at`` fields.
+
 ## [0.1.0] - Unreleased
 
 ### Added
