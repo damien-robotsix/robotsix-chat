@@ -345,6 +345,82 @@ def test_get_thread_empty():
     assert thread[0].text == "Q1"
 
 
+def test_append_to_thread_deduplicates_identical_message():
+    """append_to_thread() skips messages that are already in the thread.
+
+    When the same role+text is appended twice, the second call is a no-op
+    and no duplicate frame is published.  This prevents double-posting
+    when, for example, the agent calls ``append_to_pending_question_thread``
+    during ``_process_thread_message`` and the background task also tries
+    to post the same reply.
+    """
+    from robotsix_chat.chat.events import EventBus
+
+    bus = EventBus()
+    store = PendingQuestionsStore(event_bus=bus)
+    entry = store.add("sess-1", "Q1")
+
+    frames: list[dict[str, object]] = []
+    q = bus.subscribe("sess-1")
+
+    # Drain the add() frames (pending_question_added + thread message).
+    while not q.empty():
+        q.get_nowait()
+
+    # First append — should succeed.
+    result = store.append_to_thread(entry.question_id, "assistant", "Hello")
+    assert result is not None
+    assert len(entry.thread) == 2  # initial question + "Hello"
+    assert entry.thread[1].role == "assistant"
+    assert entry.thread[1].text == "Hello"
+
+    # Second append with identical role+text — should be a no-op.
+    result2 = store.append_to_thread(entry.question_id, "assistant", "Hello")
+    assert result2 is not None  # returns the entry, not None
+    assert len(entry.thread) == 2  # still only 2 messages
+
+    # Only one thread_message frame should have been published (for the first append).
+    while not q.empty():
+        frames.append(q.get_nowait())
+
+    bus.unsubscribe("sess-1", q)
+
+    thread_frames = [
+        f for f in frames if f.get("type") == "pending_question_thread_message"
+    ]
+    assert len(thread_frames) == 1
+    assert thread_frames[0]["text"] == "Hello"
+
+
+def test_append_to_thread_different_role_not_duplicate():
+    """Messages with the same text but different roles are not duplicates."""
+    store = PendingQuestionsStore()
+    entry = store.add("sess-1", "Q1")
+    # add() already appends the question as assistant; that's thread[0].
+
+    store.append_to_thread(entry.question_id, "assistant", "Same text")
+    store.append_to_thread(entry.question_id, "user", "Same text")
+
+    # Both should be appended because the roles differ.
+    assert len(entry.thread) == 3
+    assert entry.thread[1].role == "assistant"
+    assert entry.thread[1].text == "Same text"
+    assert entry.thread[2].role == "user"
+    assert entry.thread[2].text == "Same text"
+
+
+def test_append_to_thread_whitespace_dedup():
+    """Deduplication is whitespace-insensitive (text is stripped before comparison)."""
+    store = PendingQuestionsStore()
+    entry = store.add("sess-1", "Q1")
+
+    store.append_to_thread(entry.question_id, "assistant", "  Hello  ")
+    store.append_to_thread(entry.question_id, "assistant", "Hello")
+
+    # Second append should be a no-op because stripped texts match.
+    assert len(entry.thread) == 2
+
+
 def test_thread_messages_ordered_oldest_first():
     """Thread messages are emitted in chronological order (oldest → newest).
 

@@ -201,6 +201,12 @@ class PendingQuestionsStore:
         ``pending_question_thread_message`` frame so connected browsers
         update in real time.
 
+        Duplicate messages (identical *role* and *text*) are silently
+        skipped — this prevents double-posting when, for example, both
+        the agent (via ``append_to_pending_question_thread`` tool) and
+        the background thread-processing task try to post the same
+        assistant reply.
+
         Returns the updated entry, or ``None`` when *question_id* is unknown.
         """
         import time
@@ -208,9 +214,17 @@ class PendingQuestionsStore:
         entry = self._find(question_id)
         if entry is None:
             return None
+
+        stripped = text.strip()
+
+        # Deduplicate: skip if an identical message already exists.
+        for existing in entry.thread:
+            if existing.role == role and existing.text == stripped:
+                return entry
+
         msg = ThreadMessage(
             role=role,
-            text=text.strip(),
+            text=stripped,
             timestamp=wall_clock if wall_clock is not None else time.time(),
         )
         entry.thread.append(msg)
