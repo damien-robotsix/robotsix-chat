@@ -70,6 +70,12 @@ expires a fresh conversation starts with empty history.
 | `conversation.max_conversations` | `CONVERSATION_MAX_CONVERSATIONS` | `1000` | Maximum number of distinct clients tracked at once (LRU-evicted). Bounds the in-memory store. |
 | `conversation.persist_path` | `CONVERSATION_PERSIST_PATH` | `".data/conversations.json"` | Path to the JSON persistence file for conversation sessions. Set to empty string to disable persistence. |
 
+## Pending Questions
+
+| YAML path | Environment variable | Default | Description |
+|---|---|---|---|
+| `pending_questions.enabled` | `PENDING_QUESTIONS_ENABLED` | `true` | Master toggle for the pending-questions panel and agent tools |
+
 ## Memory (cognee)
 
 Long-term agent memory — gives the agent continuity across conversations:
