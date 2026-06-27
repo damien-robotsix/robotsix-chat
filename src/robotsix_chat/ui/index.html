@@ -2017,10 +2017,19 @@
       }
       if (!entry.thread) entry.thread = [];
       // Avoid duplicating a message that was already added optimistically
-      // (e.g. submitPendingAnswer pushes locally before the SSE frame arrives).
-      var dup = entry.thread.length > 0 &&
-          entry.thread[entry.thread.length - 1].role === (frame.role || "assistant") &&
-          entry.thread[entry.thread.length - 1].text === (frame.text || "");
+      // (e.g. appendThreadMessage pushes locally before the SSE frame arrives).
+      // Check the entire thread, not just the last message, since multiple
+      // optimistic pushes can land before their SSE frames arrive.
+      var dup = false;
+      for (var di = entry.thread.length - 1; di >= 0; di--) {
+        if (
+          entry.thread[di].role === (frame.role || "assistant") &&
+          entry.thread[di].text === (frame.text || "")
+        ) {
+          dup = true;
+          break;
+        }
+      }
       if (!dup) {
         entry.thread.push({
           role: frame.role || "assistant",
@@ -2052,7 +2061,7 @@
     dismissBtn.textContent = "\u2715";
     dismissBtn.title = "Dismiss this question";
     dismissBtn.addEventListener("click", function () {
-      submitPendingAnswer(entry.id, "");
+      dismissPendingQuestion(entry.id);
     });
     row.appendChild(dismissBtn);
 
@@ -2131,14 +2140,14 @@
 
     row.appendChild(threadContainer);
 
-    // ---- Thread input (always visible for multi-turn discussion) ----
+    // ---- Thread input (mini-chat input for this question) ----
     var threadInputRow = document.createElement("div");
     threadInputRow.className = "pq-thread-input-row";
 
     var threadInput = document.createElement("input");
     threadInput.type = "text";
-    threadInput.placeholder = "Discuss this question\u2026";
-    threadInput.setAttribute("aria-label", "Discussion for: " + entry.text);
+    threadInput.placeholder = "Reply in this thread\u2026";
+    threadInput.setAttribute("aria-label", "Reply in thread: " + entry.text);
 
     var threadSendBtn = document.createElement("button");
     threadSendBtn.textContent = "Send";
@@ -2149,11 +2158,8 @@
       if (!msg) return;
       threadSendBtn.disabled = true;
       threadSendBtn.textContent = "Sending\u2026";
-      appendThreadMessage(entry.id, msg, function () {
-        threadSendBtn.disabled = false;
-        threadSendBtn.textContent = "Send";
-        threadInput.value = "";
-      });
+      threadInput.disabled = true;
+      appendThreadMessage(entry.id, msg);
     });
 
     threadInput.addEventListener("keydown", function (e) {
@@ -2167,36 +2173,9 @@
     threadInputRow.appendChild(threadSendBtn);
     row.appendChild(threadInputRow);
 
-    // ---- Answer input row — always visible for multi-turn answering ----
-    var answerRow = document.createElement("div");
-    answerRow.className = "pq-answer-row";
-
-    var answerInput = document.createElement("input");
-    answerInput.type = "text";
-    answerInput.placeholder = "Type your answer\u2026";
-    answerInput.setAttribute("aria-label", "Answer for: " + entry.text);
-
-    var answerBtn = document.createElement("button");
-    answerBtn.textContent = "Answer";
-
-    answerBtn.addEventListener("click", function () {
-      var answer = answerInput.value.trim();
-      if (!answer) return;
-      answerBtn.disabled = true;
-      answerBtn.textContent = "Sending\u2026";
-      submitPendingAnswer(entry.id, answer);
-    });
-
-    answerInput.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        answerBtn.click();
-      }
-    });
-
-    answerRow.appendChild(answerInput);
-    answerRow.appendChild(answerBtn);
-    row.appendChild(answerRow);
+    // Store refs for async callbacks (e.g. appendThreadMessage onComplete).
+    entry._threadInput = threadInput;
+    entry._threadBtn = threadSendBtn;
 
     entry.rowEl = row;
 
@@ -2236,64 +2215,26 @@
     }
   }
 
-  function submitPendingAnswer(questionId, answer) {
-    // Feed the answer (or dismissal) back into the conversation via the
-    // existing message queue so the agent sees it as a regular turn.
-    var prefix = answer ? "[pending question " + questionId + "]: " : "";
-    var displayText = answer || "(dismissed)";
-    var fullMessage = prefix + displayText;
+  function dismissPendingQuestion(questionId) {
+    // Dismiss (remove) a pending question immediately — no chat bubble.
+    var deleteUrl = apiBase() + "/pending-questions/" + encodeURIComponent(questionId);
+    fetch(deleteUrl, { method: "DELETE" }).catch(function () {
+      // Silently ignore — the question is already gone from the panel.
+    });
 
-    // Add user bubble and push to the message queue.
-    var el = addUserBubble(displayText);
-    messageQueue.push({ text: fullMessage, el: el, images: [] });
-    drainQueue();
-
-    if (answer) {
-      // Non-empty answer → POST /answer to record it; question stays open.
-      var answerUrl = apiBase() + "/pending-questions/" + encodeURIComponent(questionId) + "/answer";
-      fetch(answerUrl, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ answer: answer })
-      }).then(function (resp) {
-        if (!resp.ok && resp.status !== 404) {
-          showError("Failed to record answer (HTTP " + resp.status + ")");
-        }
-      }).catch(function () {
-        // Silently ignore — the SSE frame will still update the panel.
-      });
-
-      // Optimistic local update: append the answer to the thread and
-      // re-render so the user sees it immediately.  The SSE frame will
-      // follow; deduplication in updatePendingPanel prevents a double.
-      var entry = pendingQuestionsById[questionId];
-      if (entry) {
-        entry.status = "answered";
-        entry.answer = answer;
-        if (!entry.thread) entry.thread = [];
-        entry.thread.push({ role: "user", text: answer, timestamp: Date.now() / 1000 });
-        renderPendingEntry(entry);
-        refreshPendingPanelVisibility();
-      }
-    } else {
-      // Empty answer (dismiss) → DELETE to close the question immediately.
-      var deleteUrl = apiBase() + "/pending-questions/" + encodeURIComponent(questionId);
-      fetch(deleteUrl, { method: "DELETE" }).catch(function () {
-        // Silently ignore — the question is already gone from the panel.
-      });
-
-      // Remove the question from panel immediately (optimistic).
-      var dismissEntry = pendingQuestionsById[questionId];
-      if (dismissEntry && dismissEntry.rowEl) dismissEntry.rowEl.remove();
-      delete pendingQuestionsById[questionId];
-      var idx = pendingQuestionsOrder.indexOf(questionId);
-      if (idx >= 0) pendingQuestionsOrder.splice(idx, 1);
-      refreshPendingPanelVisibility();
-    }
+    // Remove from panel immediately (optimistic).
+    var dismissEntry = pendingQuestionsById[questionId];
+    if (dismissEntry && dismissEntry.rowEl) dismissEntry.rowEl.remove();
+    delete pendingQuestionsById[questionId];
+    var idx = pendingQuestionsOrder.indexOf(questionId);
+    if (idx >= 0) pendingQuestionsOrder.splice(idx, 1);
+    refreshPendingPanelVisibility();
   }
 
-  function appendThreadMessage(questionId, text, onComplete) {
+  function appendThreadMessage(questionId, text) {
     // Append a user message to the question's thread via the REST endpoint.
+    // The server now spawns a background LLM call and returns 202 immediately;
+    // the assistant reply arrives later via SSE pending_question_thread_message.
     var threadUrl = apiBase() + "/pending-questions/" + encodeURIComponent(questionId) + "/thread";
 
     // Optimistic local update.
@@ -2316,7 +2257,17 @@
     }).catch(function () {
       // Silently ignore — the SSE frame will update the panel.
     }).then(function () {
-      if (onComplete) onComplete();
+      // Re-enable the CURRENT thread input (renderPendingEntry may have
+      // replaced the DOM elements).  Use the entry-stored references that
+      // renderPendingEntry keeps up-to-date.
+      var e = pendingQuestionsById[questionId];
+      if (e) {
+        if (e._threadBtn) e._threadBtn.disabled = false;
+        if (e._threadBtn) e._threadBtn.textContent = "Send";
+        if (e._threadInput) e._threadInput.disabled = false;
+        if (e._threadInput) e._threadInput.value = "";
+        if (e._threadInput) e._threadInput.focus();
+      }
     });
   }
 
