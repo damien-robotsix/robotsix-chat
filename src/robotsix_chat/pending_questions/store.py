@@ -9,11 +9,20 @@ from __future__ import annotations
 
 import uuid
 from collections import defaultdict
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from robotsix_chat.chat.events import EventBus
+
+
+@dataclass
+class ThreadMessage:
+    """One message in a pending-question conversation thread."""
+
+    role: str  # "user" or "assistant"
+    text: str
+    timestamp: float = 0.0
 
 
 @dataclass
@@ -28,6 +37,7 @@ class PendingQuestion:
     answer: str = ""
     answered_at: float = 0.0
     created_at: float = 0.0
+    thread: list[ThreadMessage] = field(default_factory=list)
 
 
 class PendingQuestionsStore:
@@ -159,6 +169,48 @@ class PendingQuestionsStore:
         """Look up a single question by id."""
         return self._find(question_id)
 
+    def append_to_thread(
+        self,
+        question_id: str,
+        role: str,
+        text: str,
+        *,
+        wall_clock: float | None = None,
+    ) -> PendingQuestion | None:
+        """Append a message to a question's conversation thread.
+
+        *role* must be ``"user"`` or ``"assistant"``.  Publishes a
+        ``pending_question_thread_message`` frame so connected browsers
+        update in real time.
+
+        Returns the updated entry, or ``None`` when *question_id* is unknown.
+        """
+        import time
+
+        entry = self._find(question_id)
+        if entry is None:
+            return None
+        msg = ThreadMessage(
+            role=role,
+            text=text.strip(),
+            timestamp=wall_clock if wall_clock is not None else time.time(),
+        )
+        entry.thread.append(msg)
+        self._publish(_thread_message_frame(entry, msg))
+        return entry
+
+    def get_thread(
+        self, question_id: str
+    ) -> list[ThreadMessage] | None:
+        """Return a copy of the thread messages for *question_id*.
+
+        Returns ``None`` when *question_id* is unknown.
+        """
+        entry = self._find(question_id)
+        if entry is None:
+            return None
+        return list(entry.thread)
+
     # ------------------------------------------------------------------
     # internals
     # ------------------------------------------------------------------
@@ -203,4 +255,17 @@ def _removed_frame(entry: PendingQuestion) -> dict[str, object]:
         "type": "pending_question_removed",
         "question_id": entry.question_id,
         "session_id": entry.session_id,
+    }
+
+
+def _thread_message_frame(
+    entry: PendingQuestion, msg: ThreadMessage
+) -> dict[str, object]:
+    return {
+        "type": "pending_question_thread_message",
+        "question_id": entry.question_id,
+        "session_id": entry.session_id,
+        "role": msg.role,
+        "text": msg.text,
+        "timestamp": msg.timestamp,
     }

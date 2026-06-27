@@ -17,12 +17,15 @@ def test_disabled_returns_empty():
     assert tools == []
 
 
-def test_enabled_returns_five_tools():
-    """Enabled settings produce five tools (add, update, remove, list, get)."""
+def test_enabled_returns_seven_tools():
+    """Enabled settings produce seven tools.
+
+    Includes add, update, remove, list, get, append_thread, get_thread.
+    """
     settings = PendingQuestionsSettings(enabled=True)
     store = PendingQuestionsStore()
     tools = build_pending_questions_tools(settings, store, session_id="sess-1")
-    assert len(tools) == 5
+    assert len(tools) == 7
 
 
 @pytest.mark.anyio
@@ -124,8 +127,8 @@ def test_session_isolation():
     # Just verify the tools are created; session routing tested via add/remove.
     tools_a = build_pending_questions_tools(settings, store, session_id="sess-a")
     tools_b = build_pending_questions_tools(settings, store, session_id="sess-b")
-    assert len(tools_a) == 5
-    assert len(tools_b) == 5
+    assert len(tools_a) == 7
+    assert len(tools_b) == 7
     assert len(store.list_for_session("sess-a")) == 0
     assert len(store.list_for_session("sess-b")) == 0
 
@@ -256,4 +259,93 @@ async def test_get_tool_unknown_id():
     tools = build_pending_questions_tools(settings, store, session_id="sess-1")
     get_fn = tools[4]
     result = await get_fn("nonexistent")
+    assert "Unknown" in result
+
+
+# ---------------------------------------------------------------------------
+# Thread tools — append_to_pending_question_thread / get_pending_question_thread
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.anyio
+async def test_append_thread_tool_adds_message():
+    """The append_thread tool adds an assistant message to the thread."""
+    settings = PendingQuestionsSettings(enabled=True)
+    store = PendingQuestionsStore()
+    tools = build_pending_questions_tools(settings, store, session_id="sess-1")
+    add_fn, append_fn = tools[0], tools[5]
+
+    qid = await add_fn("Q1")
+    result = await append_fn(qid, "Follow-up context")
+    assert "Appended" in result
+
+    entry = store.get(qid)
+    assert entry is not None
+    assert len(entry.thread) == 1
+    assert entry.thread[0].role == "assistant"
+    assert entry.thread[0].text == "Follow-up context"
+
+
+@pytest.mark.anyio
+async def test_append_thread_tool_empty_text():
+    """The append_thread tool returns an error for empty text."""
+    settings = PendingQuestionsSettings(enabled=True)
+    store = PendingQuestionsStore()
+    tools = build_pending_questions_tools(settings, store, session_id="sess-1")
+    add_fn, append_fn = tools[0], tools[5]
+
+    qid = await add_fn("Q1")
+    result = await append_fn(qid, "")
+    assert "Error" in result or "empty" in result.lower()
+
+
+@pytest.mark.anyio
+async def test_append_thread_tool_unknown_id():
+    """The append_thread tool returns an error for unknown ids."""
+    settings = PendingQuestionsSettings(enabled=True)
+    store = PendingQuestionsStore()
+    tools = build_pending_questions_tools(settings, store, session_id="sess-1")
+    append_fn = tools[5]
+    result = await append_fn("nonexistent", "msg")
+    assert "Unknown" in result
+
+
+@pytest.mark.anyio
+async def test_get_thread_tool_returns_messages():
+    """The get_thread tool returns formatted thread messages."""
+    settings = PendingQuestionsSettings(enabled=True)
+    store = PendingQuestionsStore()
+    tools = build_pending_questions_tools(settings, store, session_id="sess-1")
+    add_fn, append_fn, get_thread_fn = tools[0], tools[5], tools[6]
+
+    qid = await add_fn("Q1")
+    await append_fn(qid, "First message")
+    store.append_to_thread(qid, "user", "User reply")
+
+    result = await get_thread_fn(qid)
+    assert "[ASSISTANT] First message" in result
+    assert "[USER] User reply" in result
+
+
+@pytest.mark.anyio
+async def test_get_thread_tool_empty():
+    """The get_thread tool returns a clear message for an empty thread."""
+    settings = PendingQuestionsSettings(enabled=True)
+    store = PendingQuestionsStore()
+    tools = build_pending_questions_tools(settings, store, session_id="sess-1")
+    add_fn, get_thread_fn = tools[0], tools[6]
+
+    qid = await add_fn("Q1")
+    result = await get_thread_fn(qid)
+    assert "No thread messages" in result
+
+
+@pytest.mark.anyio
+async def test_get_thread_tool_unknown_id():
+    """The get_thread tool returns an error for unknown ids."""
+    settings = PendingQuestionsSettings(enabled=True)
+    store = PendingQuestionsStore()
+    tools = build_pending_questions_tools(settings, store, session_id="sess-1")
+    get_thread_fn = tools[6]
+    result = await get_thread_fn("nonexistent")
     assert "Unknown" in result

@@ -17,6 +17,7 @@ def test_add_returns_entry_with_id():
     assert entry.detail == ""
     assert entry.status == "pending"
     assert entry.session_id == "sess-1"
+    assert entry.thread == []
 
 
 def test_add_stores_detail():
@@ -213,3 +214,120 @@ def test_answer_publishes_frame():
     assert answered_frames[0]["question_id"] == entry.question_id
     assert answered_frames[0]["answer"] == "A1"
     assert answered_frames[0]["status"] == "answered"
+
+
+# ---------------------------------------------------------------------------
+# append_to_thread() / get_thread()
+# ---------------------------------------------------------------------------
+
+
+def test_append_to_thread_adds_message():
+    """append_to_thread() appends a message and returns the entry."""
+    store = PendingQuestionsStore()
+    entry = store.add("sess-1", "Q1")
+    result = store.append_to_thread(entry.question_id, "assistant", "Hello")
+    assert result is not None
+    assert len(result.thread) == 1
+    assert result.thread[0].role == "assistant"
+    assert result.thread[0].text == "Hello"
+    assert result.thread[0].timestamp > 0
+
+
+def test_append_to_thread_multiple_messages():
+    """Multiple messages are appended in order."""
+    store = PendingQuestionsStore()
+    entry = store.add("sess-1", "Q1")
+    store.append_to_thread(entry.question_id, "user", "msg1")
+    store.append_to_thread(entry.question_id, "assistant", "msg2")
+    store.append_to_thread(entry.question_id, "user", "msg3")
+
+    assert len(entry.thread) == 3
+    assert entry.thread[0].text == "msg1"
+    assert entry.thread[1].text == "msg2"
+    assert entry.thread[2].text == "msg3"
+    assert entry.thread[0].role == "user"
+    assert entry.thread[1].role == "assistant"
+
+
+def test_append_to_thread_unknown_returns_none():
+    """append_to_thread() on an unknown id returns None."""
+    store = PendingQuestionsStore()
+    result = store.append_to_thread("nonexistent", "user", "msg")
+    assert result is None
+
+
+def test_append_to_thread_strips_whitespace():
+    """append_to_thread() strips whitespace from message text."""
+    store = PendingQuestionsStore()
+    entry = store.add("sess-1", "Q1")
+    store.append_to_thread(entry.question_id, "user", "  trimmed  ")
+    assert entry.thread[0].text == "trimmed"
+
+
+def test_append_to_thread_wall_clock_override():
+    """The wall_clock parameter controls message timestamp."""
+    store = PendingQuestionsStore()
+    entry = store.add("sess-1", "Q1", wall_clock=100.0)
+    store.append_to_thread(entry.question_id, "user", "msg", wall_clock=200.0)
+    assert entry.thread[0].timestamp == 200.0
+
+
+def test_append_to_thread_publishes_frame():
+    """With an event bus wired, append_to_thread() publishes a frame."""
+    from robotsix_chat.chat.events import EventBus
+
+    bus = EventBus()
+    store = PendingQuestionsStore(event_bus=bus)
+    entry = store.add("sess-1", "Q1")
+
+    frames: list[dict[str, object]] = []
+    q = bus.subscribe("sess-1")
+
+    store.append_to_thread(entry.question_id, "assistant", "Hello")
+
+    while not q.empty():
+        frames.append(q.get_nowait())
+
+    bus.unsubscribe("sess-1", q)
+
+    thread_frames = [
+        f for f in frames if f.get("type") == "pending_question_thread_message"
+    ]
+    assert len(thread_frames) == 1
+    assert thread_frames[0]["question_id"] == entry.question_id
+    assert thread_frames[0]["role"] == "assistant"
+    assert thread_frames[0]["text"] == "Hello"
+    assert thread_frames[0]["timestamp"] > 0
+
+
+def test_get_thread_returns_copy():
+    """get_thread() returns a copy of thread messages, or None for unknown."""
+    store = PendingQuestionsStore()
+    entry = store.add("sess-1", "Q1")
+    store.append_to_thread(entry.question_id, "user", "m1")
+    store.append_to_thread(entry.question_id, "assistant", "m2")
+
+    thread = store.get_thread(entry.question_id)
+    assert thread is not None
+    assert len(thread) == 2
+    assert thread[0].text == "m1"
+    assert thread[1].text == "m2"
+
+    # Mutating the returned list does not affect the store.
+    thread.pop()
+    assert len(entry.thread) == 2
+
+
+def test_get_thread_unknown_returns_none():
+    """get_thread() on an unknown id returns None."""
+    store = PendingQuestionsStore()
+    result = store.get_thread("nonexistent")
+    assert result is None
+
+
+def test_get_thread_empty():
+    """get_thread() returns an empty list when no messages exist."""
+    store = PendingQuestionsStore()
+    entry = store.add("sess-1", "Q1")
+    thread = store.get_thread(entry.question_id)
+    assert thread == []
