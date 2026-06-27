@@ -1674,7 +1674,7 @@ def test_create_agent_from_settings_no_tool_wrapper_is_noop() -> None:
     agent = create_agent_from_settings(settings=Settings())
     # Without tool_wrapper, the agent is constructed normally.
     # The tools may be None when all tool-gates are disabled.
-    assert isinstance(agent._tools, (list, type(None)))
+    assert isinstance(agent._tools, list | None)
 
 
 # ---------------------------------------------------------------------------

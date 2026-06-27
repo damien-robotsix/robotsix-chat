@@ -320,7 +320,7 @@ async def test_sessions_create_returns_new_session() -> None:
     assert data["title"] == "New chat"
     assert data["turn_count"] == 0
     assert isinstance(data["session_id"], str)
-    assert isinstance(data["last_active"], (int, float))
+    assert isinstance(data["last_active"], int | float)
 
     # Verify the session is tracked as active.
     sessions, active = store.list_sessions("owner-b")

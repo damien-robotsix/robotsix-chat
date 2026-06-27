@@ -1344,7 +1344,7 @@ def test_persistence_round_trips_reason_and_last_result_at(tmp_path: Path) -> No
     data = json.loads(store.read_text())
     entry = next(e for e in data if e["id"] == lid)
     assert entry["reason"] == "Check health every 90s"
-    assert isinstance(entry["last_result_at"], (int, float))
+    assert isinstance(entry["last_result_at"], int | float)
     assert entry["last_result_at"] > 0
 
 
