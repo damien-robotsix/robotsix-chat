@@ -1132,6 +1132,12 @@ class Settings(BaseModel):
         if component_client_raw:
             raw["component_client"] = component_client_raw
 
+        pending_questions_raw = _build_pending_questions_raw(
+            flat.get("pending_questions")
+        )
+        if pending_questions_raw:
+            raw["pending_questions"] = pending_questions_raw
+
         return cls(**raw)
 
 
@@ -1445,6 +1451,21 @@ def _build_knowledge_raw(yaml_knowledge: Any) -> dict[str, Any]:
         knowledge_raw["path"] = path
 
     return knowledge_raw
+
+
+def _build_pending_questions_raw(yaml_data: Any) -> dict[str, Any]:
+    """Overlay ``PENDING_QUESTIONS_*`` env vars onto the YAML ``pending_questions``.
+
+    Returns a dict ready to parse into :class:`PendingQuestionsSettings`, or empty
+    when nothing is set.
+    """
+    raw: dict[str, Any] = dict(yaml_data or {})
+
+    enabled = os.getenv("PENDING_QUESTIONS_ENABLED")
+    if enabled is not None:
+        raw["enabled"] = _parse_bool(enabled)
+
+    return raw
 
 
 def _build_self_review_raw(yaml_self_review: Any) -> dict[str, Any]:

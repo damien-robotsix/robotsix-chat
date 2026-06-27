@@ -120,6 +120,7 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "MAIL_TIMEOUT",
         "MAX_IMAGES_PER_MESSAGE",
         "MAX_IMAGE_BYTES",
+        "PENDING_QUESTIONS_ENABLED",
         "ALLOWED_IMAGE_MEDIA_TYPES",
         "SELF_REVIEW_ENABLED",
         "SELF_REVIEW_RECENT_ACTIVITY_LIMIT",
@@ -743,6 +744,23 @@ def test_knowledge_env_overrides_yaml(
 
     assert settings.knowledge.enabled is True  # from YAML
     assert settings.knowledge.path == ".data/env_knowledge.json"  # env wins
+
+
+# ---------------------------------------------------------------------------
+# Pending questions
+# ---------------------------------------------------------------------------
+
+
+def test_pending_questions_disabled_via_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``PENDING_QUESTIONS_ENABLED=false`` disables the pending-questions feature."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("PENDING_QUESTIONS_ENABLED", "false")
+
+    settings = Settings.from_env()
+
+    assert settings.pending_questions.enabled is False
 
 
 # ---------------------------------------------------------------------------

@@ -143,6 +143,12 @@ conversation:
   # persist_path: .data/conversations.json  # JSON persistence file; set to "" to disable.
                                    #   Env override: CONVERSATION_PERSIST_PATH
 
+# Pending questions panel — surfaces questions the agent has asked in a
+# persistent panel above the chat input. Enabled by default (core UI/agent
+# primitive, no external dependencies).
+pending_questions:
+  # enabled: true                 # master toggle; env: PENDING_QUESTIONS_ENABLED
+
 # Reference-docs tool — lets the agent read documentation from allowlisted
 # team GitHub repos on demand. Primarily used to consult the board-workflow
 # reference repo when deciding whether a ticket needs manual human action.
