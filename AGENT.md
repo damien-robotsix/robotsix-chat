@@ -221,6 +221,8 @@ Tests for module `robotsix_chat.<module>` live under `tests/<module>/`, mirrorin
 
 **Rule:** When a `ChatAgent` protocol parameter is added or changed, update ALL mock classes that implement the protocol (`_MockAgent`, `MockAgent`, and any other test-local mocks) in the same PR. Run `mypy` on the full test suite to verify protocol conformance — a mock that lacks a keyword argument silently passes structural subtyping at runtime but fails static `mypy --strict` checks.
 
+**Rule:** When adding a new env-var override in a `_build_*_raw()` function, add both a `_wipe_env_vars` entry AND a test that sets the env var (via `monkeypatch.setenv`) and asserts the resulting field value. Follow the `BOARD_READER_CACHE_TTL` / `test_board_reader_from_env` sibling pattern.
+
 ## Task tracking
 
 Persistent, human-readable task tracking lives under `tasks/` at the repo root:
