@@ -881,9 +881,7 @@ async def pending_questions_thread_append_endpoint(
             {"error": "unknown question", "question_id": question_id},
             status_code=404,
         )
-    return JSONResponse(
-        {"question_id": question_id, "status": "message_appended"}
-    )
+    return JSONResponse({"question_id": question_id, "status": "message_appended"})
 
 
 async def pending_questions_thread_get_endpoint(

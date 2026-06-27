@@ -2246,9 +2246,7 @@ async def test_pending_questions_thread_get_endpoint() -> None:
     pq_store.append_to_thread(entry.question_id, "user", "Hello")
 
     async with mock_app(pq_store=pq_store) as f:
-        response = await f.client.get(
-            f"/pending-questions/{entry.question_id}/thread"
-        )
+        response = await f.client.get(f"/pending-questions/{entry.question_id}/thread")
 
     assert response.status_code == 200
     data = response.json()

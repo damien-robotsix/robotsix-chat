@@ -199,9 +199,7 @@ class PendingQuestionsStore:
         self._publish(_thread_message_frame(entry, msg))
         return entry
 
-    def get_thread(
-        self, question_id: str
-    ) -> list[ThreadMessage] | None:
+    def get_thread(self, question_id: str) -> list[ThreadMessage] | None:
         """Return a copy of the thread messages for *question_id*.
 
         Returns ``None`` when *question_id* is unknown.
