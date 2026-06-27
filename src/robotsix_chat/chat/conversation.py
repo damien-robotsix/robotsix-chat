@@ -551,7 +551,7 @@ class ConversationStore:
 
                 title = str(sraw.get("title", _DEFAULT_TITLE))
                 last_active = sraw.get("last_active")
-                if not isinstance(last_active, (int, float)):
+                if not isinstance(last_active, int | float):
                     last_active = now
 
                 session = Session(

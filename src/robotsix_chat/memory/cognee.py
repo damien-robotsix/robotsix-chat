@@ -173,7 +173,7 @@ def _format_results(results: Any) -> str:
         return ""
     if isinstance(results, str):
         text = results
-    elif isinstance(results, (list, tuple)):
+    elif isinstance(results, list | tuple):
         text = "\n".join(str(item) for item in results if item)
     else:
         text = str(results)

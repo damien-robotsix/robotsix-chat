@@ -111,7 +111,7 @@ When enabled, `memory.llm.api_key` and `memory.embedding.endpoint` are required.
 | `memory.embedding.model` | `MEMORY_EMBEDDING_MODEL` | `"bge-m3"` | Embedding model name. |
 | `memory.embedding.endpoint` | `MEMORY_EMBEDDING_ENDPOINT` | `""` | Self-hosted embedding server URL (e.g. `http://host:11434/v1`). Required when memory is enabled. |
 | `memory.embedding.dimensions` | `MEMORY_EMBEDDING_DIMENSIONS` | `1024` | Embedding vector size. Sticky — changing it invalidates stored vectors. |
-| `memory.embedding.api_key` | `MEMORY_EMBEDDING_API_KEY` | `"ollama"` | API key for the embedding server. |
+| `memory.embedding.api_key` | `MEMORY_EMBEDDING_API_KEY` | `"ollama"` | API key for the embedding server. |  # pragma: allowlist secret
 | `memory.embedding.huggingface_tokenizer` | `MEMORY_EMBEDDING_TOKENIZER` | `"BAAI/bge-m3"` | HuggingFace tokenizer name for the embedding model. |
 
 ## Mill (broker integration)
@@ -331,7 +331,7 @@ memory:
   enabled: true
   data_dir: ".data/cognee"
   llm:
-    api_key: "sk-or-..."
+    api_key: "sk-or-..."  # pragma: allowlist secret
   embedding:
     endpoint: "http://host:11434/v1"
 
