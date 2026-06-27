@@ -914,9 +914,7 @@ async def pending_questions_thread_append_endpoint(
             if reply:
                 store.append_to_thread(question_id, "assistant", reply)
         except Exception:
-            logger.exception(
-                "Background LLM call failed for thread %s", question_id
-            )
+            logger.exception("Background LLM call failed for thread %s", question_id)
 
     asyncio.create_task(_process_thread_message())
     return JSONResponse(
