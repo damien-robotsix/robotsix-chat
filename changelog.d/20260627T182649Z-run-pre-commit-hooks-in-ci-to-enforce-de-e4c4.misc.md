@@ -1,0 +1,1 @@
+Run pre-commit hooks in CI to enforce detect-secrets, bandit, vulture, and formatting

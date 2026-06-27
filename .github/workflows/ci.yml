@@ -81,8 +81,22 @@ jobs:
       - name: Run deptry
         run: uv run --with deptry deptry .
 
+  pre-commit:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6.8.0
+      - name: Install project and tooling
+        run: |
+          uv sync --frozen
+          uv pip install vulture
+      - name: Run pre-commit
+        run: uv run pre-commit run --all-files --verbose
+
   check:
-    needs: [lockfile, ci, codeql, security, deptry]
+    needs: [lockfile, ci, codeql, security, deptry, pre-commit]
     runs-on: ubuntu-latest
     steps:
       - run: echo "All CI checks passed"
