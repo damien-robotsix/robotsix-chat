@@ -2195,7 +2195,7 @@ async def test_pending_questions_thread_append_endpoint() -> None:
             json={"text": "Need more info"},
         )
 
-    assert response.status_code == 200
+    assert response.status_code == 202
     data = response.json()
     assert data["question_id"] == entry.question_id
     assert data["status"] == "message_appended"

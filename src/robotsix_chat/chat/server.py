@@ -41,7 +41,11 @@ from robotsix_chat.mail import build_mail_tools
 from robotsix_chat.memory import build_memory
 from robotsix_chat.mill import build_mill_tools
 from robotsix_chat.pending_questions import build_pending_questions_tools
-from robotsix_chat.pending_questions.store import PendingQuestionsStore
+from robotsix_chat.pending_questions.store import (
+    PendingQuestion,
+    PendingQuestionsStore,
+    ThreadMessage,
+)
 from robotsix_chat.refdocs import build_refdocs_tools
 from robotsix_chat.selfreview import build_recent_activity_tools
 from robotsix_chat.version_check import build_version_check_tools
@@ -847,15 +851,17 @@ async def pending_questions_delete_endpoint(request: Request) -> JSONResponse:
 async def pending_questions_thread_append_endpoint(
     request: Request,
 ) -> JSONResponse:
-    """Append a user message to a pending question's thread.
+    """Append a user message to a pending question's thread and get an LLM reply.
 
     ``POST /pending-questions/{question_id}/thread`` with JSON body
     ``{"text": "..."}`` appends a ``"user"``-role message to the question's
-    conversation thread.  Publishes a ``pending_question_thread_message``
-    frame so connected browsers update in real time.
+    conversation thread, then spawns a background task that calls the LLM
+    with merged main-chat + thread context and appends the assistant's reply
+    to the thread.  Publishes ``pending_question_thread_message`` frames
+    so connected browsers update in real time — no page reload is needed.
 
-    Returns 200 with the question id on success, or 404 when the id is
-    unknown.
+    Returns 202 with the question id on success (processing continues in
+    the background), or 404 when the id is unknown.
     """
     question_id = request.path_params["question_id"]
     store: PendingQuestionsStore = request.app.state.pq_store
@@ -881,7 +887,40 @@ async def pending_questions_thread_append_endpoint(
             {"error": "unknown question", "question_id": question_id},
             status_code=404,
         )
-    return JSONResponse({"question_id": question_id, "status": "message_appended"})
+
+    # ---- background LLM call -------------------------------------------
+    agent: ChatAgent = request.app.state.agent
+    conv_store: ConversationStore = request.app.state.conversation_store
+    session_id = entry.session_id
+
+    async def _process_thread_message() -> None:
+        try:
+            # Build merged context: main-chat history + full thread.
+            _, history = conv_store.begin(session_id)
+            thread = store.get_thread(question_id)
+            thread_context = _build_thread_context(entry, thread)
+
+            # Run the agent with merged context.
+            reply_parts: list[str] = []
+            async for token in agent.stream(
+                thread_context,
+                history=history,
+                session_id=session_id,
+                client_id=session_id,
+            ):
+                reply_parts.append(token)
+
+            reply = "".join(reply_parts).strip()
+            if reply:
+                store.append_to_thread(question_id, "assistant", reply)
+        except Exception:
+            logger.exception("Background LLM call failed for thread %s", question_id)
+
+    asyncio.create_task(_process_thread_message())
+    return JSONResponse(
+        {"question_id": question_id, "status": "message_appended"},
+        status_code=202,
+    )
 
 
 async def pending_questions_thread_get_endpoint(
@@ -916,6 +955,44 @@ async def pending_questions_thread_get_endpoint(
             ],
         }
     )
+
+
+# ---------------------------------------------------------------------------
+# Thread-context builder for background LLM calls
+# ---------------------------------------------------------------------------
+
+
+def _build_thread_context(
+    entry: PendingQuestion,
+    thread: list[ThreadMessage] | None,
+) -> str:
+    """Build a merged-context prompt for an LLM call on a pending-question thread.
+
+    The prompt includes the question text, any detail, and the full
+    chronological thread so the LLM has complete awareness of the discussion
+    so far — including the user message that just triggered the call.
+    """
+    parts: list[str] = []
+    parts.append(f"[Pending Question: {entry.text}]")
+    if entry.detail:
+        parts.append(f"[Detail: {entry.detail}]")
+    if entry.status == "answered" and entry.answer:
+        parts.append(f"[Latest explicit answer: {entry.answer}]")
+
+    if thread:
+        parts.append("\nThread conversation (oldest first):")
+        for msg in thread:
+            role_label = msg.role.upper()
+            parts.append(f"  [{role_label}] {msg.text}")
+
+    parts.append(
+        "\nYou are replying in a mini-chat thread for the pending question "
+        "above.  Address the most recent user message directly.  Keep your "
+        "reply concise and conversational.  You have full awareness of the "
+        "main conversation and the thread history — use that context to "
+        "give a helpful answer."
+    )
+    return "\n".join(parts)
 
 
 # ---------------------------------------------------------------------------
