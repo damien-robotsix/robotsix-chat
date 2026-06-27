@@ -42,6 +42,21 @@ number.  To revert to a previous prompt:
 
 ---
 
+## v11 — 2026-06-27 — agent_guard_bypasses_governance
+
+**Summary:** Fold the runtime `_AGENT_GUARD` hardening layer (previously
+appended in `agent.py`) into the `agent_instruction` default literal so it
+is governed by `SYSTEM_PROMPT_VERSION`, this changelog, SHA256 tracking, and
+CI enforcement.
+
+**Rationale:** The guard text — which tells the model it cannot run shell
+commands, read/edit files, browse the web, or access the host — was injected
+at runtime without any governance coverage.  Any edit to it would change what
+the model receives with no version bump, no changelog entry, and no CI
+failure.  Moving it into the versioned default closes this gap.
+
+**SHA256:** `3aeecd5f472970cd59cd4b92a889c83e5c0608b89c99137c14f7c96fc45523c6`
+
 ## v10 — 2026-06-25 — 20260625T123055Z-system-prompt-contains-internal-python-i-d0a8
 
 **Summary:** Replace calendar/task tools paragraph — remove three

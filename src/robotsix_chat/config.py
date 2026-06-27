@@ -572,7 +572,7 @@ class ConversationSettings(BaseModel):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 10
+SYSTEM_PROMPT_VERSION = 11
 
 
 class Settings(BaseModel):
@@ -710,6 +710,12 @@ class Settings(BaseModel):
         "announce or run a 'capability check'. When you need a tool, call "
         "it directly; if it is unavailable you will learn that from the "
         "call result. Do not restate tool descriptions across turns."
+        "\n\nYou are a conversational assistant with no ability to run shell "
+        "commands, read or edit files, browse the web, or otherwise access the host "
+        "system or its network. You can only converse and use the tools explicitly "
+        "provided to you in this session. If a request needs access you don't have, "
+        "briefly say so and suggest an alternative; never narrate or pretend to "
+        "perform such actions."
     )
     server_host: str = "127.0.0.1"
     server_port: int = 8000

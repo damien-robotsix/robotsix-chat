@@ -178,14 +178,13 @@ async def test_recalled_memory_injected_into_system_prompt() -> None:
 async def test_no_recall_adds_no_memory_block() -> None:
     """Keep the system prompt clean when recall is empty.
 
-    With no recalled memory, the system prompt has the instruction and
-    guard but no memory block.
+    With no recalled memory, the system prompt is just the instruction
+    with no memory block.
     """
     provider, _, _, _ = await _agent_with_memory(output="ok")
 
     system_prompt = provider.build_agent.call_args.kwargs["system_prompt"]
     assert system_prompt.startswith("Be helpful.")
-    assert "no ability to run shell commands" in system_prompt  # the guard
     assert "# Relevant memory" not in system_prompt  # no recall block
 
 
