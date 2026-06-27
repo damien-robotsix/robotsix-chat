@@ -89,6 +89,15 @@ class PendingQuestionsStore:
         )
         self._questions[session_id][question_id] = entry
         self._publish(_frame_for(entry, "pending_question_added"))
+        # Also append the question text to the thread so the full
+        # conversation history is captured from the start.
+        msg = ThreadMessage(
+            role="assistant",
+            text=text.strip(),
+            timestamp=entry.created_at,
+        )
+        entry.thread.append(msg)
+        self._publish(_thread_message_frame(entry, msg))
         return entry
 
     def update(
@@ -142,6 +151,15 @@ class PendingQuestionsStore:
         entry.status = "answered"
         entry.answered_at = wall_clock if wall_clock is not None else time.time()
         self._publish(_frame_for(entry, "pending_question_answered"))
+        # Append the answer to the thread so the full conversation
+        # history is preserved and displayed chronologically.
+        msg = ThreadMessage(
+            role="user",
+            text=entry.answer,
+            timestamp=entry.answered_at,
+        )
+        entry.thread.append(msg)
+        self._publish(_thread_message_frame(entry, msg))
         return entry
 
     def remove(self, question_id: str) -> PendingQuestion | None:
@@ -200,14 +218,14 @@ class PendingQuestionsStore:
         return entry
 
     def get_thread(self, question_id: str) -> list[ThreadMessage] | None:
-        """Return a copy of the thread messages for *question_id*.
+        """Return a copy of the thread messages for *question_id*, sorted by timestamp.
 
         Returns ``None`` when *question_id* is unknown.
         """
         entry = self._find(question_id)
         if entry is None:
             return None
-        return list(entry.thread)
+        return sorted(entry.thread, key=lambda m: m.timestamp)
 
     # ------------------------------------------------------------------
     # internals

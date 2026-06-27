@@ -1,0 +1,1 @@
+Pending-questions thread: show full ordered history and keep reply box for multi-turn

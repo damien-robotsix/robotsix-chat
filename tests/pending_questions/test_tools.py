@@ -281,9 +281,12 @@ async def test_append_thread_tool_adds_message():
 
     entry = store.get(qid)
     assert entry is not None
-    assert len(entry.thread) == 1
+    # add() already appends the question text; append_fn adds a second message.
+    assert len(entry.thread) == 2
     assert entry.thread[0].role == "assistant"
-    assert entry.thread[0].text == "Follow-up context"
+    assert entry.thread[0].text == "Q1"
+    assert entry.thread[1].role == "assistant"
+    assert entry.thread[1].text == "Follow-up context"
 
 
 @pytest.mark.anyio
@@ -337,7 +340,9 @@ async def test_get_thread_tool_empty():
 
     qid = await add_fn("Q1")
     result = await get_thread_fn(qid)
-    assert "No thread messages" in result
+    # add() now appends the question text as an assistant thread message.
+    assert "[ASSISTANT] Q1" in result
+    assert "No thread messages" not in result
 
 
 @pytest.mark.anyio

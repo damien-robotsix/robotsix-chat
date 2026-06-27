@@ -17,7 +17,10 @@ def test_add_returns_entry_with_id():
     assert entry.detail == ""
     assert entry.status == "pending"
     assert entry.session_id == "sess-1"
-    assert entry.thread == []
+    # The initial question text is also appended as an assistant thread message.
+    assert len(entry.thread) == 1
+    assert entry.thread[0].role == "assistant"
+    assert entry.thread[0].text == "What is your name?"
 
 
 def test_add_stores_detail():
@@ -225,12 +228,14 @@ def test_append_to_thread_adds_message():
     """append_to_thread() appends a message and returns the entry."""
     store = PendingQuestionsStore()
     entry = store.add("sess-1", "Q1")
+    # add() now also appends the question as an assistant thread message.
+    assert len(entry.thread) == 1  # the initial question
     result = store.append_to_thread(entry.question_id, "assistant", "Hello")
     assert result is not None
-    assert len(result.thread) == 1
-    assert result.thread[0].role == "assistant"
-    assert result.thread[0].text == "Hello"
-    assert result.thread[0].timestamp > 0
+    assert len(result.thread) == 2
+    assert result.thread[1].role == "assistant"
+    assert result.thread[1].text == "Hello"
+    assert result.thread[1].timestamp > 0
 
 
 def test_append_to_thread_multiple_messages():
@@ -241,12 +246,13 @@ def test_append_to_thread_multiple_messages():
     store.append_to_thread(entry.question_id, "assistant", "msg2")
     store.append_to_thread(entry.question_id, "user", "msg3")
 
-    assert len(entry.thread) == 3
-    assert entry.thread[0].text == "msg1"
-    assert entry.thread[1].text == "msg2"
-    assert entry.thread[2].text == "msg3"
-    assert entry.thread[0].role == "user"
-    assert entry.thread[1].role == "assistant"
+    # add() already pushed the question as thread[0]; we appended 3 more.
+    assert len(entry.thread) == 4
+    assert entry.thread[1].text == "msg1"
+    assert entry.thread[2].text == "msg2"
+    assert entry.thread[3].text == "msg3"
+    assert entry.thread[1].role == "user"
+    assert entry.thread[2].role == "assistant"
 
 
 def test_append_to_thread_unknown_returns_none():
@@ -261,7 +267,8 @@ def test_append_to_thread_strips_whitespace():
     store = PendingQuestionsStore()
     entry = store.add("sess-1", "Q1")
     store.append_to_thread(entry.question_id, "user", "  trimmed  ")
-    assert entry.thread[0].text == "trimmed"
+    # Index 1 is the newly appended user message (index 0 is the question).
+    assert entry.thread[1].text == "trimmed"
 
 
 def test_append_to_thread_wall_clock_override():
@@ -269,7 +276,8 @@ def test_append_to_thread_wall_clock_override():
     store = PendingQuestionsStore()
     entry = store.add("sess-1", "Q1", wall_clock=100.0)
     store.append_to_thread(entry.question_id, "user", "msg", wall_clock=200.0)
-    assert entry.thread[0].timestamp == 200.0
+    # Index 0 is the question (timestamp=100.0), index 1 is the new message.
+    assert entry.thread[1].timestamp == 200.0
 
 
 def test_append_to_thread_publishes_frame():
@@ -309,13 +317,14 @@ def test_get_thread_returns_copy():
 
     thread = store.get_thread(entry.question_id)
     assert thread is not None
-    assert len(thread) == 2
-    assert thread[0].text == "m1"
-    assert thread[1].text == "m2"
+    # add() already appends the question, so we have 3 messages.
+    assert len(thread) == 3
+    assert thread[1].text == "m1"
+    assert thread[2].text == "m2"
 
     # Mutating the returned list does not affect the store.
     thread.pop()
-    assert len(entry.thread) == 2
+    assert len(entry.thread) == 3
 
 
 def test_get_thread_unknown_returns_none():
@@ -326,8 +335,59 @@ def test_get_thread_unknown_returns_none():
 
 
 def test_get_thread_empty():
-    """get_thread() returns an empty list when no messages exist."""
+    """get_thread() returns the initial question when no extra messages exist."""
     store = PendingQuestionsStore()
     entry = store.add("sess-1", "Q1")
     thread = store.get_thread(entry.question_id)
-    assert thread == []
+    # add() appends the question text as an assistant thread message.
+    assert len(thread) == 1
+    assert thread[0].role == "assistant"
+    assert thread[0].text == "Q1"
+
+
+def test_thread_messages_ordered_oldest_first():
+    """Thread messages are emitted in chronological order (oldest → newest).
+
+    The initial question (added by ``add()``), any follow-ups (via
+    ``append_to_thread()``), and answers (via ``answer()``) must all appear
+    in the thread in ascending timestamp order so the frontend can render
+    them oldest-at-top / newest-at-bottom.
+    """
+    store = PendingQuestionsStore()
+
+    # Create a question at t=10.
+    entry = store.add("sess-1", "Q1", wall_clock=10.0)
+
+    # Append a follow-up at t=20.
+    store.append_to_thread(entry.question_id, "assistant", "Follow-up", wall_clock=20.0)
+
+    # Answer at t=30.
+    store.answer(entry.question_id, "A1", wall_clock=30.0)
+
+    # Append another follow-up at t=25 (between answer and previous).
+    store.append_to_thread(entry.question_id, "user", "Mid follow-up", wall_clock=25.0)
+
+    # Answer again at t=40.
+    store.answer(entry.question_id, "A2", wall_clock=40.0)
+
+    thread = entry.thread
+    # In the raw store list, messages are in insertion order (not necessarily
+    # sorted).  The public get_thread() returns them sorted by timestamp.
+    assert len(thread) == 5
+
+    sorted_thread = store.get_thread(entry.question_id)
+    assert sorted_thread is not None
+    assert [m.timestamp for m in sorted_thread] == [10.0, 20.0, 25.0, 30.0, 40.0]
+
+    # Verify roles.
+    assert sorted_thread[0].role == "assistant" and sorted_thread[0].text == "Q1"
+    assert sorted_thread[1].role == "assistant" and sorted_thread[1].text == "Follow-up"
+    assert sorted_thread[2].role == "user" and sorted_thread[2].text == "Mid follow-up"
+    assert sorted_thread[3].role == "user" and sorted_thread[3].text == "A1"
+    assert sorted_thread[4].role == "user" and sorted_thread[4].text == "A2"
+
+    # Verify the store-level ordering via list_for_session (most-recently-added
+    # questions come last — single entry here).
+    entries = store.list_for_session("sess-1")
+    assert len(entries) == 1
+    assert entries[0].question_id == entry.question_id
