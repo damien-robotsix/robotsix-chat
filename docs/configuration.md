@@ -162,7 +162,7 @@ and relay its reply. Disabled by default; requires `uv sync --extra broker`.
 | `calendar.broker_scheme` | `CALENDAR_BROKER_SCHEME` | `"https"` | Transport scheme (`https` or `http`). |
 | `calendar.broker_token` | `CALENDAR_BROKER_TOKEN` | `""` | This agent's bearer token, registered on the broker. Required when calendar is enabled. |
 | `calendar.agent_id` | `CALENDAR_AGENT_ID` | `"robotsix-chat"` | This agent's identity on the broker. |
-| `calendar.calendar_agent_id` | `CALENDAR_CALENDAR_AGENT_ID` | `"calendar-agent-robotsix"` | Target calendar/tasks agent ID. |
+| `calendar.calendar_agent_id` | `CALENDAR_CALENDAR_AGENT_ID` | `"robotsix-calendar"` | Target calendar/tasks agent ID. |
 | `calendar.timeout` | `CALENDAR_TIMEOUT` | `240.0` | Per-request timeout (seconds). Generous because the recipient is an LLM. |
 | `calendar.cache_ttl` | `CALENDAR_CACHE_TTL` | `60.0` | Seconds to cache calendar API responses |
 
