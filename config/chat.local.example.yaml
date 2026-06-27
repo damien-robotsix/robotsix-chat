@@ -107,7 +107,7 @@ calendar:
   # broker_scheme: https           # env: CALENDAR_BROKER_SCHEME
   broker_token: ""                 # this agent's bearer token; required; env: CALENDAR_BROKER_TOKEN
   # agent_id: robotsix-chat        # this agent's id on the broker; env: CALENDAR_AGENT_ID
-  # calendar_agent_id: calendar-agent-robotsix  # recipient; env: CALENDAR_CALENDAR_AGENT_ID
+  # calendar_agent_id: robotsix-calendar  # recipient; env: CALENDAR_CALENDAR_AGENT_ID
   # timeout: 240                   # per-request seconds; env: CALENDAR_TIMEOUT
   # cache_ttl: 60.0                # Seconds to cache calendar API responses; env: CALENDAR_CACHE_TTL
 

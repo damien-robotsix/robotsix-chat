@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Fixed
+- Corrected stale `calendar_agent_id` default from `calendar-agent-robotsix` to `robotsix-calendar` in `.env.example` and `config/chat.local.example.yaml` to match the code default in `config.py`.
+
 ### Changed
 - Pending questions now support threaded conversations: users and the assistant can exchange multiple messages per question, visible inline in the Pending Questions panel.
 
