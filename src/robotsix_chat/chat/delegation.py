@@ -469,7 +469,10 @@ def build_check_loop_tools(
     *agent_factory* is forwarded to
     :func:`~robotsix_chat.chat.loops.spawn_check_loop`; when ``None``
     (the default), the runner's own default factory is used — which builds
-    a sub-agent with **no** loop tools (preventing infinite recursion).
+    a sub-agent with **no** loop-*creation* tools (preventing infinite
+    recursion).  The worker does, however, inject a narrow loop-scoped
+    ``stop_check_loop`` into each tick agent so a check can halt its own loop
+    once its condition is terminal (stop-only → no recursion risk).
 
     *conversation_store* is an optional :class:`ConversationStore` used to
     gate loop spawning: when the session is marked ``closed`` the tool
@@ -501,6 +504,13 @@ def build_check_loop_tools(
         The check re-runs automatically until it is explicitly stopped, reaches
         *max_iterations* (if set), or self-stops.  Every result is surfaced to
         the user as it lands.
+
+        For a check that watches something to completion (e.g. monitor a ticket
+        until it reaches a terminal state), make *check_description* instruct the
+        sub-agent to call ``stop_check_loop`` as soon as the condition is
+        terminal — the tick sub-agent has a loop-scoped ``stop_check_loop`` that
+        halts its own loop, so it will not keep re-reporting the same terminal
+        state forever.
 
         When *include_previous_result* is ``True``, each iteration after the
         first receives the previous tick's result prepended to the prompt so the

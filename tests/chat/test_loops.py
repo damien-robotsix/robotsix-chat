@@ -727,6 +727,61 @@ async def test_spawn_runs_first_iteration_and_publishes_tick() -> None:
 
 
 @pytest.mark.asyncio
+async def test_tick_agent_can_self_stop_via_injected_tool() -> None:
+    """The worker injects a loop-scoped ``stop_check_loop`` the tick agent can call.
+
+    A tick sub-agent that detects a terminal condition and calls the injected
+    stop tool halts the loop after recording its final tick — instead of
+    re-reporting the same terminal state every interval forever.
+    """
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings()
+
+    class _SelfStoppingAgent:
+        """Has a ``_tools`` list; calls the injected stop tool during stream."""
+
+        def __init__(self) -> None:
+            self._tools: list[Any] = []
+
+        async def stream(
+            self,
+            message: str,
+            *,
+            history: list[tuple[str, str]] | None = None,
+            session_id: str | None = None,
+            client_id: str | None = None,
+            images: list[tuple[str, bytes]] | None = None,
+        ) -> AsyncIterator[str]:
+            stop = next(
+                t
+                for t in self._tools
+                if getattr(t, "__name__", "") == "stop_check_loop"
+            )
+            await stop()
+            yield "terminal — stopping"
+
+    lid = spawn_check_loop(
+        session_id="c1",
+        prompt="monitor until terminal",
+        interval_seconds=60.0,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _SelfStoppingAgent(),
+    )
+
+    await asyncio.sleep(0.1)
+
+    info = reg.get(lid)
+    assert info is not None
+    # Final tick recorded, then the loop self-stopped.
+    assert info.iterations == 1
+    assert info.last_result == "terminal — stopping"
+    assert info.status == LoopStatus.STOPPED
+    assert info.stop_reason == "condition_met"
+
+
+@pytest.mark.asyncio
 async def test_spawn_returns_immediately() -> None:
     """spawn_check_loop returns a loop_id synchronously before the agent runs."""
     bus = EventBus()

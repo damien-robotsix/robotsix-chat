@@ -526,6 +526,40 @@ async def _check_loop_worker(
     loop_id = await id_future
     clock = registry._clock
     previous_result: str | None = None
+
+    # Inject a loop-scoped self-stop tool into each tick's sub-agent.  The
+    # default tick agent deliberately ships with NO loop-creation tools (so a
+    # check cannot recursively spawn more loops — see the agent_factory note in
+    # chat/delegation.py), but a check that detects a terminal / condition-met
+    # state must still be able to halt itself; otherwise it re-reports the same
+    # terminal status every interval until a human or the foreground agent stops
+    # it.  Exposing only a narrow stop (no start) keeps the no-recursion
+    # guarantee, and because the wrapping happens here in the worker it also
+    # survives process restarts — resume_check_loops cannot serialize a
+    # stop_when predicate, but the injected tool is rebuilt on every resume.
+    stop_requested = False
+
+    async def stop_check_loop(loop_id: str = "") -> str:
+        """Stop the check loop you are running in.
+
+        Call this as soon as the monitored condition is complete or has reached
+        a terminal state (e.g. the watched ticket is ``closed``/``done``) so the
+        loop stops re-running.  The ``loop_id`` argument is optional and ignored
+        — this always stops the current loop.
+        """
+        nonlocal stop_requested
+        stop_requested = True
+        return "Acknowledged — this check loop will stop after the current tick."
+
+    _base_agent_factory = agent_factory
+
+    def tick_agent_factory(s: Settings) -> ChatAgent:
+        agent = _base_agent_factory(s)
+        tools = getattr(agent, "_tools", None)
+        if isinstance(tools, list):
+            tools.append(stop_check_loop)
+        return agent
+
     try:
         while True:
             if verify_via_board and probe is not None:
@@ -558,7 +592,7 @@ async def _check_loop_worker(
                         f"---\n\nCurrent check prompt:\n{effective_prompt}"
                     )
 
-                agent = agent_factory(settings)
+                agent = tick_agent_factory(settings)
                 result_text = "".join(
                     [chunk async for chunk in agent.stream(effective_prompt)]
                 )
@@ -612,6 +646,14 @@ async def _check_loop_worker(
 
             # Store for the next iteration's comparison.
             previous_result = result_text
+
+            # Self-stop when this tick's sub-agent invoked its scoped stop tool
+            # (e.g. it detected the monitored condition reached a terminal
+            # state).  Checked after the tick is recorded/published so the final
+            # terminal report still reaches the user.
+            if stop_requested:
+                registry.stop(loop_id, reason="condition_met")
+                return
 
             # Self-stop on condition-met.
             if stop_when is not None and stop_when(result_text):
