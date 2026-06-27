@@ -2016,11 +2016,18 @@
         pendingQuestionsOrder.push(qid);
       }
       if (!entry.thread) entry.thread = [];
-      entry.thread.push({
-        role: frame.role || "assistant",
-        text: frame.text || "",
-        timestamp: frame.timestamp || 0
-      });
+      // Avoid duplicating a message that was already added optimistically
+      // (e.g. submitPendingAnswer pushes locally before the SSE frame arrives).
+      var dup = entry.thread.length > 0 &&
+          entry.thread[entry.thread.length - 1].role === (frame.role || "assistant") &&
+          entry.thread[entry.thread.length - 1].text === (frame.text || "");
+      if (!dup) {
+        entry.thread.push({
+          role: frame.role || "assistant",
+          text: frame.text || "",
+          timestamp: frame.timestamp || 0
+        });
+      }
     }
 
     renderPendingEntry(entry);
@@ -2074,13 +2081,39 @@
     metaDiv.textContent = metaParts.join(" \u2022 ");
     row.appendChild(metaDiv);
 
-    // ---- Thread messages ----
+    // ---- Thread messages (full conversation history) ----
     var threadContainer = document.createElement("div");
     threadContainer.className = "pq-thread";
 
-    if (entry.thread && entry.thread.length > 0) {
-      for (var ti = 0; ti < entry.thread.length; ti++) {
-        var msg = entry.thread[ti];
+    // Build a unified history from the thread array.
+    // For backward-compat, if the answer text is not already represented
+    // as a user message in the thread, append it at the end.
+    var history = (entry.thread || []).slice();
+    var answerAlreadyInThread = false;
+    if (entry.answer) {
+      for (var hi = 0; hi < history.length; hi++) {
+        if (history[hi].role === "user" && history[hi].text === entry.answer) {
+          answerAlreadyInThread = true;
+          break;
+        }
+      }
+      if (!answerAlreadyInThread) {
+        history.push({
+          role: "user",
+          text: entry.answer,
+          timestamp: entry.answered_at || 0
+        });
+      }
+    }
+
+    // Sort by timestamp ascending so oldest appears at the top.
+    history.sort(function (a, b) {
+      return (a.timestamp || 0) - (b.timestamp || 0);
+    });
+
+    if (history.length > 0) {
+      for (var ti = 0; ti < history.length; ti++) {
+        var msg = history[ti];
         var msgDiv = document.createElement("div");
         msgDiv.className = "pq-thread-msg pq-thread-msg--" + (msg.role || "assistant");
         var roleLabel = document.createElement("span");
@@ -2098,85 +2131,72 @@
 
     row.appendChild(threadContainer);
 
-    // If answered, show the submitted answer.
-    if (isAnswered) {
-      var answerDiv = document.createElement("div");
-      answerDiv.className = "pq-detail";
-      answerDiv.style.color = "#86efac";
-      answerDiv.textContent = "Answer: " + (entry.answer || "(empty)");
-      row.appendChild(answerDiv);
-    }
+    // ---- Thread input (always visible for multi-turn discussion) ----
+    var threadInputRow = document.createElement("div");
+    threadInputRow.className = "pq-thread-input-row";
 
-    // ---- Thread input (user can add to the thread) ----
-    if (!isAnswered) {
-      var threadInputRow = document.createElement("div");
-      threadInputRow.className = "pq-thread-input-row";
+    var threadInput = document.createElement("input");
+    threadInput.type = "text";
+    threadInput.placeholder = "Discuss this question\u2026";
+    threadInput.setAttribute("aria-label", "Discussion for: " + entry.text);
 
-      var threadInput = document.createElement("input");
-      threadInput.type = "text";
-      threadInput.placeholder = "Discuss this question\u2026";
-      threadInput.setAttribute("aria-label", "Discussion for: " + entry.text);
+    var threadSendBtn = document.createElement("button");
+    threadSendBtn.textContent = "Send";
+    threadSendBtn.className = "pq-thread-send-btn";
 
-      var threadSendBtn = document.createElement("button");
-      threadSendBtn.textContent = "Send";
-      threadSendBtn.className = "pq-thread-send-btn";
-
-      threadSendBtn.addEventListener("click", function () {
-        var msg = threadInput.value.trim();
-        if (!msg) return;
-        threadSendBtn.disabled = true;
-        threadSendBtn.textContent = "Sending\u2026";
-        appendThreadMessage(entry.id, msg, function () {
-          threadSendBtn.disabled = false;
-          threadSendBtn.textContent = "Send";
-          threadInput.value = "";
-        });
+    threadSendBtn.addEventListener("click", function () {
+      var msg = threadInput.value.trim();
+      if (!msg) return;
+      threadSendBtn.disabled = true;
+      threadSendBtn.textContent = "Sending\u2026";
+      appendThreadMessage(entry.id, msg, function () {
+        threadSendBtn.disabled = false;
+        threadSendBtn.textContent = "Send";
+        threadInput.value = "";
       });
+    });
 
-      threadInput.addEventListener("keydown", function (e) {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          threadSendBtn.click();
-        }
-      });
+    threadInput.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        threadSendBtn.click();
+      }
+    });
 
-      threadInputRow.appendChild(threadInput);
-      threadInputRow.appendChild(threadSendBtn);
-      row.appendChild(threadInputRow);
-    }
+    threadInputRow.appendChild(threadInput);
+    threadInputRow.appendChild(threadSendBtn);
+    row.appendChild(threadInputRow);
 
-    // ---- Answer input row — hidden/disabled when already answered. ----
-    if (!isAnswered) {
-      var answerRow = document.createElement("div");
-      answerRow.className = "pq-answer-row";
+    // ---- Answer input row — always visible for multi-turn answering ----
+    var answerRow = document.createElement("div");
+    answerRow.className = "pq-answer-row";
 
-      var answerInput = document.createElement("input");
-      answerInput.type = "text";
-      answerInput.placeholder = "Type your answer\u2026";
-      answerInput.setAttribute("aria-label", "Answer for: " + entry.text);
+    var answerInput = document.createElement("input");
+    answerInput.type = "text";
+    answerInput.placeholder = "Type your answer\u2026";
+    answerInput.setAttribute("aria-label", "Answer for: " + entry.text);
 
-      var answerBtn = document.createElement("button");
-      answerBtn.textContent = "Answer";
+    var answerBtn = document.createElement("button");
+    answerBtn.textContent = "Answer";
 
-      answerBtn.addEventListener("click", function () {
-        var answer = answerInput.value.trim();
-        if (!answer) return;
-        answerBtn.disabled = true;
-        answerBtn.textContent = "Sending\u2026";
-        submitPendingAnswer(entry.id, answer);
-      });
+    answerBtn.addEventListener("click", function () {
+      var answer = answerInput.value.trim();
+      if (!answer) return;
+      answerBtn.disabled = true;
+      answerBtn.textContent = "Sending\u2026";
+      submitPendingAnswer(entry.id, answer);
+    });
 
-      answerInput.addEventListener("keydown", function (e) {
-        if (e.key === "Enter") {
-          e.preventDefault();
-          answerBtn.click();
-        }
-      });
+    answerInput.addEventListener("keydown", function (e) {
+      if (e.key === "Enter") {
+        e.preventDefault();
+        answerBtn.click();
+      }
+    });
 
-      answerRow.appendChild(answerInput);
-      answerRow.appendChild(answerBtn);
-      row.appendChild(answerRow);
-    }
+    answerRow.appendChild(answerInput);
+    answerRow.appendChild(answerBtn);
+    row.appendChild(answerRow);
 
     entry.rowEl = row;
 
@@ -2243,12 +2263,15 @@
         // Silently ignore — the SSE frame will still update the panel.
       });
 
-      // Optimistic local update: mark as answered so the row re-renders
-      // in the answered state immediately.
+      // Optimistic local update: append the answer to the thread and
+      // re-render so the user sees it immediately.  The SSE frame will
+      // follow; deduplication in updatePendingPanel prevents a double.
       var entry = pendingQuestionsById[questionId];
       if (entry) {
         entry.status = "answered";
         entry.answer = answer;
+        if (!entry.thread) entry.thread = [];
+        entry.thread.push({ role: "user", text: answer, timestamp: Date.now() / 1000 });
         renderPendingEntry(entry);
         refreshPendingPanelVisibility();
       }

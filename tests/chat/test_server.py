@@ -2171,11 +2171,14 @@ async def test_pending_questions_list_includes_thread() -> None:
     assert len(data["questions"]) == 1
     q = data["questions"][0]
     assert "thread" in q
-    assert len(q["thread"]) == 2
+    # add() appends the question, then we appended 2 more messages.
+    assert len(q["thread"]) == 3
     assert q["thread"][0]["role"] == "assistant"
-    assert q["thread"][0]["text"] == "Clarification"
-    assert q["thread"][1]["role"] == "user"
-    assert q["thread"][1]["text"] == "My reply"
+    assert q["thread"][0]["text"] == "Q1"
+    assert q["thread"][1]["role"] == "assistant"
+    assert q["thread"][1]["text"] == "Clarification"
+    assert q["thread"][2]["role"] == "user"
+    assert q["thread"][2]["text"] == "My reply"
 
 
 @pytest.mark.asyncio
@@ -2197,9 +2200,12 @@ async def test_pending_questions_thread_append_endpoint() -> None:
     assert data["question_id"] == entry.question_id
     assert data["status"] == "message_appended"
 
-    assert len(entry.thread) == 1
-    assert entry.thread[0].role == "user"
-    assert entry.thread[0].text == "Need more info"
+    # add() appends the question; we appended one more via the endpoint.
+    assert len(entry.thread) == 2
+    assert entry.thread[0].role == "assistant"
+    assert entry.thread[0].text == "Q1"
+    assert entry.thread[1].role == "user"
+    assert entry.thread[1].text == "Need more info"
 
 
 @pytest.mark.asyncio
@@ -2251,11 +2257,14 @@ async def test_pending_questions_thread_get_endpoint() -> None:
     assert response.status_code == 200
     data = response.json()
     assert data["question_id"] == entry.question_id
-    assert len(data["thread"]) == 2
+    # add() appends the question; we appended 2 more messages.
+    assert len(data["thread"]) == 3
     assert data["thread"][0]["role"] == "assistant"
-    assert data["thread"][0]["text"] == "Hi"
-    assert data["thread"][1]["role"] == "user"
-    assert data["thread"][1]["text"] == "Hello"
+    assert data["thread"][0]["text"] == "Q1"
+    assert data["thread"][1]["role"] == "assistant"
+    assert data["thread"][1]["text"] == "Hi"
+    assert data["thread"][2]["role"] == "user"
+    assert data["thread"][2]["text"] == "Hello"
 
 
 @pytest.mark.asyncio
