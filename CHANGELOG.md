@@ -9,13 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Split `src/robotsix_chat/chat/server.py` (1656 lines) into a `server/` package with four modules (`routes.py`, `app.py`, `cli.py`, `__init__.py`) for improved maintainability. All public symbols are re-exported from `__init__.py` preserving backward compatibility.
+- Folded the runtime `_AGENT_GUARD` hardening layer into the version-governed `agent_instruction` default so guard changes are tracked by `SYSTEM_PROMPT_VERSION`, the system prompt changelog, SHA256, and CI enforcement.
+- Pending questions now support threaded conversations: users and the assistant can exchange multiple messages per question, visible inline in the Pending Questions panel.
+
 ### Fixed
 - Pending-questions thread: each assistant reply is now posted exactly once per user submit, fixing a bug where identical assistant messages were double-posted in the thread when the agent's ``append_to_pending_question_thread`` tool and the background thread-processing task both appended the same reply.
 - Corrected stale `calendar_agent_id` default from `calendar-agent-robotsix` to `robotsix-calendar` in `.env.example` and `config/chat.local.example.yaml` to match the code default in `config.py`.
-
-### Changed
-- Folded the runtime `_AGENT_GUARD` hardening layer into the version-governed `agent_instruction` default so guard changes are tracked by `SYSTEM_PROMPT_VERSION`, the system prompt changelog, SHA256, and CI enforcement.
-- Pending questions now support threaded conversations: users and the assistant can exchange multiple messages per question, visible inline in the Pending Questions panel.
 
 - Check-loop worker now skips the LLM invocation when the previous tick's
   result matched the no-change predicate, reusing the prior result instead
