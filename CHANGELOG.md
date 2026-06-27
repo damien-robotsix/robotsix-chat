@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+### Changed
+- Pending questions now support threaded conversations: users and the assistant can exchange multiple messages per question, visible inline in the Pending Questions panel.
+
 - Check-loop worker now skips the LLM invocation when the previous tick's
   result matched the no-change predicate, reusing the prior result instead
   of re-sending the full prompt for a foregone NO_CHANGE reply.  Saves

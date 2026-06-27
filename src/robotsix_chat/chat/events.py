@@ -32,6 +32,7 @@ SSE_LOOP_REPLY_TYPE = "loop_reply"
 SSE_PENDING_QUESTION_ADDED_TYPE = "pending_question_added"
 SSE_PENDING_QUESTION_UPDATED_TYPE = "pending_question_updated"
 SSE_PENDING_QUESTION_REMOVED_TYPE = "pending_question_removed"
+SSE_PENDING_QUESTION_THREAD_MESSAGE_TYPE = "pending_question_thread_message"
 
 # ---------------------------------------------------------------------------
 # EventSink — structural Protocol for dependency injection
@@ -365,6 +366,37 @@ def pending_question_removed_frame(
         "type": SSE_PENDING_QUESTION_REMOVED_TYPE,
         "question_id": question_id,
         "session_id": session_id,
+    }
+
+
+def pending_question_thread_message_frame(
+    question_id: str,
+    session_id: str,
+    role: str,
+    text: str,
+    *,
+    timestamp: float = 0.0,
+) -> dict[str, object]:
+    """Build a ``pending_question_thread_message`` notification frame.
+
+    Returns a dict with shape::
+
+        {
+            "type": "pending_question_thread_message",
+            "question_id": <str>,
+            "session_id": <str>,
+            "role": <str>,       # "user" or "assistant"
+            "text": <str>,
+            "timestamp": <float>,
+        }
+    """
+    return {
+        "type": SSE_PENDING_QUESTION_THREAD_MESSAGE_TYPE,
+        "question_id": question_id,
+        "session_id": session_id,
+        "role": role,
+        "text": text,
+        "timestamp": timestamp,
     }
 
 

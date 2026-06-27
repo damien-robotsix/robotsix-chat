@@ -182,10 +182,66 @@ def build_pending_questions_tools(
         parts.append(f"created_at: {entry.created_at}")
         return "\n".join(parts)
 
+    async def append_to_pending_question_thread(
+        question_id: str,
+        text: str,
+    ) -> str:
+        """Append a message to the thread of an existing pending question.
+
+        Use this to have a back-and-forth discussion with the user about a
+        specific question — ask follow-ups, give clarifying context, or nudge
+        the user for a decision.  Messages appear inline in the Pending
+        Questions panel.
+
+        Args:
+            question_id: The id returned by ``add_pending_question``.
+            text: The message text to append (as the assistant).
+
+        Returns:
+            Confirmation message or an error if the id is unknown.
+
+        """
+        if not text.strip():
+            return "Error: thread message must not be empty"
+        entry = store.append_to_thread(question_id, "assistant", text)
+        if entry is None:
+            return f"Unknown question id: {question_id!r}"
+        return f"Appended message to thread of question {question_id!r}."
+
+    async def get_pending_question_thread(question_id: str) -> str:
+        """Read the full conversation thread of a pending question.
+
+        Use this before appending to the thread so you can see what has
+        already been discussed — all messages (user and assistant) in
+        chronological order.
+
+        Args:
+            question_id: The id returned by ``add_pending_question``.
+
+        Returns:
+            A formatted list of thread messages with role, text, and
+            timestamps, or an error if the id is unknown.
+
+        """
+        thread = store.get_thread(question_id)
+        if thread is None:
+            return f"Unknown question id: {question_id!r}"
+        if not thread:
+            return f"No thread messages for question {question_id!r}."
+        lines = []
+        for msg in thread:
+            role_label = msg.role.upper()
+            lines.append(f"[{role_label}] {msg.text}")
+            if msg.timestamp:
+                lines.append(f"  at: {msg.timestamp}")
+        return "\n".join(lines)
+
     return [
         add_pending_question,
         update_pending_question,
         remove_pending_question,
         list_pending_questions,
         get_pending_question,
+        append_to_pending_question_thread,
+        get_pending_question_thread,
     ]

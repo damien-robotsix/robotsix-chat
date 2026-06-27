@@ -771,6 +771,14 @@ async def pending_questions_list_endpoint(request: Request) -> JSONResponse:
                     "answer": q.answer,
                     "answered_at": q.answered_at,
                     "created_at": q.created_at,
+                    "thread": [
+                        {
+                            "role": m.role,
+                            "text": m.text,
+                            "timestamp": m.timestamp,
+                        }
+                        for m in q.thread
+                    ],
                 }
                 for q in entries
             ]
@@ -834,6 +842,80 @@ async def pending_questions_delete_endpoint(request: Request) -> JSONResponse:
             status_code=404,
         )
     return JSONResponse({"question_id": question_id, "status": "removed"})
+
+
+async def pending_questions_thread_append_endpoint(
+    request: Request,
+) -> JSONResponse:
+    """Append a user message to a pending question's thread.
+
+    ``POST /pending-questions/{question_id}/thread`` with JSON body
+    ``{"text": "..."}`` appends a ``"user"``-role message to the question's
+    conversation thread.  Publishes a ``pending_question_thread_message``
+    frame so connected browsers update in real time.
+
+    Returns 200 with the question id on success, or 404 when the id is
+    unknown.
+    """
+    question_id = request.path_params["question_id"]
+    store: PendingQuestionsStore = request.app.state.pq_store
+
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, ValueError):
+        return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "expected a JSON object"}, status_code=400)
+
+    text = body.get("text", "")
+    if not isinstance(text, str) or not text.strip():
+        return JSONResponse(
+            {"error": "'text' must be a non-empty string"},
+            status_code=400,
+        )
+
+    entry = store.append_to_thread(question_id, "user", text)
+    if entry is None:
+        return JSONResponse(
+            {"error": "unknown question", "question_id": question_id},
+            status_code=404,
+        )
+    return JSONResponse({"question_id": question_id, "status": "message_appended"})
+
+
+async def pending_questions_thread_get_endpoint(
+    request: Request,
+) -> JSONResponse:
+    """Return the full thread for a pending question.
+
+    ``GET /pending-questions/{question_id}/thread`` returns
+    ``{"question_id": "...", "thread": [...]}`` with each message
+    containing ``role``, ``text``, and ``timestamp``.
+
+    Returns 404 when the question id is unknown.
+    """
+    question_id = request.path_params["question_id"]
+    store: PendingQuestionsStore = request.app.state.pq_store
+    thread = store.get_thread(question_id)
+    if thread is None:
+        return JSONResponse(
+            {"error": "unknown question", "question_id": question_id},
+            status_code=404,
+        )
+    return JSONResponse(
+        {
+            "question_id": question_id,
+            "thread": [
+                {
+                    "role": msg.role,
+                    "text": msg.text,
+                    "timestamp": msg.timestamp,
+                }
+                for msg in thread
+            ],
+        }
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -1002,6 +1084,16 @@ def create_app(
             "/pending-questions/{question_id}",
             pending_questions_delete_endpoint,
             methods=["DELETE"],
+        ),
+        Route(
+            "/pending-questions/{question_id}/thread",
+            pending_questions_thread_append_endpoint,
+            methods=["POST"],
+        ),
+        Route(
+            "/pending-questions/{question_id}/thread",
+            pending_questions_thread_get_endpoint,
+            methods=["GET"],
         ),
     ]
     if serve_ui:

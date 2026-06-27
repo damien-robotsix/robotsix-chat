@@ -567,6 +567,86 @@
     cursor: not-allowed;
   }
 
+  .pq-thread {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+    margin: 0.4rem 0;
+    max-height: 240px;
+    overflow-y: auto;
+  }
+
+  .pq-thread-msg {
+    font-size: 0.88rem;
+    line-height: 1.35;
+    padding: 0.2rem 0;
+  }
+
+  .pq-thread-msg-role {
+    font-weight: 600;
+    font-size: 0.8rem;
+    margin-right: 2px;
+  }
+
+  .pq-thread-msg--user .pq-thread-msg-role {
+    color: #60a5fa;
+  }
+
+  .pq-thread-msg--assistant .pq-thread-msg-role {
+    color: #a78bfa;
+  }
+
+  .pq-thread-msg-text {
+    color: #cbd5e1;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+
+  .pq-thread-input-row {
+    display: flex;
+    gap: 0.4rem;
+    align-items: center;
+    margin-bottom: 0.5rem;
+  }
+
+  .pq-thread-input-row input[type="text"] {
+    flex: 1;
+    background: var(--chat-bg);
+    color: var(--text-fg);
+    border: 1px solid var(--composer-border);
+    border-radius: 6px;
+    padding: 0.35rem 0.5rem;
+    font-size: 0.88rem;
+    font-family: inherit;
+    outline: none;
+  }
+
+  .pq-thread-input-row input[type="text"]:focus {
+    border-color: #a78bfa;
+  }
+
+  .pq-thread-send-btn {
+    background: #7c3aed;
+    color: #fff;
+    border: none;
+    border-radius: 6px;
+    padding: 0.35rem 0.7rem;
+    font-size: 0.85rem;
+    font-weight: 600;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: background 0.15s;
+  }
+
+  .pq-thread-send-btn:hover:not(:disabled) {
+    background: #6d28d9;
+  }
+
+  .pq-thread-send-btn:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+
   /* ------------------------------------------------------------------ */
   /* Responsive tweaks                                                   */
   /* ------------------------------------------------------------------ */
@@ -701,7 +781,7 @@
   var pendingImages = [];  // { file, objectURL, mediaType }
 
   // ---- Pending Questions state -----------------------------------------
-  var pendingQuestionsById = {};    // question_id → { id, text, detail, status, created_at, rowEl }
+  var pendingQuestionsById = {};    // question_id → { id, text, detail, status, created_at, thread, rowEl }
   var pendingQuestionsOrder = [];   // insertion order of question ids
 
   function clearAttachError() {
@@ -1768,7 +1848,8 @@
         } else if (frame.type === "pending_question_added" ||
                    frame.type === "pending_question_updated" ||
                    frame.type === "pending_question_answered" ||
-                   frame.type === "pending_question_removed") {
+                   frame.type === "pending_question_removed" ||
+                   frame.type === "pending_question_thread_message") {
           updatePendingPanel(frame);
         }
         // ignore unknown types gracefully
@@ -1853,6 +1934,7 @@
           answer: frame.answer || "",
           answered_at: frame.answered_at || 0,
           created_at: frame.created_at || 0,
+          thread: [],
           rowEl: null
         };
         pendingQuestionsById[qid] = entry;
@@ -1873,6 +1955,7 @@
           answer: frame.answer || "",
           answered_at: frame.answered_at || 0,
           created_at: frame.created_at || 0,
+          thread: [],
           rowEl: null
         };
         pendingQuestionsById[qid] = entry;
@@ -1894,6 +1977,7 @@
           answer: frame.answer || "",
           answered_at: frame.answered_at || 0,
           created_at: frame.created_at || 0,
+          thread: [],
           rowEl: null
         };
         pendingQuestionsById[qid] = entry;
@@ -1914,6 +1998,29 @@
       }
       refreshPendingPanelVisibility();
       return;
+    } else if (frame.type === "pending_question_thread_message") {
+      if (!entry) {
+        // Thread message for a question we don't have yet — create a minimal entry.
+        entry = {
+          id: qid,
+          text: "Thread message",
+          detail: "",
+          status: "pending",
+          answer: "",
+          answered_at: 0,
+          created_at: 0,
+          thread: [],
+          rowEl: null
+        };
+        pendingQuestionsById[qid] = entry;
+        pendingQuestionsOrder.push(qid);
+      }
+      if (!entry.thread) entry.thread = [];
+      entry.thread.push({
+        role: frame.role || "assistant",
+        text: frame.text || "",
+        timestamp: frame.timestamp || 0
+      });
     }
 
     renderPendingEntry(entry);
@@ -1967,6 +2074,30 @@
     metaDiv.textContent = metaParts.join(" \u2022 ");
     row.appendChild(metaDiv);
 
+    // ---- Thread messages ----
+    var threadContainer = document.createElement("div");
+    threadContainer.className = "pq-thread";
+
+    if (entry.thread && entry.thread.length > 0) {
+      for (var ti = 0; ti < entry.thread.length; ti++) {
+        var msg = entry.thread[ti];
+        var msgDiv = document.createElement("div");
+        msgDiv.className = "pq-thread-msg pq-thread-msg--" + (msg.role || "assistant");
+        var roleLabel = document.createElement("span");
+        roleLabel.className = "pq-thread-msg-role";
+        roleLabel.textContent = msg.role === "user" ? "You" : "Assistant";
+        var msgText = document.createElement("span");
+        msgText.className = "pq-thread-msg-text";
+        msgText.textContent = msg.text;
+        msgDiv.appendChild(roleLabel);
+        msgDiv.appendChild(document.createTextNode(": "));
+        msgDiv.appendChild(msgText);
+        threadContainer.appendChild(msgDiv);
+      }
+    }
+
+    row.appendChild(threadContainer);
+
     // If answered, show the submitted answer.
     if (isAnswered) {
       var answerDiv = document.createElement("div");
@@ -1976,7 +2107,45 @@
       row.appendChild(answerDiv);
     }
 
-    // Answer input row — hidden/disabled when already answered.
+    // ---- Thread input (user can add to the thread) ----
+    if (!isAnswered) {
+      var threadInputRow = document.createElement("div");
+      threadInputRow.className = "pq-thread-input-row";
+
+      var threadInput = document.createElement("input");
+      threadInput.type = "text";
+      threadInput.placeholder = "Discuss this question\u2026";
+      threadInput.setAttribute("aria-label", "Discussion for: " + entry.text);
+
+      var threadSendBtn = document.createElement("button");
+      threadSendBtn.textContent = "Send";
+      threadSendBtn.className = "pq-thread-send-btn";
+
+      threadSendBtn.addEventListener("click", function () {
+        var msg = threadInput.value.trim();
+        if (!msg) return;
+        threadSendBtn.disabled = true;
+        threadSendBtn.textContent = "Sending\u2026";
+        appendThreadMessage(entry.id, msg, function () {
+          threadSendBtn.disabled = false;
+          threadSendBtn.textContent = "Send";
+          threadInput.value = "";
+        });
+      });
+
+      threadInput.addEventListener("keydown", function (e) {
+        if (e.key === "Enter") {
+          e.preventDefault();
+          threadSendBtn.click();
+        }
+      });
+
+      threadInputRow.appendChild(threadInput);
+      threadInputRow.appendChild(threadSendBtn);
+      row.appendChild(threadInputRow);
+    }
+
+    // ---- Answer input row — hidden/disabled when already answered. ----
     if (!isAnswered) {
       var answerRow = document.createElement("div");
       answerRow.className = "pq-answer-row";
@@ -2100,6 +2269,34 @@
     }
   }
 
+  function appendThreadMessage(questionId, text, onComplete) {
+    // Append a user message to the question's thread via the REST endpoint.
+    var threadUrl = apiBase() + "/pending-questions/" + encodeURIComponent(questionId) + "/thread";
+
+    // Optimistic local update.
+    var entry = pendingQuestionsById[questionId];
+    if (entry) {
+      if (!entry.thread) entry.thread = [];
+      entry.thread.push({ role: "user", text: text, timestamp: Date.now() / 1000 });
+      renderPendingEntry(entry);
+      refreshPendingPanelVisibility();
+    }
+
+    fetch(threadUrl, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text })
+    }).then(function (resp) {
+      if (!resp.ok && resp.status !== 404) {
+        showError("Failed to send message (HTTP " + resp.status + ")");
+      }
+    }).catch(function () {
+      // Silently ignore — the SSE frame will update the panel.
+    }).then(function () {
+      if (onComplete) onComplete();
+    });
+  }
+
   // ---- Pending Questions snapshot on load ------------------------------
   function loadPendingQuestions() {
     var pqUrl = apiBase() + "/pending-questions" +
@@ -2112,16 +2309,31 @@
       if (!data || !Array.isArray(data.questions)) return;
       var entries = data.questions;
       for (var i = 0; i < entries.length; i++) {
-        updatePendingPanel({
+        var entry = entries[i];
+        var frame = {
           type: "pending_question_added",
-          question_id: entries[i].question_id,
-          text: entries[i].text,
-          detail: entries[i].detail,
-          status: entries[i].status,
-          answer: entries[i].answer,
-          answered_at: entries[i].answered_at,
-          created_at: entries[i].created_at,
-        });
+          question_id: entry.question_id,
+          text: entry.text,
+          detail: entry.detail,
+          status: entry.status,
+          answer: entry.answer,
+          answered_at: entry.answered_at,
+          created_at: entry.created_at,
+        };
+        updatePendingPanel(frame);
+        // Populate thread messages from the REST response.
+        if (entry.thread && Array.isArray(entry.thread)) {
+          for (var ti = 0; ti < entry.thread.length; ti++) {
+            var msg = entry.thread[ti];
+            updatePendingPanel({
+              type: "pending_question_thread_message",
+              question_id: entry.question_id,
+              role: msg.role,
+              text: msg.text,
+              timestamp: msg.timestamp,
+            });
+          }
+        }
       }
     }).catch(function () {
       // Silently ignore network errors.

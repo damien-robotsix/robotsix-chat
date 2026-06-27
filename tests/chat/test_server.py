@@ -2151,3 +2151,121 @@ async def test_pending_questions_list_includes_answer_fields() -> None:
     assert q2["status"] == "answered"
     assert q2["answer"] == "A2"
     assert q2["answered_at"] > 0
+
+
+@pytest.mark.asyncio
+async def test_pending_questions_list_includes_thread() -> None:
+    """GET /pending-questions returns the thread array for each entry."""
+    from robotsix_chat.pending_questions.store import PendingQuestionsStore
+
+    pq_store = PendingQuestionsStore()
+    entry = pq_store.add("sess-1", "Q1")
+    pq_store.append_to_thread(entry.question_id, "assistant", "Clarification")
+    pq_store.append_to_thread(entry.question_id, "user", "My reply")
+
+    async with mock_app(pq_store=pq_store) as f:
+        resp = await f.client.get("/pending-questions?session_id=sess-1")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert len(data["questions"]) == 1
+    q = data["questions"][0]
+    assert "thread" in q
+    assert len(q["thread"]) == 2
+    assert q["thread"][0]["role"] == "assistant"
+    assert q["thread"][0]["text"] == "Clarification"
+    assert q["thread"][1]["role"] == "user"
+    assert q["thread"][1]["text"] == "My reply"
+
+
+@pytest.mark.asyncio
+async def test_pending_questions_thread_append_endpoint() -> None:
+    """POST /pending-questions/{id}/thread appends a user message."""
+    from robotsix_chat.pending_questions.store import PendingQuestionsStore
+
+    pq_store = PendingQuestionsStore()
+    entry = pq_store.add("sess-1", "Q1")
+
+    async with mock_app(pq_store=pq_store) as f:
+        response = await f.client.post(
+            f"/pending-questions/{entry.question_id}/thread",
+            json={"text": "Need more info"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["question_id"] == entry.question_id
+    assert data["status"] == "message_appended"
+
+    assert len(entry.thread) == 1
+    assert entry.thread[0].role == "user"
+    assert entry.thread[0].text == "Need more info"
+
+
+@pytest.mark.asyncio
+async def test_pending_questions_thread_append_empty_text_400() -> None:
+    """POST /pending-questions/{id}/thread with empty text returns 400."""
+    from robotsix_chat.pending_questions.store import PendingQuestionsStore
+
+    pq_store = PendingQuestionsStore()
+    entry = pq_store.add("sess-1", "Q1")
+
+    async with mock_app(pq_store=pq_store) as f:
+        response = await f.client.post(
+            f"/pending-questions/{entry.question_id}/thread",
+            json={"text": ""},
+        )
+
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_pending_questions_thread_append_unknown_404() -> None:
+    """POST /pending-questions/{id}/thread on unknown id returns 404."""
+    from robotsix_chat.pending_questions.store import PendingQuestionsStore
+
+    pq_store = PendingQuestionsStore()
+
+    async with mock_app(pq_store=pq_store) as f:
+        response = await f.client.post(
+            "/pending-questions/nonexistent/thread",
+            json={"text": "ignored"},
+        )
+
+    assert response.status_code == 404
+
+
+@pytest.mark.asyncio
+async def test_pending_questions_thread_get_endpoint() -> None:
+    """GET /pending-questions/{id}/thread returns the full thread."""
+    from robotsix_chat.pending_questions.store import PendingQuestionsStore
+
+    pq_store = PendingQuestionsStore()
+    entry = pq_store.add("sess-1", "Q1")
+    pq_store.append_to_thread(entry.question_id, "assistant", "Hi")
+    pq_store.append_to_thread(entry.question_id, "user", "Hello")
+
+    async with mock_app(pq_store=pq_store) as f:
+        response = await f.client.get(f"/pending-questions/{entry.question_id}/thread")
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data["question_id"] == entry.question_id
+    assert len(data["thread"]) == 2
+    assert data["thread"][0]["role"] == "assistant"
+    assert data["thread"][0]["text"] == "Hi"
+    assert data["thread"][1]["role"] == "user"
+    assert data["thread"][1]["text"] == "Hello"
+
+
+@pytest.mark.asyncio
+async def test_pending_questions_thread_get_unknown_404() -> None:
+    """GET /pending-questions/{id}/thread on unknown id returns 404."""
+    from robotsix_chat.pending_questions.store import PendingQuestionsStore
+
+    pq_store = PendingQuestionsStore()
+
+    async with mock_app(pq_store=pq_store) as f:
+        response = await f.client.get("/pending-questions/nonexistent/thread")
+
+    assert response.status_code == 404
