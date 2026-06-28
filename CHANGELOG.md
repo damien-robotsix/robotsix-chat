@@ -13,6 +13,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   (`_parse_json_body`, `_get_session_id`, `_cleanup_session` helpers),
   eliminating 9 internal clone pairs.  No behaviour changes.
 - Consolidated `robotsix_chat.diagnostics` module entry in `docs/modules.yaml` — removed stale references to deleted source and test files, updated the description to match the current module API.
+- Added `--cov --cov-report=term-missing` to the `test` Makefile target so local test runs collect and report coverage automatically.
 
 - `consult_mill` now caches board-read results within a single turn/tick,
   avoiding redundant broker round-trips when the LLM re-reads the same board

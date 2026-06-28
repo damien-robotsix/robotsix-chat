@@ -6,7 +6,7 @@ install:
 	uv sync --all-extras
 
 test:
-	uv run pytest
+	uv run pytest --cov --cov-report=term-missing
 
 lint:
 	uv run ruff check $(SOURCES)
