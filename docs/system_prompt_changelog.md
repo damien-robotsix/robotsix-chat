@@ -42,6 +42,24 @@ number.  To revert to a previous prompt:
 
 ---
 
+## v13 — 2026-06-28 — false_default_repo_claim
+
+**Summary:** Remove the false universal claim that "new tickets default to
+robotsix-mill regardless of source" — the board manager (via `consult_mill`)
+may route tickets to `robotsix-mill` by default, but `create_board_ticket`
+has no such default (the agent provides `repo_id` explicitly).  The
+verification rule now attributes the default correctly to the board manager
+rather than asserting it as a universal fact.
+
+**Rationale:** The universal claim misleads the agent into thinking direct
+`create_board_ticket` calls might silently land on the wrong board, inviting
+unnecessary verification steps.  Fixing the wording eliminates this
+confusion while keeping the verification instruction universal (both
+`create_board_ticket` and `consult_mill` paths benefit from post-creation
+verification).
+
+**SHA256:** `ddc129c8c333f50cfc17064d815a471eeab7cf982da6206243d798dd3ad2c480`
+
 ## v12 — 2026-06-28 — board_rules_contradict_create_ticket
 
 **Summary:** Resolve contradictory Board/mill rule for ticket creation.  The

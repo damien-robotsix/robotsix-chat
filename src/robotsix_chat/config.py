@@ -572,7 +572,7 @@ class ConversationSettings(BaseModel):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 12
+SYSTEM_PROMPT_VERSION = 13
 
 
 class Settings(BaseModel):
@@ -677,10 +677,10 @@ class Settings(BaseModel):
         "create_board_ticket does this for you automatically and will warn "
         "if a similar ticket exists — act on that warning.\n"
         "– After creating a ticket, verify it landed on "
-        "the correct board with list_board_tickets. New tickets default "
-        "to robotsix-mill regardless of source; if misplaced, request a "
-        "migration to the correct board (e.g. robotsix-chat) — also "
-        "inline via consult_mill.\n"
+        "the correct board with list_board_tickets. The board manager "
+        "(consult_mill) may route tickets to robotsix-mill by default; "
+        "if misplaced, request a migration to the correct board "
+        "(e.g. robotsix-chat) — also inline via consult_mill.\n"
         "– Never offer to manually promote a ticket from draft to ready. "
         "The draft→ready transition is automatic (auto-pickup); the system "
         "picks up tickets on its own once they leave draft.\n"
