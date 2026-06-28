@@ -167,7 +167,9 @@ DEP002 = ["transformers"]
 # its result objects, and the agent builds a multi-turn `message_history` from
 # its message types. We consume it through llmio (never declare it directly), so
 # this transitive import (DEP003) is deliberate.
-DEP003 = ["pydantic_ai"]
+# `pyyaml` ships through robotsix-yaml-config; we use it directly in the skills
+# loader and ChatConfig YAML parsing — transitive by design.
+DEP003 = ["pydantic_ai", "pyyaml"]
 
 [tool.bandit]
 exclude_dirs = ["tests"]
