@@ -173,3 +173,20 @@ board_reader:
   # api_base_url: http://127.0.0.1:8077  # board API base URL; env: BOARD_READER_API_BASE_URL
   # api_token: ""                  # bearer token (empty = no auth); env: BOARD_READER_API_TOKEN
   # timeout: 30.0                  # per-request HTTP seconds; env: BOARD_READER_TIMEOUT
+
+# Direct-repository-capability — lets the agent push branches and open PRs
+# against repos in the robotsix-mill GitHub App installation scope,
+# authenticating as the app. Disabled by default. Guardrails:
+#   - Actions only for BLOCKED tickets.
+#   - Repo scope resolved dynamically from the installation at action time.
+#   - PRs are opened in a reviewable state with NO auto-merge.
+#   - No merge capability exists on this path.
+direct_repo:
+  enabled: false                   # env override: DIRECT_REPO_ENABLED
+  github_app_id: ""                # GitHub App numeric/slug id; env: DIRECT_REPO_GITHUB_APP_ID
+  github_app_private_key: ""       # RSA private key in PEM format; env: DIRECT_REPO_GITHUB_APP_PRIVATE_KEY
+  github_app_installation_id: ""   # installation id to act as; env: DIRECT_REPO_GITHUB_APP_INSTALLATION_ID
+  # github_api_base_url: https://api.github.com  # overridable for GHE; env: DIRECT_REPO_GITHUB_API_BASE_URL
+  # board_api_base_url: http://127.0.0.1:8077  # for ticket-state lookups; env: DIRECT_REPO_BOARD_API_BASE_URL
+  # board_api_token: ""            # bearer token for board API; env: DIRECT_REPO_BOARD_API_TOKEN
+  # timeout: 30.0                  # per-request HTTP seconds; env: DIRECT_REPO_TIMEOUT

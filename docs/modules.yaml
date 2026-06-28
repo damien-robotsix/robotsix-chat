@@ -113,6 +113,13 @@ modules:
       - tests/component_agent/test_config_contract.py
       - tests/component_agent/test_responder.py
 
+  - id: robotsix_chat.direct_repo
+    description: "Direct-repository-capability tools — push branches and open PRs as the robotsix-mill GitHub App installation for BLOCKED tickets."
+    paths:
+      - src/robotsix_chat/direct_repo/__init__.py
+      - src/robotsix_chat/direct_repo/client.py
+      - tests/direct_repo/__init__.py
+      - tests/direct_repo/test_direct_repo.py
   - id: robotsix_chat.knowledge
     description: "Writable knowledge-base tools for the agent — exposes build_knowledge_tools(), a factory that returns five tools the agent can call to add, append, update, list, and read durable notes across sessions. Entirely local JSON storage, no embeddings."
     paths:

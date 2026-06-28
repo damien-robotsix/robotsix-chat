@@ -15,6 +15,7 @@ dependencies = [
     "httpx",
     "pydantic",
     "python-dotenv",
+    "pyjwt",
     "uvicorn",
     "starlette",
     # Shared robotsix-stack libraries, consumed via git (see [tool.uv.sources]):
@@ -127,6 +128,12 @@ ignore_missing_imports = true
 # default dev/test env, so let mypy tolerate its absence.
 [[tool.mypy.overrides]]
 module = ["robotsix_agent_comm.*"]
+ignore_missing_imports = true
+
+# PyJWT is an optional dependency for direct_repo; tolerate its absence
+# in the default dev/test env.
+[[tool.mypy.overrides]]
+module = ["jwt"]
 ignore_missing_imports = true
 
 # asgi-correlation-id is installed at runtime but mypy can't find stubs in
