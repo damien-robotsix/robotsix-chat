@@ -117,6 +117,8 @@ class LlmioChatAgent:
         tools: list[Any] | None = None,
         request_tools_factory: Callable[[str], list[Any]] | None = None,
         model_name: str | None = None,
+        max_output_tokens: int | None = None,
+        output_stop_sequences: list[str] | None = None,
     ) -> None:
         """Store the agent configuration for later ``stream`` calls.
 
@@ -130,6 +132,14 @@ class LlmioChatAgent:
         or ``"haiku"``) passed directly to ``provider.build_agent(model=...)``.
         When ``None`` (the default), the model name is resolved from the level's
         tier default — behaviour is unchanged.
+
+        *max_output_tokens* is an optional hard cap on LLM completion tokens
+        per agent turn, passed as ``model_settings.max_tokens``.  ``None``
+        (the default) disables the cap.
+
+        *output_stop_sequences* is an optional list of stop strings passed as
+        ``model_settings.stop_sequences``.  ``None`` (the default) leaves it
+        unset.
         """
         self._model_level = model_level
         self._instruction = instruction
@@ -143,6 +153,10 @@ class LlmioChatAgent:
         # Bare model-name override for the provider (e.g. "sonnet" for
         # claudeSDK-subscription sub-agents). None → resolved from tier default.
         self._model_name = model_name
+        # Hard cap on LLM completion tokens per agent turn (model_settings.max_tokens).
+        self._max_output_tokens = max_output_tokens
+        # Optional stop strings (model_settings.stop_sequences).
+        self._output_stop_sequences = output_stop_sequences
         # Hold references to in-flight background writes so they aren't GC'd.
         self._write_tasks: set[asyncio.Task[None]] = set()
 
@@ -237,8 +251,26 @@ class LlmioChatAgent:
                             prompt: object = user_prompt
                         else:
                             prompt = message
+                        # Build model_settings when output capping is configured.
+                        model_settings = None
+                        if (
+                            self._max_output_tokens is not None
+                            or self._output_stop_sequences
+                        ):
+                            from pydantic_ai.settings import ModelSettings
+
+                            model_settings: ModelSettings = {}
+                            if self._max_output_tokens is not None:
+                                model_settings["max_tokens"] = self._max_output_tokens
+                            if self._output_stop_sequences:
+                                model_settings["stop_sequences"] = (
+                                    self._output_stop_sequences
+                                )
+
                         result = await handle.run(
-                            prompt, message_history=message_history
+                            prompt,
+                            message_history=message_history,
+                            model_settings=model_settings,
                         )
                 finally:
                     handle.close()

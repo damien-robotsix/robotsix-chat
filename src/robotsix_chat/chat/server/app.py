@@ -480,4 +480,6 @@ def create_agent_from_settings(
         tools=tools,
         request_tools_factory=request_tools_factory,
         model_name=model_override,
+        max_output_tokens=settings.agent_max_output_tokens,
+        output_stop_sequences=settings.agent_output_stop_sequences,
     )

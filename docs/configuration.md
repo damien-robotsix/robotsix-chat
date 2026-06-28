@@ -27,6 +27,18 @@ set as an environment variable.
 | `server.min_check_loop_interval_seconds` | `MIN_CHECK_LOOP_INTERVAL_SECONDS` | `60.0` | Minimum allowed interval between check-loop iterations, in seconds. |
 | `server.max_check_loops` | `MAX_CHECK_LOOPS` | `5` | Maximum number of concurrent check loops per process. |
 
+## Agent output capping
+
+These settings add an API-level enforcement layer (``model_settings.max_tokens``
+and ``model_settings.stop_sequences``) that hard-caps the assistant's completion
+tokens regardless of prompt compliance.  They complement the system-prompt
+Efficiency rules with a mechanical guardrail.
+
+| YAML path | Env var | Default | Description |
+|---|---|---|---|
+| `agent.max_output_tokens` | `AGENT_MAX_OUTPUT_TOKENS` | `1200` | Hard cap on LLM completion tokens per agent turn (passed as `model_settings.max_tokens`). Catches verbose status-read bloat (~2,211 tokens) while allowing generous responses when elaboration is requested. Set to empty/null to disable. |
+| `agent.output_stop_sequences` | `AGENT_OUTPUT_STOP_SEQUENCES` | (unset) | Optional comma-separated stop strings passed to `model_settings.stop_sequences`. When the model generates any of these strings, generation stops immediately. Default unset. |
+
 ## Image attachments
 
 Image attachments let the user send pictures alongside or instead of text.

@@ -84,6 +84,8 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "llmio.subagent_model": "subagent_model",
     "llmio.check_loop_model": "check_loop_model",
     "agent.instruction": "agent_instruction",
+    "agent.max_output_tokens": "agent_max_output_tokens",
+    "agent.output_stop_sequences": "agent_output_stop_sequences",
     "server.host": "server_host",
     "server.port": "server_port",
     "server.idle_timeout_minutes": "idle_timeout_minutes",
@@ -687,6 +689,16 @@ class Settings(BaseModel):
         allowed_image_media_types: Media types accepted for image attachments.
             Default ``["image/png", "image/jpeg", "image/gif", "image/webp"]``.
             Env override: ``ALLOWED_IMAGE_MEDIA_TYPES`` (comma-separated).
+        agent_max_output_tokens: Hard cap on LLM completion tokens per agent
+            turn, passed as ``model_settings.max_tokens``.  ``1200`` (default)
+            catches the ~2,211-token status-read bloat while allowing generous
+            responses when elaboration is requested.  Set to ``None`` to
+            disable the cap.  Env override: ``AGENT_MAX_OUTPUT_TOKENS``.
+        agent_output_stop_sequences: Optional list of stop strings passed as
+            ``model_settings.stop_sequences``.  When the model generates any
+            of these strings, generation stops immediately.  Default ``None``
+            (unset).  Env override: ``AGENT_OUTPUT_STOP_SEQUENCES``
+            (comma-separated).
 
     """
 
@@ -845,6 +857,8 @@ class Settings(BaseModel):
     allowed_image_media_types: list[str] = Field(
         default_factory=lambda: ["image/png", "image/jpeg", "image/gif", "image/webp"]
     )
+    agent_max_output_tokens: int | None = 1200
+    agent_output_stop_sequences: list[str] | None = None
 
     def model_post_init(self, __context: Any) -> None:
         """Validate fields that cannot be expressed via simple type annotations."""
@@ -1167,6 +1181,28 @@ class Settings(BaseModel):
             raw["allowed_image_media_types"] = [
                 t.strip() for t in allowed_types.split(",") if t.strip()
             ]
+
+        max_tokens_str = os.getenv("AGENT_MAX_OUTPUT_TOKENS")
+        if max_tokens_str is not None:
+            if max_tokens_str.strip() == "":
+                raw["agent_max_output_tokens"] = None
+            else:
+                try:
+                    raw["agent_max_output_tokens"] = int(max_tokens_str)
+                except ValueError:
+                    raise ValueError(
+                        f"AGENT_MAX_OUTPUT_TOKENS must be an integer or empty, "
+                        f"got {max_tokens_str!r}"
+                    ) from None
+
+        stop_seq_raw = os.getenv("AGENT_OUTPUT_STOP_SEQUENCES")
+        if stop_seq_raw is not None:
+            if stop_seq_raw.strip() == "":
+                raw["agent_output_stop_sequences"] = None
+            else:
+                raw["agent_output_stop_sequences"] = [
+                    s.strip() for s in stop_seq_raw.split(",") if s.strip()
+                ]
 
         auth_enabled = os.getenv("AUTH_ENABLED")
         if auth_enabled is not None:
