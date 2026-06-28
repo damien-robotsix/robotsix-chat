@@ -31,7 +31,7 @@ _mill_cache: contextvars.ContextVar[dict[str, str]] = contextvars.ContextVar(
     "mill_cache"
 )
 
-__all__ = ["_mill_cache", "build_mill_tools"]
+__all__ = ["build_mill_tools"]
 
 
 def build_mill_tools(settings: MillSettings) -> list[Callable[..., Any]]:

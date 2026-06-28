@@ -156,6 +156,29 @@ async def test_consult_mill_caches_result_within_turn(
 
     monkeypatch.setattr(BaseBrokeredClient, "_check_reachable", lambda self: (True, ""))
 
+    # Capture the MillClient instance so we can modify its requester's reply
+    # after the first call.  This proves the second call hits the cache rather
+    # than simply returning the old reply from an unpatched requester instance.
+    captured_client: dict[str, Any] = {}
+    _orig_init = BaseBrokeredClient.__init__
+
+    def _capturing_init(
+        self: Any,
+        settings: Any,
+        *,
+        target_agent_id: str,
+        default_reply: str,
+    ) -> None:
+        captured_client["client"] = self
+        return _orig_init(
+            self,
+            settings,
+            target_agent_id=target_agent_id,
+            default_reply=default_reply,
+        )
+
+    monkeypatch.setattr(BaseBrokeredClient, "__init__", _capturing_init)
+
     tools = build_mill_tools(_settings())
     consult_mill = tools[0]
 
@@ -167,9 +190,11 @@ async def test_consult_mill_caches_result_within_turn(
     result1 = await consult_mill("list open tickets")
     assert result1 == "board says ok"
 
-    # Patch the broker to return something different, so we can detect
-    # whether the second call actually hits it.
-    _install_fake_agent_comm(monkeypatch, reply=_Reply({"reply": "SHOULD NOT APPEAR"}))
+    # Modify the existing requester's reply.  If the second call goes to the
+    # broker it will get this reply, so the assertion below is truly gated on
+    # the cache.
+    client = captured_client["client"]
+    client._requester._reply = _Reply({"reply": "SHOULD NOT APPEAR"})
 
     # Second call with the same request — must return the cached result.
     result2 = await consult_mill("list open tickets")
