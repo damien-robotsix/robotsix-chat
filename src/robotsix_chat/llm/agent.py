@@ -257,11 +257,13 @@ class LlmioChatAgent:
             )
             try:
                 try:
-                    # Reset the board-read tracker before each attempt so
-                    # that retries can't leak a stale True from a prior run.
+                    # Reset per-turn state before each attempt so that
+                    # retries can't leak stale values from a prior run.
                     from robotsix_chat.board_reader import board_was_read
+                    from robotsix_chat.mill import _mill_cache
 
                     board_was_read.set(False)
+                    _mill_cache.set({})
 
                     with _trace_session(session_id):
                         # Build the user-prompt: plain str (no images) or a

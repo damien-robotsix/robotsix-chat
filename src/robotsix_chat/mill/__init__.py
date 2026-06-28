@@ -12,6 +12,7 @@ the underlying agent (the claude-sdk tool loop, or pydantic-ai function tools).
 
 from __future__ import annotations
 
+import contextvars
 import importlib.util
 import logging
 from collections.abc import Callable
@@ -22,7 +23,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["build_mill_tools"]
+# Per-turn cache for consult_mill results, keyed by request string.
+# Reset at the start of each agent stream() invocation (see llm/agent.py).
+# Cached results avoid redundant broker round-trips when the LLM re-reads
+# the same board data within a single turn/tick.
+_mill_cache: contextvars.ContextVar[dict[str, str]] = contextvars.ContextVar(
+    "mill_cache"
+)
+
+__all__ = ["_mill_cache", "build_mill_tools"]
 
 
 def build_mill_tools(settings: MillSettings) -> list[Callable[..., Any]]:
@@ -70,9 +79,18 @@ def build_mill_tools(settings: MillSettings) -> list[Callable[..., Any]]:
 
         """
         try:
-            return await _raw_consult(request)
+            cache = _mill_cache.get()
+        except LookupError:
+            cache = {}
+        if request in cache:
+            logger.debug("consult_mill: returning cached result for %r", request)
+            return cache[request]
+        try:
+            result = await _raw_consult(request)
         except BrokerUnavailableError:
             return retry_queue.enqueue(request)
+        cache[request] = result
+        return result
 
     async def get_board_write_queue_status() -> str:
         """Return the current state of the board-write retry queue.
