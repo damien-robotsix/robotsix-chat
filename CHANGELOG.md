@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- When replying to a Pending Question, the chat transcript now shows a recall line referencing the original question text alongside the submitted answer ("Re: '<question>' — <answer>").  This is display-only context and does not alter the agent payload.
+- Improved Pending Questions panel readability: higher contrast text and slightly larger font sizes across the panel.
+
 - Added direct-repository-capability (`direct_repo`): the chat agent can now push branches and open PRs against repos in the robotsix-mill GitHub App installation scope, authenticating as the app (JWT → short-lived installation token). Actions are gated behind a BLOCKED-state precondition and the repo set is resolved dynamically from the installation at action time. PRs are opened in a reviewable state with no auto-merge; no merge capability exists on this path.
 
 ### Changed
