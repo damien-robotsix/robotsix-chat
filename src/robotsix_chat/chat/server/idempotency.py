@@ -26,7 +26,10 @@ class MessageIdempotencyStore:
 
     def get_reply(self, session_id: str, message_id: str) -> str | None:
         """Return the recorded reply, or None if not yet completed."""
-        return self._store.get(session_id, {}).get(message_id)
+        sess = self._store.get(session_id)
+        if sess is None:
+            return None
+        return sess.get(message_id)
 
     def mark_completed(self, session_id: str, message_id: str, reply: str) -> None:
         """Record the completed reply; evict oldest entry when over cap."""
