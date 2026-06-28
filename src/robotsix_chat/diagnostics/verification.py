@@ -177,7 +177,7 @@ class EffectivenessStore:
             logger.warning("Could not create parent dir for %s", self._path)
             return
 
-        payload: dict[str, list[dict]] = {
+        payload: dict[str, list[dict[str, object]]] = {
             "fixes": [
                 {
                     "fix_proposal_id": f.fix_proposal_id,
@@ -344,20 +344,24 @@ class RecurrenceMeasurer:
         # Pre-fix events: from (applied_at - window) up to (but not including)
         # applied_at.
         pre_events = self._diag.events_since(pre_start, fix.category)
-        pre_count = sum(
-            1
-            for e in pre_events
-            if _parse_ts(e.created_at) is not None
-            and _parse_ts(e.created_at) < applied_dt  # type: ignore[operator]
+        pre_count = len(
+            [
+                e
+                for e in pre_events
+                if _parse_ts(e.created_at) is not None
+                and _parse_ts(e.created_at) < applied_dt  # type: ignore[operator]
+            ]
         )
 
         # Post-fix events: from applied_at up to (applied_at + window).
         post_events = self._diag.events_since(applied_dt, fix.category)
-        post_count = sum(
-            1
-            for e in post_events
-            if _parse_ts(e.created_at) is not None
-            and _parse_ts(e.created_at) <= post_end  # type: ignore[operator]
+        post_count = len(
+            [
+                e
+                for e in post_events
+                if _parse_ts(e.created_at) is not None
+                and _parse_ts(e.created_at) <= post_end  # type: ignore[operator]
+            ]
         )
 
         if pre_count == 0:
