@@ -42,23 +42,25 @@ number.  To revert to a previous prompt:
 
 ---
 
-## v14 — 2026-06-26 — 20260626T130813Z-update-assistant-system-prompt-to-act-mo-8b31
+## v14 — 2026-06-28 — enforce-output-brevity
 
-**Summary:** Add an "Autonomy" section instructing the assistant to
-proactively perform safe, reversible actions without waiting for explicit
-human validation, while gating risky/irreversible actions behind human
-approval.  Includes a concrete rule: when running inside a check loop and a
-verified terminal/completion state is reached, call ``stop_check_loop``
-immediately instead of emitting repeated COMPLETED/NO_CHANGE reports.
+**Summary:** Tighten the Efficiency section to make the three-sentence
+brevity rule a hard limit with explicit quota-waste framing.  Add
+targeted guidance for status/read queries (one sentence if unchanged,
+two max if changed; no unrequested timestamps/metadata/field breakdowns).
+Add check-loop tick reply rules: ``NO_CHANGE`` literal-only for unchanged
+ticks, at most one sentence for terminal-state reports.  Move the
+read-query guidance to its own bullet so it cannot be missed.
 
-**Rationale:** The assistant currently waits for explicit human validation
-on actions that are clearly safe and reversible, adding unnecessary
-friction.  In check loops specifically, it continues emitting redundant
-COMPLETED reports after a terminal state is verified instead of
-self-stopping.  This prompt-level autonomy policy eliminates that friction
-while preserving the safety gate for genuinely risky operations.
+**Rationale:** Traces show output tokens running 3-5× necessary on
+status/read replies (e.g. 2,211 tokens for a read that fits in ~600).
+Strengthening the hard-cap framing and calling out the worst-offending
+reply categories (status reads, board queries, check-loop ticks) should
+drive compliance and save ~50-63% output tokens on those turns.
 
-**SHA256:** `9819d833885687c484dd3e480eb225639a8488b6fa90a8383a38e2027fffe1cc`
+**SHA256:** `e79e4b527cb600e78ff24c3e013de7dfc37c01c6696fc11e4459b87e0187a510`
+
+---
 
 ## v13 — 2026-06-28 — false_default_repo_claim
 

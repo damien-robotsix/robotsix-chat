@@ -1,0 +1,1 @@
+chat: enforce output brevity for interactive status/read replies (honour the existing 3-sentence / no-markdown rule)
