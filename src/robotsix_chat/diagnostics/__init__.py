@@ -15,12 +15,20 @@ if TYPE_CHECKING:
 
 from .fixes import FixProposalStore, FixSurfacer, RecurrenceDetector
 from .store import DiagnosticStore
+from .verification import (
+    EffectivenessStore,
+    FixEffectivenessReport,
+    RecurrenceMeasurer,
+)
 
 __all__ = [
     "DiagnosticStore",
+    "EffectivenessStore",
+    "FixEffectivenessReport",
     "FixProposalStore",
     "FixSurfacer",
     "RecurrenceDetector",
+    "RecurrenceMeasurer",
     "build_diagnostics_tools",
 ]
 
@@ -34,6 +42,7 @@ def build_diagnostics_tools(
 
     store = DiagnosticStore(settings.store_path)
     proposal_store = FixProposalStore(settings.proposals_path)
+    eff_store = EffectivenessStore(settings.effectiveness_path)
 
     detector = RecurrenceDetector(
         store,
@@ -41,6 +50,11 @@ def build_diagnostics_tools(
         window_days=settings.recurrence_window_days,
     )
     surfacer = FixSurfacer(proposal_store)
+    measurer = RecurrenceMeasurer(
+        store,
+        eff_store,
+        observation_window_days=settings.observation_window_days,
+    )
 
     # ------------------------------------------------------------------
     # tools
@@ -123,7 +137,7 @@ def build_diagnostics_tools(
         return "\n".join(lines)
 
     async def apply_fix(proposal_id: str) -> str:
-        """Mark a fix proposal as applied.
+        """Mark a fix proposal as applied and record it for recurrence measurement.
 
         Args:
             proposal_id: The id of the proposal to apply.
@@ -135,6 +149,11 @@ def build_diagnostics_tools(
         proposal = proposal_store.apply(proposal_id)
         if proposal is None:
             return f"Error: no fix proposal found with id '{proposal_id}'"
+        # Record the fix application for recurrence measurement.
+        measurer.apply_fix(
+            fix_proposal_id=proposal.id,
+            category=proposal.category,
+        )
         return (
             f"Applied fix proposal {proposal.id} ({proposal.category}).\n"
             f"  suggested_fix: {proposal.suggested_fix}"
@@ -155,10 +174,48 @@ def build_diagnostics_tools(
             return f"Error: no fix proposal found with id '{proposal_id}'"
         return f"Rejected fix proposal {proposal.id} ({proposal.category})."
 
+    async def list_effectiveness_reports(category: str = "") -> str:
+        """List fix-effectiveness reports, optionally filtered by category.
+
+        Reports show pre-fix vs. post-fix recurrence counts and whether the
+        fix was effective.  For fixes that were ineffective (``effective=false``),
+        the report is marked as "needs revisiting."
+
+        Args:
+            category: Optional filter (e.g. ``CLONE_TARGET``, ``CI_FAILURE``).
+                Omit or pass ``""`` to list all.
+
+        Returns:
+            A formatted listing of effectiveness reports.
+
+        """
+        # Also try to generate any pending reports first.
+        _ = measurer.generate_pending_reports()
+
+        reports = eff_store.list_reports(category)
+        if not reports:
+            return "No effectiveness reports found." + (
+                f" (category: {category})" if category else ""
+            )
+
+        lines: list[str] = []
+        for r in reports:
+            status = "effective" if r.effective else "needs revisiting"
+            lines.append(
+                f"[{r.report_id}] {r.category} ({status})\n"
+                f"  fix: {r.fix_proposal_id}\n"
+                f"  applied_at: {r.applied_at}\n"
+                f"  pre_fix_count: {r.pre_fix_count}\n"
+                f"  post_fix_count: {r.post_fix_count}\n"
+                f"  reduction: {r.reduction_pct}%"
+            )
+        return "\n".join(lines)
+
     return [
         list_diagnostic_events,
         check_recurring_categories,
         list_fix_proposals,
         apply_fix,
         reject_fix,
+        list_effectiveness_reports,
     ]

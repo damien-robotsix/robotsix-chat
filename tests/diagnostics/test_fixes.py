@@ -375,14 +375,15 @@ class TestBuildDiagnosticsTools:
         tools = build_diagnostics_tools(settings)
         assert tools == []
 
-    def test_enabled_returns_five_tools(self, tmp_path) -> None:
+    def test_enabled_returns_six_tools(self, tmp_path) -> None:
         settings = DiagnosticsSettings(
             enabled=True,
             store_path=str(tmp_path / "diag.json"),
             proposals_path=str(tmp_path / "prop.json"),
+            effectiveness_path=str(tmp_path / "eff.json"),
         )
         tools = build_diagnostics_tools(settings)
-        assert len(tools) == 5
+        assert len(tools) == 6
 
     @pytest.mark.anyio
     async def test_list_diagnostic_events(self, tmp_path) -> None:

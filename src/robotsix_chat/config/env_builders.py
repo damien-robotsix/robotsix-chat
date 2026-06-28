@@ -326,6 +326,10 @@ def _build_diagnostics_raw(yaml_diagnostics: Any) -> dict[str, Any]:
     if proposals_path is not None:
         raw["proposals_path"] = proposals_path
 
+    effectiveness_path = os.getenv("DIAGNOSTICS_EFFECTIVENESS_PATH")
+    if effectiveness_path is not None:
+        raw["effectiveness_path"] = effectiveness_path
+
     threshold_str = os.getenv("DIAGNOSTICS_RECURRENCE_THRESHOLD")
     if threshold_str is not None:
         try:
@@ -344,6 +348,16 @@ def _build_diagnostics_raw(yaml_diagnostics: Any) -> dict[str, Any]:
             raise ValueError(
                 f"DIAGNOSTICS_RECURRENCE_WINDOW_DAYS must be an integer, "
                 f"got {window_str!r}"
+            ) from None
+
+    obs_window_str = os.getenv("DIAGNOSTICS_OBSERVATION_WINDOW_DAYS")
+    if obs_window_str is not None:
+        try:
+            raw["observation_window_days"] = int(obs_window_str)
+        except ValueError:
+            raise ValueError(
+                f"DIAGNOSTICS_OBSERVATION_WINDOW_DAYS must be an integer, "
+                f"got {obs_window_str!r}"
             ) from None
 
     return raw

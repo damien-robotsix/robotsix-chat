@@ -2,10 +2,11 @@
 
 from __future__ import annotations
 
+import uuid
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
 
-from robotsix_chat.diagnostics.store import DiagnosticsStore
+from robotsix_chat.diagnostics.store import DiagnosticBundle, DiagnosticStore
 from robotsix_chat.diagnostics.verification import (
     EffectivenessStore,
     FixEffectivenessReport,
@@ -27,7 +28,7 @@ def _fixed_clock(iso: str):
 
 
 def _add_entries(
-    store: DiagnosticsStore,
+    store: DiagnosticStore,
     category: str,
     base_dt: datetime,
     count: int,
@@ -37,9 +38,14 @@ def _add_entries(
     """Add *count* diagnostic entries at *hours_apart* intervals from *base_dt*."""
     for i in range(count):
         ts = (base_dt + timedelta(hours=i * hours_apart)).isoformat()
-        entry = store.add(category=category, data={"test": True})
-        # Overwrite the auto-generated timestamp with our controlled one.
-        store._entries[entry.id].timestamp = ts
+        bundle = DiagnosticBundle(
+            id=uuid.uuid4().hex,
+            category=category,
+            message=f"test event {i}",
+            details={"test": True},
+            created_at=ts,
+        )
+        store._events[bundle.id] = bundle
     store._persist()
 
 
@@ -181,7 +187,7 @@ def test_effectiveness_store_persistence_roundtrip(tmp_path: Path) -> None:
 
 def test_baseline_calculation_reduction(tmp_path: Path) -> None:
     """Pre-fix count > post-fix count → effective=True with positive reduction."""
-    diag_store = DiagnosticsStore(tmp_path / "diag.json")
+    diag_store = DiagnosticStore(tmp_path / "diag.json")
     eff_store = EffectivenessStore(tmp_path / "eff.json")
 
     # Fix applied on June 1, 2025.
@@ -227,7 +233,7 @@ def test_baseline_calculation_reduction(tmp_path: Path) -> None:
 
 def test_post_fix_increase_ineffective(tmp_path: Path) -> None:
     """Post-fix count >= pre-fix count → effective=False."""
-    diag_store = DiagnosticsStore(tmp_path / "diag.json")
+    diag_store = DiagnosticStore(tmp_path / "diag.json")
     eff_store = EffectivenessStore(tmp_path / "eff.json")
 
     measurer = RecurrenceMeasurer(
@@ -270,7 +276,7 @@ def test_post_fix_increase_ineffective(tmp_path: Path) -> None:
 
 def test_zero_pre_fix_baseline_insufficient(tmp_path: Path) -> None:
     """Zero pre-fix events → effective=False (baseline insufficient)."""
-    diag_store = DiagnosticsStore(tmp_path / "diag.json")
+    diag_store = DiagnosticStore(tmp_path / "diag.json")
     eff_store = EffectivenessStore(tmp_path / "eff.json")
 
     measurer = RecurrenceMeasurer(
@@ -305,7 +311,7 @@ def test_zero_pre_fix_baseline_insufficient(tmp_path: Path) -> None:
 
 def test_generate_report_nonexistent_fix(tmp_path: Path) -> None:
     """generate_report returns None for unknown fix ids."""
-    diag_store = DiagnosticsStore(tmp_path / "diag.json")
+    diag_store = DiagnosticStore(tmp_path / "diag.json")
     eff_store = EffectivenessStore(tmp_path / "eff.json")
     measurer = RecurrenceMeasurer(diag_store, eff_store)
 
@@ -314,7 +320,7 @@ def test_generate_report_nonexistent_fix(tmp_path: Path) -> None:
 
 def test_generate_report_idempotent(tmp_path: Path) -> None:
     """Calling generate_report twice returns the same report (no double-count)."""
-    diag_store = DiagnosticsStore(tmp_path / "diag.json")
+    diag_store = DiagnosticStore(tmp_path / "diag.json")
     eff_store = EffectivenessStore(tmp_path / "eff.json")
 
     measurer = RecurrenceMeasurer(
@@ -356,7 +362,7 @@ def test_generate_pending_reports_only_after_window(
     tmp_path: Path,
 ) -> None:
     """Reports are only created after the observation window elapses."""
-    diag_store = DiagnosticsStore(tmp_path / "diag.json")
+    diag_store = DiagnosticStore(tmp_path / "diag.json")
     eff_store = EffectivenessStore(tmp_path / "eff.json")
 
     # Fix applied on June 1.  With a 30-day window, the report should only
@@ -405,7 +411,7 @@ def test_generate_pending_reports_only_after_window(
 
 def test_generate_pending_reports_skips_existing(tmp_path: Path) -> None:
     """generate_pending_reports does not regenerate already-existing reports."""
-    diag_store = DiagnosticsStore(tmp_path / "diag.json")
+    diag_store = DiagnosticStore(tmp_path / "diag.json")
     eff_store = EffectivenessStore(tmp_path / "eff.json")
 
     measurer = RecurrenceMeasurer(
@@ -447,7 +453,7 @@ def test_generate_pending_reports_skips_existing(tmp_path: Path) -> None:
 
 def test_reduction_pct_precision(tmp_path: Path) -> None:
     """reduction_pct is rounded to 1 decimal place."""
-    diag_store = DiagnosticsStore(tmp_path / "diag.json")
+    diag_store = DiagnosticStore(tmp_path / "diag.json")
     eff_store = EffectivenessStore(tmp_path / "eff.json")
 
     measurer = RecurrenceMeasurer(
@@ -485,7 +491,7 @@ def test_reduction_pct_precision(tmp_path: Path) -> None:
 
 def test_equal_pre_post_counts_not_effective(tmp_path: Path) -> None:
     """Equal pre and post counts → effective=False."""
-    diag_store = DiagnosticsStore(tmp_path / "diag.json")
+    diag_store = DiagnosticStore(tmp_path / "diag.json")
     eff_store = EffectivenessStore(tmp_path / "eff.json")
 
     measurer = RecurrenceMeasurer(
