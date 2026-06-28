@@ -2354,7 +2354,7 @@ class TestMessageIdempotency:
 
     @pytest.mark.asyncio
     async def test_same_message_id_concurrent(self) -> None:
-        """Two concurrent POSTs with same message_id → one agent call, both get reply."""
+        """Concurrent POSTs with same message_id → one agent call, both get reply."""
         async with mock_app(tokens=["Hello", " ", "world!"]) as f:
             import asyncio
 
@@ -2524,9 +2524,7 @@ class TestMessageIdempotency:
                 },
             )
 
-        async with mock_app(
-            tokens=["second reply"], conversation_store=store
-        ) as f2:
+        async with mock_app(tokens=["second reply"], conversation_store=store) as f2:
             await f2.client.post(
                 "/chat",
                 json={

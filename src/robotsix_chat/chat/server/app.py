@@ -194,6 +194,9 @@ def create_app(
             same instance to the ``ConversationDeliveryChannel`` so
             tick-triggered runs and user-initiated ``/chat`` requests
             are serialized together.
+        msg_id_store: Per-session message idempotency store that ensures
+            duplicate messages return the cached reply.  When ``None``
+            (default), a fresh :class:`MessageIdempotencyStore` is created.
         pq_store: Per-server pending-questions store for the real-time
             agent-questions panel.  When ``None`` (default), a fresh
             :class:`PendingQuestionsStore` is created and wired to the

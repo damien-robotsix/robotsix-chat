@@ -251,9 +251,7 @@ async def chat_endpoint(
     # -- parse & validate message_id (optional) ---------------------------
     message_id = body.get("message_id")
     if message_id is not None and not isinstance(message_id, str):
-        return JSONResponse(
-            {"error": "invalid 'message_id' field"}, status_code=400
-        )
+        return JSONResponse({"error": "invalid 'message_id' field"}, status_code=400)
     if message_id is not None and len(message_id) > 128:
         return JSONResponse(
             {"error": "'message_id' exceeds maximum length"}, status_code=400
