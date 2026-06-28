@@ -10,6 +10,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 ## [Unreleased]
 
 ### Changed
+- Extracted the three inner tool closures from `build_check_loop_tools` in `delegation.py` to module-level async functions (`_start_check_loop_tool`, `_stop_check_loop_tool`, `_list_check_loops_tool`) that take captured state as explicit keyword arguments, reducing nesting and making each tool independently testable.
 - Scoped the "new tickets default to robotsix-mill" system-prompt claim to `consult_mill` specifically, replacing a false universal statement ("regardless of source") with accurate board-manager-default wording.  `SYSTEM_PROMPT_VERSION` bumped to 12.
 - Split `src/robotsix_chat/chat/server.py` (1656 lines) into a `server/` package with four modules (`routes.py`, `app.py`, `cli.py`, `__init__.py`) for improved maintainability. All public symbols are re-exported from `__init__.py` preserving backward compatibility.
 - Folded the runtime `_AGENT_GUARD` hardening layer into the version-governed `agent_instruction` default so guard changes are tracked by `SYSTEM_PROMPT_VERSION`, the system prompt changelog, SHA256, and CI enforcement.
