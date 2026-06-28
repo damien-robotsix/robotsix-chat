@@ -116,7 +116,7 @@ per-file-ignores = {"src/robotsix_chat/chat/server/routes.py" = ["S105"], "tests
 [tool.mypy]
 python_version = "3.14"
 strict = true
-exclude = ["vulture_whitelist.py", ".local-deps"]
+exclude = ["vulture_whitelist.py", ".local-deps", "_stubs"]
 
 # cognee (the optional `memory` extra) ships no type information.
 [[tool.mypy.overrides]]
