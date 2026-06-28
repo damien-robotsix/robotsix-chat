@@ -60,9 +60,9 @@ def _is_broker_unavailable(exc: BaseException) -> bool:
         )
         from robotsix_agent_comm.transport.errors import TransportTimeoutError
     except ImportError:
-        AgentNotFoundError = ()  # type: ignore[assignment]
-        DeliveryError = ()  # type: ignore[assignment]
-        TransportTimeoutError = ()  # type: ignore[assignment]
+        AgentNotFoundError = ()
+        DeliveryError = ()
+        TransportTimeoutError = ()
 
     if isinstance(exc, (AgentNotFoundError, DeliveryError, TransportTimeoutError)):
         return True
