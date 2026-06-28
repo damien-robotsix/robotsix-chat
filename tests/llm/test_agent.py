@@ -575,3 +575,123 @@ async def test_model_name_default_is_none() -> None:
 
     kwargs = provider.build_agent.call_args.kwargs
     assert kwargs["model"] is None
+
+
+# ---------------------------------------------------------------------------
+# Board narrative guard — hallucination prevention
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_board_narrative_guard_blocks_fabricated_ticket_ids() -> None:
+    """Agent output containing ticket IDs is replaced when no board tool was called."""
+    # A fabricated response referencing a ticket ID.
+    fabricated = (
+        "I checked and found ticket 20250624T020652Z-my-ticket-a1b2 "
+        "is currently in the ready state."
+    )
+    create_model, _ = _patched_create_model(fabricated)
+
+    with (
+        patch("robotsix_chat.llm.agent.create_model", create_model),
+        patch(
+            "robotsix_chat.llm.agent._BOARD_GUARD_MESSAGE",
+            "GUARD_TRIGGERED",
+        ),
+    ):
+        # The context var must be False (no board tool called) — default is
+        # False, so the guard should fire.
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        chunks = [c async for c in agent.stream("what tickets are open?")]
+
+    assert chunks == ["GUARD_TRIGGERED"]
+
+
+@pytest.mark.asyncio
+async def test_board_narrative_guard_blocks_fabricated_state_narrative() -> None:
+    """Agent output with ticket+state keywords is replaced when no board tool called."""
+    # A fabricated response describing board state without ticket IDs.
+    fabricated = (
+        "There are 3 open tickets on the board and 2 in draft state. "
+        "The epic backlog has 5 items ready for review."
+    )
+    create_model, _ = _patched_create_model(fabricated)
+
+    with (
+        patch("robotsix_chat.llm.agent.create_model", create_model),
+        patch(
+            "robotsix_chat.llm.agent._BOARD_GUARD_MESSAGE",
+            "GUARD_TRIGGERED",
+        ),
+    ):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        chunks = [c async for c in agent.stream("what's on the board?")]
+
+    assert chunks == ["GUARD_TRIGGERED"]
+
+
+@pytest.mark.asyncio
+async def test_board_narrative_guard_allows_clean_response() -> None:
+    """A normal response with no board narrative passes through."""
+    clean = "Hello! How can I help you today?"
+    create_model, _ = _patched_create_model(clean)
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        chunks = [c async for c in agent.stream("hi")]
+
+    assert chunks == ["Hello! How can I help you today?"]
+
+
+@pytest.mark.asyncio
+async def test_board_narrative_guard_allows_response_when_board_was_read() -> None:
+    """A response with ticket IDs passes when a board tool was called during the run."""
+    fabricated = "Ticket 20250624T020652Z-my-ticket-a1b2 is in the ready state."
+
+    from robotsix_chat.board_reader import board_was_read as real_var
+
+    handle = MagicMock()
+
+    async def fake_run(_message: str, *, message_history: object = None) -> MagicMock:
+        # Simulate a board-read tool having been called during this turn.
+        real_var.set(True)
+        result = MagicMock()
+        result.output = fabricated
+        return result
+
+    handle.run = fake_run
+    handle.close = MagicMock()
+    provider = MagicMock()
+    provider.build_agent.return_value = handle
+    create_model = MagicMock(return_value=provider)
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        chunks = [c async for c in agent.stream("what's the status?")]
+
+    # Guard should NOT fire — board_was_read was set to True by the mock tool.
+    assert chunks == [fabricated]
+
+
+@pytest.mark.asyncio
+async def test_board_narrative_guard_logs_warning_on_block(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    """When the guard fires, it logs a WARNING with response length."""
+    fabricated = "Ticket 20250624T020652Z-my-ticket-a1b2 is open."
+    create_model, _ = _patched_create_model(fabricated)
+
+    with (
+        patch("robotsix_chat.llm.agent.create_model", create_model),
+        patch(
+            "robotsix_chat.llm.agent._BOARD_GUARD_MESSAGE",
+            "GUARD_TRIGGERED",
+        ),
+        caplog.at_level("WARNING", logger="robotsix_chat.llm.agent"),
+    ):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        _ = [c async for c in agent.stream("tickets?")]
+
+    assert len(caplog.records) == 1
+    assert caplog.records[0].levelname == "WARNING"
+    assert "Blocked fabricated board narrative" in caplog.records[0].message

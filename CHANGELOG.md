@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Board narrative hallucination guard: agent responses that describe
+  board/ticket state without a prior `list_board_tickets` /
+  `read_board_ticket` tool call in the same turn are now blocked and
+  replaced with a prompt to read the board first.  Uses a
+  `contextvars.ContextVar` tracker set by every board-reader tool
+  and a keyword/pattern heuristic on the response text.
 - Diagnostics subsystem: failure-category enum and deterministic
   keyword/regex categorizer for BLOCKED-ticket diagnostic bundles.
   Includes `CLONE_TARGET`, `CI_FAILURE`, `DEPENDENCY`, `REFINEMENT`,

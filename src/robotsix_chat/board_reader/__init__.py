@@ -12,6 +12,7 @@ the underlying agent (the claude-sdk tool loop, or pydantic-ai function tools).
 
 from __future__ import annotations
 
+import contextvars
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -21,7 +22,15 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-__all__ = ["build_board_reader_tools"]
+# Set by list_board_tickets / read_board_ticket / create_board_ticket when
+# any of them is called during an agent turn.  Checked by the agent after
+# the turn completes: if the response looks like board/ticket narrative but
+# no board tool was called, the response is blocked (hallucination guard).
+board_was_read: contextvars.ContextVar[bool] = contextvars.ContextVar(
+    "board_was_read", default=False
+)
+
+__all__ = ["board_was_read", "build_board_reader_tools"]
 
 
 def build_board_reader_tools(
@@ -62,6 +71,7 @@ def build_board_reader_tools(
             The board API's JSON response as a text string.
 
         """
+        board_was_read.set(True)
         return await client.list_tickets(
             repo_id=repo_id,
             include_closed=include_closed,
@@ -88,6 +98,7 @@ def build_board_reader_tools(
             message when the ticket is not found.
 
         """
+        board_was_read.set(True)
         return await client.get_ticket(ticket_id)
 
     async def create_board_ticket(
@@ -136,6 +147,8 @@ def build_board_reader_tools(
         import json
 
         from .dedup import find_duplicate_candidates
+
+        board_was_read.set(True)
 
         if not force:
             raw = await client.list_tickets(
