@@ -16,14 +16,11 @@ Returns no tools when the direct-repo capability is disabled.
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from robotsix_chat.config import DirectRepoSettings
-
-logger = logging.getLogger(__name__)
 
 __all__ = ["build_direct_repo_tools"]
 

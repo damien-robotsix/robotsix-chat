@@ -175,9 +175,7 @@ class DirectRepoClient:
         try:
             return json.loads(result.text or "")
         except json.JSONDecodeError as exc:
-            raise RuntimeError(
-                f"GitHub API GET {path}: invalid JSON: {exc}"
-            ) from exc
+            raise RuntimeError(f"GitHub API GET {path}: invalid JSON: {exc}") from exc
 
     async def _post_json(self, path: str, body: dict[str, Any]) -> Any:
         """POST *path* on the GitHub API and return the parsed JSON body."""
@@ -195,9 +193,7 @@ class DirectRepoClient:
         try:
             return json.loads(result.text or "")
         except json.JSONDecodeError as exc:
-            raise RuntimeError(
-                f"GitHub API POST {path}: invalid JSON: {exc}"
-            ) from exc
+            raise RuntimeError(f"GitHub API POST {path}: invalid JSON: {exc}") from exc
 
     # -- public API --------------------------------------------------------
 
