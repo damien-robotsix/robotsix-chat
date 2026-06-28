@@ -1,0 +1,1 @@
+Consolidate modules robotsix_chat.diagnostics, robotsix_chat.diagnostics: duplicate entries in docs/modules.yaml — merge into single module entry
