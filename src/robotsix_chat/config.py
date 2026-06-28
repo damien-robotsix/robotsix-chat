@@ -104,7 +104,6 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "diagnostics": "diagnostics",
     "version_check": "version_check",
     "knowledge": "knowledge",
-    "diagnostics": "diagnostics",
     "self_review": "self_review",
     "component_agent": "component_agent",
     "component_client": "component_client",
@@ -359,28 +358,6 @@ class BoardReaderSettings(BaseModel):
     api_token: str = ""
     timeout: float = 30.0
     cache_ttl: float = 60.0
-
-
-class DiagnosticsSettings(BaseModel):
-    """Blocked-ticket diagnostics capture and inspection.
-
-    When enabled, the agent gains a ``list_diagnostic_records`` tool to
-    inspect captured diagnostic bundles.  A background poller (started by
-    the server) detects BLOCKED state transitions and records diagnostic
-    snapshots.
-
-    Attributes:
-        enabled: Master switch.  Default ``False`` — diagnostics capture
-            is opt-in.
-        poll_interval: Seconds between board polls for BLOCKED transitions.
-        data_dir: Path to the JSON persistence file.  Default
-            ``.data/diagnostics.json``.
-
-    """
-
-    enabled: bool = False
-    poll_interval: float = 30.0
-    data_dir: str = ".data/diagnostics.json"
 
 
 class DirectRepoSettings(BaseModel):
@@ -868,7 +845,6 @@ class Settings(BaseModel):
     diagnostics: DiagnosticsSettings = Field(default_factory=DiagnosticsSettings)
     refdocs: RefDocsSettings = Field(default_factory=RefDocsSettings)
     board_reader: BoardReaderSettings = Field(default_factory=BoardReaderSettings)
-    diagnostics: DiagnosticsSettings = Field(default_factory=DiagnosticsSettings)
     knowledge: KnowledgeSettings = Field(default_factory=KnowledgeSettings)
     self_review: SelfReviewSettings = Field(default_factory=SelfReviewSettings)
     component_agent: ComponentAgentSettings = Field(
@@ -1252,10 +1228,6 @@ class Settings(BaseModel):
         if board_reader_raw:
             raw["board_reader"] = board_reader_raw
 
-        diagnostics_raw = _build_diagnostics_raw(flat.get("diagnostics"))
-        if diagnostics_raw:
-            raw["diagnostics"] = diagnostics_raw
-
         knowledge_raw = _build_knowledge_raw(flat.get("knowledge"))
         if knowledge_raw:
             raw["knowledge"] = knowledge_raw
@@ -1584,36 +1556,6 @@ def _build_board_reader_raw(yaml_board_reader: Any) -> dict[str, Any]:
             ) from None
 
     return board_reader_raw
-
-
-def _build_diagnostics_raw(yaml_diagnostics: Any) -> dict[str, Any]:
-    """Overlay ``DIAGNOSTICS_*`` env vars onto the YAML ``diagnostics`` subtree.
-
-    Returns a dict ready to parse into :class:`DiagnosticsSettings`, or empty
-    when nothing is set.
-    """
-    diagnostics_raw: dict[str, Any] = dict(yaml_diagnostics or {})
-
-    def env_set(field: str, env_name: str) -> None:
-        value = os.getenv(env_name)
-        if value is not None:
-            diagnostics_raw[field] = value
-
-    enabled = os.getenv("DIAGNOSTICS_ENABLED")
-    if enabled is not None:
-        diagnostics_raw["enabled"] = _parse_bool(enabled)
-    env_set("data_dir", "DIAGNOSTICS_DATA_DIR")
-
-    poll_str = os.getenv("DIAGNOSTICS_POLL_INTERVAL")
-    if poll_str is not None:
-        try:
-            diagnostics_raw["poll_interval"] = float(poll_str)
-        except ValueError:
-            raise ValueError(
-                f"DIAGNOSTICS_POLL_INTERVAL must be a number, got {poll_str!r}"
-            ) from None
-
-    return diagnostics_raw
 
 
 def _build_direct_repo_raw(yaml_direct_repo: Any) -> dict[str, Any]:

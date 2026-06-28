@@ -90,8 +90,10 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "BOARD_READER_TIMEOUT",
         "BOARD_READER_CACHE_TTL",
         "DIAGNOSTICS_ENABLED",
-        "DIAGNOSTICS_POLL_INTERVAL",
-        "DIAGNOSTICS_DATA_DIR",
+        "DIAGNOSTICS_STORE_PATH",
+        "DIAGNOSTICS_PROPOSALS_PATH",
+        "DIAGNOSTICS_RECURRENCE_THRESHOLD",
+        "DIAGNOSTICS_RECURRENCE_WINDOW_DAYS",
         "CALENDAR_ENABLED",
         "CALENDAR_BROKER_HOST",
         "CALENDAR_BROKER_PORT",
@@ -1483,45 +1485,49 @@ def test_board_reader_env_overrides_yaml(
 # ---------------------------------------------------------------------------
 
 
-def test_diagnostics_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Diagnostics is off by default, with sensible defaults present."""
+def test_diagnostics_enabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Diagnostics is on by default, with sensible defaults present."""
     _wipe_env_vars(monkeypatch)
 
     settings = Settings.from_env()
 
-    assert settings.diagnostics.enabled is False
-    assert settings.diagnostics.poll_interval == 30.0
-    assert settings.diagnostics.data_dir == ".data/diagnostics.json"
-
-
-def test_diagnostics_enabled_ok() -> None:
-    """Diagnostics constructs with no extra requirements beyond enabled."""
-    settings = Settings(diagnostics=DiagnosticsSettings(enabled=True))
     assert settings.diagnostics.enabled is True
+    assert settings.diagnostics.store_path == ".data/diagnostics.json"
+    assert settings.diagnostics.proposals_path == ".data/fix_proposals.json"
+    assert settings.diagnostics.recurrence_threshold == 3
+    assert settings.diagnostics.recurrence_window_days == 30
+
+
+def test_diagnostics_disabled_ok() -> None:
+    """Diagnostics can be explicitly disabled."""
+    settings = Settings(diagnostics=DiagnosticsSettings(enabled=False))
+    assert settings.diagnostics.enabled is False
 
 
 def test_diagnostics_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """``DIAGNOSTICS_*`` env vars populate the nested diagnostics settings."""
     _wipe_env_vars(monkeypatch)
-    monkeypatch.setenv("DIAGNOSTICS_ENABLED", "true")
-    monkeypatch.setenv("DIAGNOSTICS_POLL_INTERVAL", "60.0")
-    monkeypatch.setenv("DIAGNOSTICS_DATA_DIR", "/custom/diag.json")
+    monkeypatch.setenv("DIAGNOSTICS_ENABLED", "false")
+    monkeypatch.setenv("DIAGNOSTICS_STORE_PATH", "/custom/diag.json")
+    monkeypatch.setenv("DIAGNOSTICS_RECURRENCE_THRESHOLD", "5")
+    monkeypatch.setenv("DIAGNOSTICS_RECURRENCE_WINDOW_DAYS", "60")
 
     settings = Settings.from_env()
 
-    assert settings.diagnostics.enabled is True
-    assert settings.diagnostics.poll_interval == 60.0
-    assert settings.diagnostics.data_dir == "/custom/diag.json"
+    assert settings.diagnostics.enabled is False
+    assert settings.diagnostics.store_path == "/custom/diag.json"
+    assert settings.diagnostics.recurrence_threshold == 5
+    assert settings.diagnostics.recurrence_window_days == 60
 
 
-def test_diagnostics_poll_interval_invalid_raises(
+def test_diagnostics_recurrence_threshold_invalid_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A non-numeric ``DIAGNOSTICS_POLL_INTERVAL`` raises ``ValueError``."""
+    """A non-integer ``DIAGNOSTICS_RECURRENCE_THRESHOLD`` raises ``ValueError``."""
     _wipe_env_vars(monkeypatch)
-    monkeypatch.setenv("DIAGNOSTICS_POLL_INTERVAL", "fast")
+    monkeypatch.setenv("DIAGNOSTICS_RECURRENCE_THRESHOLD", "fast")
 
-    with pytest.raises(ValueError, match="DIAGNOSTICS_POLL_INTERVAL"):
+    with pytest.raises(ValueError, match="DIAGNOSTICS_RECURRENCE_THRESHOLD"):
         Settings.from_env()
 
 
@@ -1535,16 +1541,16 @@ def test_diagnostics_env_overrides_yaml(
     config_file.write_text(
         "diagnostics:\n"
         "  enabled: true\n"
-        "  poll_interval: 10.0\n"
-        "  data_dir: /yaml/diag.json\n"
+        "  store_path: /yaml/diag.json\n"
+        "  recurrence_threshold: 10\n"
     )
-    monkeypatch.setenv("DIAGNOSTICS_POLL_INTERVAL", "45.0")
+    monkeypatch.setenv("DIAGNOSTICS_RECURRENCE_THRESHOLD", "7")
 
     settings = Settings.load(config_path=config_file)
 
     assert settings.diagnostics.enabled is True
-    assert settings.diagnostics.poll_interval == 45.0  # env overrides YAML
-    assert settings.diagnostics.data_dir == "/yaml/diag.json"  # un-overridden YAML
+    assert settings.diagnostics.recurrence_threshold == 7  # env overrides YAML
+    assert settings.diagnostics.store_path == "/yaml/diag.json"  # un-overridden YAML
 
 
 # ---------------------------------------------------------------------------
