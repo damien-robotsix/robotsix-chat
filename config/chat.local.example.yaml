@@ -25,7 +25,8 @@
 llmio:
   model_level: 3                 # 1 (cheapest) | 2 | 3 (best); env: LLMIO_MODEL_LEVEL
   # api_key: sk-or-...           # required for levels 1-2 (OpenRouter); env: LLMIO_API_KEY
-  # subagent_model: sonnet      # background sub-agent model (claudeSDK only): sonnet | haiku | null=match foreground; env: LLMIO_SUBAGENT_MODEL
+  # subagent_model: sonnet      # delegation sub-agent model (claudeSDK only): sonnet | haiku | null=match foreground; env: LLMIO_SUBAGENT_MODEL
+  # check_loop_model: haiku      # check-loop monitoring model (claudeSDK only): haiku | sonnet | null=match foreground; env: LLMIO_CHECK_LOOP_MODEL
 
 # The LLM agent's behaviour.
 agent:

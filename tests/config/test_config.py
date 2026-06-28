@@ -35,6 +35,7 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "LLMIO_MODEL_LEVEL",
         "LLMIO_API_KEY",
         "LLMIO_SUBAGENT_MODEL",
+        "LLMIO_CHECK_LOOP_MODEL",
         "AGENT_INSTRUCTION",
         "SERVER_HOST",
         "SERVER_PORT",
@@ -1149,6 +1150,94 @@ def test_subagent_model_env_overrides_yaml(
     settings = Settings.load(config_path=config_file)
 
     assert settings.subagent_model == "haiku"
+
+
+# ---------------------------------------------------------------------------
+# check_loop_model
+# ---------------------------------------------------------------------------
+
+
+def test_check_loop_model_default() -> None:
+    """``check_loop_model`` defaults to ``"haiku"``."""
+    settings = Settings()
+    assert settings.check_loop_model == "haiku"
+
+
+def test_check_loop_model_explicit() -> None:
+    """``check_loop_model`` can be set to ``"sonnet"``."""
+    settings = Settings(check_loop_model="sonnet")
+    assert settings.check_loop_model == "sonnet"
+
+
+def test_check_loop_model_null_disables_downgrade() -> None:
+    """``check_loop_model=None`` disables the downgrade (None stored)."""
+    settings = Settings(check_loop_model=None)
+    assert settings.check_loop_model is None
+
+
+def test_check_loop_model_from_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``llmio.check_loop_model`` in YAML overrides the default."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text("llmio:\n  check_loop_model: sonnet\n")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.check_loop_model == "sonnet"
+
+
+def test_check_loop_model_yaml_null_stores_none(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``llmio.check_loop_model: null`` in YAML results in ``None``."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text("llmio:\n  check_loop_model: null\n")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.check_loop_model is None
+
+
+def test_check_loop_model_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``LLMIO_CHECK_LOOP_MODEL`` env var overrides the default."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("LLMIO_CHECK_LOOP_MODEL", "sonnet")
+
+    settings = Settings.from_env()
+
+    assert settings.check_loop_model == "sonnet"
+
+
+def test_check_loop_model_env_empty_string_is_none(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty ``LLMIO_CHECK_LOOP_MODEL`` is treated as ``None`` (no override)."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("LLMIO_CHECK_LOOP_MODEL", "")
+
+    settings = Settings.from_env()
+
+    assert settings.check_loop_model is None
+
+
+def test_check_loop_model_env_overrides_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Env ``LLMIO_CHECK_LOOP_MODEL`` wins over YAML ``llmio.check_loop_model``."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text("llmio:\n  check_loop_model: haiku\n")
+    monkeypatch.setenv("LLMIO_CHECK_LOOP_MODEL", "sonnet")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.check_loop_model == "sonnet"
 
 
 # ---------------------------------------------------------------------------

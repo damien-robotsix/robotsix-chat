@@ -82,6 +82,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "llmio.model_level": "llmio_model_level",
     "llmio.api_key": "llmio_api_key",  # pragma: allowlist secret
     "llmio.subagent_model": "subagent_model",
+    "llmio.check_loop_model": "check_loop_model",
     "agent.instruction": "agent_instruction",
     "server.host": "server_host",
     "server.port": "server_port",
@@ -637,13 +638,25 @@ class Settings(BaseModel):
             level's provider needs one (e.g. ``openrouter``); unused
             by keyless providers like ``claudeSDK``.
         subagent_model: Bare Claude model name override for background
-            sub-agents (delegate_task and check-loop workers).  Only applied
-            when the foreground level uses the keyless ``claudeSDK`` provider
+            sub-agents spawned via ``delegate_task``.  Only applied when the
+            foreground level uses the keyless ``claudeSDK`` provider
             (level 3).  ``"sonnet"`` (default) is cheaper than Opus and
-            stays on the subscription; set ``"haiku"`` for the cheapest
-            polling, or ``null`` to disable the downgrade (sub-agents then
-            match the foreground model).  Ignored for levels 1–2
+            stays on the subscription; set ``"haiku"`` for cheaper
+            delegation, or ``null`` to disable the downgrade (delegation
+            tasks then match the foreground model).  Ignored for levels 1–2
             (OpenRouter).  Env override: ``LLMIO_SUBAGENT_MODEL``.
+
+            Check-loop workers use :attr:`check_loop_model` instead; the two
+            pools have independent model overrides.
+        check_loop_model: Bare Claude model name override for check-loop
+            workers (recurring monitoring / status-check ticks).  Only
+            applied when the foreground level uses the keyless ``claudeSDK``
+            provider (level 3).  ``"haiku"`` (default) is the cheapest
+            subscription tier — ideal for binary "is it done yet?" polling.
+            Set ``"sonnet"`` for more nuanced monitoring, or ``null`` to
+            disable the downgrade (check-loop ticks then match the foreground
+            model).  Ignored for levels 1–2 (OpenRouter).
+            Env override: ``LLMIO_CHECK_LOOP_MODEL``.
         agent_instruction: System instruction handed to the LLM agent.
             Includes delegate-vs-inline guidance for background tasks.
         server_host: Host address the chat SSE server binds to.
@@ -680,6 +693,7 @@ class Settings(BaseModel):
     llmio_model_level: int = 3
     llmio_api_key: str = ""
     subagent_model: str | None = "sonnet"
+    check_loop_model: str | None = "haiku"
     agent_instruction: str = (
         "You are a helpful assistant. "
         "You have a local, durable knowledge base "
@@ -1031,6 +1045,9 @@ class Settings(BaseModel):
         subagent_val = os.getenv("LLMIO_SUBAGENT_MODEL")
         if subagent_val is not None:
             raw["subagent_model"] = subagent_val or None
+        check_loop_val = os.getenv("LLMIO_CHECK_LOOP_MODEL")
+        if check_loop_val is not None:
+            raw["check_loop_model"] = check_loop_val or None
         env_override("agent_instruction", "AGENT_INSTRUCTION")
         env_override("server_host", "SERVER_HOST")
         env_override("log_level", "LOG_LEVEL")
