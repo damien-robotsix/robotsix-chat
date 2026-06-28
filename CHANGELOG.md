@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added direct-repository-capability (`direct_repo`): the chat agent can now push branches and open PRs against repos in the robotsix-mill GitHub App installation scope, authenticating as the app (JWT → short-lived installation token). Actions are gated behind a BLOCKED-state precondition and the repo set is resolved dynamically from the installation at action time. PRs are opened in a reviewable state with no auto-merge; no merge capability exists on this path.
+
 ### Changed
 - Split `src/robotsix_chat/chat/server.py` (1656 lines) into a `server/` package with four modules (`routes.py`, `app.py`, `cli.py`, `__init__.py`) for improved maintainability. All public symbols are re-exported from `__init__.py` preserving backward compatibility.
 - Folded the runtime `_AGENT_GUARD` hardening layer into the version-governed `agent_instruction` default so guard changes are tracked by `SYSTEM_PROMPT_VERSION`, the system prompt changelog, SHA256, and CI enforcement.

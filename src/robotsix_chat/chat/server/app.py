@@ -28,6 +28,7 @@ from robotsix_chat.chat.events import EventBus
 from robotsix_chat.chat.tasks import TaskRegistry
 from robotsix_chat.component_client import build_component_tools
 from robotsix_chat.config import Settings, level_needs_api_key
+from robotsix_chat.direct_repo import build_direct_repo_tools
 from robotsix_chat.knowledge import build_knowledge_tools
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.mail import build_mail_tools
@@ -367,6 +368,7 @@ def create_agent_from_settings(
         *build_component_tools(settings.component_client),
         *build_refdocs_tools(settings.refdocs),
         *build_board_reader_tools(settings.board_reader),
+        *build_direct_repo_tools(settings.direct_repo),
         *build_knowledge_tools(settings.knowledge),
         *build_recent_activity_tools(settings.self_review, conversation_store),
         *build_version_check_tools(settings.version_check),

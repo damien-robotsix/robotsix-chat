@@ -106,6 +106,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "component_agent": "component_agent",
     "component_client": "component_client",
     "pending_questions": "pending_questions",
+    "direct_repo": "direct_repo",
 }
 
 
@@ -355,6 +356,51 @@ class BoardReaderSettings(BaseModel):
     api_token: str = ""
     timeout: float = 30.0
     cache_ttl: float = 60.0
+
+
+class DirectRepoSettings(BaseModel):
+    """Direct-repo push-branch + open-PR capability as the robotsix-mill GitHub App.
+
+    When enabled, the chat agent gains two tools: ``push_direct_repo_branch``
+    (create/push a branch with file changes) and ``open_direct_repo_pr``
+    (open a PR from a branch).  Both authenticate as the configured GitHub App
+    installation (JWT → short-lived installation token) and dynamically resolve
+    the allowed repo set from the installation at action time — no static
+    allowlist.
+
+    **Guardrails built into the tools (not configurable):**
+    - Actions are ONLY permitted for tickets in BLOCKED state.
+    - Repo scope is resolved dynamically from the GitHub App installation.
+    - PRs are opened in a reviewable state with no auto-merge.
+    - No merge capability exists on this path.
+
+    Attributes:
+        enabled: Master switch.  When ``False``, no direct-repo tools are
+            offered.
+        github_app_id: The GitHub App's numeric or slug id.  Required when
+            *enabled*.
+        github_app_private_key: The app's RSA private key in PEM format.
+            Required when *enabled*.  Stored in config only — never
+            hardcoded.
+        github_app_installation_id: The installation id to act as.  The
+            app must be installed on the target org/account.  Required when
+            *enabled*.
+        github_api_base_url: Overridable base URL for GitHub Enterprise.
+        board_api_base_url: Base URL of the board HTTP API for ticket-state
+            lookups (verifying BLOCKED state).
+        board_api_token: Optional bearer token for the board API.
+        timeout: Per-request HTTP timeout in seconds.
+
+    """
+
+    enabled: bool = False
+    github_app_id: str = ""
+    github_app_private_key: str = ""
+    github_app_installation_id: str = ""
+    github_api_base_url: str = "https://api.github.com"
+    board_api_base_url: str = "http://127.0.0.1:8077"
+    board_api_token: str = ""
+    timeout: float = 30.0
 
 
 class KnowledgeSettings(BaseModel):
@@ -750,6 +796,7 @@ class Settings(BaseModel):
     pending_questions: PendingQuestionsSettings = Field(
         default_factory=PendingQuestionsSettings
     )
+    direct_repo: DirectRepoSettings = Field(default_factory=DirectRepoSettings)
     max_images_per_message: int = 8
     max_image_bytes: int = 5_242_880
     allowed_image_media_types: list[str] = Field(
@@ -1142,6 +1189,10 @@ class Settings(BaseModel):
         if pending_questions_raw:
             raw["pending_questions"] = pending_questions_raw
 
+        direct_repo_raw = _build_direct_repo_raw(flat.get("direct_repo"))
+        if direct_repo_raw:
+            raw["direct_repo"] = direct_repo_raw
+
         return cls(**raw)
 
 
@@ -1436,6 +1487,41 @@ def _build_board_reader_raw(yaml_board_reader: Any) -> dict[str, Any]:
             ) from None
 
     return board_reader_raw
+
+
+def _build_direct_repo_raw(yaml_direct_repo: Any) -> dict[str, Any]:
+    """Overlay ``DIRECT_REPO_*`` env vars onto the YAML ``direct_repo`` subtree.
+
+    Returns a dict ready to parse into :class:`DirectRepoSettings`, or empty
+    when nothing is set.
+    """
+    dr_raw: dict[str, Any] = dict(yaml_direct_repo or {})
+
+    def env_set(field: str, env_name: str) -> None:
+        value = os.getenv(env_name)
+        if value is not None:
+            dr_raw[field] = value
+
+    enabled = os.getenv("DIRECT_REPO_ENABLED")
+    if enabled is not None:
+        dr_raw["enabled"] = _parse_bool(enabled)
+    env_set("github_app_id", "DIRECT_REPO_GITHUB_APP_ID")
+    env_set("github_app_private_key", "DIRECT_REPO_GITHUB_APP_PRIVATE_KEY")
+    env_set("github_app_installation_id", "DIRECT_REPO_GITHUB_APP_INSTALLATION_ID")
+    env_set("github_api_base_url", "DIRECT_REPO_GITHUB_API_BASE_URL")
+    env_set("board_api_base_url", "DIRECT_REPO_BOARD_API_BASE_URL")
+    env_set("board_api_token", "DIRECT_REPO_BOARD_API_TOKEN")
+
+    timeout_str = os.getenv("DIRECT_REPO_TIMEOUT")
+    if timeout_str is not None:
+        try:
+            dr_raw["timeout"] = float(timeout_str)
+        except ValueError:
+            raise ValueError(
+                f"DIRECT_REPO_TIMEOUT must be a number, got {timeout_str!r}"
+            ) from None
+
+    return dr_raw
 
 
 def _build_knowledge_raw(yaml_knowledge: Any) -> dict[str, Any]:
