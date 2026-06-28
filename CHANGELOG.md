@@ -9,6 +9,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Added blocked-ticket diagnostics capture (`diagnostics`): a new module that automatically records diagnostic bundles when tickets transition to BLOCKED state. Includes `DiagnosticStore` (JSON persistence), `DiagnosticCapture` (poll-based BLOCKED detection via `BoardReader`), and a `list_diagnostic_records` agent tool. Config is gated behind `diagnostics.enabled` (default `false`) with `DIAGNOSTICS_*` env-var overrides.
 - Calendar/tasks tools now use `BrokeredAgent.send_request()` directly
   instead of the deprecated `BrokeredRequester` (removed from
   `robotsix_agent_comm`). The `CalendarClient` no longer extends

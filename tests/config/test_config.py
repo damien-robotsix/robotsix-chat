@@ -12,6 +12,7 @@ from robotsix_chat.config import (
     CalendarSettings,
     ComponentAgentSettings,
     ComponentClientSettings,
+    DiagnosticsSettings,
     MailSettings,
     MemoryEmbeddingSettings,
     MemoryLlmSettings,
@@ -88,6 +89,9 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "BOARD_READER_API_TOKEN",
         "BOARD_READER_TIMEOUT",
         "BOARD_READER_CACHE_TTL",
+        "DIAGNOSTICS_ENABLED",
+        "DIAGNOSTICS_POLL_INTERVAL",
+        "DIAGNOSTICS_DATA_DIR",
         "CALENDAR_ENABLED",
         "CALENDAR_BROKER_HOST",
         "CALENDAR_BROKER_PORT",
@@ -1472,6 +1476,75 @@ def test_board_reader_env_overrides_yaml(
     assert settings.board_reader.enabled is True
     assert settings.board_reader.api_base_url == "http://env:8077"
     assert settings.board_reader.timeout == 10.0  # un-overridden YAML
+
+
+# ---------------------------------------------------------------------------
+# Diagnostics
+# ---------------------------------------------------------------------------
+
+
+def test_diagnostics_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Diagnostics is off by default, with sensible defaults present."""
+    _wipe_env_vars(monkeypatch)
+
+    settings = Settings.from_env()
+
+    assert settings.diagnostics.enabled is False
+    assert settings.diagnostics.poll_interval == 30.0
+    assert settings.diagnostics.data_dir == ".data/diagnostics.json"
+
+
+def test_diagnostics_enabled_ok() -> None:
+    """Diagnostics constructs with no extra requirements beyond enabled."""
+    settings = Settings(diagnostics=DiagnosticsSettings(enabled=True))
+    assert settings.diagnostics.enabled is True
+
+
+def test_diagnostics_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``DIAGNOSTICS_*`` env vars populate the nested diagnostics settings."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("DIAGNOSTICS_ENABLED", "true")
+    monkeypatch.setenv("DIAGNOSTICS_POLL_INTERVAL", "60.0")
+    monkeypatch.setenv("DIAGNOSTICS_DATA_DIR", "/custom/diag.json")
+
+    settings = Settings.from_env()
+
+    assert settings.diagnostics.enabled is True
+    assert settings.diagnostics.poll_interval == 60.0
+    assert settings.diagnostics.data_dir == "/custom/diag.json"
+
+
+def test_diagnostics_poll_interval_invalid_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-numeric ``DIAGNOSTICS_POLL_INTERVAL`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("DIAGNOSTICS_POLL_INTERVAL", "fast")
+
+    with pytest.raises(ValueError, match="DIAGNOSTICS_POLL_INTERVAL"):
+        Settings.from_env()
+
+
+def test_diagnostics_env_overrides_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """``DIAGNOSTICS_*`` env vars win over YAML, field-by-field."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text(
+        "diagnostics:\n"
+        "  enabled: true\n"
+        "  poll_interval: 10.0\n"
+        "  data_dir: /yaml/diag.json\n"
+    )
+    monkeypatch.setenv("DIAGNOSTICS_POLL_INTERVAL", "45.0")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.diagnostics.enabled is True
+    assert settings.diagnostics.poll_interval == 45.0  # env overrides YAML
+    assert settings.diagnostics.data_dir == "/yaml/diag.json"  # un-overridden YAML
 
 
 # ---------------------------------------------------------------------------
