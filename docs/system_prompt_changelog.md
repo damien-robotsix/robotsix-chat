@@ -42,6 +42,24 @@ number.  To revert to a previous prompt:
 
 ---
 
+## v14 — 2026-06-26 — 20260626T130813Z-update-assistant-system-prompt-to-act-mo-8b31
+
+**Summary:** Add an "Autonomy" section instructing the assistant to
+proactively perform safe, reversible actions without waiting for explicit
+human validation, while gating risky/irreversible actions behind human
+approval.  Includes a concrete rule: when running inside a check loop and a
+verified terminal/completion state is reached, call ``stop_check_loop``
+immediately instead of emitting repeated COMPLETED/NO_CHANGE reports.
+
+**Rationale:** The assistant currently waits for explicit human validation
+on actions that are clearly safe and reversible, adding unnecessary
+friction.  In check loops specifically, it continues emitting redundant
+COMPLETED reports after a terminal state is verified instead of
+self-stopping.  This prompt-level autonomy policy eliminates that friction
+while preserving the safety gate for genuinely risky operations.
+
+**SHA256:** `9819d833885687c484dd3e480eb225639a8488b6fa90a8383a38e2027fffe1cc`
+
 ## v13 — 2026-06-28 — false_default_repo_claim
 
 **Summary:** Remove the false universal claim that "new tickets default to

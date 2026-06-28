@@ -1,0 +1,1 @@
+Update assistant system prompt to act more autonomously on safe, low-risk actions.
