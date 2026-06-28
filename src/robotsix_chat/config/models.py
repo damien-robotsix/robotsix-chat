@@ -272,6 +272,31 @@ class DiagnosticsSettings(BaseModel):
     recurrence_window_days: int = 30
 
 
+class SkillsSettings(BaseModel):
+    """Skill/capability loading from declarative YAML manifests.
+
+    When enabled, the chat agent discovers broker capabilities from
+    ``*.skill.yaml`` files under *manifests_dir* and surfaces each
+    capability as an LLM-callable tool — replacing the hardcoded
+    ``build_*_tools()`` pattern.
+
+    Each manifest declares a broker's capabilities with structured
+    parameter schemas and per-capability scoping, so the assistant gets
+    only the specific functions a broker exposes — not a generic
+    "send arbitrary message to agent" passthrough.
+
+    Attributes:
+        enabled: Master switch.  When ``False``, no skill-based tools
+            are attached (even if manifests exist).
+        manifests_dir: Directory containing ``*.skill.yaml`` files.
+            Default ``config/skills/`` relative to the working directory.
+
+    """
+
+    enabled: bool = False
+    manifests_dir: str = "config/skills"
+
+
 class DirectRepoSettings(BaseModel):
     """Direct-repo push-branch + open-PR capability as the robotsix-mill GitHub App.
 

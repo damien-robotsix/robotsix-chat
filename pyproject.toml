@@ -142,6 +142,11 @@ ignore_missing_imports = true
 module = ["asgi_correlation_id", "asgi_correlation_id.*"]
 ignore_missing_imports = true
 
+# PyYAML ships no type stubs.
+[[tool.mypy.overrides]]
+module = ["yaml"]
+ignore_missing_imports = true
+
 [tool.deptry]
 # `robotsix_chat` is this project's own package (built from src/robotsix_chat);
 # deptry otherwise misreads the intra-package absolute imports as a transitive

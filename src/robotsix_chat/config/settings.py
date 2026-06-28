@@ -53,6 +53,7 @@ from robotsix_chat.config.models import (
     DiagnosticsSettings,
     DirectRepoSettings,
     KnowledgeSettings,
+    SkillsSettings,
     MailSettings,
     MemorySettings,
     MillSettings,
@@ -280,6 +281,7 @@ class Settings(BaseModel):
         default_factory=PendingQuestionsSettings
     )
     direct_repo: DirectRepoSettings = Field(default_factory=DirectRepoSettings)
+    skills: SkillsSettings = Field(default_factory=SkillsSettings)
     max_images_per_message: int = 8
     max_image_bytes: int = 5_242_880
     allowed_image_media_types: list[str] = Field(
@@ -695,3 +697,4 @@ def _load_dotenv() -> None:
         load_dotenv()
     except ImportError:  # pragma: no cover — python-dotenv is a required dep
         logger.debug("python-dotenv not installed; skipping .env loading")
+")

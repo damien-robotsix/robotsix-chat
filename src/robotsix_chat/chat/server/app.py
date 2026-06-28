@@ -39,6 +39,7 @@ from robotsix_chat.pending_questions import build_pending_questions_tools
 from robotsix_chat.pending_questions.store import PendingQuestionsStore
 from robotsix_chat.refdocs import build_refdocs_tools
 from robotsix_chat.selfreview import build_recent_activity_tools
+from robotsix_chat.skills import build_skill_tools
 from robotsix_chat.version_check import build_version_check_tools
 
 from .idempotency import MessageIdempotencyStore
@@ -380,6 +381,11 @@ def create_agent_from_settings(
         *build_diagnostics_tools(settings.diagnostics),
         *build_recent_activity_tools(settings.self_review, conversation_store),
         *build_version_check_tools(settings.version_check),
+        *(
+            build_skill_tools(settings.skills.manifests_dir)
+            if settings.skills.enabled
+            else []
+        ),
     ]
     if tool_wrapper is not None:
         tools = tool_wrapper(tools)

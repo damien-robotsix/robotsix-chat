@@ -197,6 +197,20 @@ modules:
       - src/robotsix_chat/selfreview/read.py
       - tests/selfreview/__init__.py
       - tests/selfreview/test_read.py
+
+  - id: robotsix_chat.skills
+    description: "Skill/capability loading — discover, load, and surface broker capabilities from declarative YAML manifests. Replaces the hardcoded per-broker build_*_tools() pattern with a capability-scoped mechanism."
+    paths:
+      - src/robotsix_chat/skills/__init__.py
+      - src/robotsix_chat/skills/spec.py
+      - src/robotsix_chat/skills/broker_skill.py
+      - src/robotsix_chat/skills/loader.py
+      - tests/skills/__init__.py
+      - tests/skills/test_spec.py
+      - tests/skills/test_loader.py
+      - tests/skills/test_broker_skill.py
+      - tests/skills/test_init.py
+
   - id: robotsix_chat.ui
     description: "Browser chat UI — self-contained HTML frontend served at /."
     paths:

@@ -19,6 +19,15 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   avoiding redundant broker round-trips when the LLM re-reads the same board
   data.  The cache is keyed by the exact request string and is reset at the
   start of each agent `stream()` invocation.
+- Added skill/capability loading system (`robotsix_chat.skills`): a
+  declarative mechanism that discovers broker capabilities from YAML
+  manifests (`config/skills/*.skill.yaml`) and surfaces each
+  capability as an LLM-callable tool with proper parameter schemas,
+  per-capability scoping, and graceful error handling.  Gated behind
+  `skills.enabled` (default `false`) with `SKILLS_*` env-var
+  overrides.  This is the foundational piece for per-broker
+  migration tickets that will replace the hardcoded
+  `build_*_tools()` pattern.
 
 - Check loops now auto-halt when the result text indicates a terminal
   state (`closed`/`done`/`resolved`/`completed`) via the `stop_when`

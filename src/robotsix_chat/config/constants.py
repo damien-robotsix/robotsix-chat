@@ -106,6 +106,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "component_client": "component_client",
     "pending_questions": "pending_questions",
     "direct_repo": "direct_repo",
+    "skills": "skills",
 }
 
 
