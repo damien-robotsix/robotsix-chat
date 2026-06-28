@@ -78,8 +78,7 @@ class CalendarClient:
         self,
         request: str,
         *,
-        empty_reply: str = "",
-        error_label: str = "",
+        empty_reply: str = "No request text provided.",
         **extra_payload: object,
     ) -> str:
         """Send *request* to the calendar agent under *domain* and return its reply.
