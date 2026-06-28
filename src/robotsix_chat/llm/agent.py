@@ -259,13 +259,14 @@ class LlmioChatAgent:
                         ):
                             from pydantic_ai.settings import ModelSettings
 
-                            model_settings: ModelSettings = {}
+                            ms: ModelSettings = {}
                             if self._max_output_tokens is not None:
-                                model_settings["max_tokens"] = self._max_output_tokens
+                                ms["max_tokens"] = self._max_output_tokens
                             if self._output_stop_sequences:
-                                model_settings["stop_sequences"] = (
+                                ms["stop_sequences"] = (
                                     self._output_stop_sequences
                                 )
+                            model_settings = ms
 
                         result = await handle.run(
                             prompt,

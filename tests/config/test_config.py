@@ -131,6 +131,8 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "VERSION_CHECK_BASE_URL",
         "VERSION_CHECK_TIMEOUT",
         "VERSION_CHECK_CACHE_TTL",
+        "AGENT_MAX_OUTPUT_TOKENS",
+        "AGENT_OUTPUT_STOP_SEQUENCES",
     ):
         monkeypatch.delenv(name, raising=False)
 
@@ -152,6 +154,8 @@ def test_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.server_port == 8000
     assert settings.log_level == "INFO"
     assert settings.agent_instruction.startswith("You are a helpful assistant.")
+    assert settings.agent_max_output_tokens == 1200
+    assert settings.agent_output_stop_sequences is None
 
 
 def test_log_level_default() -> None:
@@ -1472,6 +1476,100 @@ def test_board_reader_env_overrides_yaml(
     assert settings.board_reader.enabled is True
     assert settings.board_reader.api_base_url == "http://env:8077"
     assert settings.board_reader.timeout == 10.0  # un-overridden YAML
+
+
+# ---------------------------------------------------------------------------
+# Agent output capping
+# ---------------------------------------------------------------------------
+
+
+def test_agent_output_capping_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``agent_max_output_tokens`` and ``agent_output_stop_sequences`` default as documented."""
+    _wipe_env_vars(monkeypatch)
+
+    settings = Settings.from_env()
+
+    assert settings.agent_max_output_tokens == 1200
+    assert settings.agent_output_stop_sequences is None
+
+
+def test_agent_max_output_tokens_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``AGENT_MAX_OUTPUT_TOKENS`` overrides the default."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("AGENT_MAX_OUTPUT_TOKENS", "800")
+
+    settings = Settings.from_env()
+
+    assert settings.agent_max_output_tokens == 800
+
+
+def test_agent_max_output_tokens_empty_disables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Setting ``AGENT_MAX_OUTPUT_TOKENS`` to empty string disables the cap."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("AGENT_MAX_OUTPUT_TOKENS", "")
+
+    settings = Settings.from_env()
+
+    assert settings.agent_max_output_tokens is None
+
+
+def test_agent_max_output_tokens_invalid_raises(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A non-integer ``AGENT_MAX_OUTPUT_TOKENS`` raises ``ValueError``."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("AGENT_MAX_OUTPUT_TOKENS", "not-a-number")
+
+    with pytest.raises(ValueError, match="AGENT_MAX_OUTPUT_TOKENS"):
+        Settings.from_env()
+
+
+def test_agent_output_stop_sequences_from_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """``AGENT_OUTPUT_STOP_SEQUENCES`` populates the list."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("AGENT_OUTPUT_STOP_SEQUENCES", "STOP,END")
+
+    settings = Settings.from_env()
+
+    assert settings.agent_output_stop_sequences == ["STOP", "END"]
+
+
+def test_agent_output_stop_sequences_empty_disables(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Setting ``AGENT_OUTPUT_STOP_SEQUENCES`` to empty string leaves it unset."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("AGENT_OUTPUT_STOP_SEQUENCES", "")
+
+    settings = Settings.from_env()
+
+    assert settings.agent_output_stop_sequences is None
+
+
+def test_agent_output_capping_env_overrides_yaml(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+) -> None:
+    """Env vars win over YAML for output-capping fields."""
+    _wipe_env_vars(monkeypatch)
+
+    config_file = tmp_path / "chat.local.yaml"
+    config_file.write_text(
+        "agent:\n"
+        "  max_output_tokens: 2000\n"
+        "  output_stop_sequences:\n"
+        "    - STOP\n"
+    )
+    monkeypatch.setenv("AGENT_MAX_OUTPUT_TOKENS", "600")
+    monkeypatch.setenv("AGENT_OUTPUT_STOP_SEQUENCES", "")
+
+    settings = Settings.load(config_path=config_file)
+
+    assert settings.agent_max_output_tokens == 600
+    assert settings.agent_output_stop_sequences is None  # empty env → disable
 
 
 # ---------------------------------------------------------------------------
