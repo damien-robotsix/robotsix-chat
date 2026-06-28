@@ -2342,3 +2342,198 @@ async def test_pending_questions_thread_get_unknown_404() -> None:
         response = await f.client.get("/pending-questions/nonexistent/thread")
 
     assert response.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# Message idempotency
+# ---------------------------------------------------------------------------
+
+
+class TestMessageIdempotency:
+    """Tests for per-session message idempotency via ``MessageIdempotencyStore``."""
+
+    @pytest.mark.asyncio
+    async def test_same_message_id_concurrent(self) -> None:
+        """Concurrent POSTs with same message_id → one agent call, both get reply."""
+        async with mock_app(tokens=["Hello", " ", "world!"]) as f:
+            import asyncio
+
+            async def post() -> Any:
+                return await f.client.post(
+                    "/chat",
+                    json={
+                        "message": "hi",
+                        "message_id": "abc-123",
+                        "session_id": "s1",
+                        "owner_id": "o1",
+                    },
+                )
+
+            r1, r2 = await asyncio.gather(post(), post())
+
+        assert f.agent.call_count == 1
+
+        frames1 = _parse_sse(r1)
+        frames2 = _parse_sse(r2)
+
+        # Both responses contain a done frame.
+        assert any(f["type"] == SSE_DONE_TYPE for f in frames1)
+        assert any(f["type"] == SSE_DONE_TYPE for f in frames2)
+
+        # Both contain the same reply text.
+        reply1 = "".join(
+            str(f["content"]) for f in frames1 if f["type"] == SSE_TOKEN_TYPE
+        )
+        reply2 = "".join(
+            str(f["content"]) for f in frames2 if f["type"] == SSE_TOKEN_TYPE
+        )
+        assert reply1 == reply2 == "Hello world!"
+
+    @pytest.mark.asyncio
+    async def test_same_message_id_sequential(self) -> None:
+        """First POST completes; second with same message_id replays from store."""
+        async with mock_app(tokens=["Hello", " ", "world!"]) as f:
+            r1 = await f.client.post(
+                "/chat",
+                json={
+                    "message": "hi",
+                    "message_id": "abc-456",
+                    "session_id": "s2",
+                    "owner_id": "o2",
+                },
+            )
+            r2 = await f.client.post(
+                "/chat",
+                json={
+                    "message": "hi",
+                    "message_id": "abc-456",
+                    "session_id": "s2",
+                    "owner_id": "o2",
+                },
+            )
+
+        # Agent called exactly once (first request only).
+        assert f.agent.call_count == 1
+
+        frames1 = _parse_sse(r1)
+        frames2 = _parse_sse(r2)
+
+        assert any(f["type"] == SSE_DONE_TYPE for f in frames1)
+        assert any(f["type"] == SSE_DONE_TYPE for f in frames2)
+
+        # Second response replays the full reply in a single token frame.
+        token_frames2 = [f for f in frames2 if f["type"] == SSE_TOKEN_TYPE]
+        assert len(token_frames2) == 1
+        assert token_frames2[0]["content"] == "Hello world!"
+
+    @pytest.mark.asyncio
+    async def test_distinct_message_ids_run_independently(self) -> None:
+        """Two POSTs with different message_ids → two agent invocations."""
+        async with mock_app(tokens=["ok"]) as f:
+            await f.client.post(
+                "/chat",
+                json={
+                    "message": "hi",
+                    "message_id": "id-1",
+                    "session_id": "s3",
+                    "owner_id": "o3",
+                },
+            )
+            await f.client.post(
+                "/chat",
+                json={
+                    "message": "hi",
+                    "message_id": "id-2",
+                    "session_id": "s3",
+                    "owner_id": "o3",
+                },
+            )
+
+        assert f.agent.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_no_message_id_backward_compat(self) -> None:
+        """POST without message_id field — agent runs, reply returned, no error."""
+        async with mock_app(tokens=["ok"]) as f:
+            response = await f.client.post(
+                "/chat",
+                json={
+                    "message": "hi",
+                    "session_id": "s4",
+                    "owner_id": "o4",
+                },
+            )
+
+        assert response.status_code == 200
+        assert f.agent.call_count == 1
+        frames = _parse_sse(response)
+        assert any(f["type"] == SSE_DONE_TYPE for f in frames)
+        assert any(f["type"] == SSE_TOKEN_TYPE for f in frames)
+
+    @pytest.mark.asyncio
+    async def test_retry_after_stream_error_reruns(self) -> None:
+        """First POST errors → no completed entry → second POST re-runs agent."""
+        # First app instance raises an error.
+        async with mock_app(
+            error=RuntimeError("boom"),
+            tokens=["ok"],  # won't be reached
+        ) as f1:
+            r1 = await f1.client.post(
+                "/chat",
+                json={
+                    "message": "hi",
+                    "message_id": "abc",
+                    "session_id": "s5",
+                    "owner_id": "o5",
+                },
+            )
+
+        frames1 = _parse_sse(r1)
+        assert any(f["type"] == SSE_ERROR_TYPE for f in frames1)
+        assert not any(f["type"] == SSE_DONE_TYPE for f in frames1)
+
+        # Second app instance with a non-erroring agent.
+        async with mock_app(tokens=["ok"]) as f2:
+            r2 = await f2.client.post(
+                "/chat",
+                json={
+                    "message": "hi",
+                    "message_id": "abc",
+                    "session_id": "s5",
+                    "owner_id": "o5",
+                },
+            )
+
+        assert f2.agent.call_count == 1
+        frames2 = _parse_sse(r2)
+        assert any(f["type"] == SSE_DONE_TYPE for f in frames2)
+
+    @pytest.mark.asyncio
+    async def test_history_read_under_lock(self) -> None:
+        """Second message sees the first message's reply in agent.history."""
+        store = ConversationStore()
+
+        async with mock_app(tokens=["first reply"], conversation_store=store) as f1:
+            await f1.client.post(
+                "/chat",
+                json={
+                    "message": "msg1",
+                    "message_id": "id-a",
+                    "session_id": "s6",
+                    "owner_id": "o6",
+                },
+            )
+
+        async with mock_app(tokens=["second reply"], conversation_store=store) as f2:
+            await f2.client.post(
+                "/chat",
+                json={
+                    "message": "msg2",
+                    "message_id": "id-b",
+                    "session_id": "s6",
+                    "owner_id": "o6",
+                },
+            )
+
+        # The second call's agent.history must include the first message's reply.
+        assert f2.agent.history == [("msg1", "first reply")]

@@ -2431,7 +2431,11 @@
       el.classList.add("queued");
     }
 
-    messageQueue.push({ text: message, el: el, images: imagesForSend });
+    var messageId = (typeof crypto !== 'undefined' && crypto.randomUUID)
+      ? crypto.randomUUID()
+      : (Math.random().toString(36).slice(2) + Date.now().toString(36));
+
+    messageQueue.push({ text: message, el: el, images: imagesForSend, messageId: messageId });
     drainQueue();
   }
 
@@ -2442,10 +2446,10 @@
 
     var item = messageQueue.shift();
     item.el.classList.remove("queued");
-    startRequest(item.text, item.images || []);
+    startRequest(item.text, item.images || [], item.messageId);
   }
 
-  function startRequest(message, pendingForSend) {
+  function startRequest(message, pendingForSend, messageId) {
     // The existing network/streaming body of the old sendMessage, minus
     // the user-bubble creation (the bubble already exists).
     showTypingIndicator();
@@ -2459,7 +2463,7 @@
       : Promise.resolve([]);
 
     encodePromise.then(function (encodedImages) {
-      doPost(message, encodedImages);
+      doPost(message, encodedImages, messageId);
     }).catch(function (err) {
       hideTypingIndicator();
       showError(err.message || "Failed to encode images");
@@ -2475,7 +2479,7 @@
     return Promise.all(promises);
   }
 
-  function doPost(message, encodedImages) {
+  function doPost(message, encodedImages, messageId) {
     var requestSessionId = activeSessionId;
     var streamController = {
       onData: function (raw) {
@@ -2523,6 +2527,7 @@
     var url = getServerUrl();
 
     var body = { message: message, session_id: activeSessionId, owner_id: clientId };
+    if (messageId) body.message_id = messageId;
     if (encodedImages.length > 0) {
       body.images = encodedImages;
     }
