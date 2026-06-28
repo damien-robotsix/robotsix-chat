@@ -30,6 +30,7 @@ import asyncio
 import logging
 import re
 from collections.abc import Callable
+from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from robotsix_chat.chat.events import loop_reply_frame
@@ -442,6 +443,232 @@ def _no_change_result(result: str) -> bool:
     return not stripped or stripped.upper().startswith("NO_CHANGE")
 
 
+async def _start_check_loop_tool(
+    check_description: str,
+    interval_seconds: float,
+    max_iterations: int | None = None,
+    reason: str | None = None,
+    include_previous_result: bool = False,
+    verify_via_board: bool = False,
+    *,
+    session_id: str,
+    settings: Settings,
+    registry: CheckLoopRegistry,
+    channel: DeliveryChannel,
+    agent_factory: Callable[[Settings], ChatAgent] | None,
+    conversation_store: Any,
+) -> str:
+    """Start a recurring background check that re-runs every ``interval_seconds``.
+
+    Use this when the user asks you to watch something over time — monitor a
+    price, poll an endpoint, check for new results, etc.  The check runs in
+    a fresh sub-agent with no conversation history, so *check_description*
+    must be complete and self-contained (include all context the sub-agent
+    needs).
+
+    The check re-runs automatically until it is explicitly stopped, reaches
+    *max_iterations* (if set), or self-stops.  Every result is surfaced to
+    the user as it lands.
+
+    For a check that watches something to completion (e.g. monitor a ticket
+    until it reaches a terminal state), make *check_description* instruct the
+    sub-agent to call ``stop_check_loop`` as soon as the condition is
+    terminal — the tick sub-agent has a loop-scoped ``stop_check_loop`` that
+    halts its own loop, so it will not keep re-reporting the same terminal
+    state forever.
+
+    When *include_previous_result* is ``True``, each iteration after the
+    first receives the previous tick's result prepended to the prompt so the
+    sub-agent can compare against prior state.  Use this for
+    change-detection checks: instruct the sub-agent to return a description
+    when something changed, or the exact text ``NO_CHANGE`` when nothing
+    changed (ticks marked ``NO_CHANGE`` are suppressed — no user
+    notification).
+
+    Args:
+        check_description: A complete, self-contained description of what
+            the background check sub-agent should do on every iteration.
+            The sub-agent is a fresh instance with no conversation history —
+            include all necessary context.
+        interval_seconds: How often to re-run the check, in seconds.  The
+            minimum is 60 seconds; shorter intervals are rejected.
+        max_iterations: Optional cap on the number of iterations.  When the
+            loop reaches this many ticks it stops automatically.  ``None``
+            (the default) means it runs until explicitly stopped.
+        reason: A short human-readable summary of what this loop checks
+            for (e.g. "Monitor stock price" or "Watch for new emails").
+            Displayed in the UI to help the user identify the loop at a
+            glance.  When omitted, the UI falls back to a truncated
+            prompt.
+        include_previous_result: When ``True``, each tick after the first
+            receives the previous tick's result so the sub-agent can
+            compare state across iterations.  Default ``False``.
+        verify_via_board: Set ``True`` when this check reports mill/board/
+            thread/ticket status; the loop will then be required to read the
+            board (consult_mill) each tick before reporting, and unverified
+            status is suppressed.  Leave ``False`` (the default) for checks
+            that never read the board (e.g. price/endpoint polling).
+        session_id: Session-scope identifier injected by
+            :func:`build_check_loop_tools`.
+        settings: Application settings injected by
+            :func:`build_check_loop_tools`.
+        registry: Check-loop registry injected by
+            :func:`build_check_loop_tools`.
+        channel: Delivery channel injected by
+            :func:`build_check_loop_tools`.
+        agent_factory: Sub-agent factory injected by
+            :func:`build_check_loop_tools`.
+        conversation_store: Conversation store injected by
+            :func:`build_check_loop_tools`.
+
+    Returns:
+        A message with the started loop's id; relay it to the user so they
+        know the check is running and how often it will re-run.
+
+    """
+    sid = session_id
+
+    # Gate: refuse to spawn work in a closed session.
+    if conversation_store is not None:
+        try:
+            if conversation_store.is_session_closed(sid):
+                logger.info("start_check_loop blocked: session %s is closed", sid)
+                return (
+                    "I can't start a new check loop — this session "
+                    "has been closed. No new work can be spawned."
+                )
+        except Exception:
+            logger.debug(
+                "start_check_loop: session-closed check failed for session %s",
+                sid,
+                exc_info=True,
+            )
+
+    try:
+        loop_id = spawn_check_loop(
+            session_id=sid,
+            prompt=check_description,
+            interval_seconds=interval_seconds,
+            settings=settings,
+            registry=registry,
+            max_iterations=max_iterations,
+            suppress_when=_no_change_result,
+            include_previous_result=include_previous_result,
+            agent_factory=agent_factory,
+            channel=channel,
+            reason=reason,
+            verify_via_board=verify_via_board,
+        )
+    except LoopIntervalError as exc:
+        logger.info("start_check_loop rejected (interval): %s", exc)
+        return (
+            f"I can't start a check loop with an interval of "
+            f"{interval_seconds:g} seconds — the minimum is 60 seconds. "
+            f"Please ask again with a longer interval."
+        )
+    except LoopCapacityError as exc:
+        logger.info("start_check_loop rejected (capacity): %s", exc)
+        return (
+            "I couldn't start a new check loop right now — too many are "
+            "already running. Ask me again once some have finished."
+        )
+    return (
+        f"Started check loop {loop_id}. It will re-run every "
+        f"{interval_seconds:g}s; I'll surface each result as it lands."
+    )
+
+
+async def _stop_check_loop_tool(
+    loop_id: str,
+    *,
+    session_id: str,
+    registry: CheckLoopRegistry,
+) -> str:
+    """Stop a running check loop by its id.
+
+    Use this when the user asks you to cancel, stop, or end a recurring
+    check.  The *loop_id* is the identifier returned by
+    ``start_check_loop``; you can also discover active loop ids via
+    ``list_check_loops``.
+
+    Only loops owned by this conversation can be stopped — you cannot
+    interfere with another client's checks.  Stopping an already-stopped
+    (or nonexistent) loop is harmless and returns a polite message.
+
+    To **change a loop's interval or prompt**, stop the running loop with
+    this tool, then start a new one with ``start_check_loop`` — there is
+    no in-place edit for interval or prompt.
+
+    Args:
+        loop_id: The id of the loop to stop (from ``start_check_loop``'s
+            return value or from ``list_check_loops``).
+        session_id: Session-scope identifier injected by
+            :func:`build_check_loop_tools`.
+        registry: Check-loop registry injected by
+            :func:`build_check_loop_tools`.
+
+    Returns:
+        A confirmation message on success, or a polite notice when the
+        loop is not found / not owned by this client.
+
+    """
+    info = registry.get(loop_id)
+    if info is None or info.session_id != session_id:
+        logger.info(
+            "stop_check_loop: loop %s not found for session %s",
+            loop_id,
+            session_id,
+        )
+        return (
+            f"I don't see a check loop with id '{loop_id}' that belongs "
+            f"to this conversation.  Use ``list_check_loops`` to see your "
+            f"active loops and their ids."
+        )
+    registry.stop(loop_id, reason="stopped by assistant")
+    logger.info("stop_check_loop: stopped loop %s", loop_id)
+    return f"Stopped check loop {loop_id}."
+
+
+async def _list_check_loops_tool(
+    *,
+    session_id: str,
+    registry: CheckLoopRegistry,
+) -> str:
+    """List all active check loops owned by this conversation.
+
+    Use this to discover what recurring checks are currently running so
+    you can report status to the user or obtain an *loop_id* to pass to
+    ``stop_check_loop``.  Loops belonging to other conversations are
+    never shown.
+
+    Args:
+        session_id: Session-scope identifier injected by
+            :func:`build_check_loop_tools`.
+        registry: Check-loop registry injected by
+            :func:`build_check_loop_tools`.
+
+    Returns:
+        A human-readable summary of this client's loops — one line per
+        loop with id, status, interval, iteration count, and a prompt
+        snippet — or a message that there are none.
+
+    """
+    loops = registry.list_for_session(session_id)
+    if not loops:
+        return "There are no check loops running in this conversation."
+    lines: list[str] = []
+    for info in loops:
+        snippet = info.prompt[:80].replace("\n", " ")
+        lines.append(
+            f"- {info.id}: {info.status.value}, "
+            f"every {info.interval_seconds:g}s, "
+            f"iteration {info.iterations}"
+            f"{f' of {info.max_iterations}' if info.max_iterations else ''}"
+            f' — "{snippet}…"'
+        )
+    return "Active check loops:\n" + "\n".join(lines)
+
+
 def build_check_loop_tools(
     settings: Settings,
     registry: CheckLoopRegistry,
@@ -456,12 +683,12 @@ def build_check_loop_tools(
     When wired into the agent's tools list, the model can call
     ``start_check_loop`` to launch a recurring check on the user's behalf.
 
-    *channel* is captured lexically and forwarded to
+    *channel* is forwarded to
     :func:`~robotsix_chat.chat.loops.spawn_check_loop` so each tick's
     result is written back into the originating conversation via
     :class:`ConversationDeliveryChannel`.
 
-    *session_id* is captured lexically in the returned tool closure so it
+    *session_id* is passed as explicit state to the tools so it
     survives the claude_sdk / MCP execution-context boundary — unlike a
     ContextVar, which is invisible there.  Loops started, stopped, and listed
     by these tools are scoped to this session.
@@ -484,190 +711,32 @@ def build_check_loop_tools(
     changed.  The loop still tracks iterations and the last result
     internally so the next tick can compare against prior state.
     """
+    start_tool = partial(
+        _start_check_loop_tool,
+        session_id=session_id,
+        settings=settings,
+        registry=registry,
+        channel=channel,
+        agent_factory=agent_factory,
+        conversation_store=conversation_store,
+    )
+    start_tool.__name__ = "start_check_loop"  # type: ignore[attr-defined]
+    start_tool.__doc__ = _start_check_loop_tool.__doc__
 
-    async def start_check_loop(
-        check_description: str,
-        interval_seconds: float,
-        max_iterations: int | None = None,
-        reason: str | None = None,
-        include_previous_result: bool = False,
-        verify_via_board: bool = False,
-    ) -> str:
-        """Start a recurring background check that re-runs every ``interval_seconds``.
+    stop_tool = partial(
+        _stop_check_loop_tool,
+        session_id=session_id,
+        registry=registry,
+    )
+    stop_tool.__name__ = "stop_check_loop"  # type: ignore[attr-defined]
+    stop_tool.__doc__ = _stop_check_loop_tool.__doc__
 
-        Use this when the user asks you to watch something over time — monitor a
-        price, poll an endpoint, check for new results, etc.  The check runs in
-        a fresh sub-agent with no conversation history, so *check_description*
-        must be complete and self-contained (include all context the sub-agent
-        needs).
+    list_tool = partial(
+        _list_check_loops_tool,
+        session_id=session_id,
+        registry=registry,
+    )
+    list_tool.__name__ = "list_check_loops"  # type: ignore[attr-defined]
+    list_tool.__doc__ = _list_check_loops_tool.__doc__
 
-        The check re-runs automatically until it is explicitly stopped, reaches
-        *max_iterations* (if set), or self-stops.  Every result is surfaced to
-        the user as it lands.
-
-        For a check that watches something to completion (e.g. monitor a ticket
-        until it reaches a terminal state), make *check_description* instruct the
-        sub-agent to call ``stop_check_loop`` as soon as the condition is
-        terminal — the tick sub-agent has a loop-scoped ``stop_check_loop`` that
-        halts its own loop, so it will not keep re-reporting the same terminal
-        state forever.
-
-        When *include_previous_result* is ``True``, each iteration after the
-        first receives the previous tick's result prepended to the prompt so the
-        sub-agent can compare against prior state.  Use this for
-        change-detection checks: instruct the sub-agent to return a description
-        when something changed, or the exact text ``NO_CHANGE`` when nothing
-        changed (ticks marked ``NO_CHANGE`` are suppressed — no user
-        notification).
-
-        Args:
-            check_description: A complete, self-contained description of what
-                the background check sub-agent should do on every iteration.
-                The sub-agent is a fresh instance with no conversation history —
-                include all necessary context.
-            interval_seconds: How often to re-run the check, in seconds.  The
-                minimum is 60 seconds; shorter intervals are rejected.
-            max_iterations: Optional cap on the number of iterations.  When the
-                loop reaches this many ticks it stops automatically.  ``None``
-                (the default) means it runs until explicitly stopped.
-            reason: A short human-readable summary of what this loop checks
-                for (e.g. "Monitor stock price" or "Watch for new emails").
-                Displayed in the UI to help the user identify the loop at a
-                glance.  When omitted, the UI falls back to a truncated
-                prompt.
-            include_previous_result: When ``True``, each tick after the first
-                receives the previous tick's result so the sub-agent can
-                compare state across iterations.  Default ``False``.
-            verify_via_board: Set ``True`` when this check reports mill/board/
-                thread/ticket status; the loop will then be required to read the
-                board (consult_mill) each tick before reporting, and unverified
-                status is suppressed.  Leave ``False`` (the default) for checks
-                that never read the board (e.g. price/endpoint polling).
-
-        Returns:
-            A message with the started loop's id; relay it to the user so they
-            know the check is running and how often it will re-run.
-
-        """
-        sid = session_id
-
-        # Gate: refuse to spawn work in a closed session.
-        if conversation_store is not None:
-            try:
-                if conversation_store.is_session_closed(sid):
-                    logger.info("start_check_loop blocked: session %s is closed", sid)
-                    return (
-                        "I can't start a new check loop — this session "
-                        "has been closed. No new work can be spawned."
-                    )
-            except Exception:
-                logger.debug(
-                    "start_check_loop: session-closed check failed for session %s",
-                    sid,
-                    exc_info=True,
-                )
-
-        try:
-            loop_id = spawn_check_loop(
-                session_id=sid,
-                prompt=check_description,
-                interval_seconds=interval_seconds,
-                settings=settings,
-                registry=registry,
-                max_iterations=max_iterations,
-                suppress_when=_no_change_result,
-                include_previous_result=include_previous_result,
-                agent_factory=agent_factory,
-                channel=channel,
-                reason=reason,
-                verify_via_board=verify_via_board,
-            )
-        except LoopIntervalError as exc:
-            logger.info("start_check_loop rejected (interval): %s", exc)
-            return (
-                f"I can't start a check loop with an interval of "
-                f"{interval_seconds:g} seconds — the minimum is 60 seconds. "
-                f"Please ask again with a longer interval."
-            )
-        except LoopCapacityError as exc:
-            logger.info("start_check_loop rejected (capacity): %s", exc)
-            return (
-                "I couldn't start a new check loop right now — too many are "
-                "already running. Ask me again once some have finished."
-            )
-        return (
-            f"Started check loop {loop_id}. It will re-run every "
-            f"{interval_seconds:g}s; I'll surface each result as it lands."
-        )
-
-    async def stop_check_loop(loop_id: str) -> str:
-        """Stop a running check loop by its id.
-
-        Use this when the user asks you to cancel, stop, or end a recurring
-        check.  The *loop_id* is the identifier returned by
-        ``start_check_loop``; you can also discover active loop ids via
-        ``list_check_loops``.
-
-        Only loops owned by this conversation can be stopped — you cannot
-        interfere with another client's checks.  Stopping an already-stopped
-        (or nonexistent) loop is harmless and returns a polite message.
-
-        To **change a loop's interval or prompt**, stop the running loop with
-        this tool, then start a new one with ``start_check_loop`` — there is
-        no in-place edit for interval or prompt.
-
-        Args:
-            loop_id: The id of the loop to stop (from ``start_check_loop``'s
-                return value or from ``list_check_loops``).
-
-        Returns:
-            A confirmation message on success, or a polite notice when the
-            loop is not found / not owned by this client.
-
-        """
-        info = registry.get(loop_id)
-        if info is None or info.session_id != session_id:
-            logger.info(
-                "stop_check_loop: loop %s not found for session %s",
-                loop_id,
-                session_id,
-            )
-            return (
-                f"I don't see a check loop with id '{loop_id}' that belongs "
-                f"to this conversation.  Use ``list_check_loops`` to see your "
-                f"active loops and their ids."
-            )
-        registry.stop(loop_id, reason="stopped by assistant")
-        logger.info("stop_check_loop: stopped loop %s", loop_id)
-        return f"Stopped check loop {loop_id}."
-
-    async def list_check_loops() -> str:
-        """List all active check loops owned by this conversation.
-
-        Use this to discover what recurring checks are currently running so
-        you can report status to the user or obtain an *loop_id* to pass to
-        ``stop_check_loop``.  Loops belonging to other conversations are
-        never shown.
-
-        Returns:
-            A human-readable summary of this client's loops — one line per
-            loop with id, status, interval, iteration count, and a prompt
-            snippet — or a message that there are none.
-
-        """
-        loops = registry.list_for_session(session_id)
-        if not loops:
-            return "There are no check loops running in this conversation."
-        lines: list[str] = []
-        for info in loops:
-            snippet = info.prompt[:80].replace("\n", " ")
-            lines.append(
-                f"- {info.id}: {info.status.value}, "
-                f"every {info.interval_seconds:g}s, "
-                f"iteration {info.iterations}"
-                f"{f' of {info.max_iterations}' if info.max_iterations else ''}"
-                f' — "{snippet}…"'
-            )
-        return "Active check loops:\n" + "\n".join(lines)
-
-    return [start_check_loop, stop_check_loop, list_check_loops]
+    return [start_tool, stop_tool, list_tool]
