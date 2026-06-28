@@ -184,7 +184,7 @@ class LlmioChatAgent:
         # Tools the underlying agent may call (e.g. the mill consult tool). When
         # non-empty, llmio runs a real tool loop; the final reply is still
         # returned as one block.
-        self._tools = tools or None
+        self._tools = list(tools) if tools is not None else None
         self._request_tools_factory = request_tools_factory
         # Bare model-name override for the provider (e.g. "sonnet" for
         # claudeSDK-subscription sub-agents). None → resolved from tier default.

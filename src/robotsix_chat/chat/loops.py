@@ -562,6 +562,13 @@ async def _check_loop_worker(
 
     try:
         while True:
+            # Guard: if the registry already flipped our status (e.g. via
+            # an external stop() that didn't manage to cancel this task),
+            # exit immediately so we don't fire a zombie tick.
+            info = registry.get(loop_id)
+            if info is None or info.status is not LoopStatus.RUNNING:
+                return
+
             if verify_via_board and probe is not None:
                 probe.count = 0  # reset per tick
 

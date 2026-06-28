@@ -1,0 +1,1 @@
+chat check-loop: stop zombie ticks after terminal (closed) state — make stop actually halt the loop

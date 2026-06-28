@@ -11,6 +11,7 @@ from typing import Any
 
 import pytest
 
+from robotsix_chat.chat.delegation import _terminal_result
 from robotsix_chat.chat.events import (
     SSE_LOOP_FAILED_TYPE,
     SSE_LOOP_STARTED_TYPE,
@@ -942,6 +943,107 @@ async def test_stop_when_self_stops_loop() -> None:
     assert info.status == LoopStatus.STOPPED
     assert info.stop_reason == "condition_met"
     assert info.iterations == 1
+
+
+@pytest.mark.asyncio
+async def test_stop_when_terminal_keyword_self_stops() -> None:
+    """A stop_when predicate using _terminal_result stops on 'closed'."""
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+
+    lid = spawn_check_loop(
+        session_id="c1",
+        prompt="check ticket",
+        interval_seconds=0.01,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _StubAgent(["The ticket is closed."]),
+        stop_when=_terminal_result,
+    )
+
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        info = reg.get(lid)
+        if info and info.status != LoopStatus.RUNNING:
+            break
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.STOPPED
+    assert info.stop_reason == "condition_met"
+    assert info.iterations == 1
+
+
+@pytest.mark.asyncio
+async def test_no_zombie_ticks_after_stop() -> None:
+    """After stop_when fires, no additional tick iteration occurs.
+
+    This is the regression test for the "stop attempted but loop keeps
+    ticking" bug — a loop that reports a terminal state must not fire any
+    further ticks, even if the underlying task cancellation races with the
+    stop flag.
+    """
+    bus = EventBus()
+    reg = _registry(sink=bus)
+    settings = _stub_settings(min_check_loop_interval_seconds=0.001)
+
+    lid = spawn_check_loop(
+        session_id="c1",
+        prompt="check ticket",
+        interval_seconds=0.01,
+        settings=settings,
+        registry=reg,
+        agent_factory=lambda s: _StubAgent(["The ticket is done."]),
+        stop_when=_terminal_result,
+        max_iterations=100,
+    )
+
+    # Wait for the loop to stop.
+    for _ in range(50):
+        await asyncio.sleep(0.05)
+        info = reg.get(lid)
+        if info and info.status != LoopStatus.RUNNING:
+            break
+
+    info = reg.get(lid)
+    assert info is not None
+    assert info.status == LoopStatus.STOPPED
+    stop_iterations = info.iterations
+
+    # Sleep long enough that if the loop were still ticking it would have
+    # advanced (interval is 0.01s but the worker's asyncio.sleep can't
+    # start because the task was cancelled/stopped).
+    await asyncio.sleep(0.2)
+
+    # Iteration count must NOT have increased.
+    info = reg.get(lid)
+    assert info is not None
+    assert info.iterations == stop_iterations, (
+        f"Zombie tick detected: iterations went from {stop_iterations} "
+        f"to {info.iterations} after stop"
+    )
+
+
+@pytest.mark.parametrize(
+    "text,expected",
+    [
+        ("The ticket is closed.", True),
+        ("Status: done.", True),
+        ("The issue has been resolved.", True),
+        ("All tasks completed.", True),
+        ("The ticket is not closed.", False),
+        ("I can't tell if it's done.", False),
+        ("Unable to verify closed status.", False),
+        ("It failed to close.", False),
+        ("Nothing is done yet.", False),
+        ("NO_CHANGE: still open.", False),
+        ("", False),
+    ],
+)
+def test_terminal_result_predicate(text: str, expected: bool) -> None:
+    """_terminal_result correctly distinguishes terminal from non-terminal text."""
+    assert _terminal_result(text) == expected
 
 
 @pytest.mark.asyncio
