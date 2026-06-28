@@ -42,6 +42,22 @@ number.  To revert to a previous prompt:
 
 ---
 
+## v12 — 2026-06-28 — board_rules_contradict_create_ticket
+
+**Summary:** Resolve contradictory Board/mill rule for ticket creation.  The
+old Rule 1 directed ALL write operations (including ticket creation) to
+`consult_mill`, but Rule 4 told the agent to use `create_board_ticket`
+(which calls the board reader endpoint directly).  Rule 1 is now scoped to
+complex write operations (migrate, transition, triage) only; simple ticket
+creation uses `create_board_ticket`.  The verification rule is also
+generalised from "via consult_mill" to cover both paths.
+
+**Rationale:** Two rules gave conflicting directives for the same action,
+causing the model to guess which tool to use.  Aligning them eliminates
+the contradiction.
+
+**SHA256:** `81cc03108729b4e4fe46c2b191c5863a8b4ce018f5c99fda4d2927f4bd722a0c`
+
 ## v11 — 2026-06-27 — agent_guard_bypasses_governance
 
 **Summary:** Fold the runtime `_AGENT_GUARD` hardening layer (previously

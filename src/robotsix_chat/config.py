@@ -572,7 +572,7 @@ class ConversationSettings(BaseModel):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 11
+SYSTEM_PROMPT_VERSION = 12
 
 
 class Settings(BaseModel):
@@ -660,8 +660,12 @@ class Settings(BaseModel):
         "browser UI consumes, so you see exactly what the user sees.  "
         "Never narrate or fabricate ticket states; always verify with "
         "the board reader tools first.\n"
-        "– For WRITE operations (create tickets, migrate, transition), "
-        "use consult_mill — the broker-based board manager handles writes.\n"
+        "– For complex WRITE operations (migrate tickets between repos, "
+        "transition ticket state, triage that requires board-manager "
+        "intelligence), use consult_mill — the broker-based board manager "
+        "handles these. For simple ticket creation, use create_board_ticket "
+        "— it is faster, uses fewer tokens, and includes built-in duplicate "
+        "detection.\n"
         "– Do all board work inline — never offload board actions through "
         "delegate_task. Delegate-task results are never returned, so a "
         "ticket filed that way may silently fail with no feedback. "
@@ -672,7 +676,7 @@ class Settings(BaseModel):
         "same intent; comment on / reuse it instead of filing a duplicate. "
         "create_board_ticket does this for you automatically and will warn "
         "if a similar ticket exists — act on that warning.\n"
-        "– After creating a ticket via consult_mill, verify it landed on "
+        "– After creating a ticket, verify it landed on "
         "the correct board with list_board_tickets. New tickets default "
         "to robotsix-mill regardless of source; if misplaced, request a "
         "migration to the correct board (e.g. robotsix-chat) — also "
