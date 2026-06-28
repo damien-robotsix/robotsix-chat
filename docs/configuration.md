@@ -250,6 +250,33 @@ Provides three tools: `list_board_tickets` (calls `GET /tickets`),
 | `board_reader.timeout` | `BOARD_READER_TIMEOUT` | `30.0` | Per-request HTTP timeout (seconds). |
 | `board_reader.cache_ttl` | `BOARD_READER_CACHE_TTL` | `60.0` | Seconds to cache board API responses (monotonic clock). Controls how often the agent re-fetches ticket data rather than using a stale in-memory snapshot. |
 
+## Direct Repo (GitHub App push-branch + open-PR)
+
+Direct-repo push-branch and open-PR as the robotsix-mill GitHub App.
+When enabled, the chat agent gains two tools: ``push_direct_repo_branch``
+(create/push a branch with file changes) and ``open_direct_repo_pr``
+(open a PR from a branch). Both authenticate as the configured GitHub App
+installation (JWT → short-lived installation token) and dynamically resolve
+the allowed repo set from the installation at action time — no static
+allowlist.
+
+**Guardrails built into the tools (not configurable):**
+- Actions are ONLY permitted for tickets in BLOCKED state.
+- Repo scope is resolved dynamically from the GitHub App installation.
+- PRs are opened in a reviewable state with no auto-merge.
+- No merge capability exists on this path.
+
+| YAML path | Env var | Default | Description |
+|---|---|---|---|
+| `direct_repo.enabled` | `DIRECT_REPO_ENABLED` | `false` | Master switch. When ``False``, no direct-repo tools are offered. |
+| `direct_repo.github_app_id` | `DIRECT_REPO_GITHUB_APP_ID` | `""` | GitHub App numeric or slug id. Required when enabled. |
+| `direct_repo.github_app_private_key` | `DIRECT_REPO_GITHUB_APP_PRIVATE_KEY` | `""` | RSA private key in PEM format. Required when enabled. Stored in config only — never hardcoded. |
+| `direct_repo.github_app_installation_id` | `DIRECT_REPO_GITHUB_APP_INSTALLATION_ID` | `""` | Installation id to act as. The app must be installed on the target org/account. Required when enabled. |
+| `direct_repo.github_api_base_url` | `DIRECT_REPO_GITHUB_API_BASE_URL` | `"https://api.github.com"` | Overridable base URL for GitHub Enterprise. |
+| `direct_repo.board_api_base_url` | `DIRECT_REPO_BOARD_API_BASE_URL` | `"http://127.0.0.1:8077"` | Base URL of the board HTTP API for ticket-state lookups (verifying BLOCKED state). |
+| `direct_repo.board_api_token` | `DIRECT_REPO_BOARD_API_TOKEN` | `""` | Optional bearer token for the board API. |
+| `direct_repo.timeout` | `DIRECT_REPO_TIMEOUT` | `30.0` | Per-request HTTP timeout in seconds. |
+
 ## Self-review
 
 A read-only digest of live conversation activity from the in-process
@@ -355,6 +382,16 @@ conversation:
 refdocs:
   enabled: true
   repos: ["damien-robotsix/board-workflow"]
+
+direct_repo:
+  # enabled: true
+  # github_app_id: "123456"
+  # github_app_private_key: "-----BEGIN RSA PRIVATE KEY-----..."
+  # github_app_installation_id: "987654321"
+  # github_api_base_url: https://api.github.com
+  # board_api_base_url: http://127.0.0.1:8077
+  # board_api_token: ""
+  # timeout: 30.0
 
 knowledge:
   enabled: true
