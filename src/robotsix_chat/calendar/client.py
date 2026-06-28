@@ -39,9 +39,7 @@ class CalendarClient:
         """Create a BrokeredAgent, start it, and initialise the query cache."""
         from robotsix_agent_comm.sdk import BrokeredAgent  # noqa: I001
 
-        self._s = settings
         self._target_agent_id = settings.calendar_agent_id
-        self._default_reply = "The calendar agent returned no reply."
         self._agent = BrokeredAgent(
             settings.agent_id,
             broker_host=settings.broker_host,

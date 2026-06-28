@@ -286,8 +286,9 @@ def _install_fake_agent_comm(
                     else None
                 )
                 raise RuntimeError(f"brokered request to ... failed: {msg}")
-            # Return a fake message whose .body is the configured reply.
-            return _Reply(self._reply)
+            # Return the configured reply directly — it already carries
+            # a ``.body`` attribute that _extract_reply_text will read.
+            return self._reply
 
     root = types.ModuleType("robotsix_agent_comm")
     sdk = types.ModuleType("robotsix_agent_comm.sdk")
