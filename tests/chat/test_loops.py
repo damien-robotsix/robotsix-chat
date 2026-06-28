@@ -1942,6 +1942,7 @@ async def test_unchanged_loop_skips_llm_after_first_no_change() -> None:
         agent_factory=lambda s: _CountingNoChangeAgent(),
         max_iterations=5,
         suppress_when=lambda r: r.strip().upper().startswith("NO_CHANGE"),
+        auto_pause_unchanged_ticks=0,
     )
 
     for _ in range(80):
