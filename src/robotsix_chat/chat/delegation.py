@@ -30,7 +30,6 @@ import asyncio
 import logging
 import re
 from collections.abc import Callable
-from functools import partial
 from typing import TYPE_CHECKING, Any
 
 from robotsix_chat.chat.events import loop_reply_frame
@@ -736,32 +735,48 @@ def build_check_loop_tools(
     changed.  The loop still tracks iterations and the last result
     internally so the next tick can compare against prior state.
     """
-    start_tool = partial(
-        _start_check_loop_tool,
-        session_id=session_id,
-        settings=settings,
-        registry=registry,
-        channel=channel,
-        agent_factory=agent_factory,
-        conversation_store=conversation_store,
-    )
-    start_tool.__name__ = "start_check_loop"  # type: ignore[attr-defined]
-    start_tool.__doc__ = _start_check_loop_tool.__doc__
+    # Wrap each extracted implementation in a thin closure that exposes ONLY
+    # the model-facing parameters and captures the injected runtime state
+    # (registry, settings, channel, …) lexically.  A functools.partial cannot
+    # be used here: the schema builder (pydantic-ai) introspects the callable's
+    # signature, and a partial still lists its keyword-bound parameters — so the
+    # non-pydantic ``registry: CheckLoopRegistry`` annotation would crash JSON
+    # schema generation.  Closures keep the injected state out of the signature
+    # entirely while leaving the heavy logic in the module-level functions.
 
-    stop_tool = partial(
-        _stop_check_loop_tool,
-        session_id=session_id,
-        registry=registry,
-    )
-    stop_tool.__name__ = "stop_check_loop"  # type: ignore[attr-defined]
-    stop_tool.__doc__ = _stop_check_loop_tool.__doc__
+    async def start_check_loop(
+        check_description: str,
+        interval_seconds: float,
+        max_iterations: int | None = None,
+        reason: str | None = None,
+        include_previous_result: bool = False,
+        verify_via_board: bool = False,
+    ) -> str:
+        return await _start_check_loop_tool(
+            check_description,
+            interval_seconds,
+            max_iterations,
+            reason,
+            include_previous_result,
+            verify_via_board,
+            session_id=session_id,
+            settings=settings,
+            registry=registry,
+            channel=channel,
+            agent_factory=agent_factory,
+            conversation_store=conversation_store,
+        )
 
-    list_tool = partial(
-        _list_check_loops_tool,
-        session_id=session_id,
-        registry=registry,
-    )
-    list_tool.__name__ = "list_check_loops"  # type: ignore[attr-defined]
-    list_tool.__doc__ = _list_check_loops_tool.__doc__
+    async def stop_check_loop(loop_id: str) -> str:
+        return await _stop_check_loop_tool(
+            loop_id, session_id=session_id, registry=registry
+        )
 
-    return [start_tool, stop_tool, list_tool]
+    async def list_check_loops() -> str:
+        return await _list_check_loops_tool(session_id=session_id, registry=registry)
+
+    start_check_loop.__doc__ = _start_check_loop_tool.__doc__
+    stop_check_loop.__doc__ = _stop_check_loop_tool.__doc__
+    list_check_loops.__doc__ = _list_check_loops_tool.__doc__
+
+    return [start_check_loop, stop_check_loop, list_check_loops]
