@@ -486,8 +486,8 @@
     background: var(--assistant-bubble-bg);
     border: 1px solid var(--composer-border);
     border-radius: 8px;
-    padding: 0.5rem 0.75rem;
-    font-size: 1rem;
+    padding: 0.6rem 0.85rem;
+    font-size: 1.05rem;
     position: relative;
   }
 
@@ -513,16 +513,18 @@
   }
 
   .pq-detail {
-    font-size: 0.92rem;
-    color: #94a3b8;
+    font-size: 0.95rem;
+    color: var(--text-fg);
+    opacity: 0.75;
     margin-bottom: 0.25rem;
     white-space: pre-wrap;
     word-break: break-word;
   }
 
   .pq-meta {
-    font-size: 0.85rem;
-    color: #64748b;
+    font-size: 0.88rem;
+    color: var(--text-fg);
+    opacity: 0.6;
     margin-bottom: 0.4rem;
   }
 
@@ -577,7 +579,7 @@
   }
 
   .pq-thread-msg {
-    font-size: 0.88rem;
+    font-size: 0.92rem;
     line-height: 1.35;
     padding: 0.2rem 0;
   }
@@ -597,7 +599,8 @@
   }
 
   .pq-thread-msg-text {
-    color: #cbd5e1;
+    color: var(--text-fg);
+    opacity: 0.85;
     white-space: pre-wrap;
     word-break: break-word;
   }
@@ -2244,6 +2247,11 @@
       entry.thread.push({ role: "user", text: text, timestamp: Date.now() / 1000 });
       renderPendingEntry(entry);
       refreshPendingPanelVisibility();
+
+      // Show a recall bubble in the main chat transcript so the user sees
+      // the original question text alongside their answer.
+      var originalText = entry.text || "Pending question";
+      addUserBubble("Re: '" + originalText + "' \u2014 " + text);
     }
 
     fetch(threadUrl, {
