@@ -11,6 +11,7 @@ from robotsix_chat.config.constants import (
     ConfigError,
     level_needs_api_key,
 )
+from robotsix_chat.config.env_builders import _build_diagnostics_raw
 from robotsix_chat.config.models import (
     AuthSettings,
     BoardReaderSettings,
@@ -63,5 +64,6 @@ __all__ = [
     "Settings",
     "VersionCheckSettings",
     "_YAML_PATH_TO_FIELD",
+    "_build_diagnostics_raw",
     "level_needs_api_key",
 ]
