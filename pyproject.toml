@@ -52,7 +52,7 @@ Changelog = "https://github.com/damien-robotsix/robotsix-chat/blob/main/CHANGELO
 # (no API key), needs Node.js + the `claude` CLI at runtime. (model_level 3)
 claude-sdk = ["robotsix-llmio[claude-sdk]"]
 # openrouter: OpenRouter (deepseek) — needs `llmio.api_key`. (model_level 1-2)
-openrouter = ["robotsix-llmio[openrouter-deepseek]"]
+openrouter = ["robotsix-llmio[openrouter]"]
 # tracing: Langfuse observability — exports LLM call traces and enables
 # OTel trace-id injection in log records.  Credentials are read from the
 # LANGFUSE_* env vars at startup; absent credentials = graceful no-op.
