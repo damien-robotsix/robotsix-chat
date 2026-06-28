@@ -36,6 +36,32 @@ def build_direct_repo_tools(
 
     client = DirectRepoClient(settings)
 
+    async def _assert_blocked_and_scoped(
+        client: DirectRepoClient,
+        ticket_id: str,
+        repo_full_name: str,
+    ) -> str | None:
+        """Return an error string if preconditions fail, or None if OK."""
+        state = await client.get_ticket_state(ticket_id)
+        if state is None:
+            return (
+                f"Error: could not determine state for ticket {ticket_id}. "
+                "Verify the ticket id and board API connectivity."
+            )
+        if state.upper() != "BLOCKED":
+            return (
+                f"Refused: ticket {ticket_id} is in state '{state}', not BLOCKED. "
+                "Direct-repo actions are only permitted for BLOCKED tickets."
+            )
+
+        allowed = await client.list_installation_repos()
+        if repo_full_name not in allowed:
+            return (
+                f"Refused: repo '{repo_full_name}' is not in the GitHub App "
+                f"installation scope. Allowed repos: {', '.join(sorted(allowed))}"
+            )
+        return None
+
     async def push_direct_repo_branch(
         ticket_id: str,
         repo_full_name: str,
@@ -88,26 +114,8 @@ def build_direct_repo_tools(
         if not isinstance(files, list):
             return "Error: files_json must be a JSON array."
 
-        # --- guard: ticket must be BLOCKED ---
-        state = await client.get_ticket_state(ticket_id)
-        if state is None:
-            return (
-                f"Error: could not determine state for ticket {ticket_id}. "
-                "Verify the ticket id and board API connectivity."
-            )
-        if state.upper() != "BLOCKED":
-            return (
-                f"Refused: ticket {ticket_id} is in state '{state}', not BLOCKED. "
-                "Direct-repo actions are only permitted for BLOCKED tickets."
-            )
-
-        # --- guard: repo must be in installation scope ---
-        allowed = await client.list_installation_repos()
-        if repo_full_name not in allowed:
-            return (
-                f"Refused: repo '{repo_full_name}' is not in the GitHub App "
-                f"installation scope. Allowed repos: {', '.join(sorted(allowed))}"
-            )
+        if error := await _assert_blocked_and_scoped(client, ticket_id, repo_full_name):
+            return error
 
         # --- push the branch ---
         msg = commit_message or f"fix: address blocked ticket {ticket_id}"
@@ -150,26 +158,8 @@ def build_direct_repo_tools(
             A status message with the PR URL on success, or an error message.
 
         """
-        # --- guard: ticket must be BLOCKED ---
-        state = await client.get_ticket_state(ticket_id)
-        if state is None:
-            return (
-                f"Error: could not determine state for ticket {ticket_id}. "
-                "Verify the ticket id and board API connectivity."
-            )
-        if state.upper() != "BLOCKED":
-            return (
-                f"Refused: ticket {ticket_id} is in state '{state}', not BLOCKED. "
-                "Direct-repo actions are only permitted for BLOCKED tickets."
-            )
-
-        # --- guard: repo must be in installation scope ---
-        allowed = await client.list_installation_repos()
-        if repo_full_name not in allowed:
-            return (
-                f"Refused: repo '{repo_full_name}' is not in the GitHub App "
-                f"installation scope. Allowed repos: {', '.join(sorted(allowed))}"
-            )
+        if error := await _assert_blocked_and_scoped(client, ticket_id, repo_full_name):
+            return error
 
         pr_body = body or (
             f"PR opened by robotsix-chat agent to resolve blocked ticket "
