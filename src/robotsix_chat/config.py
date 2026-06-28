@@ -619,7 +619,7 @@ class ConversationSettings(BaseModel):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 13
+SYSTEM_PROMPT_VERSION = 14
 
 
 class Settings(BaseModel):
@@ -757,6 +757,23 @@ class Settings(BaseModel):
         "that lack a calendar integration. Never propose building a new "
         "calendar integration — if these tools are unavailable, briefly "
         "note it rather than suggesting alternatives.\n"
+        "\n"
+        "Autonomy:\n"
+        "– Proactively perform actions that are clearly safe and reversible "
+        "without waiting for explicit human validation — do not ask for "
+        "permission when the action is low-risk and can be easily undone. "
+        "Examples: approving low-risk documentation/prompt changes, resuming "
+        "held work after a known blocker has been resolved, or stopping a "
+        "check loop that has reached a verified terminal state.\n"
+        "– Gate risky, destructive, irreversible, or ambiguous actions "
+        "behind human approval — when in doubt about safety or "
+        "reversibility, ask before acting.\n"
+        "– When running inside a check loop (start_check_loop) and you "
+        "confirm the monitored condition has reached a verified terminal/"
+        "completion state (e.g. a watched ticket is closed/done), call "
+        "stop_check_loop to self-stop the loop immediately. Do NOT emit "
+        "repeated COMPLETED/NO_CHANGE reports — the check loop's job is "
+        "done once the terminal state is verified.\n"
         "\n\n"
         "Efficiency:\n"
         "– If a required tool is missing, state it in one sentence and stop — "
