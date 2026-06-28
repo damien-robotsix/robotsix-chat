@@ -15,7 +15,8 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from robotsix_chat.board_reader.client import BoardReader
-    from robotsix_chat.diagnostics.store import DiagnosticRecord, DiagnosticStore
+    from robotsix_chat.diagnostics.models import DiagnosticRecord
+    from robotsix_chat.diagnostics.store import DiagnosticStore
 
 logger = logging.getLogger(__name__)
 
@@ -114,7 +115,7 @@ class DiagnosticCapture:
 
     async def _capture_ticket(self, ticket_id: str) -> DiagnosticRecord | None:
         """Fetch full ticket details and build a :class:`DiagnosticRecord`."""
-        from robotsix_chat.diagnostics.store import DiagnosticRecord
+        from robotsix_chat.diagnostics.models import DiagnosticRecord
 
         raw = await self._board.get_ticket(ticket_id)
         ticket_data = self._parse_json(raw)

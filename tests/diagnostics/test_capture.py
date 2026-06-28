@@ -381,11 +381,12 @@ def test_build_diagnostics_tools_disabled() -> None:
 
 
 def test_build_diagnostics_tools_enabled() -> None:
-    """Enabled diagnostics returns list_diagnostic_records tool."""
+    """Enabled diagnostics returns list_diagnostic_records and recategorize tools."""
     from robotsix_chat.config import DiagnosticsSettings
     from robotsix_chat.diagnostics import build_diagnostics_tools
 
     settings = DiagnosticsSettings(enabled=True, data_dir=":memory:")  # won't be used
     tools = build_diagnostics_tools(settings)
-    assert len(tools) == 1
-    assert tools[0].__name__ == "list_diagnostic_records"
+    assert len(tools) == 2
+    tool_names = {t.__name__ for t in tools}
+    assert tool_names == {"list_diagnostic_records", "recategorize_blocked_event"}
