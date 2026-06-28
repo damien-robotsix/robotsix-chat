@@ -226,6 +226,60 @@ def _parse_and_validate_images(
     return images, None
 
 
+async def _parse_json_body(request: Request) -> dict[str, Any] | JSONResponse:
+    """Parse and type-guard a request's JSON body.
+
+    Returns the parsed ``dict`` on success, or a ``JSONResponse`` error
+    ready to return directly from an endpoint.
+    """
+    try:
+        body = await request.json()
+    except (json.JSONDecodeError, ValueError):
+        return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+
+    if not isinstance(body, dict):
+        return JSONResponse({"error": "expected a JSON object"}, status_code=400)
+
+    return body
+
+
+def _get_session_id(request: Request) -> str | JSONResponse:
+    """Extract ``session_id`` from query params with ``client_id`` fallback.
+
+    Returns the session id string on success, or a ``JSONResponse`` error
+    ready to return directly from an endpoint.
+    """
+    session_id = request.query_params.get("session_id")
+    if not session_id:
+        session_id = request.query_params.get("client_id")
+    if not session_id:
+        return JSONResponse(
+            {"error": "session_id query parameter is required"}, status_code=400
+        )
+    return session_id
+
+
+def _cleanup_session(session_id: str, request: Request) -> tuple[int, int]:
+    """Stop check loops and cancel background tasks for *session_id*.
+
+    Returns ``(loops_stopped, tasks_cancelled)``.  Both operations are
+    best-effort — registries may be ``None`` when the feature is not wired.
+    """
+    loops_stopped = 0
+    loop_registry = request.app.state.check_loop_registry
+    if loop_registry is not None:
+        loops_stopped = loop_registry.stop_all_for_session(
+            session_id, reason="session closed"
+        )
+
+    tasks_cancelled = 0
+    task_registry = request.app.state.task_registry
+    if task_registry is not None:
+        tasks_cancelled = task_registry.cancel_all_for_session(session_id)
+
+    return loops_stopped, tasks_cancelled
+
+
 async def chat_endpoint(
     request: Request,
 ) -> JSONResponse | StreamingResponse:
@@ -234,13 +288,9 @@ async def chat_endpoint(
     store: ConversationStore = request.app.state.conversation_store
 
     # -- parse & validate JSON body ---------------------------------------
-    try:
-        body = await request.json()
-    except (json.JSONDecodeError, ValueError):
-        return JSONResponse({"error": "invalid JSON body"}, status_code=400)
-
-    if not isinstance(body, dict):
-        return JSONResponse({"error": "expected a JSON object"}, status_code=400)
+    body = await _parse_json_body(request)
+    if isinstance(body, JSONResponse):
+        return body
 
     message = body.get("message")
     if message is not None and not isinstance(message, str):
@@ -409,14 +459,9 @@ async def history_endpoint(request: Request) -> JSONResponse:
     ``GET /history?session_id=...`` returns ``{"turns": [[user, assistant], ...]}``.
     Also tolerates ``client_id`` as a legacy fallback (treated as ``session_id``).
     """
-    session_id = request.query_params.get("session_id")
-    if not session_id:
-        # Legacy fallback: treat client_id as session_id.
-        session_id = request.query_params.get("client_id")
-    if not session_id:
-        return JSONResponse(
-            {"error": "session_id query parameter is required"}, status_code=400
-        )
+    session_id = _get_session_id(request)
+    if isinstance(session_id, JSONResponse):
+        return session_id
 
     store: ConversationStore = request.app.state.conversation_store
     turns = store.history(session_id)
@@ -433,13 +478,9 @@ async def events_endpoint(request: Request) -> JSONResponse | StreamingResponse:
 
     Tolerates ``client_id`` as a legacy fallback (treated as ``session_id``).
     """
-    session_id = request.query_params.get("session_id")
-    if not session_id:
-        session_id = request.query_params.get("client_id")
-    if not session_id:
-        return JSONResponse(
-            {"error": "session_id query parameter is required"}, status_code=400
-        )
+    session_id = _get_session_id(request)
+    if isinstance(session_id, JSONResponse):
+        return session_id
 
     async def event_stream() -> AsyncIterator[bytes]:
         queue = request.app.state.event_bus.subscribe(session_id)
@@ -500,13 +541,9 @@ async def loops_list_endpoint(request: Request) -> JSONResponse:
     Returns 400 when ``session_id`` is missing, and 503 when the check-loop
     feature is not wired (``app.state.check_loop_registry`` is ``None``).
     """
-    session_id = request.query_params.get("session_id")
-    if not session_id:
-        session_id = request.query_params.get("client_id")
-    if not session_id:
-        return JSONResponse(
-            {"error": "session_id query parameter is required"}, status_code=400
-        )
+    session_id = _get_session_id(request)
+    if isinstance(session_id, JSONResponse):
+        return session_id
 
     registry: CheckLoopRegistry | None = request.app.state.check_loop_registry
     if registry is None:
@@ -582,13 +619,9 @@ async def sessions_create_endpoint(request: Request) -> JSONResponse:
 
     The new session is marked as the owner's active session.
     """
-    try:
-        body = await request.json()
-    except (json.JSONDecodeError, ValueError):
-        return JSONResponse({"error": "invalid JSON body"}, status_code=400)
-
-    if not isinstance(body, dict):
-        return JSONResponse({"error": "expected a JSON object"}, status_code=400)
+    body = await _parse_json_body(request)
+    if isinstance(body, JSONResponse):
+        return body
 
     owner_id = body.get("owner_id")
     if not owner_id or not isinstance(owner_id, str):
@@ -628,19 +661,8 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
             {"error": "owner_id query parameter is required"}, status_code=400
         )
 
-    # 1. Stop the session's check loops (registry may be unwired → None).
-    loops_stopped = 0
-    loop_registry = request.app.state.check_loop_registry
-    if loop_registry is not None:
-        loops_stopped = loop_registry.stop_all_for_session(
-            session_id, reason="session closed"
-        )
-
-    # 2. Cancel the session's in-flight background tasks.
-    tasks_cancelled = 0
-    task_registry = request.app.state.task_registry
-    if task_registry is not None:
-        tasks_cancelled = task_registry.cancel_all_for_session(session_id)
+    # 1–2. Stop the session's check loops and cancel background tasks.
+    loops_stopped, tasks_cancelled = _cleanup_session(session_id, request)
 
     # 3. Delete the conversation/session itself.
     store: ConversationStore = request.app.state.conversation_store
@@ -698,19 +720,8 @@ async def sessions_close_endpoint(request: Request) -> JSONResponse:
             {"error": "owner_id query parameter is required"}, status_code=400
         )
 
-    # 1. Stop the session's check loops (registry may be unwired → None).
-    loops_stopped = 0
-    loop_registry = request.app.state.check_loop_registry
-    if loop_registry is not None:
-        loops_stopped = loop_registry.stop_all_for_session(
-            session_id, reason="session closed"
-        )
-
-    # 2. Cancel the session's in-flight background tasks.
-    tasks_cancelled = 0
-    task_registry = request.app.state.task_registry
-    if task_registry is not None:
-        tasks_cancelled = task_registry.cancel_all_for_session(session_id)
+    # 1–2. Stop the session's check loops and cancel background tasks.
+    loops_stopped, tasks_cancelled = _cleanup_session(session_id, request)
 
     # 3. Mark the session as closed in the conversation store.
     store: ConversationStore = request.app.state.conversation_store
@@ -749,13 +760,9 @@ async def pending_questions_list_endpoint(request: Request) -> JSONResponse:
     ``{"questions": [...]}`` with each entry containing question_id, text,
     detail, status, answer, answered_at, and created_at.
     """
-    session_id = request.query_params.get("session_id")
-    if not session_id:
-        session_id = request.query_params.get("client_id")
-    if not session_id:
-        return JSONResponse(
-            {"error": "session_id query parameter is required"}, status_code=400
-        )
+    session_id = _get_session_id(request)
+    if isinstance(session_id, JSONResponse):
+        return session_id
 
     store: PendingQuestionsStore = request.app.state.pq_store
     entries = store.list_for_session(session_id)
@@ -800,13 +807,9 @@ async def pending_questions_answer_endpoint(request: Request) -> JSONResponse:
     question_id = request.path_params["question_id"]
     store: PendingQuestionsStore = request.app.state.pq_store
 
-    try:
-        body = await request.json()
-    except (json.JSONDecodeError, ValueError):
-        return JSONResponse({"error": "invalid JSON body"}, status_code=400)
-
-    if not isinstance(body, dict):
-        return JSONResponse({"error": "expected a JSON object"}, status_code=400)
+    body = await _parse_json_body(request)
+    if isinstance(body, JSONResponse):
+        return body
 
     answer_text = body.get("answer", "")
     if not isinstance(answer_text, str):
@@ -862,13 +865,9 @@ async def pending_questions_thread_append_endpoint(
     question_id = request.path_params["question_id"]
     store: PendingQuestionsStore = request.app.state.pq_store
 
-    try:
-        body = await request.json()
-    except (json.JSONDecodeError, ValueError):
-        return JSONResponse({"error": "invalid JSON body"}, status_code=400)
-
-    if not isinstance(body, dict):
-        return JSONResponse({"error": "expected a JSON object"}, status_code=400)
+    body = await _parse_json_body(request)
+    if isinstance(body, JSONResponse):
+        return body
 
     text = body.get("text", "")
     if not isinstance(text, str) or not text.strip():
