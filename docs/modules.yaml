@@ -130,6 +130,13 @@ modules:
       - src/robotsix_chat/direct_repo/client.py
       - tests/direct_repo/__init__.py
       - tests/direct_repo/test_direct_repo.py
+  - id: robotsix_chat.diagnostics
+    description: "Diagnostics subsystem — BLOCKED-ticket investigation tools. Exposes categorize_record() for inline auto-categorisation and recategorize_blocked_event() as an agent tool for manual overrides."
+    paths:
+      - src/robotsix_chat/diagnostics/__init__.py
+      - src/robotsix_chat/diagnostics/models.py
+      - src/robotsix_chat/diagnostics/categories.py
+      - tests/diagnostics/test_categories.py
   - id: robotsix_chat.knowledge
     description: "Writable knowledge-base tools for the agent — exposes build_knowledge_tools(), a factory that returns five tools the agent can call to add, append, update, list, and read durable notes across sessions. Entirely local JSON storage, no embeddings."
     paths:

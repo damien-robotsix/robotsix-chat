@@ -12,24 +12,12 @@ from __future__ import annotations
 import json
 import logging
 from collections.abc import Callable
-from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
+from robotsix_chat.diagnostics.models import DiagnosticRecord
+
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class DiagnosticRecord:
-    """A single captured diagnostic snapshot for a ticket."""
-
-    ticket_id: str
-    block_reason: str
-    langfuse_trace: str
-    ticket_history: str
-    branch_pr_links: str
-    clone_repo_info: str
-    captured_at: str
 
 
 class DiagnosticStore:
@@ -118,6 +106,8 @@ class DiagnosticStore:
                     "ticket_history": r.ticket_history,
                     "branch_pr_links": r.branch_pr_links,
                     "clone_repo_info": r.clone_repo_info,
+                    "category": r.category,
+                    "category_override": r.category_override,
                     "captured_at": r.captured_at,
                 }
                 for r in self._records
@@ -163,6 +153,8 @@ class DiagnosticStore:
                     ticket_history=item.get("ticket_history", ""),
                     branch_pr_links=item.get("branch_pr_links", ""),
                     clone_repo_info=item.get("clone_repo_info", ""),
+                    category=item.get("category", "OTHER"),
+                    category_override=item.get("category_override"),
                     captured_at=item.get("captured_at", ""),
                 )
                 if record.ticket_id:
