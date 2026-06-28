@@ -47,6 +47,7 @@ class MockAgent:
         """Initialise with a fixed token list and optional error."""
         self.tokens = tokens or ["Hello", " ", "world!"]
         self.error = error
+        self.call_count = 0
         self.called_with: str | None = None
         # Capture the conversation context the server passes, for assertions.
         self.history: list[tuple[str, str]] | None = None
@@ -62,6 +63,7 @@ class MockAgent:
         images: list[tuple[str, bytes]] | None = None,
     ) -> AsyncIterator[str]:
         """Yield tokens or raise the configured error."""
+        self.call_count += 1
         self.called_with = message
         self.history = history
         self.session_id = session_id

@@ -248,6 +248,17 @@ async def chat_endpoint(
             {"error": "message must be a string when present"}, status_code=400
         )
 
+    # -- parse & validate message_id (optional) ---------------------------
+    message_id = body.get("message_id")
+    if message_id is not None and not isinstance(message_id, str):
+        return JSONResponse(
+            {"error": "invalid 'message_id' field"}, status_code=400
+        )
+    if message_id is not None and len(message_id) > 128:
+        return JSONResponse(
+            {"error": "'message_id' exceeds maximum length"}, status_code=400
+        )
+
     # -- parse & validate images (optional) -------------------------------
     images, err_resp = _parse_and_validate_images(
         body,
@@ -294,10 +305,9 @@ async def chat_endpoint(
     if not client_id and session_id:
         client_id = session_id
 
-    if session_id:
-        session_id, history = store.begin(session_id)
-    else:
-        session_id, history = store.new_session_id(), None
+    had_session = bool(session_id)
+    if not session_id:
+        session_id = store.new_session_id()
 
     # -- SSE async generator ----------------------------------------------
 
@@ -313,11 +323,29 @@ async def chat_endpoint(
             run_serializer = request.app.state.run_serializer
             lock_key = client_id or session_id
             async with run_serializer.for_owner(lock_key):
+                # Read history inside the lock so a new message always sees
+                # the previous message's reply.  Only read when the session
+                # pre-existed — a brand-new session has no history.
+                _, current_history = (
+                    store.begin(session_id) if had_session else (None, None)
+                )
+
+                # Idempotency check — replay completed reply if seen before.
+                msg_id_store = request.app.state.msg_id_store
+                if message_id and session_id:
+                    existing_reply = msg_id_store.get_reply(session_id, message_id)
+                    if existing_reply is not None:
+                        # Replay completed reply as a single token + done;
+                        # skip agent.
+                        await queue.put((SSE_TOKEN_TYPE, existing_reply))
+                        await queue.put((SSE_DONE_TYPE, None))
+                        return
+
                 reply_parts: list[str] = []
                 try:
                     async for token in agent.stream(
                         message,
-                        history=history,
+                        history=current_history,
                         session_id=session_id,
                         client_id=client_id,
                         images=images,
@@ -331,6 +359,11 @@ async def chat_endpoint(
                         store.record(
                             session_id, owner_id, message, "".join(reply_parts)
                         )
+                        # Record the completed reply for idempotency replay.
+                        if message_id:
+                            msg_id_store.mark_completed(
+                                session_id, message_id, "".join(reply_parts)
+                            )
                     await queue.put((SSE_DONE_TYPE, None))
                 except asyncio.CancelledError:
                     raise

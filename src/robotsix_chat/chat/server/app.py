@@ -40,6 +40,7 @@ from robotsix_chat.refdocs import build_refdocs_tools
 from robotsix_chat.selfreview import build_recent_activity_tools
 from robotsix_chat.version_check import build_version_check_tools
 
+from .idempotency import MessageIdempotencyStore
 from .routes import (
     ChatAgent,
     RunSerializer,
@@ -137,6 +138,7 @@ def create_app(
     event_bus: EventBus | None = None,
     check_loop_registry: CheckLoopRegistry | None = None,
     run_serializer: RunSerializer | None = None,
+    msg_id_store: MessageIdempotencyStore | None = None,
     pq_store: PendingQuestionsStore | None = None,
     on_startup: Callable[[], None] | None = None,
     on_startup_async: Callable[[], Any] | None = None,
@@ -298,6 +300,7 @@ def create_app(
     )
     app.state.check_loop_registry = check_loop_registry  # may be None
     app.state.run_serializer = run_serializer or RunSerializer()
+    app.state.msg_id_store = msg_id_store or MessageIdempotencyStore()
     app.state.pq_store = pq_store or PendingQuestionsStore(
         event_bus=app.state.event_bus
     )
