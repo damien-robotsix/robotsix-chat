@@ -511,6 +511,7 @@ def test_settable_keys_excludes_startup_only_fields():
         "llmio.model_level",
         "llmio.api_key",
         "llmio.subagent_model",
+        "llmio.check_loop_model",
         "agent.instruction",
         "server.correlation_id_header",
         "auth.enabled",

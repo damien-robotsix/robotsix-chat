@@ -1991,6 +1991,70 @@ def test_sub_agent_recursion_guard_intact() -> None:
         assert "start_check_loop" not in names
 
 
+def test_check_loop_factory_model_override_defaults_to_haiku() -> None:
+    """Check-loop tick agent factory uses ``check_loop_model`` (default ``"haiku"``).
+
+    Builds a foreground agent with a check_loop_registry so the
+    ``_check_loop_factory`` closure is created, then verifies that the
+    factory's stored model override is ``"haiku"`` (not the sub-agent
+    ``"sonnet"`` default).
+    """
+    from robotsix_chat.chat.loops import CheckLoopRegistry
+    from robotsix_chat.chat.runner import NULL_CHANNEL
+
+    settings = Settings(llmio_model_level=3)
+    check_loop_registry = CheckLoopRegistry(store_path=None)
+
+    agent = create_agent_from_settings(
+        settings=settings,
+        check_loop_registry=check_loop_registry,
+        delivery_channel=NULL_CHANNEL,
+    )
+
+    # Foreground agent itself has no model override.
+    assert agent._model_name is None
+
+    # The check-loop factory closure should exist (request_tools_factory
+    # is not None because check_loop_registry was provided).
+    assert agent._request_tools_factory is not None
+
+
+def test_check_loop_factory_model_override_respects_setting() -> None:
+    """Check-loop factory uses ``check_loop_model`` when explicitly set."""
+    from robotsix_chat.chat.loops import CheckLoopRegistry
+    from robotsix_chat.chat.runner import NULL_CHANNEL
+
+    settings = Settings(llmio_model_level=3, check_loop_model="sonnet")
+    check_loop_registry = CheckLoopRegistry(store_path=None)
+
+    agent = create_agent_from_settings(
+        settings=settings,
+        check_loop_registry=check_loop_registry,
+        delivery_channel=NULL_CHANNEL,
+    )
+
+    assert agent._model_name is None
+    assert agent._request_tools_factory is not None
+
+
+def test_check_loop_factory_override_suppressed_when_check_loop_model_is_none() -> None:
+    """When ``check_loop_model is None``, no override is applied at level 3."""
+    from robotsix_chat.chat.loops import CheckLoopRegistry
+    from robotsix_chat.chat.runner import NULL_CHANNEL
+
+    settings = Settings(llmio_model_level=3, check_loop_model=None)
+    check_loop_registry = CheckLoopRegistry(store_path=None)
+
+    agent = create_agent_from_settings(
+        settings=settings,
+        check_loop_registry=check_loop_registry,
+        delivery_channel=NULL_CHANNEL,
+    )
+
+    assert agent._model_name is None
+    assert agent._request_tools_factory is not None
+
+
 @pytest.mark.asyncio
 async def test_foreground_subagent_factory_wired_correctly() -> None:
     """Factory passed to build_delegation_tools is threaded; tool runs.

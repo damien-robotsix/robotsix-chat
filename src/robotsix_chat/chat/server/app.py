@@ -406,6 +406,14 @@ def create_agent_from_settings(
             )
             else None
         )
+        check_loop_model = (
+            settings.check_loop_model
+            if (
+                settings.check_loop_model
+                and not level_needs_api_key(settings.llmio_model_level)
+            )
+            else None
+        )
 
         def _subagent_factory(s: Settings) -> LlmioChatAgent:
             """Build a sub-agent with the downgraded model.
@@ -416,6 +424,18 @@ def create_agent_from_settings(
             preserving the recursion guard.
             """
             return create_agent_from_settings(settings=s, model_override=subagent_model)
+
+        def _check_loop_factory(s: Settings) -> LlmioChatAgent:
+            """Build a check-loop tick agent with the monitoring model override.
+
+            Uses ``check_loop_model`` (default ``"haiku"``) instead of
+            ``subagent_model`` so monitoring/polling ticks run on the
+            cheapest subscription tier, independently of the model used
+            for delegation tasks.
+            """
+            return create_agent_from_settings(
+                settings=s, model_override=check_loop_model
+            )
 
         def _make_request_tools(session_id: str) -> list[Any]:
             request_tools: list[Any] = []
@@ -437,7 +457,7 @@ def create_agent_from_settings(
                         check_loop_registry,
                         delivery_channel or NULL_CHANNEL,
                         session_id=session_id,
-                        agent_factory=_subagent_factory,
+                        agent_factory=_check_loop_factory,
                         conversation_store=conversation_store,
                     )
                 )
