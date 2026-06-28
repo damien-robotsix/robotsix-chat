@@ -58,7 +58,7 @@ COMPLETED reports after a terminal state is verified instead of
 self-stopping.  This prompt-level autonomy policy eliminates that friction
 while preserving the safety gate for genuinely risky operations.
 
-**SHA256:** `ddc129c8c333f50cfc17064d815a471eeab7cf982da6206243d798dd3ad2c480`
+**SHA256:** `9819d833885687c484dd3e480eb225639a8488b6fa90a8383a38e2027fffe1cc`
 
 ## v13 — 2026-06-28 — false_default_repo_claim
 
