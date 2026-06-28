@@ -9,6 +9,14 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Calendar/tasks tools now use `BrokeredAgent.send_request()` directly
+  instead of the deprecated `BrokeredRequester` (removed from
+  `robotsix_agent_comm`). The `CalendarClient` no longer extends
+  `BaseBrokeredClient`; TTL query caching is preserved. Broker-
+  unreachability detection now recognises the SDK's native
+  `AgentNotFoundError`, `DeliveryError`, and `TransportTimeoutError`
+  exception types in addition to message-fragment heuristics.
+
 - When replying to a Pending Question, the chat transcript now shows a recall line referencing the original question text alongside the submitted answer ("Re: '<question>' — <answer>").  This is display-only context and does not alter the agent payload.
 - Improved Pending Questions panel readability: higher contrast text and slightly larger font sizes across the panel.
 

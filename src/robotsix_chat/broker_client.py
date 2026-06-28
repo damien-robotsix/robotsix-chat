@@ -44,6 +44,29 @@ _BROKER_UNAVAILABLE_FRAGMENTS: tuple[str, ...] = (
 
 
 def _is_broker_unavailable(exc: BaseException) -> bool:
+    """Return ``True`` when *exc* indicates a broker/recipient reachability failure.
+
+    Checks both known SDK exception types and message-fragment heuristics so
+    that :class:`AgentNotFoundError`, :class:`DeliveryError`, and
+    :class:`TransportTimeoutError` (from ``robotsix_agent_comm``) are treated
+    as transient infrastructure errors.
+    """
+    # Check for known SDK exception types first (lazy import to avoid
+    # requiring the broker extra at module level).
+    try:
+        from robotsix_agent_comm.sdk.agent import (  # noqa: I001
+            AgentNotFoundError,
+            DeliveryError,
+        )
+        from robotsix_agent_comm.transport.errors import TransportTimeoutError
+    except ImportError:
+        AgentNotFoundError = ()
+        DeliveryError = ()
+        TransportTimeoutError = ()
+
+    if isinstance(exc, (AgentNotFoundError, DeliveryError, TransportTimeoutError)):
+        return True
+
     msg = str(exc).lower()
     return any(frag in msg for frag in _BROKER_UNAVAILABLE_FRAGMENTS)
 
