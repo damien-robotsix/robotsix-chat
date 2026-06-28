@@ -1,119 +1,164 @@
-"""Blocked-ticket diagnostics capture, categorisation, and tooling.
+"""Diagnostics module — capture, categorize, and surface systemic fixes.
 
-Exposes :func:`build_diagnostics_tools` — a factory returning the LLM tools
-that let the assistant inspect captured diagnostic records.  Returns no tools
+Exposes :func:`build_diagnostics_tools` — a factory that returns agent tools
+for listing diagnostic events and managing fix proposals.  Returns no tools
 when diagnostics is disabled.
-
-The :class:`DiagnosticCapture` polls the board for BLOCKED state transitions
-and records diagnostic bundles; this module wires the agent-facing tools.
-
-Also exposes the categorisation engine: :class:`FailureCategory`,
-:func:`categorize_record` (inline auto-categorisation during capture), and
-:func:`recategorize_blocked_event` (agent tool for manual override).
 """
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
-
-from robotsix_chat.diagnostics.categories import FailureCategory, categorize_record
-from robotsix_chat.diagnostics.models import DiagnosticRecord
 
 if TYPE_CHECKING:
     from robotsix_chat.config import DiagnosticsSettings
 
-logger = logging.getLogger(__name__)
+from .fixes import FixProposalStore, FixSurfacer, RecurrenceDetector
+from .store import DiagnosticStore
 
 __all__ = [
-    "DiagnosticRecord",
-    "FailureCategory",
+    "DiagnosticStore",
+    "FixProposalStore",
+    "FixSurfacer",
+    "RecurrenceDetector",
     "build_diagnostics_tools",
-    "categorize_record",
-    "recategorize_blocked_event",
 ]
-
-
-def recategorize_blocked_event(ticket_id: str, new_category: str) -> str:
-    """Agent tool: manually override the category of a blocked event.
-
-    Args:
-        ticket_id: The id of the blocked ticket to re-categorise.
-        new_category: The new ``FailureCategory`` value
-            (``CLONE_TARGET``, ``CI_FAILURE``, ``DEPENDENCY``,
-            ``REFINEMENT``, or ``OTHER``).
-
-    Returns:
-        A confirmation string, or an error message when the ticket id is
-        unknown or *new_category* is invalid.
-
-    This is a **tool** meant to be wired into the LLM agent; it mutates the
-    diagnostic record store in place.  At this stage the store is not yet
-    wired (see the capture sibling ticket), so this function hands off to a
-    stub that raises ``NotImplementedError`` until the store is available.
-
-    """
-    # Validate the category string.
-    try:
-        _cat = FailureCategory(new_category.upper())
-    except ValueError:
-        return (
-            f"Error: '{new_category}' is not a valid failure category. "
-            f"Choose from: {', '.join(c.value for c in FailureCategory)}"
-        )
-
-    # TODO: wire into the diagnostic record store once the capture sibling
-    # ticket lands the persistence layer.
-    logger.warning(
-        "recategorize_blocked_event: store not wired yet — ticket %s "
-        "cannot be re-categorised to %s until the diagnostic store is "
-        "available.",
-        ticket_id,
-        new_category,
-    )
-    return (
-        f"Error: the diagnostics store is not yet available. "
-        f"Cannot re-categorise ticket '{ticket_id}' to '{_cat.value}'."
-    )
 
 
 def build_diagnostics_tools(
     settings: DiagnosticsSettings,
 ) -> list[Callable[..., Any]]:
-    """Return diagnostics tool(s) for the agent, or ``[]`` when disabled."""
+    """Return diagnostics tools, or ``[]`` when disabled."""
     if not settings.enabled:
         return []
 
-    from .store import DiagnosticStore
+    store = DiagnosticStore(settings.store_path)
+    proposal_store = FixProposalStore(settings.proposals_path)
 
-    store = DiagnosticStore(path=settings.data_dir)
+    detector = RecurrenceDetector(
+        store,
+        threshold=settings.recurrence_threshold,
+        window_days=settings.recurrence_window_days,
+    )
+    surfacer = FixSurfacer(proposal_store)
 
-    async def list_diagnostic_records() -> str:
-        """List all captured diagnostic records for BLOCKED tickets.
+    # ------------------------------------------------------------------
+    # tools
+    # ------------------------------------------------------------------
 
-        Returns a human-readable summary of every captured diagnostic
-        bundle — ticket id, block reason, and trace URL.  Use this to
-        answer questions about why tickets are blocked or what the
-        investigation state is.
+    async def list_diagnostic_events(category: str = "") -> str:
+        """List captured diagnostic events, optionally filtered by category.
+
+        Args:
+            category: Optional filter (e.g. ``CLONE_TARGET``, ``CI_FAILURE``).
+                Omit or pass ``""`` to list all.
 
         Returns:
-            A formatted text summary of all diagnostic records.
+            A formatted listing of diagnostic events.
 
         """
-        records = store.list()
-        if not records:
-            return "No diagnostic records captured."
+        entries = store.list_events(category)
+        if not entries:
+            return "No diagnostic events found." + (
+                f" (category: {category})" if category else ""
+            )
 
-        lines = [f"{len(records)} diagnostic record(s):", ""]
-        for r in records:
-            lines.append(f"  Ticket: {r.ticket_id}")
-            lines.append(f"    Block reason: {r.block_reason[:200]}")
-            if r.langfuse_trace:
-                lines.append(f"    Trace: {r.langfuse_trace}")
-            lines.append(f"    Category: {r.effective_category}")
-            lines.append(f"    Captured: {r.captured_at}")
-            lines.append("")
+        lines: list[str] = []
+        for e in entries:
+            lines.append(
+                f"[{e.id}] {e.category}\n"
+                f"  message: {e.message}\n"
+                f"  created_at: {e.created_at}"
+            )
         return "\n".join(lines)
 
-    return [list_diagnostic_records, recategorize_blocked_event]
+    async def check_recurring_categories() -> str:
+        """Scan diagnostic events for categories that have recurred above threshold.
+
+        When a category recurs above the configured threshold, a fix proposal
+        is auto-generated and stored for review.
+
+        Returns:
+            A summary of recurring categories and any new proposals generated.
+
+        """
+        recurring = detector.find_recurring()
+        if not recurring:
+            return "No categories have recurred above the threshold."
+
+        proposals_created: list[str] = []
+        for category, count in recurring.items():
+            proposal = surfacer.surface_fix(category, count)
+            proposals_created.append(
+                f"  - {category}: {count} occurrences → proposal {proposal.id}"
+            )
+
+        return "Recurring categories detected:\n" + "\n".join(proposals_created)
+
+    async def list_fix_proposals(category: str = "") -> str:
+        """List fix proposals, optionally filtered by category.
+
+        Args:
+            category: Optional filter (e.g. ``CLONE_TARGET``, ``CI_FAILURE``).
+                Omit or pass ``""`` to list all.
+
+        Returns:
+            A formatted listing of fix proposals with id, status, and suggestion.
+
+        """
+        proposals = proposal_store.list_proposals(category)
+        if not proposals:
+            return "No fix proposals found." + (
+                f" (category: {category})" if category else ""
+            )
+
+        lines: list[str] = []
+        for p in proposals:
+            lines.append(
+                f"[{p.id}] {p.category} ({p.status})\n"
+                f"  description: {p.description}\n"
+                f"  suggested_fix: {p.suggested_fix}\n"
+                f"  created_at: {p.created_at}"
+            )
+        return "\n".join(lines)
+
+    async def apply_fix(proposal_id: str) -> str:
+        """Mark a fix proposal as applied.
+
+        Args:
+            proposal_id: The id of the proposal to apply.
+
+        Returns:
+            Confirmation or error when the id is unknown.
+
+        """
+        proposal = proposal_store.apply(proposal_id)
+        if proposal is None:
+            return f"Error: no fix proposal found with id '{proposal_id}'"
+        return (
+            f"Applied fix proposal {proposal.id} ({proposal.category}).\n"
+            f"  suggested_fix: {proposal.suggested_fix}"
+        )
+
+    async def reject_fix(proposal_id: str) -> str:
+        """Mark a fix proposal as rejected.
+
+        Args:
+            proposal_id: The id of the proposal to reject.
+
+        Returns:
+            Confirmation or error when the id is unknown.
+
+        """
+        proposal = proposal_store.reject(proposal_id)
+        if proposal is None:
+            return f"Error: no fix proposal found with id '{proposal_id}'"
+        return f"Rejected fix proposal {proposal.id} ({proposal.category})."
+
+    return [
+        list_diagnostic_events,
+        check_recurring_categories,
+        list_fix_proposals,
+        apply_fix,
+        reject_fix,
+    ]

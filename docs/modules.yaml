@@ -66,16 +66,6 @@ modules:
       - tests/config/test_config.py
       - tests/config/test_system_prompt_governance.py
 
-  - id: robotsix_chat.diagnostics
-    description: "Blocked-ticket diagnostics capture and inspection — automatically records diagnostic bundles when tickets transition to BLOCKED, and exposes a list_diagnostic_records tool for the agent."
-    paths:
-      - src/robotsix_chat/diagnostics/__init__.py
-      - src/robotsix_chat/diagnostics/capture.py
-      - src/robotsix_chat/diagnostics/store.py
-      - tests/diagnostics/__init__.py
-      - tests/diagnostics/test_store.py
-      - tests/diagnostics/test_capture.py
-
   - id: robotsix_chat.chat
     description: "Chat SSE server — HTTP + Server-Sent Events bridge for human-to-agent chat."
     paths:
@@ -131,12 +121,19 @@ modules:
       - tests/direct_repo/__init__.py
       - tests/direct_repo/test_direct_repo.py
   - id: robotsix_chat.diagnostics
-    description: "Diagnostics subsystem — BLOCKED-ticket investigation tools. Exposes categorize_record() for inline auto-categorisation and recategorize_blocked_event() as an agent tool for manual overrides."
+    description: "Diagnostics capture and systemic fix surfacing — records diagnostic bundles, detects recurring failure categories, and surfaces fix proposals for agent or human review."
     paths:
       - src/robotsix_chat/diagnostics/__init__.py
-      - src/robotsix_chat/diagnostics/models.py
+      - src/robotsix_chat/diagnostics/capture.py
       - src/robotsix_chat/diagnostics/categories.py
+      - src/robotsix_chat/diagnostics/fixes.py
+      - src/robotsix_chat/diagnostics/models.py
+      - src/robotsix_chat/diagnostics/store.py
+      - tests/diagnostics/__init__.py
+      - tests/diagnostics/test_capture.py
       - tests/diagnostics/test_categories.py
+      - tests/diagnostics/test_fixes.py
+      - tests/diagnostics/test_store.py
   - id: robotsix_chat.knowledge
     description: "Writable knowledge-base tools for the agent — exposes build_knowledge_tools(), a factory that returns five tools the agent can call to add, append, update, list, and read durable notes across sessions. Entirely local JSON storage, no embeddings."
     paths:
