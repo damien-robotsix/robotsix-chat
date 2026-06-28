@@ -1484,7 +1484,7 @@ def test_board_reader_env_overrides_yaml(
 
 
 def test_agent_output_capping_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``agent_max_output_tokens`` and ``agent_output_stop_sequences`` default as documented."""
+    """agent_max_output_tokens / agent_output_stop_sequences default as documented."""
     _wipe_env_vars(monkeypatch)
 
     settings = Settings.from_env()
