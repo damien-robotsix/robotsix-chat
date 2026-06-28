@@ -19,6 +19,16 @@
       "fix_proposal_id": "c6507f4b38cd473e8088b8b32d3e5cb2",
       "category": "CI_FAILURE",
       "applied_at": "2026-06-28T19:15:30.013856+00:00"
+    },
+    {
+      "fix_proposal_id": "3c65d40f4f314b0aba6458bd8d5e04fe",
+      "category": "CI_FAILURE",
+      "applied_at": "2026-06-28T19:17:42.700903+00:00"
+    },
+    {
+      "fix_proposal_id": "53476b4a70f146a0bc0c9d8c0d3d92b0",
+      "category": "CI_FAILURE",
+      "applied_at": "2026-06-28T19:17:46.012137+00:00"
     }
   ],
   "reports": []
