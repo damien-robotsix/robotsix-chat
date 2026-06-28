@@ -88,7 +88,15 @@ After cancellation the check no longer fires. The loop's status flips to
 5. When a tick result is NOT suppressed, a `loop_tick` frame is published via
    SSE to the browser and written to the conversation store for the next
    foreground turn.
-6. Loops persist to `.data/check_loops.json` and are automatically resumed
+6. **Auto-halt on terminal state.** Every check loop applies a `stop_when`
+   predicate that recognises terminal status keywords (`closed`, `done`,
+   `resolved`, `completed`) in the tick result. When a tick returns text
+   containing one of these keywords (and no negation like `"not closed"`),
+   the loop stops immediately after recording that final tick — even if the
+   sub-agent forgot to call the injected `stop_check_loop` tool. This
+   prevents zombie ticks from continuing to fire after the monitored item
+   has reached a terminal state.
+7. Loops persist to `.data/check_loops.json` and are automatically resumed
    after a process restart (e.g. Watchtower redeploy).
-7. Concurrency is bounded by `max_check_loops` (default 5); exceeding it
+8. Concurrency is bounded by `max_check_loops` (default 5); exceeding it
    returns a friendly "too many" message rather than raising.
