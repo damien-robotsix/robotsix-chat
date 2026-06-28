@@ -443,6 +443,30 @@ def _no_change_result(result: str) -> bool:
     return not stripped or stripped.upper().startswith("NO_CHANGE")
 
 
+def _terminal_result(result: str) -> bool:
+    """Return ``True`` when *result* indicates a terminal state (closed/done).
+
+    Matches results that contain terminal-status keywords (``closed``,
+    ``done``, ``resolved``, ``completed``) with word boundaries.  Used as
+    the default ``stop_when`` predicate so check loops auto-halt when the
+    monitored item reaches a terminal state — even if the sub-agent forgot
+    to call the injected ``stop_check_loop`` tool.
+    """
+    import re
+
+    lowered = result.lower()
+    if not re.search(r"\b(closed|done|resolved|completed)\b", lowered):
+        return False
+    # Guard against simple negations: if a negation word appears anywhere
+    # before the terminal keyword, treat the result as non-terminal.
+    return not re.search(
+        r"\b(?:not|cannot|can'?t|isn'?t|wasn'?t|unable|nothing|failed?)\b"
+        r".*"
+        r"\b(?:closed|done|resolved|completed)\b",
+        lowered,
+    )
+
+
 async def _start_check_loop_tool(
     check_description: str,
     interval_seconds: float,
@@ -552,6 +576,7 @@ async def _start_check_loop_tool(
             settings=settings,
             registry=registry,
             max_iterations=max_iterations,
+            stop_when=_terminal_result,
             suppress_when=_no_change_result,
             include_previous_result=include_previous_result,
             agent_factory=agent_factory,

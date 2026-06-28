@@ -9,6 +9,12 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Check loops now auto-halt when the result text indicates a terminal
+  state (`closed`/`done`/`resolved`/`completed`) via the `stop_when`
+  predicate, preventing zombie ticks after the monitored item reaches
+  its terminal state.  Also fixed a latent bug where the injected
+  `stop_check_loop` tool was silently missing when the tick agent had
+  no other tools configured.
 - Board narrative hallucination guard: agent responses that describe
   board/ticket state without a prior `list_board_tickets` /
   `read_board_ticket` tool call in the same turn are now blocked and
