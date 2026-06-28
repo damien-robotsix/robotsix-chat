@@ -10,7 +10,6 @@ from typing import Any
 
 import pytest
 
-from robotsix_chat.broker_client import BaseBrokeredClient
 from robotsix_chat.calendar import build_calendar_tools
 from robotsix_chat.calendar.client import CalendarClient
 from robotsix_chat.config import CalendarSettings
@@ -22,15 +21,6 @@ def _settings(**kw: Any) -> CalendarSettings:
     base: dict[str, Any] = {"enabled": True, "broker_token": "tok"}
     base.update(kw)
     return CalendarSettings(**base)
-
-
-def _mock_preflight(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Stub out the broker preflight check so tests never make real HTTP calls."""
-
-    def _fake_check(self: Any) -> tuple[bool, str]:  # noqa: ARG001
-        return True, ""
-
-    monkeypatch.setattr(BaseBrokeredClient, "_check_reachable", _fake_check)
 
 
 # ---------------------------------------------------------------------------
@@ -82,7 +72,6 @@ def _install_fake_and_build_tools(
         "find_spec",
         lambda name: object() if name == "robotsix_agent_comm" else None,
     )
-    _mock_preflight(monkeypatch)
     captured = _install_fake_agent_comm(monkeypatch, reply=_Reply({"reply": "ok"}))
     tools = build_calendar_tools(_settings(agent_id="robotsix-chat"))
     return captured, tools
@@ -140,7 +129,6 @@ async def test_consult_calendar_domain_sends_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify that consult(domain="calendar") sends the correct payload."""
-    _mock_preflight(monkeypatch)
     captured = _install_fake_agent_comm(monkeypatch, reply=_Reply({"reply": "done"}))
     client = CalendarClient(_settings(agent_id="robotsix-chat"))
     out = await client.consult("what's on my calendar?", domain="calendar")
@@ -160,7 +148,6 @@ async def test_consult_tasks_domain_sends_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify that consult(domain="tasks") sends the correct payload."""
-    _mock_preflight(monkeypatch)
     captured = _install_fake_agent_comm(monkeypatch, reply=_Reply({"reply": "ok"}))
     client = CalendarClient(_settings())
     out = await client.consult("create a task: buy milk", domain="tasks")
@@ -189,7 +176,6 @@ async def test_consult_never_raises_on_transport_error(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify that transport errors degrade to a message instead of raising."""
-    _mock_preflight(monkeypatch)
     _install_fake_agent_comm(monkeypatch, raise_exc=RuntimeError("broker down"))
     client = CalendarClient(_settings())
     out = await client.consult("hi", domain="calendar")
@@ -202,7 +188,6 @@ async def test_consult_handles_agent_error_reply(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Verify that calendar agent error replies are surfaced as text."""
-    _mock_preflight(monkeypatch)
     err = _FakeError({"code": "BAD_REQUEST", "message": "nope"})
     _install_fake_agent_comm(monkeypatch, reply=err)
     client = CalendarClient(_settings())
@@ -220,7 +205,6 @@ async def test_query_calendar_caches_results(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``query_calendar`` caches results and returns them without extra broker calls."""
-    _mock_preflight(monkeypatch)
     captured = _install_fake_agent_comm(
         monkeypatch, reply=_Reply({"reply": "schedule: empty"})
     )
@@ -250,7 +234,6 @@ async def test_query_cache_different_request_misses(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Different request strings produce different cache keys → cache miss."""
-    _mock_preflight(monkeypatch)
     captured = _install_fake_agent_comm(monkeypatch, reply=_Reply({"reply": "ok"}))
     client = CalendarClient(_settings(cache_ttl=9999.0))
 
@@ -268,7 +251,6 @@ async def test_manage_calendar_invalidates_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``manage_calendar`` invalidates the calendar query cache."""
-    _mock_preflight(monkeypatch)
     captured = _install_fake_agent_comm(
         monkeypatch, reply=_Reply({"reply": "event created"})
     )
@@ -292,7 +274,6 @@ async def test_manage_tasks_invalidates_cache(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``manage_tasks`` invalidates the tasks query cache."""
-    _mock_preflight(monkeypatch)
     captured = _install_fake_agent_comm(monkeypatch, reply=_Reply({"reply": "done"}))
     client = CalendarClient(_settings(cache_ttl=9999.0))
 
@@ -314,7 +295,6 @@ async def test_cache_ttl_expiry(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """A cached entry older than cache_ttl triggers a fresh broker call."""
-    _mock_preflight(monkeypatch)
     captured = _install_fake_agent_comm(monkeypatch, reply=_Reply({"reply": "data"}))
     client = CalendarClient(_settings(cache_ttl=0.01))  # 10 ms TTL
 
@@ -342,8 +322,6 @@ async def test_cache_does_not_cache_errors(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Error responses are not cached — transient failures don't poison the cache."""
-    _mock_preflight(monkeypatch)
-
     # First call: the broker errors out.
     _install_fake_agent_comm(monkeypatch, raise_exc=RuntimeError("transient failure"))
     client = CalendarClient(_settings(cache_ttl=9999.0))
@@ -366,7 +344,6 @@ async def test_invalidate_cache_does_not_affect_other_domain(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """Invalidating calendar cache does not affect tasks cache (and vice versa)."""
-    _mock_preflight(monkeypatch)
     captured = _install_fake_agent_comm(monkeypatch, reply=_Reply({"reply": "ok"}))
     client = CalendarClient(_settings(cache_ttl=9999.0))
 

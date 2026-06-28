@@ -222,6 +222,73 @@ def _install_fake_agent_comm(
                 return default if default is not None else self._default_reply
             return str(body)
 
+    class _FakeBrokeredAgentWithSend:
+        """Fake SDK BrokeredAgent that captures ``send_request`` calls.
+
+        Mirrors the real ``BrokeredAgent`` constructor signature and adds a
+        ``send_request`` method whose return value / exception is controlled
+        by the *reply* and *raise_exc* parameters of
+        :func:`_install_fake_agent_comm`.
+        """
+
+        def __init__(
+            self,
+            agent_id: str,
+            *,
+            broker_host: str,
+            broker_token: str | None,
+            broker_port: int = 443,
+            broker_scheme: str = "https",
+            tls_ca: str | None = None,
+            ssl_context: object | None = None,
+            timeout: float = 30.0,
+            on_request: Any = None,
+            on_notification: Any = None,
+        ) -> None:
+            captured["agent_id"] = agent_id
+            captured["broker_host"] = broker_host
+            captured["broker_port"] = broker_port
+            captured["broker_scheme"] = broker_scheme
+            captured["broker_token"] = broker_token
+            captured["timeout"] = timeout
+            self.agent_id = agent_id
+            self._raise_exc = raise_exc
+            self._reply = reply
+            self._on_request = on_request
+            self._on_notification = on_notification
+            self._running = False
+
+        def start(self) -> None:
+            self._running = True
+
+        def stop(self) -> None:
+            self._running = False
+
+        def serve_forever(self) -> None:
+            self._running = True
+
+        def send_request(
+            self,
+            recipient: str,
+            body: dict[str, Any] | None = None,
+            *,
+            timeout: float | None = None,
+            **extra: Any,
+        ) -> Any:
+            captured["recipient"] = recipient
+            captured["payload"] = body
+            if self._raise_exc is not None:
+                raise self._raise_exc
+            if isinstance(self._reply, _FakeError):
+                msg = (
+                    self._reply.body.get("message")
+                    if isinstance(self._reply.body, dict)
+                    else None
+                )
+                raise RuntimeError(f"brokered request to ... failed: {msg}")
+            # Return a fake message whose .body is the configured reply.
+            return _Reply(self._reply)
+
     root = types.ModuleType("robotsix_agent_comm")
     sdk = types.ModuleType("robotsix_agent_comm.sdk")
     protocol = types.ModuleType("robotsix_agent_comm.protocol")
@@ -240,7 +307,7 @@ def _install_fake_agent_comm(
     protocol_messages.__spec__ = _spec("robotsix_agent_comm.protocol.messages", None)
 
     sdk.BrokeredRequester = _FakeBrokeredRequester  # type: ignore[attr-defined]
-    sdk.BrokeredAgent = _FakeBrokeredAgent  # type: ignore[attr-defined]
+    sdk.BrokeredAgent = _FakeBrokeredAgentWithSend  # type: ignore[attr-defined]
 
     # -- Fake protocol types (module-level _FakeMetadata, _FakeRequest,  ---
     #    _FakeResponse, _FakeError) ---------------------------------------
