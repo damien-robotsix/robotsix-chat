@@ -39,6 +39,7 @@ class FixApplication:
         fix_proposal_id: The id of the applied fix proposal.
         category: The failure category the fix targets.
         applied_at: ISO-8601 timestamp of when the fix was applied.
+
     """
 
     fix_proposal_id: str
@@ -65,6 +66,7 @@ class FixEffectivenessReport:
             negative = worse).  Rounded to 1 decimal place.
         effective: ``True`` when post-fix count < pre-fix count AND
             pre-fix count > 0.
+
     """
 
     report_id: str
@@ -98,6 +100,13 @@ class EffectivenessStore:
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
+        """Initialize the store.
+
+        Args:
+            path: Path to the JSON persistence file.
+            clock: Injectable clock for deterministic timestamps in tests.
+
+        """
         self._path = Path(path)
         self._clock: Callable[[], datetime] = clock or (lambda: datetime.now(UTC))
         self._fixes: dict[str, FixApplication] = {}
@@ -154,9 +163,7 @@ class EffectivenessStore:
 
     def has_report_for_fix(self, fix_proposal_id: str) -> bool:
         """Return ``True`` if a report already exists for *fix_proposal_id*."""
-        return any(
-            r.fix_proposal_id == fix_proposal_id for r in self._reports.values()
-        )
+        return any(r.fix_proposal_id == fix_proposal_id for r in self._reports.values())
 
     # ------------------------------------------------------------------
     # persistence
@@ -200,9 +207,7 @@ class EffectivenessStore:
             tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
             tmp_path.replace(self._path)
         except OSError:
-            logger.exception(
-                "Failed to persist effectiveness store to %s", self._path
-            )
+            logger.exception("Failed to persist effectiveness store to %s", self._path)
 
     def _load(self) -> None:
         """Load fixes and reports from disk; tolerate missing/empty/corrupt file."""
@@ -285,6 +290,15 @@ class RecurrenceMeasurer:
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
+        """Initialize the measurer.
+
+        Args:
+            diagnostic_store: Store to query for diagnostic events.
+            effectiveness_store: Store to persist fix applications and reports.
+            observation_window_days: Days before/after fix to count events.
+            clock: Injectable clock for deterministic timestamps in tests.
+
+        """
         self._diag = diagnostic_store
         self._eff = effectiveness_store
         self._window_days = observation_window_days
@@ -307,9 +321,7 @@ class RecurrenceMeasurer:
             applied_at=applied_at,
         )
 
-    def generate_report(
-        self, fix_proposal_id: str
-    ) -> FixEffectivenessReport | None:
+    def generate_report(self, fix_proposal_id: str) -> FixEffectivenessReport | None:
         """Compute and persist an effectiveness report for a fix.
 
         Returns ``None`` when *fix_proposal_id* is unknown.  The report is
