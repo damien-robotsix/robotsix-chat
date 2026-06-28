@@ -578,7 +578,6 @@ async def _start_check_loop_tool(
             settings=settings,
             registry=registry,
             max_iterations=max_iterations,
-            stop_when=_terminal_result,
             suppress_when=_no_change_result,
             stop_when=_terminal_state_result,
             include_previous_result=include_previous_result,
