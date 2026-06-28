@@ -42,23 +42,46 @@ number.  To revert to a previous prompt:
 
 ---
 
-## v14 — 2026-06-26 — 20260626T130813Z-update-assistant-system-prompt-to-act-mo-8b31
+<<<<<<< HEAD
+## v14 — 2026-06-28 — 20260626T130813Z (autonomy) + 20260626T215106Z (check-loop stateful monitor)
 
-**Summary:** Add an "Autonomy" section instructing the assistant to
+**Summary:** (a) Add an "Autonomy" section instructing the assistant to
 proactively perform safe, reversible actions without waiting for explicit
 human validation, while gating risky/irreversible actions behind human
 approval.  Includes a concrete rule: when running inside a check loop and a
 verified terminal/completion state is reached, call ``stop_check_loop``
 immediately instead of emitting repeated COMPLETED/NO_CHANGE reports.
+(b) Add check-loop guidance: tick sub-agents should call
+``stop_check_loop`` when the monitored item reaches a terminal state (belt
+and suspenders with programmatic auto-stop detection); pending decision
+questions must be asked once and not repeated on subsequent unchanged ticks
+(the loop auto-pauses after detecting no change).
 
-**Rationale:** The assistant currently waits for explicit human validation
-on actions that are clearly safe and reversible, adding unnecessary
-friction.  In check loops specifically, it continues emitting redundant
-COMPLETED reports after a terminal state is verified instead of
-self-stopping.  This prompt-level autonomy policy eliminates that friction
-while preserving the safety gate for genuinely risky operations.
+**Rationale:** The Autonomy section eliminates unnecessary validation
+friction for safe, reversible actions.  In check loops specifically, the
+assistant (a) continued emitting redundant COMPLETED reports after a
+terminal state was verified instead of self-stopping, and (b) re-asked
+identical decision prompts (e.g. "resume or hold?") on every tick.  The
+combined prompt update closes both gaps.
 
-**SHA256:** `9819d833885687c484dd3e480eb225639a8488b6fa90a8383a38e2027fffe1cc`
+**SHA256:** `0b989515af6b148c7f5aec0b86e590620cca6f7df23ef5a2884e4b16fd252d3d`
+=======
+## v14 — 2026-06-27 — check-loop-stateful-monitor
+
+**Summary:** Add check-loop guidance: (a) tick sub-agents should call
+``stop_check_loop`` when the monitored item reaches a terminal state,
+(b) pending decision questions must be asked once and not repeated on
+subsequent unchanged ticks.  The loop already has programmatic auto-pause
+and terminal-state detection as belt-and-suspenders; this prompt update
+makes the assistant behaviour match.
+
+**Rationale:** Without explicit guidance, the assistant re-asked identical
+decision prompts (e.g. "resume or hold?") on every tick and failed to
+self-terminate when a watched ticket reached ``closed``/``done``.  The
+two new rules close that gap.
+
+**SHA256:** `1d486376bfa46a3b5550a5a5211f56c43a890ccff7bd0631783831248130dae5`
+>>>>>>> f6afdab (mill: chat check-loop: make the monitor stateful — skip the LLM call on unchanged ticks, ask decision prompts once, auto-pause after N unchanged ticks (20260626T215106Z-chat-check-loop-make-the-monitor-statefu-13c8))
 
 ## v13 — 2026-06-28 — false_default_repo_claim
 

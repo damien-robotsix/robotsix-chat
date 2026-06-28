@@ -41,6 +41,25 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Added blocked-ticket diagnostics capture (`diagnostics`): a new module that automatically records diagnostic bundles when tickets transition to BLOCKED state. Includes `DiagnosticStore` (JSON persistence), `DiagnosticCapture` (poll-based BLOCKED detection via `BoardReader`), and a `list_diagnostic_records` agent tool. Config is gated behind `diagnostics.enabled` (default `false`) with `DIAGNOSTICS_*` env-var overrides.
 - Added diagnostics module (`robotsix_chat.diagnostics`) with systemic fix surfacing: captures diagnostic bundles, detects recurring failure categories (configurable recurrence threshold and window), and auto-generates fix proposals from curated category→template mappings. Proposals are surfaced for agent/human review and explicitly applied or rejected — never auto-applied.
 - Added agent tools: ``list_diagnostic_events``, ``check_recurring_categories``, ``list_fix_proposals``, ``apply_fix``, ``reject_fix``.
+- Check-loop worker now auto-pauses (stops) after two consecutive unchanged
+  (NO_CHANGE) ticks, preventing silent indefinite polling on stuck/idle
+  monitored items.  The loop is stopped with a descriptive reason
+  (``auto_paused: N consecutive unchanged ticks``) published as a
+  ``loop_stopped`` frame so the user receives a single clear notification.
+  Configured via the new ``auto_pause_unchanged_ticks`` parameter
+  (default 2; set to 0 to disable).
+- Check loops started via ``start_check_loop`` now carry a built-in
+  terminal-state predicate (``_terminal_state_result``) that self-stops the
+  loop immediately when the tick result indicates a terminal ticket/thread
+  state (e.g. "is now closed", "has been done"), rather than waiting for
+  the auto-pause threshold.  A new system-prompt rule instructs the
+  tick sub-agent to call ``stop_check_loop`` explicitly as the primary
+  mechanism, with the programmatic predicate as a belt-and-suspenders
+  backup.  ``SYSTEM_PROMPT_VERSION`` bumped to 14.
+- System-prompt guidance (v14): tick sub-agents must call ``stop_check_loop``
+  when the monitored item reaches a terminal state; pending decision
+  questions must be asked once and not repeated on subsequent unchanged
+  ticks.
 - Calendar/tasks tools now use `BrokeredAgent.send_request()` directly
   instead of the deprecated `BrokeredRequester` (removed from
   `robotsix_agent_comm`). The `CalendarClient` no longer extends
