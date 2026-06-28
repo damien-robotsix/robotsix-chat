@@ -9,6 +9,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Refactored shared request-validation boilerplate in route handlers
+  (`_parse_json_body`, `_get_session_id`, `_cleanup_session` helpers),
+  eliminating 9 internal clone pairs.  No behaviour changes.
+
 - `consult_mill` now caches board-read results within a single turn/tick,
   avoiding redundant broker round-trips when the LLM re-reads the same board
   data.  The cache is keyed by the exact request string and is reset at the
