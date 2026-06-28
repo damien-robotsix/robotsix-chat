@@ -26,6 +26,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import re
 from collections.abc import AsyncIterator, Callable, Iterator
 from typing import Any
 
@@ -94,6 +95,51 @@ _MEMORY_PROMPT_HEADER = (
     "# Relevant memory from earlier conversations\n"
     "Use this background only if it helps; ignore it otherwise.\n"
 )
+
+# Pattern matching ticket IDs: a timestamp-slug-hash like
+# "20250624T020652Z-my-ticket-a1b2".  Used by the board-narrative guard to
+# detect fabricated ticket references in agent output.
+_TICKET_ID_RE = re.compile(r"\d{8}T\d{6}Z-[a-z0-9-]+-[a-f0-9]{4}")
+
+# Keywords that together suggest board/ticket narrative when found in an
+# agent response that was produced without a board-read tool call.
+_BOARD_NARRATIVE_TERMS: tuple[str, ...] = (
+    "ticket",
+    "board",
+    "backlog",
+    "epic",
+)
+_BOARD_STATE_TERMS: tuple[str, ...] = (
+    "open",
+    "closed",
+    "draft",
+    "ready",
+    "in_progress",
+    "in progress",
+    "state:",
+    "status:",
+)
+
+# Response substituted when the agent produced board/ticket narrative
+# without calling any board-read tool in the turn.
+_BOARD_GUARD_MESSAGE = (
+    "I need to check the board first to give you accurate information. "
+    "Please ask me again and I'll look up the current state."
+)
+
+
+def _looks_like_board_narrative(text: str) -> bool:
+    """Return ``True`` if *text* appears to describe board/ticket state.
+
+    Heuristic guard: one or more ticket-ID patterns is a strong signal;
+    multiple ticket+state keyword occurrences is a medium signal.
+    """
+    if _TICKET_ID_RE.search(text):
+        return True
+    text_lower = text.lower()
+    ticket_hits = sum(1 for t in _BOARD_NARRATIVE_TERMS if t in text_lower)
+    state_hits = sum(1 for t in _BOARD_STATE_TERMS if t in text_lower)
+    return ticket_hits >= 2 and state_hits >= 2
 
 
 class LlmioChatAgent:
@@ -211,6 +257,12 @@ class LlmioChatAgent:
             )
             try:
                 try:
+                    # Reset the board-read tracker before each attempt so
+                    # that retries can't leak a stale True from a prior run.
+                    from robotsix_chat.board_reader import board_was_read
+
+                    board_was_read.set(False)
+
                     with _trace_session(session_id):
                         # Build the user-prompt: plain str (no images) or a
                         # multimodal list (text + BinaryContent parts).
@@ -255,6 +307,16 @@ class LlmioChatAgent:
                 continue
 
             text = result.output
+            # --- Board narrative guard ---
+            # Block responses that describe board/ticket state when no
+            # board-read tool was called this turn (hallucination guard).
+            if text and _looks_like_board_narrative(text) and not board_was_read.get():
+                logger.warning(
+                    "Blocked fabricated board narrative — no board-read tool "
+                    "was called this turn.  Response length: %d chars.",
+                    len(text),
+                )
+                text = _BOARD_GUARD_MESSAGE
             # Persist the exchange in the background so memory consolidation never
             # blocks the reply. The task is tracked to avoid premature GC.
             if text:

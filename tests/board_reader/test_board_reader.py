@@ -12,7 +12,7 @@ from typing import Any
 import httpx
 import pytest
 
-from robotsix_chat.board_reader import build_board_reader_tools
+from robotsix_chat.board_reader import board_was_read, build_board_reader_tools
 from robotsix_chat.board_reader.client import BoardReader
 from robotsix_chat.config import BoardReaderSettings
 from tests.common.mock_helpers import (
@@ -50,6 +50,67 @@ def test_build_board_reader_tools_returns_three_tools() -> None:
     assert "list_board_tickets" in names
     assert "read_board_ticket" in names
     assert "create_board_ticket" in names
+
+
+# ---------------------------------------------------------------------------
+# board_was_read context var — hallucination guard
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_board_was_read_set_by_list_tickets(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Calling list_board_tickets sets board_was_read to True."""
+    resp = _MockResponse(text='[{"id": "abc"}]')
+    _install_mock_client(monkeypatch, resp)
+
+    tools = build_board_reader_tools(_settings())
+    list_fn = [t for t in tools if t.__name__ == "list_board_tickets"][0]
+
+    # Reset before the call so we observe the effect of THIS invocation.
+    board_was_read.set(False)
+    await list_fn(repo_id="robotsix-chat")
+
+    assert board_was_read.get() is True
+
+
+@pytest.mark.asyncio
+async def test_board_was_read_set_by_read_ticket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Calling read_board_ticket sets board_was_read to True."""
+    resp = _MockResponse(text='{"id": "abc", "title": "Fix bug"}')
+    _install_mock_client(monkeypatch, resp)
+
+    tools = build_board_reader_tools(_settings())
+    read_fn = [t for t in tools if t.__name__ == "read_board_ticket"][0]
+
+    board_was_read.set(False)
+    await read_fn(ticket_id="abc")
+
+    assert board_was_read.get() is True
+
+
+@pytest.mark.asyncio
+async def test_board_was_read_set_by_create_ticket(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Calling create_board_ticket sets board_was_read to True."""
+    get_resp = _MockResponse(text="[]")
+    post_resp = _MockResponse(
+        text='{"id": "new-1", "title": "A task", "state": "draft"}',
+        status_code=201,
+    )
+
+    tools = build_board_reader_tools(_settings())
+    create_fn = [t for t in tools if t.__name__ == "create_board_ticket"][0]
+    _install_mock_dual_client(monkeypatch, get_resp, post_resp)
+
+    board_was_read.set(False)
+    await create_fn(title="A task", description="Desc", repo_id="robotsix-chat")
+
+    assert board_was_read.get() is True
 
 
 # ---------------------------------------------------------------------------
