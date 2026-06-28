@@ -360,28 +360,6 @@ class BoardReaderSettings(BaseModel):
     cache_ttl: float = 60.0
 
 
-class DiagnosticsSettings(BaseModel):
-    """Blocked-ticket diagnostics capture and inspection.
-
-    When enabled, the agent gains a ``list_diagnostic_records`` tool to
-    inspect captured diagnostic bundles.  A background poller (started by
-    the server) detects BLOCKED state transitions and records diagnostic
-    snapshots.
-
-    Attributes:
-        enabled: Master switch.  Default ``False`` — diagnostics capture
-            is opt-in.
-        poll_interval: Seconds between board polls for BLOCKED transitions.
-        data_dir: Path to the JSON persistence file.  Default
-            ``.data/diagnostics.json``.
-
-    """
-
-    enabled: bool = False
-    poll_interval: float = 30.0
-    data_dir: str = ".data/diagnostics.json"
-
-
 class DirectRepoSettings(BaseModel):
     """Direct-repo push-branch + open-PR capability as the robotsix-mill GitHub App.
 
@@ -450,6 +428,34 @@ class KnowledgeSettings(BaseModel):
 
     enabled: bool = True
     path: str = ".data/knowledge.json"
+
+
+class DiagnosticsSettings(BaseModel):
+    """Diagnostics capture and systemic fix surfacing.
+
+    When enabled, the agent captures diagnostic bundles for failure events
+    and can detect recurring failure categories.  When a category crosses
+    the recurrence threshold a ``FixProposal`` is auto-generated (but NOT
+    auto-applied) for agent or human review.
+
+    Attributes:
+        enabled: Master switch.  Default ``True``.
+        store_path: Path to the diagnostic-event JSON persistence file.
+            Default ``.data/diagnostics.json``.
+        proposals_path: Path to the fix-proposal JSON persistence file.
+            Default ``.data/fix_proposals.json``.
+        recurrence_threshold: Minimum number of occurrences within the
+            window to trigger a recurrence alert.  Default ``3``.
+        recurrence_window_days: Look-back window in days for recurrence
+            detection.  Default ``30``.
+
+    """
+
+    enabled: bool = True
+    store_path: str = ".data/diagnostics.json"
+    proposals_path: str = ".data/fix_proposals.json"
+    recurrence_threshold: int = 3
+    recurrence_window_days: int = 30
 
 
 class SelfReviewSettings(BaseModel):
@@ -836,9 +842,9 @@ class Settings(BaseModel):
     mail: MailSettings = Field(default_factory=MailSettings)
     calendar: CalendarSettings = Field(default_factory=CalendarSettings)
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)
+    diagnostics: DiagnosticsSettings = Field(default_factory=DiagnosticsSettings)
     refdocs: RefDocsSettings = Field(default_factory=RefDocsSettings)
     board_reader: BoardReaderSettings = Field(default_factory=BoardReaderSettings)
-    diagnostics: DiagnosticsSettings = Field(default_factory=DiagnosticsSettings)
     knowledge: KnowledgeSettings = Field(default_factory=KnowledgeSettings)
     self_review: SelfReviewSettings = Field(default_factory=SelfReviewSettings)
     component_agent: ComponentAgentSettings = Field(
@@ -1222,13 +1228,13 @@ class Settings(BaseModel):
         if board_reader_raw:
             raw["board_reader"] = board_reader_raw
 
-        diagnostics_raw = _build_diagnostics_raw(flat.get("diagnostics"))
-        if diagnostics_raw:
-            raw["diagnostics"] = diagnostics_raw
-
         knowledge_raw = _build_knowledge_raw(flat.get("knowledge"))
         if knowledge_raw:
             raw["knowledge"] = knowledge_raw
+
+        diagnostics_raw = _build_diagnostics_raw(flat.get("diagnostics"))
+        if diagnostics_raw:
+            raw["diagnostics"] = diagnostics_raw
 
         self_review_raw = _build_self_review_raw(flat.get("self_review"))
         if self_review_raw:
@@ -1552,36 +1558,6 @@ def _build_board_reader_raw(yaml_board_reader: Any) -> dict[str, Any]:
     return board_reader_raw
 
 
-def _build_diagnostics_raw(yaml_diagnostics: Any) -> dict[str, Any]:
-    """Overlay ``DIAGNOSTICS_*`` env vars onto the YAML ``diagnostics`` subtree.
-
-    Returns a dict ready to parse into :class:`DiagnosticsSettings`, or empty
-    when nothing is set.
-    """
-    diagnostics_raw: dict[str, Any] = dict(yaml_diagnostics or {})
-
-    def env_set(field: str, env_name: str) -> None:
-        value = os.getenv(env_name)
-        if value is not None:
-            diagnostics_raw[field] = value
-
-    enabled = os.getenv("DIAGNOSTICS_ENABLED")
-    if enabled is not None:
-        diagnostics_raw["enabled"] = _parse_bool(enabled)
-    env_set("data_dir", "DIAGNOSTICS_DATA_DIR")
-
-    poll_str = os.getenv("DIAGNOSTICS_POLL_INTERVAL")
-    if poll_str is not None:
-        try:
-            diagnostics_raw["poll_interval"] = float(poll_str)
-        except ValueError:
-            raise ValueError(
-                f"DIAGNOSTICS_POLL_INTERVAL must be a number, got {poll_str!r}"
-            ) from None
-
-    return diagnostics_raw
-
-
 def _build_direct_repo_raw(yaml_direct_repo: Any) -> dict[str, Any]:
     """Overlay ``DIRECT_REPO_*`` env vars onto the YAML ``direct_repo`` subtree.
 
@@ -1634,6 +1610,49 @@ def _build_knowledge_raw(yaml_knowledge: Any) -> dict[str, Any]:
         knowledge_raw["path"] = path
 
     return knowledge_raw
+
+
+def _build_diagnostics_raw(yaml_diagnostics: Any) -> dict[str, Any]:
+    """Overlay ``DIAGNOSTICS_*`` env vars onto the YAML ``diagnostics`` subtree.
+
+    Returns a dict ready to parse into :class:`DiagnosticsSettings`, or empty
+    when nothing is set.
+    """
+    raw: dict[str, Any] = dict(yaml_diagnostics or {})
+
+    enabled = os.getenv("DIAGNOSTICS_ENABLED")
+    if enabled is not None:
+        raw["enabled"] = _parse_bool(enabled)
+
+    store_path = os.getenv("DIAGNOSTICS_STORE_PATH")
+    if store_path is not None:
+        raw["store_path"] = store_path
+
+    proposals_path = os.getenv("DIAGNOSTICS_PROPOSALS_PATH")
+    if proposals_path is not None:
+        raw["proposals_path"] = proposals_path
+
+    threshold_str = os.getenv("DIAGNOSTICS_RECURRENCE_THRESHOLD")
+    if threshold_str is not None:
+        try:
+            raw["recurrence_threshold"] = int(threshold_str)
+        except ValueError:
+            raise ValueError(
+                f"DIAGNOSTICS_RECURRENCE_THRESHOLD must be an integer, "
+                f"got {threshold_str!r}"
+            ) from None
+
+    window_str = os.getenv("DIAGNOSTICS_RECURRENCE_WINDOW_DAYS")
+    if window_str is not None:
+        try:
+            raw["recurrence_window_days"] = int(window_str)
+        except ValueError:
+            raise ValueError(
+                f"DIAGNOSTICS_RECURRENCE_WINDOW_DAYS must be an integer, "
+                f"got {window_str!r}"
+            ) from None
+
+    return raw
 
 
 def _build_pending_questions_raw(yaml_data: Any) -> dict[str, Any]:

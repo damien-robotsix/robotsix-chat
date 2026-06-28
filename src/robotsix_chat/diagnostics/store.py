@@ -1,30 +1,57 @@
-"""Local, durable diagnostics store for captured ticket states.
+"""Diagnostic event store — persists captured diagnostic bundles to JSON.
 
-A :class:`DiagnosticStore` persists :class:`DiagnosticRecord` entries and
-ticket known-states to a single JSON file on disk — default
-``.data/diagnostics.json`` — with best-effort atomic-ish writes. On load it
-tolerates a missing, empty, or corrupt file by starting empty, and
-forward-compatibly defaults missing keys to ``None``.
+A :class:`DiagnosticStore` persists structured diagnostic events to a single
+JSON file on disk — default ``.data/diagnostics.json`` — with best-effort
+atomic-ish writes.  On load it tolerates a missing, empty, or corrupt file
+by starting empty.
+
+This is the backing store for the diagnostic capture pipeline; it is
+queried by :class:`~robotsix_chat.diagnostics.fixes.RecurrenceDetector`
+to detect recurring failure categories.
 """
 
 from __future__ import annotations
 
 import json
 import logging
+import uuid
 from collections.abc import Callable
+from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-
-from robotsix_chat.diagnostics.models import DiagnosticRecord
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
 
+@dataclass
+class DiagnosticBundle:
+    """A single captured diagnostic event.
+
+    Attributes:
+        id: Unique identifier (uuid4 hex).
+        category: Failure category (e.g. ``CLONE_TARGET``, ``CI_FAILURE``).
+        message: Human-readable description of the event.
+        details: Optional free-form JSON-serializable dict with extra context.
+        created_at: ISO-8601 timestamp of the event.
+
+    """
+
+    id: str
+    category: str
+    message: str
+    details: dict[str, Any] | None = None
+    created_at: str = ""
+
+
 class DiagnosticStore:
-    """Persist diagnostic records to ``.data/diagnostics.json`` (or custom path).
+    """Persist diagnostic bundles to ``.data/diagnostics.json`` (or custom path).
 
     Construct with an overridable ``path`` and ``clock`` injectable (defaults
     to ``datetime.now(timezone.utc)``) so tests can pin timestamps.
+
+    Methods never raise unhandled exceptions — they return sentinel values
+    or log warnings on persistence failures.
     """
 
     def __init__(
@@ -35,134 +62,116 @@ class DiagnosticStore:
     ) -> None:
         """Create a store persisting to *path*.
 
-        *clock* overrides the timestamp source (default ``datetime.now(UTC)``)
-        so tests can pin time deterministically.
+        *clock* overrides the timestamp source so tests can pin time.
         """
         self._path = Path(path)
         self._clock: Callable[[], datetime] = clock or (lambda: datetime.now(UTC))
-        self._records: list[DiagnosticRecord] = []
-        self._known_states: dict[str, str] = {}
+        self._events: dict[str, DiagnosticBundle] = {}
         self._load()
 
     # ------------------------------------------------------------------
-    # public API — records
+    # public API
     # ------------------------------------------------------------------
 
-    def add(self, record: DiagnosticRecord) -> None:
-        """Add a diagnostic record to the store and persist."""
-        self._records.append(record)
+    def record_event(
+        self,
+        category: str,
+        message: str,
+        details: dict[str, Any] | None = None,
+    ) -> DiagnosticBundle:
+        """Record a new diagnostic event; returns the bundle."""
+        bundle = DiagnosticBundle(
+            id=uuid.uuid4().hex,
+            category=category,
+            message=message,
+            details=details,
+            created_at=self._clock().isoformat(),
+        )
+        self._events[bundle.id] = bundle
         self._persist()
+        return bundle
 
-    def list(self) -> list[DiagnosticRecord]:
-        """Return all stored diagnostic records."""
-        return list(self._records)
+    def list_events(self, category: str = "") -> list[DiagnosticBundle]:
+        """Return all events, optionally filtered by *category*."""
+        if not category:
+            return list(self._events.values())
+        cat = category.strip().lower()
+        return [e for e in self._events.values() if e.category.strip().lower() == cat]
 
-    def get(self, ticket_id: str) -> DiagnosticRecord | None:
-        """Return the most recent record for *ticket_id*, or ``None``."""
-        for rec in reversed(self._records):
-            if rec.ticket_id == ticket_id:
-                return rec
-        return None
+    def get_event(self, event_id: str) -> DiagnosticBundle | None:
+        """Return the event for *event_id*, or ``None`` if unknown."""
+        return self._events.get(event_id)
 
-    def has_ticket(self, ticket_id: str) -> bool:
-        """Check whether any record exists for *ticket_id*."""
-        return any(rec.ticket_id == ticket_id for rec in self._records)
-
-    # ------------------------------------------------------------------
-    # public API — known states
-    # ------------------------------------------------------------------
-
-    def get_known_state(self, ticket_id: str) -> str | None:
-        """Return the last-known state for *ticket_id*, or ``None``."""
-        return self._known_states.get(ticket_id)
-
-    def set_known_state(self, ticket_id: str, state: str) -> None:
-        """Record the current state of a ticket and persist."""
-        self._known_states[ticket_id] = state
-        self._persist()
-
-    def get_known_states(self) -> dict[str, str]:
-        """Return a copy of all known ticket states."""
-        return dict(self._known_states)
+    def events_since(
+        self, since: datetime, category: str = ""
+    ) -> list[DiagnosticBundle]:
+        """Return events on or after *since*, optionally filtered by category."""
+        result: list[DiagnosticBundle] = []
+        for e in self._events.values():
+            if category and e.category.strip().lower() != category.strip().lower():
+                continue
+            try:
+                ts = datetime.fromisoformat(e.created_at)
+            except (ValueError, TypeError):
+                continue
+            if ts >= since:
+                result.append(e)
+        return result
 
     # ------------------------------------------------------------------
     # persistence
     # ------------------------------------------------------------------
 
     def _persist(self) -> None:
-        """Write all records and known states to the JSON store (best-effort atomic)."""
+        """Write all events to the JSON store (best-effort atomic)."""
         try:
             self._path.parent.mkdir(parents=True, exist_ok=True)
         except OSError:
             logger.warning("Could not create parent dir for %s", self._path)
             return
 
-        data = {
-            "records": [
-                {
-                    "ticket_id": r.ticket_id,
-                    "block_reason": r.block_reason,
-                    "langfuse_trace": r.langfuse_trace,
-                    "ticket_history": r.ticket_history,
-                    "branch_pr_links": r.branch_pr_links,
-                    "clone_repo_info": r.clone_repo_info,
-                    "category": r.category,
-                    "category_override": r.category_override,
-                    "captured_at": r.captured_at,
-                }
-                for r in self._records
-            ],
-            "known_states": dict(self._known_states),
-        }
-
+        entries = [
+            {
+                "id": e.id,
+                "category": e.category,
+                "message": e.message,
+                "details": e.details,
+                "created_at": e.created_at,
+            }
+            for e in self._events.values()
+        ]
         tmp_path = self._path.with_suffix(self._path.suffix + ".tmp")
         try:
-            tmp_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            tmp_path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
             tmp_path.replace(self._path)
         except OSError:
-            logger.exception("Failed to persist diagnostics store to %s", self._path)
+            logger.exception("Failed to persist diagnostic store to %s", self._path)
 
     def _load(self) -> None:
-        """Load records and known states from disk.
-
-        Tolerates missing/empty/corrupt file.
-        """
+        """Load events from disk; tolerate missing/empty/corrupt file."""
         if not self._path.exists():
             return
         try:
             raw = json.loads(self._path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
             logger.warning(
-                "Could not read diagnostics store file %s; starting empty", self._path
+                "Could not read diagnostic store file %s; starting empty",
+                self._path,
             )
             return
 
-        if not isinstance(raw, dict):
+        if not isinstance(raw, list):
             return
 
-        # Load records
-        records_raw = raw.get("records")
-        if isinstance(records_raw, list):
-            for item in records_raw:
-                if not isinstance(item, dict):
-                    continue
-                record = DiagnosticRecord(
-                    ticket_id=item.get("ticket_id", ""),
-                    block_reason=item.get("block_reason", ""),
-                    langfuse_trace=item.get("langfuse_trace", ""),
-                    ticket_history=item.get("ticket_history", ""),
-                    branch_pr_links=item.get("branch_pr_links", ""),
-                    clone_repo_info=item.get("clone_repo_info", ""),
-                    category=item.get("category", "OTHER"),
-                    category_override=item.get("category_override"),
-                    captured_at=item.get("captured_at", ""),
-                )
-                if record.ticket_id:
-                    self._records.append(record)
-
-        # Load known states
-        states_raw = raw.get("known_states")
-        if isinstance(states_raw, dict):
-            for k, v in states_raw.items():
-                if isinstance(k, str) and isinstance(v, str):
-                    self._known_states[k] = v
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            bundle = DiagnosticBundle(
+                id=item.get("id", ""),
+                category=item.get("category", ""),
+                message=item.get("message", ""),
+                details=item.get("details"),
+                created_at=item.get("created_at", ""),
+            )
+            if bundle.id:
+                self._events[bundle.id] = bundle

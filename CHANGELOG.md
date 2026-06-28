@@ -22,6 +22,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   capture, and `recategorize_blocked_event()` is the agent tool for
   manual overrides.
 - Added blocked-ticket diagnostics capture (`diagnostics`): a new module that automatically records diagnostic bundles when tickets transition to BLOCKED state. Includes `DiagnosticStore` (JSON persistence), `DiagnosticCapture` (poll-based BLOCKED detection via `BoardReader`), and a `list_diagnostic_records` agent tool. Config is gated behind `diagnostics.enabled` (default `false`) with `DIAGNOSTICS_*` env-var overrides.
+- Added diagnostics module (`robotsix_chat.diagnostics`) with systemic fix surfacing: captures diagnostic bundles, detects recurring failure categories (configurable recurrence threshold and window), and auto-generates fix proposals from curated category→template mappings. Proposals are surfaced for agent/human review and explicitly applied or rejected — never auto-applied.
+- Added agent tools: ``list_diagnostic_events``, ``check_recurring_categories``, ``list_fix_proposals``, ``apply_fix``, ``reject_fix``.
 - Calendar/tasks tools now use `BrokeredAgent.send_request()` directly
   instead of the deprecated `BrokeredRequester` (removed from
   `robotsix_agent_comm`). The `CalendarClient` no longer extends
