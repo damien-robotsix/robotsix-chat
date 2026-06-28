@@ -25,13 +25,10 @@ A ``.env`` file in the working directory is still loaded (via
 
 from __future__ import annotations
 
-import logging
 from pathlib import Path
 
 from robotsix_llmio.config import LEVEL1_DEFAULT, LEVEL2_DEFAULT, LEVEL3_DEFAULT
 from robotsix_yaml_config import YamlConfigError
-
-logger = logging.getLogger(__name__)
 
 # Default YAML config file (gitignored; copy from the committed example).
 DEFAULT_CONFIG_PATH = Path("config") / "chat.local.yaml"

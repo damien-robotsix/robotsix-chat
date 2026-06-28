@@ -6,6 +6,7 @@ implements the full defaults → YAML → environment cascade.
 
 from __future__ import annotations
 
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -24,7 +25,6 @@ from robotsix_chat.config.constants import (
     ConfigError,
     _parse_bool,
     level_needs_api_key,
-    logger,
 )
 from robotsix_chat.config.env_builders import (
     _build_board_reader_raw,
@@ -61,6 +61,8 @@ from robotsix_chat.config.models import (
     SelfReviewSettings,
     VersionCheckSettings,
 )
+
+logger = logging.getLogger(__name__)
 
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
