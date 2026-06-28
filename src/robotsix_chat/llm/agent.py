@@ -263,9 +263,7 @@ class LlmioChatAgent:
                             if self._max_output_tokens is not None:
                                 ms["max_tokens"] = self._max_output_tokens
                             if self._output_stop_sequences:
-                                ms["stop_sequences"] = (
-                                    self._output_stop_sequences
-                                )
+                                ms["stop_sequences"] = self._output_stop_sequences
                             model_settings = ms
 
                         result = await handle.run(

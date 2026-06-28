@@ -1558,10 +1558,7 @@ def test_agent_output_capping_env_overrides_yaml(
 
     config_file = tmp_path / "chat.local.yaml"
     config_file.write_text(
-        "agent:\n"
-        "  max_output_tokens: 2000\n"
-        "  output_stop_sequences:\n"
-        "    - STOP\n"
+        "agent:\n  max_output_tokens: 2000\n  output_stop_sequences:\n    - STOP\n"
     )
     monkeypatch.setenv("AGENT_MAX_OUTPUT_TOKENS", "600")
     monkeypatch.setenv("AGENT_OUTPUT_STOP_SEQUENCES", "")
