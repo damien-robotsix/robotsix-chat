@@ -830,6 +830,53 @@ def test_build_check_loop_tools_returns_three_callables() -> None:
     assert names == ["start_check_loop", "stop_check_loop", "list_check_loops"]
 
 
+def test_check_loop_tools_do_not_leak_injected_state_in_signature() -> None:
+    """Tool signatures expose only model-facing params, never injected state.
+
+    Regression for the pydantic-core schema crash: when the tools were built
+    with ``functools.partial`` the keyword-bound runtime state (``registry``,
+    ``settings``, ``channel``, …) stayed in the callable's signature, so the
+    schema builder tried to generate a JSON schema for the non-pydantic
+    ``CheckLoopRegistry`` annotation and raised ``PydanticSchemaGenerationError``.
+    """
+    import inspect
+
+    registry = _loop_registry()
+    settings = _stub_settings()
+
+    start_tool, stop_tool, list_tool = build_check_loop_tools(settings, registry)
+
+    leaked = {"registry", "settings", "channel", "agent_factory", "conversation_store"}
+    for tool in (start_tool, stop_tool, list_tool):
+        params = set(inspect.signature(tool).parameters)
+        assert not (params & leaked), f"{tool.__name__} leaks injected state: {params}"
+
+    assert set(inspect.signature(start_tool).parameters) == {
+        "check_description",
+        "interval_seconds",
+        "max_iterations",
+        "reason",
+        "include_previous_result",
+        "verify_via_board",
+    }
+    assert set(inspect.signature(stop_tool).parameters) == {"loop_id"}
+    assert set(inspect.signature(list_tool).parameters) == set()
+
+
+def test_check_loop_tools_build_pydantic_ai_schemas() -> None:
+    """Each tool must be schema-able by pydantic-ai (the provider's tool path)."""
+    pydantic_ai = pytest.importorskip("pydantic_ai")
+
+    registry = _loop_registry()
+    settings = _stub_settings()
+
+    # Constructing a Tool runs the same JSON-schema generation the live agent
+    # does at build_agent() time — this raised PydanticSchemaGenerationError
+    # before the closure-based fix.
+    for tool in build_check_loop_tools(settings, registry):
+        pydantic_ai.Tool(tool)
+
+
 def test_start_check_loop_has_docstring() -> None:
     """The start_check_loop closure has a docstring (LLM tool description)."""
     registry = _loop_registry()
