@@ -39,6 +39,14 @@ DEFAULT_CONFIG_PATH = Path("config") / "chat.local.yaml"
 # Env var that overrides the YAML config file path.
 CONFIG_PATH_ENV = "CHAT_CONFIG_PATH"
 
+__all__ = [
+    "_YAML_PATH_TO_FIELD",
+    "CONFIG_PATH_ENV",
+    "DEFAULT_CONFIG_PATH",
+    "ConfigError",
+    "level_needs_api_key",
+]
+
 # Case-insensitive truthy spellings for the AUTH_ENABLED env override.
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 
@@ -50,7 +58,6 @@ _TRUE_VALUES = {"1", "true", "yes", "on"}
 #   level 2 → openrouter[deepseek]-deepseek/deepseek-v4-pro
 #   level 3 → claudeSDK-opus  (most capable; keyless)
 _LEVEL_DEFAULTS = {1: LEVEL1_DEFAULT, 2: LEVEL2_DEFAULT, 3: LEVEL3_DEFAULT}
-_VALID_MODEL_LEVELS = set(_LEVEL_DEFAULTS)
 
 # Provider prefix for the keyless Claude SDK tier (auth via logged-in
 # `claude` CLI — no API key needed).

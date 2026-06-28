@@ -18,7 +18,6 @@ from robotsix_yaml_config import (
 )
 
 from robotsix_chat.config.constants import (
-    _VALID_MODEL_LEVELS,
     _YAML_PATH_TO_FIELD,
     CONFIG_PATH_ENV,
     DEFAULT_CONFIG_PATH,
@@ -67,6 +66,9 @@ from robotsix_chat.config.models import (
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
 SYSTEM_PROMPT_VERSION = 14
+
+# Valid model levels (import-time constant so the set is built once).
+_VALID_MODEL_LEVELS = frozenset({1, 2, 3})
 
 
 class Settings(BaseModel):
