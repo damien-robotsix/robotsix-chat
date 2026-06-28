@@ -39,8 +39,6 @@ class DiagnosticStore:
     to ``datetime.now(timezone.utc)``) so tests can pin timestamps.
     """
 
-    _STORE_DIR = ".data"
-
     def __init__(
         self,
         path: str | Path = ".data/diagnostics.json",
