@@ -1,0 +1,1 @@
+Add missing SSE_PENDING_QUESTION_ANSWERED_TYPE constant to events.py

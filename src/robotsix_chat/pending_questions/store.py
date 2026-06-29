@@ -15,6 +15,8 @@ from typing import TYPE_CHECKING
 if TYPE_CHECKING:
     from robotsix_chat.chat.events import EventBus
 
+from robotsix_chat.chat.events import SSE_PENDING_QUESTION_ANSWERED_TYPE
+
 
 @dataclass
 class ThreadMessage:
@@ -150,7 +152,7 @@ class PendingQuestionsStore:
         entry.answer = answer_text.strip()
         entry.status = "answered"
         entry.answered_at = wall_clock if wall_clock is not None else time.time()
-        self._publish(_frame_for(entry, "pending_question_answered"))
+        self._publish(_frame_for(entry, SSE_PENDING_QUESTION_ANSWERED_TYPE))
         # Append the answer to the thread so the full conversation
         # history is preserved and displayed chronologically.
         msg = ThreadMessage(
