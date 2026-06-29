@@ -51,8 +51,8 @@ _TRUE_VALUES = {"1", "true", "yes", "on"}
 # just picks a capability *level*; the combined provider-model identifier for
 # that level comes from llmio's baked default TierLevelConfig (single source
 # of truth):
-#   level 1 → openrouter[deepseek]-deepseek/deepseek-v4-flash  (cheapest)
-#   level 2 → openrouter[deepseek]-deepseek/deepseek-v4-pro
+#   level 1 → openrouter-deepseek/deepseek-v4-flash  (cheapest)
+#   level 2 → openrouter-deepseek/deepseek-v4-pro
 #   level 3 → claudeSDK-opus  (most capable; keyless)
 _LEVEL_DEFAULTS = {1: LEVEL1_DEFAULT, 2: LEVEL2_DEFAULT, 3: LEVEL3_DEFAULT}
 

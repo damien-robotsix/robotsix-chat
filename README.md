@@ -156,8 +156,8 @@ names a concrete provider or model. The default level → provider-model mapping
 
 | `model_level` | provider-model identifier | needs API key? |
 |---|---|---|
-| 1 (cheapest) | `openrouter[deepseek]-deepseek/deepseek-v4-flash` | yes (`llmio.api_key`) |
-| 2 | `openrouter[deepseek]-deepseek/deepseek-v4-pro` | yes (`llmio.api_key`) |
+| 1 (cheapest) | `openrouter-deepseek/deepseek-v4-flash` | yes (`llmio.api_key`) |
+| 2 | `openrouter-deepseek/deepseek-v4-pro` | yes (`llmio.api_key`) |
 | 3 (most capable) | `claudeSDK-opus` | no (subscription auth) |
 
 - **Level 3 / `claudeSDK`** — the
@@ -168,7 +168,7 @@ names a concrete provider or model. The default level → provider-model mapping
   `uv sync --extra openrouter` and set `llmio.api_key` (env `LLMIO_API_KEY`).
 
 Each backend dependency is pulled **through** robotsix-llmio's own extras
-(`robotsix-llmio[claude-sdk]` / `robotsix-llmio[openrouter-deepseek]`), so the
+(`robotsix-llmio[claude-sdk]` / `robotsix-llmio[openrouter]`), so the
 stack owns those deps in one place.
 
 > Replies are returned as a single block (not token-streamed): llmio's Claude
