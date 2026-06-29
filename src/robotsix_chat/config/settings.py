@@ -24,6 +24,8 @@ from robotsix_chat.config.constants import (
     DEFAULT_CONFIG_PATH,
     ConfigError,
     _parse_bool,
+    _parse_float,
+    _parse_int,
     level_needs_api_key,
 )
 from robotsix_chat.config.env_builders import (
@@ -514,60 +516,31 @@ class Settings(BaseModel):
         env_override("server_host", "SERVER_HOST")
         env_override("log_level", "LOG_LEVEL")
 
-        level_str = os.getenv("LLMIO_MODEL_LEVEL")
-        if level_str is not None:
-            try:
-                raw["llmio_model_level"] = int(level_str)
-            except ValueError:
-                raise ValueError(
-                    f"LLMIO_MODEL_LEVEL must be an integer, got {level_str!r}"
-                ) from None
+        level_val = _parse_int("LLMIO_MODEL_LEVEL", "llmio_model_level")
+        if level_val is not None:
+            raw["llmio_model_level"] = level_val
 
-        port_str = os.getenv("SERVER_PORT")
-        if port_str is not None:
-            try:
-                raw["server_port"] = int(port_str)
-            except ValueError:
-                raise ValueError(
-                    f"SERVER_PORT must be an integer, got {port_str!r}"
-                ) from None
+        port_val = _parse_int("SERVER_PORT", "server_port")
+        if port_val is not None:
+            raw["server_port"] = port_val
 
-        timeout_str = os.getenv("IDLE_TIMEOUT_MINUTES")
-        if timeout_str is not None:
-            try:
-                raw["idle_timeout_minutes"] = int(timeout_str)
-            except ValueError:
-                raise ValueError(
-                    f"IDLE_TIMEOUT_MINUTES must be an integer, got {timeout_str!r}"
-                ) from None
+        idle_val = _parse_int("IDLE_TIMEOUT_MINUTES", "idle_timeout_minutes")
+        if idle_val is not None:
+            raw["idle_timeout_minutes"] = idle_val
 
-        bg_tasks_str = os.getenv("MAX_BACKGROUND_TASKS")
-        if bg_tasks_str is not None:
-            try:
-                raw["max_background_tasks"] = int(bg_tasks_str)
-            except ValueError:
-                raise ValueError(
-                    f"MAX_BACKGROUND_TASKS must be an integer, got {bg_tasks_str!r}"
-                ) from None
+        bg_tasks_val = _parse_int("MAX_BACKGROUND_TASKS", "max_background_tasks")
+        if bg_tasks_val is not None:
+            raw["max_background_tasks"] = bg_tasks_val
 
-        max_loops_str = os.getenv("MAX_CHECK_LOOPS")
-        if max_loops_str is not None:
-            try:
-                raw["max_check_loops"] = int(max_loops_str)
-            except ValueError:
-                raise ValueError(
-                    f"MAX_CHECK_LOOPS must be an integer, got {max_loops_str!r}"
-                ) from None
+        max_loops_val = _parse_int("MAX_CHECK_LOOPS", "max_check_loops")
+        if max_loops_val is not None:
+            raw["max_check_loops"] = max_loops_val
 
-        min_interval_str = os.getenv("MIN_CHECK_LOOP_INTERVAL_SECONDS")
-        if min_interval_str is not None:
-            try:
-                raw["min_check_loop_interval_seconds"] = float(min_interval_str)
-            except ValueError:
-                raise ValueError(
-                    f"MIN_CHECK_LOOP_INTERVAL_SECONDS must be a float, "
-                    f"got {min_interval_str!r}"
-                ) from None
+        min_interval_val = _parse_float(
+            "MIN_CHECK_LOOP_INTERVAL_SECONDS", "min_check_loop_interval_seconds"
+        )
+        if min_interval_val is not None:
+            raw["min_check_loop_interval_seconds"] = min_interval_val
 
         cors_raw = os.getenv("CORS_ALLOW_ORIGINS")
         if cors_raw is not None:
@@ -577,23 +550,13 @@ class Settings(BaseModel):
 
         env_override("correlation_id_header", "CORRELATION_ID_HEADER")
 
-        max_img_str = os.getenv("MAX_IMAGES_PER_MESSAGE")
-        if max_img_str is not None:
-            try:
-                raw["max_images_per_message"] = int(max_img_str)
-            except ValueError:
-                raise ValueError(
-                    f"MAX_IMAGES_PER_MESSAGE must be an integer, got {max_img_str!r}"
-                ) from None
+        max_img_val = _parse_int("MAX_IMAGES_PER_MESSAGE", "max_images_per_message")
+        if max_img_val is not None:
+            raw["max_images_per_message"] = max_img_val
 
-        max_bytes_str = os.getenv("MAX_IMAGE_BYTES")
-        if max_bytes_str is not None:
-            try:
-                raw["max_image_bytes"] = int(max_bytes_str)
-            except ValueError:
-                raise ValueError(
-                    f"MAX_IMAGE_BYTES must be an integer, got {max_bytes_str!r}"
-                ) from None
+        max_bytes_val = _parse_int("MAX_IMAGE_BYTES", "max_image_bytes")
+        if max_bytes_val is not None:
+            raw["max_image_bytes"] = max_bytes_val
 
         allowed_types = os.getenv("ALLOWED_IMAGE_MEDIA_TYPES")
         if allowed_types is not None:

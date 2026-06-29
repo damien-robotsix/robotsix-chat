@@ -25,6 +25,7 @@ A ``.env`` file in the working directory is still loaded (via
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 from robotsix_llmio.config import LEVEL1_DEFAULT, LEVEL2_DEFAULT, LEVEL3_DEFAULT
@@ -121,3 +122,29 @@ class ConfigError(YamlConfigError):
 def _parse_bool(value: str) -> bool:
     """Parse an env-var string into a bool (``"true"``/``"1"``/… → True)."""
     return value.strip().lower() in _TRUE_VALUES
+
+
+def _parse_int(env_name: str, field_name: str) -> int | None:
+    """Parse *env_name* as an int, or raise ValueError with a canonical message."""
+    raw = os.getenv(env_name)
+    if raw is None:
+        return None
+    try:
+        return int(raw)
+    except ValueError:
+        raise ValueError(
+            f"{env_name} must be an integer, got {raw!r}"
+        ) from None
+
+
+def _parse_float(env_name: str, field_name: str) -> float | None:
+    """Parse *env_name* as a float, or raise ValueError with a canonical message."""
+    raw = os.getenv(env_name)
+    if raw is None:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        raise ValueError(
+            f"{env_name} must be a number, got {raw!r}"
+        ) from None

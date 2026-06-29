@@ -14,6 +14,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   (`src/robotsix_chat/ui/index.html`). Added `make check-sse-types` target and integrated into the
   `ci.yml` workflow.
 
+- Extracted `_parse_int` and `_parse_float` utility functions in
+  `src/robotsix_chat/config/constants.py`, replacing ~20 repetitive inline try/except blocks across
+  `env_builders.py` and `settings.py` with centralized parsing helpers.
+
 - Added `SSE_PENDING_QUESTION_ANSWERED_TYPE` constant to `src/robotsix_chat/chat/events.py` and used
   it in `store.py` and `test_store.py` in place of the raw string literal.
 
