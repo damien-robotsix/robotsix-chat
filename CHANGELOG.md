@@ -24,6 +24,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `_get_session_id`, `_cleanup_session` helpers), eliminating 9 internal clone pairs. No behaviour
   changes.
 
+- Documented Skills subsystem env vars (`SKILLS_ENABLED`, `SKILLS_MANIFESTS_DIR`)
+  in `docs/configuration.md`.
 - Migrated mail integration from agent-comm broker to direct HTTP. Replaced
   `MailClient(BaseBrokeredClient)` with a direct HTTP client calling the auto-mail board server
   (`GET /board-content`, `GET /email/{id}/status`, `POST /move`, `POST /delete`, `POST /archive`,

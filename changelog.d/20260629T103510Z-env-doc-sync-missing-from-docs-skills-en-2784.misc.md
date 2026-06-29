@@ -1,0 +1,1 @@
+env doc sync: missing-from-docs — SKILLS_* env vars (2 vars)
