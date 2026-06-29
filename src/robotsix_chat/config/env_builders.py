@@ -10,7 +10,7 @@ from __future__ import annotations
 import os
 from typing import Any
 
-from robotsix_chat.config.constants import _parse_bool
+from robotsix_chat.config.constants import _parse_bool, _parse_float, _parse_int
 
 
 def _build_memory_raw(yaml_memory: Any) -> dict[str, Any]:
@@ -45,14 +45,9 @@ def _build_memory_raw(yaml_memory: Any) -> dict[str, Any]:
     env_set(embed_raw, "api_key", "MEMORY_EMBEDDING_API_KEY")
     env_set(embed_raw, "huggingface_tokenizer", "MEMORY_EMBEDDING_TOKENIZER")
 
-    dims = os.getenv("MEMORY_EMBEDDING_DIMENSIONS")
+    dims = _parse_int("MEMORY_EMBEDDING_DIMENSIONS", "dimensions")
     if dims is not None:
-        try:
-            embed_raw["dimensions"] = int(dims)
-        except ValueError:
-            raise ValueError(
-                f"MEMORY_EMBEDDING_DIMENSIONS must be an integer, got {dims!r}"
-            ) from None
+        embed_raw["dimensions"] = dims
 
     if llm_raw:
         memory_raw["llm"] = llm_raw
@@ -84,23 +79,13 @@ def _build_mill_raw(yaml_mill: Any) -> dict[str, Any]:
     env_set("board_manager_id", "MILL_BOARD_MANAGER_ID")
     env_set("repo_id", "MILL_REPO_ID")
 
-    port_str = os.getenv("MILL_BROKER_PORT")
-    if port_str is not None:
-        try:
-            mill_raw["broker_port"] = int(port_str)
-        except ValueError:
-            raise ValueError(
-                f"MILL_BROKER_PORT must be an integer, got {port_str!r}"
-            ) from None
+    port_val = _parse_int("MILL_BROKER_PORT", "broker_port")
+    if port_val is not None:
+        mill_raw["broker_port"] = port_val
 
-    timeout_str = os.getenv("MILL_TIMEOUT")
-    if timeout_str is not None:
-        try:
-            mill_raw["timeout"] = float(timeout_str)
-        except ValueError:
-            raise ValueError(
-                f"MILL_TIMEOUT must be a number, got {timeout_str!r}"
-            ) from None
+    timeout_val = _parse_float("MILL_TIMEOUT", "timeout")
+    if timeout_val is not None:
+        mill_raw["timeout"] = timeout_val
 
     return mill_raw
 
@@ -124,14 +109,9 @@ def _build_mail_raw(yaml_mail: Any) -> dict[str, Any]:
     env_set("api_base_url", "MAIL_API_BASE_URL")
     env_set("api_token", "MAIL_API_TOKEN")
 
-    timeout_str = os.getenv("MAIL_TIMEOUT")
-    if timeout_str is not None:
-        try:
-            mail_raw["timeout"] = float(timeout_str)
-        except ValueError:
-            raise ValueError(
-                f"MAIL_TIMEOUT must be a number, got {timeout_str!r}"
-            ) from None
+    timeout_val = _parse_float("MAIL_TIMEOUT", "timeout")
+    if timeout_val is not None:
+        mail_raw["timeout"] = timeout_val
 
     return mail_raw
 
@@ -158,32 +138,17 @@ def _build_calendar_raw(yaml_calendar: Any) -> dict[str, Any]:
     env_set("agent_id", "CALENDAR_AGENT_ID")
     env_set("calendar_agent_id", "CALENDAR_CALENDAR_AGENT_ID")
 
-    port_str = os.getenv("CALENDAR_BROKER_PORT")
-    if port_str is not None:
-        try:
-            calendar_raw["broker_port"] = int(port_str)
-        except ValueError:
-            raise ValueError(
-                f"CALENDAR_BROKER_PORT must be an integer, got {port_str!r}"
-            ) from None
+    port_val = _parse_int("CALENDAR_BROKER_PORT", "broker_port")
+    if port_val is not None:
+        calendar_raw["broker_port"] = port_val
 
-    timeout_str = os.getenv("CALENDAR_TIMEOUT")
-    if timeout_str is not None:
-        try:
-            calendar_raw["timeout"] = float(timeout_str)
-        except ValueError:
-            raise ValueError(
-                f"CALENDAR_TIMEOUT must be a number, got {timeout_str!r}"
-            ) from None
+    timeout_val = _parse_float("CALENDAR_TIMEOUT", "timeout")
+    if timeout_val is not None:
+        calendar_raw["timeout"] = timeout_val
 
-    cache_ttl_str = os.getenv("CALENDAR_CACHE_TTL")
-    if cache_ttl_str is not None:
-        try:
-            calendar_raw["cache_ttl"] = float(cache_ttl_str)
-        except ValueError:
-            raise ValueError(
-                f"CALENDAR_CACHE_TTL must be a number, got {cache_ttl_str!r}"
-            ) from None
+    cache_ttl_val = _parse_float("CALENDAR_CACHE_TTL", "cache_ttl")
+    if cache_ttl_val is not None:
+        calendar_raw["cache_ttl"] = cache_ttl_val
 
     return calendar_raw
 
@@ -196,18 +161,14 @@ def _build_conversation_raw(yaml_conversation: Any) -> dict[str, Any]:
     """
     conversation_raw: dict[str, Any] = dict(yaml_conversation or {})
 
-    def env_int(field: str, env_name: str) -> None:
-        value = os.getenv(env_name)
-        if value is None:
-            return
-        try:
-            conversation_raw[field] = int(value)
-        except ValueError:
-            raise ValueError(f"{env_name} must be an integer, got {value!r}") from None
+    def _set_if_not_none(field: str, env_name: str) -> None:
+        val = _parse_int(env_name, field)
+        if val is not None:
+            conversation_raw[field] = val
 
-    env_int("idle_reset_seconds", "CONVERSATION_IDLE_RESET_SECONDS")
-    env_int("max_history_turns", "CONVERSATION_MAX_HISTORY_TURNS")
-    env_int("max_conversations", "CONVERSATION_MAX_CONVERSATIONS")
+    _set_if_not_none("idle_reset_seconds", "CONVERSATION_IDLE_RESET_SECONDS")
+    _set_if_not_none("max_history_turns", "CONVERSATION_MAX_HISTORY_TURNS")
+    _set_if_not_none("max_conversations", "CONVERSATION_MAX_CONVERSATIONS")
 
     persist_path = os.getenv("CONVERSATION_PERSIST_PATH")
     if persist_path is not None:
@@ -242,14 +203,9 @@ def _build_refdocs_raw(yaml_refdocs: Any) -> dict[str, Any]:
             repo.strip() for repo in repos_raw.split(",") if repo.strip()
         ]
 
-    timeout_str = os.getenv("REFDOCS_TIMEOUT")
-    if timeout_str is not None:
-        try:
-            refdocs_raw["timeout"] = float(timeout_str)
-        except ValueError:
-            raise ValueError(
-                f"REFDOCS_TIMEOUT must be a number, got {timeout_str!r}"
-            ) from None
+    timeout_val = _parse_float("REFDOCS_TIMEOUT", "timeout")
+    if timeout_val is not None:
+        refdocs_raw["timeout"] = timeout_val
 
     return refdocs_raw
 
@@ -273,23 +229,13 @@ def _build_board_reader_raw(yaml_board_reader: Any) -> dict[str, Any]:
     env_set("api_base_url", "BOARD_READER_API_BASE_URL")
     env_set("api_token", "BOARD_READER_API_TOKEN")
 
-    timeout_str = os.getenv("BOARD_READER_TIMEOUT")
-    if timeout_str is not None:
-        try:
-            board_reader_raw["timeout"] = float(timeout_str)
-        except ValueError:
-            raise ValueError(
-                f"BOARD_READER_TIMEOUT must be a number, got {timeout_str!r}"
-            ) from None
+    timeout_val = _parse_float("BOARD_READER_TIMEOUT", "timeout")
+    if timeout_val is not None:
+        board_reader_raw["timeout"] = timeout_val
 
-    cache_ttl_str = os.getenv("BOARD_READER_CACHE_TTL")
-    if cache_ttl_str is not None:
-        try:
-            board_reader_raw["cache_ttl"] = float(cache_ttl_str)
-        except ValueError:
-            raise ValueError(
-                f"BOARD_READER_CACHE_TTL must be a number, got {cache_ttl_str!r}"
-            ) from None
+    cache_ttl_val = _parse_float("BOARD_READER_CACHE_TTL", "cache_ttl")
+    if cache_ttl_val is not None:
+        board_reader_raw["cache_ttl"] = cache_ttl_val
 
     return board_reader_raw
 
@@ -318,35 +264,23 @@ def _build_diagnostics_raw(yaml_diagnostics: Any) -> dict[str, Any]:
     if effectiveness_path is not None:
         raw["effectiveness_path"] = effectiveness_path
 
-    threshold_str = os.getenv("DIAGNOSTICS_RECURRENCE_THRESHOLD")
-    if threshold_str is not None:
-        try:
-            raw["recurrence_threshold"] = int(threshold_str)
-        except ValueError:
-            raise ValueError(
-                f"DIAGNOSTICS_RECURRENCE_THRESHOLD must be an integer, "
-                f"got {threshold_str!r}"
-            ) from None
+    threshold_val = _parse_int(
+        "DIAGNOSTICS_RECURRENCE_THRESHOLD", "recurrence_threshold"
+    )
+    if threshold_val is not None:
+        raw["recurrence_threshold"] = threshold_val
 
-    window_str = os.getenv("DIAGNOSTICS_RECURRENCE_WINDOW_DAYS")
-    if window_str is not None:
-        try:
-            raw["recurrence_window_days"] = int(window_str)
-        except ValueError:
-            raise ValueError(
-                f"DIAGNOSTICS_RECURRENCE_WINDOW_DAYS must be an integer, "
-                f"got {window_str!r}"
-            ) from None
+    window_val = _parse_int(
+        "DIAGNOSTICS_RECURRENCE_WINDOW_DAYS", "recurrence_window_days"
+    )
+    if window_val is not None:
+        raw["recurrence_window_days"] = window_val
 
-    obs_window_str = os.getenv("DIAGNOSTICS_OBSERVATION_WINDOW_DAYS")
-    if obs_window_str is not None:
-        try:
-            raw["observation_window_days"] = int(obs_window_str)
-        except ValueError:
-            raise ValueError(
-                f"DIAGNOSTICS_OBSERVATION_WINDOW_DAYS must be an integer, "
-                f"got {obs_window_str!r}"
-            ) from None
+    obs_window_val = _parse_int(
+        "DIAGNOSTICS_OBSERVATION_WINDOW_DAYS", "observation_window_days"
+    )
+    if obs_window_val is not None:
+        raw["observation_window_days"] = obs_window_val
 
     return raw
 
@@ -374,14 +308,9 @@ def _build_direct_repo_raw(yaml_direct_repo: Any) -> dict[str, Any]:
     env_set("board_api_base_url", "DIRECT_REPO_BOARD_API_BASE_URL")
     env_set("board_api_token", "DIRECT_REPO_BOARD_API_TOKEN")
 
-    timeout_str = os.getenv("DIRECT_REPO_TIMEOUT")
-    if timeout_str is not None:
-        try:
-            dr_raw["timeout"] = float(timeout_str)
-        except ValueError:
-            raise ValueError(
-                f"DIRECT_REPO_TIMEOUT must be a number, got {timeout_str!r}"
-            ) from None
+    timeout_val = _parse_float("DIRECT_REPO_TIMEOUT", "timeout")
+    if timeout_val is not None:
+        dr_raw["timeout"] = timeout_val
 
     return dr_raw
 
@@ -451,15 +380,9 @@ def _build_self_review_raw(yaml_self_review: Any) -> dict[str, Any]:
     if enabled is not None:
         self_review_raw["enabled"] = _parse_bool(enabled)
 
-    limit_str = os.getenv("SELF_REVIEW_RECENT_ACTIVITY_LIMIT")
-    if limit_str is not None:
-        try:
-            self_review_raw["recent_activity_limit"] = int(limit_str)
-        except ValueError:
-            raise ValueError(
-                f"SELF_REVIEW_RECENT_ACTIVITY_LIMIT must be an integer, "
-                f"got {limit_str!r}"
-            ) from None
+    limit_val = _parse_int("SELF_REVIEW_RECENT_ACTIVITY_LIMIT", "recent_activity_limit")
+    if limit_val is not None:
+        self_review_raw["recent_activity_limit"] = limit_val
 
     return self_review_raw
 
@@ -485,23 +408,13 @@ def _build_component_agent_raw(yaml_component_agent: Any) -> dict[str, Any]:
     env_set("broker_token", "COMPONENT_AGENT_BROKER_TOKEN")
     env_set("agent_id", "COMPONENT_AGENT_AGENT_ID")
 
-    port_str = os.getenv("COMPONENT_AGENT_BROKER_PORT")
-    if port_str is not None:
-        try:
-            component_agent_raw["broker_port"] = int(port_str)
-        except ValueError:
-            raise ValueError(
-                f"COMPONENT_AGENT_BROKER_PORT must be an integer, got {port_str!r}"
-            ) from None
+    port_val = _parse_int("COMPONENT_AGENT_BROKER_PORT", "broker_port")
+    if port_val is not None:
+        component_agent_raw["broker_port"] = port_val
 
-    timeout_str = os.getenv("COMPONENT_AGENT_TIMEOUT")
-    if timeout_str is not None:
-        try:
-            component_agent_raw["timeout"] = float(timeout_str)
-        except ValueError:
-            raise ValueError(
-                f"COMPONENT_AGENT_TIMEOUT must be a number, got {timeout_str!r}"
-            ) from None
+    timeout_val = _parse_float("COMPONENT_AGENT_TIMEOUT", "timeout")
+    if timeout_val is not None:
+        component_agent_raw["timeout"] = timeout_val
 
     return component_agent_raw
 
@@ -526,23 +439,13 @@ def _build_version_check_raw(yaml_version_check: Any) -> dict[str, Any]:
     env_set("github_token", "VERSION_CHECK_GITHUB_TOKEN")
     env_set("base_url", "VERSION_CHECK_BASE_URL")
 
-    timeout_str = os.getenv("VERSION_CHECK_TIMEOUT")
-    if timeout_str is not None:
-        try:
-            version_check_raw["timeout"] = float(timeout_str)
-        except ValueError:
-            raise ValueError(
-                f"VERSION_CHECK_TIMEOUT must be a number, got {timeout_str!r}"
-            ) from None
+    timeout_val = _parse_float("VERSION_CHECK_TIMEOUT", "timeout")
+    if timeout_val is not None:
+        version_check_raw["timeout"] = timeout_val
 
-    cache_ttl_str = os.getenv("VERSION_CHECK_CACHE_TTL")
-    if cache_ttl_str is not None:
-        try:
-            version_check_raw["cache_ttl"] = float(cache_ttl_str)
-        except ValueError:
-            raise ValueError(
-                f"VERSION_CHECK_CACHE_TTL must be a number, got {cache_ttl_str!r}"
-            ) from None
+    cache_ttl_val = _parse_float("VERSION_CHECK_CACHE_TTL", "cache_ttl")
+    if cache_ttl_val is not None:
+        version_check_raw["cache_ttl"] = cache_ttl_val
 
     return version_check_raw
 
@@ -559,13 +462,8 @@ def _build_component_client_raw(yaml_component_client: Any) -> dict[str, Any]:
     if enabled is not None:
         cc_raw["enabled"] = _parse_bool(enabled)
 
-    timeout_str = os.getenv("COMPONENT_CLIENT_TIMEOUT")
-    if timeout_str is not None:
-        try:
-            cc_raw["timeout"] = float(timeout_str)
-        except ValueError:
-            raise ValueError(
-                f"COMPONENT_CLIENT_TIMEOUT must be a number, got {timeout_str!r}"
-            ) from None
+    timeout_val = _parse_float("COMPONENT_CLIENT_TIMEOUT", "timeout")
+    if timeout_val is not None:
+        cc_raw["timeout"] = timeout_val
 
     return cc_raw
