@@ -8,7 +8,7 @@ purely from a capability **level** via
 ``TierLevelConfig``), so this package never names a concrete provider class or
 the Claude Agent SDK.
 
-By default: level 1-2 → ``openrouter[deepseek]-deepseek/...`` (needs an API
+By default: level 1-2 → ``openrouter-deepseek/...`` (needs an API
 key), level 3 → ``claudeSDK-opus`` (keyless, via the logged-in ``claude`` CLI).
 
 Responses are returned as a single block (not token-streamed): llmio's Claude
@@ -17,7 +17,7 @@ SDK model does not support incremental streaming through pydantic-ai, so each
 normal SSE ``token`` + ``done`` sequence.
 
 The provider dependencies are obtained through robotsix-llmio's own extras —
-``robotsix-llmio[claude-sdk]`` and ``robotsix-llmio[openrouter-deepseek]`` —
+``robotsix-llmio[claude-sdk]`` and ``robotsix-llmio[openrouter]`` —
 wired via this package's ``claude-sdk`` / ``openrouter`` extras.
 """
 
