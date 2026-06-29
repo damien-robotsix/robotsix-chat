@@ -9,10 +9,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-- Added `scripts/check_sse_event_types.py` CI gate to verify that SSE event-type string constants
-  in `src/robotsix_chat/chat/events.py` stay in sync with the browser UI
-  (`src/robotsix_chat/ui/index.html`).  Added `make check-sse-types` target and integrated into
-  the `ci.yml` workflow.
+- Added `scripts/check_sse_event_types.py` CI gate to verify that SSE event-type string constants in
+  `src/robotsix_chat/chat/events.py` stay in sync with the browser UI
+  (`src/robotsix_chat/ui/index.html`). Added `make check-sse-types` target and integrated into the
+  `ci.yml` workflow.
 
 - Added `SSE_PENDING_QUESTION_ANSWERED_TYPE` constant to `src/robotsix_chat/chat/events.py` and used
   it in `store.py` and `test_store.py` in place of the raw string literal.
