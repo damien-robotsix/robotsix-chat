@@ -7,7 +7,7 @@ child #4 ("Embed the agent") needs to serve ``config-get`` and ``config-set``
 request kinds over the broker.
 
 **Dotted-path convention.** Keys follow the YAML layout in
-``robotsix_chat/config.py`` (``_YAML_PATH_TO_FIELD``): ``server.log_level``,
+``robotsix_chat/config/constants.py`` (``_YAML_PATH_TO_FIELD``): ``server.log_level``,
 ``mill.enabled``, ``conversation.max_history_turns``, etc.  This is the same
 convention used in ``config/chat.local.yaml`` and environment-variable
 overrides.

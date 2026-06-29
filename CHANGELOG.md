@@ -9,6 +9,12 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Updated stale references to `src/robotsix_chat/config.py` (moved into `config/` package) across
+  governance docs, AGENT.md, SECURITY.md, and config_contract.py docstring to reflect the split:
+  `config/settings.py` for `Settings`/`SYSTEM_PROMPT_VERSION`/`agent_instruction`,
+  `config/constants.py` for `_YAML_PATH_TO_FIELD`, and `config/` for the package table in
+  architecture docs.
+
 - Documented `DIAGNOSTICS_*` environment variables in `docs/configuration.md`.
 
 - Documented `LLMIO_CHECK_LOOP_MODEL` / `llmio.check_loop_model` in `docs/configuration.md`

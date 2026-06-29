@@ -129,7 +129,8 @@ missing or empty.
 ### Root `.env` — application runtime env vars
 
 The root `.env.example` documents the full set of application-level environment variables that
-`python-dotenv` loads at runtime (used by `Settings.load()` in `src/robotsix_chat/config.py`):
+`python-dotenv` loads at runtime (used by `Settings.load()` in
+`src/robotsix_chat/config/settings.py`):
 
 - `LLMIO_MODEL_LEVEL`, `LLMIO_API_KEY` — LLM selection
 - `SERVER_HOST`, `SERVER_PORT`, `LOG_LEVEL`, `CORS_ALLOW_ORIGINS` — server
@@ -221,7 +222,7 @@ Disabled by default; no tools are added when off or when the `broker` extra is a
 - `.env.example` — canonical env-var reference (standard variables; deploy-only vars documented
   above)
 - `config/chat.local.example.yaml` — canonical YAML config template (copy to `chat.local.yaml`)
-- `src/robotsix_chat/config.py` — settings cascade (pydantic defaults → YAML → env,
+- `src/robotsix_chat/config/settings.py` — settings cascade (pydantic defaults → YAML → env,
   `Settings.load()`); includes `MemorySettings`
 - `src/robotsix_chat/memory/` — optional long-term memory: `base.py` (`ChatMemory` protocol +
   `NullMemory`), `cognee.py` (`CogneeMemory`), `__init__.py` (`build_memory()`)
