@@ -9,7 +9,8 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
-- Added `SSE_PENDING_QUESTION_ANSWERED_TYPE` constant to `src/robotsix_chat/chat/events.py` and used it in `store.py` and `test_store.py` in place of the raw string literal.
+- Added `SSE_PENDING_QUESTION_ANSWERED_TYPE` constant to `src/robotsix_chat/chat/events.py` and used
+  it in `store.py` and `test_store.py` in place of the raw string literal.
 
 - Updated stale references to `src/robotsix_chat/config.py` (moved into `config/` package) across
   governance docs, AGENT.md, SECURITY.md, and config_contract.py docstring to reflect the split:
