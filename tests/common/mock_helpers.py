@@ -116,11 +116,13 @@ def install_mock_client(
             *,
             headers: dict[str, str] | None = None,
             json: dict[str, Any] | None = None,
+            content: str | bytes | None = None,
         ) -> MockResponse:
             captured["method"] = "POST"
             captured["url"] = url
             captured["headers"] = headers
             captured["json"] = json
+            captured["content"] = content
             if counter is not None:
                 counter[0] += 1
             return response
@@ -170,10 +172,12 @@ def install_mock_dual_client(
             *,
             headers: dict[str, str],
             json: dict[str, str] | None = None,
+            content: str | bytes | None = None,
         ) -> MockResponse:
             captured["post"]["url"] = url
             captured["post"]["headers"] = headers
             captured["post"]["json"] = json
+            captured["post"]["content"] = content
             return self._post_resp
 
     monkeypatch.setattr(httpx, "AsyncClient", _BoundDualClient)

@@ -121,20 +121,8 @@ def _build_mail_raw(yaml_mail: Any) -> dict[str, Any]:
     enabled = os.getenv("MAIL_ENABLED")
     if enabled is not None:
         mail_raw["enabled"] = _parse_bool(enabled)
-    env_set("broker_host", "MAIL_BROKER_HOST")
-    env_set("broker_scheme", "MAIL_BROKER_SCHEME")
-    env_set("broker_token", "MAIL_BROKER_TOKEN")
-    env_set("agent_id", "MAIL_AGENT_ID")
-    env_set("board_manager_id", "MAIL_BOARD_MANAGER_ID")
-
-    port_str = os.getenv("MAIL_BROKER_PORT")
-    if port_str is not None:
-        try:
-            mail_raw["broker_port"] = int(port_str)
-        except ValueError:
-            raise ValueError(
-                f"MAIL_BROKER_PORT must be an integer, got {port_str!r}"
-            ) from None
+    env_set("api_base_url", "MAIL_API_BASE_URL")
+    env_set("api_token", "MAIL_API_TOKEN")
 
     timeout_str = os.getenv("MAIL_TIMEOUT")
     if timeout_str is not None:

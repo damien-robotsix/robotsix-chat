@@ -12,7 +12,16 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Refactored shared request-validation boilerplate in route handlers
   (`_parse_json_body`, `_get_session_id`, `_cleanup_session` helpers),
   eliminating 9 internal clone pairs.  No behaviour changes.
-- Consolidated `robotsix_chat.diagnostics` module entry in `docs/modules.yaml` — removed stale references to deleted source and test files, updated the description to match the current module API.
+- Migrated mail integration from agent-comm broker to direct HTTP. Replaced
+  `MailClient(BaseBrokeredClient)` with a direct HTTP client calling the
+  auto-mail board server (`GET /board-content`, `GET /email/{id}/status`,
+  `POST /move`, `POST /delete`, `POST /archive`, `POST /run-triage`).
+  Replaced the single `consult_mail` NL tool with six discrete tools
+  (`get_mail_board`, `get_mail_email_status`, `move_mail_email`,
+  `delete_mail_email`, `archive_mail_email`, `run_mail_triage`).
+  Removed all broker fields from `MailSettings` (now uses `api_base_url`
+  and `api_token`).  Added `content` and `follow_redirects` parameters to
+  `safe_http_request`.  No broker dependency remains in the mail module.
 - Added `--cov --cov-report=term-missing` to the `test` Makefile target so local test runs collect and report coverage automatically.
 
 - `consult_mill` now caches board-read results within a single turn/tick,

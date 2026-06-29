@@ -51,6 +51,8 @@ async def safe_http_request(
     timeout: float = 30.0,
     json_body: dict[str, Any] | None = None,
     params: dict[str, str] | None = None,
+    content: str | bytes | None = None,
+    follow_redirects: bool = True,
     label: str = "HTTP",
 ) -> HttpResult:
     """Make an HTTP request, catching all errors — never raises.
@@ -66,6 +68,11 @@ async def safe_http_request(
         timeout: Seconds before the request times out.
         json_body: JSON-serialisable body for POST requests.
         params: URL query parameters for GET requests.
+        content: Raw content body for POST requests (e.g. form-encoded).
+            Mutually exclusive with *json_body* — only one should be set.
+        follow_redirects: Whether to follow redirects. When ``False``,
+            3xx responses are treated as success (the caller inspects
+            the redirect response).
         label: Human-readable prefix for log / error messages (e.g.
             ``"Board API"``, ``"RefDocs"``, ``"GitHub API"``).
 
@@ -74,14 +81,27 @@ async def safe_http_request(
 
     """
     try:
-        async with httpx.AsyncClient(timeout=timeout) as client:
+        async with httpx.AsyncClient(
+            timeout=timeout, follow_redirects=follow_redirects
+        ) as client:
             if method.upper() == "POST":
-                response = await client.post(url, headers=headers, json=json_body)
+                if content is not None:
+                    response = await client.post(url, headers=headers, content=content)
+                else:
+                    response = await client.post(url, headers=headers, json=json_body)
             else:
                 kwargs: dict[str, Any] = {"headers": headers}
                 if params is not None:
                     kwargs["params"] = params
                 response = await client.get(url, **kwargs)
+            if not follow_redirects and 300 <= response.status_code < 400:
+                # Caller opted out of redirect-following and got a redirect
+                # response — treat as success so they can inspect the status.
+                try:
+                    body_text = response.text
+                except Exception:
+                    body_text = ""
+                return HttpResult(text=body_text, status_code=response.status_code)
             response.raise_for_status()
             # Defensive: mocked responses in tests may lack ``.text``.
             try:
