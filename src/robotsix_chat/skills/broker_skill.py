@@ -126,7 +126,11 @@ class BrokerSkill:
         tool_fn.__qualname__ = tool_name
         tool_fn.__doc__ = tool_doc
         tool_fn.__signature__ = inspect.Signature(params)  # type: ignore[attr-defined]
-        tool_fn.__annotations__ = {p.name: str for p in params}
+        # Use each parameter's real annotation (int/bool/list/str), not a
+        # hardcoded str — pydantic-ai builds the tool's JSON schema from
+        # __annotations__ via get_type_hints(), so hardcoding str would
+        # collapse every parameter's type.
+        tool_fn.__annotations__ = {p.name: p.annotation for p in params}
 
         return tool_fn
 
