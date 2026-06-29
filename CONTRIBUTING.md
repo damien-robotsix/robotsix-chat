@@ -104,5 +104,7 @@ After `pre-commit install`, the following hooks run on staged files:
 4. **bandit** — security-focused AST scanner
 5. **pip-audit** — dependency vulnerability scan (only when `uv.lock` changes)
 6. **detect-secrets** — secret leakage prevention
+7. **markdownlint-cli2** — structural Markdown linting (broken links, duplicate headings, missing alt text)
+8. **mdformat** — consistent Markdown formatting (100-char wrap, 2-space indentation, numbered lists)
 
 To run all hooks without committing: `pre-commit run --all-files`

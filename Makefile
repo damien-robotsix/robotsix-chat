@@ -1,4 +1,4 @@
-.PHONY: install test lint format format-check typecheck security clean all
+.PHONY: install test lint lint-md format fmt-md format-check typecheck security clean all
 
 SOURCES = src/robotsix_chat tests
 
@@ -10,6 +10,12 @@ test:
 
 lint:
 	uv run ruff check $(SOURCES)
+
+lint-md:          ## Lint Markdown files (structural)
+	uv run pre-commit run markdownlint-cli2 --all-files
+
+fmt-md:           ## Format Markdown files (whitespace/wrapping)
+	uv run pre-commit run mdformat --all-files
 
 format:
 	uv run ruff check --fix $(SOURCES)
