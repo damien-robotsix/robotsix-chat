@@ -33,6 +33,7 @@ SSE_PENDING_QUESTION_ADDED_TYPE = "pending_question_added"
 SSE_PENDING_QUESTION_UPDATED_TYPE = "pending_question_updated"
 SSE_PENDING_QUESTION_REMOVED_TYPE = "pending_question_removed"
 SSE_PENDING_QUESTION_THREAD_MESSAGE_TYPE = "pending_question_thread_message"
+SSE_PENDING_QUESTION_ANSWERED_TYPE = "pending_question_answered"
 
 # ---------------------------------------------------------------------------
 # EventSink — structural Protocol for dependency injection
