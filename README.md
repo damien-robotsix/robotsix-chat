@@ -93,7 +93,7 @@ curl -N -X POST http://127.0.0.1:8000/chat \
   -d '{"message": "Hello agent world"}'
 ```
 
-```
+```text
 data: {"type": "token", "content": "Hello "}
 
 data: {"type": "token", "content": "agent "}
@@ -109,7 +109,7 @@ Settings resolve through a layered cascade that matches the rest of the robotsix
 (`robotsix-mill`, `robotsix-auto-mail`), built on the shared
 [`robotsix-yaml-config`](https://github.com/damien-robotsix/robotsix-yaml-config) library:
 
-```
+```text
 pydantic field defaults  →  YAML config file  →  environment variables
 ```
 

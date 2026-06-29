@@ -111,7 +111,7 @@ The deploy stack uses **two** `.env` files for different purposes:
 `docker compose -f deploy/docker-compose.yml up` reads `.env` from the **project directory**
 (`deploy/`). Copy the template:
 
-```
+```bash
 cp deploy/.env.example deploy/.env
 ```
 
@@ -144,7 +144,7 @@ always requires HTTP Basic Auth regardless of what `.env` or the YAML config say
 The production stack mounts `./config` from the compose-file directory (i.e. `deploy/config/`).
 Create it from the canonical template:
 
-```
+```bash
 mkdir -p deploy/config
 cp config/chat.local.example.yaml deploy/config/chat.local.yaml
 ```

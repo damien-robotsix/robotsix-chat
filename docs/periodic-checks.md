@@ -45,7 +45,7 @@ count, and a prompt snippet.
 
 You can also call the REST API directly:
 
-```
+```http
 GET /loops?client_id=<your-client-id>
 ```
 
@@ -60,7 +60,7 @@ from the `start_check_loop` return message).
 
 You can also call the REST API directly:
 
-```
+```http
 POST /loops/{loop_id}/stop
 ```
 

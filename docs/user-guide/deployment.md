@@ -16,7 +16,7 @@ There are two Compose files:
 | `deploy/docker-compose.yml`      | Pull-based production stack with Watchtower auto-updates |
 
 The production stack binds to **loopback only** (`127.0.0.1`). A reverse proxy (nginx, Caddy, …) is
-expected in front of it — see the [reverse proxy placeholder](#reverse-proxy--tls) at the end of
+expected in front of it — see the [reverse proxy placeholder](#6-reverse-proxy--tls) at the end of
 this guide.
 
 ______________________________________________________________________

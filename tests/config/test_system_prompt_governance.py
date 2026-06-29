@@ -105,24 +105,26 @@ def _extract_docs_agent_instruction(docs_text: str) -> str:
     The value lives in the third column of the table row, backtick-wrapped,
     with ``\\n`` representing embedded newlines.  Returns the unescaped string.
     """
-    start_marker = 'AGENT_INSTRUCTION` | `"'
-    start_idx = docs_text.find(start_marker)
-    if start_idx < 0:
+    # The table may be mdformat-aligned with variable whitespace padding
+    # between columns. Use a regex to locate the marker regardless of spacing.
+    start_marker = r"`AGENT_INSTRUCTION`\s+\|\s+`\""
+    m = re.search(start_marker, docs_text)
+    if m is None:
         raise ValueError(
             "Could not find agent.instruction row start marker in "
             "docs/configuration.md. Has the table format changed?"
         )
-    after_start = docs_text[start_idx + len(start_marker) :]
+    after_start = docs_text[m.end() :]
 
-    end_marker = '"` | System prompt'
-    end_idx = after_start.find(end_marker)
-    if end_idx < 0:
+    end_marker = r'"`\s+\|\s+System prompt'
+    m_end = re.search(end_marker, after_start)
+    if m_end is None:
         raise ValueError(
             "Could not find agent.instruction row end marker in "
             "docs/configuration.md. Has the table format changed?"
         )
 
-    raw_value = after_start[:end_idx]
+    raw_value = after_start[: m_end.start()]
     # The table cell uses literal \\n to represent embedded newlines.
     return raw_value.replace("\\n", "\n")
 

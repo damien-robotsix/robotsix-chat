@@ -6,7 +6,7 @@
 over HTTP (Starlette ASGI, SSE streaming) so human users converse with the agent through a
 single-page browser UI.
 
-```
+```text
                   ┌────────────┐
                   │   Browser  │
                   │ (ui/index) │
@@ -50,7 +50,7 @@ ______________________________________________________________________
 
 The CLI entry point (`robotsix-chat`) executes `run_server_from_config()`:
 
-```
+```bash
 uv run robotsix-chat
   │
   ├─ 1.  Settings.load()
@@ -93,7 +93,7 @@ ______________________________________________________________________
 
 ### `POST /chat` — the main agent conversation endpoint
 
-```
+```text
 HTTP POST /chat  {"message": "...", "session_id": "...", "images": [...]}
   │
   ├─ CorrelationIdMiddleware     injects X-Request-ID into log context
@@ -187,7 +187,7 @@ ______________________________________________________________________
 
 All configuration flows through `Settings.load()`:
 
-```
+```text
 pydantic field defaults  →  YAML (config/chat.local.yaml)  →  environment variables
 ```
 
