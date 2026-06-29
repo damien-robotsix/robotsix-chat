@@ -1,0 +1,1 @@
+Fix __annotations__ hardcoded to str in BrokerSkill._make_tool

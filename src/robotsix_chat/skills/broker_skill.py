@@ -126,7 +126,7 @@ class BrokerSkill:
         tool_fn.__qualname__ = tool_name
         tool_fn.__doc__ = tool_doc
         tool_fn.__signature__ = inspect.Signature(params)  # type: ignore[attr-defined]
-        tool_fn.__annotations__ = {p.name: str for p in params}
+        tool_fn.__annotations__ = {p.name: p.annotation for p in params}
 
         return tool_fn
 
