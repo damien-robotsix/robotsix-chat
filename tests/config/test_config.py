@@ -120,12 +120,8 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "COMPONENT_CLIENT_AGENT_ID",
         "COMPONENT_CLIENT_TIMEOUT",
         "MAIL_ENABLED",
-        "MAIL_BROKER_HOST",
-        "MAIL_BROKER_PORT",
-        "MAIL_BROKER_SCHEME",
-        "MAIL_BROKER_TOKEN",
-        "MAIL_AGENT_ID",
-        "MAIL_BOARD_MANAGER_ID",
+        "MAIL_API_BASE_URL",
+        "MAIL_API_TOKEN",
         "MAIL_TIMEOUT",
         "MAX_IMAGES_PER_MESSAGE",
         "MAX_IMAGE_BYTES",
@@ -1254,29 +1250,20 @@ def test_check_loop_model_env_overrides_yaml(
 
 
 def test_mail_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Mail integration is off by default, with broker defaults present."""
+    """Mail integration is off by default, with direct-HTTP defaults present."""
     _wipe_env_vars(monkeypatch)
 
     settings = Settings.from_env()
 
     assert settings.mail.enabled is False
-    assert settings.mail.broker_host == "ai-broker.robotsix.net"
-    assert settings.mail.broker_port == 443
-    assert settings.mail.broker_scheme == "https"
-    assert settings.mail.agent_id == "robotsix-chat"
-    assert settings.mail.board_manager_id == "board-manager-robotsix-auto-mail"
-    assert settings.mail.timeout == 240.0
+    assert settings.mail.api_base_url == "http://127.0.0.1:8077"
+    assert settings.mail.api_token == ""
+    assert settings.mail.timeout == 30.0
 
 
-def test_mail_enabled_requires_token() -> None:
-    """Enabling mail without a broker token is rejected."""
-    with pytest.raises(ValueError, match="mail.broker_token"):
-        Settings(mail=MailSettings(enabled=True))
-
-
-def test_mail_enabled_with_token_ok() -> None:
-    """Mail constructs once a broker token is present."""
-    settings = Settings(mail=MailSettings(enabled=True, broker_token="tok"))
+def test_mail_enabled_ok() -> None:
+    """Mail constructs with just enabled=True (no required broker fields)."""
+    settings = Settings(mail=MailSettings(enabled=True))
     assert settings.mail.enabled is True
 
 
@@ -1284,24 +1271,22 @@ def test_mail_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """``MAIL_*`` env vars populate the nested mail settings."""
     _wipe_env_vars(monkeypatch)
     monkeypatch.setenv("MAIL_ENABLED", "true")
-    monkeypatch.setenv("MAIL_BROKER_TOKEN", "sek")
-    monkeypatch.setenv("MAIL_BROKER_PORT", "8443")
-    monkeypatch.setenv("MAIL_BOARD_MANAGER_ID", "board-manager-custom")
+    monkeypatch.setenv("MAIL_API_BASE_URL", "https://mail.example.com:9000")
+    monkeypatch.setenv("MAIL_API_TOKEN", "sek")
 
     settings = Settings.from_env()
 
     assert settings.mail.enabled is True
-    assert settings.mail.broker_token == "sek"  # pragma: allowlist secret
-    assert settings.mail.broker_port == 8443
-    assert settings.mail.board_manager_id == "board-manager-custom"
+    assert settings.mail.api_base_url == "https://mail.example.com:9000"
+    assert settings.mail.api_token == "sek"  # pragma: allowlist secret
 
 
-def test_mail_port_invalid_raises(monkeypatch: pytest.MonkeyPatch) -> None:
-    """A non-numeric ``MAIL_BROKER_PORT`` raises ``ValueError``."""
+def test_mail_timeout_invalid_raises(monkeypatch: pytest.MonkeyPatch) -> None:
+    """A non-numeric ``MAIL_TIMEOUT`` raises ``ValueError``."""
     _wipe_env_vars(monkeypatch)
-    monkeypatch.setenv("MAIL_BROKER_PORT", "https")
+    monkeypatch.setenv("MAIL_TIMEOUT", "slow")
 
-    with pytest.raises(ValueError, match="MAIL_BROKER_PORT"):
+    with pytest.raises(ValueError, match="MAIL_TIMEOUT"):
         Settings.from_env()
 
 
@@ -1313,16 +1298,17 @@ def test_mail_env_overrides_yaml(
 
     config_file = tmp_path / "chat.local.yaml"
     config_file.write_text(
-        "mail:\n  enabled: true\n  broker_host: yaml-host\n  broker_token: yaml-tok\n"
+        "mail:\n  enabled: true\n  api_base_url: http://yaml-host:8077\n"
+        "  api_token: yaml-tok\n"
     )
-    monkeypatch.setenv("MAIL_BROKER_HOST", "env-host")
-    monkeypatch.setenv("MAIL_BROKER_TOKEN", "env-tok")
+    monkeypatch.setenv("MAIL_API_BASE_URL", "http://env-host:9000")
+    monkeypatch.setenv("MAIL_API_TOKEN", "env-tok")
 
     settings = Settings.load(config_path=config_file)
 
     assert settings.mail.enabled is True
-    assert settings.mail.broker_host == "env-host"
-    assert settings.mail.broker_token == "env-tok"  # pragma: allowlist secret
+    assert settings.mail.api_base_url == "http://env-host:9000"
+    assert settings.mail.api_token == "env-tok"  # pragma: allowlist secret
 
 
 # ---------------------------------------------------------------------------

@@ -360,17 +360,8 @@ class Settings(BaseModel):
                     "mill.broker_host must be set when mill is enabled — provide it "
                     "via MILL_BROKER_HOST or the config file"
                 )
-        if self.mail.enabled:
-            if not self.mail.broker_token:
-                raise ValueError(
-                    "mail.broker_token must be set when mail is enabled — provide "
-                    "it via MAIL_BROKER_TOKEN or the `mail.broker_token` config field"
-                )
-            if not self.mail.broker_host:
-                raise ValueError(
-                    "mail.broker_host must be set when mail is enabled — provide it "
-                    "via MAIL_BROKER_HOST or the config file"
-                )
+        # mail has no required fields beyond `enabled` — api_base_url and
+        # api_token both have safe defaults for localhost operation.
         if self.calendar.enabled:
             if not self.calendar.broker_token:
                 raise ValueError(

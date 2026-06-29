@@ -120,13 +120,9 @@ calendar:
 # Needs a broker_token registered on the broker.
 mail:
   enabled: false                   # env override: MAIL_ENABLED
-  # broker_host: ai-broker.robotsix.net  # env: MAIL_BROKER_HOST
-  # broker_port: 443               # env: MAIL_BROKER_PORT
-  # broker_scheme: https           # env: MAIL_BROKER_SCHEME
-  broker_token: ""                 # this agent's bearer token; required; env: MAIL_BROKER_TOKEN
-  # agent_id: robotsix-chat        # this agent's id on the broker; env: MAIL_AGENT_ID
-  # board_manager_id: board-manager-robotsix-auto-mail  # recipient; env: MAIL_BOARD_MANAGER_ID
-  # timeout: 240                   # per-request seconds; env: MAIL_TIMEOUT
+  # api_base_url: http://127.0.0.1:8077  # env: MAIL_API_BASE_URL
+  # api_token: ""                  # optional Bearer token; env: MAIL_API_TOKEN
+  # timeout: 30                    # per-request seconds; env: MAIL_TIMEOUT
 
 # Multi-turn conversation continuity for the browser chat. The server keys
 # conversations by a per-browser id (sent automatically by the UI) and replays

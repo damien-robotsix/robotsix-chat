@@ -183,35 +183,29 @@ class MillSettings(BaseModel):
 
 
 class MailSettings(BaseModel):
-    """robotsix-auto-mail integration over the agent-comm broker. Disabled by default.
+    """Direct HTTP access to the auto-mail board server. Disabled by default.
 
-    When enabled, the chat agent gains a tool that forwards natural-language
-    requests to the auto-mail board manager
-    (``board-manager-robotsix-auto-mail``) over the broker and relays its
-    reply — so a user can view, triage, or comment on mail-agent tickets
-    from chat. Mirrors the mill / ``consult_mill`` pattern exactly.
+    When enabled, the chat agent gains discrete tools that call the
+    auto-mail board HTTP API directly (no broker indirection, no NL
+    reinterpretation): get the board content, check email status, move
+    / delete / archive emails, and run triage.
 
     Attributes:
-        enabled: Master switch. Requires the ``broker`` extra (robotsix-agent-comm).
-        broker_host: Broker hostname (the shared agent-comm broker).
-        broker_port: Broker port (443 for the public TLS endpoint).
-        broker_scheme: ``https`` (TLS) or ``http``.
-        broker_token: This agent's bearer token, registered on the broker.
-            Required when enabled.
-        agent_id: This agent's id on the broker.
-        board_manager_id: Recipient agent id — the mail board manager.
-        timeout: Per-request timeout (seconds); generous, the recipient is an LLM.
+        enabled: Master switch.  When ``False``, no mail tools are offered.
+        api_base_url: Base URL of the auto-mail board HTTP server (no
+            trailing slash).  Default ``http://127.0.0.1:8077``.
+        api_token: Optional Bearer token; empty means no Authorization
+            header.
+        timeout: Per-request HTTP timeout in seconds.
 
     """
 
     enabled: bool = False
-    broker_host: str = "ai-broker.robotsix.net"
-    broker_port: int = 443
-    broker_scheme: str = "https"
-    broker_token: str = ""
-    agent_id: str = "robotsix-chat"
-    board_manager_id: str = "board-manager-robotsix-auto-mail"
-    timeout: float = 240.0
+    api_base_url: str = "http://127.0.0.1:8077"
+    api_token: str = ""
+    timeout: float = 30.0
+
+    model_config = {"extra": "forbid"}
 
 
 class BoardReaderSettings(BaseModel):

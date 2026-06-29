@@ -100,7 +100,7 @@ def test_snapshot_redacts_secrets():
     secret_keys = [
         "llmio.api_key",
         "mill.broker_token",
-        "mail.broker_token",
+        "mail.api_token",
         "calendar.broker_token",
         "refdocs.github_token",
         "board_reader.api_token",
@@ -119,13 +119,13 @@ def test_snapshot_redacts_secrets():
 
 
 def test_snapshot_redacts_mail_calendar_tokens():
-    """Mail and calendar broker tokens are also redacted."""
+    """Mail and calendar API tokens are also redacted."""
     s = Settings(
-        mail={"broker_token": "mail-tok"},
+        mail={"api_token": "mail-tok"},
         calendar={"broker_token": "cal-tok"},
     )
     snap = get_config_snapshot(s)
-    assert snap["mail.broker_token"] == _REDACTED_SENTINEL
+    assert snap["mail.api_token"] == _REDACTED_SENTINEL
     assert snap["calendar.broker_token"] == _REDACTED_SENTINEL
 
 
@@ -525,12 +525,8 @@ def test_settable_keys_excludes_startup_only_fields():
         "mill.board_manager_id",
         "mill.repo_id",
         "mill.timeout",
-        "mail.broker_host",
-        "mail.broker_port",
-        "mail.broker_scheme",
-        "mail.broker_token",
-        "mail.agent_id",
-        "mail.board_manager_id",
+        "mail.api_base_url",
+        "mail.api_token",
         "mail.timeout",
         "calendar.broker_host",
         "calendar.broker_port",
