@@ -42,7 +42,7 @@ over HTTP.
 - The HTTP endpoints (`GET /`, `POST /chat`, `GET /health`) served by the Starlette application.
 - The LLM agent wrapper (`src/robotsix_chat/llm/agent.py`) and its interaction with the `llmio`
   library.
-- The configuration layer (`src/robotsix_chat/config.py`) — environment variable handling, defaults,
+- The configuration layer (`src/robotsix_chat/config/settings.py`) — environment variable handling, defaults,
   and validation.
 
 **What is out of scope:**
