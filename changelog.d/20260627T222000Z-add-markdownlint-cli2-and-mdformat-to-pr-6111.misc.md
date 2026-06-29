@@ -1,0 +1,1 @@
+Add markdownlint-cli2 and mdformat to pre-commit and CI for consistent documentation quality

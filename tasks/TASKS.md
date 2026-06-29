@@ -16,14 +16,13 @@ Tasks that are pending, in-progress, or blocked.
 - status: pending
 - created: 2026-06-23T12:40:00Z
 - updated: 2026-06-23T12:40:00Z
-- notes: After the 50-message history cap was added (20260623T163048Z),
-  investigate whether duplicate messages still appear when the browser
-  reconnects after an idle timeout.
+- notes: After the 50-message history cap was added (20260623T163048Z), investigate whether
+  duplicate messages still appear when the browser reconnects after an idle timeout.
 
 ## T-0002 — Terminal-filter ticket
 
 - status: pending
 - created: 2026-06-23T12:40:00Z
 - updated: 2026-06-23T12:40:00Z
-- notes: Track the terminal-filter feature request referenced in prior
-  conversations.  Add details as they become available.
+- notes: Track the terminal-filter feature request referenced in prior conversations. Add details as
+  they become available.

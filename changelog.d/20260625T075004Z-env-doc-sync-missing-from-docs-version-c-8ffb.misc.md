@@ -1,1 +1,1 @@
-env doc sync: missing-from-docs — VERSION_CHECK_* env vars (6 vars)
+env doc sync: missing-from-docs — VERSION_CHECK\_\* env vars (6 vars)

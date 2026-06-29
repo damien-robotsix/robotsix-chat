@@ -55,3 +55,19 @@ repos:
         entry: vulture src/ vulture_whitelist.py --min-confidence 80
         language: system
         pass_filenames: false
+
+  - repo: https://github.com/DavidAnson/markdownlint-cli2
+    rev: v0.22.1
+    hooks:
+      - id: markdownlint-cli2
+        args: ["--fix"]
+        types: [markdown]
+
+  - repo: https://github.com/hukkin/mdformat
+    rev: 1.0.0
+    hooks:
+      - id: mdformat
+        args: ["--number", "--wrap", "100"]
+        additional_dependencies:
+          - mdformat-gfm
+          - mdformat-frontmatter

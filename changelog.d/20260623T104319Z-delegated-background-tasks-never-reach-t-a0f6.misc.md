@@ -1,1 +1,2 @@
-Delegated task lifecycle frames never reach the originating client — client_id lost across claude_sdk/MCP boundary + EventBus not wired in production
+Delegated task lifecycle frames never reach the originating client — client_id lost across
+claude_sdk/MCP boundary + EventBus not wired in production
