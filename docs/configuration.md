@@ -284,6 +284,17 @@ from the installation at action time — no static allowlist.
 | `direct_repo.board_api_token`            | `DIRECT_REPO_BOARD_API_TOKEN`            | `""`                       | Optional bearer token for the board API.                                                               |
 | `direct_repo.timeout`                    | `DIRECT_REPO_TIMEOUT`                    | `30.0`                     | Per-request HTTP timeout in seconds.                                                                   |
 
+## Skills
+
+Declarative skill/capability loading from YAML manifests — replaces the hardcoded `build_*_tools()`
+pattern with manifest-driven tool registration. When enabled, the agent discovers skill manifests
+from `skills.manifests_dir` and registers broker-backed capabilities via the agent-comm broker.
+
+| YAML path              | Env var                | Default           | Description                                     |
+| ---------------------- | ---------------------- | ----------------- | ----------------------------------------------- |
+| `skills.enabled`       | `SKILLS_ENABLED`       | `false`           | Enable manifest-driven skill loading.           |
+| `skills.manifests_dir` | `SKILLS_MANIFESTS_DIR` | `"config/skills"` | Directory containing skill YAML manifest files. |
+
 ## Self-review
 
 A read-only digest of live conversation activity from the in-process
