@@ -985,7 +985,9 @@ def _build_thread_context(
         "above.  Address the most recent user message directly.  Keep your "
         "reply concise and conversational.  You have full awareness of the "
         "main conversation and the thread history — use that context to "
-        "give a helpful answer."
+        "give a helpful answer.  Do NOT call remove_pending_question or "
+        "otherwise close/dismiss this question — this is an ongoing "
+        "thread and the user will dismiss it themselves when done."
     )
     return "\n".join(parts)
 

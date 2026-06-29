@@ -109,12 +109,14 @@ def build_pending_questions_tools(
         return f"Updated question {question_id!r}."
 
     async def remove_pending_question(question_id: str) -> str:
-        """Close a pending question after reading and acting on its answer.
+        """Dismiss a pending question — ONLY when the user explicitly asks to.
 
-        Call this after you have used ``get_pending_question`` to read the
-        question text **and** the user's answer, and you have acknowledged
-        or acted on it.  This permanently removes the question from the
-        panel.
+        Do NOT call this merely because you answered the question: pending
+        questions are ongoing mini-chat threads and the user may keep
+        replying.  Removing a question deletes its thread and breaks all
+        further replies (later thread messages 404).  Only remove it when
+        the user clearly signals they are done with it / want it dismissed.
+        This permanently removes the question from the panel.
 
         Args:
             question_id: The id returned by ``add_pending_question``.
