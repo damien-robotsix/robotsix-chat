@@ -50,7 +50,9 @@ shown — no extra fields, no missing fields.
 
 1. Determine the next id by looking at the highest `T-NNNN` in **both** `TASKS.md` and `ARCHIVE.md`,
    then increment.
+
 2. Append a new section at the **bottom** of `tasks/TASKS.md`:
+
    ```markdown
    ## T-NNNN — Short title
 

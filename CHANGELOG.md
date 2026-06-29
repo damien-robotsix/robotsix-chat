@@ -121,24 +121,37 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   risky/irreversible actions behind human approval. Includes a concrete rule: check-loop sub-agents
   must call `stop_check_loop` when a verified terminal/completion state is reached instead of
   emitting repeated COMPLETED/NO_CHANGE reports. `SYSTEM_PROMPT_VERSION` bumped to 14.
+
 - Extracted the three inner tool closures from `build_check_loop_tools` in `delegation.py` to
   module-level async functions (`_start_check_loop_tool`, `_stop_check_loop_tool`,
   `_list_check_loops_tool`) that take captured state as explicit keyword arguments, reducing nesting
   and making each tool independently testable.
+
 - Scoped the "new tickets default to robotsix-mill" system-prompt claim to `consult_mill`
   specifically, replacing a false universal statement ("regardless of source") with accurate
   board-manager-default wording. `SYSTEM_PROMPT_VERSION` bumped to 12.
+
 - Split `src/robotsix_chat/chat/server.py` (1656 lines) into a `server/` package with four modules
   (`routes.py`, `app.py`, `cli.py`, `__init__.py`) for improved maintainability. All public symbols
   are re-exported from `__init__.py` preserving backward compatibility.
+
 - Folded the runtime `_AGENT_GUARD` hardening layer into the version-governed `agent_instruction`
   default so guard changes are tracked by `SYSTEM_PROMPT_VERSION`, the system prompt changelog,
   SHA256, and CI enforcement.
+
 - Pending questions now support threaded conversations: users and the assistant can exchange
   multiple messages per question, visible inline in the Pending Questions panel.
+
 - Pre-commit CI fixes: resolved ruff UP038 violations, vulture dead-code warnings, detect-secrets
   false positives, and missing EOF newlines across the codebase to satisfy the newly added
   pre-commit CI gate.
+
+- Background-tasks side panel now has a close button (×) and responds to the Escape key; the
+  tasks-toggle button acts as a true toggle (open/close). Closing the panel preserves in-memory task
+  history.
+
+- Extracted shared `BaseBrokeredClient` base class from `MillClient` and `CalendarClient`,
+  eliminating ~40 lines of duplicated boilerplate.
 
 ### Fixed
 
@@ -414,8 +427,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - Comprehensive `docs/configuration.md` documenting all ~30 environment variables across server,
   auth, memory, mill, calendar, conversation, and refdocs settings.
 
-### Fixed
-
 - `query_tasks` and `query_calendar` tools now send domain-specific instruction strings
   (`"list tasks: …"` and `"list calendar events: …"`) so the upstream `robotsix-calendar` intent
   classifier correctly routes them to `list_tasks` and `list_events` respectively. Fixes
@@ -425,16 +436,6 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ### Removed
 
 - Stale `docs/user-guide/configuration.md` superseded by `docs/configuration.md`.
-
-### Changed
-
-- Background-tasks side panel now has a close button (×) and responds to the Escape key; the
-  tasks-toggle button acts as a true toggle (open/close). Closing the panel preserves in-memory task
-  history.
-- Extracted shared `BaseBrokeredClient` base class from `MillClient` and `CalendarClient`,
-  eliminating ~40 lines of duplicated boilerplate.
-
-### Removed
 
 - Deleted four orphaned `pending_question_*_frame()` functions from `chat/events.py`
   (`pending_question_added_frame`, `pending_question_updated_frame`,
