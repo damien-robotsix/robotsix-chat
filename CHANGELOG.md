@@ -53,6 +53,7 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Added direct-repository-capability (`direct_repo`): the chat agent can now push branches and open PRs against repos in the robotsix-mill GitHub App installation scope, authenticating as the app (JWT → short-lived installation token). Actions are gated behind a BLOCKED-state precondition and the repo set is resolved dynamically from the installation at action time. PRs are opened in a reviewable state with no auto-merge; no merge capability exists on this path.
 - Added `check_loop_model` config (default `"haiku"`, env `LLMIO_CHECK_LOOP_MODEL`) so recurring monitoring / status-check check-loop ticks run on the cheapest subscription tier, independently of the `subagent_model` used for delegation tasks. Escalation to the foreground model (Opus) is automatic via tick-triggered foreground agent runs when a tick detects a substantive change.
+  - Documented `direct_repo` configuration in `docs/configuration.md` (table section and YAML example).
 
 ### Changed
 - Added an "Autonomy" section to the assistant system prompt instructing it to proactively perform safe, reversible actions without waiting for explicit human validation, while gating risky/irreversible actions behind human approval.  Includes a concrete rule: check-loop sub-agents must call `stop_check_loop` when a verified terminal/completion state is reached instead of emitting repeated COMPLETED/NO_CHANGE reports.  `SYSTEM_PROMPT_VERSION` bumped to 14.
