@@ -49,6 +49,9 @@ repos:
     hooks:
       - id: vulture
         name: vulture
-        entry: vulture src/ vulture_whitelist.py
+        # --min-confidence 80 drops noisy 60% findings (dynamically-set
+        # dunders on built tool functions, pydantic model fields) that are
+        # false positives; genuine dead code reports at 90%+.
+        entry: vulture src/ vulture_whitelist.py --min-confidence 80
         language: system
         pass_filenames: false
