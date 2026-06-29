@@ -10,11 +10,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 - Documented `DIAGNOSTICS_*` environment variables in `docs/configuration.md`.
-- Documented `LLMIO_CHECK_LOOP_MODEL` / `llmio.check_loop_model` in `docs/configuration.md` top-level settings table.
+
+- Documented `LLMIO_CHECK_LOOP_MODEL` / `llmio.check_loop_model` in `docs/configuration.md`
+  top-level settings table.
 
 - Refactored shared request-validation boilerplate in route handlers (`_parse_json_body`,
   `_get_session_id`, `_cleanup_session` helpers), eliminating 9 internal clone pairs. No behaviour
   changes.
+
 - Migrated mail integration from agent-comm broker to direct HTTP. Replaced
   `MailClient(BaseBrokeredClient)` with a direct HTTP client calling the auto-mail board server
   (`GET /board-content`, `GET /email/{id}/status`, `POST /move`, `POST /delete`, `POST /archive`,
