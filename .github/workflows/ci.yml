@@ -94,8 +94,17 @@ jobs:
         # — and the pre-commit runner — explicitly with `--with`.
         run: uv run --with pre-commit --with vulture pre-commit run --all-files --show-diff-on-failure
 
+  check-sse-types:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+      - name: Run SSE event-type check
+        run: python scripts/check_sse_event_types.py
+
   check:
-    needs: [lockfile, ci, codeql, security, deptry, pre-commit]
+    needs: [lockfile, ci, codeql, security, deptry, pre-commit, check-sse-types]
     runs-on: ubuntu-latest
     steps:
       - run: echo "All CI checks passed"

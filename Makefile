@@ -1,4 +1,4 @@
-.PHONY: install test lint lint-md format fmt-md format-check typecheck security clean all
+.PHONY: install test lint lint-md format fmt-md format-check typecheck security check-sse-types clean all
 
 SOURCES = src/robotsix_chat tests
 
@@ -27,6 +27,9 @@ format-check:
 
 typecheck:
 	uv run mypy $(SOURCES)
+
+check-sse-types:
+	python scripts/check_sse_event_types.py
 
 security:
 	uv run bandit -c pyproject.toml -r src/
