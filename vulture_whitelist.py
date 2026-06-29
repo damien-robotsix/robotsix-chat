@@ -10,6 +10,8 @@ from src.robotsix_chat.chat.events import (  # noqa: F811
     SSE_PENDING_QUESTION_UPDATED_TYPE,
 )
 from src.robotsix_chat.config import SYSTEM_PROMPT_VERSION, Settings
+from src.robotsix_chat.diagnostics.fixes import FixProposalStore
+from src.robotsix_chat.diagnostics.store import DiagnosticStore
 
 # pydantic hook — called by pydantic's model initialisation machinery
 Settings.model_post_init  # noqa: B018  # unused method (pydantic hook)
@@ -36,3 +38,9 @@ SSE_PENDING_QUESTION_THREAD_MESSAGE_TYPE  # noqa: B018  # unused variable (doc/d
 
 # config.py — public API imported and asserted in test_system_prompt_governance.py
 SYSTEM_PROMPT_VERSION  # noqa: B018  # unused variable (used from tests)
+
+# diagnostics/ — store + proposal accessors for the in-progress diagnostics
+# feature; defined ahead of their callers (see the diagnostics child tickets)
+FixProposalStore.get_proposal  # noqa: B018  # unused method (diagnostics, not yet wired)
+DiagnosticStore.record_event  # noqa: B018  # unused method (diagnostics, not yet wired)
+DiagnosticStore.get_event  # noqa: B018  # unused method (diagnostics, not yet wired)
