@@ -3,8 +3,8 @@
 robotsix-chat is configured via a **three-layer cascade**:
 
 1. **pydantic defaults** — built into the `Settings` model
-1. **YAML config file** — `config/chat.local.yaml` (path overridable via `CHAT_CONFIG_PATH`)
-1. **Environment variables** — override any YAML or default value
+2. **YAML config file** — `config/chat.local.yaml` (path overridable via `CHAT_CONFIG_PATH`)
+3. **Environment variables** — override any YAML or default value
 
 Every setting below can be placed in the YAML file (using the tree path shown) or set as an
 environment variable.
