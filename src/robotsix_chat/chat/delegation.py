@@ -37,6 +37,7 @@ from robotsix_chat.chat.loops import (
     CheckLoopRegistry,
     LoopCapacityError,
     LoopIntervalError,
+    _terminal_state_result,
     spawn_check_loop,
 )
 from robotsix_chat.chat.runner import (
@@ -490,8 +491,10 @@ async def _start_check_loop_tool(
     needs).
 
     The check re-runs automatically until it is explicitly stopped, reaches
-    *max_iterations* (if set), or self-stops.  Every result is surfaced to
-    the user as it lands.
+    *max_iterations* (if set), self-stops when the monitored condition is
+    terminal (the loop has a built-in terminal-state detector), or
+    auto-pauses after two consecutive unchanged ticks.  Every non-suppressed
+    result is surfaced to the user as it lands.
 
     For a check that watches something to completion (e.g. monitor a ticket
     until it reaches a terminal state), make *check_description* instruct the
@@ -575,13 +578,14 @@ async def _start_check_loop_tool(
             settings=settings,
             registry=registry,
             max_iterations=max_iterations,
-            stop_when=_terminal_result,
             suppress_when=_no_change_result,
+            stop_when=_terminal_state_result,
             include_previous_result=include_previous_result,
             agent_factory=agent_factory,
             channel=channel,
             reason=reason,
             verify_via_board=verify_via_board,
+            auto_pause_unchanged_ticks=2,
         )
     except LoopIntervalError as exc:
         logger.info("start_check_loop rejected (interval): %s", exc)

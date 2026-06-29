@@ -19,6 +19,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import re
 import time
 import uuid
 from collections import defaultdict
@@ -501,6 +502,36 @@ def _setup_board_read_gate(
 
 
 # ---------------------------------------------------------------------------
+# Terminal-state predicate — belt-and-suspenders complement to the
+# loop-scoped stop_check_loop tool
+# ---------------------------------------------------------------------------
+
+
+# Patterns that indicate a terminal ticket/thread state.  The primary
+# mechanism is the sub-agent calling stop_check_loop, but this catches
+# cases where the agent reports a terminal state yet forgets to halt.
+_TERMINAL_STATE_PATTERN = re.compile(
+    r"\b(?:is|was|now|been)\s+"
+    r"(?:in\s+)?(?:a\s+)?(?:state\s+)?(?:of\s+)?"
+    r"\b(?:closed|done|resolved|merged)\b",
+    re.IGNORECASE,
+)
+
+
+def _terminal_state_result(result: str) -> bool:
+    """Return ``True`` when *result* indicates a terminal ticket/thread state.
+
+    Matches results containing phrases like "is now closed", "has been done",
+    "now in a resolved state".  Does NOT match bare NO_CHANGE sentinel
+    results — those are handled by the suppress/no-change path.
+    """
+    stripped = result.strip()
+    if stripped.upper().startswith("NO_CHANGE"):
+        return False
+    return bool(_TERMINAL_STATE_PATTERN.search(stripped))
+
+
+# ---------------------------------------------------------------------------
 # check-loop worker — top-level async function (was a 227-line nested closure)
 # ---------------------------------------------------------------------------
 
@@ -521,11 +552,13 @@ async def _check_loop_worker(
     stop_when: Callable[[str], bool] | None,
     max_iterations: int | None,
     channel: DeliveryChannel,
+    auto_pause_unchanged_ticks: int = 2,
 ) -> None:
     """Run the recurring check-loop tick cycle until stopped or capped."""
     loop_id = await id_future
     clock = registry._clock
     previous_result: str | None = None
+    consecutive_unchanged: int = 0
 
     # Inject a loop-scoped self-stop tool into each tick's sub-agent.  The
     # default tick agent deliberately ships with NO loop-creation tools (so a
@@ -654,6 +687,31 @@ async def _check_loop_worker(
             # Store for the next iteration's comparison.
             previous_result = result_text
 
+            # --- auto-pause tracking: count consecutive unchanged ticks ---
+            if suppressed:
+                consecutive_unchanged += 1
+            else:
+                consecutive_unchanged = 0
+
+            # Auto-pause after N consecutive unchanged ticks to avoid
+            # burning tokens on a stuck/idle monitored item.  The loop
+            # is stopped (not merely suppressed) so the user gets a single
+            # clear notification rather than silent indefinite polling.
+            if (
+                auto_pause_unchanged_ticks > 0
+                and consecutive_unchanged >= auto_pause_unchanged_ticks
+            ):
+                reason = (
+                    f"auto_paused: {consecutive_unchanged} consecutive unchanged ticks"
+                )
+                logger.info(
+                    "Check loop %s auto-paused after %s unchanged ticks",
+                    loop_id,
+                    consecutive_unchanged,
+                )
+                registry.stop(loop_id, reason=reason)
+                return
+
             # Self-stop when this tick's sub-agent invoked its scoped stop tool
             # (e.g. it detected the monitored condition reached a terminal
             # state).  Checked after the tick is recorded/published so the final
@@ -662,7 +720,7 @@ async def _check_loop_worker(
                 registry.stop(loop_id, reason="condition_met")
                 return
 
-            # Self-stop on condition-met.
+            # Self-stop on condition-met (e.g. terminal-state predicate).
             if stop_when is not None and stop_when(result_text):
                 registry.stop(loop_id, reason="condition_met")
                 return
@@ -715,6 +773,7 @@ def spawn_check_loop(
     reason: str | None = None,
     verify_via_board: bool = False,
     dedup: bool = True,
+    auto_pause_unchanged_ticks: int = 2,
 ) -> str:
     """Schedule a recurring check prompt; return the loop id immediately.
 
@@ -749,6 +808,12 @@ def spawn_check_loop(
     stops any existing ``RUNNING`` loop with the same *session_id* and *prompt*
     before registering the new one.  This prevents duplicate check loops.
     Pass ``dedup=False`` when restoring persisted loops on startup.
+
+    When *auto_pause_unchanged_ticks* is positive (default 2), the loop
+    automatically stops after that many consecutive ticks whose result was
+    suppressed (i.e. matched *suppress_when*).  This prevents silent
+    indefinite polling on a stuck/idle monitored item.  Set to 0 to disable
+    auto-pause entirely.
 
     Raises :class:`LoopIntervalError` when *interval_seconds* is below
     :attr:`settings.min_check_loop_interval_seconds
@@ -801,6 +866,7 @@ def spawn_check_loop(
             stop_when=stop_when,
             max_iterations=max_iterations,
             channel=channel,
+            auto_pause_unchanged_ticks=auto_pause_unchanged_ticks,
         )
     )
     loop_id = registry.register(
