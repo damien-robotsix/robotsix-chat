@@ -1,1 +1,2 @@
-Governance and docs reference stale `config.py` path after package split — should point to `config/settings.py`
+Governance and docs reference stale `config.py` path after package split — should point to
+`config/settings.py`

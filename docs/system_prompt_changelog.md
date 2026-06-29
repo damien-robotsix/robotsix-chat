@@ -1,7 +1,7 @@
 # System Prompt Changelog
 
-Governed artifact: `Settings.agent_instruction` default literal in `src/robotsix_chat/config/settings.py`.
-Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
+Governed artifact: `Settings.agent_instruction` default literal in
+`src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
 ______________________________________________________________________
 
