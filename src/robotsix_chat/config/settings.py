@@ -388,20 +388,9 @@ class Settings(BaseModel):
                     "component_agent is enabled — provide it via "
                     "COMPONENT_AGENT_BROKER_HOST or the config file"
                 )
-        if self.component_client.enabled:
-            if not self.component_client.broker_token:
-                raise ValueError(
-                    "component_client.broker_token must be set when "
-                    "component_client is enabled — provide it via "
-                    "COMPONENT_CLIENT_BROKER_TOKEN or the "
-                    "`component_client.broker_token` config field"
-                )
-            if not self.component_client.broker_host:
-                raise ValueError(
-                    "component_client.broker_host must be set when "
-                    "component_client is enabled — provide it via "
-                    "COMPONENT_CLIENT_BROKER_HOST or the config file"
-                )
+        # component_client has no required fields beyond `enabled` —
+        # an empty components list just means no agents are reachable,
+        # and the list_component_agents tool returns a helpful message.
         if self.refdocs.enabled and not self.refdocs.repos:
             raise ValueError(
                 "refdocs.repos must be non-empty when refdocs is enabled — "

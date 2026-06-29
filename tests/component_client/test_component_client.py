@@ -1,12 +1,13 @@
 """Tests for the component client tools and ``ComponentAgentClient``.
 
-robotsix-agent-comm is faked via ``sys.modules`` so these run without the
-``broker`` extra installed and never touch a real broker.
+Uses ``MockResponse`` and ``install_mock_client`` from
+``tests.common.mock_helpers`` to stand in for httpx so the tests
+run without a real network and never touch the broker.
 """
 
 from __future__ import annotations
 
-import logging
+import json
 from typing import Any
 
 import pytest
@@ -15,14 +16,13 @@ from robotsix_chat.component_client import build_component_tools
 from robotsix_chat.component_client.client import ComponentAgentClient
 from robotsix_chat.config import ComponentClientSettings, ComponentTarget, Settings
 
-from ..conftest import _FakeError, _install_fake_agent_comm, _Reply
+from ..common.mock_helpers import MockResponse, install_mock_client
 
 
 def _settings(**kw: Any) -> ComponentClientSettings:
     base: dict[str, Any] = {
         "enabled": True,
-        "broker_token": "tok",
-        "components": [ComponentTarget(agent_id="comp-1", label="Chat")],
+        "components": [ComponentTarget(base_url="http://comp-1:8090", label="Chat")],
     }
     base.update(kw)
     # Allow dict-style components for brevity in tests
@@ -49,32 +49,8 @@ def test_disabled_returns_empty() -> None:
     assert build_component_tools(ComponentClientSettings()) == []
 
 
-def test_missing_broker_extra_returns_empty_and_warns(
-    monkeypatch: pytest.MonkeyPatch,
-    caplog: pytest.LogCaptureFixture,
-) -> None:
-    """Missing robotsix_agent_comm → no tools + warning."""
-    import importlib.util
-
-    monkeypatch.setattr(importlib.util, "find_spec", lambda name: None)
-    with caplog.at_level(logging.WARNING):
-        tools = build_component_tools(_settings())
-    assert tools == []
-    assert "component_client.enabled is true but the 'broker' extra" in caplog.text
-
-
-def test_enabled_with_broker_extra_returns_four_tools(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """All four tools returned when broker extra is present."""
-    import importlib.util
-
-    monkeypatch.setattr(
-        importlib.util,
-        "find_spec",
-        lambda name: object() if name == "robotsix_agent_comm" else None,
-    )
-    _install_fake_agent_comm(monkeypatch)
+def test_enabled_returns_four_tools() -> None:
+    """All four tools returned when enabled."""
     tools = build_component_tools(_settings())
     assert len(tools) == 4
     names = [t.__name__ for t in tools]
@@ -92,49 +68,29 @@ def test_enabled_with_broker_extra_returns_four_tools(
 
 
 @pytest.mark.asyncio
-async def test_list_component_agents_returns_configured(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_list_component_agents_returns_configured() -> None:
     """list_component_agents enumerates configured agents and supported kinds."""
-    import importlib.util
-
-    monkeypatch.setattr(
-        importlib.util,
-        "find_spec",
-        lambda name: object() if name == "robotsix_agent_comm" else None,
-    )
-    _install_fake_agent_comm(monkeypatch)
     tools = build_component_tools(
         _settings(
             components=[
-                {"agent_id": "comp-1", "label": "Chat"},
-                {"agent_id": "comp-2", "label": ""},
+                {"base_url": "http://comp-1:8090", "label": "Chat"},
+                {"base_url": "http://comp-2:8090", "label": ""},
             ]
         )
     )
     list_fn = tools[0]
     result = await list_fn()
-    assert "comp-1" in result
+    assert "http://comp-1:8090" in result
     assert "Chat" in result
-    assert "comp-2" in result
+    assert "http://comp-2:8090" in result
     assert "monitor" in result
     assert "config-get" in result
     assert "config-set" in result
 
 
 @pytest.mark.asyncio
-async def test_list_component_agents_empty(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
+async def test_list_component_agents_empty() -> None:
     """list_component_agents with no components returns a helpful message."""
-    import importlib.util
-
-    monkeypatch.setattr(
-        importlib.util,
-        "find_spec",
-        lambda name: object() if name == "robotsix_agent_comm" else None,
-    )
-    _install_fake_agent_comm(monkeypatch)
     tools = build_component_tools(_settings(components=[]))
     list_fn = tools[0]
     result = await list_fn()
@@ -150,44 +106,30 @@ async def test_list_component_agents_empty(
 async def test_get_component_telemetry_sends_monitor_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """get_component_telemetry sends {"kind": "monitor", "payload": {}}."""
-    import importlib.util
-
-    monkeypatch.setattr(
-        importlib.util,
-        "find_spec",
-        lambda name: object() if name == "robotsix_agent_comm" else None,
-    )
-    captured = _install_fake_agent_comm(
-        monkeypatch, reply=_Reply({"check_loops": {}, "conversations": {}})
+    """get_component_telemetry POSTs to /api/component-agent/monitor."""
+    captured = install_mock_client(
+        monkeypatch,
+        MockResponse({"check_loops": {}, "conversations": {}}),
     )
     tools = build_component_tools(_settings())
     telemetry_fn = tools[1]
-    result = await telemetry_fn("comp-1")
+    result = await telemetry_fn("http://comp-1:8090")
     assert "check_loops" in result
-    assert captured["payload"] == {"kind": "monitor", "payload": {}}
-    assert captured["recipient"] == "comp-1"
-    assert captured["broker_token"] == "tok"  # pragma: allowlist secret
+    assert captured["method"] == "POST"
+    assert captured["url"] == "http://comp-1:8090/api/component-agent/monitor"
+    assert captured["json"] == {"kind": "monitor", "payload": {}}
 
 
 @pytest.mark.asyncio
-async def test_get_component_telemetry_unknown_agent(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Unknown agent_id returns a clear error naming known ids."""
-    import importlib.util
-
-    monkeypatch.setattr(
-        importlib.util,
-        "find_spec",
-        lambda name: object() if name == "robotsix_agent_comm" else None,
+async def test_get_component_telemetry_unknown_base_url() -> None:
+    """Unknown base_url returns a clear error naming known URLs."""
+    tools = build_component_tools(
+        _settings(components=[{"base_url": "http://comp-1:8090"}])
     )
-    _install_fake_agent_comm(monkeypatch)
-    tools = build_component_tools(_settings(components=[{"agent_id": "comp-1"}]))
     telemetry_fn = tools[1]
-    result = await telemetry_fn("comp-unknown")
+    result = await telemetry_fn("http://unknown:8090")
     assert "Unknown component agent" in result
-    assert "comp-1" in result
+    assert "http://comp-1:8090" in result
 
 
 # ---------------------------------------------------------------------------
@@ -199,41 +141,28 @@ async def test_get_component_telemetry_unknown_agent(
 async def test_get_component_config_sends_config_get_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """get_component_config sends {"kind": "config-get", "payload": {}}."""
-    import importlib.util
-
-    monkeypatch.setattr(
-        importlib.util,
-        "find_spec",
-        lambda name: object() if name == "robotsix_agent_comm" else None,
-    )
-    captured = _install_fake_agent_comm(
-        monkeypatch, reply=_Reply({"config": {}, "settable": {}})
+    """get_component_config POSTs to /api/component-agent/config with config-get."""
+    captured = install_mock_client(
+        monkeypatch,
+        MockResponse({"config": {}, "settable": {}}),
     )
     tools = build_component_tools(_settings())
     config_fn = tools[2]
-    result = await config_fn("comp-1")
+    result = await config_fn("http://comp-1:8090")
     assert "config" in result
-    assert captured["payload"] == {"kind": "config-get", "payload": {}}
-    assert captured["recipient"] == "comp-1"
+    assert captured["method"] == "POST"
+    assert captured["url"] == "http://comp-1:8090/api/component-agent/config"
+    assert captured["json"] == {"kind": "config-get", "payload": {}}
 
 
 @pytest.mark.asyncio
-async def test_get_component_config_unknown_agent(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Unknown agent_id returns a clear error."""
-    import importlib.util
-
-    monkeypatch.setattr(
-        importlib.util,
-        "find_spec",
-        lambda name: object() if name == "robotsix_agent_comm" else None,
+async def test_get_component_config_unknown_base_url() -> None:
+    """Unknown base_url returns a clear error."""
+    tools = build_component_tools(
+        _settings(components=[{"base_url": "http://comp-1:8090"}])
     )
-    _install_fake_agent_comm(monkeypatch)
-    tools = build_component_tools(_settings(components=[{"agent_id": "comp-1"}]))
     config_fn = tools[2]
-    result = await config_fn("comp-unknown")
+    result = await config_fn("http://unknown:8090")
     assert "Unknown component agent" in result
 
 
@@ -246,44 +175,31 @@ async def test_get_component_config_unknown_agent(
 async def test_set_component_config_sends_config_set_payload(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """set_component_config sends updates under payload["updates"]."""
-    import importlib.util
-
-    monkeypatch.setattr(
-        importlib.util,
-        "find_spec",
-        lambda name: object() if name == "robotsix_agent_comm" else None,
-    )
-    captured = _install_fake_agent_comm(
-        monkeypatch, reply=_Reply({"applied": {"server.port": 8080}})
+    """set_component_config POSTs updates under payload["updates"]."""
+    captured = install_mock_client(
+        monkeypatch,
+        MockResponse({"applied": {"server.port": 8080}}),
     )
     tools = build_component_tools(_settings())
     set_fn = tools[3]
-    result = await set_fn("comp-1", {"server.port": 8080})
+    result = await set_fn("http://comp-1:8090", {"server.port": 8080})
     assert "applied" in result
-    assert captured["payload"] == {
+    assert captured["method"] == "POST"
+    assert captured["url"] == "http://comp-1:8090/api/component-agent/config"
+    assert captured["json"] == {
         "kind": "config-set",
         "payload": {"updates": {"server.port": 8080}},
     }
-    assert captured["recipient"] == "comp-1"
 
 
 @pytest.mark.asyncio
-async def test_set_component_config_unknown_agent(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Unknown agent_id returns a clear error."""
-    import importlib.util
-
-    monkeypatch.setattr(
-        importlib.util,
-        "find_spec",
-        lambda name: object() if name == "robotsix_agent_comm" else None,
+async def test_set_component_config_unknown_base_url() -> None:
+    """Unknown base_url returns a clear error."""
+    tools = build_component_tools(
+        _settings(components=[{"base_url": "http://comp-1:8090"}])
     )
-    _install_fake_agent_comm(monkeypatch)
-    tools = build_component_tools(_settings(components=[{"agent_id": "comp-1"}]))
     set_fn = tools[3]
-    result = await set_fn("comp-unknown", {"x": 1})
+    result = await set_fn("http://unknown:8090", {"x": 1})
     assert "Unknown component agent" in result
 
 
@@ -291,106 +207,133 @@ async def test_set_component_config_unknown_agent(
 async def test_set_component_config_failure_surfaced_as_text(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """config-set failure (Error reply) is surfaced as a clear error string."""
-    import importlib.util
-
-    monkeypatch.setattr(
-        importlib.util,
-        "find_spec",
-        lambda name: object() if name == "robotsix_agent_comm" else None,
+    """HTTP error from config-set is surfaced as a clear error string."""
+    install_mock_client(
+        monkeypatch,
+        MockResponse({"code": "INVALID", "message": "nope"}, status_code=400),
     )
-    err = _FakeError({"code": "INVALID", "message": "nope"})
-    _install_fake_agent_comm(monkeypatch, reply=err)
     tools = build_component_tools(_settings())
     set_fn = tools[3]
-    result = await set_fn("comp-1", {"bad.key": 1})
+    result = await set_fn("http://comp-1:8090", {"bad.key": 1})
     assert "nope" in result
 
 
 # ---------------------------------------------------------------------------
-# ComponentAgentClient — requester construction
+# ComponentAgentClient — direct HTTP
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_requester_constructed_with_correct_args(
+async def test_client_monitor_posts_correct_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Each BrokeredRequester is constructed with the correct broker settings."""
-    captured = _install_fake_agent_comm(monkeypatch)
-    s = _settings(
-        agent_id="chat-agent",
-        broker_host="host.example.com",
-        broker_port=8443,
-        broker_scheme="http",
-        broker_token="secret-token",
-        timeout=120.0,
+    """monitor() POSTs to the correct endpoint with the right payload."""
+    captured = install_mock_client(
+        monkeypatch,
+        MockResponse({"ok": True}),
     )
-    client = ComponentAgentClient(s)
-    await client.monitor("target-1")
-    assert captured["agent_id"] == "chat-agent"
-    assert captured["recipient"] == "target-1"
-    assert captured["broker_host"] == "host.example.com"
-    assert captured["broker_port"] == 8443
-    assert captured["broker_scheme"] == "http"
-    assert captured["broker_token"] == "secret-token"  # pragma: allowlist secret
-    assert captured["timeout"] == 120.0
+    client = ComponentAgentClient(_settings(timeout=5.0))
+    result = await client.monitor("http://agent:8090")
+    assert "ok" in result
+    assert captured["url"] == "http://agent:8090/api/component-agent/monitor"
+    assert captured["json"] == {"kind": "monitor", "payload": {}}
+    assert captured["method"] == "POST"
 
 
 @pytest.mark.asyncio
-async def test_requesters_cached_per_target(
+async def test_client_config_get_posts_correct_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Requester is reused for the same target, distinct for different targets."""
-    captured = _install_fake_agent_comm(monkeypatch)
-    s = _settings(
-        components=[
-            {"agent_id": "comp-1"},
-            {"agent_id": "comp-2"},
-        ]
+    """config_get() POSTs to the config endpoint with config-get kind."""
+    captured = install_mock_client(
+        monkeypatch,
+        MockResponse({"config": {}, "settable": {}}),
     )
-    client = ComponentAgentClient(s)
-    # First call creates a requester.
-    await client.monitor("comp-1")
-    assert captured["recipient"] == "comp-1"
-    first_requester = client._requesters["comp-1"]
-    # Second call to same target reuses.
-    await client.config_get("comp-1")
-    assert client._requesters["comp-1"] is first_requester
-    # Different target creates a new one.
-    await client.monitor("comp-2")
-    assert "comp-2" in client._requesters
-    assert client._requesters["comp-2"] is not first_requester
-
-
-# ---------------------------------------------------------------------------
-# ComponentAgentClient — error handling
-# ---------------------------------------------------------------------------
+    client = ComponentAgentClient(_settings(timeout=10.0))
+    result = await client.config_get("http://agent:8090")
+    assert "config" in result
+    assert captured["url"] == "http://agent:8090/api/component-agent/config"
+    assert captured["json"] == {"kind": "config-get", "payload": {}}
 
 
 @pytest.mark.asyncio
-async def test_client_broker_unavailable_returned_as_text(
+async def test_client_config_set_posts_correct_url(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """BrokerUnavailableError (connection refused) returns text, never raises."""
-    _install_fake_agent_comm(monkeypatch, raise_exc=RuntimeError("connection refused"))
+    """config_set() POSTs updates to the config endpoint."""
+    captured = install_mock_client(
+        monkeypatch,
+        MockResponse({"applied": {"x": 1}}),
+    )
     client = ComponentAgentClient(_settings())
-    result = await client.monitor("comp-1")
-    assert "unreachable" in result.lower()
-    assert "comp-1" in result
+    result = await client.config_set("http://agent:8090", {"x": 1})
+    assert "applied" in result
+    assert captured["url"] == "http://agent:8090/api/component-agent/config"
+    assert captured["json"] == {
+        "kind": "config-set",
+        "payload": {"updates": {"x": 1}},
+    }
 
 
 @pytest.mark.asyncio
-async def test_client_other_exception_returned_as_text(
+async def test_client_strips_trailing_slash(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """Other exceptions are caught and returned as error text."""
-    _install_fake_agent_comm(monkeypatch, raise_exc=RuntimeError("something broke"))
+    """Trailing slash on base_url is stripped so the URL is not doubled."""
+    captured = install_mock_client(
+        monkeypatch,
+        MockResponse({"ok": True}),
+    )
     client = ComponentAgentClient(_settings())
-    result = await client.config_get("comp-1")
-    assert "failed" in result.lower()
-    assert "comp-1" in result
-    assert "something broke" in result
+    await client.monitor("http://agent:8090/")
+    assert captured["url"] == "http://agent:8090/api/component-agent/monitor"
+
+
+@pytest.mark.asyncio
+async def test_client_http_error_returned_as_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """HTTP 500 errors are caught and returned as error text, never raised."""
+    install_mock_client(
+        monkeypatch,
+        MockResponse("internal error", status_code=500),
+    )
+    client = ComponentAgentClient(_settings())
+    result = await client.monitor("http://agent:8090")
+    assert "error" in result.lower()
+    assert "http://agent:8090" in result
+
+
+@pytest.mark.asyncio
+async def test_client_timeout_returned_as_text(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Timeout errors are caught and returned as text, never raised."""
+    import httpx
+
+    # Make the mock client's post method raise a TimeoutException
+    captured: dict[str, Any] = {}
+
+    class _TimeoutClient:
+        def __init__(self, **kwargs: Any) -> None:
+            pass
+
+        async def __aenter__(self) -> _TimeoutClient:
+            return self
+
+        async def __aexit__(self, *exc: object) -> None:
+            pass
+
+        async def post(self, *args: Any, **kwargs: Any) -> None:
+            raise httpx.TimeoutException("timed out")
+
+        async def get(self, *args: Any, **kwargs: Any) -> None:
+            raise httpx.TimeoutException("timed out")
+
+    monkeypatch.setattr(httpx, "AsyncClient", _TimeoutClient)
+    client = ComponentAgentClient(_settings())
+    result = await client.monitor("http://agent:8090")
+    assert "timed out" in result.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -399,34 +342,22 @@ async def test_client_other_exception_returned_as_text(
 
 
 def test_settings_disabled_requires_nothing() -> None:
-    """Disabled component_client does not require broker_token or broker_host."""
+    """Disabled component_client requires no special fields."""
     Settings(component_client=ComponentClientSettings())
 
 
-def test_settings_enabled_requires_broker_token() -> None:
-    """Enabled component_client with empty broker_token raises."""
-    with pytest.raises(ValueError, match="component_client.broker_token"):
-        Settings(
-            component_client=ComponentClientSettings(enabled=True, broker_token="")
-        )
+def test_settings_enabled_with_empty_components_ok() -> None:
+    """Enabled component_client with empty components is allowed (just no agents reachable)."""
+    settings = Settings(component_client=ComponentClientSettings(enabled=True))
+    assert settings.component_client.enabled is True
+    assert settings.component_client.components == []
 
 
-def test_settings_enabled_requires_broker_host() -> None:
-    """Enabled component_client with empty broker_host raises."""
-    with pytest.raises(ValueError, match="component_client.broker_host"):
-        Settings(
-            component_client=ComponentClientSettings(
-                enabled=True, broker_token="tok", broker_host=""
-            )
-        )
-
-
-def test_settings_enabled_with_token_and_host_passes() -> None:
-    """Enabled component_client with broker_token and broker_host succeeds."""
+def test_settings_enabled_with_components_passes() -> None:
+    """Enabled component_client with at least one component succeeds."""
     Settings(
         component_client=ComponentClientSettings(
             enabled=True,
-            broker_token="tok",
-            broker_host="broker.example.com",
+            components=[ComponentTarget(base_url="http://comp-1:8090")],
         )
     )

@@ -189,20 +189,14 @@ by default; requires `uv sync --extra broker`.
 
 When enabled, the chat agent gains four tools (`list_component_agents`, `get_component_telemetry`,
 `get_component_config`, and `set_component_config`) so it can enumerate configured component agents,
-read live telemetry, and read/update configuration on demand. Disabled by default; requires
-`uv sync --extra broker`.
+read live telemetry, and read/update configuration on demand via direct HTTP. Disabled by default.
 
-| YAML path                        | Env var                          | Default                    | Description                                                                 |
-| -------------------------------- | -------------------------------- | -------------------------- | --------------------------------------------------------------------------- |
-| `component_client.enabled`       | `COMPONENT_CLIENT_ENABLED`       | `false`                    | Master switch. Requires the `broker` extra (robotsix-agent-comm).           |
-| `component_client.broker_host`   | `COMPONENT_CLIENT_BROKER_HOST`   | `"ai-broker.robotsix.net"` | Agent-comm broker hostname.                                                 |
-| `component_client.broker_port`   | `COMPONENT_CLIENT_BROKER_PORT`   | `443`                      | Broker TCP port.                                                            |
-| `component_client.broker_scheme` | `COMPONENT_CLIENT_BROKER_SCHEME` | `"https"`                  | Transport scheme (`https` or `http`).                                       |
-| `component_client.broker_token`  | `COMPONENT_CLIENT_BROKER_TOKEN`  | `""`                       | This agent's bearer token, registered on the broker. Required when enabled. |
-| `component_client.agent_id`      | `COMPONENT_CLIENT_AGENT_ID`      | `"robotsix-chat"`          | This agent's identity on the broker (the requester).                        |
-| `component_client.timeout`       | `COMPONENT_CLIENT_TIMEOUT`       | `240.0`                    | Per-request timeout (seconds).                                              |
+| YAML path                   | Env var                     | Default | Description                              |
+| --------------------------- | --------------------------- | ------- | ---------------------------------------- |
+| `component_client.enabled`  | `COMPONENT_CLIENT_ENABLED`  | `false` | Master switch.                           |
+| `component_client.timeout`  | `COMPONENT_CLIENT_TIMEOUT`  | `240.0` | Per-request HTTP timeout (seconds).      |
 
-The `component_client.components` sub-field (list of `ComponentTarget`, each with an `agent_id` and
+The `component_client.components` sub-field (list of `ComponentTarget`, each with a `base_url` and
 optional `label`) is YAML-only and has no env-var exposure.
 
 ## Reference Docs (refdocs)

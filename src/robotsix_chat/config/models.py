@@ -475,12 +475,13 @@ class ComponentTarget(BaseModel):
     """A single component agent that the chat may inspect or configure.
 
     Attributes:
-        agent_id: Broker agent id of the target component.
+        base_url: Base URL of the component agent (e.g.
+            ``"http://comp-1:8090"``).
         label: Optional human-readable label shown in discovery output.
 
     """
 
-    agent_id: str
+    base_url: str
     label: str = ""
 
 
@@ -490,29 +491,18 @@ class ComponentClientSettings(BaseModel):
     When enabled, the chat agent gains four tools: ``list_component_agents``,
     ``get_component_telemetry``, ``get_component_config``, and
     ``set_component_config`` so it can enumerate configured component agents,
-    read live telemetry, and read/update configuration on demand.
+    read live telemetry, and read/update configuration on demand via direct
+    HTTP.
 
     Attributes:
-        enabled: Master switch. Requires the ``broker`` extra (robotsix-agent-comm).
-        broker_host: Broker hostname (the shared agent-comm broker).
-        broker_port: Broker port (443 for the public TLS endpoint).
-        broker_scheme: ``https`` (TLS) or ``http``.
-        broker_token: This agent's bearer token, registered on the broker.
-            Required when enabled.
-        agent_id: This agent's id on the broker (the requester identity).
-            Default ``robotsix-chat``.
-        timeout: Per-request timeout (seconds).
+        enabled: Master switch.
+        timeout: Per-request HTTP timeout (seconds).
         components: Allowlist of component agents the chat may contact.
-            Each entry has an ``agent_id`` and an optional ``label``.
+            Each entry has a ``base_url`` and an optional ``label``.
 
     """
 
     enabled: bool = False
-    broker_host: str = "ai-broker.robotsix.net"
-    broker_port: int = 443
-    broker_scheme: str = "https"
-    broker_token: str = ""
-    agent_id: str = "robotsix-chat"
     timeout: float = 240.0
     components: list[ComponentTarget] = Field(default_factory=list)
 

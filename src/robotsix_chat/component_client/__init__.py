@@ -2,9 +2,8 @@
 
 Exposes :func:`build_component_tools` — a factory returning LLM tools that let
 the chat agent enumerate, inspect, and configure remote component agents over
-the agent-comm broker. Returns no tools when the component client is disabled or
-when the ``broker`` extra (robotsix-agent-comm) is absent, so the chat runs
-exactly as before.
+direct HTTP. Returns no tools when the component client is disabled or when
+the ``components`` allowlist is empty.
 
 The tools are plain async callables; robotsix-llmio converts them into tools for
 the underlying agent (the claude-sdk tool loop, or pydantic-ai function tools).
@@ -12,7 +11,6 @@ the underlying agent (the claude-sdk tool loop, or pydantic-ai function tools).
 
 from __future__ import annotations
 
-import importlib.util
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -33,36 +31,29 @@ def build_component_tools(
     """Return the component agent tools for the agent, or ``[]`` when unavailable."""
     if not settings.enabled:
         return []
-    if importlib.util.find_spec("robotsix_agent_comm") is None:
-        logger.warning(
-            "component_client.enabled is true but the 'broker' extra "
-            "(robotsix-agent-comm) is not installed — component agent tools "
-            "are unavailable. Install robotsix-chat[broker]."
-        )
-        return []
 
     from .client import ComponentAgentClient
 
     client = ComponentAgentClient(settings)
-    allowed_ids = {c.agent_id for c in settings.components}
+    allowed_urls = {c.base_url for c in settings.components}
 
-    def _known_ids_msg() -> str:
-        ids = sorted(allowed_ids)
-        if not ids:
+    def _known_urls_msg() -> str:
+        urls = sorted(allowed_urls)
+        if not urls:
             return "No component agents are configured."
-        return f"Known component agents: {', '.join(ids)}"
+        return f"Known component agent URLs: {', '.join(urls)}"
 
-    def _validate_agent_id(agent_id: str) -> str | None:
-        """Return an error message if *agent_id* is not in the allowlist."""
-        if agent_id not in allowed_ids:
-            return f"Unknown component agent '{agent_id}'. {_known_ids_msg()}"
+    def _validate_base_url(base_url: str) -> str | None:
+        """Return an error message if *base_url* is not in the allowlist."""
+        if base_url not in allowed_urls:
+            return f"Unknown component agent '{base_url}'. {_known_urls_msg()}"
         return None
 
     async def list_component_agents() -> str:
         """List the known component agents and their supported request kinds.
 
-        Returns the configured component agents (id + label) and the request
-        kinds each agent supports (monitor, config-get, config-set).
+        Returns the configured component agents (base URL + label) and the
+        request kinds each agent supports (monitor, config-get, config-set).
 
         Returns:
             A text listing of known agents and supported operations.
@@ -79,12 +70,12 @@ def build_component_tools(
         ]
         for c in settings.components:
             label = f" ({c.label})" if c.label else ""
-            lines.append(f"  - {c.agent_id}{label}")
+            lines.append(f"  - {c.base_url}{label}")
         lines.append("")
         lines.append("Supported request kinds: " + ", ".join(_SUPPORTED_KINDS))
         return "\n".join(lines)
 
-    async def get_component_telemetry(agent_id: str) -> str:
+    async def get_component_telemetry(base_url: str) -> str:
         """Fetch live telemetry (monitor) from a component agent.
 
         Returns the agent's runtime stats: check-loop counts, conversation
@@ -92,36 +83,38 @@ def build_component_tools(
         snapshot.
 
         Args:
-            agent_id: The broker agent id of the component to query.
+            base_url: The base URL of the component agent to query
+                (e.g. ``"http://comp-1:8090"``).
 
         Returns:
             The agent's monitor snapshot, or an error message.
 
         """
-        err = _validate_agent_id(agent_id)
+        err = _validate_base_url(base_url)
         if err:
             return err
-        return await client.monitor(agent_id)
+        return await client.monitor(base_url)
 
-    async def get_component_config(agent_id: str) -> str:
+    async def get_component_config(base_url: str) -> str:
         """Read the current configuration of a component agent.
 
         Returns a redacted snapshot of the agent's live config plus metadata
         about which keys are settable.
 
         Args:
-            agent_id: The broker agent id of the component to query.
+            base_url: The base URL of the component agent to query
+                (e.g. ``"http://comp-1:8090"``).
 
         Returns:
             The agent's config snapshot and settable-key metadata, or an error.
 
         """
-        err = _validate_agent_id(agent_id)
+        err = _validate_base_url(base_url)
         if err:
             return err
-        return await client.config_get(agent_id)
+        return await client.config_get(base_url)
 
-    async def set_component_config(agent_id: str, updates: dict[str, Any]) -> str:
+    async def set_component_config(base_url: str, updates: dict[str, Any]) -> str:
         """Update configuration on a running component agent.
 
         Sends a validated config update to the agent. The agent applies the
@@ -130,7 +123,8 @@ def build_component_tools(
         messages.
 
         Args:
-            agent_id: The broker agent id of the component to configure.
+            base_url: The base URL of the component agent to configure
+                (e.g. ``"http://comp-1:8090"``).
             updates: A mapping of dotted-path config keys to new values
                 (e.g. ``{"server.port": 8080}``).
 
@@ -138,10 +132,10 @@ def build_component_tools(
             An audit of applied changes, or an error message.
 
         """
-        err = _validate_agent_id(agent_id)
+        err = _validate_base_url(base_url)
         if err:
             return err
-        return await client.config_set(agent_id, updates)
+        return await client.config_set(base_url, updates)
 
     return [
         list_component_agents,
