@@ -9,6 +9,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+- Documented `DIAGNOSTICS_*` environment variables in `docs/configuration.md`.
+
 - Refactored shared request-validation boilerplate in route handlers
   (`_parse_json_body`, `_get_session_id`, `_cleanup_session` helpers),
   eliminating 9 internal clone pairs.  No behaviour changes.
