@@ -1,1 +1,2 @@
-robotsix-chat: give the assistant direct read access to the board via the same HTTP endpoint the user's UI uses
+robotsix-chat: give the assistant direct read access to the board via the same HTTP endpoint the
+user's UI uses

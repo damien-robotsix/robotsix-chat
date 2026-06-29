@@ -1,1 +1,2 @@
-Consolidate _StubAgent/_FailingAgent in test_runner.py and test_background_e2e.py with conftest's MockAgent
+Consolidate \_StubAgent/\_FailingAgent in test_runner.py and test_background_e2e.py with conftest's
+MockAgent

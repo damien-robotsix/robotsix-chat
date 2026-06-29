@@ -1,1 +1,1 @@
-Four pending_question_*_frame functions in chat/events.py are defined but never called
+Four pending_question\_\*\_frame functions in chat/events.py are defined but never called
