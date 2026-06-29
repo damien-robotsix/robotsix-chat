@@ -92,8 +92,10 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "DIAGNOSTICS_ENABLED",
         "DIAGNOSTICS_STORE_PATH",
         "DIAGNOSTICS_PROPOSALS_PATH",
+        "DIAGNOSTICS_EFFECTIVENESS_PATH",
         "DIAGNOSTICS_RECURRENCE_THRESHOLD",
         "DIAGNOSTICS_RECURRENCE_WINDOW_DAYS",
+        "DIAGNOSTICS_OBSERVATION_WINDOW_DAYS",
         "CALENDAR_ENABLED",
         "CALENDAR_BROKER_HOST",
         "CALENDAR_BROKER_PORT",
@@ -1494,8 +1496,12 @@ def test_diagnostics_enabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None
     assert settings.diagnostics.enabled is True
     assert settings.diagnostics.store_path == ".data/diagnostics.json"
     assert settings.diagnostics.proposals_path == ".data/fix_proposals.json"
+    assert settings.diagnostics.effectiveness_path == (
+        ".data/diagnostics_effectiveness.json"
+    )
     assert settings.diagnostics.recurrence_threshold == 3
     assert settings.diagnostics.recurrence_window_days == 30
+    assert settings.diagnostics.observation_window_days == 30
 
 
 def test_diagnostics_disabled_ok() -> None:
@@ -1509,15 +1515,19 @@ def test_diagnostics_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     _wipe_env_vars(monkeypatch)
     monkeypatch.setenv("DIAGNOSTICS_ENABLED", "false")
     monkeypatch.setenv("DIAGNOSTICS_STORE_PATH", "/custom/diag.json")
+    monkeypatch.setenv("DIAGNOSTICS_EFFECTIVENESS_PATH", "/custom/eff.json")
     monkeypatch.setenv("DIAGNOSTICS_RECURRENCE_THRESHOLD", "5")
     monkeypatch.setenv("DIAGNOSTICS_RECURRENCE_WINDOW_DAYS", "60")
+    monkeypatch.setenv("DIAGNOSTICS_OBSERVATION_WINDOW_DAYS", "45")
 
     settings = Settings.from_env()
 
     assert settings.diagnostics.enabled is False
     assert settings.diagnostics.store_path == "/custom/diag.json"
+    assert settings.diagnostics.effectiveness_path == "/custom/eff.json"
     assert settings.diagnostics.recurrence_threshold == 5
     assert settings.diagnostics.recurrence_window_days == 60
+    assert settings.diagnostics.observation_window_days == 45
 
 
 def test_diagnostics_recurrence_threshold_invalid_raises(

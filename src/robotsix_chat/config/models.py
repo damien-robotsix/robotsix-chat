@@ -252,24 +252,35 @@ class DiagnosticsSettings(BaseModel):
     the recurrence threshold a ``FixProposal`` is auto-generated (but NOT
     auto-applied) for agent or human review.
 
+    Applied fixes are tracked in the effectiveness store; after the
+    observation window elapses a ``FixEffectivenessReport`` is generated
+    comparing pre-fix and post-fix recurrence counts.
+
     Attributes:
         enabled: Master switch.  Default ``True``.
         store_path: Path to the diagnostic-event JSON persistence file.
             Default ``.data/diagnostics.json``.
         proposals_path: Path to the fix-proposal JSON persistence file.
             Default ``.data/fix_proposals.json``.
+        effectiveness_path: Path to the effectiveness-report JSON
+            persistence file.  Default ``.data/diagnostics_effectiveness.json``.
         recurrence_threshold: Minimum number of occurrences within the
             window to trigger a recurrence alert.  Default ``3``.
         recurrence_window_days: Look-back window in days for recurrence
             detection.  Default ``30``.
+        observation_window_days: Days after a fix is applied to wait before
+            generating an effectiveness report.  The pre-fix and post-fix
+            windows are both this many days.  Default ``30``.
 
     """
 
     enabled: bool = True
     store_path: str = ".data/diagnostics.json"
     proposals_path: str = ".data/fix_proposals.json"
+    effectiveness_path: str = ".data/diagnostics_effectiveness.json"
     recurrence_threshold: int = 3
     recurrence_window_days: int = 30
+    observation_window_days: int = 30
 
 
 class DirectRepoSettings(BaseModel):

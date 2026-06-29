@@ -1,0 +1,35 @@
+{
+  "fixes": [
+    {
+      "fix_proposal_id": "a825938c461d478883eb54cbfe08803b",
+      "category": "CI_FAILURE",
+      "applied_at": "2026-06-28T19:14:39.834764+00:00"
+    },
+    {
+      "fix_proposal_id": "51f902d0754e40a296142d6d0ed5d98e",
+      "category": "CI_FAILURE",
+      "applied_at": "2026-06-28T19:14:43.679545+00:00"
+    },
+    {
+      "fix_proposal_id": "434641f8f5384ff0a15a2d9e5e20770b",
+      "category": "CI_FAILURE",
+      "applied_at": "2026-06-28T19:15:07.941603+00:00"
+    },
+    {
+      "fix_proposal_id": "c6507f4b38cd473e8088b8b32d3e5cb2",
+      "category": "CI_FAILURE",
+      "applied_at": "2026-06-28T19:15:30.013856+00:00"
+    },
+    {
+      "fix_proposal_id": "3c65d40f4f314b0aba6458bd8d5e04fe",
+      "category": "CI_FAILURE",
+      "applied_at": "2026-06-28T19:17:42.700903+00:00"
+    },
+    {
+      "fix_proposal_id": "53476b4a70f146a0bc0c9d8c0d3d92b0",
+      "category": "CI_FAILURE",
+      "applied_at": "2026-06-28T19:17:46.012137+00:00"
+    }
+  ],
+  "reports": []
+}
