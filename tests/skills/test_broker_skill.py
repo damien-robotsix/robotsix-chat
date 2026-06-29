@@ -166,6 +166,39 @@ def test_tool_has_signature_with_params(
     assert params[1].default == ""
 
 
+def test_tool_annotations_carry_real_types(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """__annotations__ must reflect each parameter's real type, not str.
+
+    pydantic-ai builds the tool's JSON schema from __annotations__ (via
+    get_type_hints), so a hardcoded str collapses every parameter's type.
+    """
+    _install_fake_agent_comm(monkeypatch, reply="ok")
+    manifest = _make_manifest(
+        capabilities=[
+            CapabilityDef(
+                name="typed",
+                description="Typed params.",
+                parameters={
+                    "count": ParameterDef(type="integer", description="n"),
+                    "flag": ParameterDef(type="boolean", description="b"),
+                    "items": ParameterDef(type="array", description="xs"),
+                    "label": ParameterDef(type="string", description="s"),
+                },
+            ),
+        ]
+    )
+    skill = BrokerSkill(manifest)
+    tools = skill.get_tools()
+
+    annotations = tools[0].__annotations__
+    assert annotations["count"] is int
+    assert annotations["flag"] is bool
+    assert annotations["items"] is list
+    assert annotations["label"] is str
+
+
 # ---------------------------------------------------------------------------
 # Tool call behaviour
 # ---------------------------------------------------------------------------
