@@ -89,10 +89,10 @@ jobs:
       - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
       - uses: astral-sh/setup-uv@d0cc045d04ccac9d8b7881df0226f9e82c39688e  # v6.8.0
       - name: Run pre-commit
-        # The language:system hooks (mypy, vulture, ruff, …) resolve their
-        # tools from the project's dev group via `uv run`; --with adds the
-        # pre-commit runner itself.
-        run: uv run --with pre-commit pre-commit run --all-files --show-diff-on-failure
+        # mypy resolves from the project's dev group via `uv run`; vulture is
+        # not a declared dependency (only a system-hook tool), so provision it
+        # — and the pre-commit runner — explicitly with `--with`.
+        run: uv run --with pre-commit --with vulture pre-commit run --all-files --show-diff-on-failure
 
   check:
     needs: [lockfile, ci, codeql, security, deptry, pre-commit]
