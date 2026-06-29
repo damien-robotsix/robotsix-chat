@@ -132,9 +132,7 @@ def _parse_int(env_name: str, field_name: str) -> int | None:
     try:
         return int(raw)
     except ValueError:
-        raise ValueError(
-            f"{env_name} must be an integer, got {raw!r}"
-        ) from None
+        raise ValueError(f"{env_name} must be an integer, got {raw!r}") from None
 
 
 def _parse_float(env_name: str, field_name: str) -> float | None:
@@ -145,6 +143,4 @@ def _parse_float(env_name: str, field_name: str) -> float | None:
     try:
         return float(raw)
     except ValueError:
-        raise ValueError(
-            f"{env_name} must be a number, got {raw!r}"
-        ) from None
+        raise ValueError(f"{env_name} must be a number, got {raw!r}") from None
