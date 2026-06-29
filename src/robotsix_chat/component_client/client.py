@@ -66,9 +66,7 @@ class ComponentAgentClient:
     # Internals
     # ------------------------------------------------------------------
 
-    async def _post(
-        self, base_url: str, kind: str, payload: dict[str, Any]
-    ) -> str:
+    async def _post(self, base_url: str, kind: str, payload: dict[str, Any]) -> str:
         """POST to the component agent endpoint and return the text body.
 
         All errors (HTTP status, timeout, connection) are caught by

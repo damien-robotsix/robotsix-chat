@@ -7,7 +7,6 @@ run without a real network and never touch the broker.
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import pytest
@@ -312,7 +311,6 @@ async def test_client_timeout_returned_as_text(
     import httpx
 
     # Make the mock client's post method raise a TimeoutException
-    captured: dict[str, Any] = {}
 
     class _TimeoutClient:
         def __init__(self, **kwargs: Any) -> None:
@@ -347,7 +345,10 @@ def test_settings_disabled_requires_nothing() -> None:
 
 
 def test_settings_enabled_with_empty_components_ok() -> None:
-    """Enabled component_client with empty components is allowed (just no agents reachable)."""
+    """Enabled component_client with empty components is allowed.
+
+    (Just no agents reachable.)
+    """
     settings = Settings(component_client=ComponentClientSettings(enabled=True))
     assert settings.component_client.enabled is True
     assert settings.component_client.components == []

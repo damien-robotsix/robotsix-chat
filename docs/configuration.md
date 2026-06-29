@@ -3,8 +3,8 @@
 robotsix-chat is configured via a **three-layer cascade**:
 
 1. **pydantic defaults** — built into the `Settings` model
-2. **YAML config file** — `config/chat.local.yaml` (path overridable via `CHAT_CONFIG_PATH`)
-3. **Environment variables** — override any YAML or default value
+1. **YAML config file** — `config/chat.local.yaml` (path overridable via `CHAT_CONFIG_PATH`)
+1. **Environment variables** — override any YAML or default value
 
 Every setting below can be placed in the YAML file (using the tree path shown) or set as an
 environment variable.
@@ -191,10 +191,10 @@ When enabled, the chat agent gains four tools (`list_component_agents`, `get_com
 `get_component_config`, and `set_component_config`) so it can enumerate configured component agents,
 read live telemetry, and read/update configuration on demand via direct HTTP. Disabled by default.
 
-| YAML path                   | Env var                     | Default | Description                              |
-| --------------------------- | --------------------------- | ------- | ---------------------------------------- |
-| `component_client.enabled`  | `COMPONENT_CLIENT_ENABLED`  | `false` | Master switch.                           |
-| `component_client.timeout`  | `COMPONENT_CLIENT_TIMEOUT`  | `240.0` | Per-request HTTP timeout (seconds).      |
+| YAML path                  | Env var                    | Default | Description                         |
+| -------------------------- | -------------------------- | ------- | ----------------------------------- |
+| `component_client.enabled` | `COMPONENT_CLIENT_ENABLED` | `false` | Master switch.                      |
+| `component_client.timeout` | `COMPONENT_CLIENT_TIMEOUT` | `240.0` | Per-request HTTP timeout (seconds). |
 
 The `component_client.components` sub-field (list of `ComponentTarget`, each with a `base_url` and
 optional `label`) is YAML-only and has no env-var exposure.

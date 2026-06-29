@@ -1790,7 +1790,10 @@ def test_component_client_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -
 
 
 def test_component_client_enabled_ok_without_components() -> None:
-    """Enabling component client without components is allowed (just no agents reachable)."""
+    """Enabling component client without components is allowed.
+
+    (Just no agents reachable.)
+    """
     settings = Settings(component_client=ComponentClientSettings(enabled=True))
     assert settings.component_client.enabled is True
     assert settings.component_client.components == []
@@ -1839,11 +1842,7 @@ def test_component_client_env_overrides_yaml(
     _wipe_env_vars(monkeypatch)
 
     config_file = tmp_path / "chat.local.yaml"
-    config_file.write_text(
-        "component_client:\n"
-        "  enabled: true\n"
-        "  timeout: 120.0\n"
-    )
+    config_file.write_text("component_client:\n  enabled: true\n  timeout: 120.0\n")
     monkeypatch.setenv("COMPONENT_CLIENT_TIMEOUT", "60.0")
 
     settings = Settings.load(config_path=config_file)
