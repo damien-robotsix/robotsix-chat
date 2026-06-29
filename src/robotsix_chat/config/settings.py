@@ -41,6 +41,7 @@ from robotsix_chat.config.env_builders import (
     _build_pending_questions_raw,
     _build_refdocs_raw,
     _build_self_review_raw,
+    _build_skills_raw,
     _build_version_check_raw,
 )
 from robotsix_chat.config.models import (
@@ -59,6 +60,7 @@ from robotsix_chat.config.models import (
     PendingQuestionsSettings,
     RefDocsSettings,
     SelfReviewSettings,
+    SkillsSettings,
     VersionCheckSettings,
 )
 
@@ -280,6 +282,7 @@ class Settings(BaseModel):
         default_factory=PendingQuestionsSettings
     )
     direct_repo: DirectRepoSettings = Field(default_factory=DirectRepoSettings)
+    skills: SkillsSettings = Field(default_factory=SkillsSettings)
     max_images_per_message: int = 8
     max_image_bytes: int = 5_242_880
     allowed_image_media_types: list[str] = Field(
@@ -683,6 +686,10 @@ class Settings(BaseModel):
         direct_repo_raw = _build_direct_repo_raw(flat.get("direct_repo"))
         if direct_repo_raw:
             raw["direct_repo"] = direct_repo_raw
+
+        skills_raw = _build_skills_raw(flat.get("skills"))
+        if skills_raw:
+            raw["skills"] = skills_raw
 
         return cls(**raw)
 

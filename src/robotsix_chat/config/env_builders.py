@@ -398,6 +398,25 @@ def _build_direct_repo_raw(yaml_direct_repo: Any) -> dict[str, Any]:
     return dr_raw
 
 
+def _build_skills_raw(yaml_skills: Any) -> dict[str, Any]:
+    """Overlay ``SKILLS_*`` env vars onto the YAML ``skills`` subtree.
+
+    Returns a dict ready to parse into :class:`SkillsSettings`, or empty
+    when nothing is set.
+    """
+    skills_raw: dict[str, Any] = dict(yaml_skills or {})
+
+    enabled = os.getenv("SKILLS_ENABLED")
+    if enabled is not None:
+        skills_raw["enabled"] = _parse_bool(enabled)
+
+    manifests_dir = os.getenv("SKILLS_MANIFESTS_DIR")
+    if manifests_dir is not None:
+        skills_raw["manifests_dir"] = manifests_dir
+
+    return skills_raw
+
+
 def _build_knowledge_raw(yaml_knowledge: Any) -> dict[str, Any]:
     """Overlay ``KNOWLEDGE_*`` env vars onto the YAML ``knowledge`` subtree.
 

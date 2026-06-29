@@ -11,7 +11,10 @@ from robotsix_chat.config.constants import (
     ConfigError,
     level_needs_api_key,
 )
-from robotsix_chat.config.env_builders import _build_diagnostics_raw
+from robotsix_chat.config.env_builders import (
+    _build_diagnostics_raw,
+    _build_skills_raw,
+)
 from robotsix_chat.config.models import (
     AuthSettings,
     BoardReaderSettings,
@@ -31,6 +34,7 @@ from robotsix_chat.config.models import (
     PendingQuestionsSettings,
     RefDocsSettings,
     SelfReviewSettings,
+    SkillsSettings,
     VersionCheckSettings,
 )
 from robotsix_chat.config.settings import (
@@ -62,8 +66,10 @@ __all__ = [
     "SYSTEM_PROMPT_VERSION",
     "SelfReviewSettings",
     "Settings",
+    "SkillsSettings",
     "VersionCheckSettings",
     "_YAML_PATH_TO_FIELD",
     "_build_diagnostics_raw",
+    "_build_skills_raw",
     "level_needs_api_key",
 ]

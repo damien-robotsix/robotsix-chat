@@ -16,6 +16,7 @@ dependencies = [
     "pydantic",
     "python-dotenv",
     "pyjwt",
+    "pyyaml",
     "uvicorn",
     "starlette",
     # Shared robotsix-stack libraries, consumed via git (see [tool.uv.sources]):
@@ -142,6 +143,11 @@ ignore_missing_imports = true
 module = ["asgi_correlation_id", "asgi_correlation_id.*"]
 ignore_missing_imports = true
 
+# PyYAML ships no type stubs.
+[[tool.mypy.overrides]]
+module = ["yaml"]
+ignore_missing_imports = true
+
 [tool.deptry]
 # `robotsix_chat` is this project's own package (built from src/robotsix_chat);
 # deptry otherwise misreads the intra-package absolute imports as a transitive
@@ -161,7 +167,9 @@ DEP002 = ["transformers"]
 # its result objects, and the agent builds a multi-turn `message_history` from
 # its message types. We consume it through llmio (never declare it directly), so
 # this transitive import (DEP003) is deliberate.
-DEP003 = ["pydantic_ai"]
+# `pyyaml` ships through robotsix-yaml-config; we use it directly in the skills
+# loader and ChatConfig YAML parsing — transitive by design.
+DEP003 = ["pydantic_ai", "pyyaml"]
 
 [tool.bandit]
 exclude_dirs = ["tests"]

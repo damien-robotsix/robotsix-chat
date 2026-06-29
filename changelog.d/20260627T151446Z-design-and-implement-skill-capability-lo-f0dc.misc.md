@@ -1,0 +1,1 @@
+Design and implement skill/capability loading mechanism for direct broker access
