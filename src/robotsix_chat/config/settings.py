@@ -41,6 +41,7 @@ from robotsix_chat.config.env_builders import (
     _build_pending_questions_raw,
     _build_refdocs_raw,
     _build_self_review_raw,
+    _build_skills_raw,
     _build_version_check_raw,
 )
 from robotsix_chat.config.models import (
@@ -53,13 +54,13 @@ from robotsix_chat.config.models import (
     DiagnosticsSettings,
     DirectRepoSettings,
     KnowledgeSettings,
-    SkillsSettings,
     MailSettings,
     MemorySettings,
     MillSettings,
     PendingQuestionsSettings,
     RefDocsSettings,
     SelfReviewSettings,
+    SkillsSettings,
     VersionCheckSettings,
 )
 
@@ -686,6 +687,10 @@ class Settings(BaseModel):
         if direct_repo_raw:
             raw["direct_repo"] = direct_repo_raw
 
+        skills_raw = _build_skills_raw(flat.get("skills"))
+        if skills_raw:
+            raw["skills"] = skills_raw
+
         return cls(**raw)
 
 
@@ -697,4 +702,3 @@ def _load_dotenv() -> None:
         load_dotenv()
     except ImportError:  # pragma: no cover — python-dotenv is a required dep
         logger.debug("python-dotenv not installed; skipping .env loading")
-")
