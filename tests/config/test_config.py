@@ -12,6 +12,7 @@ from robotsix_chat.config import (
     CalendarSettings,
     ComponentAgentSettings,
     ComponentClientSettings,
+    ComponentTarget,
     DiagnosticsSettings,
     MailSettings,
     MemoryEmbeddingSettings,
@@ -113,11 +114,6 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "COMPONENT_AGENT_AGENT_ID",
         "COMPONENT_AGENT_TIMEOUT",
         "COMPONENT_CLIENT_ENABLED",
-        "COMPONENT_CLIENT_BROKER_HOST",
-        "COMPONENT_CLIENT_BROKER_PORT",
-        "COMPONENT_CLIENT_BROKER_SCHEME",
-        "COMPONENT_CLIENT_BROKER_TOKEN",
-        "COMPONENT_CLIENT_AGENT_ID",
         "COMPONENT_CLIENT_TIMEOUT",
         "MAIL_ENABLED",
         "MAIL_API_BASE_URL",
@@ -1778,63 +1774,64 @@ def test_component_agent_env_overrides_yaml(
 
 
 # ---------------------------------------------------------------------------
-# Component client (broker requester)
+# Component client (direct HTTP)
 # ---------------------------------------------------------------------------
 
 
 def test_component_client_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Component client is off by default, with broker defaults present."""
+    """Component client is off by default, with no components configured."""
     _wipe_env_vars(monkeypatch)
 
     settings = Settings.from_env()
 
     assert settings.component_client.enabled is False
-    assert settings.component_client.broker_host == "ai-broker.robotsix.net"
-    assert settings.component_client.broker_port == 443
-    assert settings.component_client.broker_scheme == "https"
-    assert settings.component_client.agent_id == "robotsix-chat"
     assert settings.component_client.timeout == 240.0
     assert settings.component_client.components == []
 
 
-def test_component_client_enabled_requires_token() -> None:
-    """Enabling component client without a broker token is rejected."""
-    with pytest.raises(ValueError, match="component_client.broker_token"):
-        Settings(component_client=ComponentClientSettings(enabled=True))
+def test_component_client_enabled_ok_without_components() -> None:
+    """Enabling component client without components is allowed.
+
+    (Just no agents reachable.)
+    """
+    settings = Settings(component_client=ComponentClientSettings(enabled=True))
+    assert settings.component_client.enabled is True
+    assert settings.component_client.components == []
 
 
-def test_component_client_enabled_with_token_ok() -> None:
-    """Component client constructs once a broker token is present."""
+def test_component_client_enabled_with_components_ok() -> None:
+    """Component client constructs when components are configured."""
     settings = Settings(
-        component_client=ComponentClientSettings(enabled=True, broker_token="tok")
+        component_client=ComponentClientSettings(
+            enabled=True,
+            components=[ComponentTarget(base_url="http://comp-1:8090")],
+        )
     )
     assert settings.component_client.enabled is True
+    assert len(settings.component_client.components) == 1
+    assert settings.component_client.components[0].base_url == "http://comp-1:8090"
 
 
 def test_component_client_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     """``COMPONENT_CLIENT_*`` env vars populate the component client settings."""
     _wipe_env_vars(monkeypatch)
     monkeypatch.setenv("COMPONENT_CLIENT_ENABLED", "true")
-    monkeypatch.setenv("COMPONENT_CLIENT_BROKER_TOKEN", "sek")
-    monkeypatch.setenv("COMPONENT_CLIENT_BROKER_PORT", "8443")
-    monkeypatch.setenv("COMPONENT_CLIENT_AGENT_ID", "my-client")
+    monkeypatch.setenv("COMPONENT_CLIENT_TIMEOUT", "30.5")
 
     settings = Settings.from_env()
 
     assert settings.component_client.enabled is True
-    assert settings.component_client.broker_token == "sek"  # pragma: allowlist secret
-    assert settings.component_client.broker_port == 8443
-    assert settings.component_client.agent_id == "my-client"
+    assert settings.component_client.timeout == 30.5
 
 
-def test_component_client_port_invalid_raises(
+def test_component_client_timeout_invalid_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A non-numeric ``COMPONENT_CLIENT_BROKER_PORT`` raises ``ValueError``."""
+    """A non-numeric ``COMPONENT_CLIENT_TIMEOUT`` raises ``ValueError``."""
     _wipe_env_vars(monkeypatch)
-    monkeypatch.setenv("COMPONENT_CLIENT_BROKER_PORT", "https")
+    monkeypatch.setenv("COMPONENT_CLIENT_TIMEOUT", "slow")
 
-    with pytest.raises(ValueError, match="COMPONENT_CLIENT_BROKER_PORT"):
+    with pytest.raises(ValueError, match="COMPONENT_CLIENT_TIMEOUT"):
         Settings.from_env()
 
 
@@ -1845,27 +1842,13 @@ def test_component_client_env_overrides_yaml(
     _wipe_env_vars(monkeypatch)
 
     config_file = tmp_path / "chat.local.yaml"
-    config_file.write_text(
-        "component_client:\n"
-        "  enabled: true\n"
-        "  broker_host: yaml-host\n"
-        "  broker_token: yaml-tok\n"
-    )
-    monkeypatch.setenv("COMPONENT_CLIENT_BROKER_HOST", "env-host")
-    monkeypatch.setenv("COMPONENT_CLIENT_BROKER_TOKEN", "env-tok")
+    config_file.write_text("component_client:\n  enabled: true\n  timeout: 120.0\n")
+    monkeypatch.setenv("COMPONENT_CLIENT_TIMEOUT", "60.0")
 
     settings = Settings.load(config_path=config_file)
 
     assert settings.component_client.enabled is True
-    assert settings.component_client.broker_host == "env-host"
-    assert (
-        settings.component_client.broker_token == "env-tok"
-    )  # pragma: allowlist secret
-
-
-# ---------------------------------------------------------------------------
-# Pending questions
-# ---------------------------------------------------------------------------
+    assert settings.component_client.timeout == 60.0
 
 
 def test_pending_questions_enabled_by_default(

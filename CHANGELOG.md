@@ -36,6 +36,14 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `api_base_url` and `api_token`). Added `content` and `follow_redirects` parameters to
   `safe_http_request`. No broker dependency remains in the mail module.
 
+- Migrated component client from agent-comm broker to direct HTTP. Replaced `ComponentAgentClient`
+  (broker-based, using `BrokeredRequester`) with a direct HTTP client calling each component agent's
+  `/api/component-agent/monitor` and `/api/component-agent/config` endpoints. Changed
+  `ComponentTarget.agent_id` to `ComponentTarget.base_url`. Removed all broker fields
+  (`broker_host`, `broker_port`, `broker_scheme`, `broker_token`, `agent_id`) from
+  `ComponentClientSettings`. Removed the `robotsix_agent_comm` availability check from
+  `build_component_tools`. No broker dependency remains in the component_client module.
+
 - Added `--cov --cov-report=term-missing` to the `test` Makefile target so local test runs collect
   and report coverage automatically.
 

@@ -555,27 +555,9 @@ def _build_component_client_raw(yaml_component_client: Any) -> dict[str, Any]:
     """
     cc_raw: dict[str, Any] = dict(yaml_component_client or {})
 
-    def env_set(field: str, env_name: str) -> None:
-        value = os.getenv(env_name)
-        if value is not None:
-            cc_raw[field] = value
-
     enabled = os.getenv("COMPONENT_CLIENT_ENABLED")
     if enabled is not None:
         cc_raw["enabled"] = _parse_bool(enabled)
-    env_set("broker_host", "COMPONENT_CLIENT_BROKER_HOST")
-    env_set("broker_scheme", "COMPONENT_CLIENT_BROKER_SCHEME")
-    env_set("broker_token", "COMPONENT_CLIENT_BROKER_TOKEN")
-    env_set("agent_id", "COMPONENT_CLIENT_AGENT_ID")
-
-    port_str = os.getenv("COMPONENT_CLIENT_BROKER_PORT")
-    if port_str is not None:
-        try:
-            cc_raw["broker_port"] = int(port_str)
-        except ValueError:
-            raise ValueError(
-                f"COMPONENT_CLIENT_BROKER_PORT must be an integer, got {port_str!r}"
-            ) from None
 
     timeout_str = os.getenv("COMPONENT_CLIENT_TIMEOUT")
     if timeout_str is not None:
