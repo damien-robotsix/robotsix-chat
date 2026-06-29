@@ -249,6 +249,26 @@ Provides three tools: `list_board_tickets` (calls `GET /tickets`),
 | `board_reader.timeout` | `BOARD_READER_TIMEOUT` | `30.0` | Per-request HTTP timeout (seconds). |
 | `board_reader.cache_ttl` | `BOARD_READER_CACHE_TTL` | `60.0` | Seconds to cache board API responses (monotonic clock). Controls how often the agent re-fetches ticket data rather than using a stale in-memory snapshot. |
 
+## Diagnostics
+
+Diagnostics capture and systemic fix surfacing. When enabled, the agent captures
+diagnostic bundles for failure events and can detect recurring failure categories.
+When a category crosses the recurrence threshold a ``FixProposal`` is
+auto-generated (but NOT auto-applied) for agent or human review. Applied fixes are
+tracked in the effectiveness store; after the observation window elapses a
+``FixEffectivenessReport`` is generated comparing pre-fix and post-fix recurrence
+counts. Enabled by default.
+
+| YAML path | Env var | Default | Description |
+|---|---|---|---|
+| `diagnostics.enabled` | `DIAGNOSTICS_ENABLED` | `true` | Master switch. |
+| `diagnostics.store_path` | `DIAGNOSTICS_STORE_PATH` | `".data/diagnostics.json"` | Path to the diagnostic-event JSON persistence file. |
+| `diagnostics.proposals_path` | `DIAGNOSTICS_PROPOSALS_PATH` | `".data/fix_proposals.json"` | Path to the fix-proposal JSON persistence file. |
+| `diagnostics.effectiveness_path` | `DIAGNOSTICS_EFFECTIVENESS_PATH` | `".data/diagnostics_effectiveness.json"` | Path to the effectiveness-report JSON persistence file. |
+| `diagnostics.recurrence_threshold` | `DIAGNOSTICS_RECURRENCE_THRESHOLD` | `3` | Minimum number of occurrences within the window to trigger a recurrence alert. |
+| `diagnostics.recurrence_window_days` | `DIAGNOSTICS_RECURRENCE_WINDOW_DAYS` | `30` | Look-back window in days for recurrence detection. |
+| `diagnostics.observation_window_days` | `DIAGNOSTICS_OBSERVATION_WINDOW_DAYS` | `30` | Days after a fix is applied to wait before generating an effectiveness report. |
+
 ## Direct Repo (GitHub App push-branch + open-PR)
 
 Direct-repo push-branch and open-PR as the robotsix-mill GitHub App.
