@@ -1045,7 +1045,8 @@ async def test_create_agent_from_settings_uses_load_when_none(
     """``create_agent_from_settings`` resolves config when *settings* is None."""
     # Isolate from any on-disk config/chat.local.yaml so resolution is env-only.
     monkeypatch.setattr(
-        "robotsix_chat.config.DEFAULT_CONFIG_PATH", Path("/nonexistent/chat.local.yaml")
+        "robotsix_chat.config.constants.DEFAULT_CONFIG_PATH",
+        Path("/nonexistent/chat.local.yaml"),
     )
     monkeypatch.delenv("CHAT_CONFIG_PATH", raising=False)
     monkeypatch.setenv("LLMIO_MODEL_LEVEL", "1")
@@ -1074,7 +1075,8 @@ async def test_run_server_from_config_creates_agent_from_settings(
     """
     # Isolate from any on-disk config/chat.local.yaml so resolution is env-only.
     monkeypatch.setattr(
-        "robotsix_chat.config.DEFAULT_CONFIG_PATH", Path("/nonexistent/chat.local.yaml")
+        "robotsix_chat.config.constants.DEFAULT_CONFIG_PATH",
+        Path("/nonexistent/chat.local.yaml"),
     )
     monkeypatch.delenv("CHAT_CONFIG_PATH", raising=False)
     monkeypatch.setenv("LLMIO_MODEL_LEVEL", "3")
@@ -1148,7 +1150,8 @@ async def test_run_server_from_config_passes_explicit_agent(
     """
     # Isolate from any on-disk config; the default (claude-sdk) needs no key.
     monkeypatch.setattr(
-        "robotsix_chat.config.DEFAULT_CONFIG_PATH", Path("/nonexistent/chat.local.yaml")
+        "robotsix_chat.config.constants.DEFAULT_CONFIG_PATH",
+        Path("/nonexistent/chat.local.yaml"),
     )
     monkeypatch.delenv("CHAT_CONFIG_PATH", raising=False)
     mock_agent = MagicMock()

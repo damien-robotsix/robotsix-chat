@@ -61,7 +61,11 @@ modules:
   - id: robotsix_chat.config
     description: "Environment-based configuration via pydantic + python-dotenv."
     paths:
-      - src/robotsix_chat/config.py
+      - src/robotsix_chat/config/__init__.py
+      - src/robotsix_chat/config/constants.py
+      - src/robotsix_chat/config/env_builders.py
+      - src/robotsix_chat/config/models.py
+      - src/robotsix_chat/config/settings.py
       - tests/config/__init__.py
       - tests/config/test_config.py
       - tests/config/test_system_prompt_governance.py
