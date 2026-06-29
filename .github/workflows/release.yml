@@ -39,6 +39,6 @@ jobs:
 
   publish:
     needs: verify
-    uses: damien-robotsix/robotsix-mill/.github/workflows/python-release.yml@84de006ddcaee4926124edd588c0eaf06d7a61ec  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-release.yml@5cd8c1facb02299da618979e7a55f1953f9c075a  # main
     permissions:
       id-token: write
