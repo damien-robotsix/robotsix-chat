@@ -12,14 +12,15 @@ to detect recurring failure categories.
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
 from typing import Any
+
+from robotsix_chat.common.json_store import JsonStoreBase
 
 logger = logging.getLogger(__name__)
 
@@ -44,7 +45,7 @@ class DiagnosticBundle:
     created_at: str = ""
 
 
-class DiagnosticStore:
+class DiagnosticStore(JsonStoreBase[DiagnosticBundle]):
     """Persist diagnostic bundles to ``.data/diagnostics.json`` (or custom path).
 
     Construct with an overridable ``path`` and ``clock`` injectable (defaults
@@ -54,20 +55,39 @@ class DiagnosticStore:
     or log warnings on persistence failures.
     """
 
+    _store_name = "diagnostic store"
+
     def __init__(
         self,
         path: str | Path = ".data/diagnostics.json",
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
-        """Create a store persisting to *path*.
+        """Create a store persisting to *path*."""
+        super().__init__(path, clock=clock)
 
-        *clock* overrides the timestamp source so tests can pin time.
-        """
-        self._path = Path(path)
-        self._clock: Callable[[], datetime] = clock or (lambda: datetime.now(UTC))
-        self._events: dict[str, DiagnosticBundle] = {}
-        self._load()
+    # ------------------------------------------------------------------
+    # serialisation hooks
+    # ------------------------------------------------------------------
+
+    def _to_dict(self, item: DiagnosticBundle) -> dict[str, object]:
+        return {
+            "id": item.id,
+            "category": item.category,
+            "message": item.message,
+            "details": item.details,
+            "created_at": item.created_at,
+        }
+
+    @classmethod
+    def _from_dict(cls, d: dict[str, Any]) -> DiagnosticBundle:
+        return DiagnosticBundle(
+            id=d.get("id", ""),
+            category=d.get("category", ""),
+            message=d.get("message", ""),
+            details=d.get("details"),
+            created_at=d.get("created_at", ""),
+        )
 
     # ------------------------------------------------------------------
     # public API
@@ -87,27 +107,27 @@ class DiagnosticStore:
             details=details,
             created_at=self._clock().isoformat(),
         )
-        self._events[bundle.id] = bundle
+        self._items[bundle.id] = bundle
         self._persist()
         return bundle
 
     def list_events(self, category: str = "") -> list[DiagnosticBundle]:
         """Return all events, optionally filtered by *category*."""
         if not category:
-            return list(self._events.values())
+            return list(self._items.values())
         cat = category.strip().lower()
-        return [e for e in self._events.values() if e.category.strip().lower() == cat]
+        return [e for e in self._items.values() if e.category.strip().lower() == cat]
 
     def get_event(self, event_id: str) -> DiagnosticBundle | None:
         """Return the event for *event_id*, or ``None`` if unknown."""
-        return self._events.get(event_id)
+        return self._items.get(event_id)
 
     def events_since(
         self, since: datetime, category: str = ""
     ) -> list[DiagnosticBundle]:
         """Return events on or after *since*, optionally filtered by category."""
         result: list[DiagnosticBundle] = []
-        for e in self._events.values():
+        for e in self._items.values():
             if category and e.category.strip().lower() != category.strip().lower():
                 continue
             try:
@@ -117,61 +137,3 @@ class DiagnosticStore:
             if ts >= since:
                 result.append(e)
         return result
-
-    # ------------------------------------------------------------------
-    # persistence
-    # ------------------------------------------------------------------
-
-    def _persist(self) -> None:
-        """Write all events to the JSON store (best-effort atomic)."""
-        try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            logger.warning("Could not create parent dir for %s", self._path)
-            return
-
-        entries = [
-            {
-                "id": e.id,
-                "category": e.category,
-                "message": e.message,
-                "details": e.details,
-                "created_at": e.created_at,
-            }
-            for e in self._events.values()
-        ]
-        tmp_path = self._path.with_suffix(self._path.suffix + ".tmp")
-        try:
-            tmp_path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
-            tmp_path.replace(self._path)
-        except OSError:
-            logger.exception("Failed to persist diagnostic store to %s", self._path)
-
-    def _load(self) -> None:
-        """Load events from disk; tolerate missing/empty/corrupt file."""
-        if not self._path.exists():
-            return
-        try:
-            raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            logger.warning(
-                "Could not read diagnostic store file %s; starting empty",
-                self._path,
-            )
-            return
-
-        if not isinstance(raw, list):
-            return
-
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-            bundle = DiagnosticBundle(
-                id=item.get("id", ""),
-                category=item.get("category", ""),
-                message=item.get("message", ""),
-                details=item.get("details"),
-                created_at=item.get("created_at", ""),
-            )
-            if bundle.id:
-                self._events[bundle.id] = bundle

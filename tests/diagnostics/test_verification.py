@@ -45,7 +45,7 @@ def _add_entries(
             details={"test": True},
             created_at=ts,
         )
-        store._events[bundle.id] = bundle
+        store._items[bundle.id] = bundle
     store._persist()
 
 

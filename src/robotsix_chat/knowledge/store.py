@@ -12,13 +12,15 @@ system prompt.
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import datetime
 from pathlib import Path
+from typing import Any
+
+from robotsix_chat.common.json_store import JsonStoreBase
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +36,7 @@ class KnowledgeEntry:
     updated_at: str
 
 
-class KnowledgeStore:
+class KnowledgeStore(JsonStoreBase[KnowledgeEntry]):
     """Persist agent-authored notes to ``.data/knowledge.json`` (or custom path).
 
     Construct with an overridable ``path`` and ``clock`` injectable (defaults
@@ -46,7 +48,7 @@ class KnowledgeStore:
     (e.g. disk full, permissions), which the tool layer wraps.
     """
 
-    _STORE_DIR = ".data"
+    _store_name = "knowledge store"
 
     def __init__(
         self,
@@ -54,15 +56,31 @@ class KnowledgeStore:
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
-        """Create a store persisting to *path*.
+        """Create a store persisting to *path*."""
+        super().__init__(path, clock=clock)
 
-        *clock* overrides the timestamp source (default ``datetime.now(UTC)``)
-        so tests can pin time deterministically.
-        """
-        self._path = Path(path)
-        self._clock: Callable[[], datetime] = clock or (lambda: datetime.now(UTC))
-        self._entries: dict[str, KnowledgeEntry] = {}
-        self._load()
+    # ------------------------------------------------------------------
+    # serialisation hooks
+    # ------------------------------------------------------------------
+
+    def _to_dict(self, item: KnowledgeEntry) -> dict[str, object]:
+        return {
+            "id": item.id,
+            "topic": item.topic,
+            "content": item.content,
+            "created_at": item.created_at,
+            "updated_at": item.updated_at,
+        }
+
+    @classmethod
+    def _from_dict(cls, d: dict[str, Any]) -> KnowledgeEntry:
+        return KnowledgeEntry(
+            id=d.get("id", ""),
+            topic=d.get("topic", ""),
+            content=d.get("content", ""),
+            created_at=d.get("created_at", ""),
+            updated_at=d.get("updated_at", ""),
+        )
 
     # ------------------------------------------------------------------
     # public API
@@ -78,7 +96,7 @@ class KnowledgeStore:
             created_at=now,
             updated_at=now,
         )
-        self._entries[entry.id] = entry
+        self._items[entry.id] = entry
         self._persist()
         return entry
 
@@ -89,7 +107,7 @@ class KnowledgeStore:
         ``id="error"`` and an error message in ``content``** when *note_id* is
         unknown — callers should check ``entry.id`` before using it.
         """
-        entry = self._entries.get(note_id)
+        entry = self._items.get(note_id)
         if entry is None:
             return KnowledgeEntry(
                 id="error",
@@ -108,7 +126,7 @@ class KnowledgeStore:
 
         Returns the updated entry or an error entry when *note_id* is unknown.
         """
-        entry = self._entries.get(note_id)
+        entry = self._items.get(note_id)
         if entry is None:
             return KnowledgeEntry(
                 id="error",
@@ -125,68 +143,10 @@ class KnowledgeStore:
     def list(self, topic: str = "") -> list[KnowledgeEntry]:
         """Return all notes, optionally filtered by *topic* (case-insensitive)."""
         if not topic:
-            return list(self._entries.values())
+            return list(self._items.values())
         t = topic.strip().lower()
-        return [e for e in self._entries.values() if e.topic.strip().lower() == t]
+        return [e for e in self._items.values() if e.topic.strip().lower() == t]
 
     def get(self, note_id: str) -> KnowledgeEntry | None:
         """Return the entry for *note_id*, or ``None`` if unknown."""
-        return self._entries.get(note_id)
-
-    # ------------------------------------------------------------------
-    # persistence
-    # ------------------------------------------------------------------
-
-    def _persist(self) -> None:
-        """Write all entries to the JSON store (best-effort atomic)."""
-        try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            logger.warning("Could not create parent dir for %s", self._path)
-            return
-
-        entries = [
-            {
-                "id": e.id,
-                "topic": e.topic,
-                "content": e.content,
-                "created_at": e.created_at,
-                "updated_at": e.updated_at,
-            }
-            for e in self._entries.values()
-        ]
-        # Write to a temp file then rename for atomic-ish behaviour.
-        tmp_path = self._path.with_suffix(self._path.suffix + ".tmp")
-        try:
-            tmp_path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
-            tmp_path.replace(self._path)
-        except OSError:
-            logger.exception("Failed to persist knowledge store to %s", self._path)
-
-    def _load(self) -> None:
-        """Load entries from disk; tolerate missing/empty/corrupt file."""
-        if not self._path.exists():
-            return
-        try:
-            raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            logger.warning(
-                "Could not read knowledge store file %s; starting empty", self._path
-            )
-            return
-
-        if not isinstance(raw, list):
-            return
-
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-            entry = KnowledgeEntry(
-                id=item.get("id", ""),
-                topic=item.get("topic", ""),
-                content=item.get("content", ""),
-                created_at=item.get("created_at", ""),
-                updated_at=item.get("updated_at", ""),
-            )
-            if entry.id:
-                self._entries[entry.id] = entry
+        return self._items.get(note_id)
