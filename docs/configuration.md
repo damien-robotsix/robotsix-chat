@@ -133,21 +133,16 @@ development work (create/triage tickets, ask status) from chat. Disabled by defa
 
 ## Mail
 
-robotsix-auto-mail integration over the agent-comm broker. When enabled, the chat agent gains a
-`consult_mail` tool that forwards natural-language requests to the auto-mail board manager
-(`board-manager-robotsix-auto-mail`) and relays its reply — so a user can view, triage, or comment
-on mail-agent tickets from chat. Disabled by default; requires `uv sync --extra broker`.
+Direct HTTP access to the auto-mail board server. When enabled, the chat agent gains discrete tools
+that call the auto-mail board HTTP API directly (no broker indirection): get the board content,
+check email status, move/delete/archive emails, and run triage. Disabled by default.
 
-| YAML path               | Env var                 | Default                              | Description                                 |
-| ----------------------- | ----------------------- | ------------------------------------ | ------------------------------------------- |
-| `mail.enabled`          | `MAIL_ENABLED`          | `false`                              | Master switch. Requires the `broker` extra. |
-| `mail.broker_host`      | `MAIL_BROKER_HOST`      | `"ai-broker.robotsix.net"`           | Shared broker hostname.                     |
-| `mail.broker_port`      | `MAIL_BROKER_PORT`      | `443`                                | Broker port.                                |
-| `mail.broker_scheme`    | `MAIL_BROKER_SCHEME`    | `"https"`                            | `https` or `http`.                          |
-| `mail.broker_token`     | `MAIL_BROKER_TOKEN`     | `""`                                 | Bearer token (required when enabled).       |
-| `mail.agent_id`         | `MAIL_AGENT_ID`         | `"robotsix-chat"`                    | This agent's broker identity.               |
-| `mail.board_manager_id` | `MAIL_BOARD_MANAGER_ID` | `"board-manager-robotsix-auto-mail"` | Target board manager agent ID.              |
-| `mail.timeout`          | `MAIL_TIMEOUT`          | `240.0`                              | Per-request timeout (seconds).              |
+| YAML path           | Env var             | Default                   | Description                                                                                                  |
+| ------------------- | ------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `mail.enabled`      | `MAIL_ENABLED`      | `false`                   | Master switch. When enabled, the agent gains discrete tools that call the auto-mail board HTTP API directly. |
+| `mail.api_base_url` | `MAIL_API_BASE_URL` | `"http://127.0.0.1:8077"` | Base URL of the auto-mail board HTTP server (no trailing slash).                                             |
+| `mail.api_token`    | `MAIL_API_TOKEN`    | `""`                      | Optional Bearer token; empty means no Authorization header.                                                  |
+| `mail.timeout`      | `MAIL_TIMEOUT`      | `30.0`                    | Per-request HTTP timeout in seconds.                                                                         |
 
 ## Calendar (broker integration)
 

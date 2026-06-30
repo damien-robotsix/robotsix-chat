@@ -9,6 +9,10 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Updated Mail section docs to reflect direct HTTP API (no broker), with correct env vars
+  `MAIL_API_BASE_URL`/`MAIL_API_TOKEN` and correct `MAIL_TIMEOUT` default of `30.0`. Removed stale
+  broker-based entries.
+
 - Refactored `_check_loop_worker` in `loops.py`: extracted `_build_tick_prompt`,
   `_run_tick_iteration`, and `_evaluate_stop_conditions` helpers to flatten the monolithic
   while-loop body and consolidate stop-decision logic into a single decision point.

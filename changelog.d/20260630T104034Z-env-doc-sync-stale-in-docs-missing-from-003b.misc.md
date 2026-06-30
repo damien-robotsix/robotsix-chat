@@ -1,0 +1,2 @@
+env doc sync: stale-in-docs / missing-from-docs / default-mismatch — Mail section uses broker-style
+env vars that no longer exist
