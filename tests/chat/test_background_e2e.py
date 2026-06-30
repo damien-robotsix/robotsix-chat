@@ -23,7 +23,12 @@ from robotsix_chat.chat.delegation import (
     ConversationDeliveryChannel,
     build_delegation_tools,
 )
-from robotsix_chat.chat.events import EventBus
+from robotsix_chat.chat.events import (
+    SSE_TASK_COMPLETED_TYPE,
+    SSE_TASK_FAILED_TYPE,
+    SSE_TASK_STARTED_TYPE,
+    EventBus,
+)
 from robotsix_chat.chat.tasks import TaskRegistry
 from robotsix_chat.config import Settings
 from tests.conftest import MockAgent
@@ -107,12 +112,14 @@ async def test_e2e_happy_path_task_started_to_completed() -> None:
     frames = _drain_frames(q)
     types = [f["type"] for f in frames]
 
-    assert "task_started" in types, f"missing task_started in {types}"
-    assert "task_completed" in types, f"missing task_completed in {types}"
+    assert SSE_TASK_STARTED_TYPE in types, f"missing {SSE_TASK_STARTED_TYPE} in {types}"
+    assert SSE_TASK_COMPLETED_TYPE in types, (
+        f"missing {SSE_TASK_COMPLETED_TYPE} in {types}"
+    )
 
     # The task_id should be consistent across frames for the same task.
-    started = next(f for f in frames if f["type"] == "task_started")
-    completed = next(f for f in frames if f["type"] == "task_completed")
+    started = next(f for f in frames if f["type"] == SSE_TASK_STARTED_TYPE)
+    completed = next(f for f in frames if f["type"] == SSE_TASK_COMPLETED_TYPE)
     assert started["task_id"] == completed["task_id"]
     assert completed["result"] == "result: 42"
 
@@ -158,11 +165,11 @@ async def test_e2e_failure_path_task_started_to_failed() -> None:
     frames = _drain_frames(q)
     types = [f["type"] for f in frames]
 
-    assert "task_started" in types, f"missing task_started in {types}"
-    assert "task_failed" in types, f"missing task_failed in {types}"
+    assert SSE_TASK_STARTED_TYPE in types, f"missing {SSE_TASK_STARTED_TYPE} in {types}"
+    assert SSE_TASK_FAILED_TYPE in types, f"missing {SSE_TASK_FAILED_TYPE} in {types}"
 
-    started = next(f for f in frames if f["type"] == "task_started")
-    failed = next(f for f in frames if f["type"] == "task_failed")
+    started = next(f for f in frames if f["type"] == SSE_TASK_STARTED_TYPE)
+    failed = next(f for f in frames if f["type"] == SSE_TASK_FAILED_TYPE)
     assert started["task_id"] == failed["task_id"]
     assert failed["error"] == "bad input"
 
@@ -204,8 +211,8 @@ async def test_e2e_frames_isolated_per_client() -> None:
     # client-a gets frames.
     frames_a = _drain_frames(q_a)
     types_a = [f["type"] for f in frames_a]
-    assert "task_started" in types_a
-    assert "task_completed" in types_a
+    assert SSE_TASK_STARTED_TYPE in types_a
+    assert SSE_TASK_COMPLETED_TYPE in types_a
 
     # client-b gets nothing.
     assert q_b.empty()
