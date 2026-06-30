@@ -532,7 +532,125 @@ def _terminal_state_result(result: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# check-loop worker — top-level async function (was a 227-line nested closure)
+# tick helpers — extract prompt building, iteration, and stop-decision logic
+# from the worker body so the while-loop stays ~50 lines of linear orchestration
+# ---------------------------------------------------------------------------
+
+
+def _build_tick_prompt(
+    prompt: str,
+    *,
+    previous_result: str | None,
+    include_previous_result: bool,
+    verify_via_board: bool,
+) -> str:
+    """Build the effective prompt for a single tick.
+
+    Folds in guardrail headers and the previous result when applicable.
+    """
+    effective_prompt = prompt
+    if verify_via_board:
+        if include_previous_result and previous_result is not None:
+            effective_prompt = _SOFT_GUARDRAIL_HEADER + effective_prompt
+        else:
+            effective_prompt = _GUARDRAIL_HEADER + effective_prompt
+    if include_previous_result and previous_result is not None:
+        effective_prompt = (
+            f"Previous check result:\n{previous_result}\n\n"
+            f"---\n\nCurrent check prompt:\n{effective_prompt}"
+        )
+    return effective_prompt
+
+
+async def _run_tick_iteration(
+    *,
+    prompt: str,
+    previous_result: str | None,
+    include_previous_result: bool,
+    verify_via_board: bool,
+    suppress_when: Callable[[str], bool] | None,
+    probe: BoardReadProbe | None,
+    loop_id: str,
+    settings: Settings,
+    tick_agent_factory: Callable[[Settings], ChatAgent],
+) -> tuple[str, bool]:
+    """Run one tick iteration; return ``(result_text, suppressed)``.
+
+    Skips the LLM invocation when *suppress_when* matches the previous
+    result (reusing it to save tokens).  Otherwise builds the effective
+    prompt, streams a reply, and applies the board-read gate when active.
+    """
+    # Skip LLM when the previous result was unchanged — re-running the full
+    # prompt would waste input tokens for a foregone NO_CHANGE reply.
+    if (
+        suppress_when is not None
+        and previous_result is not None
+        and suppress_when(previous_result)
+    ):
+        result_text = previous_result
+    else:
+        effective_prompt = _build_tick_prompt(
+            prompt,
+            previous_result=previous_result,
+            include_previous_result=include_previous_result,
+            verify_via_board=verify_via_board,
+        )
+        agent = tick_agent_factory(settings)
+        result_text = "".join([chunk async for chunk in agent.stream(effective_prompt)])
+
+        # Gate: suppress unverified status when the board was not consulted.
+        if verify_via_board:
+            result_text = _apply_board_read_gate(
+                result_text,
+                probe,
+                verify_via_board,
+                loop_id,
+                has_previous_result=(
+                    include_previous_result and previous_result is not None
+                ),
+            )
+
+    suppressed = suppress_when is not None and suppress_when(result_text)
+    return result_text, suppressed
+
+
+def _evaluate_stop_conditions(
+    *,
+    consecutive_unchanged: int,
+    auto_pause_unchanged_ticks: int,
+    stop_requested: bool,
+    stop_when: Callable[[str], bool] | None,
+    result_text: str,
+    max_iterations: int | None,
+    current_iterations: int,
+) -> tuple[bool, str | None]:
+    """Check all stop conditions; return ``(should_stop, reason)``.
+
+    Reasons: ``auto_paused: …``, ``condition_met``, ``max_iterations``.
+    Returns ``(False, None)`` when no stop condition fires.
+    """
+    if (
+        auto_pause_unchanged_ticks > 0
+        and consecutive_unchanged >= auto_pause_unchanged_ticks
+    ):
+        return True, (
+            f"auto_paused: {consecutive_unchanged} consecutive unchanged ticks"
+        )
+
+    if stop_requested:
+        return True, "condition_met"
+
+    if stop_when is not None and stop_when(result_text):
+        return True, "condition_met"
+
+    if max_iterations is not None and current_iterations >= max_iterations:
+        return True, "max_iterations"
+
+    return False, None
+
+
+# ---------------------------------------------------------------------------
+# check-loop worker — top-level async function
 # ---------------------------------------------------------------------------
 
 
@@ -605,52 +723,20 @@ async def _check_loop_worker(
             if verify_via_board and probe is not None:
                 probe.count = 0  # reset per tick
 
-            # --- skip LLM when previous result was unchanged ---
-            # When the previous tick's result already matched the no-change
-            # predicate, re-running the full prompt would waste input tokens
-            # for a foregone 1-token NO_CHANGE reply.  Reuse the previous
-            # result so the loop still advances its iteration counter and
-            # re-schedule without a new LLM invocation.
-            if (
-                suppress_when is not None
-                and previous_result is not None
-                and suppress_when(previous_result)
-            ):
-                result_text = previous_result
-            else:
-                # Build the effective prompt, combining the guardrail header
-                # (when gated) with the previous result (when comparing).
-                effective_prompt = prompt
-                if verify_via_board:
-                    if include_previous_result and previous_result is not None:
-                        effective_prompt = _SOFT_GUARDRAIL_HEADER + effective_prompt
-                    else:
-                        effective_prompt = _GUARDRAIL_HEADER + effective_prompt
-                if include_previous_result and previous_result is not None:
-                    effective_prompt = (
-                        f"Previous check result:\n{previous_result}\n\n"
-                        f"---\n\nCurrent check prompt:\n{effective_prompt}"
-                    )
-
-                agent = tick_agent_factory(settings)
-                result_text = "".join(
-                    [chunk async for chunk in agent.stream(effective_prompt)]
-                )
-
-                # --- gate: suppress unverified status ---
-                if verify_via_board:
-                    result_text = _apply_board_read_gate(
-                        result_text,
-                        probe,
-                        verify_via_board,
-                        loop_id,
-                        has_previous_result=(
-                            include_previous_result and previous_result is not None
-                        ),
-                    )
+            # --- run one tick iteration ---
+            result_text, suppressed = await _run_tick_iteration(
+                prompt=prompt,
+                previous_result=previous_result,
+                include_previous_result=include_previous_result,
+                verify_via_board=verify_via_board,
+                suppress_when=suppress_when,
+                probe=probe,
+                loop_id=loop_id,
+                settings=settings,
+                tick_agent_factory=tick_agent_factory,
+            )
 
             next_run = clock() + interval_seconds
-            suppressed = suppress_when is not None and suppress_when(result_text)
             registry.record_tick(
                 loop_id,
                 result=result_text,
@@ -693,41 +779,24 @@ async def _check_loop_worker(
             else:
                 consecutive_unchanged = 0
 
-            # Auto-pause after N consecutive unchanged ticks to avoid
-            # burning tokens on a stuck/idle monitored item.  The loop
-            # is stopped (not merely suppressed) so the user gets a single
-            # clear notification rather than silent indefinite polling.
-            if (
-                auto_pause_unchanged_ticks > 0
-                and consecutive_unchanged >= auto_pause_unchanged_ticks
-            ):
-                reason = (
-                    f"auto_paused: {consecutive_unchanged} consecutive unchanged ticks"
-                )
-                logger.info(
-                    "Check loop %s auto-paused after %s unchanged ticks",
-                    loop_id,
-                    consecutive_unchanged,
-                )
-                registry.stop(loop_id, reason=reason)
-                return
-
-            # Self-stop when this tick's sub-agent invoked its scoped stop tool
-            # (e.g. it detected the monitored condition reached a terminal
-            # state).  Checked after the tick is recorded/published so the final
-            # terminal report still reaches the user.
-            if stop_requested:
-                registry.stop(loop_id, reason="condition_met")
-                return
-
-            # Self-stop on condition-met (e.g. terminal-state predicate).
-            if stop_when is not None and stop_when(result_text):
-                registry.stop(loop_id, reason="condition_met")
-                return
-
-            # Max-iterations cap.
-            if max_iterations is not None and info.iterations >= max_iterations:
-                registry.stop(loop_id, reason="max_iterations")
+            # --- evaluate stop conditions ---
+            should_stop, reason = _evaluate_stop_conditions(
+                consecutive_unchanged=consecutive_unchanged,
+                auto_pause_unchanged_ticks=auto_pause_unchanged_ticks,
+                stop_requested=stop_requested,
+                stop_when=stop_when,
+                result_text=result_text,
+                max_iterations=max_iterations,
+                current_iterations=info.iterations,
+            )
+            if should_stop:
+                if reason and reason.startswith("auto_paused:"):
+                    logger.info(
+                        "Check loop %s auto-paused after %s unchanged ticks",
+                        loop_id,
+                        consecutive_unchanged,
+                    )
+                registry.stop(loop_id, reason=reason or "unknown")
                 return
 
             # Wait for the next interval.
