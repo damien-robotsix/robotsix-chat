@@ -1,3 +1,7 @@
+## 0.0.0 (unreleased)
+
+- Add `crate-ci/typos` spell-checking: pre-commit hook, `typos.toml` config, and `make spellcheck` target.
+- Add `crate-ci/typos` spell-checking: pre-commit hook, `typos.toml` config, and `make spellcheck` target.
 # Changelog
 
 All notable changes to this project will be documented in this file.

@@ -1,0 +1,47 @@
+[default.extend-words]
+# Allow common tech abbreviations that typos would otherwise flag
+URI = "URI"
+API = "API"
+UUID = "UUID"
+HTML = "HTML"
+JSON = "JSON"
+YAML = "YAML"
+CLI = "CLI"
+HTTP = "HTTP"
+HTTPS = "HTTPS"
+SSH = "SSH"
+SSL = "SSL"
+TLS = "TLS"
+SQL = "SQL"
+REST = "REST"
+CRUD = "CRUD"
+JWT = "JWT"
+OAuth = "OAuth"
+CORS = "CORS"
+AST = "AST"
+ORM = "ORM"
+CSV = "CSV"
+DOM = "DOM"
+EOF = "EOF"
+WSGI = "WSGI"
+ASGI = "ASGI"
+CSS = "CSS"
+XML = "XML"
+UID = "UID"
+PR = "PR"
+CI = "CI"
+CD = "CD"
+REPL = "REPL"
+BTree = "BTree"
+
+[default.extend-identifiers]
+mkdocs = "mkdocs"
+mkdocstrings = "mkdocstrings"
+
+[files]
+extend-exclude = [
+    "changelog.d/**",
+    ".data/**",
+    ".robotsix-mill/**",
+    "__pycache__/**",
+]
