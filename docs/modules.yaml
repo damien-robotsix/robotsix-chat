@@ -25,6 +25,17 @@ modules:
       - tests/__init__.py
       - tests/conftest.py
       - tests/test_smoke.py
+      - docs/index.md
+      - docs/architecture.md
+      - docs/getting-started.md
+      - docs/configuration.md
+      - docs/contributing.md
+      - docs/changelog.md
+      - docs/system_prompt_changelog.md
+      - docs/periodic-checks.md
+      - docs/user-guide/deployment.md
+      - docs/_snippets/nginx-reverse-proxy.md
+      - docs/api/robotsix_chat.md
 
   - id: robotsix_chat.board_reader
     description: "Direct HTTP read access to the mill's board API — exposes build_board_reader_tools() that let the assistant list and read tickets from the same HTTP endpoint the user's browser UI consumes."
@@ -66,6 +77,7 @@ modules:
       - src/robotsix_chat/config/env_builders.py
       - src/robotsix_chat/config/models.py
       - src/robotsix_chat/config/settings.py
+      - docs/api/robotsix_chat/config.md
       - tests/config/__init__.py
       - tests/config/test_config.py
       - tests/config/test_system_prompt_governance.py
@@ -87,6 +99,7 @@ modules:
       - src/robotsix_chat/chat/server/routes.py
       - src/robotsix_chat/chat/tasks.py
       - docs/api/robotsix_chat/server.md
+      - docs/api/robotsix_chat/auth.md
       - tests/chat/__init__.py
       - tests/chat/test_auth.py
       - tests/chat/test_background_e2e.py
@@ -148,6 +161,7 @@ modules:
     paths:
       - src/robotsix_chat/llm/__init__.py
       - src/robotsix_chat/llm/agent.py
+      - docs/api/robotsix_chat/agent.md
       - tests/llm/__init__.py
       - tests/llm/test_agent.py
 
@@ -157,6 +171,7 @@ modules:
       - src/robotsix_chat/memory/__init__.py
       - src/robotsix_chat/memory/base.py
       - src/robotsix_chat/memory/cognee.py
+      - docs/api/robotsix_chat/memory.md
       - tests/memory/__init__.py
       - tests/memory/test_memory.py
 
@@ -166,6 +181,7 @@ modules:
       - src/robotsix_chat/mill/__init__.py
       - src/robotsix_chat/mill/client.py
       - src/robotsix_chat/mill/retry_queue.py
+      - docs/api/robotsix_chat/mill.md
       - tests/mill/__init__.py
       - tests/mill/test_board_write_retry.py
       - tests/mill/test_mill.py

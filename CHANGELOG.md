@@ -9,6 +9,11 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 ## [Unreleased]
 
+- Registered 16 unclassified docs files in `docs/modules.yaml`: 10 project-wide docs under
+  `robotsix_chat`, plus 6 mkdocstrings API stubs under their respective modules
+  (`robotsix_chat.llm`, `robotsix_chat.chat`, `robotsix_chat.config`, `robotsix_chat.memory`,
+  `robotsix_chat.mill`).
+
 - Updated Mail section docs to reflect direct HTTP API (no broker), with correct env vars
   `MAIL_API_BASE_URL`/`MAIL_API_TOKEN` and correct `MAIL_TIMEOUT` default of `30.0`. Removed stale
   broker-based entries.
