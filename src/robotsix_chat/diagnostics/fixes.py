@@ -13,14 +13,15 @@ accepted via ``apply_fix`` or dismissed via ``reject_fix``.
 
 from __future__ import annotations
 
-import json
 import logging
 import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+from robotsix_chat.common.json_store import JsonStoreBase
 
 if TYPE_CHECKING:
     from robotsix_chat.diagnostics.store import DiagnosticStore
@@ -85,12 +86,14 @@ class FixProposal:
 # ---------------------------------------------------------------------------
 
 
-class FixProposalStore:
+class FixProposalStore(JsonStoreBase[FixProposal]):
     """Persist fix proposals to a JSON file (best-effort atomic writes).
 
     Tolerates missing/empty/corrupt files on load.  Inject a ``clock``
     callable for deterministic timestamps in tests.
     """
+
+    _store_name = "fix proposals"
 
     def __init__(
         self,
@@ -98,14 +101,35 @@ class FixProposalStore:
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
-        """Create a proposal store persisting to *path*.
+        """Create a proposal store persisting to *path*."""
+        super().__init__(path, clock=clock)
 
-        *clock* overrides the timestamp source so tests can pin time.
-        """
-        self._path = Path(path)
-        self._clock: Callable[[], datetime] = clock or (lambda: datetime.now(UTC))
-        self._proposals: dict[str, FixProposal] = {}
-        self._load()
+    # ------------------------------------------------------------------
+    # serialisation hooks
+    # ------------------------------------------------------------------
+
+    def _to_dict(self, item: FixProposal) -> dict[str, object]:
+        return {
+            "id": item.id,
+            "category": item.category,
+            "description": item.description,
+            "suggested_fix": item.suggested_fix,
+            "status": item.status,
+            "created_at": item.created_at,
+            "applied_at": item.applied_at,
+        }
+
+    @classmethod
+    def _from_dict(cls, d: dict[str, Any]) -> FixProposal:
+        return FixProposal(
+            id=d.get("id", ""),
+            category=d.get("category", ""),
+            description=d.get("description", ""),
+            suggested_fix=d.get("suggested_fix", ""),
+            status=d.get("status", "proposed"),
+            created_at=d.get("created_at", ""),
+            applied_at=d.get("applied_at"),
+        )
 
     # ------------------------------------------------------------------
     # public API
@@ -127,26 +151,24 @@ class FixProposalStore:
             created_at=self._clock().isoformat(),
             applied_at=None,
         )
-        self._proposals[proposal.id] = proposal
+        self._items[proposal.id] = proposal
         self._persist()
         return proposal
 
     def list_proposals(self, category: str = "") -> list[FixProposal]:
         """Return all proposals, optionally filtered by *category*."""
         if not category:
-            return list(self._proposals.values())
+            return list(self._items.values())
         cat = category.strip().lower()
-        return [
-            p for p in self._proposals.values() if p.category.strip().lower() == cat
-        ]
+        return [p for p in self._items.values() if p.category.strip().lower() == cat]
 
     def get_proposal(self, proposal_id: str) -> FixProposal | None:
         """Return the proposal for *proposal_id*, or ``None`` if unknown."""
-        return self._proposals.get(proposal_id)
+        return self._items.get(proposal_id)
 
     def apply(self, proposal_id: str) -> FixProposal | None:
         """Mark a proposal as applied; returns updated proposal or ``None``."""
-        proposal = self._proposals.get(proposal_id)
+        proposal = self._items.get(proposal_id)
         if proposal is None:
             return None
         proposal.status = "applied"
@@ -156,74 +178,12 @@ class FixProposalStore:
 
     def reject(self, proposal_id: str) -> FixProposal | None:
         """Mark a proposal as rejected; returns updated proposal or ``None``."""
-        proposal = self._proposals.get(proposal_id)
+        proposal = self._items.get(proposal_id)
         if proposal is None:
             return None
         proposal.status = "rejected"
         self._persist()
         return proposal
-
-    # ------------------------------------------------------------------
-    # persistence
-    # ------------------------------------------------------------------
-
-    def _persist(self) -> None:
-        """Write all proposals to the JSON store (best-effort atomic)."""
-        try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            logger.warning("Could not create parent dir for %s", self._path)
-            return
-
-        entries = [
-            {
-                "id": p.id,
-                "category": p.category,
-                "description": p.description,
-                "suggested_fix": p.suggested_fix,
-                "status": p.status,
-                "created_at": p.created_at,
-                "applied_at": p.applied_at,
-            }
-            for p in self._proposals.values()
-        ]
-        tmp_path = self._path.with_suffix(self._path.suffix + ".tmp")
-        try:
-            tmp_path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
-            tmp_path.replace(self._path)
-        except OSError:
-            logger.exception("Failed to persist fix proposals to %s", self._path)
-
-    def _load(self) -> None:
-        """Load proposals from disk; tolerate missing/empty/corrupt file."""
-        if not self._path.exists():
-            return
-        try:
-            raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
-            logger.warning(
-                "Could not read fix proposals file %s; starting empty",
-                self._path,
-            )
-            return
-
-        if not isinstance(raw, list):
-            return
-
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-            proposal = FixProposal(
-                id=item.get("id", ""),
-                category=item.get("category", ""),
-                description=item.get("description", ""),
-                suggested_fix=item.get("suggested_fix", ""),
-                status=item.get("status", "proposed"),
-                created_at=item.get("created_at", ""),
-                applied_at=item.get("applied_at"),
-            )
-            if proposal.id:
-                self._proposals[proposal.id] = proposal
 
 
 # ---------------------------------------------------------------------------

@@ -18,7 +18,9 @@ from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
 from pathlib import Path
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
+
+from robotsix_chat.common.json_store import JsonStoreBase
 
 if TYPE_CHECKING:
     from robotsix_chat.diagnostics.store import DiagnosticStore
@@ -86,7 +88,7 @@ class FixEffectivenessReport:
 # ---------------------------------------------------------------------------
 
 
-class EffectivenessStore:
+class EffectivenessStore(JsonStoreBase[Any]):
     """Persist fix applications and effectiveness reports to a JSON file.
 
     Construct with an overridable ``path`` and injectable ``clock`` so
@@ -94,24 +96,35 @@ class EffectivenessStore:
     they log warnings on persistence failures.
     """
 
+    _store_name = "effectiveness store"
+
     def __init__(
         self,
         path: str | Path = ".data/diagnostics_effectiveness.json",
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
-        """Initialize the store.
+        """Create a store persisting to *path*."""
+        super().__init__(path, clock=clock)
 
-        Args:
-            path: Path to the JSON persistence file.
-            clock: Injectable clock for deterministic timestamps in tests.
+    # ------------------------------------------------------------------
+    # storage (overrides single-dict default)
+    # ------------------------------------------------------------------
 
-        """
-        self._path = Path(path)
-        self._clock: Callable[[], datetime] = clock or (lambda: datetime.now(UTC))
+    def _init_storage(self) -> None:
         self._fixes: dict[str, FixApplication] = {}
         self._reports: dict[str, FixEffectivenessReport] = {}
-        self._load()
+
+    # ------------------------------------------------------------------
+    # serialisation hooks (not used — this store manages two dicts)
+    # ------------------------------------------------------------------
+
+    def _to_dict(self, item: Any) -> dict[str, object]:
+        raise NotImplementedError("EffectivenessStore uses custom persistence")
+
+    @classmethod
+    def _from_dict(cls, d: dict[str, Any]) -> Any:
+        raise NotImplementedError("EffectivenessStore uses custom persistence")
 
     # ------------------------------------------------------------------
     # fix applications
@@ -166,7 +179,7 @@ class EffectivenessStore:
         return any(r.fix_proposal_id == fix_proposal_id for r in self._reports.values())
 
     # ------------------------------------------------------------------
-    # persistence
+    # persistence (overrides base — two-dict format)
     # ------------------------------------------------------------------
 
     def _persist(self) -> None:
