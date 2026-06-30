@@ -137,12 +137,12 @@ Direct HTTP access to the auto-mail board server. When enabled, the chat agent g
 tools that call the auto-mail board HTTP API directly (no broker indirection): get the board
 content, check email status, move/delete/archive emails, and run triage. Disabled by default.
 
-| YAML path          | Env var             | Default                     | Description                                                                               |
-| ------------------ | ------------------- | --------------------------- | ----------------------------------------------------------------------------------------- |
-| `mail.enabled`     | `MAIL_ENABLED`      | `false`                     | Master switch. When enabled, the agent gains discrete tools that call the auto-mail board HTTP API directly. |
-| `mail.api_base_url` | `MAIL_API_BASE_URL` | `"http://127.0.0.1:8077"`   | Base URL of the auto-mail board HTTP server (no trailing slash).                          |
-| `mail.api_token`   | `MAIL_API_TOKEN`    | `""`                        | Optional Bearer token; empty means no Authorization header.                               |
-| `mail.timeout`     | `MAIL_TIMEOUT`      | `30.0`                      | Per-request HTTP timeout in seconds.                                                      |
+| YAML path           | Env var             | Default                   | Description                                                                                                  |
+| ------------------- | ------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `mail.enabled`      | `MAIL_ENABLED`      | `false`                   | Master switch. When enabled, the agent gains discrete tools that call the auto-mail board HTTP API directly. |
+| `mail.api_base_url` | `MAIL_API_BASE_URL` | `"http://127.0.0.1:8077"` | Base URL of the auto-mail board HTTP server (no trailing slash).                                             |
+| `mail.api_token`    | `MAIL_API_TOKEN`    | `""`                      | Optional Bearer token; empty means no Authorization header.                                                  |
+| `mail.timeout`      | `MAIL_TIMEOUT`      | `30.0`                    | Per-request HTTP timeout in seconds.                                                                         |
 
 ## Calendar (broker integration)
 
