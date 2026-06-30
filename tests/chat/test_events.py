@@ -11,10 +11,12 @@ from starlette.requests import Request
 from starlette.responses import StreamingResponse
 
 from robotsix_chat.chat.events import (
+    SSE_LOOP_REPLY_TYPE,
     SSE_TASK_COMPLETED_TYPE,
     SSE_TASK_FAILED_TYPE,
     SSE_TASK_STARTED_TYPE,
     EventBus,
+    loop_reply_frame,
     task_completed_frame,
     task_failed_frame,
     task_started_frame,
@@ -60,6 +62,17 @@ def test_task_failed_frame_shape() -> None:
         "task_id": "t1",
         "status": "failed",
         "error": "boom",
+    }
+
+
+def test_loop_reply_frame_shape() -> None:
+    """``loop_reply_frame`` returns the documented JSON shape."""
+    frame = loop_reply_frame("L1", 3, "Here's the result...")
+    assert frame == {
+        "type": SSE_LOOP_REPLY_TYPE,
+        "loop_id": "L1",
+        "iteration": 3,
+        "reply": "Here's the result...",
     }
 
 
