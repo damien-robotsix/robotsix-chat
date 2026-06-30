@@ -13,6 +13,7 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   `robotsix_chat`, plus 6 mkdocstrings API stubs under their respective modules
   (`robotsix_chat.llm`, `robotsix_chat.chat`, `robotsix_chat.config`, `robotsix_chat.memory`,
   `robotsix_chat.mill`).
+
 - Extracted `JsonStoreBase[T]` generic base class for JSON-persisted dataclass stores, eliminating
   ~100 lines of duplicated persistence boilerplate across `DiagnosticStore`, `KnowledgeStore`,
   `FixProposalStore`, and `EffectivenessStore`.
