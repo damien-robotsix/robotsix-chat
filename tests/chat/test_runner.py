@@ -8,6 +8,10 @@ from typing import Any
 
 import pytest
 
+from robotsix_chat.chat.events import (
+    SSE_TASK_COMPLETED_TYPE,
+    SSE_TASK_FAILED_TYPE,
+)
 from robotsix_chat.chat.runner import (
     TaskCapacityError,
     spawn_subagent_task,
@@ -48,13 +52,17 @@ class _BoomChannel:
 def test_task_completed_frame_shape() -> None:
     """The completed frame has exactly the three expected keys."""
     frame = task_completed_frame("t42", "all done")
-    assert frame == {"type": "task_completed", "task_id": "t42", "result": "all done"}
+    assert frame == {
+        "type": SSE_TASK_COMPLETED_TYPE,
+        "task_id": "t42",
+        "result": "all done",
+    }
 
 
 def test_task_failed_frame_shape() -> None:
     """The failed frame has exactly the three expected keys."""
     frame = task_failed_frame("t99", "timeout")
-    assert frame == {"type": "task_failed", "task_id": "t99", "error": "timeout"}
+    assert frame == {"type": SSE_TASK_FAILED_TYPE, "task_id": "t99", "error": "timeout"}
 
 
 # ---------------------------------------------------------------------------
@@ -99,7 +107,7 @@ async def test_spawn_success_completes_and_publishes() -> None:
     assert len(channel.frames) == 1
     cid, frame = channel.frames[0]
     assert cid == "c1"
-    assert frame["type"] == "task_completed"
+    assert frame["type"] == SSE_TASK_COMPLETED_TYPE
     assert frame["task_id"] == tid
     assert frame["result"] == "hi there"
 
@@ -211,7 +219,7 @@ async def test_spawn_failure_updates_registry_and_publishes() -> None:
     assert len(channel.frames) == 1
     cid, frame = channel.frames[0]
     assert cid == "c2"
-    assert frame["type"] == "task_failed"
+    assert frame["type"] == SSE_TASK_FAILED_TYPE
     assert frame["task_id"] == tid
     assert frame["error"] == "bad input"
 

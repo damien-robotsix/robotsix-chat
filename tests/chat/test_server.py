@@ -13,6 +13,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from robotsix_chat.chat.conversation import ConversationStore
+from robotsix_chat.chat.events import (
+    SSE_TASK_COMPLETED_TYPE,
+    SSE_TASK_FAILED_TYPE,
+    SSE_TASK_STARTED_TYPE,
+)
 from robotsix_chat.chat.loops import CheckLoopRegistry
 from robotsix_chat.chat.server import (
     SSE_CONTENT_TYPE,
@@ -1276,9 +1281,9 @@ async def test_ui_renders_task_notifications() -> None:
     assert response.status_code == 200
     assert '"/events"' in response.text
     assert "openEventStream" in response.text
-    assert '"task_started"' in response.text
-    assert '"task_completed"' in response.text
-    assert '"task_failed"' in response.text
+    assert f'"{SSE_TASK_STARTED_TYPE}"' in response.text
+    assert f'"{SSE_TASK_COMPLETED_TYPE}"' in response.text
+    assert f'"{SSE_TASK_FAILED_TYPE}"' in response.text
     assert ".bubble.notification" in response.text
     assert '"tasks-toggle"' in response.text
     assert '"tasks-list"' in response.text
