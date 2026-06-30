@@ -10,9 +10,9 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 ## [Unreleased]
 
 - Refactored `_check_loop_worker` in `loops.py`: extracted `_build_tick_prompt`,
-  `_run_tick_iteration`, and `_evaluate_stop_conditions` helpers to flatten the
-  monolithic while-loop body and consolidate stop-decision logic into a single
-  decision point.
+  `_run_tick_iteration`, and `_evaluate_stop_conditions` helpers to flatten the monolithic
+  while-loop body and consolidate stop-decision logic into a single decision point.
+
 - Added `scripts/check_sse_event_types.py` CI gate to verify that SSE event-type string constants in
   `src/robotsix_chat/chat/events.py` stay in sync with the browser UI
   (`src/robotsix_chat/ui/index.html`). Added `make check-sse-types` target and integrated into the
