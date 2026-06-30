@@ -133,9 +133,9 @@ development work (create/triage tickets, ask status) from chat. Disabled by defa
 
 ## Mail
 
-Direct HTTP access to the auto-mail board server. When enabled, the chat agent gains discrete
-tools that call the auto-mail board HTTP API directly (no broker indirection): get the board
-content, check email status, move/delete/archive emails, and run triage. Disabled by default.
+Direct HTTP access to the auto-mail board server. When enabled, the chat agent gains discrete tools
+that call the auto-mail board HTTP API directly (no broker indirection): get the board content,
+check email status, move/delete/archive emails, and run triage. Disabled by default.
 
 | YAML path           | Env var             | Default                   | Description                                                                                                  |
 | ------------------- | ------------------- | ------------------------- | ------------------------------------------------------------------------------------------------------------ |
