@@ -4,6 +4,8 @@
   literals, fixing 31 bare literals across `tests/chat/test_delegation.py`,
   `tests/chat/test_events.py`, and `tests/pending_questions/test_store.py` to use canonical
   `SSE_*_TYPE` constants.
+- Replace `pip-audit` pre-commit hook with native `uv audit` — reads `uv.lock` directly and
+  additionally reports adverse package statuses (deprecated/archived/quarantined per PEP 792).
 - Bump pytest from 9.1.0 to 9.1.1 (dependabot PR #337)
 - Migrate `ConfigContractError` to canonical `robotsix_agent_comm.protocol.ConfigContractError`;
   delete the local definition from `component_agent/config_contract.py`.
