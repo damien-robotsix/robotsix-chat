@@ -19,10 +19,10 @@ from robotsix_chat.config import (
     MemoryLlmSettings,
     MemorySettings,
     MillSettings,
-    PendingQuestionsSettings,
     RefDocsSettings,
     SelfReviewSettings,
     Settings,
+    SubsessionsSettings,
     VersionCheckSettings,
 )
 
@@ -754,23 +754,6 @@ def test_knowledge_env_overrides_yaml(
 
 
 # ---------------------------------------------------------------------------
-# Pending questions
-# ---------------------------------------------------------------------------
-
-
-def test_pending_questions_disabled_via_env(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``PENDING_QUESTIONS_ENABLED=false`` disables the pending-questions feature."""
-    _wipe_env_vars(monkeypatch)
-    monkeypatch.setenv("PENDING_QUESTIONS_ENABLED", "false")
-
-    settings = Settings.from_env()
-
-    assert settings.pending_questions.enabled is False
-
-
-# ---------------------------------------------------------------------------
 # Idle timeout
 # ---------------------------------------------------------------------------
 
@@ -844,406 +827,126 @@ def test_idle_timeout_zero_allowed() -> None:
 
 
 # ---------------------------------------------------------------------------
-# max_background_tasks
+# Subsessions settings
 # ---------------------------------------------------------------------------
 
 
-def test_max_background_tasks_default() -> None:
-    """``max_background_tasks`` defaults to 5."""
+def test_subsessions_defaults() -> None:
+    """``subsessions`` sub-model falls back to its documented defaults."""
     settings = Settings()
-    assert settings.max_background_tasks == 5
+    assert settings.subsessions == SubsessionsSettings()
+    assert settings.subsessions.max_concurrent == 8
+    assert settings.subsessions.max_depth == 3
+    assert settings.subsessions.default_model_level == 3
+    assert settings.subsessions.min_interval_seconds == 60.0
+    assert settings.subsessions.auto_stop_no_change_runs == 5
+    assert settings.subsessions.store_path == ".data/subsessions.json"
 
 
-def test_max_background_tasks_from_yaml(
+def test_subsessions_from_yaml(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """``server.max_background_tasks`` in YAML overrides the default."""
+    """The ``subsessions`` YAML section overrides the defaults."""
     _wipe_env_vars(monkeypatch)
 
     config_file = tmp_path / "chat.local.yaml"
-    config_file.write_text("server:\n  max_background_tasks: 3\n")
+    config_file.write_text(
+        "subsessions:\n"
+        "  max_concurrent: 3\n"
+        "  max_depth: 2\n"
+        "  default_model_level: 2\n"
+        "  min_interval_seconds: 30.0\n"
+    )
 
     settings = Settings.load(config_path=config_file)
 
-    assert settings.max_background_tasks == 3
+    assert settings.subsessions.max_concurrent == 3
+    assert settings.subsessions.max_depth == 2
+    assert settings.subsessions.default_model_level == 2
+    assert settings.subsessions.min_interval_seconds == 30.0
 
 
-def test_max_background_tasks_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``MAX_BACKGROUND_TASKS`` env var overrides the default."""
+def test_subsessions_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``SUBSESSIONS_*`` env vars override the defaults."""
     _wipe_env_vars(monkeypatch)
-    monkeypatch.setenv("MAX_BACKGROUND_TASKS", "10")
+    monkeypatch.setenv("SUBSESSIONS_MAX_CONCURRENT", "12")
+    monkeypatch.setenv("SUBSESSIONS_MAX_DEPTH", "1")
+    monkeypatch.setenv("SUBSESSIONS_DEFAULT_MODEL_LEVEL", "4")
+    monkeypatch.setenv("SUBSESSIONS_MIN_INTERVAL_SECONDS", "120.5")
+    monkeypatch.setenv("SUBSESSIONS_AUTO_STOP_NO_CHANGE_RUNS", "2")
+    monkeypatch.setenv("SUBSESSIONS_STORE_PATH", ".data/other.json")
 
     settings = Settings.from_env()
 
-    assert settings.max_background_tasks == 10
+    assert settings.subsessions.max_concurrent == 12
+    assert settings.subsessions.max_depth == 1
+    assert settings.subsessions.default_model_level == 4
+    assert settings.subsessions.min_interval_seconds == 120.5
+    assert settings.subsessions.auto_stop_no_change_runs == 2
+    assert settings.subsessions.store_path == ".data/other.json"
 
 
-def test_max_background_tasks_env_override_yaml(
+def test_subsessions_env_override_yaml(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Path
 ) -> None:
-    """Env var ``MAX_BACKGROUND_TASKS`` wins over YAML value."""
+    """Env vars win over the YAML ``subsessions`` section field-by-field."""
     _wipe_env_vars(monkeypatch)
 
     config_file = tmp_path / "chat.local.yaml"
-    config_file.write_text("server:\n  max_background_tasks: 8\n")
-    monkeypatch.setenv("MAX_BACKGROUND_TASKS", "2")
+    config_file.write_text("subsessions:\n  max_concurrent: 5\n  max_depth: 2\n")
+    monkeypatch.setenv("SUBSESSIONS_MAX_CONCURRENT", "9")
 
     settings = Settings.load(config_path=config_file)
 
-    assert settings.max_background_tasks == 2
+    assert settings.subsessions.max_concurrent == 9  # env wins
+    assert settings.subsessions.max_depth == 2  # YAML preserved
 
 
-def test_max_background_tasks_env_non_integer_raises(
+def test_subsessions_env_non_integer_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A non-integer ``MAX_BACKGROUND_TASKS`` raises ``ValueError``."""
+    """A non-integer ``SUBSESSIONS_MAX_CONCURRENT`` raises ``ValueError``."""
     _wipe_env_vars(monkeypatch)
-    monkeypatch.setenv("MAX_BACKGROUND_TASKS", "many")
+    monkeypatch.setenv("SUBSESSIONS_MAX_CONCURRENT", "many")
 
-    with pytest.raises(ValueError, match="MAX_BACKGROUND_TASKS"):
+    with pytest.raises(ValueError, match="SUBSESSIONS_MAX_CONCURRENT"):
         Settings.from_env()
 
 
-def test_max_background_tasks_zero_raises() -> None:
-    """``max_background_tasks = 0`` is rejected by ``model_post_init``."""
-    with pytest.raises(ValueError, match="max_background_tasks"):
-        Settings(max_background_tasks=0)
+def test_subsessions_max_concurrent_zero_raises() -> None:
+    """``subsessions.max_concurrent = 0`` is rejected by ``model_post_init``."""
+    with pytest.raises(ValueError, match="max_concurrent"):
+        Settings(subsessions={"max_concurrent": 0})
 
 
-def test_max_background_tasks_one_allowed() -> None:
-    """``max_background_tasks = 1`` is valid."""
-    settings = Settings(max_background_tasks=1)
-    assert settings.max_background_tasks == 1
+def test_subsessions_max_depth_zero_raises() -> None:
+    """``subsessions.max_depth = 0`` is rejected by ``model_post_init``."""
+    with pytest.raises(ValueError, match="max_depth"):
+        Settings(subsessions={"max_depth": 0})
 
 
-# ---------------------------------------------------------------------------
-# max_check_loops
-# ---------------------------------------------------------------------------
+def test_subsessions_default_model_level_invalid_raises() -> None:
+    """``subsessions.default_model_level = 5`` is rejected."""
+    with pytest.raises(ValueError, match="default_model_level"):
+        Settings(subsessions={"default_model_level": 5})
 
 
-def test_max_check_loops_default() -> None:
-    """``max_check_loops`` defaults to 5."""
-    settings = Settings()
-    assert settings.max_check_loops == 5
+def test_subsessions_min_interval_zero_raises() -> None:
+    """``subsessions.min_interval_seconds = 0.0`` is rejected."""
+    with pytest.raises(ValueError, match="min_interval_seconds"):
+        Settings(subsessions={"min_interval_seconds": 0.0})
 
 
-def test_max_check_loops_from_yaml(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """``server.max_check_loops`` in YAML overrides the default."""
-    _wipe_env_vars(monkeypatch)
+def test_subsessions_auto_stop_zero_raises() -> None:
+    """``subsessions.auto_stop_no_change_runs = 0`` is rejected."""
+    with pytest.raises(ValueError, match="auto_stop_no_change_runs"):
+        Settings(subsessions={"auto_stop_no_change_runs": 0})
 
-    config_file = tmp_path / "chat.local.yaml"
-    config_file.write_text("server:\n  max_check_loops: 3\n")
 
-    settings = Settings.load(config_path=config_file)
-
-    assert settings.max_check_loops == 3
-
-
-def test_max_check_loops_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``MAX_CHECK_LOOPS`` env var overrides the default."""
-    _wipe_env_vars(monkeypatch)
-    monkeypatch.setenv("MAX_CHECK_LOOPS", "10")
-
-    settings = Settings.from_env()
-
-    assert settings.max_check_loops == 10
-
-
-def test_max_check_loops_env_override_yaml(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Env var ``MAX_CHECK_LOOPS`` wins over YAML value."""
-    _wipe_env_vars(monkeypatch)
-
-    config_file = tmp_path / "chat.local.yaml"
-    config_file.write_text("server:\n  max_check_loops: 8\n")
-    monkeypatch.setenv("MAX_CHECK_LOOPS", "2")
-
-    settings = Settings.load(config_path=config_file)
-
-    assert settings.max_check_loops == 2
-
-
-def test_max_check_loops_env_non_integer_raises(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A non-integer ``MAX_CHECK_LOOPS`` raises ``ValueError``."""
-    _wipe_env_vars(monkeypatch)
-    monkeypatch.setenv("MAX_CHECK_LOOPS", "many")
-
-    with pytest.raises(ValueError, match="MAX_CHECK_LOOPS"):
-        Settings.from_env()
-
-
-def test_max_check_loops_zero_raises() -> None:
-    """``max_check_loops = 0`` is rejected by ``model_post_init``."""
-    with pytest.raises(ValueError, match="max_check_loops"):
-        Settings(max_check_loops=0)
-
-
-def test_max_check_loops_one_allowed() -> None:
-    """``max_check_loops = 1`` is valid."""
-    settings = Settings(max_check_loops=1)
-    assert settings.max_check_loops == 1
-
-
-# ---------------------------------------------------------------------------
-# min_check_loop_interval_seconds
-# ---------------------------------------------------------------------------
-
-
-def test_min_check_loop_interval_seconds_default() -> None:
-    """``min_check_loop_interval_seconds`` defaults to 60.0."""
-    settings = Settings()
-    assert settings.min_check_loop_interval_seconds == 60.0
-
-
-def test_min_check_loop_interval_seconds_from_yaml(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """``server.min_check_loop_interval_seconds`` in YAML overrides the default."""
-    _wipe_env_vars(monkeypatch)
-
-    config_file = tmp_path / "chat.local.yaml"
-    config_file.write_text("server:\n  min_check_loop_interval_seconds: 30.0\n")
-
-    settings = Settings.load(config_path=config_file)
-
-    assert settings.min_check_loop_interval_seconds == 30.0
-
-
-def test_min_check_loop_interval_seconds_from_env(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """``MIN_CHECK_LOOP_INTERVAL_SECONDS`` env var overrides the default."""
-    _wipe_env_vars(monkeypatch)
-    monkeypatch.setenv("MIN_CHECK_LOOP_INTERVAL_SECONDS", "120.5")
-
-    settings = Settings.from_env()
-
-    assert settings.min_check_loop_interval_seconds == 120.5
-
-
-def test_min_check_loop_interval_seconds_env_override_yaml(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Env var ``MIN_CHECK_LOOP_INTERVAL_SECONDS`` wins over YAML value."""
-    _wipe_env_vars(monkeypatch)
-
-    config_file = tmp_path / "chat.local.yaml"
-    config_file.write_text("server:\n  min_check_loop_interval_seconds: 90.0\n")
-    monkeypatch.setenv("MIN_CHECK_LOOP_INTERVAL_SECONDS", "15.0")
-
-    settings = Settings.load(config_path=config_file)
-
-    assert settings.min_check_loop_interval_seconds == 15.0
-
-
-def test_min_check_loop_interval_seconds_env_non_float_raises(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """A non-float ``MIN_CHECK_LOOP_INTERVAL_SECONDS`` raises ``ValueError``."""
-    _wipe_env_vars(monkeypatch)
-    monkeypatch.setenv("MIN_CHECK_LOOP_INTERVAL_SECONDS", "fast")
-
-    with pytest.raises(ValueError, match="MIN_CHECK_LOOP_INTERVAL_SECONDS"):
-        Settings.from_env()
-
-
-def test_min_check_loop_interval_seconds_zero_raises() -> None:
-    """``min_check_loop_interval_seconds = 0.0`` is rejected by ``model_post_init``."""
-    with pytest.raises(ValueError, match="min_check_loop_interval_seconds"):
-        Settings(min_check_loop_interval_seconds=0.0)
-
-
-def test_min_check_loop_interval_seconds_negative_raises() -> None:
-    """``min_check_loop_interval_seconds = -5.0`` is rejected."""
-    with pytest.raises(ValueError, match="min_check_loop_interval_seconds"):
-        Settings(min_check_loop_interval_seconds=-5.0)
-
-
-def test_min_check_loop_interval_seconds_one_allowed() -> None:
-    """``min_check_loop_interval_seconds = 1.0`` is valid."""
-    settings = Settings(min_check_loop_interval_seconds=1.0)
-    assert settings.min_check_loop_interval_seconds == 1.0
-
-
-# ---------------------------------------------------------------------------
-# subagent_model
-# ---------------------------------------------------------------------------
-
-
-def test_subagent_model_default() -> None:
-    """``subagent_model`` defaults to ``"sonnet"``."""
-    settings = Settings()
-    assert settings.subagent_model == "sonnet"
-
-
-def test_subagent_model_explicit() -> None:
-    """``subagent_model`` can be set to ``"haiku"``."""
-    settings = Settings(subagent_model="haiku")
-    assert settings.subagent_model == "haiku"
-
-
-def test_subagent_model_null_disables_downgrade() -> None:
-    """``subagent_model=None`` disables the downgrade (None stored)."""
-    settings = Settings(subagent_model=None)
-    assert settings.subagent_model is None
-
-
-def test_subagent_model_from_yaml(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """``llmio.subagent_model`` in YAML overrides the default."""
-    _wipe_env_vars(monkeypatch)
-
-    config_file = tmp_path / "chat.local.yaml"
-    config_file.write_text("llmio:\n  subagent_model: haiku\n")
-
-    settings = Settings.load(config_path=config_file)
-
-    assert settings.subagent_model == "haiku"
-
-
-def test_subagent_model_yaml_null_stores_none(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """``llmio.subagent_model: null`` in YAML results in ``None``."""
-    _wipe_env_vars(monkeypatch)
-
-    config_file = tmp_path / "chat.local.yaml"
-    config_file.write_text("llmio:\n  subagent_model: null\n")
-
-    settings = Settings.load(config_path=config_file)
-
-    assert settings.subagent_model is None
-
-
-def test_subagent_model_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``LLMIO_SUBAGENT_MODEL`` env var overrides the default."""
-    _wipe_env_vars(monkeypatch)
-    monkeypatch.setenv("LLMIO_SUBAGENT_MODEL", "haiku")
-
-    settings = Settings.from_env()
-
-    assert settings.subagent_model == "haiku"
-
-
-def test_subagent_model_env_empty_string_is_none(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """An empty ``LLMIO_SUBAGENT_MODEL`` is treated as ``None`` (no override)."""
-    _wipe_env_vars(monkeypatch)
-    monkeypatch.setenv("LLMIO_SUBAGENT_MODEL", "")
-
-    settings = Settings.from_env()
-
-    assert settings.subagent_model is None
-
-
-def test_subagent_model_env_overrides_yaml(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Env ``LLMIO_SUBAGENT_MODEL`` wins over YAML ``llmio.subagent_model``."""
-    _wipe_env_vars(monkeypatch)
-
-    config_file = tmp_path / "chat.local.yaml"
-    config_file.write_text("llmio:\n  subagent_model: sonnet\n")
-    monkeypatch.setenv("LLMIO_SUBAGENT_MODEL", "haiku")
-
-    settings = Settings.load(config_path=config_file)
-
-    assert settings.subagent_model == "haiku"
-
-
-# ---------------------------------------------------------------------------
-# check_loop_model
-# ---------------------------------------------------------------------------
-
-
-def test_check_loop_model_default() -> None:
-    """``check_loop_model`` defaults to ``"haiku"``."""
-    settings = Settings()
-    assert settings.check_loop_model == "haiku"
-
-
-def test_check_loop_model_explicit() -> None:
-    """``check_loop_model`` can be set to ``"sonnet"``."""
-    settings = Settings(check_loop_model="sonnet")
-    assert settings.check_loop_model == "sonnet"
-
-
-def test_check_loop_model_null_disables_downgrade() -> None:
-    """``check_loop_model=None`` disables the downgrade (None stored)."""
-    settings = Settings(check_loop_model=None)
-    assert settings.check_loop_model is None
-
-
-def test_check_loop_model_from_yaml(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """``llmio.check_loop_model`` in YAML overrides the default."""
-    _wipe_env_vars(monkeypatch)
-
-    config_file = tmp_path / "chat.local.yaml"
-    config_file.write_text("llmio:\n  check_loop_model: sonnet\n")
-
-    settings = Settings.load(config_path=config_file)
-
-    assert settings.check_loop_model == "sonnet"
-
-
-def test_check_loop_model_yaml_null_stores_none(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """``llmio.check_loop_model: null`` in YAML results in ``None``."""
-    _wipe_env_vars(monkeypatch)
-
-    config_file = tmp_path / "chat.local.yaml"
-    config_file.write_text("llmio:\n  check_loop_model: null\n")
-
-    settings = Settings.load(config_path=config_file)
-
-    assert settings.check_loop_model is None
-
-
-def test_check_loop_model_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``LLMIO_CHECK_LOOP_MODEL`` env var overrides the default."""
-    _wipe_env_vars(monkeypatch)
-    monkeypatch.setenv("LLMIO_CHECK_LOOP_MODEL", "sonnet")
-
-    settings = Settings.from_env()
-
-    assert settings.check_loop_model == "sonnet"
-
-
-def test_check_loop_model_env_empty_string_is_none(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """An empty ``LLMIO_CHECK_LOOP_MODEL`` is treated as ``None`` (no override)."""
-    _wipe_env_vars(monkeypatch)
-    monkeypatch.setenv("LLMIO_CHECK_LOOP_MODEL", "")
-
-    settings = Settings.from_env()
-
-    assert settings.check_loop_model is None
-
-
-def test_check_loop_model_env_overrides_yaml(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
-    """Env ``LLMIO_CHECK_LOOP_MODEL`` wins over YAML ``llmio.check_loop_model``."""
-    _wipe_env_vars(monkeypatch)
-
-    config_file = tmp_path / "chat.local.yaml"
-    config_file.write_text("llmio:\n  check_loop_model: haiku\n")
-    monkeypatch.setenv("LLMIO_CHECK_LOOP_MODEL", "sonnet")
-
-    settings = Settings.load(config_path=config_file)
-
-    assert settings.check_loop_model == "sonnet"
+def test_subsessions_min_interval_one_allowed() -> None:
+    """``subsessions.min_interval_seconds = 1.0`` is valid."""
+    settings = Settings(subsessions={"min_interval_seconds": 1.0})
+    assert settings.subsessions.min_interval_seconds == 1.0
 
 
 # ---------------------------------------------------------------------------
@@ -1855,23 +1558,6 @@ def test_component_client_env_overrides_yaml(
 
     assert settings.component_client.enabled is True
     assert settings.component_client.timeout == 60.0
-
-
-def test_pending_questions_enabled_by_default(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Pending questions is on by default."""
-    _wipe_env_vars(monkeypatch)
-
-    settings = Settings.from_env()
-
-    assert settings.pending_questions.enabled is True
-
-
-def test_pending_questions_disabled_ok() -> None:
-    """Pending questions can be disabled explicitly — no extra requirements."""
-    settings = Settings(pending_questions=PendingQuestionsSettings(enabled=False))
-    assert settings.pending_questions.enabled is False
 
 
 # ---------------------------------------------------------------------------

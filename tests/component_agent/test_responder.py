@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import asyncio
 from typing import Any
 
 import pytest
@@ -11,12 +10,12 @@ from robotsix_agent_comm.protocol.messages import Request
 
 from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus
-from robotsix_chat.chat.loops import CheckLoopRegistry
 from robotsix_chat.component_agent.responder import (
     ComponentAgentResponder,
     ComponentAgentResponderError,
 )
 from robotsix_chat.config import Settings
+from robotsix_chat.subsessions import SubsessionKind, SubsessionRegistry
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -46,12 +45,12 @@ def responder_deps():
         }
     )
     event_bus = EventBus()
-    check_loop_registry = CheckLoopRegistry(store_path=None)  # no disk persistence
+    subsession_registry = SubsessionRegistry(store_path=None)  # no disk persistence
     conversation_store = ConversationStore()
     return {
         "settings": settings,
         "event_bus": event_bus,
-        "check_loop_registry": check_loop_registry,
+        "subsession_registry": subsession_registry,
         "conversation_store": conversation_store,
     }
 
@@ -77,7 +76,7 @@ async def test_responder_start_registers_handler(
     """Starting the responder constructs a BrokeredAgent with the on_request handler."""
     responder = ComponentAgentResponder(
         settings=responder_deps["settings"],
-        check_loop_registry=responder_deps["check_loop_registry"],
+        subsession_registry=responder_deps["subsession_registry"],
         conversation_store=responder_deps["conversation_store"],
         event_bus=responder_deps["event_bus"],
     )
@@ -96,7 +95,7 @@ async def test_responder_stop_cancels_serve(responder_deps, fake_broker, monkeyp
     """stop() cancels the serve task and calls agent.stop()."""
     responder = ComponentAgentResponder(
         settings=responder_deps["settings"],
-        check_loop_registry=responder_deps["check_loop_registry"],
+        subsession_registry=responder_deps["subsession_registry"],
         conversation_store=responder_deps["conversation_store"],
         event_bus=responder_deps["event_bus"],
     )
@@ -126,7 +125,7 @@ async def test_responder_missing_broker_extra_raises(responder_deps, monkeypatch
 
     responder = ComponentAgentResponder(
         settings=responder_deps["settings"],
-        check_loop_registry=responder_deps["check_loop_registry"],
+        subsession_registry=responder_deps["subsession_registry"],
         conversation_store=responder_deps["conversation_store"],
         event_bus=responder_deps["event_bus"],
     )
@@ -142,7 +141,7 @@ async def test_responder_missing_broker_extra_raises(responder_deps, monkeypatch
 @pytest.mark.asyncio
 async def test_monitor_returns_live_telemetry(responder_deps, fake_broker):
     """Monitor returns genuine counts reflecting seeded state."""
-    loop_registry = responder_deps["check_loop_registry"]
+    sub_registry = responder_deps["subsession_registry"]
     conv_store = responder_deps["conversation_store"]
     event_bus = responder_deps["event_bus"]
 
@@ -157,25 +156,23 @@ async def test_monitor_returns_live_telemetry(responder_deps, fake_broker):
     event_bus.subscribe("client-a")
     event_bus.subscribe("client-b")
 
-    # Seed a check loop (manually, without spawning a real task).
-    async def _noop():
-        pass
-
-    task = asyncio.create_task(_noop())
-    loop_registry.register(
-        "client-x",
-        "check every minute",
+    # Seed a subsession record (no worker task needed for telemetry).
+    sub_registry.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id="client-x",
+        parent_id=None,
+        depth=1,
+        title="test loop",
+        prompt="check every minute",
+        model_level=3,
         interval_seconds=60.0,
-        max_iterations=5,
-        coro=task,
-        reason="test loop",
+        max_runs=5,
     )
-    task.cancel()
 
     # Build responder and start it.
     responder = ComponentAgentResponder(
         settings=responder_deps["settings"],
-        check_loop_registry=loop_registry,
+        subsession_registry=sub_registry,
         conversation_store=conv_store,
         event_bus=event_bus,
     )
@@ -198,10 +195,11 @@ async def test_monitor_returns_live_telemetry(responder_deps, fake_broker):
     # Check event bus.
     assert result["event_bus"]["subscribers"] >= 2
 
-    # Check check-loops.
-    assert result["check_loops"]["total"] >= 1
-    loops = result["check_loops"]["loops"]
-    assert any(loo["reason"] == "test loop" for loo in loops)
+    # Check subsessions.
+    assert result["subsessions"]["total"] >= 1
+    assert result["subsessions"]["active"] >= 1
+    entries = result["subsessions"]["entries"]
+    assert any(entry["title"] == "test loop" for entry in entries)
 
     # Settings snapshot is redacted.
     assert "settings" in result
@@ -223,7 +221,7 @@ async def test_config_get_returns_snapshot_and_settable_keys(
     """config-get returns redacted snapshot + settable metadata."""
     responder = ComponentAgentResponder(
         settings=responder_deps["settings"],
-        check_loop_registry=responder_deps["check_loop_registry"],
+        subsession_registry=responder_deps["subsession_registry"],
         conversation_store=responder_deps["conversation_store"],
         event_bus=responder_deps["event_bus"],
     )
@@ -258,7 +256,7 @@ async def test_config_set_applies_valid_update(responder_deps, fake_broker):
     """config-set applies a valid update and returns the audit record."""
     responder = ComponentAgentResponder(
         settings=responder_deps["settings"],
-        check_loop_registry=responder_deps["check_loop_registry"],
+        subsession_registry=responder_deps["subsession_registry"],
         conversation_store=responder_deps["conversation_store"],
         event_bus=responder_deps["event_bus"],
     )
@@ -282,7 +280,7 @@ async def test_config_set_rejects_unknown_key(responder_deps, fake_broker):
     """config-set rejects an unknown key without mutating settings."""
     responder = ComponentAgentResponder(
         settings=responder_deps["settings"],
-        check_loop_registry=responder_deps["check_loop_registry"],
+        subsession_registry=responder_deps["subsession_registry"],
         conversation_store=responder_deps["conversation_store"],
         event_bus=responder_deps["event_bus"],
     )
@@ -306,7 +304,7 @@ async def test_config_set_rejects_type_mismatch(responder_deps, fake_broker):
     """config-set rejects a type mismatch without mutating settings."""
     responder = ComponentAgentResponder(
         settings=responder_deps["settings"],
-        check_loop_registry=responder_deps["check_loop_registry"],
+        subsession_registry=responder_deps["subsession_registry"],
         conversation_store=responder_deps["conversation_store"],
         event_bus=responder_deps["event_bus"],
     )
@@ -330,7 +328,7 @@ async def test_config_set_rejects_cross_field_invalid(responder_deps, fake_broke
     """config-set rejects an update that would violate cross-field invariants."""
     responder = ComponentAgentResponder(
         settings=responder_deps["settings"],
-        check_loop_registry=responder_deps["check_loop_registry"],
+        subsession_registry=responder_deps["subsession_registry"],
         conversation_store=responder_deps["conversation_store"],
         event_bus=responder_deps["event_bus"],
     )
@@ -359,7 +357,7 @@ async def test_unknown_kind_returns_error(responder_deps, fake_broker):
     """An unknown request kind returns an Error."""
     responder = ComponentAgentResponder(
         settings=responder_deps["settings"],
-        check_loop_registry=responder_deps["check_loop_registry"],
+        subsession_registry=responder_deps["subsession_registry"],
         conversation_store=responder_deps["conversation_store"],
         event_bus=responder_deps["event_bus"],
     )
@@ -392,7 +390,7 @@ async def test_responder_not_constructed_when_disabled(
     settings = Settings()  # default — component_agent.enabled=False
     responder = ComponentAgentResponder(
         settings=settings,
-        check_loop_registry=responder_deps["check_loop_registry"],
+        subsession_registry=responder_deps["subsession_registry"],
         conversation_store=responder_deps["conversation_store"],
         event_bus=responder_deps["event_bus"],
     )
@@ -442,22 +440,24 @@ def test_event_bus_subscriber_count_is_read_only():
 
 
 @pytest.mark.asyncio
-async def test_check_loop_registry_snapshot_is_read_only():
-    """snapshot() returns a list of loops without mutating registry."""
-    registry = CheckLoopRegistry(store_path=None)
+async def test_subsession_registry_list_all_is_read_only():
+    """list_all() returns snapshots without mutating the registry."""
+    registry = SubsessionRegistry(store_path=None)
+    registry.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id="c1",
+        parent_id=None,
+        depth=1,
+        title="t1",
+        prompt="p1",
+        model_level=3,
+    )
 
-    async def _noop():
-        pass
-
-    task = asyncio.create_task(_noop())
-    registry.register("c1", "p1", interval_seconds=30.0, max_iterations=None, coro=task)
-    task.cancel()
-
-    snap1 = registry.snapshot()
-    snap2 = registry.snapshot()
+    snap1 = [info.snapshot() for info in registry.list_all()]
+    snap2 = [info.snapshot() for info in registry.list_all()]
     assert snap1 == snap2
     assert len(snap1) == 1
-    assert snap1[0].session_id == "c1"
-    # Calling snapshot doesn't change count_running or list_for_session.
-    assert registry.count_running() == 1
-    assert len(registry.list_for_session("c1")) == 1
+    assert snap1[0]["owner_session_id"] == "c1"
+    # Reading does not change active counts or owner listings.
+    assert registry.count_active() == 1
+    assert len(registry.list_for_owner("c1")) == 1

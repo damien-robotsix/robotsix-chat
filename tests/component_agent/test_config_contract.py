@@ -78,7 +78,7 @@ def test_snapshot_includes_all_fields():
     assert snap["mill.enabled"] is False
     assert snap["memory.enabled"] is False
     assert snap["conversation.max_history_turns"] == 50
-    assert snap["llmio.model_level"] == 3  # read-only, but still present
+    assert snap["llmio.model_level"] == 4  # read-only, but still present
 
     # Nested sub-model fields
     assert "memory.llm.api_key" in snap
@@ -195,10 +195,10 @@ def test_validate_valid_bool_flags():
 
 
 def test_validate_float_accepts_int():
-    """min_check_loop_interval_seconds accepts int (coerced to float)."""
+    """subsessions.min_interval_seconds accepts int (coerced to float)."""
     s = Settings()
-    result = validate_config_update(s, {"server.min_check_loop_interval_seconds": 120})
-    assert result == {"server.min_check_loop_interval_seconds": 120}
+    result = validate_config_update(s, {"subsessions.min_interval_seconds": 120})
+    assert result == {"subsessions.min_interval_seconds": 120}
 
 
 def test_validate_list_field():

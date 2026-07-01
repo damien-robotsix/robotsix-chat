@@ -1,4 +1,4 @@
-"""Tests for the persistent SSE events channel and EventBus/TaskRegistry integration."""
+"""Tests for the subsession SSE frame builders, EventBus, and /events endpoint."""
 
 from __future__ import annotations
 
@@ -11,19 +11,21 @@ from starlette.requests import Request
 from starlette.responses import StreamingResponse
 
 from robotsix_chat.chat.events import (
-    SSE_LOOP_REPLY_TYPE,
-    SSE_TASK_COMPLETED_TYPE,
-    SSE_TASK_FAILED_TYPE,
-    SSE_TASK_STARTED_TYPE,
+    SSE_SUBSESSION_CLOSED_TYPE,
+    SSE_SUBSESSION_FAILED_TYPE,
+    SSE_SUBSESSION_MESSAGE_TYPE,
+    SSE_SUBSESSION_RESULT_TYPE,
+    SSE_SUBSESSION_STARTED_TYPE,
+    SSE_SUBSESSION_UPDATED_TYPE,
     EventBus,
-    loop_reply_frame,
-    task_completed_frame,
-    task_failed_frame,
-    task_started_frame,
+    subsession_closed_frame,
+    subsession_failed_frame,
+    subsession_message_frame,
+    subsession_result_frame,
+    subsession_started_frame,
+    subsession_updated_frame,
 )
 from robotsix_chat.chat.server import SSE_CONTENT_TYPE, events_endpoint
-from robotsix_chat.chat.tasks import TaskRegistry, TaskStatus
-from tests.chat import _fake_coro
 from tests.conftest import mock_app
 
 # ---------------------------------------------------------------------------
@@ -31,48 +33,135 @@ from tests.conftest import mock_app
 # ---------------------------------------------------------------------------
 
 
-def test_task_started_frame_shape() -> None:
-    """``task_started_frame`` returns the documented JSON shape."""
-    frame = task_started_frame("t1", "c1", "summarise")
-    assert frame == {
-        "type": SSE_TASK_STARTED_TYPE,
-        "task_id": "t1",
-        "session_id": "c1",
-        "prompt": "summarise",
+def test_subsession_started_frame_shape() -> None:
+    """``subsession_started_frame`` merges the snapshot under the started type."""
+    snapshot: dict[str, object] = {
+        "subsession_id": "sub-1",
+        "kind": "task",
+        "owner_session_id": "sess-1",
+        "parent_id": None,
+        "depth": 1,
+        "title": "summarise",
         "status": "running",
     }
+    frame = subsession_started_frame(snapshot)
+    assert frame == {"type": SSE_SUBSESSION_STARTED_TYPE, **snapshot}
 
 
-def test_task_completed_frame_shape() -> None:
-    """``task_completed_frame`` returns the documented JSON shape."""
-    frame = task_completed_frame("t1", "done")
+def test_subsession_started_frame_does_not_mutate_snapshot() -> None:
+    """The builder returns a new dict — the input snapshot gains no keys."""
+    snapshot: dict[str, object] = {"subsession_id": "sub-1"}
+    frame = subsession_started_frame(snapshot)
+    assert "type" not in snapshot
+    assert frame is not snapshot
+
+
+def test_subsession_updated_frame_shape() -> None:
+    """``subsession_updated_frame`` returns the documented JSON shape."""
+    frame = subsession_updated_frame(
+        "sub-1",
+        "sleeping",
+        runs=3,
+        next_run_at=100.5,
+        last_activity_at=90.0,
+        last_result="all good",
+    )
     assert frame == {
-        "type": SSE_TASK_COMPLETED_TYPE,
-        "task_id": "t1",
-        "status": "completed",
-        "result": "done",
+        "type": SSE_SUBSESSION_UPDATED_TYPE,
+        "subsession_id": "sub-1",
+        "status": "sleeping",
+        "runs": 3,
+        "next_run_at": 100.5,
+        "last_activity_at": 90.0,
+        "last_result": "all good",
     }
 
 
-def test_task_failed_frame_shape() -> None:
-    """``task_failed_frame`` returns the documented JSON shape."""
-    frame = task_failed_frame("t1", "boom")
+def test_subsession_updated_frame_defaults() -> None:
+    """Optional keyword fields default to zero/None but stay present."""
+    frame = subsession_updated_frame("sub-2", "running")
     assert frame == {
-        "type": SSE_TASK_FAILED_TYPE,
-        "task_id": "t1",
-        "status": "failed",
+        "type": SSE_SUBSESSION_UPDATED_TYPE,
+        "subsession_id": "sub-2",
+        "status": "running",
+        "runs": 0,
+        "next_run_at": None,
+        "last_activity_at": None,
+        "last_result": None,
+    }
+
+
+def test_subsession_message_frame_shape() -> None:
+    """``subsession_message_frame`` returns the documented JSON shape."""
+    frame = subsession_message_frame("sub-1", "assistant", "hello", 42.0)
+    assert frame == {
+        "type": SSE_SUBSESSION_MESSAGE_TYPE,
+        "subsession_id": "sub-1",
+        "role": "assistant",
+        "text": "hello",
+        "timestamp": 42.0,
+    }
+
+
+def test_subsession_result_frame_shape() -> None:
+    """``subsession_result_frame`` returns the documented JSON shape."""
+    frame = subsession_result_frame(
+        "sub-1", "periodic", "watch CI", 2, "build is green", "parent-1"
+    )
+    assert frame == {
+        "type": SSE_SUBSESSION_RESULT_TYPE,
+        "subsession_id": "sub-1",
+        "kind": "periodic",
+        "title": "watch CI",
+        "run": 2,
+        "text": "build is green",
+        "parent_id": "parent-1",
+    }
+
+
+def test_subsession_closed_frame_shape() -> None:
+    """``subsession_closed_frame`` returns the documented JSON shape."""
+    frame = subsession_closed_frame(
+        "sub-1",
+        kind="task",
+        title="summarise",
+        reason="completed",
+        summary="all done",
+        closed_by="agent",
+        parent_id=None,
+    )
+    assert frame == {
+        "type": SSE_SUBSESSION_CLOSED_TYPE,
+        "subsession_id": "sub-1",
+        "kind": "task",
+        "title": "summarise",
+        "reason": "completed",
+        "summary": "all done",
+        "closed_by": "agent",
+        "parent_id": None,
+        "status": "closed",
+    }
+
+
+def test_subsession_failed_frame_shape() -> None:
+    """``subsession_failed_frame`` returns the documented JSON shape."""
+    frame = subsession_failed_frame(
+        "sub-1",
+        kind="user_chat",
+        title="ask about deploy",
+        error="boom",
+        summary="Failed: boom",
+        parent_id="parent-9",
+    )
+    assert frame == {
+        "type": SSE_SUBSESSION_FAILED_TYPE,
+        "subsession_id": "sub-1",
+        "kind": "user_chat",
+        "title": "ask about deploy",
         "error": "boom",
-    }
-
-
-def test_loop_reply_frame_shape() -> None:
-    """``loop_reply_frame`` returns the documented JSON shape."""
-    frame = loop_reply_frame("L1", 3, "Here's the result...")
-    assert frame == {
-        "type": SSE_LOOP_REPLY_TYPE,
-        "loop_id": "L1",
-        "iteration": 3,
-        "reply": "Here's the result...",
+        "summary": "Failed: boom",
+        "parent_id": "parent-9",
+        "status": "failed",
     }
 
 
@@ -259,7 +348,7 @@ async def test_events_endpoint_receives_pushed_frame() -> None:
             # Publish a frame
             f.app.state.event_bus.publish(
                 "c1",
-                {"type": SSE_TASK_STARTED_TYPE, "task_id": "t1", "status": "running"},
+                subsession_message_frame("sub-1", "assistant", "hi", 1.0),
             )
 
             # Read the data frame
@@ -271,9 +360,11 @@ async def test_events_endpoint_receives_pushed_frame() -> None:
             assert len(data_lines) == 1
             parsed = _parse_data_line(data_lines[0])
             assert parsed == {
-                "type": SSE_TASK_STARTED_TYPE,
-                "task_id": "t1",
-                "status": "running",
+                "type": SSE_SUBSESSION_MESSAGE_TYPE,
+                "subsession_id": "sub-1",
+                "role": "assistant",
+                "text": "hi",
+                "timestamp": 1.0,
             }
         finally:
             await body_iter.aclose()
@@ -302,92 +393,3 @@ async def test_events_endpoint_unsubscribes_on_disconnect() -> None:
 
     # After cleanup, the subscriber set is gone
     assert "c1" not in f.app.state.event_bus._subscribers
-
-
-# ---------------------------------------------------------------------------
-# TaskRegistry → EventBus integration (unit-level)
-# ---------------------------------------------------------------------------
-
-
-def test_task_registry_publishes_started_frame_on_register() -> None:
-    """Registering a task publishes a ``task_started`` frame to the EventBus."""
-    bus = EventBus()
-    reg = TaskRegistry(event_sink=bus)
-    q = bus.subscribe("c1")
-
-    tid = reg.register("c1", "do x", _fake_coro())  # type: ignore[arg-type]
-
-    frame = q.get_nowait()
-    assert frame == task_started_frame(tid, "c1", "do x")
-
-
-def test_task_registry_publishes_completed_frame_on_complete() -> None:
-    """Completing a task publishes a ``task_completed`` frame."""
-    bus = EventBus()
-    reg = TaskRegistry(event_sink=bus)
-    q = bus.subscribe("c1")
-
-    tid = reg.register("c1", "do x", _fake_coro())  # type: ignore[arg-type]
-    q.get_nowait()  # consume started frame
-
-    reg.complete(tid, "ok")
-
-    frame = q.get_nowait()
-    assert frame == task_completed_frame(tid, "ok")
-
-
-def test_task_registry_publishes_failed_frame_on_fail() -> None:
-    """Failing a task publishes a ``task_failed`` frame."""
-    bus = EventBus()
-    reg = TaskRegistry(event_sink=bus)
-    q = bus.subscribe("c1")
-
-    tid = reg.register("c1", "risky", _fake_coro())  # type: ignore[arg-type]
-    q.get_nowait()  # consume started frame
-
-    reg.fail(tid, "boom")
-
-    frame = q.get_nowait()
-    assert frame == task_failed_frame(tid, "boom")
-
-
-def test_task_registry_no_event_sink_no_publish() -> None:
-    """When ``event_sink`` is None, existing behaviour is unchanged — no publish."""
-    # Construct with default (no event_sink)
-    reg = TaskRegistry()
-    tid = reg.register("c1", "do x", _fake_coro())  # type: ignore[arg-type]
-
-    reg.complete(tid, "ok")
-    reg.fail(tid, "boom")
-
-    # The important things: no crash, and existing test_tasks.py still passes.
-    info = reg.get(tid)
-    assert info is not None
-    assert info.status == TaskStatus.FAILED
-    assert info.error == "boom"
-
-
-@pytest.mark.asyncio
-async def test_task_registry_integration_with_real_task() -> None:
-    """End-to-end: register → complete → fail using a real asyncio.Task."""
-    bus = EventBus()
-    reg = TaskRegistry(event_sink=bus)
-    q = bus.subscribe("c1")
-
-    async def quick() -> None:
-        pass
-
-    task = asyncio.create_task(quick())
-    tid = reg.register("c1", "quick-op", task)
-
-    # Started frame delivered
-    assert q.get_nowait() == task_started_frame(tid, "c1", "quick-op")
-
-    reg.complete(tid, "done")
-    assert q.get_nowait() == task_completed_frame(tid, "done")
-
-    # Fail after complete overwrites
-    reg.fail(tid, "oops")
-    assert q.get_nowait() == task_failed_frame(tid, "oops")
-
-    await task
