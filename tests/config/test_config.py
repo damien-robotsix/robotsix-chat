@@ -146,7 +146,7 @@ def test_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
     settings = Settings.from_env()
 
-    assert settings.llmio_model_level == 3
+    assert settings.llmio_model_level == 4
     assert settings.llmio_api_key == ""
     assert settings.server_host == "127.0.0.1"
     assert settings.server_port == 8000
@@ -165,9 +165,9 @@ def test_log_level_default() -> None:
 
 
 def test_default_level_is_keyless() -> None:
-    """The default level (3 → claudeSDK) is keyless — constructs with no key."""
+    """The default level (4 → claudeSDK) is keyless — constructs with no key."""
     settings = Settings()
-    assert settings.llmio_model_level == 3
+    assert settings.llmio_model_level == 4
     assert settings.llmio_api_key == ""
 
 
@@ -185,9 +185,15 @@ def test_key_bearing_level_with_key_ok() -> None:
 
 
 def test_invalid_model_level_raises() -> None:
-    """A model_level outside 1-3 is rejected."""
+    """A model_level outside 1-4 is rejected."""
     with pytest.raises(ValueError, match="model_level"):
-        Settings(llmio_model_level=4)
+        Settings(llmio_model_level=5)
+
+
+def test_level_4_is_keyless() -> None:
+    """Level 4 (claudeSDK / claude-fable-5) constructs with no key."""
+    settings = Settings(llmio_model_level=4)
+    assert settings.llmio_model_level == 4
 
 
 def test_key_required_via_from_env_raises(monkeypatch: pytest.MonkeyPatch) -> None:

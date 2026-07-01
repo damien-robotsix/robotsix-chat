@@ -28,7 +28,12 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from robotsix_llmio.config import LEVEL1_DEFAULT, LEVEL2_DEFAULT, LEVEL3_DEFAULT
+from robotsix_llmio.config import (
+    LEVEL1_DEFAULT,
+    LEVEL2_DEFAULT,
+    LEVEL3_DEFAULT,
+    LEVEL4_DEFAULT,
+)
 from robotsix_yaml_config import YamlConfigError
 
 # Default YAML config file (gitignored; copy from the committed example).
@@ -54,8 +59,14 @@ _TRUE_VALUES = {"1", "true", "yes", "on"}
 # of truth):
 #   level 1 → openrouter-deepseek/deepseek-v4-flash  (cheapest)
 #   level 2 → openrouter-deepseek/deepseek-v4-pro
-#   level 3 → claudeSDK-opus  (most capable; keyless)
-_LEVEL_DEFAULTS = {1: LEVEL1_DEFAULT, 2: LEVEL2_DEFAULT, 3: LEVEL3_DEFAULT}
+#   level 3 → claudeSDK-opus  (keyless)
+#   level 4 → claudeSDK-claude-fable-5  (frontier; keyless)
+_LEVEL_DEFAULTS = {
+    1: LEVEL1_DEFAULT,
+    2: LEVEL2_DEFAULT,
+    3: LEVEL3_DEFAULT,
+    4: LEVEL4_DEFAULT,
+}
 
 # Provider prefix for the keyless Claude SDK tier (auth via logged-in
 # `claude` CLI — no API key needed).
