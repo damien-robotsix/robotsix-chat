@@ -97,8 +97,8 @@ def test_parse_version_prerelease_suffix() -> None:
     assert _parse_version("1.2.0-rc1") == (1, 2, 0)
 
 
-def test_parse_version_unparseable() -> None:
-    """Unparseable input returns empty tuple."""
+def test_parse_version_unparsable() -> None:
+    """Unparsable input returns empty tuple."""
     assert _parse_version("not-a-version") == ()
     assert _parse_version("") == ()
 
@@ -134,8 +134,8 @@ def test_compare_versions_non_semantic_fallback() -> None:
     assert compare_versions("abc", "def") is False
 
 
-def test_compare_versions_one_unparseable() -> None:
-    """When one side is unparseable, fall back to equality."""
+def test_compare_versions_one_unparsable() -> None:
+    """When one side is unparsable, fall back to equality."""
     assert compare_versions("1.0.0", "not-ver") is False
     assert compare_versions("not-ver", "1.0.0") is False
 

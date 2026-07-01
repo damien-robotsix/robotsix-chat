@@ -7,6 +7,11 @@ repos:
       - id: check-yaml
       - id: check-toml
 
+  - repo: https://github.com/crate-ci/typos
+    rev: bee27e3a4fd1ea2111cf90ab89cd076c870fce14  # v1.48.0
+    hooks:
+      - id: typos
+
   - repo: https://github.com/astral-sh/ruff-pre-commit
     rev: v0.15.17
     hooks:

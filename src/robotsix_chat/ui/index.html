@@ -1827,7 +1827,7 @@
       onData: function (raw) {
         var frame;
         try { frame = JSON.parse(raw); }
-        catch (_) { return; /* skip unparseable frames */ }
+        catch (_) { return; /* skip unparsable frames */ }
 
         if (frame.type === "task_started" ||
             frame.type === "task_completed" ||
@@ -2487,7 +2487,7 @@
         if (activeSessionId !== requestSessionId) return;
         var frame;
         try { frame = JSON.parse(raw); }
-        catch (_) { return; /* skip unparseable frames */ }
+        catch (_) { return; /* skip unparsable frames */ }
 
         if (frame.type === "token") {
           // First token — hide typing indicator and enter streaming.

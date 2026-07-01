@@ -119,7 +119,7 @@ class BaseBrokeredClient:
         instead of waiting out the full request timeout.  Returns
         ``(ok, reason)``: ``ok=False`` means fail fast with *reason*.
 
-        Best-effort: any ambiguous outcome (non-200, unparseable body,
+        Best-effort: any ambiguous outcome (non-200, unparsable body,
         unexpected error) returns ``(True, "")`` so a flaky probe never blocks
         an otherwise-valid request.  Blocking (uses ``httpx``); call via
         :func:`asyncio.to_thread`.
