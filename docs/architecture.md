@@ -130,18 +130,18 @@ On `"done"` the client knows the reply is complete and can re-enable the input.
 
 ### Other Endpoints
 
-| Method | Path                    | Purpose                                                     |
-| ------ | ----------------------- | ----------------------------------------------------------- |
-| `GET`  | `/`                     | Serve the chat UI (`ui/index.html`)                         |
-| `GET`  | `/health`               | Liveness probe (always open)                                |
-| `GET`  | `/events?session_id=…`  | Persistent SSE channel for subsession lifecycle events      |
-| `GET`  | `/history?session_id=…` | Retrieve stored conversation turns                          |
-| `GET`  | `/subsessions?session_id=…` | List the session's subsession tree                      |
-| `GET`  | `/subsessions/{id}`     | One subsession's snapshot + transcript                      |
-| `POST` | `/subsessions/{id}/message` | Send a user message to a running subsession             |
-| `POST` | `/subsessions/{id}/close`   | Close a subsession (summary still delivered)            |
-| `GET`  | `/sessions?owner_id=…`  | List all sessions for an owner                              |
-| `POST` | `/sessions`             | Create a new empty session                                  |
+| Method | Path                        | Purpose                                                |
+| ------ | --------------------------- | ------------------------------------------------------ |
+| `GET`  | `/`                         | Serve the chat UI (`ui/index.html`)                    |
+| `GET`  | `/health`                   | Liveness probe (always open)                           |
+| `GET`  | `/events?session_id=…`      | Persistent SSE channel for subsession lifecycle events |
+| `GET`  | `/history?session_id=…`     | Retrieve stored conversation turns                     |
+| `GET`  | `/subsessions?session_id=…` | List the session's subsession tree                     |
+| `GET`  | `/subsessions/{id}`         | One subsession's snapshot + transcript                 |
+| `POST` | `/subsessions/{id}/message` | Send a user message to a running subsession            |
+| `POST` | `/subsessions/{id}/close`   | Close a subsession (summary still delivered)           |
+| `GET`  | `/sessions?owner_id=…`      | List all sessions for an owner                         |
+| `POST` | `/sessions`                 | Create a new empty session                             |
 
 ______________________________________________________________________
 
@@ -151,13 +151,13 @@ Each subpackage lives under `src/robotsix_chat/`.
 
 ### Core
 
-| Package       | Role                                                                                                                                                                                                                                                                |
-| ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`chat/`**   | Starlette app factory, route handlers, entry point, auth middleware (`auth.py`). Conversation store (`conversation.py`) and SSE event bus (`events.py`). |
+| Package            | Role                                                                                                                                                                                                                                                              |
+| ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| **`chat/`**        | Starlette app factory, route handlers, entry point, auth middleware (`auth.py`). Conversation store (`conversation.py`) and SSE event bus (`events.py`).                                                                                                          |
 | **`subsessions/`** | Unified subsession system — models, registry (state + inbox + persistence), worker turn loop, parent summary delivery, and the depth-aware agent tools (`spawn_subsession`, `message_subsession`, `close_subsession`, `list_subsessions`, `complete_subsession`). |
-| **`llm/`**    | `LlmioChatAgent` — satisfies the `ChatAgent` protocol. Wraps `robotsix-llmio`'s `create_model(level)`, producing single-block (non-streamed) replies for claudeSDK transports.                                                                                      |
-| **`config/`** | Pydantic `Settings` model (all configuration in one place). Cascade: field defaults → YAML (`config/chat.local.yaml`) → environment variables. ~30 settings spanning LLM, server, auth, memory, and all tool gates.                                                 |
-| **`ui/`**     | Single-file browser chat UI (`index.html`). No build step, no framework — served directly by `GET /`.                                                                                                                                                               |
+| **`llm/`**         | `LlmioChatAgent` — satisfies the `ChatAgent` protocol. Wraps `robotsix-llmio`'s `create_model(level)`, producing single-block (non-streamed) replies for claudeSDK transports.                                                                                    |
+| **`config/`**      | Pydantic `Settings` model (all configuration in one place). Cascade: field defaults → YAML (`config/chat.local.yaml`) → environment variables. ~30 settings spanning LLM, server, auth, memory, and all tool gates.                                               |
+| **`ui/`**          | Single-file browser chat UI (`index.html`). No build step, no framework — served directly by `GET /`.                                                                                                                                                             |
 
 ### Optional Tools (gated by `settings.<tool>.enabled`)
 
@@ -202,9 +202,9 @@ pydantic field defaults  →  YAML (config/chat.local.yaml)  →  environment va
   `LLMIO_MODEL_LEVEL`, `AUTH_ENABLED`). Env vars override YAML, which overrides defaults.
 
 The LLM provider is selected indirectly: `model_level` (1–4) is passed to `robotsix-llmio`, which
-resolves it to a concrete provider (levels 3–4 → claudeSDK, levels 1–2 → OpenRouter DeepSeek).
-Level 4 (`claude-fable-5`) is the frontier tier and the default for the main chat agent;
-subsessions default to level 3 unless the spawning agent picks otherwise.
+resolves it to a concrete provider (levels 3–4 → claudeSDK, levels 1–2 → OpenRouter DeepSeek). Level
+4 (`claude-fable-5`) is the frontier tier and the default for the main chat agent; subsessions
+default to level 3 unless the spawning agent picks otherwise.
 
 ______________________________________________________________________
 

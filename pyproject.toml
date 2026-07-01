@@ -95,7 +95,7 @@ packages = ["src/robotsix_chat"]
 
 [tool.uv.sources]
 robotsix-yaml-config = { git = "https://github.com/damien-robotsix/robotsix-yaml-config.git", rev = "main" }
-robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "c2cab4bc5ff41cbdec6a7695559a7531c3a871f3" }
+robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "c2cab4bc5ff41cbdec6a7695559a7531c3a871f3" }  # pragma: allowlist secret
 robotsix-agent-comm = { git = "https://github.com/damien-robotsix/robotsix-agent-comm.git", rev = "main" }
 
 [tool.towncrier]
