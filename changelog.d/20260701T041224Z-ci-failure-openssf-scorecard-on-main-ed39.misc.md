@@ -1,0 +1,1 @@
+CI failure: OpenSSF Scorecard on main
