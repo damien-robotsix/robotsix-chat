@@ -110,7 +110,7 @@ broker:
 
 
 def test_discover_skips_invalid_yaml(tmp_path: Path) -> None:
-    """Unparseable YAML is skipped with a warning."""
+    """Unparsable YAML is skipped with a warning."""
     skills_dir = tmp_path / "skills"
     skills_dir.mkdir()
     (skills_dir / "bad.skill.yaml").write_text(":: not valid yaml ::")

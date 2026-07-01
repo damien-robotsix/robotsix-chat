@@ -46,7 +46,7 @@ def discover_manifests(manifests_dir: str) -> list[SkillManifest]:
             directory does not exist, returns ``[]`` silently.
 
     Returns:
-        Parsed manifest objects.  Unparseable files are skipped with a
+        Parsed manifest objects.  Unparsable files are skipped with a
         warning.
 
     """
