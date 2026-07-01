@@ -37,9 +37,9 @@ repos:
 
   - repo: local
     hooks:
-      - id: pip-audit
-        name: pip-audit
-        entry: pip-audit
+      - id: uv-audit
+        name: uv audit
+        entry: uv audit
         language: system
         pass_filenames: false
         files: ^uv\.lock$
