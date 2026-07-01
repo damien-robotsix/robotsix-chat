@@ -24,7 +24,6 @@ from robotsix_chat.config.constants import (
     DEFAULT_CONFIG_PATH,
     ConfigError,
     _parse_bool,
-    _parse_float,
     _parse_int,
     level_needs_api_key,
 )
@@ -40,10 +39,10 @@ from robotsix_chat.config.env_builders import (
     _build_mail_raw,
     _build_memory_raw,
     _build_mill_raw,
-    _build_pending_questions_raw,
     _build_refdocs_raw,
     _build_self_review_raw,
     _build_skills_raw,
+    _build_subsessions_raw,
     _build_version_check_raw,
 )
 from robotsix_chat.config.models import (
@@ -59,10 +58,10 @@ from robotsix_chat.config.models import (
     MailSettings,
     MemorySettings,
     MillSettings,
-    PendingQuestionsSettings,
     RefDocsSettings,
     SelfReviewSettings,
     SkillsSettings,
+    SubsessionsSettings,
     VersionCheckSettings,
 )
 
@@ -71,7 +70,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 14
+SYSTEM_PROMPT_VERSION = 15
 
 # Valid model levels (import-time constant so the set is built once).
 _VALID_MODEL_LEVELS = frozenset({1, 2, 3, 4})
@@ -93,40 +92,15 @@ class Settings(BaseModel):
         llmio_api_key: Provider API key, forwarded to llmio when the chosen
             level's provider needs one (e.g. ``openrouter``); unused
             by keyless providers like ``claudeSDK``.
-        subagent_model: Bare Claude model name override for background
-            sub-agents spawned via ``delegate_task``.  Only applied when the
-            foreground level uses the keyless ``claudeSDK`` provider
-            (level 3).  ``"sonnet"`` (default) is cheaper than Opus and
-            stays on the subscription; set ``"haiku"`` for cheaper
-            delegation, or ``null`` to disable the downgrade (delegation
-            tasks then match the foreground model).  Ignored for levels 1–2
-            (OpenRouter).  Env override: ``LLMIO_SUBAGENT_MODEL``.
-
-            Check-loop workers use :attr:`check_loop_model` instead; the two
-            pools have independent model overrides.
-        check_loop_model: Bare Claude model name override for check-loop
-            workers (recurring monitoring / status-check ticks).  Only
-            applied when the foreground level uses the keyless ``claudeSDK``
-            provider (level 3).  ``"haiku"`` (default) is the cheapest
-            subscription tier — ideal for binary "is it done yet?" polling.
-            Set ``"sonnet"`` for more nuanced monitoring, or ``null`` to
-            disable the downgrade (check-loop ticks then match the foreground
-            model).  Ignored for levels 1–2 (OpenRouter).
-            Env override: ``LLMIO_CHECK_LOOP_MODEL``.
         agent_instruction: System instruction handed to the LLM agent.
-            Includes delegate-vs-inline guidance for background tasks.
+            Includes guidance on spawning subsessions for background work.
         server_host: Host address the chat SSE server binds to.
         server_port: Port the chat SSE server listens on.
         idle_timeout_minutes: Minutes of no user activity before the UI
             auto-restarts the conversation; ``0`` disables the feature.
             Env override: ``IDLE_TIMEOUT_MINUTES``.
-        max_background_tasks: Maximum number of concurrently-running background
-            sub-agent tasks per process.  Env override: ``MAX_BACKGROUND_TASKS``.
-        max_check_loops: Maximum number of concurrent check loops per process.
-            Env override: ``MAX_CHECK_LOOPS``.
-        min_check_loop_interval_seconds: Minimum allowed interval between
-            check-loop iterations, in seconds. Env override:
-            ``MIN_CHECK_LOOP_INTERVAL_SECONDS``.
+        subsessions: Unified subsession system (background/periodic/user-chat
+            sub-agents) — see :class:`SubsessionsSettings`.
         log_level: Python logging level name.
         cors_allow_origins: Origins allowed to call /chat cross-origin
             (empty = none; ``["*"]`` = any). Only needed when the browser
@@ -148,8 +122,6 @@ class Settings(BaseModel):
 
     llmio_model_level: int = 4
     llmio_api_key: str = ""
-    subagent_model: str | None = "sonnet"
-    check_loop_model: str | None = "haiku"
     agent_instruction: str = (
         "You are a helpful assistant. "
         "You have a local, durable knowledge base "
@@ -162,31 +134,58 @@ class Settings(BaseModel):
         "automatic cognee conversation memory — cognee recalls past "
         "exchanges by similarity, while these notes you explicitly "
         "create and address by id. "
-        "Answer quick questions inline. "
-        "When a request is judged to take a while — multi-step research, "
-        "long generation, or anything that would stall your reply — call "
-        "the delegate_task tool to offload it to a background sub-agent. "
-        "The tool returns a task id immediately; tell the user the work "
-        "is running in the background and they'll be notified when it "
-        "finishes."
+        "Answer quick questions inline."
         "\n\n"
+        "Subsessions:\n"
+        "– spawn_subsession offloads work to a background sub-agent that "
+        "has the same tools you do. Three kinds: 'task' (one-shot job — "
+        "multi-step research, long generation, anything that would stall "
+        "your reply), 'periodic' (re-runs instructions on an interval — "
+        "monitoring, polling), and 'user_chat' (a side-chat with the user "
+        "for a focused question or decision — use it instead of blocking "
+        "this conversation while you wait for an answer).\n"
+        "– Pick model_level by difficulty and cost: 1-2 are cheap "
+        "OpenRouter tiers for trivial polling or extraction (only when an "
+        "API key is configured), 3 is the default for general work, 4 is "
+        "the frontier tier — reserve it for genuinely hard reasoning. "
+        "Never spawn at level 4 for routine checks.\n"
+        "– Write instructions that are complete and self-contained: the "
+        "subsession starts with NO conversation history, so include every "
+        "id, URL, constraint, and expected outcome it needs.\n"
+        "– The subsession's summary arrives in this conversation when it "
+        "closes. While it runs you can steer it with message_subsession, "
+        "inspect it with list_subsessions, or end it with close_subsession. "
+        "Tell the user the work is running in the background.\n"
+        "– Inside a subsession, call complete_subsession(summary) as soon "
+        "as your goal is reached — for periodic work, that means as soon "
+        "as the monitored condition reaches a verified terminal state; do "
+        "NOT keep re-reporting a finished state. Reply exactly NO_CHANGE "
+        "on a periodic run where nothing changed.\n"
+        "– In a user_chat subsession, ask a pending question ONCE and wait "
+        "for the user's reply; close with a summary once the discussion "
+        "reaches a conclusion. The user can also close it at any time.\n"
+        "– Subsessions can spawn their own subsessions (nesting is depth-"
+        "limited) — split genuinely independent subtasks, do not chain "
+        "for its own sake. Check list_subsessions before spawning to "
+        "avoid duplicating running work.\n"
+        "\n"
         "Board/mill rules:\n"
         "– To READ board/ticket state, always use list_board_tickets or "
         "read_board_ticket — these call the SAME HTTP endpoint the user's "
         "browser UI consumes, so you see exactly what the user sees.  "
         "Never narrate or fabricate ticket states; always verify with "
-        "the board reader tools first.\n"
+        "the board reader tools first. This applies inside subsessions "
+        "too: a periodic subsession monitoring board/ticket status must "
+        "re-read the board every run before reporting.\n"
         "– For complex WRITE operations (migrate tickets between repos, "
         "transition ticket state, triage that requires board-manager "
         "intelligence), use consult_mill — the broker-based board manager "
         "handles these. For simple ticket creation, use create_board_ticket "
         "— it is faster, uses fewer tokens, and includes built-in duplicate "
         "detection.\n"
-        "– Do all board work inline — never offload board actions through "
-        "delegate_task. Delegate-task results are never returned, so a "
-        "ticket filed that way may silently fail with no feedback. "
-        "This is now enforced — delegate_task will refuse board/ticket "
-        "work and direct you to consult_mill.\n"
+        "– Prefer doing board work inline. If you do hand board work to a "
+        "subsession, its instructions MUST require verifying the result "
+        "with list_board_tickets before reporting success.\n"
         "– Before filing ANY new ticket, list_board_tickets for the target "
         "repo and check whether an existing OPEN ticket already covers the "
         "same intent; comment on / reuse it instead of filing a duplicate. "
@@ -200,20 +199,6 @@ class Settings(BaseModel):
         "– Never offer to manually promote a ticket from draft to ready. "
         "The draft→ready transition is automatic (auto-pickup); the system "
         "picks up tickets on its own once they leave draft.\n"
-        "– When launching a check loop (start_check_loop) that monitors "
-        "mill/board/thread/ticket status, set verify_via_board=True. "
-        "Never assert board/thread status without a fresh consult_mill read "
-        "— fabricating or narrating status without reading the board is "
-        "prohibited.\n"
-        "– When running inside a check loop (as a tick sub-agent), call "
-        "stop_check_loop as soon as the monitored item reaches a terminal "
-        "state — the loop will also self-stop automatically when it detects "
-        "a terminal-state indicator in your report, but calling the tool "
-        "explicitly is more reliable.\n"
-        "– When a check loop asks the user a pending decision (e.g. 'resume "
-        "or hold?'), ask it ONCE. Do not repeat the same unanswered question "
-        "on subsequent ticks — the loop will auto-pause after detecting no "
-        "change, so repeating the question wastes tokens with no benefit.\n"
         "\n"
         "Calendar/task tools:\n"
         "– query_calendar, manage_calendar, query_tasks, and manage_tasks "
@@ -228,17 +213,11 @@ class Settings(BaseModel):
         "without waiting for explicit human validation — do not ask for "
         "permission when the action is low-risk and can be easily undone. "
         "Examples: approving low-risk documentation/prompt changes, resuming "
-        "held work after a known blocker has been resolved, or stopping a "
-        "check loop that has reached a verified terminal state.\n"
+        "held work after a known blocker has been resolved, or closing a "
+        "periodic subsession that has reached a verified terminal state.\n"
         "– Gate risky, destructive, irreversible, or ambiguous actions "
         "behind human approval — when in doubt about safety or "
         "reversibility, ask before acting.\n"
-        "– When running inside a check loop (start_check_loop) and you "
-        "confirm the monitored condition has reached a verified terminal/"
-        "completion state (e.g. a watched ticket is closed/done), call "
-        "stop_check_loop to self-stop the loop immediately. Do NOT emit "
-        "repeated COMPLETED/NO_CHANGE reports — the check loop's job is "
-        "done once the terminal state is verified.\n"
         "\n\n"
         "Efficiency:\n"
         "– If a required tool is missing, state it in one sentence and stop — "
@@ -266,9 +245,6 @@ class Settings(BaseModel):
     server_host: str = "127.0.0.1"
     server_port: int = 8000
     idle_timeout_minutes: int = 30
-    max_background_tasks: int = 5
-    max_check_loops: int = 5
-    min_check_loop_interval_seconds: float = 60.0
     log_level: str = "INFO"
     cors_allow_origins: list[str] = Field(default_factory=list)
     correlation_id_header: str = "X-Request-ID"
@@ -290,9 +266,7 @@ class Settings(BaseModel):
     component_client: ComponentClientSettings = Field(
         default_factory=ComponentClientSettings
     )
-    pending_questions: PendingQuestionsSettings = Field(
-        default_factory=PendingQuestionsSettings
-    )
+    subsessions: SubsessionsSettings = Field(default_factory=SubsessionsSettings)
     direct_repo: DirectRepoSettings = Field(default_factory=DirectRepoSettings)
     skills: SkillsSettings = Field(default_factory=SkillsSettings)
     max_images_per_message: int = 8
@@ -339,18 +313,31 @@ class Settings(BaseModel):
             raise ValueError(
                 f"idle_timeout_minutes must be >= 0, got {self.idle_timeout_minutes!r}"
             )
-        if self.max_background_tasks < 1:
+        if self.subsessions.max_concurrent < 1:
             raise ValueError(
-                f"max_background_tasks must be >= 1, got {self.max_background_tasks!r}"
+                f"subsessions.max_concurrent must be >= 1, "
+                f"got {self.subsessions.max_concurrent!r}"
             )
-        if self.max_check_loops < 1:
+        if self.subsessions.max_depth < 1:
             raise ValueError(
-                f"max_check_loops must be >= 1, got {self.max_check_loops!r}"
+                f"subsessions.max_depth must be >= 1, "
+                f"got {self.subsessions.max_depth!r}"
             )
-        if self.min_check_loop_interval_seconds < 1.0:
+        if self.subsessions.default_model_level not in _VALID_MODEL_LEVELS:
             raise ValueError(
-                f"min_check_loop_interval_seconds must be >= 1.0, "
-                f"got {self.min_check_loop_interval_seconds!r}"
+                f"subsessions.default_model_level must be one of "
+                f"{sorted(_VALID_MODEL_LEVELS)}, "
+                f"got {self.subsessions.default_model_level!r}"
+            )
+        if self.subsessions.min_interval_seconds < 1.0:
+            raise ValueError(
+                f"subsessions.min_interval_seconds must be >= 1.0, "
+                f"got {self.subsessions.min_interval_seconds!r}"
+            )
+        if self.subsessions.auto_stop_no_change_runs < 1:
+            raise ValueError(
+                f"subsessions.auto_stop_no_change_runs must be >= 1, "
+                f"got {self.subsessions.auto_stop_no_change_runs!r}"
             )
         if self.mill.enabled:
             if not self.mill.broker_token:
@@ -507,12 +494,6 @@ class Settings(BaseModel):
                 raw[field] = value
 
         env_override("llmio_api_key", "LLMIO_API_KEY")
-        subagent_val = os.getenv("LLMIO_SUBAGENT_MODEL")
-        if subagent_val is not None:
-            raw["subagent_model"] = subagent_val or None
-        check_loop_val = os.getenv("LLMIO_CHECK_LOOP_MODEL")
-        if check_loop_val is not None:
-            raw["check_loop_model"] = check_loop_val or None
         env_override("agent_instruction", "AGENT_INSTRUCTION")
         env_override("server_host", "SERVER_HOST")
         env_override("log_level", "LOG_LEVEL")
@@ -528,20 +509,6 @@ class Settings(BaseModel):
         idle_val = _parse_int("IDLE_TIMEOUT_MINUTES", "idle_timeout_minutes")
         if idle_val is not None:
             raw["idle_timeout_minutes"] = idle_val
-
-        bg_tasks_val = _parse_int("MAX_BACKGROUND_TASKS", "max_background_tasks")
-        if bg_tasks_val is not None:
-            raw["max_background_tasks"] = bg_tasks_val
-
-        max_loops_val = _parse_int("MAX_CHECK_LOOPS", "max_check_loops")
-        if max_loops_val is not None:
-            raw["max_check_loops"] = max_loops_val
-
-        min_interval_val = _parse_float(
-            "MIN_CHECK_LOOP_INTERVAL_SECONDS", "min_check_loop_interval_seconds"
-        )
-        if min_interval_val is not None:
-            raw["min_check_loop_interval_seconds"] = min_interval_val
 
         cors_raw = os.getenv("CORS_ALLOW_ORIGINS")
         if cors_raw is not None:
@@ -630,11 +597,9 @@ class Settings(BaseModel):
         if component_client_raw:
             raw["component_client"] = component_client_raw
 
-        pending_questions_raw = _build_pending_questions_raw(
-            flat.get("pending_questions")
-        )
-        if pending_questions_raw:
-            raw["pending_questions"] = pending_questions_raw
+        subsessions_raw = _build_subsessions_raw(flat.get("subsessions"))
+        if subsessions_raw:
+            raw["subsessions"] = subsessions_raw
 
         direct_repo_raw = _build_direct_repo_raw(flat.get("direct_repo"))
         if direct_repo_raw:

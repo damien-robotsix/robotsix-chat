@@ -90,15 +90,10 @@ def level_needs_api_key(level: int) -> bool:
 _YAML_PATH_TO_FIELD: dict[str, str] = {
     "llmio.model_level": "llmio_model_level",
     "llmio.api_key": "llmio_api_key",  # pragma: allowlist secret
-    "llmio.subagent_model": "subagent_model",
-    "llmio.check_loop_model": "check_loop_model",
     "agent.instruction": "agent_instruction",
     "server.host": "server_host",
     "server.port": "server_port",
     "server.idle_timeout_minutes": "idle_timeout_minutes",
-    "server.max_background_tasks": "max_background_tasks",
-    "server.max_check_loops": "max_check_loops",
-    "server.min_check_loop_interval_seconds": "min_check_loop_interval_seconds",
     "server.log_level": "log_level",
     "server.cors_allow_origins": "cors_allow_origins",
     "server.correlation_id_header": "correlation_id_header",
@@ -116,7 +111,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "self_review": "self_review",
     "component_agent": "component_agent",
     "component_client": "component_client",
-    "pending_questions": "pending_questions",
+    "subsessions": "subsessions",
     "direct_repo": "direct_repo",
     "skills": "skills",
 }

@@ -353,17 +353,43 @@ def _build_knowledge_raw(yaml_knowledge: Any) -> dict[str, Any]:
     return knowledge_raw
 
 
-def _build_pending_questions_raw(yaml_data: Any) -> dict[str, Any]:
-    """Overlay ``PENDING_QUESTIONS_*`` env vars onto the YAML ``pending_questions``.
+def _build_subsessions_raw(yaml_data: Any) -> dict[str, Any]:
+    """Overlay ``SUBSESSIONS_*`` env vars onto the YAML ``subsessions`` subtree.
 
-    Returns a dict ready to parse into :class:`PendingQuestionsSettings`, or empty
+    Returns a dict ready to parse into :class:`SubsessionsSettings`, or empty
     when nothing is set.
     """
     raw: dict[str, Any] = dict(yaml_data or {})
 
-    enabled = os.getenv("PENDING_QUESTIONS_ENABLED")
-    if enabled is not None:
-        raw["enabled"] = _parse_bool(enabled)
+    max_concurrent = _parse_int("SUBSESSIONS_MAX_CONCURRENT", "max_concurrent")
+    if max_concurrent is not None:
+        raw["max_concurrent"] = max_concurrent
+
+    max_depth = _parse_int("SUBSESSIONS_MAX_DEPTH", "max_depth")
+    if max_depth is not None:
+        raw["max_depth"] = max_depth
+
+    default_level = _parse_int(
+        "SUBSESSIONS_DEFAULT_MODEL_LEVEL", "default_model_level"
+    )
+    if default_level is not None:
+        raw["default_model_level"] = default_level
+
+    min_interval = _parse_float(
+        "SUBSESSIONS_MIN_INTERVAL_SECONDS", "min_interval_seconds"
+    )
+    if min_interval is not None:
+        raw["min_interval_seconds"] = min_interval
+
+    no_change_runs = _parse_int(
+        "SUBSESSIONS_AUTO_STOP_NO_CHANGE_RUNS", "auto_stop_no_change_runs"
+    )
+    if no_change_runs is not None:
+        raw["auto_stop_no_change_runs"] = no_change_runs
+
+    store_path = os.getenv("SUBSESSIONS_STORE_PATH")
+    if store_path is not None:
+        raw["store_path"] = store_path
 
     return raw
 

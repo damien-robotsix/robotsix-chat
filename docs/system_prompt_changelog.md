@@ -39,6 +39,29 @@ prompt:
 
 ______________________________________________________________________
 
+## v15 — 2026-07-02 — subsession-redesign
+
+**Summary:** Replace all `delegate_task` / check-loop / pending-question guidance with a new
+"Subsessions" section for the unified subsession system: when to spawn each kind (`task`,
+`periodic`, `user_chat`), model-level selection by difficulty and cost (1-2 cheap OpenRouter, 3
+default, 4 frontier reserved for hard reasoning), self-contained-instructions requirement,
+steering/inspecting/closing running subsessions (`message_subsession`, `list_subsessions`,
+`close_subsession`), `complete_subsession` discipline (self-close at verified terminal states,
+`NO_CHANGE` convention for periodic runs, ask pending user questions once), and depth-limited
+nesting. Board rules updated accordingly: subsessions now carry the full tool suite, so the old
+hard "never offload board actions" rule becomes "prefer inline; a subsession doing board work must
+verify results with `list_board_tickets` before reporting success", and the `verify_via_board` /
+`stop_check_loop` rules are dropped with the machinery. The Autonomy example now references closing
+a terminal periodic subsession.
+
+**Rationale:** The chat system was redesigned around one unified subsession primitive (spawned
+sub-agents at chosen model levels, nested, periodic, or user-facing) replacing three separate
+systems (`delegate_task` background tasks, check loops, pending questions). The prompt must
+describe the new tool surface and encode the cost-control guidance (model levels) that previously
+lived in static `subagent_model` / `check_loop_model` config overrides.
+
+**SHA256:** `06cbece9be305939cabcd498992a1cf764a2c9e5467022086986b536a496ad38`
+
 ## v14 — 2026-06-28 — 20260626T130813Z (autonomy) + 20260626T215106Z (check-loop stateful monitor)
 
 **Summary:** (a) Add an "Autonomy" section instructing the assistant to proactively perform safe,
