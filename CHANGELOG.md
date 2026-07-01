@@ -1,12 +1,6 @@
 ## 0.0.0 (unreleased)
 
-- Bump `docker/build-push-action` from v7.2.0 to v7.3.0 (dependabot PR #353).
-- Extend `scripts/check_sse_event_types.py` to scan `tests/**/*.py` for bare SSE event-type string
-  literals, fixing 31 bare literals across `tests/chat/test_delegation.py`,
-  `tests/chat/test_events.py`, and `tests/pending_questions/test_store.py` to use canonical
-  `SSE_*_TYPE` constants.
-- Replace `pip-audit` pre-commit hook with native `uv audit` — reads `uv.lock` directly and
-  additionally reports adverse package statuses (deprecated/archived/quarantined per PEP 792).
+- Bump `actions/upload-artifact` from v4.6.2 to v7.0.1 (dependabot PR #352).
 - Bump pytest from 9.1.0 to 9.1.1 (dependabot PR #337)
 - Migrate `ConfigContractError` to canonical `robotsix_agent_comm.protocol.ConfigContractError`;
   delete the local definition from `component_agent/config_contract.py`.
