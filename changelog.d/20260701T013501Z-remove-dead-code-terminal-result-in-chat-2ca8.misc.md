@@ -1,0 +1,1 @@
+Remove dead code: `_terminal_result` in `chat/delegation.py`
