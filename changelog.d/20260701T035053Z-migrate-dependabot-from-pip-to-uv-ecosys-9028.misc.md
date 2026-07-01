@@ -1,0 +1,1 @@
+Migrate Dependabot from pip to uv ecosystem for uv.lock-aware updates
