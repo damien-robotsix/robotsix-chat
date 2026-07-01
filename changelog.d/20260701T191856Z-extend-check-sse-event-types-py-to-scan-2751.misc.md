@@ -1,0 +1,1 @@
+Extend check_sse_event_types.py to scan test files for bare SSE string literals

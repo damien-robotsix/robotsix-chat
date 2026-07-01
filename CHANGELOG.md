@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Extend `scripts/check_sse_event_types.py` to scan `tests/**/*.py` for bare SSE event-type string literals, fixing 31 bare literals across `tests/chat/test_delegation.py`, `tests/chat/test_events.py`, and `tests/pending_questions/test_store.py` to use canonical `SSE_*_TYPE` constants.
 - Bump pytest from 9.1.0 to 9.1.1 (dependabot PR #337)
 - Migrate `ConfigContractError` to canonical `robotsix_agent_comm.protocol.ConfigContractError`;
   delete the local definition from `component_agent/config_contract.py`.

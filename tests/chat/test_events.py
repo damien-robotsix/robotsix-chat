@@ -259,7 +259,7 @@ async def test_events_endpoint_receives_pushed_frame() -> None:
             # Publish a frame
             f.app.state.event_bus.publish(
                 "c1",
-                {"type": "task_started", "task_id": "t1", "status": "running"},
+                {"type": SSE_TASK_STARTED_TYPE, "task_id": "t1", "status": "running"},
             )
 
             # Read the data frame
@@ -271,7 +271,7 @@ async def test_events_endpoint_receives_pushed_frame() -> None:
             assert len(data_lines) == 1
             parsed = _parse_data_line(data_lines[0])
             assert parsed == {
-                "type": "task_started",
+                "type": SSE_TASK_STARTED_TYPE,
                 "task_id": "t1",
                 "status": "running",
             }

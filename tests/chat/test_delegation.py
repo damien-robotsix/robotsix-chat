@@ -19,9 +19,14 @@ from robotsix_chat.chat.delegation import (
     build_delegation_tools,
 )
 from robotsix_chat.chat.events import (
+    SSE_LOOP_FAILED_TYPE,
+    SSE_LOOP_REPLY_TYPE,
     SSE_LOOP_STARTED_TYPE,
     SSE_LOOP_STOPPED_TYPE,
     SSE_LOOP_TICK_TYPE,
+    SSE_TASK_COMPLETED_TYPE,
+    SSE_TASK_FAILED_TYPE,
+    SSE_TASK_STARTED_TYPE,
     EventBus,
 )
 from robotsix_chat.chat.loops import (
@@ -286,7 +291,7 @@ async def test_task_started_frame_published() -> None:
 
     # At least one frame should be task_started.
     types = [f["type"] for _, f in channel.frames]
-    assert "task_started" in types
+    assert SSE_TASK_STARTED_TYPE in types
 
 
 @pytest.mark.asyncio
@@ -308,7 +313,9 @@ async def test_task_started_frame_has_expected_shape() -> None:
     task_id = _extract_task_id(result)
 
     # Find the task_started frame.
-    started_frames = [f for cid, f in channel.frames if f["type"] == "task_started"]
+    started_frames = [
+        f for cid, f in channel.frames if f["type"] == SSE_TASK_STARTED_TYPE
+    ]
     assert len(started_frames) == 1
     frame = started_frames[0]
     assert frame["task_id"] == task_id
@@ -357,7 +364,11 @@ async def test_channel_publish_error_not_propagated() -> None:
 def test_task_started_frame_builder_shape() -> None:
     """The runner's ``task_started_frame`` returns the expected dict."""
     frame = task_started_frame("t42", "do stuff")
-    assert frame == {"type": "task_started", "task_id": "t42", "prompt": "do stuff"}
+    assert frame == {
+        "type": SSE_TASK_STARTED_TYPE,
+        "task_id": "t42",
+        "prompt": "do stuff",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -428,7 +439,7 @@ def test_foreground_agent_gets_delegate_tool() -> None:
 async def test_null_delivery_channel_is_noop() -> None:
     """``NullDeliveryChannel.publish`` does not raise."""
     channel = NullDeliveryChannel()
-    await channel.publish("c1", {"type": "task_started", "task_id": "x"})
+    await channel.publish("c1", {"type": SSE_TASK_STARTED_TYPE, "task_id": "x"})
     # No exception → success.
 
 
@@ -470,7 +481,7 @@ class TestConversationDeliveryChannel:
 
         await channel.publish(
             "c1",
-            {"type": "task_completed", "task_id": "t42", "result": "done: 42"},
+            {"type": SSE_TASK_COMPLETED_TYPE, "task_id": "t42", "result": "done: 42"},
         )
 
         history = self._active_history(store, "c1")
@@ -490,7 +501,7 @@ class TestConversationDeliveryChannel:
 
         await channel.publish(
             "c2",
-            {"type": "task_failed", "task_id": "t99", "error": "timeout"},
+            {"type": SSE_TASK_FAILED_TYPE, "task_id": "t99", "error": "timeout"},
         )
 
         history = self._active_history(store, "c2")
@@ -509,7 +520,7 @@ class TestConversationDeliveryChannel:
 
         await channel.publish(
             "c3",
-            {"type": "task_started", "task_id": "t1", "prompt": "do stuff"},
+            {"type": SSE_TASK_STARTED_TYPE, "task_id": "t1", "prompt": "do stuff"},
         )
 
         history = self._active_history(store, "c3")
@@ -535,7 +546,7 @@ class TestConversationDeliveryChannel:
 
         await channel.publish(
             "",
-            {"type": "task_completed", "task_id": "t42", "result": "x"},
+            {"type": SSE_TASK_COMPLETED_TYPE, "task_id": "t42", "result": "x"},
         )
 
         # No conversation was ever created for "".
@@ -555,7 +566,7 @@ class TestConversationDeliveryChannel:
         # The store never had a create_session() call for "ghost".
         await channel.publish(
             "ghost",
-            {"type": "task_completed", "task_id": "t1", "result": "landed"},
+            {"type": SSE_TASK_COMPLETED_TYPE, "task_id": "t1", "result": "landed"},
         )
 
         # record_for_session lazily creates the session and records the turn.
@@ -572,11 +583,11 @@ class TestConversationDeliveryChannel:
 
         await channel.publish(
             "c5",
-            {"type": "task_completed", "task_id": "ta", "result": "first"},
+            {"type": SSE_TASK_COMPLETED_TYPE, "task_id": "ta", "result": "first"},
         )
         await channel.publish(
             "c5",
-            {"type": "task_failed", "task_id": "tb", "error": "second"},
+            {"type": SSE_TASK_FAILED_TYPE, "task_id": "tb", "error": "second"},
         )
 
         history = self._active_history(store, "c5")
@@ -594,7 +605,7 @@ class TestConversationDeliveryChannel:
         # task_completed without 'result' key — should default to "".
         await channel.publish(
             "c6",
-            {"type": "task_completed", "task_id": "t1"},
+            {"type": SSE_TASK_COMPLETED_TYPE, "task_id": "t1"},
         )
 
         history = self._active_history(store, "c6")
@@ -614,7 +625,7 @@ class TestConversationDeliveryChannel:
         await channel.publish(
             "c-loop",
             {
-                "type": "loop_tick",
+                "type": SSE_LOOP_TICK_TYPE,
                 "loop_id": "L42",
                 "iteration": 3,
                 "result": "price is $12.34",
@@ -640,7 +651,7 @@ class TestConversationDeliveryChannel:
         await channel.publish(
             "c-loop-fail",
             {
-                "type": "loop_failed",
+                "type": SSE_LOOP_FAILED_TYPE,
                 "loop_id": "L99",
                 "error": "connection refused",
             },
@@ -664,7 +675,7 @@ class TestConversationDeliveryChannel:
         await channel.publish(
             "c-loop-start",
             {
-                "type": "loop_started",
+                "type": SSE_LOOP_STARTED_TYPE,
                 "loop_id": "L1",
                 "prompt": "check weather",
                 "interval_seconds": 120.0,
@@ -685,7 +696,7 @@ class TestConversationDeliveryChannel:
         await channel.publish(
             "c-loop-stop",
             {
-                "type": "loop_stopped",
+                "type": SSE_LOOP_STOPPED_TYPE,
                 "loop_id": "L1",
                 "reason": "max_iterations",
                 "iterations": 5,
@@ -703,7 +714,12 @@ class TestConversationDeliveryChannel:
 
         await channel.publish(
             "",
-            {"type": "loop_tick", "loop_id": "L1", "iteration": 1, "result": "x"},
+            {
+                "type": SSE_LOOP_TICK_TYPE,
+                "loop_id": "L1",
+                "iteration": 1,
+                "result": "x",
+            },
         )
 
         assert store.history("") == []
@@ -717,7 +733,7 @@ class TestConversationDeliveryChannel:
 
         await channel.publish(
             "c-loop-missing",
-            {"type": "loop_tick", "loop_id": "L1", "iteration": 1},
+            {"type": SSE_LOOP_TICK_TYPE, "loop_id": "L1", "iteration": 1},
         )
 
         history = self._active_history(store, "c-loop-missing")
@@ -763,7 +779,9 @@ async def test_delegate_task_at_capacity_returns_friendly_message() -> None:
     assert not re.search(r"\b[0-9a-f]{32}\b", result)
 
     # No task_started frame was published to the channel.
-    started_frames = [f for _, f in channel.frames if f["type"] == "task_started"]
+    started_frames = [
+        f for _, f in channel.frames if f["type"] == SSE_TASK_STARTED_TYPE
+    ]
     assert len(started_frames) == 0
 
     # The registry count is still 1 (no new task was registered).
@@ -1805,7 +1823,7 @@ class TestTickTriggeredAgentRun:
         await channel.publish(
             "c-tick-run",
             {
-                "type": "loop_tick",
+                "type": SSE_LOOP_TICK_TYPE,
                 "loop_id": "L42",
                 "iteration": 3,
                 "result": "price is $12.34",
@@ -1834,7 +1852,7 @@ class TestTickTriggeredAgentRun:
 
         # A loop_reply frame was emitted.
         frame = q.get_nowait()
-        assert frame["type"] == "loop_reply"
+        assert frame["type"] == SSE_LOOP_REPLY_TYPE
         assert frame["loop_id"] == "L42"
         assert frame["iteration"] == 3
         assert frame["reply"] == "tick reply"
@@ -1852,7 +1870,7 @@ class TestTickTriggeredAgentRun:
         await channel.publish(
             "c-legacy",
             {
-                "type": "loop_tick",
+                "type": SSE_LOOP_TICK_TYPE,
                 "loop_id": "L1",
                 "iteration": 1,
                 "result": "ok",
@@ -1912,11 +1930,21 @@ class TestTickTriggeredAgentRun:
         # Publish two ticks for the SAME owner concurrently.
         await channel.publish(
             "c-serial",
-            {"type": "loop_tick", "loop_id": "L1", "iteration": 1, "result": "a"},
+            {
+                "type": SSE_LOOP_TICK_TYPE,
+                "loop_id": "L1",
+                "iteration": 1,
+                "result": "a",
+            },
         )
         await channel.publish(
             "c-serial",
-            {"type": "loop_tick", "loop_id": "L2", "iteration": 1, "result": "b"},
+            {
+                "type": SSE_LOOP_TICK_TYPE,
+                "loop_id": "L2",
+                "iteration": 1,
+                "result": "b",
+            },
         )
 
         # Give the event loop a chance to start the first task.
@@ -1958,7 +1986,7 @@ class TestTickTriggeredAgentRun:
         # trigger the agent run — only loop_tick does.
         await channel.publish(
             "c-suppressed",
-            {"type": "loop_failed", "loop_id": "L1", "error": "boom"},
+            {"type": SSE_LOOP_FAILED_TYPE, "loop_id": "L1", "error": "boom"},
         )
         assert len(agent.calls) == 0  # agent not invoked for loop_failed
 
@@ -2119,7 +2147,9 @@ async def test_delegate_task_board_action_returns_guardrail_message() -> None:
     assert "consult_mill" in result
 
     # No task_started frame was published.
-    started_frames = [f for _, f in channel.frames if f["type"] == "task_started"]
+    started_frames = [
+        f for _, f in channel.frames if f["type"] == SSE_TASK_STARTED_TYPE
+    ]
     assert len(started_frames) == 0
 
     # No task was registered (registry count should be 0).
@@ -2216,7 +2246,9 @@ async def test_delegate_task_non_board_still_spawns() -> None:
     assert info.status in (TaskStatus.RUNNING, TaskStatus.COMPLETED)
 
     # A task_started frame was published.
-    started_frames = [f for _, f in channel.frames if f["type"] == "task_started"]
+    started_frames = [
+        f for _, f in channel.frames if f["type"] == SSE_TASK_STARTED_TYPE
+    ]
     assert len(started_frames) == 1
 
 
