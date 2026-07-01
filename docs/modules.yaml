@@ -121,6 +121,7 @@ modules:
       - tests/common/agent_comm_fakes.py
       - tests/common/mock_helpers.py
       - tests/common/test_http.py
+      - tests/common/test_json_store.py
 
   - id: robotsix_chat.component_agent
     description: "Component agent package — contains the config contract + validation module and the broker responder that registers this component as an embedded agent on the agent-comm broker, serving monitor, config-get, and config-set request kinds."
