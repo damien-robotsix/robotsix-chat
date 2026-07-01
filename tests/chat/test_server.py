@@ -3,9 +3,7 @@
 from __future__ import annotations
 
 import base64
-import contextlib
 import json
-from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
@@ -13,12 +11,6 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from robotsix_chat.chat.conversation import ConversationStore
-from robotsix_chat.chat.events import (
-    SSE_TASK_COMPLETED_TYPE,
-    SSE_TASK_FAILED_TYPE,
-    SSE_TASK_STARTED_TYPE,
-)
-from robotsix_chat.chat.loops import CheckLoopRegistry
 from robotsix_chat.chat.server import (
     SSE_CONTENT_TYPE,
     SSE_DONE_TYPE,
@@ -27,11 +19,37 @@ from robotsix_chat.chat.server import (
     create_agent_from_settings,
     run_server_from_config,
 )
-from robotsix_chat.chat.tasks import TaskRegistry
 from robotsix_chat.config import Settings
 from robotsix_chat.llm import LlmioChatAgent
-from tests.chat import _fake_coro
+from robotsix_chat.subsessions import (
+    SubsessionInfo,
+    SubsessionKind,
+    SubsessionRegistry,
+    SubsessionStatus,
+    spawn_subsession,
+)
 from tests.conftest import mock_app
+
+
+def _register_subsession(
+    registry: SubsessionRegistry,
+    *,
+    owner: str,
+    kind: SubsessionKind = SubsessionKind.TASK,
+    title: str = "job",
+    **overrides: object,
+) -> SubsessionInfo:
+    """Register an active subsession record directly (no worker task)."""
+    return registry.create(
+        kind=kind,
+        owner_session_id=owner,
+        parent_id=None,
+        depth=1,
+        title=title,
+        prompt="do the thing",
+        model_level=3,
+        **overrides,  # type: ignore[arg-type]
+    )
 
 
 def _parse_sse(response: Any) -> list[dict[str, object]]:
@@ -364,39 +382,31 @@ async def test_sessions_create_invalid_json_returns_400() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sessions_delete_stops_loops_and_removes_session() -> None:
-    """``DELETE /sessions/{id}`` stops the session's loops and deletes it."""
+async def test_sessions_delete_closes_subsessions_and_removes_session() -> None:
+    """``DELETE /sessions/{id}`` closes the session's subsessions and deletes it."""
     store = ConversationStore()
     sid_a = cast(str, store.create_session("owner-del")["session_id"])
     sid_b = cast(str, store.create_session("owner-del")["session_id"])  # active
-    loop_reg = CheckLoopRegistry(store_path=None)
-    loop_reg.register(
-        sid_a,
-        "watch",
-        interval_seconds=60,
-        max_iterations=None,
-        coro=_fake_coro(),  # type: ignore[arg-type]
-    )
+    registry = SubsessionRegistry(store_path=None)
+    info = _register_subsession(registry, owner=sid_a)
 
     async with mock_app(
         conversation_store=store,
-        check_loop_registry=loop_reg,
-        task_registry=TaskRegistry(),
+        subsession_registry=registry,
     ) as f:
         response = await f.client.delete(f"/sessions/{sid_a}?owner_id=owner-del")
 
     assert response.status_code == 200
     data = response.json()
     assert data["deleted"] is True
-    assert data["loops_stopped"] == 1
+    assert data["subsessions_closed"] == 1
     assert data["active_session_id"] == sid_b
 
-    # Session a is gone; its loop is stopped.
+    # Session a is gone; its subsession is closed.
     sessions, _ = store.list_sessions("owner-del")
     assert sid_a not in [s["session_id"] for s in sessions]
-    assert all(
-        loop.status.value == "stopped" for loop in loop_reg.list_for_session(sid_a)
-    )
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "session closed"
 
 
 @pytest.mark.asyncio
@@ -423,29 +433,19 @@ async def test_sessions_delete_missing_owner_id_returns_400() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sessions_close_stops_loops_and_marks_closed() -> None:
-    """``POST /sessions/{id}/close`` stops loops + cancels tasks + marks closed."""
+async def test_sessions_close_closes_subsessions_and_marks_closed() -> None:
+    """``POST /sessions/{id}/close`` closes subsessions + marks the session."""
     store = ConversationStore()
     sid = str(store.create_session("owner-close")["session_id"])
-    loop_reg = CheckLoopRegistry(store_path=None)
-    loop_reg.register(
-        sid,
-        "watch something",
-        interval_seconds=60,
-        max_iterations=None,
-        coro=_fake_coro(),  # type: ignore[arg-type]
-    )
-    task_reg = TaskRegistry()
-    task_reg.register(
-        sid,
-        "do work",
-        _fake_coro(),  # type: ignore[arg-type]
+    registry = SubsessionRegistry(store_path=None)
+    task_info = _register_subsession(registry, owner=sid, title="watch something")
+    chat_info = _register_subsession(
+        registry, owner=sid, kind=SubsessionKind.USER_CHAT, title="side chat"
     )
 
     async with mock_app(
         conversation_store=store,
-        check_loop_registry=loop_reg,
-        task_registry=task_reg,
+        subsession_registry=registry,
     ) as f:
         response = await f.client.post(f"/sessions/{sid}/close?owner_id=owner-close")
 
@@ -453,8 +453,7 @@ async def test_sessions_close_stops_loops_and_marks_closed() -> None:
     data = response.json()
     assert data["closed"] is True
     assert data["session_id"] == sid
-    assert data["loops_stopped"] == 1
-    assert data["tasks_cancelled"] == 1
+    assert data["subsessions_closed"] == 2
 
     # Session still exists, marked closed.
     assert store.is_session_closed(sid) is True
@@ -462,11 +461,9 @@ async def test_sessions_close_stops_loops_and_marks_closed() -> None:
     assert sid in [s["session_id"] for s in sessions]
     assert sessions[0]["closed"] is True
 
-    # Loops and tasks are stopped/cancelled.
-    assert all(
-        loop.status.value == "stopped" for loop in loop_reg.list_for_session(sid)
-    )
-    assert all(t.status.value == "failed" for t in task_reg.list_for_session(sid))
+    # Both subsessions were closed via close_all_for_owner.
+    assert task_info.status is SubsessionStatus.CLOSED
+    assert chat_info.status is SubsessionStatus.CLOSED
 
 
 @pytest.mark.asyncio
@@ -490,36 +487,26 @@ async def test_sessions_close_missing_owner_id_returns_400() -> None:
 
 
 @pytest.mark.asyncio
-async def test_sessions_close_cleans_orphaned_loops() -> None:
-    """Close endpoint stops loops even when the session is not owned by the caller."""
+async def test_sessions_close_cleans_orphaned_subsessions() -> None:
+    """Close endpoint closes subsessions even for a session the caller lacks."""
     store = ConversationStore()
     store.create_session("real-owner")  # registers the owner
-    loop_reg = CheckLoopRegistry(store_path=None)
-    # Register a loop for a session that belongs to a different owner.
-    loop_reg.register(
-        "orphan-sid",
-        "orphan check",
-        interval_seconds=60,
-        max_iterations=None,
-        coro=_fake_coro(),  # type: ignore[arg-type]
-    )
+    registry = SubsessionRegistry(store_path=None)
+    # Register a subsession for a session that belongs to a different owner.
+    info = _register_subsession(registry, owner="orphan-sid", title="orphan check")
 
     async with mock_app(
         conversation_store=store,
-        check_loop_registry=loop_reg,
+        subsession_registry=registry,
     ) as f:
         # Call close with the real owner but an orphan session id.
         response = await f.client.post("/sessions/orphan-sid/close?owner_id=real-owner")
 
-    # Session not found for this owner → 404, but loop was still cleaned up.
+    # Session not found for this owner → 404, but cleanup still ran.
     assert response.status_code == 404
     data = response.json()
-    assert data["loops_stopped"] == 1
-    # The loop registry still cleared it.
-    assert all(
-        loop.status.value == "stopped"
-        for loop in loop_reg.list_for_session("orphan-sid")
-    )
+    assert data["subsessions_closed"] == 1
+    assert info.status is SubsessionStatus.CLOSED
 
 
 # ---------------------------------------------------------------------------
@@ -1024,13 +1011,13 @@ def test_create_agent_from_settings_explicit() -> None:
 
 
 def test_create_agent_from_settings_keyless_level_drops_key() -> None:
-    """A keyless level (3 → claude-sdk) never forwards an api_key."""
-    settings = Settings()  # model_level 3, keyless
+    """A keyless level (4 → claude-sdk, the default) never forwards an api_key."""
+    settings = Settings()  # model_level 4, keyless
 
     agent = create_agent_from_settings("Be helpful.", settings=settings)
 
     assert isinstance(agent, LlmioChatAgent)
-    assert agent._model_level == 3
+    assert agent._model_level == 4
     assert agent._api_key == ""
 
 
@@ -1100,32 +1087,26 @@ async def test_run_server_from_config_creates_agent_from_settings(
         # rest of the server options explicitly.
         conversation_store = call_args[1].pop("conversation_store")
         assert isinstance(conversation_store, ConversationStore)
-        task_registry = call_args[1].pop("task_registry")
-        from robotsix_chat.chat.tasks import TaskRegistry
-
-        assert isinstance(task_registry, TaskRegistry)
         event_bus = call_args[1].pop("event_bus")
         from robotsix_chat.chat.events import EventBus
 
         assert isinstance(event_bus, EventBus)
-        check_loop_registry = call_args[1].pop("check_loop_registry")
-        from robotsix_chat.chat.loops import CheckLoopRegistry
-
-        assert isinstance(check_loop_registry, CheckLoopRegistry)
         run_serializer = call_args[1].pop("run_serializer")
         from robotsix_chat.chat.server import RunSerializer
 
         assert isinstance(run_serializer, RunSerializer)
+        subsession_registry = call_args[1].pop("subsession_registry")
+        assert isinstance(subsession_registry, SubsessionRegistry)
+        subsession_delivery = call_args[1].pop("subsession_delivery")
+        from robotsix_chat.subsessions import ParentDelivery
+
+        assert isinstance(subsession_delivery, ParentDelivery)
         on_startup = call_args[1].pop("on_startup")
         assert callable(on_startup)
         on_startup_async = call_args[1].pop("on_startup_async")
         assert callable(on_startup_async)
         on_shutdown = call_args[1].pop("on_shutdown")
         assert callable(on_shutdown)
-        pq_store = call_args[1].pop("pq_store")
-        from robotsix_chat.pending_questions.store import PendingQuestionsStore
-
-        assert isinstance(pq_store, PendingQuestionsStore)
         assert call_args[1] == {
             "host": "127.0.0.1",
             "port": 8080,
@@ -1265,15 +1246,13 @@ async def test_ui_injects_message_queue() -> None:
 
 
 @pytest.mark.asyncio
-async def test_ui_renders_task_notifications() -> None:
-    """``GET /`` contains the task-notification UI wiring.
+async def test_ui_renders_event_stream_wiring() -> None:
+    """``GET /`` contains the persistent notification-stream wiring.
 
-    The served HTML must reference the ``/events`` SSE endpoint, the
-    ``openEventStream`` function that opens it, the three task-lifecycle
-    frame-type literals that the JS dispatcher switches on, the
-    ``.bubble.notification`` CSS selector used for rendering, and the
-    side-panel markers (``tasks-toggle``, ``tasks-list``, ``updateTaskPanel``)
-    introduced for the background-tasks detail panel.
+    The served HTML must reference the ``/events`` SSE endpoint and the
+    ``openEventStream`` function that opens it.  (The subsession-panel
+    JS markup is covered by ``scripts/check_sse_event_types.py``, which
+    cross-checks the frame-type literals against ``events.py``.)
     """
     async with mock_app() as f:
         response = await f.client.get("/")
@@ -1281,15 +1260,6 @@ async def test_ui_renders_task_notifications() -> None:
     assert response.status_code == 200
     assert '"/events"' in response.text
     assert "openEventStream" in response.text
-    assert f'"{SSE_TASK_STARTED_TYPE}"' in response.text
-    assert f'"{SSE_TASK_COMPLETED_TYPE}"' in response.text
-    assert f'"{SSE_TASK_FAILED_TYPE}"' in response.text
-    assert ".bubble.notification" in response.text
-    assert '"tasks-toggle"' in response.text
-    assert '"tasks-list"' in response.text
-    assert "updateTaskPanel" in response.text
-    assert "Close tasks panel" in response.text  # dismiss button in tasks header
-    assert '"Escape"' in response.text  # Escape key closes tasks panel
 
 
 @pytest.mark.asyncio
@@ -1360,337 +1330,29 @@ async def test_custom_correlation_id_header_in_response() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Check-loop registry wiring
+# Subsession registry wiring
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_check_loop_registry_wired_into_app_state() -> None:
-    """``check_loop_registry`` kwarg is exposed on ``app.state``."""
+async def test_subsession_registry_wired_into_app_state() -> None:
+    """``subsession_registry``/``subsession_delivery`` land on ``app.state``."""
     from robotsix_chat.chat.events import EventBus
-    from robotsix_chat.chat.loops import CheckLoopRegistry
 
     bus = EventBus()
-    reg = CheckLoopRegistry(event_sink=bus, store_path=None)
+    registry = SubsessionRegistry(event_sink=bus, store_path=None)
 
-    async with mock_app(check_loop_registry=reg, event_bus=bus) as f:
-        assert f.app.state.check_loop_registry is reg
+    async with mock_app(subsession_registry=registry, event_bus=bus) as f:
+        assert f.app.state.subsession_registry is registry
         assert f.app.state.event_bus is bus
 
 
 @pytest.mark.asyncio
-async def test_check_loop_registry_defaults_to_none() -> None:
-    """Without ``check_loop_registry`` kwarg, ``app.state`` stores ``None``."""
+async def test_subsession_registry_defaults_to_none() -> None:
+    """Without the kwargs, ``app.state`` stores ``None`` for both."""
     async with mock_app() as f:
-        assert f.app.state.check_loop_registry is None
-
-
-# ---------------------------------------------------------------------------
-# Stop route — /loops/{loop_id}/stop
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_loops_stop_endpoint_no_registry_returns_503() -> None:
-    """``POST /loops/{id}/stop`` returns 503 when no registry is wired."""
-    async with mock_app() as f:
-        response = await f.client.post("/loops/abc123/stop")
-
-    assert response.status_code == 503
-    assert response.json() == {"error": "check-loop feature not enabled"}
-
-
-@pytest.mark.asyncio
-async def test_loops_stop_endpoint_unknown_loop_returns_404() -> None:
-    """Stopping a loop id that does not exist returns a 404 JSON error."""
-    from robotsix_chat.chat.loops import CheckLoopRegistry
-
-    reg = CheckLoopRegistry(store_path=None)
-    async with mock_app(check_loop_registry=reg) as f:
-        response = await f.client.post("/loops/nonexistent/stop")
-
-    assert response.status_code == 404
-    data = response.json()
-    assert data["error"] == "unknown loop"
-    assert data["loop_id"] == "nonexistent"
-
-
-@pytest.mark.asyncio
-async def test_loops_stop_endpoint_stops_running_loop() -> None:
-    """``POST /loops/{id}/stop`` stops a running loop and returns 200."""
-    import asyncio
-
-    from robotsix_chat.chat.loops import CheckLoopRegistry, LoopStatus
-
-    reg = CheckLoopRegistry(store_path=None)
-
-    # Register a running loop — the registry needs an asyncio.Task.
-    async def _noop() -> None:
-        pass
-
-    task = asyncio.create_task(_noop())
-    loop_id = reg.register(
-        "client-1",
-        "check the weather",
-        interval_seconds=60.0,
-        max_iterations=None,
-        coro=task,
-    )
-
-    async with mock_app(check_loop_registry=reg) as f:
-        response = await f.client.post(f"/loops/{loop_id}/stop")
-
-    assert response.status_code == 200
-    data = response.json()
-    assert data["loop_id"] == loop_id
-    assert data["status"] == "stopped"
-
-    info = reg.get(loop_id)
-    assert info is not None
-    assert info.status == LoopStatus.STOPPED
-    assert info.stop_reason == "stopped via api"
-
-    # Cleanup — the task may have been cancelled by stop().
-    with contextlib.suppress(asyncio.CancelledError):
-        await task
-
-
-@pytest.mark.asyncio
-async def test_loops_stop_endpoint_idempotent() -> None:
-    """Stopping an already-stopped loop is idempotent — returns 200."""
-    import asyncio
-
-    from robotsix_chat.chat.loops import CheckLoopRegistry
-
-    reg = CheckLoopRegistry(store_path=None)
-
-    async def _noop() -> None:
-        pass
-
-    task = asyncio.create_task(_noop())
-    loop_id = reg.register(
-        "client-2",
-        "check mail",
-        interval_seconds=30.0,
-        max_iterations=None,
-        coro=task,
-    )
-    # Pre-stop
-    reg.stop(loop_id, reason="already stopped")
-
-    async with mock_app(check_loop_registry=reg) as f:
-        response = await f.client.post(f"/loops/{loop_id}/stop")
-
-    assert response.status_code == 200
-    assert response.json()["status"] == "stopped"
-
-    with contextlib.suppress(asyncio.CancelledError):
-        await task
-
-
-# ---------------------------------------------------------------------------
-# Loop lifecycle frame observable via /events
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_loop_stopped_frame_reaches_events_stream() -> None:
-    """``registry.stop`` publishes ``loop_stopped`` frame on the shared ``EventBus``."""
-    import asyncio
-
-    from starlette.responses import StreamingResponse
-
-    from robotsix_chat.chat.events import EventBus, loop_stopped_frame
-    from robotsix_chat.chat.loops import CheckLoopRegistry
-    from robotsix_chat.chat.server import events_endpoint
-    from tests.chat.test_events import _make_request, _parse_data_line
-
-    bus = EventBus()
-    reg = CheckLoopRegistry(event_sink=bus, store_path=None)
-
-    # Register a running loop for client "cloop"
-    async def _noop() -> None:
-        pass
-
-    task = asyncio.create_task(_noop())
-    loop_id = reg.register(
-        "cloop",
-        "check inbox",
-        interval_seconds=60.0,
-        max_iterations=None,
-        coro=task,
-    )
-
-    async with mock_app(check_loop_registry=reg, event_bus=bus) as f:
-        # Open the /events SSE stream for the same client
-        request = _make_request("cloop", f.app)
-        response = await events_endpoint(request)
-        assert isinstance(response, StreamingResponse)
-        assert response.media_type == "text/event-stream"
-
-        body_iter: AsyncGenerator[bytes, None] = response.body_iterator  # type: ignore[assignment]
-        try:
-            # Consume the initial heartbeat
-            chunk = await asyncio.wait_for(body_iter.__anext__(), timeout=2.0)
-            assert chunk == b": keepalive\n\n"
-
-            # Stop the loop — the registry publishes via the shared EventBus
-            reg.stop(loop_id, reason="test stop")
-
-            # The next SSE frame must be the loop_stopped data frame
-            chunk = await asyncio.wait_for(body_iter.__anext__(), timeout=2.0)
-            text = chunk.decode()
-            lines = text.rstrip("\n").split("\n")
-            data_lines = [ln for ln in lines if ln.startswith("data: ")]
-            assert len(data_lines) == 1
-            parsed = _parse_data_line(data_lines[0])
-            expected = loop_stopped_frame(loop_id, reason="test stop", iterations=0)
-            assert parsed == expected
-        finally:
-            await body_iter.aclose()
-
-    with contextlib.suppress(asyncio.CancelledError):
-        await task
-
-
-# ---------------------------------------------------------------------------
-# Resume-on-startup
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_resume_check_loops_restarts_persisted_running_loop(
-    tmp_path: Path,
-) -> None:
-    """A persisted ``status='running'`` loop is resumed via the startup hook."""
-    import json
-
-    from robotsix_chat.chat.loops import (
-        CheckLoopRegistry,
-        LoopStatus,
-        resume_check_loops,
-    )
-    from robotsix_chat.config import Settings
-
-    store_path = tmp_path / "check_loops.json"
-    persisted_id = "resume-me-1"
-    persisted_client = "c-resume"
-    persisted_prompt = "check the weather every hour"
-
-    store_path.write_text(
-        json.dumps(
-            [
-                {
-                    "id": persisted_id,
-                    "client_id": persisted_client,
-                    "prompt": persisted_prompt,
-                    "interval_seconds": 60.0,
-                    "max_iterations": None,
-                    "iterations": 3,
-                    "status": "running",
-                    "last_result": "sunny",
-                }
-            ]
-        )
-    )
-
-    reg = CheckLoopRegistry(store_path=store_path)
-
-    # Stub agent factory so resume doesn't start real agent work.
-    from tests.conftest import MockAgent
-
-    def _agent_factory(s: Settings) -> MockAgent:
-        return MockAgent(tokens=["resumed ok"])
-
-    settings = Settings()
-    # Ensure settings allow the loop interval
-    settings.min_check_loop_interval_seconds = 1.0
-
-    resumed = resume_check_loops(reg, settings, agent_factory=_agent_factory)
-    assert resumed == [persisted_id]
-
-    info = reg.get(persisted_id)
-    assert info is not None
-    assert info.status == LoopStatus.RUNNING
-    assert info.session_id == persisted_client
-    assert info.prompt == persisted_prompt
-
-    # Cleanup — stop the resumed loop so its asyncio task cancels.
-    reg.stop(persisted_id, reason="test teardown")
-    # Give the task a moment to process the cancellation.
-    import asyncio
-
-    await asyncio.sleep(0.05)
-
-
-@pytest.mark.asyncio
-async def test_resume_check_loops_skips_stopped_and_failed(
-    tmp_path: Path,
-) -> None:
-    """Persisted loops with status ``stopped`` or ``failed`` are not resumed."""
-    import json
-
-    from robotsix_chat.chat.loops import CheckLoopRegistry, resume_check_loops
-    from robotsix_chat.config import Settings
-
-    store_path = tmp_path / "check_loops.json"
-    store_path.write_text(
-        json.dumps(
-            [
-                {
-                    "id": "loop-running",
-                    "client_id": "c1",
-                    "prompt": "check X",
-                    "interval_seconds": 60.0,
-                    "max_iterations": None,
-                    "iterations": 0,
-                    "status": "running",
-                    "last_result": None,
-                },
-                {
-                    "id": "loop-stopped",
-                    "client_id": "c1",
-                    "prompt": "check Y",
-                    "interval_seconds": 60.0,
-                    "max_iterations": None,
-                    "iterations": 5,
-                    "status": "stopped",
-                    "last_result": "done",
-                },
-                {
-                    "id": "loop-failed",
-                    "client_id": "c1",
-                    "prompt": "check Z",
-                    "interval_seconds": 60.0,
-                    "max_iterations": None,
-                    "iterations": 2,
-                    "status": "failed",
-                    "last_result": None,
-                },
-            ]
-        )
-    )
-    reg = CheckLoopRegistry(store_path=store_path)
-
-    from tests.conftest import MockAgent
-
-    def _agent_factory(s: Settings) -> MockAgent:
-        return MockAgent(tokens=["ok"])
-
-    settings = Settings()
-    settings.min_check_loop_interval_seconds = 1.0
-
-    resumed = resume_check_loops(reg, settings, agent_factory=_agent_factory)
-    assert resumed == ["loop-running"]
-    assert reg.get("loop-running") is not None
-    assert reg.get("loop-stopped") is None
-    assert reg.get("loop-failed") is None
-
-    # Cleanup
-    reg.stop("loop-running", reason="test teardown")
-    import asyncio
-
-    await asyncio.sleep(0.05)
+        assert f.app.state.subsession_registry is None
+        assert f.app.state.subsession_delivery is None
 
 
 @pytest.mark.asyncio
@@ -1707,649 +1369,397 @@ async def test_resume_hook_passed_through_mock_app() -> None:
     # it until the ASGI server starts.  We can verify it's been retained.
     # (We can't easily assert it's stored because Starlette's lifespan is
     # internal, but the app was built without error.)
-    assert f.app.state.check_loop_registry is None  # default
+    assert f.app.state.subsession_registry is None  # default
 
 
 # ---------------------------------------------------------------------------
-# GET /loops — snapshot endpoint
+# GET /subsessions — list endpoint
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_loops_list_endpoint_missing_client_id() -> None:
-    """``GET /loops`` without session_id returns 400."""
-    async with mock_app() as f:
-        response = await f.client.get("/loops")
+async def test_subsessions_list_missing_session_id_returns_400() -> None:
+    """``GET /subsessions`` without ``session_id`` returns 400."""
+    async with mock_app(subsession_registry=SubsessionRegistry(store_path=None)) as f:
+        response = await f.client.get("/subsessions")
 
     assert response.status_code == 400
     assert response.json() == {"error": "session_id query parameter is required"}
 
 
 @pytest.mark.asyncio
-async def test_loops_list_endpoint_no_registry_returns_503() -> None:
-    """``GET /loops?client_id=x`` returns 503 when no registry is wired."""
+async def test_subsessions_list_no_registry_returns_503() -> None:
+    """``GET /subsessions?session_id=x`` returns 503 when not wired."""
     async with mock_app() as f:
-        response = await f.client.get("/loops?client_id=test-client")
+        response = await f.client.get("/subsessions?session_id=s1")
 
     assert response.status_code == 503
-    assert response.json() == {"error": "check-loop feature not enabled"}
+    assert response.json() == {"error": "subsessions feature not enabled"}
 
 
 @pytest.mark.asyncio
-async def test_loops_list_endpoint_returns_loops_for_client() -> None:
-    """``GET /loops?client_id=x`` returns the loops for that client."""
-    import asyncio
-
-    from robotsix_chat.chat.loops import CheckLoopRegistry
-
-    reg = CheckLoopRegistry(store_path=None)
-
-    # Register two loops for client "c-a" and one for "c-b".
-    async def _noop() -> None:
-        pass
-
-    t1 = asyncio.create_task(_noop())
-    lid1 = reg.register(
-        "c-a", "check weather", interval_seconds=60.0, max_iterations=None, coro=t1
+async def test_subsessions_list_returns_owner_tree() -> None:
+    """``GET /subsessions?session_id=x`` returns that session's snapshots."""
+    registry = SubsessionRegistry(store_path=None)
+    a = _register_subsession(registry, owner="sess-a", title="first")
+    b = _register_subsession(
+        registry,
+        owner="sess-a",
+        kind=SubsessionKind.PERIODIC,
+        title="second",
+        interval_seconds=60.0,
     )
-
-    t2 = asyncio.create_task(_noop())
-    lid2 = reg.register(
-        "c-a", "check inbox", interval_seconds=30.0, max_iterations=5, coro=t2
-    )
-
-    t3 = asyncio.create_task(_noop())
-    lid3 = reg.register(
-        "c-b", "check stocks", interval_seconds=120.0, max_iterations=None, coro=t3
-    )
-
-    async with mock_app(check_loop_registry=reg) as f:
-        # Client "c-a" should see two loops.
-        response = await f.client.get("/loops?client_id=c-a")
-        assert response.status_code == 200
-        data = response.json()
-        assert isinstance(data, dict)
-        assert "loops" in data
-        loops = data["loops"]
-        assert isinstance(loops, list)
-        assert len(loops) == 2
-
-        ids = {entry["id"] for entry in loops}
-        assert ids == {lid1, lid2}
-
-        for entry in loops:
-            assert entry["session_id"] == "c-a"
-            assert entry["status"] == "running"
-            assert entry["interval_seconds"] in (60.0, 30.0)
-            assert entry["iterations"] == 0
-            assert entry["error"] is None
-            assert entry["stop_reason"] is None
-            # Every LoopInfo field must be present.
-            for field in (
-                "id",
-                "session_id",
-                "prompt",
-                "interval_seconds",
-                "status",
-                "iterations",
-                "max_iterations",
-                "last_result",
-                "next_run",
-                "error",
-                "stop_reason",
-                "reason",
-                "last_result_at",
-            ):
-                assert field in entry, f"missing field {field!r}"
-
-        # Client "c-b" should see one loop.
-        response_b = await f.client.get("/loops?client_id=c-b")
-        assert response_b.status_code == 200
-        loops_b = response_b.json()["loops"]
-        assert len(loops_b) == 1
-        assert loops_b[0]["id"] == lid3
-        assert loops_b[0]["session_id"] == "c-b"
-
-    # Cleanup
-    for t in (t1, t2, t3):
-        with contextlib.suppress(asyncio.CancelledError):
-            await t
-
-
-@pytest.mark.asyncio
-async def test_loops_list_endpoint_reflects_stopped_and_failed() -> None:
-    """Status changes made via the registry appear in the snapshot."""
-    import asyncio
-
-    from robotsix_chat.chat.loops import CheckLoopRegistry
-
-    reg = CheckLoopRegistry(store_path=None)
-
-    async def _noop() -> None:
-        pass
-
-    t1 = asyncio.create_task(_noop())
-    lid1 = reg.register(
-        "c-x", "stopped loop", interval_seconds=10.0, max_iterations=None, coro=t1
-    )
-
-    t2 = asyncio.create_task(_noop())
-    lid2 = reg.register(
-        "c-x", "failed loop", interval_seconds=10.0, max_iterations=None, coro=t2
-    )
-
-    reg.stop(lid1, reason="manual")
-    reg.fail(lid2, error="something broke")
-
-    async with mock_app(check_loop_registry=reg) as f:
-        response = await f.client.get("/loops?client_id=c-x")
-        assert response.status_code == 200
-        loops = response.json()["loops"]
-        assert len(loops) == 2
-
-        by_id = {e["id"]: e for e in loops}
-        assert by_id[lid1]["status"] == "stopped"
-        assert by_id[lid1]["stop_reason"] == "manual"
-        assert by_id[lid2]["status"] == "failed"
-        assert by_id[lid2]["error"] == "something broke"
-
-    with contextlib.suppress(asyncio.CancelledError):
-        await t1
-    with contextlib.suppress(asyncio.CancelledError):
-        await t2
-
-
-# ---------------------------------------------------------------------------
-# Sub-agent model override wiring
-# ---------------------------------------------------------------------------
-
-
-def test_foreground_agent_model_name_is_none_by_default() -> None:
-    """Foreground agent from ``create_agent_from_settings`` has ``_model_name`` None."""
-    settings = Settings()
-    agent = create_agent_from_settings(settings=settings)
-    assert agent._model_name is None
-
-
-def test_model_override_passed_to_agent() -> None:
-    """``model_override="haiku"`` flows through to ``LlmioChatAgent._model_name``."""
-    settings = Settings()
-    agent = create_agent_from_settings(settings=settings, model_override="haiku")
-    assert agent._model_name == "haiku"
-
-
-def test_subagent_factory_model_override_when_level_3() -> None:
-    """Sub-agent factory builds agent with ``_model_name == settings.subagent_model``.
-
-    Applies at level 3 (claudeSDK) only.
-    """
-    settings = Settings(llmio_model_level=3, subagent_model="sonnet")
-    from robotsix_chat.chat.tasks import TaskRegistry
-    from tests.chat.test_delegation import _FakeDeliveryChannel
-
-    registry = TaskRegistry()
-    channel = _FakeDeliveryChannel()
-
-    agent = create_agent_from_settings(
-        settings=settings,
-        task_registry=registry,
-        delivery_channel=channel,
-    )
-
-    # The foreground agent itself has no model_name override.
-    assert agent._model_name is None
-
-    # The per-request factory exposes delegate_task; we can't directly introspect
-    # the factory closure's captured _subagent_factory, but we can verify the
-    # agent_factory kwarg was forwarded to build_delegation_tools by checking
-    # that the tool exists and the sub-agent built by that factory is correct.
-    assert agent._request_tools_factory is not None
-
-
-def test_subagent_factory_no_override_when_level_1() -> None:
-    """Sub-agent factory builds agent with ``_model_name is None`` at level 1.
-
-    Override suppressed for OpenRouter.
-    """
-    settings = Settings(
-        llmio_model_level=1,
-        llmio_api_key="sk-test-key",
-        subagent_model="sonnet",
-    )
-    from robotsix_chat.chat.tasks import TaskRegistry
-    from tests.chat.test_delegation import _FakeDeliveryChannel
-
-    registry = TaskRegistry()
-    channel = _FakeDeliveryChannel()
-
-    agent = create_agent_from_settings(
-        settings=settings,
-        task_registry=registry,
-        delivery_channel=channel,
-    )
-
-    # The foreground agent has no model_name override.
-    assert agent._model_name is None
-
-
-def test_subagent_factory_no_override_when_level_2() -> None:
-    """Override suppressed at level 2 — ``_model_name`` stays None."""
-    settings = Settings(
-        llmio_model_level=2,
-        llmio_api_key="sk-test-key",
-        subagent_model="sonnet",
-    )
-    from robotsix_chat.chat.tasks import TaskRegistry
-    from tests.chat.test_delegation import _FakeDeliveryChannel
-
-    registry = TaskRegistry()
-    channel = _FakeDeliveryChannel()
-
-    agent = create_agent_from_settings(
-        settings=settings,
-        task_registry=registry,
-        delivery_channel=channel,
-    )
-
-    # The foreground agent has no model_name override.
-    assert agent._model_name is None
-
-
-def test_subagent_factory_override_suppressed_when_subagent_model_is_none() -> None:
-    """When ``subagent_model is None``, no override is applied even at level 3."""
-    settings = Settings(llmio_model_level=3, subagent_model=None)
-    from robotsix_chat.chat.tasks import TaskRegistry
-    from tests.chat.test_delegation import _FakeDeliveryChannel
-
-    registry = TaskRegistry()
-    channel = _FakeDeliveryChannel()
-
-    agent = create_agent_from_settings(
-        settings=settings,
-        task_registry=registry,
-        delivery_channel=channel,
-    )
-
-    # The foreground agent has no model_name override.
-    assert agent._model_name is None
-
-
-def test_sub_agent_recursion_guard_intact() -> None:
-    """Sub-agents built via ``_subagent_factory`` have no delegation/loop tools.
-
-    Builds via ``create_agent_from_settings`` without registries and asserts
-    the sub-agent has no ``request_tools_factory`` — preserving the recursion
-    guard.
-    """
-    settings = Settings(llmio_model_level=3, subagent_model="sonnet")
-
-    # Sub-agent: no registries → no delegation/loop tools.
-    sub_agent = create_agent_from_settings(settings=settings, model_override="sonnet")
-
-    assert sub_agent._model_name == "sonnet"
-    # The recursion guard: no per-request tools factory (no delegate_task, no
-    # start_check_loop).
-    assert sub_agent._request_tools_factory is None
-
-    # Static tools: no delegate_task / start_check_loop.
-    static_tools = sub_agent._tools
-    if static_tools is not None:
-        names = [getattr(t, "__name__", str(t)) for t in static_tools]
-        assert "delegate_task" not in names
-        assert "start_check_loop" not in names
-
-
-def test_check_loop_factory_model_override_defaults_to_haiku() -> None:
-    """Check-loop tick agent factory uses ``check_loop_model`` (default ``"haiku"``).
-
-    Builds a foreground agent with a check_loop_registry so the
-    ``_check_loop_factory`` closure is created, then verifies that the
-    factory's stored model override is ``"haiku"`` (not the sub-agent
-    ``"sonnet"`` default).
-    """
-    from robotsix_chat.chat.loops import CheckLoopRegistry
-    from robotsix_chat.chat.runner import NULL_CHANNEL
-
-    settings = Settings(llmio_model_level=3)
-    check_loop_registry = CheckLoopRegistry(store_path=None)
-
-    agent = create_agent_from_settings(
-        settings=settings,
-        check_loop_registry=check_loop_registry,
-        delivery_channel=NULL_CHANNEL,
-    )
-
-    # Foreground agent itself has no model override.
-    assert agent._model_name is None
-
-    # The check-loop factory closure should exist (request_tools_factory
-    # is not None because check_loop_registry was provided).
-    assert agent._request_tools_factory is not None
-
-
-def test_check_loop_factory_model_override_respects_setting() -> None:
-    """Check-loop factory uses ``check_loop_model`` when explicitly set."""
-    from robotsix_chat.chat.loops import CheckLoopRegistry
-    from robotsix_chat.chat.runner import NULL_CHANNEL
-
-    settings = Settings(llmio_model_level=3, check_loop_model="sonnet")
-    check_loop_registry = CheckLoopRegistry(store_path=None)
-
-    agent = create_agent_from_settings(
-        settings=settings,
-        check_loop_registry=check_loop_registry,
-        delivery_channel=NULL_CHANNEL,
-    )
-
-    assert agent._model_name is None
-    assert agent._request_tools_factory is not None
-
-
-def test_check_loop_factory_override_suppressed_when_check_loop_model_is_none() -> None:
-    """When ``check_loop_model is None``, no override is applied at level 3."""
-    from robotsix_chat.chat.loops import CheckLoopRegistry
-    from robotsix_chat.chat.runner import NULL_CHANNEL
-
-    settings = Settings(llmio_model_level=3, check_loop_model=None)
-    check_loop_registry = CheckLoopRegistry(store_path=None)
-
-    agent = create_agent_from_settings(
-        settings=settings,
-        check_loop_registry=check_loop_registry,
-        delivery_channel=NULL_CHANNEL,
-    )
-
-    assert agent._model_name is None
-    assert agent._request_tools_factory is not None
-
-
-@pytest.mark.asyncio
-async def test_foreground_subagent_factory_wired_correctly() -> None:
-    """Factory passed to build_delegation_tools is threaded; tool runs.
-
-    Builds the foreground agent with full wiring, calls the request-tools
-    factory to get the delegate_task tool, and executes it — confirming the
-    factory closure is correctly wired.
-    """
-    import asyncio
-
-    from robotsix_chat.chat.tasks import TaskRegistry
-    from tests.chat.test_delegation import _FakeDeliveryChannel
-
-    settings = Settings(llmio_model_level=3, subagent_model="haiku")
-    registry = TaskRegistry()
-    channel = _FakeDeliveryChannel()
-
-    agent = create_agent_from_settings(
-        settings=settings,
-        task_registry=registry,
-        delivery_channel=channel,
-    )
-
-    assert agent._request_tools_factory is not None
-    per_req = agent._request_tools_factory("test-client")
-
-    # delegate_task should be present.
-    delegate = [t for t in per_req if getattr(t, "__name__", "") == "delegate_task"]
-    assert len(delegate) == 1
-
-    # Invoke delegate_task — the _subagent_factory it invokes will call
-    # create_agent_from_settings(model_override="haiku").
-    result = await delegate[0]("quick test")
-    assert isinstance(result, str)
-    assert "task" in result.lower()
-
-    # Clean up the spawned task.
-    await asyncio.sleep(0.1)
-
-
-# ---------------------------------------------------------------------------
-# Pending questions endpoints
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_pending_questions_answer_endpoint_returns_200() -> None:
-    """POST /pending-questions/{id}/answer records an answer and returns 200."""
-    from robotsix_chat.pending_questions.store import PendingQuestionsStore
-
-    pq_store = PendingQuestionsStore()
-    entry = pq_store.add("sess-1", "What is your name?")
-
-    async with mock_app(pq_store=pq_store) as f:
-        response = await f.client.post(
-            f"/pending-questions/{entry.question_id}/answer",
-            json={"answer": "Damien"},
-        )
+    registry.mark_closed(b.id, summary="done", reason="completed")
+    _register_subsession(registry, owner="sess-b", title="foreign")
+
+    async with mock_app(subsession_registry=registry) as f:
+        response = await f.client.get("/subsessions?session_id=sess-a")
 
     assert response.status_code == 200
-    data = response.json()
-    assert data["question_id"] == entry.question_id
-    assert data["status"] == "answered"
-    assert data["answer"] == "Damien"
+    subsessions = response.json()["subsessions"]
+    # Whole tree including terminal entries, oldest first, no transcripts.
+    assert [s["subsession_id"] for s in subsessions] == [a.id, b.id]
+    for snapshot in subsessions:
+        assert "transcript" not in snapshot
+        for key in (
+            "subsession_id",
+            "kind",
+            "owner_session_id",
+            "parent_id",
+            "depth",
+            "title",
+            "prompt",
+            "model_level",
+            "status",
+            "created_at",
+            "last_activity_at",
+            "interval_seconds",
+            "next_run_at",
+            "include_previous_result",
+            "runs",
+            "max_runs",
+            "last_result",
+            "summary",
+            "close_reason",
+            "error",
+        ):
+            assert key in snapshot, f"missing snapshot key {key!r}"
+    assert subsessions[1]["status"] == SubsessionStatus.CLOSED.value
+    assert subsessions[1]["summary"] == "done"
+
+
+# ---------------------------------------------------------------------------
+# GET /subsessions/{id} and /transcript
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_pending_questions_answer_endpoint_question_remains_listable() -> None:
-    """After answering, the question still appears in GET /pending-questions."""
-    from robotsix_chat.pending_questions.store import PendingQuestionsStore
-
-    pq_store = PendingQuestionsStore()
-    entry = pq_store.add("sess-1", "Q1")
-
-    async with mock_app(pq_store=pq_store) as f:
-        # Answer the question.
-        await f.client.post(
-            f"/pending-questions/{entry.question_id}/answer",
-            json={"answer": "A1"},
-        )
-
-        # List questions for the session.
-        list_resp = await f.client.get("/pending-questions?session_id=sess-1")
-
-    assert list_resp.status_code == 200
-    data = list_resp.json()
-    assert len(data["questions"]) == 1
-    q = data["questions"][0]
-    assert q["question_id"] == entry.question_id
-    assert q["status"] == "answered"
-    assert q["answer"] == "A1"
-    assert q["answered_at"] > 0
-
-
-@pytest.mark.asyncio
-async def test_pending_questions_answer_unknown_id_returns_404() -> None:
-    """POST /pending-questions/{id}/answer on unknown id returns 404."""
-    from robotsix_chat.pending_questions.store import PendingQuestionsStore
-
-    pq_store = PendingQuestionsStore()
-
-    async with mock_app(pq_store=pq_store) as f:
-        response = await f.client.post(
-            "/pending-questions/nonexistent/answer",
-            json={"answer": "ignored"},
-        )
+async def test_subsessions_get_unknown_returns_404() -> None:
+    """``GET /subsessions/{id}`` for an unknown id returns 404."""
+    async with mock_app(subsession_registry=SubsessionRegistry(store_path=None)) as f:
+        response = await f.client.get("/subsessions/ghost")
 
     assert response.status_code == 404
     data = response.json()
-    assert data["error"] == "unknown question"
-    assert data["question_id"] == "nonexistent"
+    assert data["error"] == "unknown subsession"
+    assert data["subsession_id"] == "ghost"
 
 
 @pytest.mark.asyncio
-async def test_pending_questions_delete_still_removes() -> None:
-    """DELETE /pending-questions/{id} still removes the question."""
-    from robotsix_chat.pending_questions.store import PendingQuestionsStore
+async def test_subsessions_get_returns_snapshot_with_transcript() -> None:
+    """``GET /subsessions/{id}`` returns the snapshot plus its transcript."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _register_subsession(registry, owner="sess-a", title="detailed")
+    registry.append_transcript(info.id, "assistant", "working on it")
 
-    pq_store = PendingQuestionsStore()
-    entry = pq_store.add("sess-1", "Q1")
+    async with mock_app(subsession_registry=registry) as f:
+        response = await f.client.get(f"/subsessions/{info.id}")
 
-    async with mock_app(pq_store=pq_store) as f:
-        resp = await f.client.delete(f"/pending-questions/{entry.question_id}")
-
-    assert resp.status_code == 200
-    assert resp.json() == {
-        "question_id": entry.question_id,
-        "status": "removed",
-    }
-    assert len(pq_store.list_for_session("sess-1")) == 0
-
-
-@pytest.mark.asyncio
-async def test_pending_questions_list_includes_answer_fields() -> None:
-    """GET /pending-questions returns answer and answered_at for each entry."""
-    from robotsix_chat.pending_questions.store import PendingQuestionsStore
-
-    pq_store = PendingQuestionsStore()
-    pq_store.add("sess-1", "Q1")
-    entry2 = pq_store.add("sess-1", "Q2")
-    pq_store.answer(entry2.question_id, "A2")
-
-    async with mock_app(pq_store=pq_store) as f:
-        resp = await f.client.get("/pending-questions?session_id=sess-1")
-
-    assert resp.status_code == 200
-    data = resp.json()
-    assert len(data["questions"]) == 2
-
-    # Q1 is pending — no answer.
-    q1 = [q for q in data["questions"] if q["text"] == "Q1"][0]
-    assert q1["status"] == "pending"
-    assert q1["answer"] == ""
-    assert q1["answered_at"] == 0.0
-
-    # Q2 is answered.
-    q2 = [q for q in data["questions"] if q["text"] == "Q2"][0]
-    assert q2["status"] == "answered"
-    assert q2["answer"] == "A2"
-    assert q2["answered_at"] > 0
+    assert response.status_code == 200
+    data = response.json()
+    assert data["subsession_id"] == info.id
+    assert data["title"] == "detailed"
+    assert len(data["transcript"]) == 1
+    entry = data["transcript"][0]
+    assert entry["role"] == "assistant"
+    assert entry["text"] == "working on it"
+    assert isinstance(entry["timestamp"], int | float)
 
 
 @pytest.mark.asyncio
-async def test_pending_questions_list_includes_thread() -> None:
-    """GET /pending-questions returns the thread array for each entry."""
-    from robotsix_chat.pending_questions.store import PendingQuestionsStore
+async def test_subsessions_transcript_endpoint() -> None:
+    """``GET /subsessions/{id}/transcript`` returns transcript only."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _register_subsession(registry, owner="sess-a")
+    registry.append_transcript(info.id, "user", "a question")
+    registry.append_transcript(info.id, "assistant", "an answer")
 
-    pq_store = PendingQuestionsStore()
-    entry = pq_store.add("sess-1", "Q1")
-    pq_store.append_to_thread(entry.question_id, "assistant", "Clarification")
-    pq_store.append_to_thread(entry.question_id, "user", "My reply")
+    async with mock_app(subsession_registry=registry) as f:
+        response = await f.client.get(f"/subsessions/{info.id}/transcript")
+        missing = await f.client.get("/subsessions/ghost/transcript")
 
-    async with mock_app(pq_store=pq_store) as f:
-        resp = await f.client.get("/pending-questions?session_id=sess-1")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["subsession_id"] == info.id
+    assert [(e["role"], e["text"]) for e in data["transcript"]] == [
+        ("user", "a question"),
+        ("assistant", "an answer"),
+    ]
+    assert missing.status_code == 404
 
-    assert resp.status_code == 200
-    data = resp.json()
-    assert len(data["questions"]) == 1
-    q = data["questions"][0]
-    assert "thread" in q
-    # add() appends the question, then we appended 2 more messages.
-    assert len(q["thread"]) == 3
-    assert q["thread"][0]["role"] == "assistant"
-    assert q["thread"][0]["text"] == "Q1"
-    assert q["thread"][1]["role"] == "assistant"
-    assert q["thread"][1]["text"] == "Clarification"
-    assert q["thread"][2]["role"] == "user"
-    assert q["thread"][2]["text"] == "My reply"
+
+# ---------------------------------------------------------------------------
+# POST /subsessions/{id}/message
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_pending_questions_thread_append_endpoint() -> None:
-    """POST /pending-questions/{id}/thread appends a user message."""
-    from robotsix_chat.pending_questions.store import PendingQuestionsStore
+async def test_subsessions_message_empty_text_returns_400() -> None:
+    """An empty or missing ``text`` field is rejected with 400."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _register_subsession(registry, owner="sess-a")
 
-    pq_store = PendingQuestionsStore()
-    entry = pq_store.add("sess-1", "Q1")
+    async with mock_app(subsession_registry=registry) as f:
+        empty = await f.client.post(
+            f"/subsessions/{info.id}/message", json={"text": ""}
+        )
+        missing = await f.client.post(f"/subsessions/{info.id}/message", json={})
 
-    async with mock_app(pq_store=pq_store) as f:
+    assert empty.status_code == 400
+    assert "text" in empty.json()["error"]
+    assert missing.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_subsessions_message_unknown_returns_404() -> None:
+    """Messaging an unknown subsession returns 404."""
+    async with mock_app(subsession_registry=SubsessionRegistry(store_path=None)) as f:
         response = await f.client.post(
-            f"/pending-questions/{entry.question_id}/thread",
-            json={"text": "Need more info"},
+            "/subsessions/ghost/message", json={"text": "hello"}
+        )
+
+    assert response.status_code == 404
+    assert response.json()["subsession_id"] == "ghost"
+
+
+@pytest.mark.asyncio
+async def test_subsessions_message_terminal_returns_409() -> None:
+    """Messaging a terminal subsession returns 409."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _register_subsession(registry, owner="sess-a")
+    registry.mark_closed(info.id, summary="done", reason="completed")
+
+    async with mock_app(subsession_registry=registry) as f:
+        response = await f.client.post(
+            f"/subsessions/{info.id}/message", json={"text": "too late"}
+        )
+
+    assert response.status_code == 409
+    assert response.json()["error"] == "subsession is not active"
+
+
+@pytest.mark.asyncio
+async def test_subsessions_message_queues_into_inbox_and_transcript() -> None:
+    """A valid message returns 202 and lands in the inbox and transcript."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _register_subsession(registry, owner="sess-a")
+
+    async with mock_app(subsession_registry=registry) as f:
+        response = await f.client.post(
+            f"/subsessions/{info.id}/message", json={"text": "user says hi"}
         )
 
     assert response.status_code == 202
-    data = response.json()
-    assert data["question_id"] == entry.question_id
-    assert data["status"] == "message_appended"
+    assert response.json() == {"subsession_id": info.id, "status": "queued"}
 
-    # add() appends the question; we appended one more via the endpoint.
-    assert len(entry.thread) == 2
-    assert entry.thread[0].role == "assistant"
-    assert entry.thread[0].text == "Q1"
-    assert entry.thread[1].role == "user"
-    assert entry.thread[1].text == "Need more info"
+    # Transcripted immediately with role "user"...
+    assert [(e.role, e.text) for e in info.transcript] == [("user", "user says hi")]
+    # ...and queued for the worker's next turn boundary.
+    queued = registry.drain_inbox(info.id)
+    assert [(m.role, m.text) for m in queued] == [("user", "user says hi")]
 
 
-@pytest.mark.asyncio
-async def test_pending_questions_thread_append_empty_text_400() -> None:
-    """POST /pending-questions/{id}/thread with empty text returns 400."""
-    from robotsix_chat.pending_questions.store import PendingQuestionsStore
-
-    pq_store = PendingQuestionsStore()
-    entry = pq_store.add("sess-1", "Q1")
-
-    async with mock_app(pq_store=pq_store) as f:
-        response = await f.client.post(
-            f"/pending-questions/{entry.question_id}/thread",
-            json={"text": ""},
-        )
-
-    assert response.status_code == 400
+# ---------------------------------------------------------------------------
+# POST /subsessions/{id}/close
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_pending_questions_thread_append_unknown_404() -> None:
-    """POST /pending-questions/{id}/thread on unknown id returns 404."""
-    from robotsix_chat.pending_questions.store import PendingQuestionsStore
-
-    pq_store = PendingQuestionsStore()
-
-    async with mock_app(pq_store=pq_store) as f:
-        response = await f.client.post(
-            "/pending-questions/nonexistent/thread",
-            json={"text": "ignored"},
-        )
+async def test_subsessions_close_unknown_returns_404() -> None:
+    """Closing an unknown subsession returns 404."""
+    async with mock_app(subsession_registry=SubsessionRegistry(store_path=None)) as f:
+        response = await f.client.post("/subsessions/ghost/close")
 
     assert response.status_code == 404
 
 
 @pytest.mark.asyncio
-async def test_pending_questions_thread_get_endpoint() -> None:
-    """GET /pending-questions/{id}/thread returns the full thread."""
-    from robotsix_chat.pending_questions.store import PendingQuestionsStore
+async def test_subsessions_close_terminal_is_idempotent() -> None:
+    """Closing an already-terminal subsession returns ``closed: false``."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _register_subsession(registry, owner="sess-a")
+    registry.mark_closed(info.id, summary="done", reason="completed")
 
-    pq_store = PendingQuestionsStore()
-    entry = pq_store.add("sess-1", "Q1")
-    pq_store.append_to_thread(entry.question_id, "assistant", "Hi")
-    pq_store.append_to_thread(entry.question_id, "user", "Hello")
+    async with mock_app(subsession_registry=registry) as f:
+        response = await f.client.post(f"/subsessions/{info.id}/close")
 
-    async with mock_app(pq_store=pq_store) as f:
-        response = await f.client.get(f"/pending-questions/{entry.question_id}/thread")
+    assert response.status_code == 200
+    assert response.json() == {
+        "subsession_id": info.id,
+        "closed": False,
+        "status": SubsessionStatus.CLOSED.value,
+    }
+
+
+@pytest.mark.asyncio
+async def test_subsessions_close_cancels_worker_and_delivers_summary() -> None:
+    """Closing a live subsession cancels its worker and delivers a summary."""
+    import asyncio
+    from contextlib import suppress
+
+    from tests.common.subsession_fakes import FakeAgent, build_env, wait_until
+
+    gate = asyncio.Event()  # never set — the worker stays mid-turn
+    agent = FakeAgent(["never"], gate=gate)
+    env = build_env(agent=agent)
+
+    sub_id = spawn_subsession(
+        env=env,
+        kind=SubsessionKind.TASK,
+        owner_session_id="sess-live",
+        parent_id=None,
+        depth=1,
+        title="long job",
+        prompt="work forever",
+        model_level=3,
+    )
+    await wait_until(lambda: len(agent.calls) == 1)
+    env.registry.append_transcript(sub_id, "assistant", "half done")
+    worker = env.registry._running[sub_id]
+
+    async with mock_app(
+        conversation_store=env.conversation_store,
+        subsession_registry=env.registry,
+        subsession_delivery=env.delivery,
+    ) as f:
+        response = await f.client.post(f"/subsessions/{sub_id}/close")
 
     assert response.status_code == 200
     data = response.json()
-    assert data["question_id"] == entry.question_id
-    # add() appends the question; we appended 2 more messages.
-    assert len(data["thread"]) == 3
-    assert data["thread"][0]["role"] == "assistant"
-    assert data["thread"][0]["text"] == "Q1"
-    assert data["thread"][1]["role"] == "assistant"
-    assert data["thread"][1]["text"] == "Hi"
-    assert data["thread"][2]["role"] == "user"
-    assert data["thread"][2]["text"] == "Hello"
+    assert data["subsession_id"] == sub_id
+    assert data["closed"] is True
+    assert data["summary"].startswith("Closed by user.")
+    assert "half done" in data["summary"]
+
+    with suppress(asyncio.CancelledError):
+        await asyncio.wait_for(worker, 2.0)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "closed by user"
+
+    # The summary was delivered to the owning session (delivery wired).
+    history = env.conversation_store.history("sess-live")
+    assert len(history) == 1
+    assert history[0][0].startswith(f"[Subsession {sub_id[:8]} (task)")
+    assert "half done" in history[0][1]
+
+
+# ---------------------------------------------------------------------------
+# create_agent_from_settings — subsession wiring
+# ---------------------------------------------------------------------------
+
+
+def test_create_agent_model_level_override() -> None:
+    """``model_level`` overrides ``settings.llmio_model_level``."""
+    settings = Settings(llmio_model_level=3, llmio_api_key="sk-key")
+
+    agent = create_agent_from_settings("Be terse.", settings=settings, model_level=2)
+
+    assert agent._model_level == 2
+    # Level 2 → openrouter (key-bearing), so the key is forwarded.
+    assert agent._api_key == "sk-key"  # pragma: allowlist secret
+
+
+def test_main_agent_gets_per_request_subsession_tools_factory() -> None:
+    """With an env and no ctx, subsession tools are built per request."""
+    from tests.common.subsession_fakes import build_env
+
+    settings = Settings()
+    env = build_env()
+
+    agent = create_agent_from_settings(settings=settings, subsession_env=env)
+
+    assert agent._request_tools_factory is not None
+    per_request = agent._request_tools_factory("sess-1")
+    names = [t.__name__ for t in per_request]
+    assert names == [
+        "spawn_subsession_tool",
+        "message_subsession",
+        "close_subsession",
+        "list_subsessions",
+    ]
+
+
+def test_subsession_agent_gets_static_tools_with_complete() -> None:
+    """With a ctx and close state, the tools are baked in statically."""
+    from robotsix_chat.subsessions import CloseState, SubsessionContext
+    from tests.common.subsession_fakes import build_env
+
+    settings = Settings()
+    env = build_env()
+    ctx = SubsessionContext(owner_session_id="sess-1", subsession_id="sub-1", depth=1)
+
+    agent = create_agent_from_settings(
+        settings=settings,
+        subsession_env=env,
+        subsession_ctx=ctx,
+        subsession_close_state=CloseState(),
+    )
+
+    assert agent._request_tools_factory is None
+    names = [getattr(t, "__name__", "") for t in agent._tools or []]
+    assert "complete_subsession" in names
+    assert "spawn_subsession_tool" in names
+
+
+def test_bare_agent_has_no_subsession_tools() -> None:
+    """Without a subsession env, no subsession tools are attached."""
+    agent = create_agent_from_settings(settings=Settings())
+
+    assert agent._request_tools_factory is None
+    names = [getattr(t, "__name__", "") for t in agent._tools or []]
+    assert "spawn_subsession_tool" not in names
+    assert "complete_subsession" not in names
+
+
+# ---------------------------------------------------------------------------
+# Chat endpoint — subsession tool scoping via client_id
+# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_pending_questions_thread_get_unknown_404() -> None:
-    """GET /pending-questions/{id}/thread on unknown id returns 404."""
-    from robotsix_chat.pending_questions.store import PendingQuestionsStore
+async def test_chat_endpoint_passes_session_id_as_client_id() -> None:
+    """``/chat`` scopes the per-request tools to the SESSION id.
 
-    pq_store = PendingQuestionsStore()
+    Even when the browser sends its own ``client_id``, the agent receives
+    the session id as ``client_id`` so spawned subsessions (and their SSE
+    frames) land in the owning chat session.
+    """
+    async with mock_app(tokens=["ok"]) as f:
+        await f.client.post(
+            "/chat",
+            json={
+                "message": "hi",
+                "session_id": "sess-42",
+                "owner_id": "owner-1",
+                "client_id": "browser-99",
+            },
+        )
 
-    async with mock_app(pq_store=pq_store) as f:
-        response = await f.client.get("/pending-questions/nonexistent/thread")
-
-    assert response.status_code == 404
+    assert f.agent.session_id == "sess-42"
+    assert f.agent.client_id == "sess-42"
 
 
 # ---------------------------------------------------------------------------

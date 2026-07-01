@@ -2,7 +2,7 @@
 
 Exposes an LLM agent (represented by the :class:`ChatAgent` protocol) via
 ``POST /chat`` (SSE stream), ``GET /health`` (liveness probe), ``GET /events``
-(persistent background-task event stream), and ``GET /`` (browser chat UI).
+(persistent subsession event stream), and ``GET /`` (browser chat UI).
 Built on Starlette so it can be tested with ``httpx.ASGITransport`` without
 binding a real port.
 """
@@ -10,9 +10,12 @@ binding a real port.
 from __future__ import annotations
 
 from .events import (
-    SSE_TASK_COMPLETED_TYPE,
-    SSE_TASK_FAILED_TYPE,
-    SSE_TASK_STARTED_TYPE,
+    SSE_SUBSESSION_CLOSED_TYPE,
+    SSE_SUBSESSION_FAILED_TYPE,
+    SSE_SUBSESSION_MESSAGE_TYPE,
+    SSE_SUBSESSION_RESULT_TYPE,
+    SSE_SUBSESSION_STARTED_TYPE,
+    SSE_SUBSESSION_UPDATED_TYPE,
     EventBus,
 )
 from .server import (
@@ -33,9 +36,12 @@ __all__ = [
     "SSE_CONTENT_TYPE",
     "SSE_DONE_TYPE",
     "SSE_ERROR_TYPE",
-    "SSE_TASK_COMPLETED_TYPE",
-    "SSE_TASK_FAILED_TYPE",
-    "SSE_TASK_STARTED_TYPE",
+    "SSE_SUBSESSION_CLOSED_TYPE",
+    "SSE_SUBSESSION_FAILED_TYPE",
+    "SSE_SUBSESSION_MESSAGE_TYPE",
+    "SSE_SUBSESSION_RESULT_TYPE",
+    "SSE_SUBSESSION_STARTED_TYPE",
+    "SSE_SUBSESSION_UPDATED_TYPE",
     "SSE_TOKEN_TYPE",
     "create_agent_from_settings",
     "create_app",

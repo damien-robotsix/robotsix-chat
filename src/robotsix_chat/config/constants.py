@@ -28,7 +28,12 @@ from __future__ import annotations
 import os
 from pathlib import Path
 
-from robotsix_llmio.config import LEVEL1_DEFAULT, LEVEL2_DEFAULT, LEVEL3_DEFAULT
+from robotsix_llmio.config import (
+    LEVEL1_DEFAULT,
+    LEVEL2_DEFAULT,
+    LEVEL3_DEFAULT,
+    LEVEL4_DEFAULT,
+)
 from robotsix_yaml_config import YamlConfigError
 
 # Default YAML config file (gitignored; copy from the committed example).
@@ -54,8 +59,14 @@ _TRUE_VALUES = {"1", "true", "yes", "on"}
 # of truth):
 #   level 1 → openrouter-deepseek/deepseek-v4-flash  (cheapest)
 #   level 2 → openrouter-deepseek/deepseek-v4-pro
-#   level 3 → claudeSDK-opus  (most capable; keyless)
-_LEVEL_DEFAULTS = {1: LEVEL1_DEFAULT, 2: LEVEL2_DEFAULT, 3: LEVEL3_DEFAULT}
+#   level 3 → claudeSDK-opus  (keyless)
+#   level 4 → claudeSDK-claude-fable-5  (frontier; keyless)
+_LEVEL_DEFAULTS = {
+    1: LEVEL1_DEFAULT,
+    2: LEVEL2_DEFAULT,
+    3: LEVEL3_DEFAULT,
+    4: LEVEL4_DEFAULT,
+}
 
 # Provider prefix for the keyless Claude SDK tier (auth via logged-in
 # `claude` CLI — no API key needed).
@@ -79,15 +90,10 @@ def level_needs_api_key(level: int) -> bool:
 _YAML_PATH_TO_FIELD: dict[str, str] = {
     "llmio.model_level": "llmio_model_level",
     "llmio.api_key": "llmio_api_key",  # pragma: allowlist secret
-    "llmio.subagent_model": "subagent_model",
-    "llmio.check_loop_model": "check_loop_model",
     "agent.instruction": "agent_instruction",
     "server.host": "server_host",
     "server.port": "server_port",
     "server.idle_timeout_minutes": "idle_timeout_minutes",
-    "server.max_background_tasks": "max_background_tasks",
-    "server.max_check_loops": "max_check_loops",
-    "server.min_check_loop_interval_seconds": "min_check_loop_interval_seconds",
     "server.log_level": "log_level",
     "server.cors_allow_origins": "cors_allow_origins",
     "server.correlation_id_header": "correlation_id_header",
@@ -105,7 +111,7 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "self_review": "self_review",
     "component_agent": "component_agent",
     "component_client": "component_client",
-    "pending_questions": "pending_questions",
+    "subsessions": "subsessions",
     "direct_repo": "direct_repo",
     "skills": "skills",
 }

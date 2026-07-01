@@ -28,8 +28,8 @@ from robotsix_chat.component_agent.config_contract import (
 if TYPE_CHECKING:
     from robotsix_chat.chat.conversation import ConversationStore
     from robotsix_chat.chat.events import EventBus
-    from robotsix_chat.chat.loops import CheckLoopRegistry
     from robotsix_chat.config import Settings
+    from robotsix_chat.subsessions import SubsessionRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -55,7 +55,7 @@ class ComponentAgentResponder:
     Parameters
     ----------
         settings: The live application ``Settings`` instance.
-        check_loop_registry: The process-wide check-loop registry.
+        subsession_registry: The process-wide subsession registry.
         conversation_store: The process-wide conversation store.
         event_bus: The process-wide SSE event bus.
 
@@ -65,13 +65,13 @@ class ComponentAgentResponder:
         self,
         settings: Settings,
         *,
-        check_loop_registry: CheckLoopRegistry,
+        subsession_registry: SubsessionRegistry,
         conversation_store: ConversationStore,
         event_bus: EventBus,
     ) -> None:
         """Store references to live runtime objects; the SDK agent is built lazily."""
         self._settings = settings
-        self._check_loop_registry = check_loop_registry
+        self._subsession_registry = subsession_registry
         self._conversation_store = conversation_store
         self._event_bus = event_bus
         self._serve_task: asyncio.Task[None] | None = None
@@ -194,31 +194,15 @@ class ComponentAgentResponder:
         """Return genuine live runtime telemetry.
 
         Returns a ``monitor`` body with:
-        * ``check_loops``: running count + aggregate snapshot of all loops.
+        * ``subsessions``: active count + per-subsession snapshots.
         * ``conversations``: stats from the conversation store.
         * ``event_bus``: subscriber counts.
         * ``settings``: redacted configuration snapshot.
         """
-        # Check-loop telemetry.
-        running = self._check_loop_registry.count_running()
-        loops = self._check_loop_registry.snapshot()
-        loop_summary: list[dict[str, object]] = []
-        for info in loops:
-            loop_summary.append(
-                {
-                    "id": info.id,
-                    "session_id": info.session_id,
-                    "prompt": info.prompt,
-                    "interval_seconds": info.interval_seconds,
-                    "status": info.status.value,
-                    "iterations": info.iterations,
-                    "max_iterations": info.max_iterations,
-                    "last_result": info.last_result,
-                    "error": info.error,
-                    "stop_reason": info.stop_reason,
-                    "reason": info.reason,
-                }
-            )
+        # Subsession telemetry (transcripts omitted — they can be large).
+        registry = self._subsession_registry
+        active = registry.count_active()
+        subs = [info.snapshot() for info in registry.list_all()]
 
         # Conversation / EventBus stats.
         conv_stats = self._conversation_store.stats()
@@ -228,10 +212,10 @@ class ComponentAgentResponder:
         settings_snap = get_config_snapshot(self._settings)
 
         return {
-            "check_loops": {
-                "running": running,
-                "total": len(loops),
-                "loops": loop_summary,
+            "subsessions": {
+                "active": active,
+                "total": len(subs),
+                "entries": subs,
             },
             "conversations": conv_stats,
             "event_bus": {

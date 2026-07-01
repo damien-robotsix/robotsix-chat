@@ -52,6 +52,7 @@ class MockAgent:
         # Capture the conversation context the server passes, for assertions.
         self.history: list[tuple[str, str]] | None = None
         self.session_id: str | None = None
+        self.client_id: str | None = None
 
     async def stream(
         self,
@@ -67,6 +68,7 @@ class MockAgent:
         self.called_with = message
         self.history = history
         self.session_id = session_id
+        self.client_id = client_id
         self.images = images
         if self.error is not None:
             raise self.error

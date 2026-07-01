@@ -18,10 +18,8 @@ from typing import Any
 from robotsix_chat.chat.auth import BasicAuthConfig
 from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus
-from robotsix_chat.chat.tasks import TaskRegistry
 from robotsix_chat.config import Settings
 from robotsix_chat.llm import LlmioChatAgent
-from robotsix_chat.pending_questions.store import PendingQuestionsStore
 
 from .app import create_agent_from_settings, create_app
 from .routes import ChatAgent, RunSerializer
@@ -43,11 +41,10 @@ def run_server(
     auth: BasicAuthConfig | None = None,
     correlation_id_header: str = "X-Request-ID",
     conversation_store: ConversationStore | None = None,
-    task_registry: TaskRegistry | None = None,
     event_bus: EventBus | None = None,
-    check_loop_registry: Any = None,
     run_serializer: RunSerializer | None = None,
-    pq_store: PendingQuestionsStore | None = None,
+    subsession_registry: Any = None,
+    subsession_delivery: Any = None,
     on_startup: Callable[[], None] | None = None,
     on_startup_async: Callable[[], Any] | None = None,
     on_shutdown: Callable[[], Any] | None = None,
@@ -70,11 +67,10 @@ def run_server(
         auth=auth,
         correlation_id_header=correlation_id_header,
         conversation_store=conversation_store,
-        task_registry=task_registry,
         event_bus=event_bus,
-        check_loop_registry=check_loop_registry,
         run_serializer=run_serializer,
-        pq_store=pq_store,
+        subsession_registry=subsession_registry,
+        subsession_delivery=subsession_delivery,
         on_startup=on_startup,
         on_startup_async=on_startup_async,
         on_shutdown=on_shutdown,
@@ -153,32 +149,22 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # -- tracing / observability (graceful no-op when deps or creds absent) --
     _setup_observability()
 
-    # -- shared task registry + delivery channel for delegation -----------
-    # Two independent notification sinks for background-task lifecycles:
-    #
-    # 1. EventBus → GET /events SSE → browser UI
-    #    TaskRegistry.complete() / .fail() publish task_completed / task_failed
-    #    frames to the EventBus, which the /events endpoint streams to the
-    #    connected browser.  This path is unchanged.
-    #
-    # 2. ConversationDeliveryChannel → ConversationStore → agent history
-    #    The runner's _worker also calls channel.publish(session_id, frame).
-    #    This channel records completed/failed task results into the
-    #    ConversationStore keyed by the originating session_id, so the
-    #    foreground agent sees them in its next-turn history and can relay
-    #    task IDs / URLs / findings to the user.
-    #
-    # The two sinks have different destinations (browser SSE vs. agent
-    # history) — there is no duplicate-frame concern.
-    #
-    # The conversation store MUST be constructed before the channel so both
-    # the channel and run_server() receive the exact same store instance.
-    from robotsix_chat.chat.delegation import ConversationDeliveryChannel
-    from robotsix_chat.chat.loops import CheckLoopRegistry, resume_check_loops
+    # -- unified subsession system -----------------------------------------
+    # One registry owns every subsession (task / periodic / user_chat, all
+    # nesting depths).  Lifecycle frames go to the EventBus → GET /events →
+    # browser; terminal summaries go through ParentDelivery → either the
+    # owning chat session's history (parent = main chat) or the parent
+    # subsession's inbox (nested).
+    from robotsix_chat.subsessions import (
+        CloseState,
+        ParentDelivery,
+        SubsessionContext,
+        SubsessionEnv,
+        SubsessionRegistry,
+        resume_subsessions,
+    )
 
     event_bus = EventBus()
-    registry = TaskRegistry(event_sink=event_bus)
-    check_loop_registry = CheckLoopRegistry(event_sink=event_bus)
 
     persist_path_str = settings.conversation.persist_path
     conversation_store = ConversationStore(
@@ -189,52 +175,58 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     )
 
     # Per-owner run serializer — shared between /chat requests and
-    # tick-triggered runs so they never overlap for the same owner.
+    # subsession summary writes so they never overlap for the same owner.
     run_serializer = RunSerializer()
 
-    # No-loop-tools foreground agent factory for tick-triggered runs.
-    # Omits check_loop_registry so a tick-triggered run can never spawn
-    # a new check loop (preserves the loop-sub-agent no-loop-tools boundary).
-    # Other foreground tools (delegation, consult_mill, etc.) remain.
-    def _tick_agent_factory(s: Settings) -> LlmioChatAgent:
-        return create_agent_from_settings(
-            settings=s,
-            task_registry=registry,
-            delivery_channel=channel,
-            check_loop_registry=None,  # NO loop tools — recursion guard
-            conversation_store=conversation_store,
-        )
-
-    # The channel uses the no-loop-tools factory for tick-triggered runs;
-    # we build the channel first, then wire it as the delivery_channel for
-    # the foreground agent (which DOES get loop tools).
-    channel = ConversationDeliveryChannel(
-        conversation_store,
-        event_bus=event_bus,
+    subsession_registry = SubsessionRegistry(
+        event_sink=event_bus,
+        store_path=Path(settings.subsessions.store_path),
+        transcript_max_entries=settings.subsessions.transcript_max_entries,
+    )
+    delivery = ParentDelivery(
+        conversation_store=conversation_store,
+        registry=subsession_registry,
         run_serializer=run_serializer,
-        agent_factory=_tick_agent_factory,
-        settings=settings,
     )
 
-    # Shared pending-questions store wired to the event bus so the
-    # frontend panel receives real-time SSE updates when the agent
-    # adds / updates / removes entries.
-    pq_store = PendingQuestionsStore(event_bus=event_bus)
+    # Subsession agent factory: same full tool suite as the main agent,
+    # plus the depth-aware subsession tools bound to the worker's context.
+    # `env` is created right after (late binding through the closure).
+    def _subsession_agent_factory(
+        s: Settings,
+        model_level: int,
+        ctx: SubsessionContext,
+        close_state: CloseState,
+    ) -> LlmioChatAgent:
+        return create_agent_from_settings(
+            settings=s,
+            conversation_store=conversation_store,
+            model_level=model_level,
+            subsession_env=env,
+            subsession_ctx=ctx,
+            subsession_close_state=close_state,
+        )
+
+    env = SubsessionEnv(
+        settings=settings,
+        registry=subsession_registry,
+        delivery=delivery,
+        conversation_store=conversation_store,
+        agent_factory=_subsession_agent_factory,
+        event_sink=event_bus,
+    )
 
     if agent is None:
         agent = create_agent_from_settings(
             settings=settings,
-            task_registry=registry,
-            delivery_channel=channel,
-            check_loop_registry=check_loop_registry,
             conversation_store=conversation_store,
-            pq_store=pq_store,
+            subsession_env=env,
         )
 
-    # -- resume persisted check loops after redeploy ----------------------
+    # -- resume persisted subsessions after redeploy -----------------------
     def _resume() -> None:
-        """Resume any check loops that were RUNNING at last shutdown."""
-        resume_check_loops(check_loop_registry, settings, channel=channel)
+        """Resume periodic subsessions; report interrupted one-shot work."""
+        resume_subsessions(env)
 
     # -- component-agent responder (disabled by default; gated on the -----
     # -- optional broker extra) -------------------------------------------
@@ -258,7 +250,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
 
         _responder = ComponentAgentResponder(
             settings,
-            check_loop_registry=check_loop_registry,
+            subsession_registry=subsession_registry,
             conversation_store=conversation_store,
             event_bus=event_bus,
         )
@@ -291,11 +283,10 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         auth=auth,
         correlation_id_header=settings.correlation_id_header,
         conversation_store=conversation_store,
-        task_registry=registry,
         event_bus=event_bus,
-        check_loop_registry=check_loop_registry,
         run_serializer=run_serializer,
-        pq_store=pq_store,
+        subsession_registry=subsession_registry,
+        subsession_delivery=delivery,
         on_startup=_resume,
         on_startup_async=_start_responder,
         on_shutdown=_stop_responder,

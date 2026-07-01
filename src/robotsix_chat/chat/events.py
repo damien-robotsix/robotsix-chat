@@ -1,12 +1,12 @@
-"""In-memory per-session SSE event bus for background-task lifecycle events.
+"""In-memory per-session SSE event bus for subsession lifecycle events.
 
 Provides frame builders, type constants, and a publish/subscribe registry so
-the chat server can push ``task_started`` / ``task_completed`` / ``task_failed``
-notification frames to connected browsers via a persistent SSE channel, scoped
-to the chat session that owns the work.
+the chat server can push ``subsession_*`` notification frames to connected
+browsers via a persistent SSE channel, scoped to the chat session that owns
+the work.
 
-This module must NOT import from ``tasks.py`` — the dependency is one-way:
-``tasks.py`` → ``events.py``, never a cycle.
+This module must NOT import from ``robotsix_chat.subsessions`` — the
+dependency is one-way: ``subsessions`` → ``events``, never a cycle.
 """
 
 from __future__ import annotations
@@ -19,21 +19,12 @@ from typing import Protocol
 # SSE frame-type constants (mirror the SSE_*_TYPE naming convention in server.py)
 # ---------------------------------------------------------------------------
 
-SSE_TASK_STARTED_TYPE = "task_started"
-SSE_TASK_COMPLETED_TYPE = "task_completed"
-SSE_TASK_FAILED_TYPE = "task_failed"
-
-SSE_LOOP_STARTED_TYPE = "loop_started"
-SSE_LOOP_TICK_TYPE = "loop_tick"
-SSE_LOOP_STOPPED_TYPE = "loop_stopped"
-SSE_LOOP_FAILED_TYPE = "loop_failed"
-SSE_LOOP_REPLY_TYPE = "loop_reply"
-
-SSE_PENDING_QUESTION_ADDED_TYPE = "pending_question_added"
-SSE_PENDING_QUESTION_UPDATED_TYPE = "pending_question_updated"
-SSE_PENDING_QUESTION_REMOVED_TYPE = "pending_question_removed"
-SSE_PENDING_QUESTION_THREAD_MESSAGE_TYPE = "pending_question_thread_message"
-SSE_PENDING_QUESTION_ANSWERED_TYPE = "pending_question_answered"
+SSE_SUBSESSION_STARTED_TYPE = "subsession_started"
+SSE_SUBSESSION_UPDATED_TYPE = "subsession_updated"
+SSE_SUBSESSION_MESSAGE_TYPE = "subsession_message"
+SSE_SUBSESSION_RESULT_TYPE = "subsession_result"
+SSE_SUBSESSION_CLOSED_TYPE = "subsession_closed"
+SSE_SUBSESSION_FAILED_TYPE = "subsession_failed"
 
 # ---------------------------------------------------------------------------
 # EventSink — structural Protocol for dependency injection
@@ -43,9 +34,9 @@ SSE_PENDING_QUESTION_ANSWERED_TYPE = "pending_question_answered"
 class EventSink(Protocol):
     """Structural interface for publishing lifecycle frames to a session.
 
-    ``TaskRegistry`` depends on this protocol (dependency injection) so it
-    never imports the concrete :class:`EventBus` — any object with a matching
-    ``publish`` method satisfies the contract.
+    ``SubsessionRegistry`` depends on this protocol (dependency injection) so
+    it never imports the concrete :class:`EventBus` — any object with a
+    matching ``publish`` method satisfies the contract.
     """
 
     def publish(self, session_id: str, frame: dict[str, object]) -> None:
@@ -54,225 +45,190 @@ class EventSink(Protocol):
 
 
 # ---------------------------------------------------------------------------
-# Frame builders
+# Subsession frame builders
 #
-# Each takes plain primitive fields (NOT a ``TaskInfo``, to avoid importing
-# ``tasks``) and returns a dict of the exact shape documented in its docstring.
+# ``subsession_started_frame`` takes the plain-dict snapshot produced by
+# ``SubsessionInfo.snapshot()`` (a dict, NOT the dataclass — keeps this
+# module free of ``subsessions`` imports; the dependency stays one-way).
 # ---------------------------------------------------------------------------
 
 
-def task_started_frame(task_id: str, session_id: str, prompt: str) -> dict[str, object]:
-    """Build a ``task_started`` notification frame.
+def subsession_started_frame(snapshot: dict[str, object]) -> dict[str, object]:
+    """Build a ``subsession_started`` frame from an info *snapshot* dict.
 
-    Returns a dict with shape::
-
-        {
-            "type": "task_started",
-            "task_id": <str>,
-            "session_id": <str>,
-            "prompt": <str>,
-            "status": "running",
-        }
+    Returns the full snapshot (id, kind, parent_id, depth, title, status,
+    model_level, interval/next-run fields, …) plus ``"type":
+    "subsession_started"`` so the UI can insert the row directly.
     """
-    return {
-        "type": SSE_TASK_STARTED_TYPE,
-        "task_id": task_id,
-        "session_id": session_id,
-        "prompt": prompt,
-        "status": "running",
-    }
+    return {"type": SSE_SUBSESSION_STARTED_TYPE, **snapshot}
 
 
-def task_completed_frame(task_id: str, result: str) -> dict[str, object]:
-    """Build a ``task_completed`` notification frame.
-
-    Returns a dict with shape::
-
-        {
-            "type": "task_completed",
-            "task_id": <str>,
-            "status": "completed",
-            "result": <str>,
-        }
-    """
-    return {
-        "type": SSE_TASK_COMPLETED_TYPE,
-        "task_id": task_id,
-        "status": "completed",
-        "result": result,
-    }
-
-
-def task_failed_frame(task_id: str, error: str) -> dict[str, object]:
-    """Build a ``task_failed`` notification frame.
-
-    Returns a dict with shape::
-
-        {
-            "type": "task_failed",
-            "task_id": <str>,
-            "status": "failed",
-            "error": <str>,
-        }
-    """
-    return {
-        "type": SSE_TASK_FAILED_TYPE,
-        "task_id": task_id,
-        "status": "failed",
-        "error": error,
-    }
-
-
-# ---------------------------------------------------------------------------
-# Loop frame builders
-# ---------------------------------------------------------------------------
-
-
-def loop_started_frame(
-    loop_id: str,
-    session_id: str,
-    prompt: str,
-    interval_seconds: float,
-    max_iterations: int | None,
+def subsession_updated_frame(
+    subsession_id: str,
+    status: str,
     *,
-    reason: str | None = None,
+    runs: int = 0,
+    next_run_at: float | None = None,
+    last_activity_at: float | None = None,
+    last_result: str | None = None,
 ) -> dict[str, object]:
-    """Build a ``loop_started`` notification frame.
+    """Build a ``subsession_updated`` frame (status / scheduling delta).
 
     Returns a dict with shape::
 
         {
-            "type": "loop_started",
-            "loop_id": <str>,
-            "session_id": <str>,
-            "prompt": <str>,
-            "interval_seconds": <float>,
-            "max_iterations": <int | None>,
-            "status": "running",
-            "reason": <str | None>,
-        }
-    """
-    result: dict[str, object] = {
-        "type": SSE_LOOP_STARTED_TYPE,
-        "loop_id": loop_id,
-        "session_id": session_id,
-        "prompt": prompt,
-        "interval_seconds": interval_seconds,
-        "max_iterations": max_iterations,
-        "status": "running",
-    }
-    if reason is not None:
-        result["reason"] = reason
-    return result
-
-
-def loop_tick_frame(
-    loop_id: str,
-    iteration: int,
-    result: str,
-    next_run: float | None,
-    *,
-    last_result_at: float | None = None,
-) -> dict[str, object]:
-    """Build a ``loop_tick`` notification frame.
-
-    Returns a dict with shape::
-
-        {
-            "type": "loop_tick",
-            "loop_id": <str>,
-            "iteration": <int>,
-            "result": <str>,
-            "next_run": <float | None>,
-            "status": "running",
-            "last_result_at": <float | None>,
+            "type": "subsession_updated",
+            "subsession_id": <str>,
+            "status": <str>,
+            "runs": <int>,
+            "next_run_at": <float | None>,
+            "last_activity_at": <float | None>,
+            "last_result": <str | None>,
         }
     """
     return {
-        "type": SSE_LOOP_TICK_TYPE,
-        "loop_id": loop_id,
-        "iteration": iteration,
-        "result": result,
-        "next_run": next_run,
-        "status": "running",
-        "last_result_at": last_result_at,
+        "type": SSE_SUBSESSION_UPDATED_TYPE,
+        "subsession_id": subsession_id,
+        "status": status,
+        "runs": runs,
+        "next_run_at": next_run_at,
+        "last_activity_at": last_activity_at,
+        "last_result": last_result,
     }
 
 
-def loop_stopped_frame(
-    loop_id: str,
+def subsession_message_frame(
+    subsession_id: str,
+    role: str,
+    text: str,
+    timestamp: float,
+) -> dict[str, object]:
+    """Build a ``subsession_message`` frame (one transcript append).
+
+    Returns a dict with shape::
+
+        {
+            "type": "subsession_message",
+            "subsession_id": <str>,
+            "role": <"user" | "parent" | "assistant" | "system">,
+            "text": <str>,
+            "timestamp": <float>,
+        }
+    """
+    return {
+        "type": SSE_SUBSESSION_MESSAGE_TYPE,
+        "subsession_id": subsession_id,
+        "role": role,
+        "text": text,
+        "timestamp": timestamp,
+    }
+
+
+def subsession_result_frame(
+    subsession_id: str,
+    kind: str,
+    title: str,
+    run: int,
+    text: str,
+    parent_id: str | None,
+) -> dict[str, object]:
+    """Build a ``subsession_result`` frame (non-suppressed periodic run result).
+
+    Returns a dict with shape::
+
+        {
+            "type": "subsession_result",
+            "subsession_id": <str>,
+            "kind": <str>,
+            "title": <str>,
+            "run": <int>,
+            "text": <str>,
+            "parent_id": <str | None>,
+        }
+    """
+    return {
+        "type": SSE_SUBSESSION_RESULT_TYPE,
+        "subsession_id": subsession_id,
+        "kind": kind,
+        "title": title,
+        "run": run,
+        "text": text,
+        "parent_id": parent_id,
+    }
+
+
+def subsession_closed_frame(
+    subsession_id: str,
+    *,
+    kind: str,
+    title: str,
     reason: str,
-    iterations: int,
+    summary: str,
+    closed_by: str,
+    parent_id: str | None,
 ) -> dict[str, object]:
-    """Build a ``loop_stopped`` notification frame.
+    """Build a ``subsession_closed`` frame (terminal, clean close).
 
     Returns a dict with shape::
 
         {
-            "type": "loop_stopped",
-            "loop_id": <str>,
+            "type": "subsession_closed",
+            "subsession_id": <str>,
+            "kind": <str>,
+            "title": <str>,
             "reason": <str>,
-            "iterations": <int>,
-            "status": "stopped",
+            "summary": <str>,
+            "closed_by": <"agent" | "user" | "parent" | "system">,
+            "parent_id": <str | None>,
+            "status": "closed",
         }
     """
     return {
-        "type": SSE_LOOP_STOPPED_TYPE,
-        "loop_id": loop_id,
+        "type": SSE_SUBSESSION_CLOSED_TYPE,
+        "subsession_id": subsession_id,
+        "kind": kind,
+        "title": title,
         "reason": reason,
-        "iterations": iterations,
-        "status": "stopped",
+        "summary": summary,
+        "closed_by": closed_by,
+        "parent_id": parent_id,
+        "status": "closed",
     }
 
 
-def loop_failed_frame(
-    loop_id: str,
+def subsession_failed_frame(
+    subsession_id: str,
+    *,
+    kind: str,
+    title: str,
     error: str,
+    summary: str,
+    parent_id: str | None,
 ) -> dict[str, object]:
-    """Build a ``loop_failed`` notification frame.
+    """Build a ``subsession_failed`` frame (terminal, error).
 
     Returns a dict with shape::
 
         {
-            "type": "loop_failed",
-            "loop_id": <str>,
+            "type": "subsession_failed",
+            "subsession_id": <str>,
+            "kind": <str>,
+            "title": <str>,
             "error": <str>,
+            "summary": <str>,
+            "parent_id": <str | None>,
             "status": "failed",
         }
     """
     return {
-        "type": SSE_LOOP_FAILED_TYPE,
-        "loop_id": loop_id,
+        "type": SSE_SUBSESSION_FAILED_TYPE,
+        "subsession_id": subsession_id,
+        "kind": kind,
+        "title": title,
         "error": error,
+        "summary": summary,
+        "parent_id": parent_id,
         "status": "failed",
-    }
-
-
-def loop_reply_frame(
-    loop_id: str,
-    iteration: int,
-    reply: str,
-) -> dict[str, object]:
-    """Build a ``loop_reply`` notification frame.
-
-    Emitted when a tick-triggered foreground agent run completes, carrying
-    the full assistant reply for rendering in the browser as a normal
-    assistant bubble.
-
-    Returns a dict with shape::
-
-        {
-            "type": "loop_reply",
-            "loop_id": <str>,
-            "iteration": <int>,
-            "reply": <str>,
-        }
-    """
-    return {
-        "type": SSE_LOOP_REPLY_TYPE,
-        "loop_id": loop_id,
-        "iteration": iteration,
-        "reply": reply,
     }
 
 
@@ -286,7 +242,7 @@ class EventBus:
 
     Callers publish frames to a ``session_id``; every queue currently
     subscribed for that id receives the frame.  A browser that (re)connects
-    re-syncs current state via ``TaskRegistry.list_for_session(session_id)``
+    re-syncs current state via ``GET /subsessions?session_id=...``
     rather than replaying a buffer — so when no queue is subscribed for a
     ``session_id``, :meth:`publish` **silently drops the frame** (no
     buffering).  The in-memory model favours bounded memory over guaranteed

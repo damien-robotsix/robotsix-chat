@@ -88,28 +88,20 @@ modules:
       - src/robotsix_chat/chat/__init__.py
       - src/robotsix_chat/chat/auth.py
       - src/robotsix_chat/chat/conversation.py
-      - src/robotsix_chat/chat/delegation.py
       - src/robotsix_chat/chat/events.py
-      - src/robotsix_chat/chat/loops.py
-      - src/robotsix_chat/chat/runner.py
       - src/robotsix_chat/chat/server/__init__.py
       - src/robotsix_chat/chat/server/app.py
       - src/robotsix_chat/chat/server/cli.py
       - src/robotsix_chat/chat/server/idempotency.py
       - src/robotsix_chat/chat/server/routes.py
-      - src/robotsix_chat/chat/tasks.py
       - docs/api/robotsix_chat/server.md
       - docs/api/robotsix_chat/auth.md
       - tests/chat/__init__.py
       - tests/chat/test_auth.py
-      - tests/chat/test_background_e2e.py
       - tests/chat/test_conversation.py
-      - tests/chat/test_delegation.py
       - tests/chat/test_events.py
-      - tests/chat/test_loops.py
-      - tests/chat/test_runner.py
       - tests/chat/test_server.py
-      - tests/chat/test_tasks.py
+      - tests/chat/test_subsessions_e2e.py
 
   - id: robotsix_chat.common
     description: "Shared utilities — provides safe_http_request() for consistent httpx error handling across HTTP clients, and JsonStoreBase for JSON-persisted dataclass stores."
@@ -195,14 +187,21 @@ modules:
       - tests/mail/__init__.py
       - tests/mail/test_build_mail_tools.py
 
-  - id: robotsix_chat.pending_questions
-    description: "Pending-questions panel and agent tool — real-time tracker for awaiting-user items above chat input."
+  - id: robotsix_chat.subsessions
+    description: "Unified subsession system — background agents (task / periodic / user_chat) spawned from chat sessions, with per-subsession model levels, depth-limited nesting, inbox steering, and parent summary delivery."
     paths:
-      - src/robotsix_chat/pending_questions/__init__.py
-      - src/robotsix_chat/pending_questions/store.py
-      - tests/pending_questions/__init__.py
-      - tests/pending_questions/test_store.py
-      - tests/pending_questions/test_tools.py
+      - src/robotsix_chat/subsessions/__init__.py
+      - src/robotsix_chat/subsessions/models.py
+      - src/robotsix_chat/subsessions/registry.py
+      - src/robotsix_chat/subsessions/delivery.py
+      - src/robotsix_chat/subsessions/worker.py
+      - src/robotsix_chat/subsessions/tools.py
+      - tests/subsessions/__init__.py
+      - tests/subsessions/test_models.py
+      - tests/subsessions/test_registry.py
+      - tests/subsessions/test_worker.py
+      - tests/subsessions/test_tools.py
+      - tests/subsessions/test_resume.py
 
   - id: robotsix_chat.refdocs
     description: "Read-only reference-docs tool — lets the chat agent read team repos."

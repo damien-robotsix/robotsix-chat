@@ -2,8 +2,7 @@
 
 Re-exports the public API that used to live in the monolithic ``server.py``,
 preserving backward compatibility for all existing import sites
-(``tests/``, ``src/robotsix_chat/chat/__init__.py``, ``delegation.py``,
-``loops.py``, ``runner.py``, etc.).
+(``tests/``, ``src/robotsix_chat/chat/__init__.py``, etc.).
 """
 
 from .app import (
@@ -26,26 +25,23 @@ from .routes import (
     SSE_TOKEN_TYPE,
     ChatAgent,
     RunSerializer,
-    _build_thread_context,
     _parse_and_validate_images,
     _sse_frame,
     chat_endpoint,
     events_endpoint,
     health_endpoint,
     history_endpoint,
-    loops_list_endpoint,
-    loops_stop_endpoint,
     not_found_handler,
-    pending_questions_answer_endpoint,
-    pending_questions_delete_endpoint,
-    pending_questions_list_endpoint,
-    pending_questions_thread_append_endpoint,
-    pending_questions_thread_get_endpoint,
     server_error_handler,
     sessions_close_endpoint,
     sessions_create_endpoint,
     sessions_delete_endpoint,
     sessions_list_endpoint,
+    subsessions_close_endpoint,
+    subsessions_get_endpoint,
+    subsessions_list_endpoint,
+    subsessions_message_endpoint,
+    subsessions_transcript_endpoint,
     ui_endpoint,
 )
 
@@ -57,7 +53,6 @@ __all__ = [
     "SSE_ERROR_TYPE",
     "SSE_HEARTBEAT_INTERVAL",
     "SSE_TOKEN_TYPE",
-    "_build_thread_context",
     "_load_ui_html",
     "_make_lifespan",
     "_parse_and_validate_images",
@@ -70,14 +65,7 @@ __all__ = [
     "events_endpoint",
     "health_endpoint",
     "history_endpoint",
-    "loops_list_endpoint",
-    "loops_stop_endpoint",
     "not_found_handler",
-    "pending_questions_answer_endpoint",
-    "pending_questions_delete_endpoint",
-    "pending_questions_list_endpoint",
-    "pending_questions_thread_append_endpoint",
-    "pending_questions_thread_get_endpoint",
     "run_server",
     "run_server_from_config",
     "server_error_handler",
@@ -85,5 +73,10 @@ __all__ = [
     "sessions_create_endpoint",
     "sessions_delete_endpoint",
     "sessions_list_endpoint",
+    "subsessions_close_endpoint",
+    "subsessions_get_endpoint",
+    "subsessions_list_endpoint",
+    "subsessions_message_endpoint",
+    "subsessions_transcript_endpoint",
     "ui_endpoint",
 ]

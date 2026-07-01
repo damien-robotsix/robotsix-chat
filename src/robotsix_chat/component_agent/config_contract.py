@@ -109,20 +109,25 @@ SETTABLE_KEYS: dict[str, dict[str, Any]] = {
         "python_type": int,
         "path": ["idle_timeout_minutes"],
     },
-    "server.max_background_tasks": {
+    "subsessions.max_concurrent": {
         "type": "int (>= 1)",
         "python_type": int,
-        "path": ["max_background_tasks"],
+        "path": ["subsessions", "max_concurrent"],
     },
-    "server.max_check_loops": {
+    "subsessions.max_depth": {
         "type": "int (>= 1)",
         "python_type": int,
-        "path": ["max_check_loops"],
+        "path": ["subsessions", "max_depth"],
     },
-    "server.min_check_loop_interval_seconds": {
+    "subsessions.default_model_level": {
+        "type": "int (1-4)",
+        "python_type": int,
+        "path": ["subsessions", "default_model_level"],
+    },
+    "subsessions.min_interval_seconds": {
         "type": "float (>= 1.0)",
         "python_type": (int, float),
-        "path": ["min_check_loop_interval_seconds"],
+        "path": ["subsessions", "min_interval_seconds"],
     },
     "server.cors_allow_origins": {
         "type": "list[str]",

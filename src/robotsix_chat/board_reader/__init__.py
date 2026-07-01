@@ -116,8 +116,8 @@ def build_board_reader_tools(
         user asks you to file a ticket, create a task, or report a bug on the
         board.
 
-        Prefer this over ``delegate_task`` for simple ticket creation — it is
-        faster and uses fewer tokens.
+        Prefer this over spawning a subsession for simple ticket creation —
+        it is faster and uses fewer tokens.
 
         Before creating, this tool checks for likely duplicates among OPEN
         tickets on the target repo and surfaces candidates so you can comment

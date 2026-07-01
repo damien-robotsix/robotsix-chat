@@ -18,14 +18,9 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse, StreamingResponse
 
 from robotsix_chat.chat.conversation import ConversationStore
-from robotsix_chat.pending_questions.store import (
-    PendingQuestion,
-    PendingQuestionsStore,
-    ThreadMessage,
-)
 
 if TYPE_CHECKING:
-    from robotsix_chat.chat.loops import CheckLoopRegistry
+    from robotsix_chat.subsessions import ParentDelivery, SubsessionRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -259,25 +254,16 @@ def _get_session_id(request: Request) -> str | JSONResponse:
     return session_id
 
 
-def _cleanup_session(session_id: str, request: Request) -> tuple[int, int]:
-    """Stop check loops and cancel background tasks for *session_id*.
+def _cleanup_session(session_id: str, request: Request) -> int:
+    """Close every subsession owned by *session_id* (best-effort).
 
-    Returns ``(loops_stopped, tasks_cancelled)``.  Both operations are
-    best-effort — registries may be ``None`` when the feature is not wired.
+    Returns the number of subsessions closed; ``0`` when the subsession
+    registry is not wired.
     """
-    loops_stopped = 0
-    loop_registry = request.app.state.check_loop_registry
-    if loop_registry is not None:
-        loops_stopped = loop_registry.stop_all_for_session(
-            session_id, reason="session closed"
-        )
-
-    tasks_cancelled = 0
-    task_registry = request.app.state.task_registry
-    if task_registry is not None:
-        tasks_cancelled = task_registry.cancel_all_for_session(session_id)
-
-    return loops_stopped, tasks_cancelled
+    registry: SubsessionRegistry | None = request.app.state.subsession_registry
+    if registry is None:
+        return 0
+    return registry.close_all_for_owner(session_id, reason="session closed")
 
 
 async def chat_endpoint(
@@ -391,11 +377,15 @@ async def chat_endpoint(
 
                 reply_parts: list[str] = []
                 try:
+                    # NOTE: client_id here feeds the per-request tools factory
+                    # (subsession tool scoping) — it must be the SESSION id,
+                    # not the per-browser client id, so spawned subsessions and
+                    # their SSE frames land in the owning chat session.
                     async for token in agent.stream(
                         message,
                         history=current_history,
                         session_id=session_id,
-                        client_id=client_id,
+                        client_id=session_id,
                         images=images,
                     ):
                         reply_parts.append(token)
@@ -505,73 +495,180 @@ async def events_endpoint(request: Request) -> JSONResponse | StreamingResponse:
     )
 
 
-async def loops_stop_endpoint(request: Request) -> JSONResponse:
-    """Stop a running check loop.
+# ---------------------------------------------------------------------------
+# Subsession endpoints
+# ---------------------------------------------------------------------------
 
-    ``POST /loops/{loop_id}/stop`` stops the loop and returns a 200 JSON ack.
-    Returns 503 when the check-loop feature is not wired (registry is None),
-    or 404 when the loop id is unknown.
-    """
-    registry: CheckLoopRegistry | None = request.app.state.check_loop_registry
+
+def _get_subsession_registry(
+    request: Request,
+) -> SubsessionRegistry | JSONResponse:
+    """Return the wired registry, or a ready-to-return 503 error response."""
+    registry: SubsessionRegistry | None = request.app.state.subsession_registry
     if registry is None:
         return JSONResponse(
-            {"error": "check-loop feature not enabled"}, status_code=503
+            {"error": "subsessions feature not enabled"}, status_code=503
         )
-
-    loop_id = request.path_params["loop_id"]
-
-    if registry.get(loop_id) is None:
-        return JSONResponse(
-            {"error": "unknown loop", "loop_id": loop_id}, status_code=404
-        )
-
-    registry.stop(loop_id, reason="stopped via api")
-    return JSONResponse({"loop_id": loop_id, "status": "stopped"})
+    return registry
 
 
-async def loops_list_endpoint(request: Request) -> JSONResponse:
-    """Return all check loops for a session as JSON.
+async def subsessions_list_endpoint(request: Request) -> JSONResponse:
+    """Return the whole subsession tree for a chat session.
 
-    ``GET /loops?session_id=...`` returns ``{"loops": [...]}`` where each
-    entry contains every :class:`~robotsix_chat.chat.loops.LoopInfo` field
-    with ``status`` serialized as its plain string value.
+    ``GET /subsessions?session_id=...`` returns ``{"subsessions": [...]}``
+    — every subsession owned by the session (all kinds, all depths, all
+    statuses; terminal entries are retained for a while so the panel can
+    show recent history), sorted by ``created_at`` ascending, without
+    transcripts.  Tolerates ``client_id`` as a legacy fallback.
 
-    Tolerates ``client_id`` as a legacy fallback (treated as ``session_id``).
-
-    Returns 400 when ``session_id`` is missing, and 503 when the check-loop
-    feature is not wired (``app.state.check_loop_registry`` is ``None``).
+    Returns 400 when ``session_id`` is missing and 503 when the
+    subsession feature is not wired.
     """
     session_id = _get_session_id(request)
     if isinstance(session_id, JSONResponse):
         return session_id
+    registry = _get_subsession_registry(request)
+    if isinstance(registry, JSONResponse):
+        return registry
 
-    registry: CheckLoopRegistry | None = request.app.state.check_loop_registry
-    if registry is None:
+    return JSONResponse(
+        {
+            "subsessions": [
+                info.snapshot() for info in registry.list_for_owner(session_id)
+            ]
+        }
+    )
+
+
+async def subsessions_get_endpoint(request: Request) -> JSONResponse:
+    """Return one subsession's full snapshot including its transcript.
+
+    ``GET /subsessions/{sub_id}`` returns the snapshot dict plus a
+    ``"transcript"`` list.  404 when the id is unknown.
+    """
+    registry = _get_subsession_registry(request)
+    if isinstance(registry, JSONResponse):
+        return registry
+
+    sub_id = request.path_params["sub_id"]
+    info = registry.get(sub_id)
+    if info is None:
         return JSONResponse(
-            {"error": "check-loop feature not enabled"}, status_code=503
+            {"error": "unknown subsession", "subsession_id": sub_id},
+            status_code=404,
+        )
+    return JSONResponse(info.snapshot(with_transcript=True))
+
+
+async def subsessions_transcript_endpoint(request: Request) -> JSONResponse:
+    """Return one subsession's transcript only.
+
+    ``GET /subsessions/{sub_id}/transcript`` returns
+    ``{"subsession_id": ..., "transcript": [{role, text, timestamp}, ...]}``.
+    404 when the id is unknown.
+    """
+    registry = _get_subsession_registry(request)
+    if isinstance(registry, JSONResponse):
+        return registry
+
+    sub_id = request.path_params["sub_id"]
+    info = registry.get(sub_id)
+    if info is None:
+        return JSONResponse(
+            {"error": "unknown subsession", "subsession_id": sub_id},
+            status_code=404,
+        )
+    return JSONResponse(
+        {
+            "subsession_id": sub_id,
+            "transcript": [entry.as_dict() for entry in info.transcript],
+        }
+    )
+
+
+async def subsessions_message_endpoint(request: Request) -> JSONResponse:
+    """Queue a user message for a running subsession.
+
+    ``POST /subsessions/{sub_id}/message`` with body ``{"text": "..."}``
+    enqueues the message (role ``"user"``) for delivery at the
+    subsession's next turn boundary and returns 202
+    ``{"subsession_id": ..., "status": "queued"}``.
+
+    Returns 400 for a missing/empty ``text``, 404 for an unknown id, and
+    409 when the subsession is no longer active.
+    """
+    registry = _get_subsession_registry(request)
+    if isinstance(registry, JSONResponse):
+        return registry
+
+    sub_id = request.path_params["sub_id"]
+    body = await _parse_json_body(request)
+    if isinstance(body, JSONResponse):
+        return body
+    text = body.get("text")
+    if not text or not isinstance(text, str):
+        return JSONResponse(
+            {"error": "'text' field is required and must be a non-empty string"},
+            status_code=400,
         )
 
-    loops = registry.list_for_session(session_id)
-    result: list[dict[str, object]] = []
-    for info in loops:
-        result.append(
+    info = registry.get(sub_id)
+    if info is None:
+        return JSONResponse(
+            {"error": "unknown subsession", "subsession_id": sub_id},
+            status_code=404,
+        )
+    if not registry.enqueue_message(sub_id, "user", text):
+        return JSONResponse(
+            {"error": "subsession is not active", "subsession_id": sub_id},
+            status_code=409,
+        )
+    return JSONResponse({"subsession_id": sub_id, "status": "queued"}, status_code=202)
+
+
+async def subsessions_close_endpoint(request: Request) -> JSONResponse:
+    """Close a subsession from the UI (user-initiated external close).
+
+    ``POST /subsessions/{sub_id}/close`` cancels the worker, marks the
+    subsession closed, delivers a best-effort summary to its parent
+    conversation, and returns ``{"subsession_id": ..., "closed": true,
+    "summary": "..."}``.
+
+    Idempotent: an already-terminal subsession returns 200 with
+    ``"closed": false`` and its current status.  404 for an unknown id.
+    """
+    registry = _get_subsession_registry(request)
+    if isinstance(registry, JSONResponse):
+        return registry
+
+    sub_id = request.path_params["sub_id"]
+    info = registry.get(sub_id)
+    if info is None:
+        return JSONResponse(
+            {"error": "unknown subsession", "subsession_id": sub_id},
+            status_code=404,
+        )
+
+    closed = registry.cancel_and_close(
+        sub_id, reason="closed by user", closed_by="user"
+    )
+    if closed is None:
+        return JSONResponse(
             {
-                "id": info.id,
-                "session_id": info.session_id,
-                "prompt": info.prompt,
-                "interval_seconds": info.interval_seconds,
+                "subsession_id": sub_id,
+                "closed": False,
                 "status": info.status.value,
-                "iterations": info.iterations,
-                "max_iterations": info.max_iterations,
-                "last_result": info.last_result,
-                "next_run": info.next_run,
-                "error": info.error,
-                "stop_reason": info.stop_reason,
-                "reason": info.reason,
-                "last_result_at": info.last_result_at,
             }
         )
-    return JSONResponse({"loops": result})
+
+    delivery: ParentDelivery | None = request.app.state.subsession_delivery
+    if delivery is not None:
+        await delivery.deliver_summary(
+            closed, closed.summary or "", closed.close_reason or "closed"
+        )
+    return JSONResponse(
+        {"subsession_id": sub_id, "closed": True, "summary": closed.summary}
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -638,20 +735,18 @@ async def sessions_create_endpoint(request: Request) -> JSONResponse:
 async def sessions_delete_endpoint(request: Request) -> JSONResponse:
     """Close (delete) a session and stop its background work.
 
-    ``DELETE /sessions/{session_id}?owner_id=...`` stops every check loop and
-    cancels every in-flight background task owned by the session, deletes the
-    session and its history, and returns::
+    ``DELETE /sessions/{session_id}?owner_id=...`` closes every subsession
+    owned by the session, deletes the session and its history, and returns::
 
         {
           "deleted": true,
           "active_session_id": "...",   # the owner's new active session
-          "loops_stopped": 1,
-          "tasks_cancelled": 0
+          "subsessions_closed": 1
         }
 
     ``owner_id`` is required (query param).  Returns 404 when the session is
-    not found / not owned by *owner_id*.  Stopping loops/tasks is best-effort
-    and runs even when the conversation delete is a no-op (so an orphaned loop
+    not found / not owned by *owner_id*.  Closing subsessions is best-effort
+    and runs even when the conversation delete is a no-op (so orphaned work
     can still be cleaned up).
     """
     session_id = request.path_params["session_id"]
@@ -661,10 +756,10 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
             {"error": "owner_id query parameter is required"}, status_code=400
         )
 
-    # 1–2. Stop the session's check loops and cancel background tasks.
-    loops_stopped, tasks_cancelled = _cleanup_session(session_id, request)
+    # 1. Close the session's subsessions.
+    subsessions_closed = _cleanup_session(session_id, request)
 
-    # 3. Delete the conversation/session itself.
+    # 2. Delete the conversation/session itself.
     store: ConversationStore = request.app.state.conversation_store
     result = store.delete_session(owner_id, session_id)
 
@@ -673,8 +768,7 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
             {
                 "error": "session not found",
                 "session_id": session_id,
-                "loops_stopped": loops_stopped,
-                "tasks_cancelled": tasks_cancelled,
+                "subsessions_closed": subsessions_closed,
             },
             status_code=404,
         )
@@ -683,8 +777,7 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
         {
             "deleted": True,
             "active_session_id": result.get("active_session_id", ""),
-            "loops_stopped": loops_stopped,
-            "tasks_cancelled": tasks_cancelled,
+            "subsessions_closed": subsessions_closed,
         }
     )
 
@@ -692,22 +785,20 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
 async def sessions_close_endpoint(request: Request) -> JSONResponse:
     """Close (mark as closed) a session and stop its background work.
 
-    ``POST /sessions/{session_id}/close?owner_id=...`` stops every check loop
-    and cancels every in-flight background task owned by the session, marks
-    the session as ``closed`` (preventing it from spawning new work), and
-    returns::
+    ``POST /sessions/{session_id}/close?owner_id=...`` closes every
+    subsession owned by the session, marks the session as ``closed``
+    (preventing it from spawning new work), and returns::
 
         {
           "closed": true,
           "session_id": "...",
-          "loops_stopped": 1,
-          "tasks_cancelled": 0
+          "subsessions_closed": 1
         }
 
     ``owner_id`` is required (query param).  Returns 404 when the session is
-    not found / not owned by *owner_id*.  Stopping loops/tasks is best-effort
-    and runs even when the session is not found (so orphaned work can still be
-    cleaned up).
+    not found / not owned by *owner_id*.  Closing subsessions is best-effort
+    and runs even when the session is not found (so orphaned work can still
+    be cleaned up).
 
     Unlike ``DELETE /sessions/{session_id}``, closing preserves the session's
     history and metadata — the session cannot spawn new background work but
@@ -720,10 +811,10 @@ async def sessions_close_endpoint(request: Request) -> JSONResponse:
             {"error": "owner_id query parameter is required"}, status_code=400
         )
 
-    # 1–2. Stop the session's check loops and cancel background tasks.
-    loops_stopped, tasks_cancelled = _cleanup_session(session_id, request)
+    # 1. Close the session's subsessions.
+    subsessions_closed = _cleanup_session(session_id, request)
 
-    # 3. Mark the session as closed in the conversation store.
+    # 2. Mark the session as closed in the conversation store.
     store: ConversationStore = request.app.state.conversation_store
     result = store.close_session(owner_id, session_id)
 
@@ -732,8 +823,7 @@ async def sessions_close_endpoint(request: Request) -> JSONResponse:
             {
                 "error": "session not found",
                 "session_id": session_id,
-                "loops_stopped": loops_stopped,
-                "tasks_cancelled": tasks_cancelled,
+                "subsessions_closed": subsessions_closed,
             },
             status_code=404,
         )
@@ -742,254 +832,9 @@ async def sessions_close_endpoint(request: Request) -> JSONResponse:
         {
             "closed": True,
             "session_id": session_id,
-            "loops_stopped": loops_stopped,
-            "tasks_cancelled": tasks_cancelled,
+            "subsessions_closed": subsessions_closed,
         }
     )
-
-
-# ---------------------------------------------------------------------------
-# Pending questions endpoints
-# ---------------------------------------------------------------------------
-
-
-async def pending_questions_list_endpoint(request: Request) -> JSONResponse:
-    """Return all pending questions for a session as JSON.
-
-    ``GET /pending-questions?session_id=...`` returns
-    ``{"questions": [...]}`` with each entry containing question_id, text,
-    detail, status, answer, answered_at, and created_at.
-    """
-    session_id = _get_session_id(request)
-    if isinstance(session_id, JSONResponse):
-        return session_id
-
-    store: PendingQuestionsStore = request.app.state.pq_store
-    entries = store.list_for_session(session_id)
-    return JSONResponse(
-        {
-            "questions": [
-                {
-                    "question_id": q.question_id,
-                    "session_id": q.session_id,
-                    "text": q.text,
-                    "detail": q.detail,
-                    "status": q.status,
-                    "answer": q.answer,
-                    "answered_at": q.answered_at,
-                    "created_at": q.created_at,
-                    "thread": [
-                        {
-                            "role": m.role,
-                            "text": m.text,
-                            "timestamp": m.timestamp,
-                        }
-                        for m in q.thread
-                    ],
-                }
-                for q in entries
-            ]
-        }
-    )
-
-
-async def pending_questions_answer_endpoint(request: Request) -> JSONResponse:
-    """Record an answer for a pending question.
-
-    ``POST /pending-questions/{question_id}/answer`` with JSON body
-    ``{"answer": "..."}`` sets the question's ``status`` to ``"answered"``
-    and stores the answer text.  The question stays in the store (and the
-    panel) until the assistant explicitly removes it.
-
-    Returns 200 with the question data on success, or 404 when the id is
-    unknown.
-    """
-    question_id = request.path_params["question_id"]
-    store: PendingQuestionsStore = request.app.state.pq_store
-
-    body = await _parse_json_body(request)
-    if isinstance(body, JSONResponse):
-        return body
-
-    answer_text = body.get("answer", "")
-    if not isinstance(answer_text, str):
-        return JSONResponse({"error": "'answer' must be a string"}, status_code=400)
-
-    entry = store.answer(question_id, answer_text)
-    if entry is None:
-        return JSONResponse(
-            {"error": "unknown question", "question_id": question_id},
-            status_code=404,
-        )
-    return JSONResponse(
-        {
-            "question_id": entry.question_id,
-            "status": entry.status,
-            "answer": entry.answer,
-        }
-    )
-
-
-async def pending_questions_delete_endpoint(request: Request) -> JSONResponse:
-    """Remove a pending question by id.
-
-    ``DELETE /pending-questions/{question_id}`` removes the question and
-    returns a 200 JSON ack.  Returns 404 when the question id is unknown.
-    """
-    question_id = request.path_params["question_id"]
-    store: PendingQuestionsStore = request.app.state.pq_store
-    entry = store.remove(question_id)
-    if entry is None:
-        return JSONResponse(
-            {"error": "unknown question", "question_id": question_id},
-            status_code=404,
-        )
-    return JSONResponse({"question_id": question_id, "status": "removed"})
-
-
-async def pending_questions_thread_append_endpoint(
-    request: Request,
-) -> JSONResponse:
-    """Append a user message to a pending question's thread and get an LLM reply.
-
-    ``POST /pending-questions/{question_id}/thread`` with JSON body
-    ``{"text": "..."}`` appends a ``"user"``-role message to the question's
-    conversation thread, then spawns a background task that calls the LLM
-    with merged main-chat + thread context and appends the assistant's reply
-    to the thread.  Publishes ``pending_question_thread_message`` frames
-    so connected browsers update in real time — no page reload is needed.
-
-    Returns 202 with the question id on success (processing continues in
-    the background), or 404 when the id is unknown.
-    """
-    question_id = request.path_params["question_id"]
-    store: PendingQuestionsStore = request.app.state.pq_store
-
-    body = await _parse_json_body(request)
-    if isinstance(body, JSONResponse):
-        return body
-
-    text = body.get("text", "")
-    if not isinstance(text, str) or not text.strip():
-        return JSONResponse(
-            {"error": "'text' must be a non-empty string"},
-            status_code=400,
-        )
-
-    entry = store.append_to_thread(question_id, "user", text)
-    if entry is None:
-        return JSONResponse(
-            {"error": "unknown question", "question_id": question_id},
-            status_code=404,
-        )
-
-    # ---- background LLM call -------------------------------------------
-    agent: ChatAgent = request.app.state.agent
-    conv_store: ConversationStore = request.app.state.conversation_store
-    session_id = entry.session_id
-
-    async def _process_thread_message() -> None:
-        try:
-            # Build merged context: main-chat history + full thread.
-            _, history = conv_store.begin(session_id)
-            thread = store.get_thread(question_id)
-            thread_context = _build_thread_context(entry, thread)
-
-            # Run the agent with merged context.
-            reply_parts: list[str] = []
-            async for token in agent.stream(
-                thread_context,
-                history=history,
-                session_id=session_id,
-                client_id=session_id,
-            ):
-                reply_parts.append(token)
-
-            reply = "".join(reply_parts).strip()
-            if reply:
-                store.append_to_thread(question_id, "assistant", reply)
-        except Exception:
-            logger.exception("Background LLM call failed for thread %s", question_id)
-
-    asyncio.create_task(_process_thread_message())
-    return JSONResponse(
-        {"question_id": question_id, "status": "message_appended"},
-        status_code=202,
-    )
-
-
-async def pending_questions_thread_get_endpoint(
-    request: Request,
-) -> JSONResponse:
-    """Return the full thread for a pending question.
-
-    ``GET /pending-questions/{question_id}/thread`` returns
-    ``{"question_id": "...", "thread": [...]}`` with each message
-    containing ``role``, ``text``, and ``timestamp``.
-
-    Returns 404 when the question id is unknown.
-    """
-    question_id = request.path_params["question_id"]
-    store: PendingQuestionsStore = request.app.state.pq_store
-    thread = store.get_thread(question_id)
-    if thread is None:
-        return JSONResponse(
-            {"error": "unknown question", "question_id": question_id},
-            status_code=404,
-        )
-    return JSONResponse(
-        {
-            "question_id": question_id,
-            "thread": [
-                {
-                    "role": msg.role,
-                    "text": msg.text,
-                    "timestamp": msg.timestamp,
-                }
-                for msg in thread
-            ],
-        }
-    )
-
-
-# ---------------------------------------------------------------------------
-# Thread-context builder for background LLM calls
-# ---------------------------------------------------------------------------
-
-
-def _build_thread_context(
-    entry: PendingQuestion,
-    thread: list[ThreadMessage] | None,
-) -> str:
-    """Build a merged-context prompt for an LLM call on a pending-question thread.
-
-    The prompt includes the question text, any detail, and the full
-    chronological thread so the LLM has complete awareness of the discussion
-    so far — including the user message that just triggered the call.
-    """
-    parts: list[str] = []
-    parts.append(f"[Pending Question: {entry.text}]")
-    if entry.detail:
-        parts.append(f"[Detail: {entry.detail}]")
-    if entry.status == "answered" and entry.answer:
-        parts.append(f"[Latest explicit answer: {entry.answer}]")
-
-    if thread:
-        parts.append("\nThread conversation (oldest first):")
-        for msg in thread:
-            role_label = msg.role.upper()
-            parts.append(f"  [{role_label}] {msg.text}")
-
-    parts.append(
-        "\nYou are replying in a mini-chat thread for the pending question "
-        "above.  Address the most recent user message directly.  Keep your "
-        "reply concise and conversational.  You have full awareness of the "
-        "main conversation and the thread history — use that context to "
-        "give a helpful answer.  Do NOT call remove_pending_question or "
-        "otherwise close/dismiss this question — this is an ongoing "
-        "thread and the user will dismiss it themselves when done."
-    )
-    return "\n".join(parts)
 
 
 # ---------------------------------------------------------------------------

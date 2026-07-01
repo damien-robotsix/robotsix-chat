@@ -507,20 +507,41 @@ class ComponentClientSettings(BaseModel):
     components: list[ComponentTarget] = Field(default_factory=list)
 
 
-class PendingQuestionsSettings(BaseModel):
-    """Pending-questions panel and agent tool for awaiting-user prompts.
+class SubsessionsSettings(BaseModel):
+    """Unified subsession system — background agents spawned from a chat.
 
-    When enabled (default), the agent can raise structured questions the user
-    needs to answer — they appear in a panel above the chat input, update in
-    real time, and the user's inline answer is fed back into the conversation.
+    A subsession is a background agent run (``task``, ``periodic``, or
+    ``user_chat``) spawned by the main chat agent — or, nested, by another
+    subsession — with its own model level chosen by task difficulty.
 
     Attributes:
-        enabled: Master switch.  Default ``True`` — this is a core UI/agent
-            primitive with no external dependencies.
+        max_concurrent: Process-wide cap on simultaneously active
+            subsessions (all kinds, all depths).
+            Env override: ``SUBSESSIONS_MAX_CONCURRENT``.
+        max_depth: Maximum nesting depth.  The main chat session is depth
+            0; its subsessions are depth 1.  Agents at ``max_depth`` get
+            no spawn tools.  Env override: ``SUBSESSIONS_MAX_DEPTH``.
+        default_model_level: llmio capability level used when the
+            spawning agent does not pick one explicitly (1 cheapest … 4
+            frontier).  Env override: ``SUBSESSIONS_DEFAULT_MODEL_LEVEL``.
+        min_interval_seconds: Minimum interval for ``periodic``
+            subsessions.  Env override: ``SUBSESSIONS_MIN_INTERVAL_SECONDS``.
+        auto_stop_no_change_runs: A periodic subsession auto-closes after
+            this many consecutive ``NO_CHANGE`` runs.
+            Env override: ``SUBSESSIONS_AUTO_STOP_NO_CHANGE_RUNS``.
+        store_path: JSON persistence file (periodic subsessions resume
+            across restarts).  Env override: ``SUBSESSIONS_STORE_PATH``.
+        transcript_max_entries: Per-subsession transcript retention cap.
 
     """
 
-    enabled: bool = True
+    max_concurrent: int = 8
+    max_depth: int = 3
+    default_model_level: int = 3
+    min_interval_seconds: float = 60.0
+    auto_stop_no_change_runs: int = 5
+    store_path: str = ".data/subsessions.json"
+    transcript_max_entries: int = 200
 
 
 class ConversationSettings(BaseModel):
