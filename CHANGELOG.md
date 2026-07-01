@@ -1,5 +1,7 @@
 ## 0.0.0 (unreleased)
 
+- Migrate `ConfigContractError` to canonical `robotsix_agent_comm.protocol.ConfigContractError`;
+  delete the local definition from `component_agent/config_contract.py`.
 - Add OpenSSF Scorecard GitHub Action workflow (weekly Monday + push to main), uploading SARIF
   results to the security tab for supply-chain posture scoring.
 - Generate CycloneDX SBOM at release time and submit to GitHub Dependency Graph; re-enable Docker

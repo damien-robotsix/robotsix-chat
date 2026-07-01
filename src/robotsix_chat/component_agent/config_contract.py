@@ -36,6 +36,7 @@ from copy import deepcopy
 from typing import Any
 
 from pydantic import BaseModel, ValidationError
+from robotsix_agent_comm.protocol import ConfigContractError
 
 from robotsix_chat.config import _YAML_PATH_TO_FIELD, Settings
 
@@ -82,34 +83,6 @@ _FIELD_TO_DOTTED.setdefault("max_image_bytes", "server.max_image_bytes")
 _FIELD_TO_DOTTED.setdefault(
     "allowed_image_media_types", "server.allowed_image_media_types"
 )
-
-
-# ---------------------------------------------------------------------------
-# Config contract error
-# ---------------------------------------------------------------------------
-
-
-class ConfigContractError(Exception):
-    """Structured error mirroring ``protocol.Error``'s body fields.
-
-    Attributes:
-        code: Machine-readable error code (e.g. ``"UNKNOWN_KEY"``).
-        message: Human-readable description.
-        details: Optional dict with extra context (offending keys, reason).
-
-    """
-
-    def __init__(
-        self,
-        code: str,
-        message: str,
-        details: dict[str, Any] | None = None,
-    ) -> None:
-        """Initialise with a machine code, human message, and optional details."""
-        super().__init__(message)
-        self.code = code
-        self.message = message
-        self.details = details or {}
 
 
 # ---------------------------------------------------------------------------

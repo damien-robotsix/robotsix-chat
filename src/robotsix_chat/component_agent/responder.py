@@ -17,8 +17,9 @@ import importlib.util
 import logging
 from typing import TYPE_CHECKING, Any
 
+from robotsix_agent_comm.protocol import ConfigContractError
+
 from robotsix_chat.component_agent.config_contract import (
-    ConfigContractError,
     apply_config_update,
     describe_config,
     get_config_snapshot,

@@ -153,6 +153,7 @@ if "robotsix_agent_comm" not in sys.modules:
     _protocol_messages.Error = _FakeError  # type: ignore[attr-defined]
     _protocol.Error = _FakeError  # type: ignore[attr-defined]
     _protocol.Response = _FakeResponse  # type: ignore[attr-defined]
+    _protocol.ConfigContractError = _FakeProtocolError  # type: ignore[attr-defined]
 
     sys.modules["robotsix_agent_comm"] = _root
     sys.modules["robotsix_agent_comm.sdk"] = _sdk
