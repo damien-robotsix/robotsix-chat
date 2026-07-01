@@ -321,6 +321,7 @@ def _install_fake_agent_comm(
     # ``from robotsix_agent_comm.protocol import Error, Response`` works.
     protocol.Error = _FakeError  # type: ignore[attr-defined]
     protocol.Response = _FakeResponse  # type: ignore[attr-defined]
+    protocol.ConfigContractError = _FakeProtocolError  # type: ignore[attr-defined]
 
     for name, mod in {
         "robotsix_agent_comm": root,
