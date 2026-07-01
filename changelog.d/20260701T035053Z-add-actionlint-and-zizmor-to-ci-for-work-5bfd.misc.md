@@ -1,0 +1,1 @@
+Add actionlint and zizmor to CI for workflow security linting
