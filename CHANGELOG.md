@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add OpenSSF Scorecard GitHub Action workflow (weekly Monday + push to main), uploading SARIF results to the security tab for supply-chain posture scoring.
 - Remove dead `_terminal_result` function from `chat/delegation.py` (superseded by
   `_terminal_state_result` in `chat/loops.py`)
 
