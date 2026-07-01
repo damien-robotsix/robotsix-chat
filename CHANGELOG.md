@@ -2,6 +2,8 @@
 
 - Add OpenSSF Scorecard GitHub Action workflow (weekly Monday + push to main), uploading SARIF
   results to the security tab for supply-chain posture scoring.
+- Generate CycloneDX SBOM at release time and submit to GitHub Dependency Graph; re-enable Docker
+  image SBOM attestation in release-image workflow.
 - Remove dead `_terminal_result` function from `chat/delegation.py` (superseded by
   `_terminal_state_result` in `chat/loops.py`)
 
