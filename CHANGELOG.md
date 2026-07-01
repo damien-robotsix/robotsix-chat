@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Bump pytest from 9.1.0 to 9.1.1 (dependabot PR #337)
 - Migrate `ConfigContractError` to canonical `robotsix_agent_comm.protocol.ConfigContractError`;
   delete the local definition from `component_agent/config_contract.py`.
 - Add OpenSSF Scorecard GitHub Action workflow (weekly Monday + push to main), uploading SARIF
