@@ -40,6 +40,9 @@ repos:
       - id: uv-audit
         name: uv audit
         entry: uv audit
+        # CVE-2025-69872 / GHSA-w8v5-vhqr-4h9v: diskcache unsafe pickle deserialization.
+        # No fix version available; ignored until a patched release is published.
+        args: ["--ignore-until-fixed", "GHSA-w8v5-vhqr-4h9v"]
         language: system
         pass_filenames: false
         files: ^uv\.lock$

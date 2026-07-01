@@ -21,7 +21,9 @@ jobs:
       - name: Check lockfile freshness
         run: uv lock --check
       - name: Audit dependencies
-        run: uv audit
+        # CVE-2025-69872 / GHSA-w8v5-vhqr-4h9v: diskcache unsafe pickle deserialization.
+        # No fix version available; ignored until a patched release is published.
+        run: uv audit --ignore-until-fixed GHSA-w8v5-vhqr-4h9v
 
   ci:
     uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-ci.yml@5cd8c1facb02299da618979e7a55f1953f9c075a  # main
