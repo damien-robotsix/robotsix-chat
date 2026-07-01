@@ -1,0 +1,1 @@
+Generate CycloneDX SBOM at build time for Python dependencies

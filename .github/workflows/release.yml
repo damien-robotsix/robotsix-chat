@@ -37,6 +37,34 @@ jobs:
             const fn = require('./.github/scripts/verify-ci.js');
             await fn({github, context, core});
 
+  sbom:
+    needs: verify
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@34e114876b0b11c390a56381ad16ebd13914f8d5  # v4
+        with:
+          persist-credentials: false
+
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
+
+      - name: Generate CycloneDX SBOM
+        run: uv export --format cyclonedx1.5 --frozen -o sbom.cdx.json
+
+      - name: Upload SBOM artifact
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02  # v4
+        with:
+          name: sbom.cdx.json
+          path: sbom.cdx.json
+
+      - name: Submit SBOM to Dependency Graph
+        uses: anchore/sbom-action@e22c389904149dbc22b58101806040fa8d37a610  # v0.24.0
+        with:
+          path: ./
+          format: cyclonedx-json
+          dependency-snapshot: true
+
   publish:
     needs: verify
     uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-release.yml@5cd8c1facb02299da618979e7a55f1953f9c075a  # main

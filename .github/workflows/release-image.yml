@@ -1,8 +1,8 @@
 name: Release image
 
 # Publishes container images to GHCR.  Triggers: push to main, push of semver
-# tags, manual dispatch.  SBOM generation is disabled (sbom: false) to avoid a
-# Docker Hub runtime dependency on docker/buildkit-syft-scanner.
+# tags, manual dispatch.  SBOM generation is enabled — BuildKit ≥0.13 has
+# native SBOM support without the docker/buildkit-syft-scanner dependency.
 # See deploy/README.md for how the server consumes the `main` tag via Watchtower.
 on:
   push:
@@ -72,4 +72,4 @@ jobs:
           tags: ${{ steps.meta.outputs.tags }}
           labels: ${{ steps.meta.outputs.labels }}
           provenance: mode=max
-          sbom: false
+          sbom: true
