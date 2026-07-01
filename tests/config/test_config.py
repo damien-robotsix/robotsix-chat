@@ -843,9 +843,7 @@ def test_subsessions_defaults() -> None:
     assert settings.subsessions.store_path == ".data/subsessions.json"
 
 
-def test_subsessions_from_yaml(
-    monkeypatch: pytest.MonkeyPatch, tmp_path: Path
-) -> None:
+def test_subsessions_from_yaml(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     """The ``subsessions`` YAML section overrides the defaults."""
     _wipe_env_vars(monkeypatch)
 

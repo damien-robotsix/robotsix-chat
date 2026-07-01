@@ -104,9 +104,7 @@ class SubsessionEnv:
     registry: SubsessionRegistry
     delivery: ParentDelivery
     conversation_store: ConversationStore
-    agent_factory: Callable[
-        [Settings, int, SubsessionContext, CloseState], ChatAgent
-    ]
+    agent_factory: Callable[[Settings, int, SubsessionContext, CloseState], ChatAgent]
     event_sink: EventSink | None = None
     # Strong refs to worker tasks spawned via spawn_subsession (belt and
     # braces alongside the registry's _running map).
@@ -338,8 +336,7 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
             no_change_cap = env.settings.subsessions.auto_stop_no_change_runs
             if consecutive_no_change >= no_change_cap:
                 summary = (
-                    f"Auto-stopped after {no_change_cap} consecutive "
-                    "no-change runs."
+                    f"Auto-stopped after {no_change_cap} consecutive no-change runs."
                 )
                 closed = registry.mark_closed(
                     sub_id,
@@ -354,9 +351,7 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                 return
 
             # Sleep until the next tick, waking early on a steering message.
-            woke = await registry.wait_for_inbox(
-                sub_id, timeout=info.interval_seconds
-            )
+            woke = await registry.wait_for_inbox(sub_id, timeout=info.interval_seconds)
             pending = registry.drain_inbox(sub_id) if woke else []
 
     except asyncio.CancelledError:
@@ -473,8 +468,7 @@ def _resume_entry(env: SubsessionEnv, entry: dict[str, object]) -> None:
     # reliable destination.
     env.conversation_store.record_for_session(
         owner,
-        f"[Subsession {sub_id[:8]} ({kind.value}) "
-        f"'{info.title}' interrupted]",
+        f"[Subsession {sub_id[:8]} ({kind.value}) '{info.title}' interrupted]",
         summary,
     )
 

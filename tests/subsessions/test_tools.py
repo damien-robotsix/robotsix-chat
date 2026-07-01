@@ -26,9 +26,7 @@ from tests.common.subsession_fakes import (
 OWNER = "sess-main"
 
 
-def _ctx(
-    *, subsession_id: str | None = None, depth: int = 0
-) -> SubsessionContext:
+def _ctx(*, subsession_id: str | None = None, depth: int = 0) -> SubsessionContext:
     """Build a ``SubsessionContext`` for the owning test session."""
     return SubsessionContext(
         owner_session_id=OWNER, subsession_id=subsession_id, depth=depth
@@ -235,9 +233,7 @@ async def test_message_tool_scope_guard_rejects_foreign_subsession() -> None:
 
     result = await message(foreign.id, "psst")
 
-    assert result == (
-        f"No subsession {foreign.id!r} in this conversation's tree."
-    )
+    assert result == (f"No subsession {foreign.id!r} in this conversation's tree.")
     assert env.registry.drain_inbox(foreign.id) == []
 
 
@@ -250,9 +246,7 @@ async def test_close_tool_scope_guard_rejects_foreign_subsession() -> None:
 
     result = await close(foreign.id)
 
-    assert result == (
-        f"No subsession {foreign.id!r} in this conversation's tree."
-    )
+    assert result == (f"No subsession {foreign.id!r} in this conversation's tree.")
     assert foreign.is_active
 
 

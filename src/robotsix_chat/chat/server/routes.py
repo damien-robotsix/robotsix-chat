@@ -623,9 +623,7 @@ async def subsessions_message_endpoint(request: Request) -> JSONResponse:
             {"error": "subsession is not active", "subsession_id": sub_id},
             status_code=409,
         )
-    return JSONResponse(
-        {"subsession_id": sub_id, "status": "queued"}, status_code=202
-    )
+    return JSONResponse({"subsession_id": sub_id, "status": "queued"}, status_code=202)
 
 
 async def subsessions_close_endpoint(request: Request) -> JSONResponse:

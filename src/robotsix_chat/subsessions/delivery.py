@@ -60,8 +60,7 @@ class ParentDelivery:
         Best-effort: failures are logged, never raised back into a worker.
         """
         label = (
-            f"[Subsession {info.id[:8]} ({info.kind.value}) "
-            f"'{info.title}' {reason}]"
+            f"[Subsession {info.id[:8]} ({info.kind.value}) '{info.title}' {reason}]"
         )
         try:
             if info.parent_id is not None and self._registry.enqueue_message(
@@ -71,9 +70,7 @@ class ParentDelivery:
             # Main-chat parent, or nested parent already terminal → degrade
             # to the owning session so the outcome is never lost.
             async with self._run_serializer.for_owner(info.owner_session_id):
-                self._store.record_for_session(
-                    info.owner_session_id, label, summary
-                )
+                self._store.record_for_session(info.owner_session_id, label, summary)
         except Exception:
             logger.exception(
                 "Failed to deliver subsession %s summary to its parent", info.id
@@ -95,6 +92,4 @@ class ParentDelivery:
             async with self._run_serializer.for_owner(info.owner_session_id):
                 self._store.record_for_session(info.owner_session_id, label, text)
         except Exception:
-            logger.exception(
-                "Failed to deliver subsession %s run result", info.id
-            )
+            logger.exception("Failed to deliver subsession %s run result", info.id)

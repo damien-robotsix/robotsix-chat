@@ -369,9 +369,7 @@ def _build_subsessions_raw(yaml_data: Any) -> dict[str, Any]:
     if max_depth is not None:
         raw["max_depth"] = max_depth
 
-    default_level = _parse_int(
-        "SUBSESSIONS_DEFAULT_MODEL_LEVEL", "default_model_level"
-    )
+    default_level = _parse_int("SUBSESSIONS_DEFAULT_MODEL_LEVEL", "default_model_level")
     if default_level is not None:
         raw["default_model_level"] = default_level
 

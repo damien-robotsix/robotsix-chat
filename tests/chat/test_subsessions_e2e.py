@@ -51,6 +51,7 @@ async def _next_frame_of_type(
     timeout: float = 2.0,
 ) -> dict[str, object]:
     """Consume frames from *queue* until one of *frame_type* arrives."""
+
     async def _drain() -> dict[str, object]:
         while True:
             frame = await queue.get()
@@ -129,9 +130,7 @@ async def test_user_chat_subsession_full_lifecycle_over_http() -> None:
         # -- the subsession shows up on the REST surface -------------------
         listing = await client.get("/subsessions", params={"session_id": SESSION})
         assert listing.status_code == 200
-        assert [s["subsession_id"] for s in listing.json()["subsessions"]] == [
-            sub_id
-        ]
+        assert [s["subsession_id"] for s in listing.json()["subsessions"]] == [sub_id]
 
         # -- user replies via POST /subsessions/{id}/message ----------------
         posted = await client.post(

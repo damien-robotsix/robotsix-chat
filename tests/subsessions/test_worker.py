@@ -81,9 +81,7 @@ async def test_task_single_turn_completes_and_delivers() -> None:
     assert info.status is SubsessionStatus.CLOSED
     assert info.close_reason == "completed"
     assert info.summary == "result 42"
-    assert [(e.role, e.text) for e in info.transcript] == [
-        ("assistant", "result 42")
-    ]
+    assert [(e.role, e.text) for e in info.transcript] == [("assistant", "result 42")]
 
     # Exactly one agent turn with the initial prompt as input.
     assert len(agent.calls) == 1
@@ -140,9 +138,7 @@ async def test_user_chat_waits_between_turns_and_closes_via_close_state() -> Non
     factory = CapturingAgentFactory(agent)
     env = build_env(agent_factory=factory)
 
-    sub_id = _spawn(
-        env, kind=SubsessionKind.USER_CHAT, prompt="ask about deploys"
-    )
+    sub_id = _spawn(env, kind=SubsessionKind.USER_CHAT, prompt="ask about deploys")
     await wait_until(
         lambda: env.registry.get(sub_id).status is SubsessionStatus.WAITING  # type: ignore[union-attr]
     )
@@ -256,9 +252,7 @@ async def test_periodic_no_change_reply_is_suppressed() -> None:
 async def test_periodic_auto_stops_after_consecutive_no_change_runs() -> None:
     """N consecutive NO_CHANGE runs close the subsession automatically."""
     agent = FakeAgent(["NO_CHANGE", "no_change again"])
-    env = build_env(
-        agent=agent, settings=make_settings(auto_stop_no_change_runs=2)
-    )
+    env = build_env(agent=agent, settings=make_settings(auto_stop_no_change_runs=2))
 
     sub_id = _spawn(env, kind=SubsessionKind.PERIODIC, interval_seconds=0.02)
     await _await_worker(env, sub_id)
@@ -420,8 +414,7 @@ async def test_external_cancel_mid_turn_no_double_delivery() -> None:
     assert env.conversation_store.history(OWNER) == []
     # Idempotent: the external close won exactly once.
     assert (
-        env.registry.cancel_and_close(sub_id, reason="again", closed_by="user")
-        is None
+        env.registry.cancel_and_close(sub_id, reason="again", closed_by="user") is None
     )
 
 

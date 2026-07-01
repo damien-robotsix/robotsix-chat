@@ -85,9 +85,7 @@ class CapturingAgentFactory:
         close_state: CloseState,
     ) -> Any:
         """Record the call and hand out the next scripted agent."""
-        agent = (
-            self._agents.pop(0) if len(self._agents) > 1 else self._agents[0]
-        )
+        agent = self._agents.pop(0) if len(self._agents) > 1 else self._agents[0]
         self.captured.append(
             {
                 "settings": settings,
@@ -178,9 +176,7 @@ def build_env(
         agent_factory = CapturingAgentFactory(agent or FakeAgent())
     settings = settings or make_settings()
     store = store or ConversationStore()
-    registry = registry or SubsessionRegistry(
-        event_sink=event_sink, store_path=None
-    )
+    registry = registry or SubsessionRegistry(event_sink=event_sink, store_path=None)
     delivery = ParentDelivery(
         conversation_store=store,
         registry=registry,
@@ -200,6 +196,7 @@ async def wait_until(
     predicate: Any, *, timeout: float = 2.0, interval: float = 0.005
 ) -> None:
     """Poll *predicate* until it returns truthy or *timeout* elapses."""
+
     async def _poll() -> None:
         while not predicate():
             await asyncio.sleep(interval)

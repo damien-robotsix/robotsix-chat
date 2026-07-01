@@ -486,9 +486,7 @@ class SubsessionRegistry:
         except OSError:
             logger.warning("Could not create parent dir for %s", self._store_path)
             return
-        entries = [
-            info.snapshot(with_transcript=True) for info in self._subs.values()
-        ]
+        entries = [info.snapshot(with_transcript=True) for info in self._subs.values()]
         try:
             self._store_path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
         except OSError:

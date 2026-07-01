@@ -257,9 +257,7 @@ async def test_cancel_and_close_cancels_task_and_builds_summary() -> None:
     assert task.cancelled()
 
     # Idempotent: a second call is a no-op.
-    assert (
-        registry.cancel_and_close(info.id, reason="again", closed_by="user") is None
-    )
+    assert registry.cancel_and_close(info.id, reason="again", closed_by="user") is None
 
 
 def test_fail_sets_failed_state_and_summary() -> None:
