@@ -1,0 +1,1 @@
+Add dependency-review action to block PRs introducing vulnerable dependencies
