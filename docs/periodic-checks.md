@@ -1,9 +1,10 @@
-# Periodic Checks
+# Periodic Checks (periodic subsessions)
 
-The assistant can arm **periodic background checks** that re-run on a regular cadence — e.g. every
-30 minutes — to monitor the mill board for ticket status changes, poll an endpoint, or watch for any
-recurring condition. Checks run in a fresh sub-agent with access to all the same tools (mill,
-calendar, refdocs), so they can query the board, check ticket status, and report back.
+The assistant can arm **periodic subsessions** that re-run on a regular cadence — e.g. every 30
+minutes — to monitor the mill board for ticket status changes, poll an endpoint, or watch for any
+recurring condition. Each run executes in a sub-agent with the same tool suite as the main agent
+(mill, board reader, calendar, refdocs, …), so it can query the board, check ticket status, and
+report back.
 
 ## Setting up a periodic board check
 
@@ -11,28 +12,25 @@ Tell the assistant something like:
 
 > "Watch my board tickets and let me know if any of them change status — check every 30 minutes."
 
-The assistant calls `start_check_loop` with:
+The assistant calls `spawn_subsession` with:
 
-| Parameter                 | Value                                                                                                       |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `check_description`       | A self-contained prompt for the sub-agent: what to check, which tickets to watch, what constitutes a change |
-| `interval_seconds`        | How often to re-run, in seconds. Minimum is 60 seconds; 1800 (30 minutes) is a common choice                |
-| `reason`                  | (optional) Short human-readable label shown in the UI, e.g. "Monitor ticket T-42 status"                    |
-| `max_iterations`          | (optional) Cap on num of checks; `None` means run until explicitly stopped                                  |
-| `include_previous_result` | Set to `true` so each tick can compare against the prior state                                              |
+| Parameter                 | Value                                                                                                        |
+| ------------------------- | ------------------------------------------------------------------------------------------------------------ |
+| `kind`                    | `"periodic"`                                                                                                 |
+| `title`                   | Short human-readable label shown in the UI panel, e.g. "Monitor ticket T-42 status"                          |
+| `instructions`            | A self-contained prompt for the sub-agent: what to check, which tickets to watch, what constitutes a change |
+| `model_level`             | Capability level 1–4 picked by difficulty (cheap tiers for simple polling)                                   |
+| `interval_seconds`        | How often to re-run, in seconds. Minimum is 60 seconds; 1800 (30 minutes) is a common choice                 |
+| `max_runs`                | (optional) Cap on the number of runs; omitted means run until closed                                         |
+| `include_previous_result` | Set to `true` so each run can compare against the prior state                                                |
 
-### Recommended prompt pattern for change-detection
+### Change-detection convention
 
-When you want the assistant to **only notify on changes**, include these instructions in your
-request:
-
-> "On each check, query the board for the current status of tickets X, Y, Z. Compare against the
-> previous check's result (which you'll see in the prompt). If nothing changed, respond with
-> exactly: NO_CHANGE If something changed — a ticket reached a gate, got blocked, failed, or
-> completed — describe what changed and which ticket."
-
-The `NO_CHANGE` sentinel triggers automatic suppression: no SSE notification is sent to the browser
-and no conversation turn is recorded, so you are only bothered when something actually happened.
+Each periodic run is instructed to reply with exactly `NO_CHANGE` when nothing changed since the
+previous run. The sentinel triggers automatic suppression: no result is delivered to the parent
+conversation and no notification bubble is shown — you are only bothered when something actually
+happened. After a configurable number of consecutive `NO_CHANGE` runs
+(`subsessions.auto_stop_no_change_runs`, default 5) the subsession closes itself.
 
 ## Listing active checks
 
@@ -40,52 +38,47 @@ Ask:
 
 > "What periodic checks are currently running?"
 
-The assistant calls `list_check_loops` and returns each loop's id, status, interval, iteration
-count, and a prompt snippet.
+The assistant calls `list_subsessions`. The Subsessions panel in the UI also shows every periodic
+subsession with its run count and a live countdown to the next run.
 
 You can also call the REST API directly:
 
 ```http
-GET /loops?client_id=<your-client-id>
+GET /subsessions?session_id=<your-session-id>
 ```
 
-## Cancelling a check
+## Steering or cancelling a check
 
 Ask:
 
-> "Stop the check loop for ticket T-42."
+> "Stop the check for ticket T-42." — the assistant calls `close_subsession(subsession_id)`.
 
-The assistant calls `stop_check_loop(loop_id)` with the loop id obtained from `list_check_loops` (or
-from the `start_check_loop` return message).
+While a check runs you can also refine it without restarting ("also watch ticket T-43") — the
+assistant calls `message_subsession` and the instruction is picked up on the next run.
 
-You can also call the REST API directly:
+The UI's Subsessions panel has a **Close** button on every live subsession, or call the REST API:
 
 ```http
-POST /loops/{loop_id}/stop
+POST /subsessions/{subsession_id}/close
 ```
-
-After cancellation the check no longer fires. The loop's status flips to `stopped` and it disappears
-from the UI's active-loops panel.
 
 ## How it works under the hood
 
-1. `start_check_loop` spawns an asyncio worker that runs on a configurable interval (minimum 60
-   seconds, no upper bound).
-2. On each tick, a fresh sub-agent is built via `create_agent_from_settings` — it has access to
-   mill, calendar, and refdocs tools (same as the foreground agent).
-3. When `include_previous_result` is `true`, the previous tick's result is prepended to the prompt
-   so the sub-agent can compare state across iterations.
-4. The `NO_CHANGE` sentinel (or empty result) suppresses the SSE notification and conversation-store
-   turn for that tick — you see nothing when nothing changed.
-5. When a tick result is NOT suppressed, a `loop_tick` frame is published via SSE to the browser and
-   written to the conversation store for the next foreground turn.
-6. **Auto-halt on terminal state.** Every check loop applies a `stop_when` predicate that recognises
-   terminal status keywords (`closed`, `done`, `resolved`, `completed`) in the tick result. When a
-   tick returns text containing one of these keywords (and no negation like `"not closed"`), the
-   loop stops immediately after recording that final tick — even if the sub-agent forgot to call the
-   injected `stop_check_loop` tool. This prevents zombie ticks from continuing to fire after the
-   monitored item has reached a terminal state.
-7. Loops persist to `.data/check_loops.json` and are automatically resumed after a process restart
-   (e.g. Watchtower redeploy).
-8. Concurrency is bounded by `max_check_loops` (default 5); exceeding it returns a friendly "too
-   many" message rather than raising.
+1. `spawn_subsession(kind="periodic", ...)` launches an asyncio worker that runs one agent turn per
+   tick on the configured interval (minimum `subsessions.min_interval_seconds`, default 60s).
+2. Each turn runs the subsession's own agent (built at the chosen `model_level` via
+   `create_agent_from_settings`) with the full standard tool suite plus the subsession tools.
+3. When `include_previous_result` is `true`, the previous run's result is prepended to the prompt so
+   the agent can compare state across runs.
+4. A `NO_CHANGE` reply suppresses parent delivery and the `subsession_result` SSE frame for that
+   run; N consecutive suppressed runs auto-close the subsession.
+5. A non-suppressed result is delivered to the parent conversation (a synthetic turn in the owning
+   chat session, or the parent subsession's inbox when nested) and published as a
+   `subsession_result` frame to the browser.
+6. **Terminal-state discipline.** The sub-agent calls its `complete_subsession(summary)` tool as
+   soon as the monitored condition reaches a verified terminal state — the summary is delivered to
+   the parent and the subsession closes.
+7. Subsessions persist to `.data/subsessions.json`; periodic ones are automatically resumed after a
+   process restart (e.g. Watchtower redeploy) with their remaining run budget.
+8. Concurrency is bounded by `subsessions.max_concurrent` (default 8, across all subsession kinds);
+   exceeding it returns a friendly refusal rather than raising.

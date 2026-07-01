@@ -42,7 +42,9 @@ Tools like `consult_mill`, `query_calendar`, and `component_client` all use this
 (`board_reader`, `knowledge`) are self-contained and operate locally.
 
 The LLM itself is driven through `robotsix-llmio`, which abstracts the provider behind a
-`model_level` (1–3). The agent never calls a provider directly.
+`model_level` (1–4). The agent never calls a provider directly. Background work runs in
+**subsessions** — sub-agents spawned by the main agent (one-shot tasks, periodic monitors, or
+user-facing side-chats), each at a model level picked by task difficulty.
 
 ______________________________________________________________________
 
@@ -63,12 +65,11 @@ uv run robotsix-chat
   │      Langfuse + OpenTelemetry (graceful no-op when unavailable)
   │
   ├─ 4.  Build shared singletons
-  │      ├─ EventBus              per-client SSE notification bus
-  │      ├─ TaskRegistry          background sub-agent lifecycle
-  │      ├─ CheckLoopRegistry     recurring check-loop lifecycle
+  │      ├─ EventBus              per-session SSE notification bus
+  │      ├─ SubsessionRegistry    unified subsession lifecycle (persistent)
   │      ├─ ConversationStore     multi-session turn history (persistent)
   │      ├─ RunSerializer         per-owner asyncio lock
-  │      └─ ConversationDeliveryChannel  records task results into history
+  │      └─ ParentDelivery        routes subsession summaries to their parent
   │
   ├─ 5.  create_agent_from_settings()
   │      Wires LlmioChatAgent with enabled tools:
@@ -76,7 +77,7 @@ uv run robotsix-chat
   │      board_reader, selfreview, version_check, component_client
   │
   ├─ 6.  _resume()
-  │      Restart persisted check loops (lifecycle hook)
+  │      Resume persisted periodic subsessions (lifecycle hook)
   │
   ├─ 7.  (Optional) Start ComponentAgentResponder
   │      Broker listener for incoming agent-to-agent messages
@@ -133,10 +134,12 @@ On `"done"` the client knows the reply is complete and can re-enable the input.
 | ------ | ----------------------- | ----------------------------------------------------------- |
 | `GET`  | `/`                     | Serve the chat UI (`ui/index.html`)                         |
 | `GET`  | `/health`               | Liveness probe (always open)                                |
-| `GET`  | `/events?session_id=…`  | Persistent SSE channel for background-task lifecycle events |
+| `GET`  | `/events?session_id=…`  | Persistent SSE channel for subsession lifecycle events      |
 | `GET`  | `/history?session_id=…` | Retrieve stored conversation turns                          |
-| `GET`  | `/loops?session_id=…`   | List active check loops                                     |
-| `POST` | `/loops/{id}/stop`      | Stop a running check loop                                   |
+| `GET`  | `/subsessions?session_id=…` | List the session's subsession tree                      |
+| `GET`  | `/subsessions/{id}`     | One subsession's snapshot + transcript                      |
+| `POST` | `/subsessions/{id}/message` | Send a user message to a running subsession             |
+| `POST` | `/subsessions/{id}/close`   | Close a subsession (summary still delivered)            |
 | `GET`  | `/sessions?owner_id=…`  | List all sessions for an owner                              |
 | `POST` | `/sessions`             | Create a new empty session                                  |
 
@@ -150,7 +153,8 @@ Each subpackage lives under `src/robotsix_chat/`.
 
 | Package       | Role                                                                                                                                                                                                                                                                |
 | ------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`chat/`**   | Starlette app factory, route handlers, entry point, auth middleware (`auth.py`). Conversation store (`conversation.py`), SSE event bus (`events.py`), background-task lifecycle (`tasks.py`, `loops.py`, `runner.py`), and task-delegation tools (`delegation.py`). |
+| **`chat/`**   | Starlette app factory, route handlers, entry point, auth middleware (`auth.py`). Conversation store (`conversation.py`) and SSE event bus (`events.py`). |
+| **`subsessions/`** | Unified subsession system — models, registry (state + inbox + persistence), worker turn loop, parent summary delivery, and the depth-aware agent tools (`spawn_subsession`, `message_subsession`, `close_subsession`, `list_subsessions`, `complete_subsession`). |
 | **`llm/`**    | `LlmioChatAgent` — satisfies the `ChatAgent` protocol. Wraps `robotsix-llmio`'s `create_model(level)`, producing single-block (non-streamed) replies for claudeSDK transports.                                                                                      |
 | **`config/`** | Pydantic `Settings` model (all configuration in one place). Cascade: field defaults → YAML (`config/chat.local.yaml`) → environment variables. ~30 settings spanning LLM, server, auth, memory, and all tool gates.                                                 |
 | **`ui/`**     | Single-file browser chat UI (`index.html`). No build step, no framework — served directly by `GET /`.                                                                                                                                                               |
@@ -197,8 +201,10 @@ pydantic field defaults  →  YAML (config/chat.local.yaml)  →  environment va
 - **Environment**: every setting has a corresponding env var (e.g. `SERVER_PORT`,
   `LLMIO_MODEL_LEVEL`, `AUTH_ENABLED`). Env vars override YAML, which overrides defaults.
 
-The LLM provider is selected indirectly: `model_level` (1–3) is passed to `robotsix-llmio`, which
-resolves it to a concrete provider (level 3 → claudeSDK, levels 1–2 → OpenRouter DeepSeek).
+The LLM provider is selected indirectly: `model_level` (1–4) is passed to `robotsix-llmio`, which
+resolves it to a concrete provider (levels 3–4 → claudeSDK, levels 1–2 → OpenRouter DeepSeek).
+Level 4 (`claude-fable-5`) is the frontier tier and the default for the main chat agent;
+subsessions default to level 3 unless the spawning agent picks otherwise.
 
 ______________________________________________________________________
 
@@ -222,7 +228,7 @@ State that survives restarts when `.data/` is bind-mounted:
 | File                       | Content                                                               |
 | -------------------------- | --------------------------------------------------------------------- |
 | `.data/conversations.json` | Multi-session conversation history (auto-migrated from legacy format) |
-| `.data/check_loops.json`   | Running check-loop metadata (resumed on startup)                      |
+| `.data/subsessions.json`   | Subsession state (periodic subsessions resumed on startup)            |
 | `.data/cognee/`            | Long-term memory storage (cognee)                                     |
 
 ______________________________________________________________________

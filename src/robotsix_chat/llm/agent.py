@@ -220,11 +220,10 @@ class LlmioChatAgent:
 
         # Forward the key only when one is configured; keyless levels
         # (claudeSDK) must not receive an api_key (the provider rejects it).
-        provider_kwargs: dict[str, str] = {}
         if self._api_key:
-            provider_kwargs["api_key"] = self._api_key
-
-        provider = create_model(level=self._model_level, **provider_kwargs)
+            provider = create_model(level=self._model_level, api_key=self._api_key)
+        else:
+            provider = create_model(level=self._model_level)
         message_history = _build_message_history(history)
 
         # Compute effective tools once: static tools + per-request tools from

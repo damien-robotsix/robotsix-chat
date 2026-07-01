@@ -105,7 +105,7 @@ class SubsessionEnv:
     delivery: ParentDelivery
     conversation_store: ConversationStore
     agent_factory: Callable[
-        ["Settings", int, SubsessionContext, CloseState], "ChatAgent"
+        [Settings, int, SubsessionContext, CloseState], ChatAgent
     ]
     event_sink: EventSink | None = None
     # Strong refs to worker tasks spawned via spawn_subsession (belt and
@@ -302,7 +302,8 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
             suppressed = _is_no_change(reply)
             consecutive_no_change = 0 if not suppressed else consecutive_no_change + 1
             runs = info.runs + 1
-            assert info.interval_seconds is not None  # validated at spawn
+            if info.interval_seconds is None:  # pragma: no cover - spawn validates
+                raise RuntimeError("periodic subsession without an interval")
             registry.set_status(
                 sub_id,
                 SubsessionStatus.SLEEPING,
@@ -390,33 +391,68 @@ def resume_subsessions(env: SubsessionEnv) -> None:
             logger.exception("Could not resume subsession entry %r", entry)
 
 
+def _entry_str(entry: dict[str, object], key: str, default: str = "") -> str:
+    """Coerce a persisted-entry field to ``str`` (typed JSON accessor)."""
+    value = entry.get(key, default)
+    return value if isinstance(value, str) else default
+
+
+def _entry_int(entry: dict[str, object], key: str, default: int = 0) -> int:
+    """Coerce a persisted-entry field to ``int``."""
+    value = entry.get(key)
+    return int(value) if isinstance(value, (int, float)) else default
+
+
+def _entry_float(entry: dict[str, object], key: str, default: float = 0.0) -> float:
+    """Coerce a persisted-entry field to ``float``."""
+    value = entry.get(key)
+    return float(value) if isinstance(value, (int, float)) else default
+
+
+def _entry_opt_int(entry: dict[str, object], key: str) -> int | None:
+    """Coerce a persisted-entry field to ``int | None``."""
+    value = entry.get(key)
+    return int(value) if isinstance(value, (int, float)) else None
+
+
+def _entry_opt_float(entry: dict[str, object], key: str) -> float | None:
+    """Coerce a persisted-entry field to ``float | None``."""
+    value = entry.get(key)
+    return float(value) if isinstance(value, (int, float)) else None
+
+
+def _entry_opt_str(entry: dict[str, object], key: str) -> str | None:
+    """Coerce a persisted-entry field to ``str | None``."""
+    value = entry.get(key)
+    return value if isinstance(value, str) else None
+
+
 def _resume_entry(env: SubsessionEnv, entry: dict[str, object]) -> None:
     """Resume a single persisted registry entry (see resume_subsessions)."""
-    status = str(entry.get("status", ""))
-    kind = SubsessionKind(str(entry.get("kind", "task")))
-    sub_id = str(entry.get("subsession_id", ""))
-    owner = str(entry.get("owner_session_id", ""))
+    status = _entry_str(entry, "status")
+    kind = SubsessionKind(_entry_str(entry, "kind", "task"))
+    sub_id = _entry_str(entry, "subsession_id")
+    owner = _entry_str(entry, "owner_session_id")
     if not sub_id or not owner:
         return
-    active = status in {s.value for s in ACTIVE_STATUSES}
-    if not active:
+    if status not in {s.value for s in ACTIVE_STATUSES}:
         _restore_entry(env.registry, entry)
         return
 
     if kind is SubsessionKind.PERIODIC:
-        max_runs = entry.get("max_runs")
-        runs = int(entry.get("runs", 0) or 0)
-        remaining = None if max_runs is None else max(1, int(max_runs) - runs)  # type: ignore[arg-type]
+        max_runs = _entry_opt_int(entry, "max_runs")
+        runs = _entry_int(entry, "runs")
+        remaining = None if max_runs is None else max(1, max_runs - runs)
         spawn_subsession(
             env=env,
             kind=kind,
             owner_session_id=owner,
-            parent_id=entry.get("parent_id") if isinstance(entry.get("parent_id"), str) else None,  # type: ignore[arg-type]
-            depth=int(entry.get("depth", 1) or 1),
-            title=str(entry.get("title", "")),
-            prompt=str(entry.get("prompt", "")),
-            model_level=int(entry.get("model_level", 3) or 3),
-            interval_seconds=float(entry.get("interval_seconds") or 0) or None,
+            parent_id=_entry_opt_str(entry, "parent_id"),
+            depth=_entry_int(entry, "depth", 1),
+            title=_entry_str(entry, "title"),
+            prompt=_entry_str(entry, "prompt"),
+            model_level=_entry_int(entry, "model_level", 3),
+            interval_seconds=_entry_opt_float(entry, "interval_seconds"),
             include_previous_result=bool(entry.get("include_previous_result")),
             max_runs=remaining,
             sub_id=sub_id,
@@ -438,7 +474,7 @@ def _resume_entry(env: SubsessionEnv, entry: dict[str, object]) -> None:
     env.conversation_store.record_for_session(
         owner,
         f"[Subsession {sub_id[:8]} ({kind.value}) "
-        f"'{entry.get('title', '')}' interrupted]",
+        f"'{info.title}' interrupted]",
         summary,
     )
 
@@ -456,55 +492,37 @@ def _restore_entry(
     restored as RUNNING so a subsequent ``mark_interrupted`` transition
     is valid.
     """
-    sub_id = str(entry.get("subsession_id", ""))
+    sub_id = _entry_str(entry, "subsession_id")
     if not sub_id or registry.get(sub_id) is not None:
         return None
     try:
         status = (
             SubsessionStatus.RUNNING
             if force_active
-            else SubsessionStatus(str(entry.get("status")))
+            else SubsessionStatus(_entry_str(entry, "status"))
         )
         info = SubsessionInfo(
             id=sub_id,
-            kind=SubsessionKind(str(entry.get("kind", "task"))),
-            owner_session_id=str(entry.get("owner_session_id", "")),
-            parent_id=entry.get("parent_id") if isinstance(entry.get("parent_id"), str) else None,  # type: ignore[arg-type]
-            depth=int(entry.get("depth", 1) or 1),
-            title=str(entry.get("title", "")),
-            prompt=str(entry.get("prompt", "")),
-            model_level=int(entry.get("model_level", 3) or 3),
+            kind=SubsessionKind(_entry_str(entry, "kind", "task")),
+            owner_session_id=_entry_str(entry, "owner_session_id"),
+            parent_id=_entry_opt_str(entry, "parent_id"),
+            depth=_entry_int(entry, "depth", 1),
+            title=_entry_str(entry, "title"),
+            prompt=_entry_str(entry, "prompt"),
+            model_level=_entry_int(entry, "model_level", 3),
             status=status,
-            created_at=float(entry.get("created_at", 0.0) or 0.0),
-            last_activity_at=float(entry.get("last_activity_at", 0.0) or 0.0),
-            interval_seconds=(
-                float(entry["interval_seconds"])  # type: ignore[arg-type]
-                if entry.get("interval_seconds") is not None
-                else None
-            ),
+            created_at=_entry_float(entry, "created_at"),
+            last_activity_at=_entry_float(entry, "last_activity_at"),
+            interval_seconds=_entry_opt_float(entry, "interval_seconds"),
             include_previous_result=bool(entry.get("include_previous_result")),
-            runs=int(entry.get("runs", 0) or 0),
-            max_runs=(
-                int(entry["max_runs"])  # type: ignore[arg-type]
-                if entry.get("max_runs") is not None
-                else None
-            ),
-            last_result=(
-                str(entry["last_result"])
-                if entry.get("last_result") is not None
-                else None
-            ),
-            summary=(
-                str(entry["summary"]) if entry.get("summary") is not None else None
-            ),
-            close_reason=(
-                str(entry["close_reason"])
-                if entry.get("close_reason") is not None
-                else None
-            ),
-            error=str(entry["error"]) if entry.get("error") is not None else None,
+            runs=_entry_int(entry, "runs"),
+            max_runs=_entry_opt_int(entry, "max_runs"),
+            last_result=_entry_opt_str(entry, "last_result"),
+            summary=_entry_opt_str(entry, "summary"),
+            close_reason=_entry_opt_str(entry, "close_reason"),
+            error=_entry_opt_str(entry, "error"),
         )
-    except (ValueError, TypeError):
+    except ValueError:
         logger.warning("Skipping malformed persisted subsession %r", sub_id)
         return None
     transcript = entry.get("transcript")
@@ -513,9 +531,9 @@ def _restore_entry(
             if isinstance(item, dict):
                 info.transcript.append(
                     TranscriptEntry(
-                        role=str(item.get("role", "")),
-                        text=str(item.get("text", "")),
-                        timestamp=float(item.get("timestamp", 0.0) or 0.0),
+                        role=_entry_str(item, "role"),
+                        text=_entry_str(item, "text"),
+                        timestamp=_entry_float(item, "timestamp"),
                     )
                 )
     registry.restore(info)

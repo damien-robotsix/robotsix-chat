@@ -53,9 +53,6 @@ logger = logging.getLogger(__name__)
 # recent history after a reload; older ones are pruned oldest-first.
 _MAX_TERMINAL_ENTRIES = 50
 
-# Sentinel meaning "leave this field unchanged" in set_status.
-_UNSET: object = object()
-
 
 class SubsessionRegistry:
     """Track every subsession in the process (see module docstring)."""
@@ -166,13 +163,13 @@ class SubsessionRegistry:
         sub_id: str,
         status: SubsessionStatus,
         *,
-        runs: object = _UNSET,
-        next_run_at: object = _UNSET,
-        last_result: object = _UNSET,
+        runs: int | None = None,
+        next_run_at: float | None = None,
+        last_result: str | None = None,
     ) -> None:
         """Mutate scheduling state and publish ``subsession_updated``.
 
-        Keyword fields left at their default are not touched.  No-op for
+        Keyword fields left at ``None`` are not touched.  No-op for
         unknown or already-terminal subsessions (guards the race between
         an external close and the worker's own bookkeeping).
         """
@@ -181,12 +178,12 @@ class SubsessionRegistry:
             return
         info.status = status
         info.last_activity_at = self._clock()
-        if runs is not _UNSET:
-            info.runs = int(runs)  # type: ignore[arg-type]
-        if next_run_at is not _UNSET:
-            info.next_run_at = next_run_at  # type: ignore[assignment]
-        if last_result is not _UNSET:
-            info.last_result = last_result  # type: ignore[assignment]
+        if runs is not None:
+            info.runs = runs
+        if next_run_at is not None:
+            info.next_run_at = next_run_at
+        if last_result is not None:
+            info.last_result = last_result
         self._publish(
             info.owner_session_id,
             subsession_updated_frame(
