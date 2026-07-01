@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Bump `docker/build-push-action` from v7.2.0 to v7.3.0 (dependabot PR #353).
 - Extend `scripts/check_sse_event_types.py` to scan `tests/**/*.py` for bare SSE event-type string
   literals, fixing 31 bare literals across `tests/chat/test_delegation.py`,
   `tests/chat/test_events.py`, and `tests/pending_questions/test_store.py` to use canonical
