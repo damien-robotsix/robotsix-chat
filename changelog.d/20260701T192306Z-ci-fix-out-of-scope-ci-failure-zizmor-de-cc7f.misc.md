@@ -1,0 +1,1 @@
+ci_fix: out-of-scope CI failure — zizmor/dependabot-cooldown in .github/dependabot.yml — needs cooldown configuration (e.g., open-pull-requests-limit) added to Dependabot update groups
