@@ -1,3 +1,6 @@
+## 0.0.0 (unreleased)
+
+- Remove dead `_terminal_result` function from `chat/delegation.py` (superseded by `_terminal_state_result` in `chat/loops.py`)
 # Changelog
 
 All notable changes to this project will be documented in this file.
