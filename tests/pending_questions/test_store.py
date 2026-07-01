@@ -6,7 +6,11 @@ from typing import Any
 
 import pytest
 
-from robotsix_chat.chat.events import SSE_PENDING_QUESTION_ANSWERED_TYPE, EventBus
+from robotsix_chat.chat.events import (
+    SSE_PENDING_QUESTION_ANSWERED_TYPE,
+    SSE_PENDING_QUESTION_THREAD_MESSAGE_TYPE,
+    EventBus,
+)
 from robotsix_chat.pending_questions.store import (
     PendingQuestion,
     PendingQuestionsStore,
@@ -306,7 +310,7 @@ def test_append_to_thread_publishes_frame() -> None:
     bus.unsubscribe("sess-1", q)
 
     thread_frames = [
-        f for f in frames if f.get("type") == "pending_question_thread_message"
+        f for f in frames if f.get("type") == SSE_PENDING_QUESTION_THREAD_MESSAGE_TYPE
     ]
     assert len(thread_frames) == 1
     assert thread_frames[0]["question_id"] == entry.question_id
@@ -387,7 +391,7 @@ def test_append_to_thread_deduplicates_identical_message() -> None:
     bus.unsubscribe("sess-1", q)
 
     thread_frames = [
-        f for f in frames if f.get("type") == "pending_question_thread_message"
+        f for f in frames if f.get("type") == SSE_PENDING_QUESTION_THREAD_MESSAGE_TYPE
     ]
     assert len(thread_frames) == 1
     assert thread_frames[0]["text"] == "Hello"

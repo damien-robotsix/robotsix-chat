@@ -4,7 +4,8 @@
 Extracts ``SSE_*_TYPE = "..."`` assignments from
 ``src/robotsix_chat/chat/events.py``, then scans
 ``src/robotsix_chat/ui/index.html`` for JavaScript string literals that
-look like SSE event types.  Exits non-zero when:
+look like SSE event types, and scans ``tests/**/*.py`` for bare string
+literals matching canonical event-type values.  Exits non-zero when:
 
 1. A canonical value from ``events.py`` is **missing** from the HTML
    (Python renamed → frontend silently broken).
@@ -12,6 +13,8 @@ look like SSE event types.  Exits non-zero when:
    comparison / assignment (``frame.type === "…"``, ``type: "…"``) is
    **not** one of the canonical constants (typo, stale reference,
    orphaned string).
+3. A bare string literal in a test file matches a canonical event-type
+   value (e.g. ``"task_started"`` instead of ``SSE_TASK_STARTED_TYPE``).
 
 This complements ``scripts/check_kind_literals.py`` (which enforces
 ``TicketKind`` constants in test files).
@@ -140,9 +143,35 @@ def main() -> int:
             print(f"  {val}", file=sys.stderr)
         print(file=sys.stderr)
 
+    # ------------------------------------------------------------------
+    # Step 3 — scan test files for bare event-type string literals
+    # ------------------------------------------------------------------
+    test_dir = repo_root / "tests"
+    # Build a regex that matches any canonical value as a quoted string.
+    _alt = "|".join(
+        re.escape(v) for v in sorted(canonical_values, key=len, reverse=True)
+    )
+    _BARE_SSE_LITERAL_RE = re.compile(rf'"({_alt})"|\'({_alt})\'')
+    # Strip Python comments (both full-line and inline) before scanning.
+    _PY_COMMENT_RE = re.compile(r"#.*$", re.MULTILINE)
+
+    for py_file in sorted(test_dir.rglob("*.py")):
+        raw = py_file.read_text(encoding="utf-8")
+        # Remove comment lines so we don't flag documentation references.
+        code_only = _PY_COMMENT_RE.sub("", raw)
+        for m in _BARE_SSE_LITERAL_RE.finditer(code_only):
+            val = m.group(1) or m.group(2)
+            violations = True
+            print(
+                f"{py_file.relative_to(repo_root)}: bare string "
+                f'"{val}" — replace with the corresponding '
+                f"SSE_*_TYPE constant from robotsix_chat.chat.events",
+                file=sys.stderr,
+            )
+
     if violations:
         print(
-            "Run `python scripts/check_sse_event_types.py` locally to reproduce.",
+            "\nRun `python scripts/check_sse_event_types.py` locally to reproduce.",
             file=sys.stderr,
         )
         return 1
