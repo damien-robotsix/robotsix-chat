@@ -65,12 +65,18 @@
   }
   #connection-dot.error { background: var(--dot-red); }
 
-  #settings-toggle {
-    background: none; border: none; color: var(--header-fg);
-    font-size: 1.2rem; cursor: pointer; line-height: 1;
-    padding: 0.2rem 0.4rem; border-radius: 4px;
+  /* Shared style for the labeled header buttons (Chats / Settings /
+     Subsessions). Icon + short text label + title tooltip, so their
+     purpose is clear at a glance. */
+  .header-btn {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    background: none; border: 1px solid rgba(255,255,255,0.18);
+    color: var(--header-fg);
+    font-size: 0.8rem; font-family: inherit; cursor: pointer; line-height: 1;
+    padding: 0.3rem 0.55rem; border-radius: 4px; white-space: nowrap;
+    transition: background 0.15s;
   }
-  #settings-toggle:hover { background: rgba(255,255,255,0.15); }
+  .header-btn:hover { background: rgba(255,255,255,0.15); }
 
   #settings-panel {
     display: none; position: absolute; top: 2.5rem; right: 1rem;
@@ -87,16 +93,9 @@
   }
 
   /* ------------------------------------------------------------------ */
-  /* Tasks side panel                                                    */
+  /* Subsessions side panel                                              */
   /* ------------------------------------------------------------------ */
-  #tasks-toggle {
-    background: none; border: none; color: var(--header-fg);
-    font-size: 1.2rem; cursor: pointer; line-height: 1;
-    padding: 0.2rem 0.4rem; border-radius: 4px;
-  }
-  #tasks-toggle:hover { background: rgba(255,255,255,0.15); }
-
-  #tasks-panel {
+  #subsessions-panel {
     display: none; position: fixed; top: 0; right: 0; bottom: 0;
     width: 420px; min-width: 260px; max-width: 90vw;
     background: var(--composer-bg); color: var(--text-fg);
@@ -104,95 +103,161 @@
     z-index: 20; overflow-y: auto;
     box-shadow: -4px 0 12px rgba(0,0,0,0.25);
   }
-  #tasks-panel.visible { display: flex; flex-direction: column; }
+  #subsessions-panel.visible { display: flex; flex-direction: column; }
 
-  #tasks-resize-handle {
+  #subsessions-resize-handle {
     display: none; position: fixed; top: 0; bottom: 0;
     width: 6px; cursor: ew-resize; z-index: 21;
   }
-  #tasks-resize-handle:hover,
-  #tasks-resize-handle.active { background: rgba(59, 130, 246, 0.5); }
+  #subsessions-resize-handle:hover,
+  #subsessions-resize-handle.active { background: rgba(59, 130, 246, 0.5); }
 
-  .tasks-header {
+  .subs-header {
     padding: 0.6rem 0.75rem; font-weight: 700; font-size: 0.95rem;
     border-bottom: 1px solid var(--composer-border);
     background: var(--header-bg); color: var(--header-fg);
     flex-shrink: 0; display: flex; align-items: center;
     justify-content: space-between;
   }
-  .tasks-header .dismiss {
+  .subs-header .dismiss {
     background: none; border: none; color: var(--header-fg);
     font-size: 1.2rem; cursor: pointer; line-height: 1; padding: 0 0.2rem;
     opacity: 0.7;
   }
-  .tasks-header .dismiss:hover { opacity: 1; }
+  .subs-header .dismiss:hover { opacity: 1; }
 
-  #tasks-list { flex: 1; overflow-y: auto; padding: 0.5rem; }
+  #subsessions-list { flex: 1; overflow-y: auto; padding: 0.5rem; }
 
-  .task-row {
+  .subs-empty { padding: 0.75rem 0.5rem; font-size: 0.82rem; color: #64748b; }
+
+  .subs-row {
     padding: 0.5rem 0.6rem; margin-bottom: 0.4rem;
     border-radius: 6px; font-size: 0.82rem;
     border: 1px solid var(--composer-border);
     background: var(--assistant-bubble-bg);
     word-break: break-word;
   }
-  .task-row .task-id    { font-family: monospace; font-size: 0.75rem; color: #94a3b8; }
-  .task-row .task-desc  { font-weight: 600; margin: 0.15rem 0; }
-  .task-row .task-meta  { font-size: 0.72rem; color: #94a3b8; }
-  .task-row .task-result { margin-top: 0.25rem; font-size: 0.78rem; }
+  .subs-row.terminal { opacity: 0.55; }
 
-  .task-row.state-running   { border-left: 3px solid #3b82f6; }
-  .task-row.state-completed { border-left: 3px solid #22c55e; }
-  .task-row.state-failed    { border-left: 3px solid #ef4444; }
+  .subs-row.status-running     { border-left: 3px solid #3b82f6; }
+  .subs-row.status-waiting     { border-left: 3px solid #f59e0b; }
+  .subs-row.status-sleeping    { border-left: 3px solid #64748b; }
+  .subs-row.status-closed      { border-left: 3px solid #475569; }
+  .subs-row.status-failed,
+  .subs-row.status-interrupted { border-left: 3px solid #ef4444; }
 
-  /* Check Loops section (mirrors .task-row) */
-  .loop-row {
-    padding: 0.5rem 0.6rem; margin-bottom: 0.4rem;
-    border-radius: 6px; font-size: 0.82rem;
-    border: 1px solid var(--composer-border);
-    background: var(--assistant-bubble-bg);
-    word-break: break-word;
+  .subs-title-line {
+    display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
   }
-  .loop-row .loop-id    { font-family: monospace; font-size: 0.75rem; color: #94a3b8; }
-  .loop-row .loop-reason { font-weight: 600; margin: 0.15rem 0;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
-  .loop-row .loop-meta  { font-size: 0.72rem; color: #94a3b8; }
-  .loop-row .loop-result { margin-top: 0.25rem; font-size: 0.78rem;
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .subs-kind  { font-size: 0.72rem; color: #94a3b8; white-space: nowrap; }
+  .subs-title { font-weight: 600; flex: 1; min-width: 0; }
 
-  .loop-row.state-running  { border-left: 3px solid #3b82f6; }
-  .loop-row.state-stopped  { border-left: 3px solid #64748b; }
-  .loop-row.state-failed   { border-left: 3px solid #ef4444; }
+  .subs-status {
+    font-size: 0.68rem; font-weight: 600; padding: 0.1rem 0.45rem;
+    border-radius: 999px; white-space: nowrap; text-transform: uppercase;
+  }
+  .subs-status.status-running {
+    background: rgba(59, 130, 246, 0.2); color: #93c5fd;
+    animation: subs-pulse 1.6s infinite ease-in-out;
+  }
+  .subs-status.status-waiting  { background: rgba(245, 158, 11, 0.2); color: #fcd34d; }
+  .subs-status.status-sleeping { background: rgba(100, 116, 139, 0.3); color: #cbd5e1; }
+  .subs-status.status-closed   { background: rgba(148, 163, 184, 0.2); color: #94a3b8; }
+  .subs-status.status-failed,
+  .subs-status.status-interrupted {
+    background: rgba(239, 68, 68, 0.2); color: #fca5a5;
+  }
 
-  .loop-stop-btn {
-    margin-top: 0.3rem;
-    padding: 0.15rem 0.5rem;
-    font-size: 0.72rem;
-    border: 1px solid #ef4444;
-    border-radius: 4px;
-    color: #fca5a5;
-    background: transparent;
-    cursor: pointer;
+  @keyframes subs-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.55; }
+  }
+
+  .subs-level {
+    font-size: 0.68rem; padding: 0.1rem 0.35rem; border-radius: 4px;
+    border: 1px solid var(--composer-border); color: #94a3b8;
+    white-space: nowrap;
+  }
+
+  .subs-meta { font-size: 0.72rem; color: #94a3b8; margin-top: 0.2rem; }
+
+  .subs-result {
+    margin-top: 0.25rem; font-size: 0.75rem; color: #cbd5e1;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .subs-actions { display: flex; gap: 0.4rem; margin-top: 0.35rem; }
+
+  .subs-action-btn {
+    padding: 0.2rem 0.55rem; font-size: 0.75rem; font-weight: 600;
+    border: 1px solid var(--composer-border); border-radius: 4px;
+    background: transparent; color: var(--text-fg); cursor: pointer;
     transition: background 0.15s;
   }
-  .loop-stop-btn:hover:not(:disabled) {
-    background: rgba(239, 68, 68, 0.15);
+  .subs-action-btn:hover:not(:disabled) { background: rgba(59, 130, 246, 0.15); }
+  .subs-action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .subs-close-btn { border-color: #ef4444; color: #fca5a5; }
+  .subs-close-btn:hover:not(:disabled) { background: rgba(239, 68, 68, 0.15); }
+
+  .subs-transcript {
+    display: flex; flex-direction: column; gap: 0.3rem;
+    margin-top: 0.4rem; padding-top: 0.4rem;
+    border-top: 1px solid var(--composer-border);
+    max-height: 240px; overflow-y: auto;
   }
-  .loop-stop-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
+
+  .subs-msg {
+    font-size: 0.78rem; line-height: 1.35; white-space: pre-wrap;
+    word-break: break-word; padding: 0.25rem 0.45rem; border-radius: 6px;
+    max-width: 95%;
+  }
+  .subs-msg--user {
+    background: rgba(29, 78, 216, 0.3); color: var(--user-bubble-fg);
+    align-self: flex-end;
+  }
+  .subs-msg--assistant {
+    background: var(--chat-bg); color: var(--text-fg);
+    align-self: flex-start;
+  }
+  .subs-msg--parent {
+    background: rgba(124, 58, 237, 0.2); color: #ddd6fe;
+    align-self: flex-start;
+  }
+  .subs-msg--system { color: #94a3b8; font-style: italic; }
+
+  .subs-msg-role {
+    display: block; font-weight: 600; font-size: 0.68rem;
+    opacity: 0.8; margin-bottom: 0.1rem;
+  }
+
+  .subs-input-row {
+    display: flex; gap: 0.4rem; align-items: flex-end; margin-top: 0.4rem;
+  }
+  .subs-input-row textarea {
+    flex: 1; resize: none;
+    background: var(--chat-bg); color: var(--text-fg);
+    border: 1px solid var(--composer-border); border-radius: 6px;
+    padding: 0.35rem 0.5rem; font-size: 0.82rem; font-family: inherit;
+    line-height: 1.35; min-height: 32px; max-height: 90px;
+    outline: none;
+  }
+  .subs-input-row textarea:focus { border-color: var(--btn-primary-bg); }
+
+  .subs-send-btn {
+    background: var(--btn-primary-bg); color: var(--btn-primary-fg);
+    border: none; border-radius: 6px; padding: 0.35rem 0.7rem;
+    font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    white-space: nowrap; transition: background 0.15s;
+  }
+  .subs-send-btn:hover:not(:disabled) { background: var(--btn-primary-hover); }
+  .subs-send-btn:disabled {
+    background: var(--btn-disabled-bg); cursor: not-allowed;
   }
 
   /* ------------------------------------------------------------------ */
   /* Sessions panel (left sidebar)                                       */
   /* ------------------------------------------------------------------ */
-  #sessions-toggle {
-    background: none; border: none; color: var(--header-fg);
-    font-size: 1.2rem; cursor: pointer; line-height: 1;
-    padding: 0.2rem 0.4rem; border-radius: 4px;
-  }
-  #sessions-toggle:hover { background: rgba(255,255,255,0.15); }
-
   #sessions-panel {
     display: none; position: fixed; top: 0; left: 0; bottom: 0;
     width: 300px; min-width: 220px; max-width: 80vw;
@@ -253,7 +318,7 @@
   .session-delete-btn {
     position: absolute; top: 4px; right: 4px;
     background: transparent; border: none; color: #94a3b8;
-    font-size: 1.05rem; line-height: 1; cursor: pointer;
+    font-size: 0.9rem; line-height: 1; cursor: pointer;
     padding: 1px 6px; border-radius: 4px;
     opacity: 0; transition: opacity 0.1s, color 0.1s, background 0.1s;
   }
@@ -317,7 +382,7 @@
   .bubble.user.queued { opacity: 0.55; }
   .bubble.user.queued::after { content: " (queued)"; font-style: italic; }
 
-  /* Task notification bubbles (from /events SSE channel) */
+  /* Subsession notification bubbles (from /events SSE channel) */
   .bubble.notification {
     align-self: center;
     max-width: 90%;
@@ -330,11 +395,6 @@
     color: #94a3b8;
     border: 1px solid #334155;
   }
-  .bubble.notification.started {
-    background: #1e293b;
-    color: #93c5fd;
-    border-color: #1d4ed8;
-  }
   .bubble.notification.completed {
     background: #1e293b;
     color: #86efac;
@@ -345,7 +405,7 @@
     color: #fca5a5;
     border-color: #b91c1c;
   }
-  .bubble.notification.loop-tick {
+  .bubble.notification.result {
     background: #1e293b;
     color: #fde68a;
     border-color: #a16207;
@@ -386,6 +446,10 @@
   #send-btn:disabled {
     background: var(--btn-disabled-bg); cursor: not-allowed;
   }
+  /* Visually-disabled while the assistant is replying; still clickable so
+     messages typed during a reply are queued (see messageQueue). */
+  #send-btn.busy,
+  #send-btn.busy:hover { background: var(--btn-disabled-bg); }
 
   #attach-btn {
     background: var(--assistant-bubble-bg); color: var(--text-fg);
@@ -463,194 +527,6 @@
   }
 
   /* ------------------------------------------------------------------ */
-  /* Pending Questions panel                                            */
-  /* ------------------------------------------------------------------ */
-  #pending-panel {
-    display: none;
-    background: var(--composer-bg);
-    border-top: 1px solid var(--composer-border);
-    padding: 0.5rem 1rem;
-    flex-shrink: 0;
-    max-height: 40vh;
-    overflow-y: auto;
-  }
-  #pending-panel.visible { display: block; }
-
-  #pending-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.5rem;
-  }
-
-  .pq-entry {
-    background: var(--assistant-bubble-bg);
-    border: 1px solid var(--composer-border);
-    border-radius: 8px;
-    padding: 0.6rem 0.85rem;
-    font-size: 1.05rem;
-    position: relative;
-  }
-
-  .pq-dismiss-btn {
-    position: absolute;
-    top: 0.35rem;
-    right: 0.45rem;
-    background: none;
-    border: none;
-    color: #94a3b8;
-    font-size: 1rem;
-    cursor: pointer;
-    line-height: 1;
-    padding: 0.1rem 0.25rem;
-    border-radius: 3px;
-  }
-  .pq-dismiss-btn:hover { color: #fca5a5; background: rgba(239, 68, 68, 0.15); }
-
-  .pq-text {
-    font-weight: 600;
-    margin-bottom: 0.2rem;
-    color: var(--text-fg);
-  }
-
-  .pq-detail {
-    font-size: 0.95rem;
-    color: var(--text-fg);
-    opacity: 0.75;
-    margin-bottom: 0.25rem;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-
-  .pq-meta {
-    font-size: 0.88rem;
-    color: var(--text-fg);
-    opacity: 0.6;
-    margin-bottom: 0.4rem;
-  }
-
-  .pq-answer-row {
-    display: flex;
-    gap: 0.4rem;
-    align-items: center;
-  }
-
-  .pq-answer-row input[type="text"] {
-    flex: 1;
-    background: var(--chat-bg);
-    color: var(--text-fg);
-    border: 1px solid var(--composer-border);
-    border-radius: 6px;
-    padding: 0.35rem 0.5rem;
-    font-size: 0.92rem;
-    font-family: inherit;
-    outline: none;
-  }
-  .pq-answer-row input[type="text"]:focus {
-    border-color: var(--btn-primary-bg);
-  }
-
-  .pq-answer-row button {
-    background: var(--btn-primary-bg);
-    color: var(--btn-primary-fg);
-    border: none;
-    border-radius: 6px;
-    padding: 0.35rem 0.7rem;
-    font-size: 0.92rem;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background 0.15s;
-  }
-  .pq-answer-row button:hover:not(:disabled) {
-    background: var(--btn-primary-hover);
-  }
-  .pq-answer-row button:disabled {
-    background: var(--btn-disabled-bg);
-    cursor: not-allowed;
-  }
-
-  .pq-thread {
-    display: flex;
-    flex-direction: column;
-    gap: 0.3rem;
-    margin: 0.4rem 0;
-    max-height: 240px;
-    overflow-y: auto;
-  }
-
-  .pq-thread-msg {
-    font-size: 0.92rem;
-    line-height: 1.35;
-    padding: 0.2rem 0;
-  }
-
-  .pq-thread-msg-role {
-    font-weight: 600;
-    font-size: 0.8rem;
-    margin-right: 2px;
-  }
-
-  .pq-thread-msg--user .pq-thread-msg-role {
-    color: #60a5fa;
-  }
-
-  .pq-thread-msg--assistant .pq-thread-msg-role {
-    color: #a78bfa;
-  }
-
-  .pq-thread-msg-text {
-    color: var(--text-fg);
-    opacity: 0.85;
-    white-space: pre-wrap;
-    word-break: break-word;
-  }
-
-  .pq-thread-input-row {
-    display: flex;
-    gap: 0.4rem;
-    align-items: center;
-    margin-bottom: 0.5rem;
-  }
-
-  .pq-thread-input-row input[type="text"] {
-    flex: 1;
-    background: var(--chat-bg);
-    color: var(--text-fg);
-    border: 1px solid var(--composer-border);
-    border-radius: 6px;
-    padding: 0.35rem 0.5rem;
-    font-size: 0.88rem;
-    font-family: inherit;
-    outline: none;
-  }
-
-  .pq-thread-input-row input[type="text"]:focus {
-    border-color: #a78bfa;
-  }
-
-  .pq-thread-send-btn {
-    background: #7c3aed;
-    color: #fff;
-    border: none;
-    border-radius: 6px;
-    padding: 0.35rem 0.7rem;
-    font-size: 0.85rem;
-    font-weight: 600;
-    cursor: pointer;
-    white-space: nowrap;
-    transition: background 0.15s;
-  }
-
-  .pq-thread-send-btn:hover:not(:disabled) {
-    background: #6d28d9;
-  }
-
-  .pq-thread-send-btn:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-
-  /* ------------------------------------------------------------------ */
   /* Responsive tweaks                                                   */
   /* ------------------------------------------------------------------ */
   @media (max-width: 480px) {
@@ -667,10 +543,10 @@
 <!-- ================================================================= -->
 <header id="header">
   <span class="title">{{ PROJECT_TITLE }}</span>
-  <button id="sessions-toggle" title="Chat sessions" aria-label="Chat sessions">💬</button>
-  <span id="connection-dot" title="connection status"></span>
-  <button id="settings-toggle" title="Server URL" aria-label="Server settings">⚙</button>
-  <button id="tasks-toggle" title="Background tasks" aria-label="Background tasks">☰</button>
+  <button id="sessions-toggle" class="header-btn" title="Show your chat sessions" aria-label="Chat sessions">💬 Chats</button>
+  <span id="connection-dot" title="Connection status"></span>
+  <button id="settings-toggle" class="header-btn" title="Server settings" aria-label="Server settings">⚙ Settings</button>
+  <button id="subsessions-toggle" class="header-btn" title="Show background subsessions" aria-label="Subsessions">🗂 Subsessions</button>
 </header>
 
 <div id="settings-panel">
@@ -685,18 +561,19 @@
 <div id="sessions-panel">
   <div class="sessions-header">
     <span>Sessions</span>
-    <button class="dismiss" aria-label="Close sessions panel">&times;</button>
+    <button class="dismiss" title="Close panel" aria-label="Close sessions panel">&times;</button>
   </div>
-  <button id="new-chat-btn">+ New chat</button>
+  <button id="new-chat-btn" title="Start a new chat session">+ New chat</button>
   <div id="sessions-list"></div>
 </div>
 
-<div id="tasks-resize-handle"></div>
-<div id="tasks-panel">
-  <div class="tasks-header">Background tasks<button class="dismiss" aria-label="Close tasks panel">&times;</button></div>
-  <div id="tasks-list"></div>
-  <div class="tasks-header" style="border-top: 2px solid var(--composer-border);">Check Loops</div>
-  <div id="loops-list"></div>
+<!-- ================================================================= -->
+<!-- Subsessions panel (right sidebar)                                  -->
+<!-- ================================================================= -->
+<div id="subsessions-resize-handle"></div>
+<div id="subsessions-panel">
+  <div class="subs-header">Subsessions<button class="dismiss" title="Close panel" aria-label="Close subsessions panel">&times;</button></div>
+  <div id="subsessions-list"></div>
 </div>
 
 <!-- ================================================================= -->
@@ -704,20 +581,13 @@
 <!-- ================================================================= -->
 <div id="error-banner">
   <span class="msg"></span>
-  <button class="dismiss" aria-label="Dismiss error">&times;</button>
+  <button class="dismiss" title="Dismiss" aria-label="Dismiss error">&times;</button>
 </div>
 
 <!-- ================================================================= -->
 <!-- Chat messages                                                      -->
 <!-- ================================================================= -->
 <div id="chat" aria-live="polite"></div>
-
-<!-- ================================================================= -->
-<!-- Pending Questions panel                                            -->
-<!-- ================================================================= -->
-<div id="pending-panel">
-  <div id="pending-list"></div>
-</div>
 
 <!-- ================================================================= -->
 <!-- Preview tray                                                       -->
@@ -731,7 +601,7 @@
 <div id="composer">
   <textarea id="msg-input" rows="1" placeholder="Type a message…" aria-label="Message"></textarea>
   <button id="attach-btn" title="Attach images" aria-label="Attach images">📎</button>
-  <button id="send-btn">Send</button>
+  <button id="send-btn" title="Send message (Enter)">Send</button>
   <input type="file" id="file-input" accept="image/png,image/jpeg,image/gif,image/webp" multiple style="display:none">
 </div>
 
@@ -758,16 +628,14 @@
   const sessionsDismiss = sessionsPanel.querySelector(".dismiss");
   const sessionsResizeHandle = document.getElementById("sessions-resize-handle");
   const newChatBtn = document.getElementById("new-chat-btn");
-  const tasksToggle    = document.getElementById("tasks-toggle");
-  const tasksPanel     = document.getElementById("tasks-panel");
-  const tasksResizeHandle = document.getElementById("tasks-resize-handle");
-  const tasksList      = document.getElementById("tasks-list");
+  const subsToggle     = document.getElementById("subsessions-toggle");
+  const subsPanel      = document.getElementById("subsessions-panel");
+  const subsResizeHandle = document.getElementById("subsessions-resize-handle");
+  const subsList       = document.getElementById("subsessions-list");
   const attachBtn      = document.getElementById("attach-btn");
   const fileInput      = document.getElementById("file-input");
   const previewTray    = document.getElementById("preview-tray");
   const attachErrorEl  = document.getElementById("attach-error");
-  var   pendingPanel   = document.getElementById("pending-panel");
-  var   pendingList    = document.getElementById("pending-list");
 
   // ---- State -----------------------------------------------------------
   var state = "idle";          // idle | sending | streaming | error
@@ -782,10 +650,6 @@
   var MAX_FILE_BYTES = 5 * 1024 * 1024;  // 5 MiB
   var ALLOWED_TYPES = ["image/png", "image/jpeg", "image/gif", "image/webp"];
   var pendingImages = [];  // { file, objectURL, mediaType }
-
-  // ---- Pending Questions state -----------------------------------------
-  var pendingQuestionsById = {};    // question_id → { id, text, detail, status, created_at, thread, rowEl }
-  var pendingQuestionsOrder = [];   // insertion order of question ids
 
   function clearAttachError() {
     attachErrorEl.classList.remove("visible");
@@ -922,6 +786,7 @@
     messageQueue = [];
     hideTypingIndicator();
     state = "idle";
+    updateSendBusy();
     // Append a brief italic notice so the user knows what happened.
     var notice = document.createElement("div");
     notice.className = "bubble assistant";
@@ -1056,13 +921,14 @@
       metaDiv.textContent = parts.join(" · ");
       row.appendChild(metaDiv);
 
-      // Delete (close) button — stops the session's check loops + tasks.
+      // Delete (close) button — appears on hover; stops the session's
+      // subsessions and deletes its history (after a confirm()).
       var delBtn = document.createElement("button");
       delBtn.className = "session-delete-btn";
       delBtn.type = "button";
-      delBtn.title = "Close session (stops its check loops)";
-      delBtn.setAttribute("aria-label", "Close session");
-      delBtn.textContent = "×";
+      delBtn.title = "Delete chat";
+      delBtn.setAttribute("aria-label", "Delete chat");
+      delBtn.textContent = "🗑";
       row.appendChild(delBtn);
 
       // Closure to capture session_id / title
@@ -1076,9 +942,9 @@
           ev.stopPropagation();
           var label = title || "Untitled";
           if (window.confirm(
-            "Close session “" + label + "”?\n\n" +
-            "This stops its check loops and background tasks and deletes " +
-            "its history. This cannot be undone."
+            "Delete chat “" + label + "”?\n\n" +
+            "This stops its subsessions and deletes its history. " +
+            "This cannot be undone."
           )) {
             deleteSession(sid);
           }
@@ -1150,11 +1016,8 @@
     // 2. Clear the chat DOM bubbles.
     clearChatBubbles();
 
-    // 2b. Reset the per-session Tasks/Check Loops panels.
-    clearBackgroundPanels();
-
-    // 2c. Clear and reload pending questions for the new session.
-    clearPendingQuestions();
+    // 2b. Reset the per-session Subsessions panel.
+    clearSubsessions();
 
     // 3. Close the current event stream and re-open for new session.
     closeEventStream();
@@ -1163,11 +1026,8 @@
     // 4. Load history for the new session.
     loadHistory();
 
-    // 5. Reload loops for the new session.
-    loadLoops();
-
-    // 6. Load pending questions for the new session.
-    loadPendingQuestions();
+    // 5. Reload subsessions for the new session.
+    fetchSubsessions();
 
     // 6. Update the active-row highlight.
     updateActiveHighlight();
@@ -1208,264 +1068,506 @@
     }, 5000);
   }
 
-  // ---- Task panel store (session-only, in-memory) ----------------------
-  // tasksById: maps task_id → { id, description, state, startedAt,
-  //                            result, error, rowEl }
-  // tasksOrder: ordered list of task_ids in insertion order.
-  // The store is intentionally NOT cleared on restartConversation()
-  // so reopening the panel preserves the full session history.
-  var tasksById = {};
-  var tasksOrder = [];
+  // ---- Subsessions store (per-session, rebuilt from server snapshots) --
+  // subsById: subsession_id → snapshot fields plus UI-only state:
+  //   expanded, transcript ([{role, text, timestamp}]), transcriptLoaded,
+  //   _transcriptLoading, _closing, _draft, and per-render DOM refs
+  //   (_transcriptEl, _countdownEl, _msgInput, _msgBtn).
+  // subsOrder: subsession_ids in arrival order; the tree display order is
+  // recomputed per render by subsDisplayOrder().
+  var subsById = {};
+  var subsOrder = [];
 
-  // Check Loops store (mirrors tasks store; session-only, in-memory)
-  var loopsById = {};
-  var loopsOrder = [];
+  var SUBS_SNAPSHOT_FIELDS = [
+    "subsession_id", "kind", "owner_session_id", "parent_id", "depth",
+    "title", "prompt", "model_level", "status", "created_at",
+    "last_activity_at", "interval_seconds", "next_run_at",
+    "include_previous_result", "runs", "max_runs", "last_result",
+    "summary", "close_reason", "error"
+  ];
 
-  function renderTaskRow(task) {
-    // Remove old row element if re-rendering; note its DOM position
-    // so we can insert the fresh row in place instead of jumping to
-    // the bottom.
-    var oldRow = task.rowEl;
-    if (oldRow) oldRow.remove();
-
-    var row = document.createElement("div");
-    row.className = "task-row state-" + task.state;
-
-    var idSpan = document.createElement("span");
-    idSpan.className = "task-id";
-    idSpan.textContent = task.id.slice(0, 8);
-    row.appendChild(idSpan);
-
-    var descDiv = document.createElement("div");
-    descDiv.className = "task-desc";
-    descDiv.textContent = task.description || "(no description)";
-    row.appendChild(descDiv);
-
-    var metaDiv = document.createElement("div");
-    metaDiv.className = "task-meta";
-    var stateLabel = task.state === "running" ? "running"
-      : task.state === "completed" ? "completed" : "failed";
-    metaDiv.textContent = stateLabel + " \u2022 " + (task.startedAt || "\u2014");
-    row.appendChild(metaDiv);
-
-    if (task.result) {
-      var resultDiv = document.createElement("div");
-      resultDiv.className = "task-result";
-      resultDiv.textContent = task.result;
-      row.appendChild(resultDiv);
-    }
-    if (task.error) {
-      var errorDiv = document.createElement("div");
-      errorDiv.className = "task-result";
-      errorDiv.style.color = "#fca5a5";
-      errorDiv.textContent = task.error;
-      row.appendChild(errorDiv);
-    }
-
-    task.rowEl = row;
-    // Insert at the position matching tasksOrder so updates stay in place.
-    var idx = tasksOrder.indexOf(task.id);
-    if (idx >= 0) {
-      // Find the next already-rendered sibling after this task.
-      var nextSibling = null;
-      for (var i = idx + 1; i < tasksOrder.length; i++) {
-        var n = tasksById[tasksOrder[i]];
-        if (n && n.rowEl && n.rowEl.parentNode === tasksList) {
-          nextSibling = n.rowEl;
-          break;
-        }
-      }
-      if (nextSibling) {
-        tasksList.insertBefore(row, nextSibling);
-      } else {
-        tasksList.appendChild(row);
-      }
-    } else {
-      tasksList.appendChild(row);
-    }
+  function isSubsTerminal(sub) {
+    return sub.status === "closed" ||
+           sub.status === "failed" ||
+           sub.status === "interrupted";
   }
 
-  function updateTaskPanel(frame) {
-    var tid = frame.task_id;
-    if (!tid) return;
-
-    var task = tasksById[tid];
-
-    if (frame.type === "task_started") {
-      if (!task) {
-        task = {
-          id: tid,
-          description: frame.prompt || "",
-          state: "running",
-          startedAt: new Date().toLocaleTimeString(),
-          result: null,
-          error: null,
-          rowEl: null
-        };
-        tasksById[tid] = task;
-        tasksOrder.push(tid);
-      }
-      // Update in case a completion frame arrived first (race).
-      task.description = frame.prompt || task.description;
-      task.state = "running";
-      if (!task.startedAt) task.startedAt = new Date().toLocaleTimeString();
-    } else if (frame.type === "task_completed") {
-      if (!task) {
-        task = {
-          id: tid,
-          description: "",
-          state: "completed",
-          startedAt: new Date().toLocaleTimeString(),
-          result: frame.result || "",
-          error: null,
-          rowEl: null
-        };
-        tasksById[tid] = task;
-        tasksOrder.push(tid);
-      } else {
-        task.state = "completed";
-        task.result = frame.result || "";
-      }
-    } else if (frame.type === "task_failed") {
-      if (!task) {
-        task = {
-          id: tid,
-          description: "",
-          state: "failed",
-          startedAt: new Date().toLocaleTimeString(),
-          result: null,
-          error: frame.error || "",
-          rowEl: null
-        };
-        tasksById[tid] = task;
-        tasksOrder.push(tid);
-      } else {
-        task.state = "failed";
-        task.error = frame.error || "";
-      }
-    }
-
-    renderTaskRow(task);
+  function subsKindLabel(kind) {
+    if (kind === "periodic") return "⏱ periodic";
+    if (kind === "user_chat") return "💬 chat";
+    return "⚙ task";
   }
 
-  // ---- Check Loops panel -----------------------------------------------
-  function renderLoopRow(loop) {
-    var oldRow = loop.rowEl;
-    if (oldRow) oldRow.remove();
+  function newSubsEntry() {
+    return {
+      expanded: false,
+      transcript: [],
+      transcriptLoaded: false,
+      _transcriptLoading: false,
+      _closing: false,
+      _draft: ""
+    };
+  }
 
-    // Only running loops are visible; stopped/failed loops disappear.
-    if (loop.state !== "running") {
-      loop.rowEl = null;
+  function applySubsSnapshot(sub, snap) {
+    for (var i = 0; i < SUBS_SNAPSHOT_FIELDS.length; i++) {
+      var field = SUBS_SNAPSHOT_FIELDS[i];
+      if (snap[field] !== undefined) sub[field] = snap[field];
+    }
+    // A live user_chat subsession is the agent asking the user something —
+    // keep its transcript + reply box visible without an extra click.
+    if (sub.kind === "user_chat" && !isSubsTerminal(sub)) sub.expanded = true;
+  }
+
+  // Insert-or-merge a snapshot / partial-update frame, then re-render.
+  // Used for both subsession_started (full snapshot) and subsession_updated
+  // (subset of fields) — applySubsSnapshot only copies defined fields.
+  function upsertSubsession(snap) {
+    var sid = snap.subsession_id;
+    if (!sid) return;
+    var sub = subsById[sid];
+    if (!sub) {
+      sub = newSubsEntry();
+      subsById[sid] = sub;
+      subsOrder.push(sid);
+    }
+    applySubsSnapshot(sub, snap);
+    renderSubsessionsList();
+  }
+
+  // Terminal frames (subsession_closed / subsession_failed) carry "reason"
+  // rather than "close_reason" — merge that mapping on top of the snapshot.
+  function applySubsTerminalFrame(frame) {
+    var sid = frame.subsession_id;
+    if (!sid) return;
+    var sub = subsById[sid];
+    if (!sub) {
+      sub = newSubsEntry();
+      subsById[sid] = sub;
+      subsOrder.push(sid);
+    }
+    applySubsSnapshot(sub, frame);
+    if (frame.reason !== undefined) sub.close_reason = frame.reason;
+    sub._closing = false;
+    renderSubsessionsList();
+  }
+
+  function handleSubsessionMessage(frame) {
+    var sub = subsById[frame.subsession_id];
+    if (!sub) return;  // unknown row — the next snapshot fetch picks it up
+    var msg = {
+      role: frame.role || "assistant",
+      text: frame.text || "",
+      timestamp: frame.timestamp || 0
+    };
+    if (!subsTranscriptHas(sub, msg)) sub.transcript.push(msg);
+    if (frame.timestamp) sub.last_activity_at = frame.timestamp;
+    // Update the transcript in place — a full list re-render here would
+    // steal focus from the reply box while the user is typing.
+    if (sub.expanded && sub._transcriptEl) renderSubsTranscript(sub);
+  }
+
+  function subsTranscriptHas(sub, msg) {
+    var t = sub.transcript || [];
+    for (var i = t.length - 1; i >= 0; i--) {
+      if (t[i].role === msg.role &&
+          t[i].text === msg.text &&
+          (t[i].timestamp || 0) === (msg.timestamp || 0)) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // ---- Subsessions tree rendering --------------------------------------
+  // Flatten the tree: top-level entries (parent_id === null) in created_at
+  // order, each followed by its descendants depth-first (children in
+  // created_at order). Orphans (unknown parent) fall back to the end.
+  function subsDisplayOrder() {
+    var childrenOf = {};
+    var top = [];
+    var i, sub;
+    for (i = 0; i < subsOrder.length; i++) {
+      sub = subsById[subsOrder[i]];
+      if (!sub) continue;
+      if (sub.parent_id) {
+        if (!childrenOf[sub.parent_id]) childrenOf[sub.parent_id] = [];
+        childrenOf[sub.parent_id].push(sub);
+      } else {
+        top.push(sub);
+      }
+    }
+    function byCreated(a, b) { return (a.created_at || 0) - (b.created_at || 0); }
+    top.sort(byCreated);
+    var out = [];
+    function walk(node) {
+      out.push(node);
+      var kids = childrenOf[node.subsession_id] || [];
+      kids.sort(byCreated);
+      for (var k = 0; k < kids.length; k++) walk(kids[k]);
+    }
+    for (i = 0; i < top.length; i++) walk(top[i]);
+    for (i = 0; i < subsOrder.length; i++) {
+      sub = subsById[subsOrder[i]];
+      if (sub && out.indexOf(sub) === -1) out.push(sub);
+    }
+    return out;
+  }
+
+  function renderSubsessionsList() {
+    subsList.innerHTML = "";
+    var order = subsDisplayOrder();
+    if (order.length === 0) {
+      var empty = document.createElement("div");
+      empty.className = "subs-empty";
+      empty.textContent = "No subsessions yet — the assistant spawns " +
+                          "background work here.";
+      subsList.appendChild(empty);
       return;
     }
-
-    var row = document.createElement("div");
-    row.className = "loop-row state-running";
-
-    var idSpan = document.createElement("span");
-    idSpan.className = "loop-id";
-    idSpan.textContent = loop.id.slice(0, 8);
-    row.appendChild(idSpan);
-
-    // Reason/purpose line: explicit reason or truncated prompt.
-    var reasonDiv = document.createElement("div");
-    reasonDiv.className = "loop-reason";
-    var purpose = loop.reason || truncateText(loop.prompt || "(no prompt)", 80);
-    reasonDiv.textContent = purpose;
-    row.appendChild(reasonDiv);
-
-    // Meta line: fire count + interval.
-    var metaDiv = document.createElement("div");
-    metaDiv.className = "loop-meta";
-    var metaParts = ["fired " + loop.iterations + "\u00d7"];
-    if (loop.interval_seconds) {
-      metaParts.push("every " + formatInterval(loop.interval_seconds));
-    }
-    metaDiv.textContent = metaParts.join(" \u2022 ");
-    row.appendChild(metaDiv);
-
-    // Latest feedback (timestamped, summarized).
-    if (loop.last_result) {
-      var feedbackDiv = document.createElement("div");
-      feedbackDiv.className = "loop-result";
-      var ts = "";
-      if (loop.last_result_at) {
-        ts = new Date(loop.last_result_at * 1000).toLocaleString() + " — ";
-      }
-      feedbackDiv.textContent = ts + truncateText(loop.last_result, 120);
-      row.appendChild(feedbackDiv);
-    } else if (loop.iterations === 0) {
-      var noRunDiv = document.createElement("div");
-      noRunDiv.className = "loop-result";
-      noRunDiv.style.color = "#64748b";
-      noRunDiv.textContent = "no runs yet";
-      row.appendChild(noRunDiv);
-    }
-
-    if (loop.error) {
-      var errorDiv = document.createElement("div");
-      errorDiv.className = "loop-result";
-      errorDiv.style.color = "#fca5a5";
-      errorDiv.textContent = truncateText(loop.error, 120);
-      row.appendChild(errorDiv);
-    }
-
-    // Stop button (only for running loops).
-    var stopBtn = document.createElement("button");
-    stopBtn.className = "loop-stop-btn";
-    stopBtn.textContent = "Stop";
-    stopBtn.addEventListener("click", function () {
-      stopBtn.disabled = true;
-      stopBtn.textContent = "Stopping\u2026";
-      fetch("/loops/" + encodeURIComponent(loop.id) + "/stop", { method: "POST" })
-        .then(function (resp) {
-          if (!resp.ok) {
-            stopBtn.disabled = false;
-            stopBtn.textContent = "Stop";
-            resp.text().then(function (body) {
-              showError("Stop failed: " + (body || resp.statusText));
-            }).catch(function () {
-              showError("Stop failed: " + resp.statusText);
-            });
-          }
-          // On success, rely on loop_stopped SSE to re-render the row.
-        })
-        .catch(function (err) {
-          stopBtn.disabled = false;
-          stopBtn.textContent = "Stop";
-          showError("Stop failed: " + (err.message || "Network error"));
-        });
-    });
-    row.appendChild(stopBtn);
-
-    loop.rowEl = row;
-
-    var loopsList = document.getElementById("loops-list");
-    var idx = loopsOrder.indexOf(loop.id);
-    if (idx >= 0) {
-      var nextSibling = null;
-      for (var i = idx + 1; i < loopsOrder.length; i++) {
-        var n = loopsById[loopsOrder[i]];
-        if (n && n.rowEl && n.rowEl.parentNode === loopsList) {
-          nextSibling = n.rowEl;
-          break;
-        }
-      }
-      if (nextSibling) {
-        loopsList.insertBefore(row, nextSibling);
-      } else {
-        loopsList.appendChild(row);
-      }
-    } else {
-      loopsList.appendChild(row);
+    for (var i = 0; i < order.length; i++) {
+      subsList.appendChild(renderSubsessionRow(order[i]));
     }
   }
+
+  function renderSubsessionRow(sub) {
+    // Reset per-render DOM refs so stale nodes are never updated.
+    sub._transcriptEl = null;
+    sub._countdownEl = null;
+    sub._msgInput = null;
+    sub._msgBtn = null;
+
+    var terminal = isSubsTerminal(sub);
+    var status = sub.status || "running";
+
+    var row = document.createElement("div");
+    row.className = "subs-row status-" + status + (terminal ? " terminal" : "");
+    // Indent children under their parent (depth 1 = top level).
+    row.style.marginLeft = (((sub.depth || 1) - 1) * 14) + "px";
+
+    // Title line: kind icon+label, title, status pill, model-level badge.
+    var titleLine = document.createElement("div");
+    titleLine.className = "subs-title-line";
+
+    var kindSpan = document.createElement("span");
+    kindSpan.className = "subs-kind";
+    kindSpan.textContent = subsKindLabel(sub.kind);
+    titleLine.appendChild(kindSpan);
+
+    var titleSpan = document.createElement("span");
+    titleSpan.className = "subs-title";
+    titleSpan.textContent = sub.title || "(untitled)";
+    if (sub.prompt) titleSpan.title = truncateText(sub.prompt, 200);
+    titleLine.appendChild(titleSpan);
+
+    var statusSpan = document.createElement("span");
+    statusSpan.className = "subs-status status-" + status;
+    statusSpan.textContent = sub._closing ? "closing" : status;
+    titleLine.appendChild(statusSpan);
+
+    if (sub.model_level) {
+      var levelSpan = document.createElement("span");
+      levelSpan.className = "subs-level";
+      levelSpan.textContent = "L" + sub.model_level;
+      levelSpan.title = "Model level " + sub.model_level;
+      titleLine.appendChild(levelSpan);
+    }
+    row.appendChild(titleLine);
+
+    // Meta line: periodic run counter + interval + live countdown;
+    // close reason for terminal rows.
+    var metaDiv = document.createElement("div");
+    metaDiv.className = "subs-meta";
+    var metaParts = [];
+    if (sub.kind === "periodic") {
+      var runLabel = "run " + (sub.runs || 0);
+      if (sub.max_runs) runLabel += "/" + sub.max_runs;
+      metaParts.push(runLabel);
+      if (sub.interval_seconds) {
+        metaParts.push("every " + formatInterval(sub.interval_seconds));
+      }
+    }
+    if (terminal && sub.close_reason) metaParts.push(sub.close_reason);
+    metaDiv.textContent = metaParts.join(" • ");
+    if (!terminal && sub.kind === "periodic" && sub.next_run_at) {
+      var countdownSpan = document.createElement("span");
+      countdownSpan.className = "subs-countdown";
+      countdownSpan.textContent = subsCountdownLabel(sub);
+      sub._countdownEl = countdownSpan;
+      metaDiv.appendChild(countdownSpan);
+    }
+    if (metaDiv.textContent !== "" || metaDiv.firstChild) {
+      row.appendChild(metaDiv);
+    }
+
+    // Latest result / summary / error line (one-liner, truncated).
+    var resultText = sub.error || sub.summary || sub.last_result;
+    if (resultText) {
+      var resultDiv = document.createElement("div");
+      resultDiv.className = "subs-result";
+      resultDiv.textContent = truncateText(resultText, 160);
+      resultDiv.title = truncateText(resultText, 400);
+      if (sub.error) resultDiv.style.color = "#fca5a5";
+      row.appendChild(resultDiv);
+    }
+
+    // Actions row: labeled expand/collapse + Close (active rows only).
+    var actionsDiv = document.createElement("div");
+    actionsDiv.className = "subs-actions";
+
+    var expandBtn = document.createElement("button");
+    expandBtn.type = "button";
+    expandBtn.className = "subs-action-btn";
+    if (sub.expanded) {
+      expandBtn.textContent = "▾ Hide transcript";
+      expandBtn.title = "Hide this subsession's conversation";
+    } else {
+      expandBtn.textContent = "▸ Transcript";
+      expandBtn.title = "Show this subsession's conversation";
+    }
+    expandBtn.addEventListener("click", function () {
+      sub.expanded = !sub.expanded;
+      renderSubsessionsList();
+    });
+    actionsDiv.appendChild(expandBtn);
+
+    if (!terminal) {
+      var closeBtn = document.createElement("button");
+      closeBtn.type = "button";
+      closeBtn.className = "subs-action-btn subs-close-btn";
+      closeBtn.textContent = sub._closing ? "Closing…" : "Close";
+      closeBtn.disabled = !!sub._closing;
+      closeBtn.title = "Stop this subsession and report back";
+      closeBtn.addEventListener("click", function () {
+        closeSubsession(sub, closeBtn);
+      });
+      actionsDiv.appendChild(closeBtn);
+    }
+    row.appendChild(actionsDiv);
+
+    // Expanded view: transcript (+ reply box for active user_chat rows).
+    if (sub.expanded) {
+      var transcriptDiv = document.createElement("div");
+      transcriptDiv.className = "subs-transcript";
+      sub._transcriptEl = transcriptDiv;
+      row.appendChild(transcriptDiv);
+      renderSubsTranscript(sub);
+      // Lazy-load the transcript from the server on first expand.
+      if (!sub.transcriptLoaded) loadSubsTranscript(sub);
+
+      if (sub.kind === "user_chat" && !terminal) {
+        row.appendChild(buildSubsInputRow(sub));
+      }
+    }
+
+    return row;
+  }
+
+  function renderSubsTranscript(sub) {
+    var container = sub._transcriptEl;
+    if (!container) return;
+    container.innerHTML = "";
+    var msgs = (sub.transcript || []).slice();
+    msgs.sort(function (a, b) {
+      return (a.timestamp || 0) - (b.timestamp || 0);
+    });
+    if (msgs.length === 0) {
+      var placeholder = document.createElement("div");
+      placeholder.className = "subs-msg subs-msg--system";
+      placeholder.textContent = sub._transcriptLoading
+        ? "Loading transcript…" : "No messages yet.";
+      container.appendChild(placeholder);
+      return;
+    }
+    for (var i = 0; i < msgs.length; i++) {
+      var msg = msgs[i];
+      var role = msg.role || "assistant";
+      var msgDiv = document.createElement("div");
+      msgDiv.className = "subs-msg subs-msg--" + role;
+      var roleLabel = document.createElement("span");
+      roleLabel.className = "subs-msg-role";
+      roleLabel.textContent = role === "user" ? "You"
+        : role === "parent" ? "From main chat"
+        : role === "system" ? "System" : "Assistant";
+      msgDiv.appendChild(roleLabel);
+      var textSpan = document.createElement("span");
+      textSpan.textContent = msg.text || "";
+      msgDiv.appendChild(textSpan);
+      container.appendChild(msgDiv);
+    }
+    container.scrollTop = container.scrollHeight;
+  }
+
+  function loadSubsTranscript(sub) {
+    if (sub._transcriptLoading) return;
+    sub._transcriptLoading = true;
+    var url = apiBase() + "/subsessions/" +
+              encodeURIComponent(sub.subsession_id) + "/transcript";
+    fetch(url, { method: "GET" }).then(function (response) {
+      if (!response.ok) return null;
+      return response.json();
+    }).then(function (data) {
+      sub._transcriptLoading = false;
+      sub.transcriptLoaded = true;
+      if (data && Array.isArray(data.transcript)) {
+        // Merge with any SSE-delivered messages (dedupe by
+        // timestamp+role+text).
+        for (var i = 0; i < data.transcript.length; i++) {
+          var raw = data.transcript[i];
+          var msg = {
+            role: raw.role || "assistant",
+            text: raw.text || "",
+            timestamp: raw.timestamp || 0
+          };
+          if (!subsTranscriptHas(sub, msg)) sub.transcript.push(msg);
+        }
+      }
+      renderSubsTranscript(sub);
+    }).catch(function () {
+      sub._transcriptLoading = false;
+      renderSubsTranscript(sub);
+    });
+  }
+
+  function buildSubsInputRow(sub) {
+    var inputRow = document.createElement("div");
+    inputRow.className = "subs-input-row";
+
+    var msgArea = document.createElement("textarea");
+    msgArea.rows = 1;
+    msgArea.placeholder = "Reply to this subsession…";
+    msgArea.setAttribute("aria-label",
+      "Reply to subsession: " + (sub.title || "untitled"));
+    // Restore the draft so a re-render doesn't eat a half-typed reply.
+    if (sub._draft) msgArea.value = sub._draft;
+    msgArea.addEventListener("input", function () {
+      sub._draft = msgArea.value;
+    });
+
+    var sendMsgBtn = document.createElement("button");
+    sendMsgBtn.type = "button";
+    sendMsgBtn.className = "subs-send-btn";
+    sendMsgBtn.textContent = "Send";
+    sendMsgBtn.title = "Send this reply to the subsession (Enter)";
+    sendMsgBtn.addEventListener("click", function () {
+      var text = msgArea.value.trim();
+      if (!text) return;
+      sendSubsessionMessage(sub, text);
+    });
+
+    msgArea.addEventListener("keydown", function (e) {
+      if (e.key === "Enter" && !e.shiftKey) {
+        e.preventDefault();
+        sendMsgBtn.click();
+      }
+    });
+
+    sub._msgInput = msgArea;
+    sub._msgBtn = sendMsgBtn;
+    inputRow.appendChild(msgArea);
+    inputRow.appendChild(sendMsgBtn);
+    return inputRow;
+  }
+
+  function sendSubsessionMessage(sub, text) {
+    if (sub._msgBtn) {
+      sub._msgBtn.disabled = true;
+      sub._msgBtn.textContent = "Sending…";
+    }
+    if (sub._msgInput) sub._msgInput.disabled = true;
+    var url = apiBase() + "/subsessions/" +
+              encodeURIComponent(sub.subsession_id) + "/message";
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ text: text })
+    }).then(function (resp) {
+      if (resp.status === 409) {
+        showError("This subsession has already finished — " +
+                  "reply in the main chat instead.");
+      } else if (!resp.ok) {
+        showError("Failed to send message (HTTP " + resp.status + ")");
+      } else {
+        // Accepted (202) — do NOT append locally; the echoed
+        // subsession_message SSE frame renders it.
+        sub._draft = "";
+        if (sub._msgInput) sub._msgInput.value = "";
+      }
+    }).catch(function (err) {
+      showError("Failed to send message: " + (err.message || "Network error"));
+    }).then(function () {
+      // Re-enable the CURRENT input (a re-render may have replaced the DOM;
+      // buildSubsInputRow keeps the entry-stored refs up to date).
+      if (sub._msgBtn) {
+        sub._msgBtn.disabled = false;
+        sub._msgBtn.textContent = "Send";
+      }
+      if (sub._msgInput) {
+        sub._msgInput.disabled = false;
+        sub._msgInput.focus();
+      }
+    });
+  }
+
+  function closeSubsession(sub, closeBtn) {
+    closeBtn.disabled = true;
+    closeBtn.textContent = "Closing…";
+    sub._closing = true;
+    var url = apiBase() + "/subsessions/" +
+              encodeURIComponent(sub.subsession_id) + "/close";
+    fetch(url, { method: "POST" })
+      .then(function (resp) {
+        if (!resp.ok) {
+          sub._closing = false;
+          resp.text().then(function (body) {
+            showError("Close failed: " + (body || resp.statusText));
+          }).catch(function () {
+            showError("Close failed: " + resp.statusText);
+          });
+          renderSubsessionsList();
+        }
+        // On success, rely on the subsession_closed SSE frame to
+        // mark the row terminal.
+      })
+      .catch(function (err) {
+        sub._closing = false;
+        showError("Close failed: " + (err.message || "Network error"));
+        renderSubsessionsList();
+      });
+  }
+
+  // ---- Live countdown for periodic rows (wall-clock; 1s tick) ----------
+  function subsCountdownLabel(sub) {
+    if (!sub.next_run_at) return "";
+    var remaining = Math.floor(sub.next_run_at - Date.now() / 1000);
+    var when;
+    if (remaining <= 0) {
+      when = "due";
+    } else {
+      var h = Math.floor(remaining / 3600);
+      var m = Math.floor((remaining % 3600) / 60);
+      var s = remaining % 60;
+      if (h > 0) when = "in " + h + "h " + m + "m";
+      else if (m > 0) when = "in " + m + "m " + s + "s";
+      else when = "in " + s + "s";
+    }
+    return " • next run " + when;
+  }
+
+  setInterval(function () {
+    for (var i = 0; i < subsOrder.length; i++) {
+      var sub = subsById[subsOrder[i]];
+      if (sub && sub._countdownEl) {
+        sub._countdownEl.textContent = subsCountdownLabel(sub);
+      }
+    }
+  }, 1000);
 
   function truncateText(text, maxLen) {
     if (!text) return "";
     var firstLine = text.split("\n")[0];
     if (firstLine.length <= maxLen) return firstLine;
-    return firstLine.slice(0, maxLen) + "\u2026";
+    return firstLine.slice(0, maxLen) + "…";
   }
 
   function formatInterval(seconds) {
@@ -1474,115 +1576,47 @@
     return (seconds / 3600).toFixed(1).replace(/\.0$/, "") + "h";
   }
 
-  function updateLoopPanel(frame) {
-    var lid = frame.loop_id;
-    if (!lid) return;
+  // ---- Subsessions snapshot on load -------------------------------------
+  function fetchSubsessions() {
+    var url = apiBase() + "/subsessions" +
+              "?session_id=" + encodeURIComponent(activeSessionId);
 
-    var loop = loopsById[lid];
+    fetch(url, { method: "GET" }).then(function (response) {
+      if (!response.ok) return;
+      return response.json();
+    }).then(function (data) {
+      if (!data || !Array.isArray(data.subsessions)) return;
+      // Rebuild the store from the snapshot, preserving UI-only state
+      // (expanded rows, loaded transcripts, drafts) for surviving ids.
+      var old = subsById;
+      subsById = {};
+      subsOrder = [];
+      for (var i = 0; i < data.subsessions.length; i++) {
+        var snap = data.subsessions[i];
+        var sid = snap.subsession_id;
+        if (!sid) continue;
+        var sub = old[sid] || newSubsEntry();
+        applySubsSnapshot(sub, snap);
+        subsById[sid] = sub;
+        subsOrder.push(sid);
+      }
+      renderSubsessionsList();
+    }).catch(function () {
+      // Silently ignore fetch failures — the panel just stays stale.
+    });
+  }
 
-    if (frame.type === "loop_started") {
-      if (!loop) {
-        loop = {
-          id: lid,
-          prompt: frame.prompt || "",
-          reason: frame.reason || null,
-          interval_seconds: frame.interval_seconds || 0,
-          max_iterations: frame.max_iterations || null,
-          state: "running",
-          iterations: 0,
-          last_result: null,
-          last_result_at: null,
-          next_run: null,
-          error: null,
-          stop_reason: null,
-          rowEl: null
-        };
-        loopsById[lid] = loop;
-        loopsOrder.push(lid);
-      }
-      loop.prompt = frame.prompt || loop.prompt;
-      if (frame.reason !== undefined) loop.reason = frame.reason;
-      loop.interval_seconds = frame.interval_seconds || loop.interval_seconds;
-      if (frame.max_iterations !== undefined) {
-        loop.max_iterations = frame.max_iterations;
-      }
-      loop.state = "running";
-    } else if (frame.type === "loop_tick") {
-      if (!loop) {
-        loop = {
-          id: lid,
-          prompt: "",
-          reason: null,
-          interval_seconds: 0,
-          max_iterations: null,
-          state: "running",
-          iterations: frame.iteration || 0,
-          last_result: frame.result || null,
-          last_result_at: frame.last_result_at || null,
-          next_run: frame.next_run || null,
-          error: null,
-          stop_reason: null,
-          rowEl: null
-        };
-        loopsById[lid] = loop;
-        loopsOrder.push(lid);
-      } else {
-        loop.state = "running";
-        loop.iterations = frame.iteration || loop.iterations;
-        if (frame.result !== undefined) loop.last_result = frame.result;
-        if (frame.last_result_at !== undefined) loop.last_result_at = frame.last_result_at;
-        if (frame.next_run !== undefined) loop.next_run = frame.next_run;
-      }
-    } else if (frame.type === "loop_stopped") {
-      if (!loop) {
-        loop = {
-          id: lid,
-          prompt: "",
-          reason: null,
-          interval_seconds: 0,
-          max_iterations: null,
-          state: "stopped",
-          iterations: frame.iterations || 0,
-          last_result: null,
-          last_result_at: null,
-          next_run: null,
-          error: null,
-          stop_reason: frame.reason || null,
-          rowEl: null
-        };
-        loopsById[lid] = loop;
-        loopsOrder.push(lid);
-      } else {
-        loop.state = "stopped";
-        loop.iterations = frame.iterations || loop.iterations;
-        loop.stop_reason = frame.reason || null;
-      }
-    } else if (frame.type === "loop_failed") {
-      if (!loop) {
-        loop = {
-          id: lid,
-          prompt: "",
-          reason: null,
-          interval_seconds: 0,
-          max_iterations: null,
-          state: "failed",
-          iterations: 0,
-          last_result: null,
-          last_result_at: null,
-          next_run: null,
-          error: frame.error || null,
-          stop_reason: null,
-          rowEl: null
-        };
-        loopsById[lid] = loop;
-        loopsOrder.push(lid);
-      } else {
-        loop.state = "failed";
-        loop.error = frame.error || null;
-      }
+  function clearSubsessions() {
+    subsById = {};
+    subsOrder = [];
+    renderSubsessionsList();
+  }
+
+  function openSubsessionsPanel() {
+    if (!subsPanel.classList.contains("visible")) {
+      subsPanel.classList.add("visible");
+      positionResizeHandle();
     }
-
-    renderLoopRow(loop);
   }
 
   // ---- Helpers ---------------------------------------------------------
@@ -1630,11 +1664,18 @@
     typingIndicatorEl = null;
   }
 
-  // ---- Input enable / disable ------------------------------------------
-  function setInputEnabled(enabled) {
-    msgInput.disabled = !enabled;
-    sendBtn.disabled  = !enabled;
-    attachBtn.disabled = !enabled;
+  // ---- Send button busy state ------------------------------------------
+  // While the assistant is replying the send button LOOKS disabled (and its
+  // tooltip explains what's happening) but stays clickable so messages
+  // typed mid-reply are queued (see messageQueue).
+  function updateSendBusy() {
+    if (isBusy()) {
+      sendBtn.classList.add("busy");
+      sendBtn.title = "Assistant is replying — new messages are queued";
+    } else {
+      sendBtn.classList.remove("busy");
+      sendBtn.title = "Send message (Enter)";
+    }
   }
 
   // ---- Message bubbles -------------------------------------------------
@@ -1653,21 +1694,7 @@
     if (state === "sending" || state === "streaming") {
       state = "idle";
     }
-  }
-
-  function clearBackgroundPanels() {
-    // Reset the per-session Tasks and Check Loops panels so background work
-    // from a previous session does not bleed into the one we switched to.
-    // Loops are reloaded for the new session via loadLoops(); tasks are
-    // session-only/in-memory and simply start empty until new ones arrive.
-    tasksById = {};
-    tasksOrder = [];
-    loopsById = {};
-    loopsOrder = [];
-    var tasksListEl = document.getElementById("tasks-list");
-    if (tasksListEl) tasksListEl.innerHTML = "";
-    var loopsListEl = document.getElementById("loops-list");
-    if (loopsListEl) loopsListEl.innerHTML = "";
+    updateSendBusy();
   }
 
   function addUserBubble(text) {
@@ -1688,33 +1715,28 @@
     return div;
   }
 
+  // Main-chat notification bubbles for TOP-LEVEL subsession events
+  // (the /events dispatcher only calls this when parent_id is null).
   function addNotificationBubble(frame) {
     var div = document.createElement("div");
     var typeClass = "";
     var text = "";
-    if (frame.type === "task_started") {
-      typeClass = "started";
-      text = "[Task " + frame.task_id.slice(0, 8) + "] Started: " + frame.prompt;
-    } else if (frame.type === "task_completed") {
+    var title = frame.title || "(untitled)";
+    if (frame.type === "subsession_result") {
+      typeClass = "result";
+      var runLabel = (frame.run !== undefined && frame.run !== null)
+        ? " run " + frame.run : "";
+      var resultText = frame.text || "";
+      if (resultText.length > 200) resultText = resultText.slice(0, 200) + "…";
+      text = "⏱ '" + title + "'" + runLabel + ": " + resultText;
+    } else if (frame.type === "subsession_closed") {
       typeClass = "completed";
-      text = "[Task " + frame.task_id.slice(0, 8) + "] Completed: " + frame.result;
-    } else if (frame.type === "task_failed") {
+      text = "Subsession '" + title + "' closed (" +
+             (frame.reason || "done") + "): " + (frame.summary || "");
+    } else if (frame.type === "subsession_failed") {
       typeClass = "failed";
-      text = "[Task " + frame.task_id.slice(0, 8) + "] Failed: " + frame.error;
-    } else if (frame.type === "loop_started") {
-      typeClass = "started";
-      text = "[Loop " + frame.loop_id.slice(0, 8) + "] Started: " + frame.prompt;
-    } else if (frame.type === "loop_tick") {
-      typeClass = "loop-tick";
-      // Visually distinct tick bubble: shows loop id, iteration, and result.
-      var iter = (frame.iteration !== undefined) ? " #" + frame.iteration : "";
-      text = "[Loop " + frame.loop_id.slice(0, 8) + iter + "] " + (frame.result || "");
-    } else if (frame.type === "loop_stopped") {
-      typeClass = "completed";
-      text = "[Loop " + frame.loop_id.slice(0, 8) + "] Stopped: " + (frame.reason || "");
-    } else if (frame.type === "loop_failed") {
-      typeClass = "failed";
-      text = "[Loop " + frame.loop_id.slice(0, 8) + "] Failed: " + (frame.error || "");
+      text = "Subsession '" + title + "' failed: " +
+             (frame.error || frame.summary || "");
     } else {
       return; // ignore unknown types
     }
@@ -1829,31 +1851,34 @@
         try { frame = JSON.parse(raw); }
         catch (_) { return; /* skip unparsable frames */ }
 
-        if (frame.type === "task_started" ||
-            frame.type === "task_completed" ||
-            frame.type === "task_failed") {
-          addNotificationBubble(frame);
-          updateTaskPanel(frame);
-        } else if (frame.type === "loop_started" ||
-                   frame.type === "loop_tick" ||
-                   frame.type === "loop_stopped" ||
-                   frame.type === "loop_failed") {
-          // Show a notification bubble for all loop lifecycle frames,
-          // including loop_tick (the tick result is visible in the chat).
-          addNotificationBubble(frame);
-          updateLoopPanel(frame);
-        } else if (frame.type === "loop_reply") {
-          // A tick-triggered foreground agent run completed —
-          // render the reply as a normal assistant bubble.
-          if (frame.reply && typeof frame.reply === "string") {
-            addAssistantBubble(frame.reply);
+        if (frame.type === "subsession_started") {
+          // Full snapshot — insert/replace the row.
+          upsertSubsession(frame);
+          // A user_chat subsession starting means the agent is asking the
+          // user something — make it prominent: open the panel (the row
+          // itself auto-expands in applySubsSnapshot).
+          if (frame.kind === "user_chat") {
+            openSubsessionsPanel();
           }
-        } else if (frame.type === "pending_question_added" ||
-                   frame.type === "pending_question_updated" ||
-                   frame.type === "pending_question_answered" ||
-                   frame.type === "pending_question_removed" ||
-                   frame.type === "pending_question_thread_message") {
-          updatePendingPanel(frame);
+        } else if (frame.type === "subsession_updated") {
+          // Partial update — merge into the existing row.
+          upsertSubsession(frame);
+        } else if (frame.type === "subsession_message") {
+          // Transcript message (includes the echo of our own POSTs).
+          handleSubsessionMessage(frame);
+        } else if (frame.type === "subsession_result") {
+          // Periodic run result — surface top-level results in the chat.
+          if (frame.parent_id === null || frame.parent_id === undefined) {
+            addNotificationBubble(frame);
+          }
+        } else if (frame.type === "subsession_closed" ||
+                   frame.type === "subsession_failed") {
+          // Terminal frames — mark the row closed/failed and surface
+          // top-level completions in the chat.
+          applySubsTerminalFrame(frame);
+          if (frame.parent_id === null || frame.parent_id === undefined) {
+            addNotificationBubble(frame);
+          }
         }
         // ignore unknown types gracefully
       },
@@ -1886,6 +1911,9 @@
         scheduleEventReconnect();
         return;
       }
+      // (Re)connected — re-sync the subsessions snapshot so any frames
+      // missed while disconnected are reflected in the panel.
+      fetchSubsessions();
       var parser = processSSEStream(response.body, eventsController);
       parser.start();
     }).catch(function (err) {
@@ -1917,477 +1945,6 @@
       scrollToBottom();
     }).catch(function () {
       // Silently ignore network errors — empty chat is fine.
-    });
-  }
-
-  // ---- Pending Questions rendering ------------------------------------
-  function updatePendingPanel(frame) {
-    var qid = frame.question_id;
-    if (!qid) return;
-
-    var entry = pendingQuestionsById[qid];
-
-    if (frame.type === "pending_question_added") {
-      if (!entry) {
-        entry = {
-          id: qid,
-          text: frame.text || "",
-          detail: frame.detail || "",
-          status: frame.status || "pending",
-          answer: frame.answer || "",
-          answered_at: frame.answered_at || 0,
-          created_at: frame.created_at || 0,
-          thread: [],
-          rowEl: null
-        };
-        pendingQuestionsById[qid] = entry;
-        pendingQuestionsOrder.push(qid);
-      }
-      entry.text = frame.text || entry.text;
-      entry.detail = frame.detail || entry.detail;
-      entry.status = frame.status || entry.status;
-      if (frame.answer !== undefined) entry.answer = frame.answer;
-      if (frame.answered_at !== undefined) entry.answered_at = frame.answered_at;
-    } else if (frame.type === "pending_question_updated") {
-      if (!entry) {
-        entry = {
-          id: qid,
-          text: frame.text || "",
-          detail: frame.detail || "",
-          status: frame.status || "pending",
-          answer: frame.answer || "",
-          answered_at: frame.answered_at || 0,
-          created_at: frame.created_at || 0,
-          thread: [],
-          rowEl: null
-        };
-        pendingQuestionsById[qid] = entry;
-        pendingQuestionsOrder.push(qid);
-      } else {
-        if (frame.text !== undefined) entry.text = frame.text;
-        if (frame.detail !== undefined) entry.detail = frame.detail;
-        if (frame.status !== undefined) entry.status = frame.status;
-        if (frame.answer !== undefined) entry.answer = frame.answer;
-        if (frame.answered_at !== undefined) entry.answered_at = frame.answered_at;
-      }
-    } else if (frame.type === "pending_question_answered") {
-      if (!entry) {
-        entry = {
-          id: qid,
-          text: frame.text || "",
-          detail: frame.detail || "",
-          status: frame.status || "answered",
-          answer: frame.answer || "",
-          answered_at: frame.answered_at || 0,
-          created_at: frame.created_at || 0,
-          thread: [],
-          rowEl: null
-        };
-        pendingQuestionsById[qid] = entry;
-        pendingQuestionsOrder.push(qid);
-      } else {
-        entry.status = frame.status || "answered";
-        entry.answer = frame.answer || "";
-        if (frame.answered_at !== undefined) entry.answered_at = frame.answered_at;
-        if (frame.text !== undefined) entry.text = frame.text;
-        if (frame.detail !== undefined) entry.detail = frame.detail;
-      }
-    } else if (frame.type === "pending_question_removed") {
-      if (entry) {
-        if (entry.rowEl) entry.rowEl.remove();
-        delete pendingQuestionsById[qid];
-        var idx = pendingQuestionsOrder.indexOf(qid);
-        if (idx >= 0) pendingQuestionsOrder.splice(idx, 1);
-      }
-      refreshPendingPanelVisibility();
-      return;
-    } else if (frame.type === "pending_question_thread_message") {
-      if (!entry) {
-        // Thread message for a question we don't have yet — create a minimal entry.
-        entry = {
-          id: qid,
-          text: "Thread message",
-          detail: "",
-          status: "pending",
-          answer: "",
-          answered_at: 0,
-          created_at: 0,
-          thread: [],
-          rowEl: null
-        };
-        pendingQuestionsById[qid] = entry;
-        pendingQuestionsOrder.push(qid);
-      }
-      if (!entry.thread) entry.thread = [];
-      // Avoid duplicating a message that was already added optimistically
-      // (e.g. appendThreadMessage pushes locally before the SSE frame arrives).
-      // Check the entire thread, not just the last message, since multiple
-      // optimistic pushes can land before their SSE frames arrive.
-      var dup = false;
-      for (var di = entry.thread.length - 1; di >= 0; di--) {
-        if (
-          entry.thread[di].role === (frame.role || "assistant") &&
-          entry.thread[di].text === (frame.text || "")
-        ) {
-          dup = true;
-          break;
-        }
-      }
-      if (!dup) {
-        entry.thread.push({
-          role: frame.role || "assistant",
-          text: frame.text || "",
-          timestamp: frame.timestamp || 0
-        });
-      }
-    }
-
-    renderPendingEntry(entry);
-    refreshPendingPanelVisibility();
-  }
-
-  function renderPendingEntry(entry) {
-    var oldRow = entry.rowEl;
-    if (oldRow) oldRow.remove();
-
-    var isAnswered = entry.status === "answered" || !!entry.answer;
-
-    var row = document.createElement("div");
-    row.className = "pq-entry";
-    if (isAnswered) {
-      row.style.opacity = "0.75";
-    }
-
-    // Dismiss button
-    var dismissBtn = document.createElement("button");
-    dismissBtn.className = "pq-dismiss-btn";
-    dismissBtn.textContent = "\u2715";
-    dismissBtn.title = "Dismiss this question";
-    dismissBtn.addEventListener("click", function () {
-      dismissPendingQuestion(entry.id);
-    });
-    row.appendChild(dismissBtn);
-
-    // Question text
-    var textDiv = document.createElement("div");
-    textDiv.className = "pq-text";
-    textDiv.textContent = entry.text;
-    row.appendChild(textDiv);
-
-    // Detail (if any)
-    if (entry.detail) {
-      var detailDiv = document.createElement("div");
-      detailDiv.className = "pq-detail";
-      detailDiv.textContent = entry.detail;
-      row.appendChild(detailDiv);
-    }
-
-    // Meta line
-    var metaDiv = document.createElement("div");
-    metaDiv.className = "pq-meta";
-    var metaParts = [];
-    if (entry.status) metaParts.push(entry.status);
-    if (entry.created_at) {
-      metaParts.push(new Date(entry.created_at * 1000).toLocaleTimeString());
-    }
-    metaDiv.textContent = metaParts.join(" \u2022 ");
-    row.appendChild(metaDiv);
-
-    // ---- Thread messages (full conversation history) ----
-    var threadContainer = document.createElement("div");
-    threadContainer.className = "pq-thread";
-
-    // Build a unified history from the thread array.
-    // For backward-compat, if the answer text is not already represented
-    // as a user message in the thread, append it at the end.
-    var history = (entry.thread || []).slice();
-    var answerAlreadyInThread = false;
-    if (entry.answer) {
-      for (var hi = 0; hi < history.length; hi++) {
-        if (history[hi].role === "user" && history[hi].text === entry.answer) {
-          answerAlreadyInThread = true;
-          break;
-        }
-      }
-      if (!answerAlreadyInThread) {
-        history.push({
-          role: "user",
-          text: entry.answer,
-          timestamp: entry.answered_at || 0
-        });
-      }
-    }
-
-    // Sort by timestamp ascending so oldest appears at the top.
-    history.sort(function (a, b) {
-      return (a.timestamp || 0) - (b.timestamp || 0);
-    });
-
-    if (history.length > 0) {
-      for (var ti = 0; ti < history.length; ti++) {
-        var msg = history[ti];
-        var msgDiv = document.createElement("div");
-        msgDiv.className = "pq-thread-msg pq-thread-msg--" + (msg.role || "assistant");
-        var roleLabel = document.createElement("span");
-        roleLabel.className = "pq-thread-msg-role";
-        roleLabel.textContent = msg.role === "user" ? "You" : "Assistant";
-        var msgText = document.createElement("span");
-        msgText.className = "pq-thread-msg-text";
-        msgText.textContent = msg.text;
-        msgDiv.appendChild(roleLabel);
-        msgDiv.appendChild(document.createTextNode(": "));
-        msgDiv.appendChild(msgText);
-        threadContainer.appendChild(msgDiv);
-      }
-    }
-
-    row.appendChild(threadContainer);
-
-    // ---- Thread input (mini-chat input for this question) ----
-    var threadInputRow = document.createElement("div");
-    threadInputRow.className = "pq-thread-input-row";
-
-    var threadInput = document.createElement("input");
-    threadInput.type = "text";
-    threadInput.placeholder = "Reply in this thread\u2026";
-    threadInput.setAttribute("aria-label", "Reply in thread: " + entry.text);
-
-    var threadSendBtn = document.createElement("button");
-    threadSendBtn.textContent = "Send";
-    threadSendBtn.className = "pq-thread-send-btn";
-
-    threadSendBtn.addEventListener("click", function () {
-      var msg = threadInput.value.trim();
-      if (!msg) return;
-      threadSendBtn.disabled = true;
-      threadSendBtn.textContent = "Sending\u2026";
-      threadInput.disabled = true;
-      appendThreadMessage(entry.id, msg);
-    });
-
-    threadInput.addEventListener("keydown", function (e) {
-      if (e.key === "Enter") {
-        e.preventDefault();
-        threadSendBtn.click();
-      }
-    });
-
-    threadInputRow.appendChild(threadInput);
-    threadInputRow.appendChild(threadSendBtn);
-    row.appendChild(threadInputRow);
-
-    // Store refs for async callbacks (e.g. appendThreadMessage onComplete).
-    entry._threadInput = threadInput;
-    entry._threadBtn = threadSendBtn;
-
-    entry.rowEl = row;
-
-    // Insert in order
-    var idx = pendingQuestionsOrder.indexOf(entry.id);
-    if (idx >= 0) {
-      var nextSibling = null;
-      for (var i = idx + 1; i < pendingQuestionsOrder.length; i++) {
-        var n = pendingQuestionsById[pendingQuestionsOrder[i]];
-        if (n && n.rowEl && n.rowEl.parentNode === pendingList) {
-          nextSibling = n.rowEl;
-          break;
-        }
-      }
-      if (nextSibling) {
-        pendingList.insertBefore(row, nextSibling);
-      } else {
-        pendingList.appendChild(row);
-      }
-    } else {
-      pendingList.appendChild(row);
-    }
-  }
-
-  function refreshPendingPanelVisibility() {
-    var hasVisible = false;
-    for (var i = 0; i < pendingQuestionsOrder.length; i++) {
-      if (pendingQuestionsById[pendingQuestionsOrder[i]]) {
-        hasVisible = true;
-        break;
-      }
-    }
-    if (hasVisible) {
-      pendingPanel.classList.add("visible");
-    } else {
-      pendingPanel.classList.remove("visible");
-    }
-  }
-
-  function dismissPendingQuestion(questionId) {
-    // Dismiss (remove) a pending question immediately — no chat bubble.
-    var deleteUrl = apiBase() + "/pending-questions/" + encodeURIComponent(questionId);
-    fetch(deleteUrl, { method: "DELETE" }).catch(function () {
-      // Silently ignore — the question is already gone from the panel.
-    });
-
-    // Remove from panel immediately (optimistic).
-    var dismissEntry = pendingQuestionsById[questionId];
-    if (dismissEntry && dismissEntry.rowEl) dismissEntry.rowEl.remove();
-    delete pendingQuestionsById[questionId];
-    var idx = pendingQuestionsOrder.indexOf(questionId);
-    if (idx >= 0) pendingQuestionsOrder.splice(idx, 1);
-    refreshPendingPanelVisibility();
-  }
-
-  function appendThreadMessage(questionId, text) {
-    // Append a user message to the question's thread via the REST endpoint.
-    // The server now spawns a background LLM call and returns 202 immediately;
-    // the assistant reply arrives later via SSE pending_question_thread_message.
-    var threadUrl = apiBase() + "/pending-questions/" + encodeURIComponent(questionId) + "/thread";
-
-    // Optimistic local update.
-    var entry = pendingQuestionsById[questionId];
-    if (entry) {
-      if (!entry.thread) entry.thread = [];
-      entry.thread.push({ role: "user", text: text, timestamp: Date.now() / 1000 });
-      renderPendingEntry(entry);
-      refreshPendingPanelVisibility();
-
-      // Show a recall bubble in the main chat transcript so the user sees
-      // the original question text alongside their answer.
-      var originalText = entry.text || "Pending question";
-      addUserBubble("Re: '" + originalText + "' \u2014 " + text);
-    }
-
-    fetch(threadUrl, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ text: text })
-    }).then(function (resp) {
-      if (!resp.ok && resp.status !== 404) {
-        showError("Failed to send message (HTTP " + resp.status + ")");
-      }
-    }).catch(function () {
-      // Silently ignore — the SSE frame will update the panel.
-    }).then(function () {
-      // Re-enable the CURRENT thread input (renderPendingEntry may have
-      // replaced the DOM elements).  Use the entry-stored references that
-      // renderPendingEntry keeps up-to-date.
-      var e = pendingQuestionsById[questionId];
-      if (e) {
-        if (e._threadBtn) e._threadBtn.disabled = false;
-        if (e._threadBtn) e._threadBtn.textContent = "Send";
-        if (e._threadInput) e._threadInput.disabled = false;
-        if (e._threadInput) e._threadInput.value = "";
-        if (e._threadInput) e._threadInput.focus();
-      }
-    });
-  }
-
-  // ---- Pending Questions snapshot on load ------------------------------
-  function loadPendingQuestions() {
-    var pqUrl = apiBase() + "/pending-questions" +
-                "?session_id=" + encodeURIComponent(activeSessionId);
-
-    fetch(pqUrl, { method: "GET" }).then(function (response) {
-      if (!response.ok) return;
-      return response.json();
-    }).then(function (data) {
-      if (!data || !Array.isArray(data.questions)) return;
-      var entries = data.questions;
-      for (var i = 0; i < entries.length; i++) {
-        var entry = entries[i];
-        var frame = {
-          type: "pending_question_added",
-          question_id: entry.question_id,
-          text: entry.text,
-          detail: entry.detail,
-          status: entry.status,
-          answer: entry.answer,
-          answered_at: entry.answered_at,
-          created_at: entry.created_at,
-        };
-        updatePendingPanel(frame);
-        // Populate thread messages from the REST response.
-        if (entry.thread && Array.isArray(entry.thread)) {
-          for (var ti = 0; ti < entry.thread.length; ti++) {
-            var msg = entry.thread[ti];
-            updatePendingPanel({
-              type: "pending_question_thread_message",
-              question_id: entry.question_id,
-              role: msg.role,
-              text: msg.text,
-              timestamp: msg.timestamp,
-            });
-          }
-        }
-      }
-    }).catch(function () {
-      // Silently ignore network errors.
-    });
-  }
-
-  function clearPendingQuestions() {
-    // Remove all rows from the DOM.
-    if (pendingList) pendingList.innerHTML = "";
-    pendingQuestionsById = {};
-    pendingQuestionsOrder = [];
-    refreshPendingPanelVisibility();
-  }
-
-  // ---- Check Loops snapshot on load ------------------------------------
-  function loadLoops() {
-    var loopsUrl = apiBase() + "/loops" +
-                   "?session_id=" + encodeURIComponent(activeSessionId) +
-                   "&owner_id=" + encodeURIComponent(clientId);
-
-    fetch(loopsUrl, { method: "GET" }).then(function (response) {
-      if (!response.ok) return;
-      return response.json();
-    }).then(function (data) {
-      if (!data || !Array.isArray(data.loops)) return;
-      var entries = data.loops;
-      for (var i = 0; i < entries.length; i++) {
-        var entry = entries[i];
-        var lid = entry.id;
-        if (!lid) continue;
-
-        // Normalize snapshot field names to the internal store shape.
-        // Entry uses "id" / "status" (string); frames use "loop_id" / "type".
-        var existing = loopsById[lid];
-        var loop = {
-          id: lid,
-          prompt: entry.prompt || "",
-          reason: entry.reason || null,
-          interval_seconds: entry.interval_seconds || 0,
-          max_iterations: entry.max_iterations || null,
-          state: entry.status || "running",
-          iterations: entry.iterations || 0,
-          last_result: entry.last_result || null,
-          last_result_at: entry.last_result_at || null,
-          next_run: entry.next_run || null,
-          error: entry.error || null,
-          stop_reason: entry.stop_reason || null,
-          rowEl: null
-        };
-
-        // If a live frame already arrived for this id (race between
-        // snapshot fetch and SSE delivery), live data wins.
-        if (existing) {
-          loop.rowEl = existing.rowEl;               // preserve the SSE-created DOM row so renderLoopRow can clean it up
-          loop.state = existing.state;
-          loop.iterations = existing.iterations;
-          loop.last_result = existing.last_result || loop.last_result;
-          loop.last_result_at = existing.last_result_at || loop.last_result_at;
-          loop.next_run = existing.next_run || loop.next_run;
-          loop.error = existing.error || loop.error;
-          loop.stop_reason = existing.stop_reason || loop.stop_reason;
-          loop.reason = existing.reason || loop.reason;
-        }
-
-        loopsById[lid] = loop;
-        if (!existing && loopsOrder.indexOf(lid) === -1) {
-          loopsOrder.push(lid);
-        }
-        renderLoopRow(loop);
-      }
-    }).catch(function () {
-      // Silently ignore fetch failures (e.g. 503 when feature disabled).
     });
   }
 
@@ -2456,6 +2013,7 @@
     setConnectionStatus(true);
 
     state = "sending";
+    updateSendBusy();
 
     // Encode images if any; then POST.
     var encodePromise = pendingForSend.length > 0
@@ -2468,6 +2026,7 @@
       hideTypingIndicator();
       showError(err.message || "Failed to encode images");
       state = "error";
+      updateSendBusy();
     });
   }
 
@@ -2504,6 +2063,7 @@
           finaliseAssistantBubble();
           setConnectionStatus(true);
           state = "idle";
+          updateSendBusy();
           // Automatically dispatch the next queued message (FIFO).
           drainQueue();
         } else if (frame.type === "error") {
@@ -2511,6 +2071,7 @@
           finaliseAssistantBubble();
           showError(frame.message || "Server error");
           state = "error";
+          updateSendBusy();
           // Leave queued messages in place — the user can trigger
           // drainQueue() by submitting another message later.
         }
@@ -2520,6 +2081,7 @@
         finaliseAssistantBubble();
         showError(err.message || "Network error — is the server running?");
         state = "error";
+        updateSendBusy();
         // Same as above: queued messages stay; next submit resumes draining.
       }
     };
@@ -2692,11 +2254,11 @@
         // the highlight in one pass.
         setActiveSessionId(data.session_id);
         clearChatBubbles();
+        clearSubsessions();
         closeEventStream();
         openEventStream();
         loadHistory();
-        loadLoops();
-        loadPendingQuestions();
+        fetchSubsessions();
         refreshSessions();
         resetIdleTimer();
       }
@@ -2760,54 +2322,55 @@
     positionSessionsResizeHandle();
   });
 
-  // ---- Tasks panel toggle — no auto-close on outside click (unlike settings).
-  var tasksDismiss = tasksPanel.querySelector(".dismiss");
-  tasksToggle.addEventListener("click", function (e) {
+  // ---- Subsessions panel toggle — no auto-close on outside click (unlike
+  // settings).
+  var subsDismiss = subsPanel.querySelector(".dismiss");
+  subsToggle.addEventListener("click", function (e) {
     e.stopPropagation();
-    var opening = !tasksPanel.classList.contains("visible");
-    tasksPanel.classList.toggle("visible");
+    var opening = !subsPanel.classList.contains("visible");
+    subsPanel.classList.toggle("visible");
     if (opening) positionResizeHandle();
     else hideResizeHandle();
   });
 
-  tasksDismiss.addEventListener("click", function (e) {
+  subsDismiss.addEventListener("click", function (e) {
     e.stopPropagation();
-    tasksPanel.classList.remove("visible");
+    subsPanel.classList.remove("visible");
     hideResizeHandle();
   });
 
-  tasksPanel.addEventListener("click", function (e) {
+  subsPanel.addEventListener("click", function (e) {
     e.stopPropagation();
   });
 
   document.addEventListener("keydown", function (e) {
-    if (e.key === "Escape" && tasksPanel.classList.contains("visible")) {
-      tasksPanel.classList.remove("visible");
+    if (e.key === "Escape" && subsPanel.classList.contains("visible")) {
+      subsPanel.classList.remove("visible");
       hideResizeHandle();
     }
   });
 
-  // ---- Resize handle for tasks panel ----------------------------------
+  // ---- Resize handle for subsessions panel -----------------------------
   var resizeDragging = false;
   var resizeStartX = 0;
   var resizeStartWidth = 0;
 
   function positionResizeHandle() {
-    var rect = tasksPanel.getBoundingClientRect();
-    tasksResizeHandle.style.display = "block";
-    tasksResizeHandle.style.left = rect.left + "px";
+    var rect = subsPanel.getBoundingClientRect();
+    subsResizeHandle.style.display = "block";
+    subsResizeHandle.style.left = rect.left + "px";
   }
 
   function hideResizeHandle() {
-    tasksResizeHandle.style.display = "none";
+    subsResizeHandle.style.display = "none";
   }
 
-  tasksResizeHandle.addEventListener("mousedown", function (e) {
+  subsResizeHandle.addEventListener("mousedown", function (e) {
     e.preventDefault();
     resizeDragging = true;
     resizeStartX = e.clientX;
-    resizeStartWidth = tasksPanel.getBoundingClientRect().width;
-    tasksResizeHandle.classList.add("active");
+    resizeStartWidth = subsPanel.getBoundingClientRect().width;
+    subsResizeHandle.classList.add("active");
     document.body.style.userSelect = "none";
   });
 
@@ -2816,35 +2379,36 @@
     var dx = resizeStartX - e.clientX;
     var newWidth = resizeStartWidth + dx;
     newWidth = Math.max(260, Math.min(newWidth, window.innerWidth * 0.9));
-    tasksPanel.style.width = newWidth + "px";
+    subsPanel.style.width = newWidth + "px";
     positionResizeHandle();
   });
 
   document.addEventListener("mouseup", function () {
     if (!resizeDragging) return;
     resizeDragging = false;
-    tasksResizeHandle.classList.remove("active");
+    subsResizeHandle.classList.remove("active");
     document.body.style.userSelect = "";
     positionResizeHandle();
   });
 
   window.addEventListener("resize", function () {
-    if (!tasksPanel.classList.contains("visible")) return;
+    if (!subsPanel.classList.contains("visible")) return;
     // Re-clamp the panel width so it doesn't overflow the viewport after
     // a browser window resize.  The inline width set during drag can
     // override the CSS max-width, so we re-apply the clamp here.
-    var currentWidth = tasksPanel.getBoundingClientRect().width;
+    var currentWidth = subsPanel.getBoundingClientRect().width;
     var maxWidth = window.innerWidth * 0.9;
     if (currentWidth > maxWidth) {
-      tasksPanel.style.width = maxWidth + "px";
+      subsPanel.style.width = maxWidth + "px";
     } else if (currentWidth < 260) {
-      tasksPanel.style.width = "260px";
+      subsPanel.style.width = "260px";
     }
     positionResizeHandle();
   });
 
   // ---- Initial state ---------------------------------------------------
   setConnectionStatus(true);  // optimistic green; turns red on first error
+  renderSubsessionsList();    // show the empty state until the snapshot lands
 
   // Bootstrap: fetch sessions, pick the active one, then load history/events.
   fetchSessions().then(function (data) {
@@ -2868,8 +2432,7 @@
     }
     renderSessionList(data);
     loadHistory();
-    loadLoops();
-    loadPendingQuestions();
+    fetchSubsessions();
     openEventStream();
     resetIdleTimer();
   }).catch(function () {
@@ -2882,8 +2445,7 @@
       setActiveSessionId(clientId);
     }
     loadHistory();
-    loadLoops();
-    loadPendingQuestions();
+    fetchSubsessions();
     openEventStream();
     resetIdleTimer();
   });
