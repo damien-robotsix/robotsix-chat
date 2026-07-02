@@ -265,6 +265,47 @@ class SubsessionRegistry:
             return False
         return True
 
+    def _close_and_publish(
+        self,
+        info: SubsessionInfo,
+        *,
+        status: SubsessionStatus,
+        summary: str,
+        reason: str = "",
+        closed_by: str = "agent",
+        error: str | None = None,
+    ) -> SubsessionInfo:
+        """Set terminal state, publish frame, persist, and return *info*."""
+        info.status = status
+        info.summary = summary
+        info.last_activity_at = self._clock()
+
+        if status is SubsessionStatus.FAILED:
+            info.error = error
+            frame = subsession_failed_frame(
+                info.id,
+                kind=info.kind.value,
+                title=info.title,
+                error=error,  # type: ignore[arg-type]  # non-None when FAILED
+                summary=summary,
+                parent_id=info.parent_id,
+            )
+        else:
+            info.close_reason = reason
+            frame = subsession_closed_frame(
+                info.id,
+                kind=info.kind.value,
+                title=info.title,
+                reason=reason,
+                summary=summary,
+                closed_by=closed_by,
+                parent_id=info.parent_id,
+            )
+
+        self._publish(info.owner_session_id, frame)
+        self._persist()
+        return info
+
     def mark_closed(
         self, sub_id: str, *, summary: str, reason: str, closed_by: str = "agent"
     ) -> SubsessionInfo | None:
@@ -277,24 +318,13 @@ class SubsessionRegistry:
         info = self._subs.get(sub_id)
         if info is None or not info.is_active:
             return None
-        info.status = SubsessionStatus.CLOSED
-        info.summary = summary
-        info.close_reason = reason
-        info.last_activity_at = self._clock()
-        self._publish(
-            info.owner_session_id,
-            subsession_closed_frame(
-                info.id,
-                kind=info.kind.value,
-                title=info.title,
-                reason=reason,
-                summary=summary,
-                closed_by=closed_by,
-                parent_id=info.parent_id,
-            ),
+        return self._close_and_publish(
+            info,
+            status=SubsessionStatus.CLOSED,
+            summary=summary,
+            reason=reason,
+            closed_by=closed_by,
         )
-        self._persist()
-        return info
 
     def cancel_and_close(
         self, sub_id: str, *, reason: str, closed_by: str
@@ -318,24 +348,13 @@ class SubsessionRegistry:
         summary = f"{reason.capitalize()}."
         if last:
             summary += f" Last state: {_truncate(last, 500)}"
-        info.status = SubsessionStatus.CLOSED
-        info.summary = summary
-        info.close_reason = reason
-        info.last_activity_at = self._clock()
-        self._publish(
-            info.owner_session_id,
-            subsession_closed_frame(
-                info.id,
-                kind=info.kind.value,
-                title=info.title,
-                reason=reason,
-                summary=summary,
-                closed_by=closed_by,
-                parent_id=info.parent_id,
-            ),
+        return self._close_and_publish(
+            info,
+            status=SubsessionStatus.CLOSED,
+            summary=summary,
+            reason=reason,
+            closed_by=closed_by,
         )
-        self._persist()
-        return info
 
     def fail(self, sub_id: str, *, error: str) -> SubsessionInfo | None:
         """Set terminal ``FAILED`` state and publish ``subsession_failed``.
@@ -350,23 +369,12 @@ class SubsessionRegistry:
         summary = f"Failed: {_truncate(error, 300)}"
         if last:
             summary += f" Last state: {_truncate(last, 500)}"
-        info.status = SubsessionStatus.FAILED
-        info.error = error
-        info.summary = summary
-        info.last_activity_at = self._clock()
-        self._publish(
-            info.owner_session_id,
-            subsession_failed_frame(
-                info.id,
-                kind=info.kind.value,
-                title=info.title,
-                error=error,
-                summary=summary,
-                parent_id=info.parent_id,
-            ),
+        return self._close_and_publish(
+            info,
+            status=SubsessionStatus.FAILED,
+            summary=summary,
+            error=error,
         )
-        self._persist()
-        return info
 
     def mark_interrupted(self, sub_id: str, *, summary: str) -> SubsessionInfo | None:
         """Set terminal ``INTERRUPTED`` state (startup resume path).
@@ -377,24 +385,13 @@ class SubsessionRegistry:
         info = self._subs.get(sub_id)
         if info is None or not info.is_active:
             return None
-        info.status = SubsessionStatus.INTERRUPTED
-        info.summary = summary
-        info.close_reason = "interrupted"
-        info.last_activity_at = self._clock()
-        self._publish(
-            info.owner_session_id,
-            subsession_closed_frame(
-                info.id,
-                kind=info.kind.value,
-                title=info.title,
-                reason="interrupted",
-                summary=summary,
-                closed_by="system",
-                parent_id=info.parent_id,
-            ),
+        return self._close_and_publish(
+            info,
+            status=SubsessionStatus.INTERRUPTED,
+            summary=summary,
+            reason="interrupted",
+            closed_by="system",
         )
-        self._persist()
-        return info
 
     def close_all_for_owner(self, owner_session_id: str, *, reason: str) -> int:
         """Close every active subsession owned by *owner_session_id*.
