@@ -3,6 +3,8 @@
 - Extract `_close_and_publish` helper from four terminal-state methods (`mark_closed`,
   `cancel_and_close`, `fail`, `mark_interrupted`) in `SubsessionRegistry`, removing ~30 lines of
   duplicated SSE/persist logic.
+- Removed stale `pip-audit` dev dependency and updated documentation references to `uv audit` (PR
+  #349 cleanup).
 - Migrate board reader to shared `BoardHTTPClient` from `robotsix-board-agent`, replacing the
   standalone `BoardReader` class. Board tools (`list_board_tickets`, `read_board_ticket`,
   `create_board_ticket`) now use `ErrorStrategy.RETURN` for never-raise error handling with TTL
