@@ -259,6 +259,11 @@ dependency auditing.
 Task tracking lives under [`tasks/`](tasks/) — see [`tasks/README.md`](tasks/README.md) for the
 format and workflow.
 
+## Standards
+
+This repo follows the
+[robotsix stack standards](https://github.com/damien-robotsix/robotsix-standards).
+
 ## License
 
 MIT — see [`LICENSE`](LICENSE).

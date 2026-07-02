@@ -278,3 +278,6 @@ Persistent, human-readable task tracking lives under `tasks/` at the repo root:
 At the start of every conversation, read `tasks/TASKS.md` to pick up any pending work from prior
 conversations. When work is done, archive the task by moving its section from `TASKS.md` into
 `ARCHIVE.md`. The format is structured Markdown — a person can inspect or edit the files by hand.
+
+This repo follows the
+[robotsix stack standards](https://github.com/damien-robotsix/robotsix-standards).
