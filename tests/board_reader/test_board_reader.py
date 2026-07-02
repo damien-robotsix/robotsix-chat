@@ -1,6 +1,6 @@
 """Tests for the board-reader integration.
 
-:func:`build_board_reader_tools` and :class:`BoardReader`, with ``httpx``
+:func:`build_board_reader_tools` and :class:`BoardReader`, with ``respx``
 mocked so there are no real network calls.
 """
 
@@ -11,19 +11,11 @@ from typing import Any
 
 import httpx
 import pytest
+import respx
 
 from robotsix_chat.board_reader import board_was_read, build_board_reader_tools
 from robotsix_chat.board_reader.client import BoardReader
 from robotsix_chat.config import BoardReaderSettings
-from tests.common.mock_helpers import (
-    MockResponse as _MockResponse,
-)
-from tests.common.mock_helpers import (
-    install_mock_client as _install_mock_client,
-)
-from tests.common.mock_helpers import (
-    install_mock_dual_client as _install_mock_dual_client,
-)
 
 
 def _settings(**kw: Any) -> BoardReaderSettings:
@@ -59,11 +51,12 @@ def test_build_board_reader_tools_returns_three_tools() -> None:
 
 @pytest.mark.asyncio
 async def test_board_was_read_set_by_list_tickets(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Calling list_board_tickets sets board_was_read to True."""
-    resp = _MockResponse(text='[{"id": "abc"}]')
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(200, text='[{"id": "abc"}]')
+    )
 
     tools = build_board_reader_tools(_settings())
     list_fn = [t for t in tools if t.__name__ == "list_board_tickets"][0]
@@ -77,11 +70,12 @@ async def test_board_was_read_set_by_list_tickets(
 
 @pytest.mark.asyncio
 async def test_board_was_read_set_by_read_ticket(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Calling read_board_ticket sets board_was_read to True."""
-    resp = _MockResponse(text='{"id": "abc", "title": "Fix bug"}')
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get("http://127.0.0.1:8077/tickets/abc").mock(
+        return_value=httpx.Response(200, text='{"id": "abc", "title": "Fix bug"}')
+    )
 
     tools = build_board_reader_tools(_settings())
     read_fn = [t for t in tools if t.__name__ == "read_board_ticket"][0]
@@ -94,18 +88,20 @@ async def test_board_was_read_set_by_read_ticket(
 
 @pytest.mark.asyncio
 async def test_board_was_read_set_by_create_ticket(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Calling create_board_ticket sets board_was_read to True."""
-    get_resp = _MockResponse(text="[]")
-    post_resp = _MockResponse(
-        text='{"id": "new-1", "title": "A task", "state": "draft"}',
-        status_code=201,
+    respx_mock.get("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(200, text="[]")
+    )
+    respx_mock.post("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(
+            201, text='{"id": "new-1", "title": "A task", "state": "draft"}'
+        )
     )
 
     tools = build_board_reader_tools(_settings())
     create_fn = [t for t in tools if t.__name__ == "create_board_ticket"][0]
-    _install_mock_dual_client(monkeypatch, get_resp, post_resp)
 
     board_was_read.set(False)
     await create_fn(title="A task", description="Desc", repo_id="robotsix-chat")
@@ -120,27 +116,29 @@ async def test_board_was_read_set_by_create_ticket(
 
 @pytest.mark.asyncio
 async def test_list_tickets_calls_get_tickets(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Verify that list_tickets calls GET /tickets with correct params."""
-    resp = _MockResponse(text='[{"id": "abc", "title": "Fix bug"}]')
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.get("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(200, text='[{"id": "abc", "title": "Fix bug"}]')
+    )
 
     client = BoardReader(_settings(api_base_url="http://127.0.0.1:8077"))
     out = await client.list_tickets(repo_id="robotsix-chat")
 
-    assert out == resp.text
-    assert captured["url"] == "http://127.0.0.1:8077/tickets"
-    assert captured["params"] == {"repo_id": "robotsix-chat"}
+    assert out == '[{"id": "abc", "title": "Fix bug"}]'
+    assert route.called
+    assert dict(route.calls.last.request.url.params) == {"repo_id": "robotsix-chat"}
 
 
 @pytest.mark.asyncio
 async def test_list_tickets_includes_closed_and_state(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Verify that include_closed and state are forwarded as query params."""
-    resp = _MockResponse(text="[]")
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.get("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(200, text="[]")
+    )
 
     client = BoardReader(_settings())
     await client.list_tickets(
@@ -149,7 +147,7 @@ async def test_list_tickets_includes_closed_and_state(
         state="ready",
     )
 
-    assert captured["params"] == {
+    assert dict(route.calls.last.request.url.params) == {
         "repo_id": "robotsix-mill",
         "include_closed": "true",
         "state": "ready",
@@ -163,17 +161,20 @@ async def test_list_tickets_includes_closed_and_state(
 
 @pytest.mark.asyncio
 async def test_get_ticket_calls_get_tickets_by_id(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Verify that get_ticket calls GET /tickets/{id}."""
-    resp = _MockResponse(text='{"id": "abc", "title": "Fix bug", "state": "ready"}')
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.get("http://localhost:8077/tickets/abc").mock(
+        return_value=httpx.Response(
+            200, text='{"id": "abc", "title": "Fix bug", "state": "ready"}'
+        )
+    )
 
     client = BoardReader(_settings(api_base_url="http://localhost:8077"))
     out = await client.get_ticket("abc")
 
-    assert out == resp.text
-    assert captured["url"] == "http://localhost:8077/tickets/abc"
+    assert out == '{"id": "abc", "title": "Fix bug", "state": "ready"}'
+    assert route.called
 
 
 # ---------------------------------------------------------------------------
@@ -183,33 +184,34 @@ async def test_get_ticket_calls_get_tickets_by_id(
 
 @pytest.mark.asyncio
 async def test_bearer_token_sent_when_configured(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Verify that the Authorization header is set when api_token is given."""
-    resp = _MockResponse(text="[]")
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.get("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(200, text="[]")
+    )
 
     client = BoardReader(_settings(api_token="secret-token"))
     await client.list_tickets(repo_id="robotsix-chat")
 
-    assert captured["headers"] == {
-        "Accept": "application/json",
-        "Authorization": "Bearer secret-token",
-    }
+    assert route.called
+    assert route.calls.last.request.headers["authorization"] == "Bearer secret-token"
+    assert route.calls.last.request.headers["accept"] == "application/json"
 
 
 @pytest.mark.asyncio
 async def test_no_auth_header_when_token_empty(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Verify that no Authorization header is sent when api_token is empty."""
-    resp = _MockResponse(text="[]")
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.get("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(200, text="[]")
+    )
 
     client = BoardReader(_settings(api_token=""))
     await client.list_tickets(repo_id="robotsix-chat")
 
-    assert "Authorization" not in captured["headers"]
+    assert "authorization" not in route.calls.last.request.headers
 
 
 # ---------------------------------------------------------------------------
@@ -219,11 +221,12 @@ async def test_no_auth_header_when_token_empty(
 
 @pytest.mark.asyncio
 async def test_http_error_returns_diagnostic(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Verify that HTTP errors become a text message, never raised."""
-    resp = _MockResponse(text="not found", status_code=404)
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get("http://127.0.0.1:8077/tickets/nonexistent").mock(
+        return_value=httpx.Response(404, text="not found")
+    )
 
     client = BoardReader(_settings())
     out = await client.get_ticket("nonexistent")
@@ -234,30 +237,12 @@ async def test_http_error_returns_diagnostic(
 
 @pytest.mark.asyncio
 async def test_timeout_returns_diagnostic(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Verify that timeouts become a text message, never raised."""
-
-    class _TimeoutClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _TimeoutClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(
-            self,
-            url: str,
-            *,
-            headers: dict[str, str] | None = None,
-            params: dict[str, str] | None = None,
-        ) -> None:
-            raise httpx.TimeoutException("timed out")
-
-    monkeypatch.setattr(httpx, "AsyncClient", _TimeoutClient)
+    respx_mock.get("http://127.0.0.1:8077/tickets").mock(
+        side_effect=httpx.ReadTimeout("timed out")
+    )
 
     client = BoardReader(_settings(timeout=5.0))
     out = await client.list_tickets(repo_id="x")
@@ -268,30 +253,12 @@ async def test_timeout_returns_diagnostic(
 
 @pytest.mark.asyncio
 async def test_unexpected_error_returns_diagnostic(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Verify that unexpected errors become a text message, never raised."""
-
-    class _BrokenClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _BrokenClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(
-            self,
-            url: str,
-            *,
-            headers: dict[str, str] | None = None,
-            params: dict[str, str] | None = None,
-        ) -> None:
-            raise RuntimeError("something crashed")
-
-    monkeypatch.setattr(httpx, "AsyncClient", _BrokenClient)
+    respx_mock.get("http://127.0.0.1:8077/tickets/abc").mock(
+        side_effect=RuntimeError("something crashed")
+    )
 
     client = BoardReader(_settings())
     out = await client.get_ticket("abc")
@@ -307,14 +274,14 @@ async def test_unexpected_error_returns_diagnostic(
 
 @pytest.mark.asyncio
 async def test_create_ticket_calls_post_tickets(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Verify that create_ticket calls POST /tickets with correct payload."""
-    resp = _MockResponse(
-        text='{"id": "abc", "title": "New ticket", "state": "draft"}',
-        status_code=201,
+    route = respx_mock.post("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(
+            201, text='{"id": "abc", "title": "New ticket", "state": "draft"}'
+        )
     )
-    captured = _install_mock_client(monkeypatch, resp)
 
     client = BoardReader(_settings(api_base_url="http://127.0.0.1:8077"))
     out = await client.create_ticket(
@@ -323,9 +290,12 @@ async def test_create_ticket_calls_post_tickets(
         repo_id="robotsix-chat",
     )
 
-    assert out == resp.text
-    assert captured["url"] == "http://127.0.0.1:8077/tickets"
-    assert captured["json"] == {
+    assert out == '{"id": "abc", "title": "New ticket", "state": "draft"}'
+    assert route.called
+    # Check the JSON payload
+    import json as _json
+
+    assert _json.loads(route.calls.last.request.content) == {
         "title": "New ticket",
         "description": "A test ticket",
         "repo_id": "robotsix-chat",
@@ -334,11 +304,12 @@ async def test_create_ticket_calls_post_tickets(
 
 @pytest.mark.asyncio
 async def test_create_ticket_with_kind(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Verify that kind is included in payload when provided."""
-    resp = _MockResponse(text='{"id": "xyz", "kind": "bug"}', status_code=201)
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.post("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(201, text='{"id": "xyz", "kind": "bug"}')
+    )
 
     client = BoardReader(_settings())
     await client.create_ticket(
@@ -348,7 +319,9 @@ async def test_create_ticket_with_kind(
         kind="bug",
     )
 
-    assert captured["json"] == {
+    import json as _json
+
+    assert _json.loads(route.calls.last.request.content) == {
         "title": "Bug report",
         "description": "Something broke",
         "repo_id": "robotsix-mill",
@@ -358,11 +331,12 @@ async def test_create_ticket_with_kind(
 
 @pytest.mark.asyncio
 async def test_create_ticket_omits_kind_when_empty(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Verify that kind is omitted from payload when empty string."""
-    resp = _MockResponse(text='{"id": "abc"}', status_code=201)
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.post("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(201, text='{"id": "abc"}')
+    )
 
     client = BoardReader(_settings())
     await client.create_ticket(
@@ -372,16 +346,19 @@ async def test_create_ticket_omits_kind_when_empty(
         kind="",
     )
 
-    assert "kind" not in captured["json"]
+    import json as _json
+
+    assert "kind" not in _json.loads(route.calls.last.request.content)
 
 
 @pytest.mark.asyncio
 async def test_create_ticket_http_error_returns_diagnostic(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Verify that create_ticket HTTP errors become text, never raised."""
-    resp = _MockResponse(text="conflict", status_code=409)
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.post("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(409, text="conflict")
+    )
 
     client = BoardReader(_settings())
     out = await client.create_ticket(
@@ -401,29 +378,29 @@ async def test_create_ticket_http_error_returns_diagnostic(
 
 @pytest.mark.asyncio
 async def test_list_tickets_cache_hit(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Second call to list_tickets with same params must hit cache (0 extra HTTP)."""
-    get_counter: list[int] = [0]
-    resp = _MockResponse(text='[{"id": "abc"}]')
-    _install_mock_client(monkeypatch, resp, counter=get_counter)
+    route = respx_mock.get("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(200, text='[{"id": "abc"}]')
+    )
 
     client = BoardReader(_settings(cache_ttl=60.0))
     out1 = await client.list_tickets(repo_id="robotsix-chat")
     out2 = await client.list_tickets(repo_id="robotsix-chat")
 
     assert out1 == out2 == '[{"id": "abc"}]'
-    assert get_counter[0] == 1  # only the first call hit HTTP
+    assert route.call_count == 1  # only the first call hit HTTP
 
 
 @pytest.mark.asyncio
 async def test_list_tickets_cache_miss_after_expiry(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter, monkeypatch: pytest.MonkeyPatch
 ) -> None:
     """After cache_ttl seconds, a fresh HTTP call must be made."""
-    get_counter: list[int] = [0]
-    resp = _MockResponse(text="[]")
-    _install_mock_client(monkeypatch, resp, counter=get_counter)
+    route = respx_mock.get("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(200, text="[]")
+    )
 
     # Control monotonic time so we can advance past cache_ttl
     fake_time = [0.0]
@@ -438,26 +415,25 @@ async def test_list_tickets_cache_miss_after_expiry(
 
     # First call fills cache at t=0
     await client.list_tickets(repo_id="robotsix-chat")
-    assert get_counter[0] == 1
+    assert route.call_count == 1
 
     # Advance past cache_ttl
     fake_time[0] = 10.0
 
     await client.list_tickets(repo_id="robotsix-chat")
-    assert get_counter[0] == 2  # cache expired → second HTTP call
+    assert route.call_count == 2  # cache expired → second HTTP call
 
 
 @pytest.mark.asyncio
 async def test_list_tickets_errors_not_cached(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Error responses must not be stored; each call hits HTTP."""
-    get_counter: list[int] = [0]
-    # 500 error → response text starts with "Board API error"
-    resp = _MockResponse(
-        text="Board API error 500 for GET /tickets: boom", status_code=500
+    route = respx_mock.get("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(
+            500, text="Board API error 500 for GET /tickets: boom"
+        )
     )
-    _install_mock_client(monkeypatch, resp, counter=get_counter)
 
     client = BoardReader(_settings(cache_ttl=60.0))
     out1 = await client.list_tickets(repo_id="x")
@@ -465,91 +441,52 @@ async def test_list_tickets_errors_not_cached(
 
     assert "500" in out1
     assert "500" in out2
-    assert get_counter[0] == 2  # errors not cached → both calls hit HTTP
+    assert route.call_count == 2  # errors not cached → both calls hit HTTP
 
 
 @pytest.mark.asyncio
 async def test_create_ticket_invalidates_list_cache(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """create_ticket must clear _list_cache, forcing a list refetch."""
-    get_counter: list[int] = [0]
-    post_counter: list[int] = [0]
-
-    list_resp = _MockResponse(text='[{"id": "abc"}]')
-    create_resp = _MockResponse(text='{"id": "xyz"}', status_code=201)
-
-    captured: dict[str, Any] = {}
-
-    class _BothClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _BothClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(
-            self,
-            url: str,
-            *,
-            headers: dict[str, str],
-            params: dict[str, str] | None = None,
-        ) -> _MockResponse:
-            captured["url"] = url
-            captured["headers"] = headers
-            captured.setdefault("params_list", []).append(params)
-            get_counter[0] += 1
-            return list_resp
-
-        async def post(
-            self,
-            url: str,
-            *,
-            headers: dict[str, str],
-            json: dict[str, str] | None = None,
-        ) -> _MockResponse:
-            captured["post_url"] = url
-            captured["post_headers"] = headers
-            captured["post_json"] = json
-            post_counter[0] += 1
-            return create_resp
-
-    monkeypatch.setattr(httpx, "AsyncClient", _BothClient)
+    get_route = respx_mock.get("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(200, text='[{"id": "abc"}]')
+    )
+    post_route = respx_mock.post("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(201, text='{"id": "xyz"}')
+    )
 
     client = BoardReader(_settings(cache_ttl=60.0))
 
     # 1) Populate list cache
     await client.list_tickets(repo_id="robotsix-chat")
-    assert get_counter[0] == 1
+    assert get_route.call_count == 1
 
     # 2) Create a ticket → invalidates list cache
     await client.create_ticket(title="T", description="D", repo_id="robotsix-chat")
-    assert post_counter[0] == 1
+    assert post_route.call_count == 1
 
     # 3) List again → must refetch (cache was cleared by create)
     await client.list_tickets(repo_id="robotsix-chat")
-    assert get_counter[0] == 2  # second list HTTP call
-    assert post_counter[0] == 1  # still exactly one POST
+    assert get_route.call_count == 2  # second list HTTP call
+    assert post_route.call_count == 1  # still exactly one POST
 
 
 @pytest.mark.asyncio
 async def test_get_ticket_cache_hit(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Second get_ticket for the same id must hit cache (0 extra HTTP)."""
-    get_counter: list[int] = [0]
-    resp = _MockResponse(text='{"id": "abc", "title": "Fix bug"}')
-    _install_mock_client(monkeypatch, resp, counter=get_counter)
+    route = respx_mock.get("http://127.0.0.1:8077/tickets/abc").mock(
+        return_value=httpx.Response(200, text='{"id": "abc", "title": "Fix bug"}')
+    )
 
     client = BoardReader(_settings(cache_ttl=60.0))
     out1 = await client.get_ticket("abc")
     out2 = await client.get_ticket("abc")
 
     assert out1 == out2 == '{"id": "abc", "title": "Fix bug"}'
-    assert get_counter[0] == 1  # only the first call hit HTTP
+    assert route.call_count == 1  # only the first call hit HTTP
 
 
 # ---------------------------------------------------------------------------
@@ -772,17 +709,23 @@ def test_similarity_threshold_constant() -> None:
 
 @pytest.mark.asyncio
 async def test_create_ticket_blocks_on_duplicate(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Near-duplicate open ticket blocks POST and returns a warning."""
-    get_resp = _MockResponse(
-        text='[{"id": "existing-1", "title": "Add image support", "state": "ready"}]'
+    respx_mock.get("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(
+            200,
+            text=(
+                '[{"id": "existing-1", "title": "Add image support", "state": "ready"}]'
+            ),
+        )
     )
-    post_resp = _MockResponse(text="SHOULD NOT BE CALLED", status_code=201)
+    post_route = respx_mock.post("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(201, text="SHOULD NOT BE CALLED")
+    )
 
     tools = build_board_reader_tools(_settings(api_base_url="http://127.0.0.1:8077"))
     create_fn = [t for t in tools if t.__name__ == "create_board_ticket"][0]
-    captured = _install_mock_dual_client(monkeypatch, get_resp, post_resp)
 
     out = await create_fn(
         title="image support",
@@ -791,7 +734,7 @@ async def test_create_ticket_blocks_on_duplicate(
     )
 
     # Must NOT have POSTed.
-    assert "url" not in captured["post"]
+    assert not post_route.called
     # Warning must be present.
     assert "⚠️" in out
     assert "existing-1" in out
@@ -801,20 +744,24 @@ async def test_create_ticket_blocks_on_duplicate(
 
 @pytest.mark.asyncio
 async def test_create_ticket_proceeds_when_no_duplicate(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """With force=False and no similar open tickets, the tool POSTs normally."""
-    get_resp = _MockResponse(
-        text='[{"id": "abc", "title": "Fix login bug", "state": "ready"}]'
+    respx_mock.get("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(
+            200,
+            text='[{"id": "abc", "title": "Fix login bug", "state": "ready"}]',
+        )
     )
-    post_resp = _MockResponse(
-        text='{"id": "new-1", "title": "Support images", "state": "draft"}',
-        status_code=201,
+    post_route = respx_mock.post("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(
+            201,
+            text='{"id": "new-1", "title": "Support images", "state": "draft"}',
+        )
     )
 
     tools = build_board_reader_tools(_settings(api_base_url="http://127.0.0.1:8077"))
     create_fn = [t for t in tools if t.__name__ == "create_board_ticket"][0]
-    captured = _install_mock_dual_client(monkeypatch, get_resp, post_resp)
 
     out = await create_fn(
         title="Support images",
@@ -823,26 +770,30 @@ async def test_create_ticket_proceeds_when_no_duplicate(
     )
 
     # POST must have been called.
-    assert captured["post"]["url"] == "http://127.0.0.1:8077/tickets"
-    assert out == post_resp.text
+    assert post_route.called
+    assert str(post_route.calls.last.request.url) == "http://127.0.0.1:8077/tickets"
+    assert out == post_route.calls.last.response.text
 
 
 @pytest.mark.asyncio
 async def test_create_ticket_force_bypasses_dedup(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """With force=True, the dedup check is skipped and the tool POSTs immediately."""
-    get_resp = _MockResponse(
-        text='[{"id": "existing-1", "title": "Add image support"}]'
+    get_route = respx_mock.get("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(
+            200, text='[{"id": "existing-1", "title": "Add image support"}]'
+        )
     )
-    post_resp = _MockResponse(
-        text='{"id": "new-2", "title": "Support images", "state": "draft"}',
-        status_code=201,
+    post_route = respx_mock.post("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(
+            201,
+            text='{"id": "new-2", "title": "Support images", "state": "draft"}',
+        )
     )
 
     tools = build_board_reader_tools(_settings(api_base_url="http://127.0.0.1:8077"))
     create_fn = [t for t in tools if t.__name__ == "create_board_ticket"][0]
-    captured = _install_mock_dual_client(monkeypatch, get_resp, post_resp)
 
     out = await create_fn(
         title="Support images",
@@ -852,26 +803,32 @@ async def test_create_ticket_force_bypasses_dedup(
     )
 
     # GET should NOT have been called (we never listed tickets).
-    assert "url" not in captured["get"]
+    assert not get_route.called
     # POST must have been called.
-    assert captured["post"]["url"] == "http://127.0.0.1:8077/tickets"
-    assert out == post_resp.text
+    assert post_route.called
+    assert str(post_route.calls.last.request.url) == "http://127.0.0.1:8077/tickets"
+    assert out == post_route.calls.last.response.text
 
 
 @pytest.mark.asyncio
 async def test_create_ticket_fail_open_on_non_json_list(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Board-read error (diagnostic string) → fail-open POST."""
-    get_resp = _MockResponse(text="Board API request timed out after 5.0s: ...")
-    post_resp = _MockResponse(
-        text='{"id": "new-3", "title": "Support images", "state": "draft"}',
-        status_code=201,
+    respx_mock.get("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(
+            200, text="Board API request timed out after 5.0s: ..."
+        )
+    )
+    post_route = respx_mock.post("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(
+            201,
+            text='{"id": "new-3", "title": "Support images", "state": "draft"}',
+        )
     )
 
     tools = build_board_reader_tools(_settings(api_base_url="http://127.0.0.1:8077"))
     create_fn = [t for t in tools if t.__name__ == "create_board_ticket"][0]
-    captured = _install_mock_dual_client(monkeypatch, get_resp, post_resp)
 
     out = await create_fn(
         title="Support images",
@@ -880,25 +837,27 @@ async def test_create_ticket_fail_open_on_non_json_list(
     )
 
     # GET was called, POST also was called (fail-open).
-    assert captured["get"]["url"] == "http://127.0.0.1:8077/tickets"
-    assert captured["post"]["url"] == "http://127.0.0.1:8077/tickets"
-    assert out == post_resp.text
+    assert post_route.called
+    assert out == post_route.calls.last.response.text
 
 
 @pytest.mark.asyncio
 async def test_create_ticket_fail_open_on_json_object(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Board-read returns a JSON object (not list) → fail-open POST."""
-    get_resp = _MockResponse(text='{"error": "something went wrong"}')
-    post_resp = _MockResponse(
-        text='{"id": "new-4", "title": "Fix bug", "state": "draft"}',
-        status_code=201,
+    respx_mock.get("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(200, text='{"error": "something went wrong"}')
+    )
+    post_route = respx_mock.post("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(
+            201,
+            text='{"id": "new-4", "title": "Fix bug", "state": "draft"}',
+        )
     )
 
     tools = build_board_reader_tools(_settings(api_base_url="http://127.0.0.1:8077"))
     create_fn = [t for t in tools if t.__name__ == "create_board_ticket"][0]
-    captured = _install_mock_dual_client(monkeypatch, get_resp, post_resp)
 
     out = await create_fn(
         title="Fix bug",
@@ -906,23 +865,31 @@ async def test_create_ticket_fail_open_on_json_object(
         repo_id="robotsix-chat",
     )
 
-    assert captured["post"]["url"] == "http://127.0.0.1:8077/tickets"
-    assert out == post_resp.text
+    assert post_route.called
+    assert str(post_route.calls.last.request.url) == "http://127.0.0.1:8077/tickets"
+    assert out == post_route.calls.last.response.text
 
 
 @pytest.mark.asyncio
 async def test_create_ticket_duplicate_listing_includes_state(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """The duplicate warning includes state for each candidate."""
-    get_resp = _MockResponse(
-        text='[{"id": "dup-1", "title": "Add image support", "state": "in_progress"}]'
+    respx_mock.get("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(
+            200,
+            text=(
+                '[{"id": "dup-1", "title": "Add image support",'
+                ' "state": "in_progress"}]'
+            ),
+        )
     )
-    post_resp = _MockResponse(text="SHOULD NOT BE CALLED", status_code=201)
+    respx_mock.post("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(201, text="SHOULD NOT BE CALLED")
+    )
 
     tools = build_board_reader_tools(_settings())
     create_fn = [t for t in tools if t.__name__ == "create_board_ticket"][0]
-    _install_mock_dual_client(monkeypatch, get_resp, post_resp)
 
     out = await create_fn(
         title="Add image support",

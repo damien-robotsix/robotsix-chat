@@ -1,6 +1,6 @@
 """Tests for the reference-docs integration.
 
-:func:`build_refdocs_tools` and :class:`RefDocsClient`, with ``httpx`` mocked
+:func:`build_refdocs_tools` and :class:`RefDocsClient`, with ``respx`` mocked
 so there are no real network calls.
 """
 
@@ -11,12 +11,11 @@ from typing import Any
 
 import httpx
 import pytest
+import respx
 
 from robotsix_chat.config import RefDocsSettings
 from robotsix_chat.refdocs import build_refdocs_tools
 from robotsix_chat.refdocs.client import RefDocsClient
-from tests.common.mock_helpers import MockResponse as _MockResponse
-from tests.common.mock_helpers import install_mock_client as _install_mock_client
 
 
 def _settings(**kw: Any) -> RefDocsSettings:
@@ -26,30 +25,6 @@ def _settings(**kw: Any) -> RefDocsSettings:
     }
     base.update(kw)
     return RefDocsSettings(**base)
-
-
-# ---------------------------------------------------------------------------
-# Shared mock helpers
-# ---------------------------------------------------------------------------
-
-
-def _failing_client(exc: type[Exception], msg: str) -> type:
-    """Return an httpx.AsyncClient stand-in that raises *exc(msg)* on ``get``."""
-
-    class _FailingClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _FailingClient:
-            return self
-
-        async def __aexit__(self, *exc_obj: object) -> None:
-            return None
-
-        async def get(self, url: str, *, headers: dict[str, str]) -> None:
-            raise exc(msg)
-
-    return _FailingClient
 
 
 # ---------------------------------------------------------------------------
@@ -99,14 +74,16 @@ async def test_list_rejects_repo_not_in_allowlist() -> None:
 
 @pytest.mark.asyncio
 async def test_read_file_returns_decoded_content(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """The read tool decodes base64 content from a successful GitHub response."""
     text = "## Manual-action states\n\n- state A\n- state B\n"
     encoded = base64.b64encode(text.encode("utf-8")).decode("ascii")
-    resp = _MockResponse({"content": encoded, "encoding": "base64"})
-
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get("https://api.github.com/repos/org/r/contents/docs/states.md").mock(
+        return_value=httpx.Response(
+            200, json={"content": encoded, "encoding": "base64"}
+        )
+    )
 
     client = RefDocsClient(_settings(repos=["org/r"]))
     out = await client.read_file("org/r", "docs/states.md")
@@ -115,45 +92,46 @@ async def test_read_file_returns_decoded_content(
 
 @pytest.mark.asyncio
 async def test_read_file_uses_token_when_configured(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """The read tool sends an Authorization header when a token is set."""
-    resp = _MockResponse({"content": "YQ==", "encoding": "base64"})
-
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.get("https://api.github.com/repos/org/r/contents/f.txt").mock(
+        return_value=httpx.Response(200, json={"content": "YQ==", "encoding": "base64"})
+    )
 
     client = RefDocsClient(
         _settings(repos=["org/r"], github_token="ghp_test")  # pragma: allowlist secret
     )
     await client.read_file("org/r", "f.txt")
 
-    assert captured.get("headers", {}).get("Authorization") == (
-        "Bearer ghp_test"  # pragma: allowlist secret
+    assert (
+        route.calls.last.request.headers["authorization"]
+        == "Bearer ghp_test"  # pragma: allowlist secret
     )
 
 
 @pytest.mark.asyncio
 async def test_read_file_no_token_header_when_empty(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """The read tool does NOT send an Authorization header when no token."""
-    resp = _MockResponse({"content": "YQ==", "encoding": "base64"})
-
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.get("https://api.github.com/repos/org/r/contents/f.txt").mock(
+        return_value=httpx.Response(200, json={"content": "YQ==", "encoding": "base64"})
+    )
 
     client = RefDocsClient(_settings(repos=["org/r"]))
     await client.read_file("org/r", "f.txt")
-    assert "Authorization" not in captured.get("headers", {})
+    assert "authorization" not in route.calls.last.request.headers
 
 
 @pytest.mark.asyncio
 async def test_read_file_directory_response_returns_guidance(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """When the GitHub response is a list (directory), guide to list tool."""
-    resp = _MockResponse([{"name": "a.md", "type": "file"}])
-
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get("https://api.github.com/repos/org/allowed-repo/contents/docs").mock(
+        return_value=httpx.Response(200, json=[{"name": "a.md", "type": "file"}])
+    )
 
     client = RefDocsClient(_settings())
     out = await client.read_file("org/allowed-repo", "docs")
@@ -163,12 +141,12 @@ async def test_read_file_directory_response_returns_guidance(
 
 @pytest.mark.asyncio
 async def test_read_file_missing_content_returns_error(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """When the response lacks base64 content, return an error string."""
-    resp = _MockResponse({"no_content_here": True})
-
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get("https://api.github.com/repos/org/allowed-repo/contents/f.txt").mock(
+        return_value=httpx.Response(200, json={"no_content_here": True})
+    )
 
     client = RefDocsClient(_settings())
     out = await client.read_file("org/allowed-repo", "f.txt")
@@ -182,12 +160,12 @@ async def test_read_file_missing_content_returns_error(
 
 @pytest.mark.asyncio
 async def test_read_file_http_error_returns_string(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """An HTTP error is returned as a concise string, never raised."""
-    resp = _MockResponse({}, status_code=404)
-
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get(
+        "https://api.github.com/repos/org/allowed-repo/contents/missing.md"
+    ).mock(return_value=httpx.Response(404, json={}))
 
     client = RefDocsClient(_settings())
     out = await client.read_file("org/allowed-repo", "missing.md")
@@ -196,11 +174,12 @@ async def test_read_file_http_error_returns_string(
 
 @pytest.mark.asyncio
 async def test_read_file_network_error_returns_string(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """A network/connection error is returned as a concise string, never raised."""
-    _FailingClient = _failing_client(ConnectionError, "connection refused")
-    monkeypatch.setattr(httpx, "AsyncClient", _FailingClient)
+    respx_mock.get("https://api.github.com/repos/org/allowed-repo/contents/f.txt").mock(
+        side_effect=ConnectionError("connection refused")
+    )
 
     client = RefDocsClient(_settings())
     out = await client.read_file("org/allowed-repo", "f.txt")
@@ -210,18 +189,21 @@ async def test_read_file_network_error_returns_string(
 
 @pytest.mark.asyncio
 async def test_list_files_returns_formatted_listing(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """The list tool formats a directory listing from a GitHub array response."""
-    resp = _MockResponse(
-        [
-            {"name": "README.md", "type": "file"},
-            {"name": "docs", "type": "dir"},
-            {"name": "states.md", "type": "file"},
-        ]
+    respx_mock.get(
+        "https://api.github.com/repos/org/allowed-repo/contents?ref=main"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"name": "README.md", "type": "file"},
+                {"name": "docs", "type": "dir"},
+                {"name": "states.md", "type": "file"},
+            ],
+        )
     )
-
-    _install_mock_client(monkeypatch, resp)
 
     client = RefDocsClient(_settings())
     out = await client.list_files("org/allowed-repo", "")
@@ -233,12 +215,14 @@ async def test_list_files_returns_formatted_listing(
 
 @pytest.mark.asyncio
 async def test_list_files_file_response_returns_guidance(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """When the GitHub response is a file (not a list), guide to read tool."""
-    resp = _MockResponse({"content": "YQ==", "encoding": "base64"})
-
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get(
+        "https://api.github.com/repos/org/allowed-repo/contents/README.md?ref=main"
+    ).mock(
+        return_value=httpx.Response(200, json={"content": "YQ==", "encoding": "base64"})
+    )
 
     client = RefDocsClient(_settings())
     out = await client.list_files("org/allowed-repo", "README.md")
@@ -248,11 +232,12 @@ async def test_list_files_file_response_returns_guidance(
 
 @pytest.mark.asyncio
 async def test_list_files_network_error_returns_string(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """A network error in list_files is returned as a string, never raised."""
-    _FailingClient = _failing_client(OSError, "timeout")
-    monkeypatch.setattr(httpx, "AsyncClient", _FailingClient)
+    respx_mock.get(
+        "https://api.github.com/repos/org/allowed-repo/contents?ref=main"
+    ).mock(side_effect=OSError("timeout"))
 
     client = RefDocsClient(_settings())
     out = await client.list_files("org/allowed-repo", "")
@@ -267,14 +252,18 @@ async def test_list_files_network_error_returns_string(
 
 @pytest.mark.asyncio
 async def test_read_file_truncates_large_content(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Content exceeding the cap is truncated with a marker."""
     big = "x" * 40_000
     encoded = base64.b64encode(big.encode("utf-8")).decode("ascii")
-    resp = _MockResponse({"content": encoded, "encoding": "base64"})
-
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get(
+        "https://api.github.com/repos/org/allowed-repo/contents/big.txt?ref=main"
+    ).mock(
+        return_value=httpx.Response(
+            200, json={"content": encoded, "encoding": "base64"}
+        )
+    )
 
     client = RefDocsClient(_settings())
     out = await client.read_file("org/allowed-repo", "big.txt")

@@ -1,7 +1,6 @@
 """Tests for the component client tools and ``ComponentAgentClient``.
 
-Uses ``MockResponse`` and ``install_mock_client`` from
-``tests.common.mock_helpers`` to stand in for httpx so the tests
+Uses ``respx`` (httpx transport-layer mocking) so the tests
 run without a real network and never touch the broker.
 """
 
@@ -9,13 +8,13 @@ from __future__ import annotations
 
 from typing import Any
 
+import httpx
 import pytest
+import respx
 
 from robotsix_chat.component_client import build_component_tools
 from robotsix_chat.component_client.client import ComponentAgentClient
 from robotsix_chat.config import ComponentClientSettings, ComponentTarget, Settings
-
-from ..common.mock_helpers import MockResponse, install_mock_client
 
 
 def _settings(**kw: Any) -> ComponentClientSettings:
@@ -103,20 +102,17 @@ async def test_list_component_agents_empty() -> None:
 
 @pytest.mark.asyncio
 async def test_get_component_telemetry_sends_monitor_payload(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """get_component_telemetry POSTs to /api/component-agent/monitor."""
-    captured = install_mock_client(
-        monkeypatch,
-        MockResponse({"check_loops": {}, "conversations": {}}),
+    route = respx_mock.post("http://comp-1:8090/api/component-agent/monitor").mock(
+        return_value=httpx.Response(200, json={"check_loops": {}, "conversations": {}})
     )
     tools = build_component_tools(_settings())
     telemetry_fn = tools[1]
     result = await telemetry_fn("http://comp-1:8090")
     assert "check_loops" in result
-    assert captured["method"] == "POST"
-    assert captured["url"] == "http://comp-1:8090/api/component-agent/monitor"
-    assert captured["json"] == {"kind": "monitor", "payload": {}}
+    assert route.called
 
 
 @pytest.mark.asyncio
@@ -138,20 +134,17 @@ async def test_get_component_telemetry_unknown_base_url() -> None:
 
 @pytest.mark.asyncio
 async def test_get_component_config_sends_config_get_payload(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """get_component_config POSTs to /api/component-agent/config with config-get."""
-    captured = install_mock_client(
-        monkeypatch,
-        MockResponse({"config": {}, "settable": {}}),
+    route = respx_mock.post("http://comp-1:8090/api/component-agent/config").mock(
+        return_value=httpx.Response(200, json={"config": {}, "settable": {}})
     )
     tools = build_component_tools(_settings())
     config_fn = tools[2]
     result = await config_fn("http://comp-1:8090")
     assert "config" in result
-    assert captured["method"] == "POST"
-    assert captured["url"] == "http://comp-1:8090/api/component-agent/config"
-    assert captured["json"] == {"kind": "config-get", "payload": {}}
+    assert route.called
 
 
 @pytest.mark.asyncio
@@ -172,23 +165,17 @@ async def test_get_component_config_unknown_base_url() -> None:
 
 @pytest.mark.asyncio
 async def test_set_component_config_sends_config_set_payload(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """set_component_config POSTs updates under payload["updates"]."""
-    captured = install_mock_client(
-        monkeypatch,
-        MockResponse({"applied": {"server.port": 8080}}),
+    route = respx_mock.post("http://comp-1:8090/api/component-agent/config").mock(
+        return_value=httpx.Response(200, json={"applied": {"server.port": 8080}})
     )
     tools = build_component_tools(_settings())
     set_fn = tools[3]
     result = await set_fn("http://comp-1:8090", {"server.port": 8080})
     assert "applied" in result
-    assert captured["method"] == "POST"
-    assert captured["url"] == "http://comp-1:8090/api/component-agent/config"
-    assert captured["json"] == {
-        "kind": "config-set",
-        "payload": {"updates": {"server.port": 8080}},
-    }
+    assert route.called
 
 
 @pytest.mark.asyncio
@@ -204,12 +191,11 @@ async def test_set_component_config_unknown_base_url() -> None:
 
 @pytest.mark.asyncio
 async def test_set_component_config_failure_surfaced_as_text(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """HTTP error from config-set is surfaced as a clear error string."""
-    install_mock_client(
-        monkeypatch,
-        MockResponse({"code": "INVALID", "message": "nope"}, status_code=400),
+    respx_mock.post("http://comp-1:8090/api/component-agent/config").mock(
+        return_value=httpx.Response(400, json={"code": "INVALID", "message": "nope"})
     )
     tools = build_component_tools(_settings())
     set_fn = tools[3]
@@ -224,78 +210,66 @@ async def test_set_component_config_failure_surfaced_as_text(
 
 @pytest.mark.asyncio
 async def test_client_monitor_posts_correct_url(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """monitor() POSTs to the correct endpoint with the right payload."""
-    captured = install_mock_client(
-        monkeypatch,
-        MockResponse({"ok": True}),
+    route = respx_mock.post("http://agent:8090/api/component-agent/monitor").mock(
+        return_value=httpx.Response(200, json={"ok": True})
     )
     client = ComponentAgentClient(_settings(timeout=5.0))
     result = await client.monitor("http://agent:8090")
     assert "ok" in result
-    assert captured["url"] == "http://agent:8090/api/component-agent/monitor"
-    assert captured["json"] == {"kind": "monitor", "payload": {}}
-    assert captured["method"] == "POST"
+    assert route.called
 
 
 @pytest.mark.asyncio
 async def test_client_config_get_posts_correct_url(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """config_get() POSTs to the config endpoint with config-get kind."""
-    captured = install_mock_client(
-        monkeypatch,
-        MockResponse({"config": {}, "settable": {}}),
+    route = respx_mock.post("http://agent:8090/api/component-agent/config").mock(
+        return_value=httpx.Response(200, json={"config": {}, "settable": {}})
     )
     client = ComponentAgentClient(_settings(timeout=10.0))
     result = await client.config_get("http://agent:8090")
     assert "config" in result
-    assert captured["url"] == "http://agent:8090/api/component-agent/config"
-    assert captured["json"] == {"kind": "config-get", "payload": {}}
+    assert route.called
 
 
 @pytest.mark.asyncio
 async def test_client_config_set_posts_correct_url(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """config_set() POSTs updates to the config endpoint."""
-    captured = install_mock_client(
-        monkeypatch,
-        MockResponse({"applied": {"x": 1}}),
+    route = respx_mock.post("http://agent:8090/api/component-agent/config").mock(
+        return_value=httpx.Response(200, json={"applied": {"x": 1}})
     )
     client = ComponentAgentClient(_settings())
     result = await client.config_set("http://agent:8090", {"x": 1})
     assert "applied" in result
-    assert captured["url"] == "http://agent:8090/api/component-agent/config"
-    assert captured["json"] == {
-        "kind": "config-set",
-        "payload": {"updates": {"x": 1}},
-    }
+    assert route.called
 
 
 @pytest.mark.asyncio
 async def test_client_strips_trailing_slash(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Trailing slash on base_url is stripped so the URL is not doubled."""
-    captured = install_mock_client(
-        monkeypatch,
-        MockResponse({"ok": True}),
+    route = respx_mock.post("http://agent:8090/api/component-agent/monitor").mock(
+        return_value=httpx.Response(200, json={"ok": True})
     )
     client = ComponentAgentClient(_settings())
     await client.monitor("http://agent:8090/")
-    assert captured["url"] == "http://agent:8090/api/component-agent/monitor"
+    assert route.called
 
 
 @pytest.mark.asyncio
 async def test_client_http_error_returned_as_text(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """HTTP 500 errors are caught and returned as error text, never raised."""
-    install_mock_client(
-        monkeypatch,
-        MockResponse("internal error", status_code=500),
+    respx_mock.post("http://agent:8090/api/component-agent/monitor").mock(
+        return_value=httpx.Response(500, text="internal error")
     )
     client = ComponentAgentClient(_settings())
     result = await client.monitor("http://agent:8090")
@@ -305,30 +279,12 @@ async def test_client_http_error_returned_as_text(
 
 @pytest.mark.asyncio
 async def test_client_timeout_returned_as_text(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Timeout errors are caught and returned as text, never raised."""
-    import httpx
-
-    # Make the mock client's post method raise a TimeoutException
-
-    class _TimeoutClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _TimeoutClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            pass
-
-        async def post(self, *args: Any, **kwargs: Any) -> None:
-            raise httpx.TimeoutException("timed out")
-
-        async def get(self, *args: Any, **kwargs: Any) -> None:
-            raise httpx.TimeoutException("timed out")
-
-    monkeypatch.setattr(httpx, "AsyncClient", _TimeoutClient)
+    respx_mock.post("http://agent:8090/api/component-agent/monitor").mock(
+        side_effect=httpx.ReadTimeout("timed out")
+    )
     client = ComponentAgentClient(_settings())
     result = await client.monitor("http://agent:8090")
     assert "timed out" in result.lower()

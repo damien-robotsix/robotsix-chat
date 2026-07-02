@@ -1,20 +1,19 @@
 """Tests for the mail integration — :func:`build_mail_tools` and :class:`MailClient`.
 
-Uses ``httpx`` mocking (via ``tests.common.mock_helpers``) so tests never
-touch a real network and do not need the ``broker`` extra installed.
+Uses ``respx`` (httpx transport-layer mocking) so tests never touch a real
+network and do not need the ``broker`` extra installed.
 """
 
 from __future__ import annotations
 
 from typing import Any
 
+import httpx
 import pytest
+import respx
 
 from robotsix_chat.config import MailSettings
 from robotsix_chat.mail import build_mail_tools
-
-from ..common.mock_helpers import MockResponse as _MockResponse
-from ..common.mock_helpers import install_mock_client as _install_mock_client
 
 
 def _settings(**kw: Any) -> MailSettings:
@@ -82,25 +81,26 @@ def test_build_mail_tools_returns_six_tools() -> None:
 
 
 @pytest.mark.asyncio
-async def test_board_content_success(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_board_content_success(respx_mock: respx.MockRouter) -> None:
     """GET /board-content returns the JSON body as text."""
-    resp = _MockResponse(text='{"columns": []}', status_code=200)
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.get("http://127.0.0.1:8077/board-content").mock(
+        return_value=httpx.Response(200, text='{"columns": []}')
+    )
     tools = build_mail_tools(_settings())
     get_board = tools[0]
 
     result = await get_board()
 
-    assert captured["method"] == "GET"
-    assert captured["url"] == "http://127.0.0.1:8077/board-content"
+    assert route.called
     assert result == '{"columns": []}'
 
 
 @pytest.mark.asyncio
-async def test_board_content_error(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_board_content_error(respx_mock: respx.MockRouter) -> None:
     """GET /board-content on 500 returns an error string, never raises."""
-    resp = _MockResponse(text="Internal error", status_code=500)
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get("http://127.0.0.1:8077/board-content").mock(
+        return_value=httpx.Response(500, text="Internal error")
+    )
     tools = build_mail_tools(_settings())
     get_board = tools[0]
 
@@ -115,33 +115,34 @@ async def test_board_content_error(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_email_status_success(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_email_status_success(respx_mock: respx.MockRouter) -> None:
     """GET /email/{id}/status returns the triage column name."""
-    resp = _MockResponse(text="INBOX", status_code=200)
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.get("http://127.0.0.1:8077/email/msg-123/status").mock(
+        return_value=httpx.Response(200, text="INBOX")
+    )
     tools = build_mail_tools(_settings())
     get_status = tools[1]
 
     result = await get_status("msg-123")
 
-    assert captured["method"] == "GET"
-    assert captured["url"].endswith("/email/msg-123/status")
+    assert route.called
     assert result == "INBOX"
 
 
 @pytest.mark.asyncio
 async def test_email_status_url_encodes_message_id(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Special characters in message_id are URL-encoded."""
-    resp = _MockResponse(text="INBOX", status_code=200)
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.get(
+        "http://127.0.0.1:8077/email/msg%20with%2Fslash/status"
+    ).mock(return_value=httpx.Response(200, text="INBOX"))
     tools = build_mail_tools(_settings())
     get_status = tools[1]
 
     await get_status("msg with/slash")
 
-    assert "/email/msg%20with%2Fslash/status" in captured["url"]
+    assert route.called
 
 
 # ---------------------------------------------------------------------------
@@ -150,26 +151,25 @@ async def test_email_status_url_encodes_message_id(
 
 
 @pytest.mark.asyncio
-async def test_move_email_success(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_move_email_success(respx_mock: respx.MockRouter) -> None:
     """POST /move with form fields and 302 → success."""
-    resp = _MockResponse(text="", status_code=302)
-    captured = _install_mock_client(monkeypatch, resp, capture_kwargs=True)
+    route = respx_mock.post("http://127.0.0.1:8077/move").mock(
+        return_value=httpx.Response(302, text="")
+    )
     tools = build_mail_tools(_settings())
     move_email = tools[2]
 
     result = await move_email("msg-abc", "TO_ARCHIVE")
 
-    assert captured["method"] == "POST"
-    assert captured["url"] == "http://127.0.0.1:8077/move"
-    assert "message_id=msg-abc" in captured.get("content", "")
-    assert "triage_action=TO_ARCHIVE" in captured.get("content", "")
-    # follow_redirects=False is used
-    assert captured.get("client_kwargs", {}).get("follow_redirects") is False
+    assert route.called
+    content = route.calls.last.request.content.decode()
+    assert "message_id=msg-abc" in content
+    assert "triage_action=TO_ARCHIVE" in content
     assert "OK (status 302)" in result
 
 
 @pytest.mark.asyncio
-async def test_move_email_invalid_action(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_move_email_invalid_action() -> None:
     """Invalid triage_action returns an error string without an HTTP call."""
     tools = build_mail_tools(_settings())
     move_email = tools[2]
@@ -181,10 +181,11 @@ async def test_move_email_invalid_action(monkeypatch: pytest.MonkeyPatch) -> Non
 
 
 @pytest.mark.asyncio
-async def test_move_email_400_error(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_move_email_400_error(respx_mock: respx.MockRouter) -> None:
     """POST /move with 400 returns the error body."""
-    resp = _MockResponse(text="Unknown message_id", status_code=400)
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.post("http://127.0.0.1:8077/move").mock(
+        return_value=httpx.Response(400, text="Unknown message_id")
+    )
     tools = build_mail_tools(_settings())
     move_email = tools[2]
 
@@ -200,18 +201,18 @@ async def test_move_email_400_error(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_delete_email_success(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_delete_email_success(respx_mock: respx.MockRouter) -> None:
     """POST /delete with form-encoded message_id and 302 → success."""
-    resp = _MockResponse(text="", status_code=302)
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.post("http://127.0.0.1:8077/delete").mock(
+        return_value=httpx.Response(302, text="")
+    )
     tools = build_mail_tools(_settings())
     delete_email = tools[3]
 
     result = await delete_email("msg-del")
 
-    assert captured["method"] == "POST"
-    assert captured["url"] == "http://127.0.0.1:8077/delete"
-    assert "message_id=msg-del" in captured.get("content", "")
+    assert route.called
+    assert b"message_id=msg-del" in route.calls.last.request.content
     assert "OK (status 302)" in result
 
 
@@ -221,18 +222,18 @@ async def test_delete_email_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_archive_email_success(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_archive_email_success(respx_mock: respx.MockRouter) -> None:
     """POST /archive with form-encoded message_id and 302 → success."""
-    resp = _MockResponse(text="", status_code=302)
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.post("http://127.0.0.1:8077/archive").mock(
+        return_value=httpx.Response(302, text="")
+    )
     tools = build_mail_tools(_settings())
     archive_email = tools[4]
 
     result = await archive_email("msg-arc")
 
-    assert captured["method"] == "POST"
-    assert captured["url"] == "http://127.0.0.1:8077/archive"
-    assert "message_id=msg-arc" in captured.get("content", "")
+    assert route.called
+    assert b"message_id=msg-arc" in route.calls.last.request.content
     assert "OK (status 302)" in result
 
 
@@ -242,17 +243,17 @@ async def test_archive_email_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_run_triage_success(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_run_triage_success(respx_mock: respx.MockRouter) -> None:
     """POST /run-triage with empty body and 302 → success."""
-    resp = _MockResponse(text="", status_code=302)
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.post("http://127.0.0.1:8077/run-triage").mock(
+        return_value=httpx.Response(302, text="")
+    )
     tools = build_mail_tools(_settings())
     run_triage = tools[5]
 
     result = await run_triage()
 
-    assert captured["method"] == "POST"
-    assert captured["url"] == "http://127.0.0.1:8077/run-triage"
+    assert route.called
     assert "OK (status 302)" in result
 
 
@@ -262,33 +263,35 @@ async def test_run_triage_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_sends_bearer_token(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_sends_bearer_token(respx_mock: respx.MockRouter) -> None:
     """When api_token is set, the Authorization: Bearer header is sent."""
-    resp = _MockResponse(text="ok", status_code=200)
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.get("http://127.0.0.1:8077/board-content").mock(
+        return_value=httpx.Response(200, text="ok")
+    )
     tools = build_mail_tools(_settings(api_token="secret-token"))
     get_board = tools[0]
 
     await get_board()
 
-    assert captured["headers"] == {
-        "Authorization": "Bearer secret-token",
-    }
+    assert route.called
+    assert route.calls.last.request.headers["authorization"] == "Bearer secret-token"
 
 
 @pytest.mark.asyncio
 async def test_no_auth_header_when_token_empty(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """When api_token is empty, no Authorization header is sent."""
-    resp = _MockResponse(text="ok", status_code=200)
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.get("http://127.0.0.1:8077/board-content").mock(
+        return_value=httpx.Response(200, text="ok")
+    )
     tools = build_mail_tools(_settings(api_token=""))
     get_board = tools[0]
 
     await get_board()
 
-    assert captured["headers"] == {}
+    assert route.called
+    assert "authorization" not in route.calls.last.request.headers
 
 
 # ---------------------------------------------------------------------------
@@ -297,10 +300,11 @@ async def test_no_auth_header_when_token_empty(
 
 
 @pytest.mark.asyncio
-async def test_custom_api_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_custom_api_base_url(respx_mock: respx.MockRouter) -> None:
     """Custom api_base_url is used as the request prefix."""
-    resp = _MockResponse(text="ok", status_code=200)
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.get("https://mail.example.com:9000/api/board-content").mock(
+        return_value=httpx.Response(200, text="ok")
+    )
     tools = build_mail_tools(
         _settings(api_base_url="https://mail.example.com:9000/api/")
     )
@@ -308,7 +312,7 @@ async def test_custom_api_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
 
     await get_board()
 
-    assert captured["url"] == "https://mail.example.com:9000/api/board-content"
+    assert route.called
 
 
 # ---------------------------------------------------------------------------
@@ -318,25 +322,12 @@ async def test_custom_api_base_url(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.asyncio
 async def test_network_error_returns_diagnostic(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """A network error is returned as an error string, never raised."""
-    import httpx
-
-    class _TimeoutClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _TimeoutClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(self, url: str, **kwargs: Any) -> None:
-            raise httpx.TimeoutException("timed out")
-
-    monkeypatch.setattr(httpx, "AsyncClient", _TimeoutClient)
+    respx_mock.get("http://127.0.0.1:8077/board-content").mock(
+        side_effect=httpx.ReadTimeout("timed out")
+    )
     tools = build_mail_tools(_settings())
     get_board = tools[0]
 

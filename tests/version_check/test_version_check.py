@@ -1,7 +1,7 @@
 """Tests for the version-check integration.
 
 :func:`build_version_check_tools`, :class:`VersionCheckClient`, and the
-:func:`_parse_version` helper, with ``httpx`` mocked so there are no real
+:func:`_parse_version` helper, with ``respx`` mocked so there are no real
 network calls.
 """
 
@@ -11,6 +11,7 @@ from typing import Any
 
 import httpx
 import pytest
+import respx
 
 from robotsix_chat.config import VersionCheckSettings
 from robotsix_chat.version_check import build_version_check_tools
@@ -19,7 +20,6 @@ from robotsix_chat.version_check.client import (
     _parse_version,
     compare_versions,
 )
-from tests.common.mock_helpers import MockResponse as _MockResponse
 
 
 def _settings(**kw: Any) -> VersionCheckSettings:
@@ -29,51 +29,6 @@ def _settings(**kw: Any) -> VersionCheckSettings:
     }
     base.update(kw)
     return VersionCheckSettings(**base)
-
-
-# ---------------------------------------------------------------------------
-# Shared mock helpers (mirrors the refdocs / board_reader pattern)
-# ---------------------------------------------------------------------------
-
-
-def _install_mock_client(
-    monkeypatch: pytest.MonkeyPatch,
-    responses: list[_MockResponse] | _MockResponse,
-) -> dict[str, Any]:
-    """Replace ``httpx.AsyncClient`` with a factory returning *responses*.
-
-    Returns a ``captured`` dict with ``calls`` — a list of ``(url, headers)``
-    tuples for each ``get`` call made.
-    """
-    captured: dict[str, Any] = {"calls": []}
-    _responses: list[_MockResponse] = (
-        responses if isinstance(responses, list) else [responses]
-    )
-
-    # Shared index so consecutive AsyncClient instances advance too.
-    idx_counter = {"i": 0}
-
-    class _BoundClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _BoundClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(self, url: str, *, headers: dict[str, str]) -> _MockResponse:
-            captured["calls"].append((url, headers))
-            i = idx_counter["i"]
-            resp = _responses[i]
-            # Advance the index but clamp so the last response repeats.
-            if i + 1 < len(_responses):
-                idx_counter["i"] = i + 1
-            return resp
-
-    monkeypatch.setattr(httpx, "AsyncClient", _BoundClient)
-    return captured
 
 
 # ---------------------------------------------------------------------------
@@ -163,10 +118,11 @@ def test_build_enabled_returns_one_tool() -> None:
 
 
 @pytest.mark.asyncio
-async def test_up_to_date(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_up_to_date(respx_mock: respx.MockRouter) -> None:
     """When current == latest, summary says up-to-date and shows both versions."""
-    resp = _MockResponse({"tag_name": "0.1.0"})
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get("https://api.github.com/repos/org/my-repo/releases/latest").mock(
+        return_value=httpx.Response(200, json={"tag_name": "0.1.0"})
+    )
 
     client = VersionCheckClient(_settings())
     version, source = await client.latest_version()
@@ -175,10 +131,11 @@ async def test_up_to_date(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_behind(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_behind(respx_mock: respx.MockRouter) -> None:
     """When current < latest, the client returns the newer version."""
-    resp = _MockResponse({"tag_name": "0.2.0"})
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get("https://api.github.com/repos/org/my-repo/releases/latest").mock(
+        return_value=httpx.Response(200, json={"tag_name": "0.2.0"})
+    )
 
     client = VersionCheckClient(_settings())
     version, source = await client.latest_version()
@@ -192,22 +149,21 @@ async def test_behind(monkeypatch: pytest.MonkeyPatch) -> None:
 
 @pytest.mark.asyncio
 async def test_releases_latest_404_falls_back_to_tags(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """When releases/latest returns 404, the tags endpoint is tried."""
-    not_found = _MockResponse({}, status_code=404)
-    tags_resp = _MockResponse([{"name": "v0.1.0"}, {"name": "v0.0.9"}])
-    captured = _install_mock_client(monkeypatch, [not_found, tags_resp])
+    respx_mock.get("https://api.github.com/repos/org/my-repo/releases/latest").mock(
+        return_value=httpx.Response(404, json={})
+    )
+    tags_route = respx_mock.get("https://api.github.com/repos/org/my-repo/tags").mock(
+        return_value=httpx.Response(200, json=[{"name": "v0.1.0"}, {"name": "v0.0.9"}])
+    )
 
     client = VersionCheckClient(_settings())
     version, source = await client.latest_version()
     assert version == "v0.1.0"
     assert "tags" in source.lower()
-
-    calls = captured["calls"]
-    assert len(calls) == 2
-    assert "releases/latest" in calls[0][0]
-    assert "tags" in calls[1][0]
+    assert tags_route.called
 
 
 # ---------------------------------------------------------------------------
@@ -217,11 +173,12 @@ async def test_releases_latest_404_falls_back_to_tags(
 
 @pytest.mark.asyncio
 async def test_http_error_returns_none(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """An HTTP error returns (None, reason) — never raises."""
-    resp = _MockResponse({}, status_code=500)
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get("https://api.github.com/repos/org/my-repo/releases/latest").mock(
+        return_value=httpx.Response(500, json={})
+    )
 
     client = VersionCheckClient(_settings())
     version, source = await client.latest_version()
@@ -231,24 +188,12 @@ async def test_http_error_returns_none(
 
 @pytest.mark.asyncio
 async def test_timeout_returns_none(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """A timeout returns (None, reason) — never raises."""
-
-    class _TimeoutClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _TimeoutClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(self, url: str, *, headers: dict[str, str]) -> None:
-            raise httpx.TimeoutException("timed out")
-
-    monkeypatch.setattr(httpx, "AsyncClient", _TimeoutClient)
+    respx_mock.get("https://api.github.com/repos/org/my-repo/releases/latest").mock(
+        side_effect=httpx.ReadTimeout("timed out")
+    )
 
     client = VersionCheckClient(_settings())
     version, source = await client.latest_version()
@@ -258,24 +203,12 @@ async def test_timeout_returns_none(
 
 @pytest.mark.asyncio
 async def test_unexpected_error_returns_none(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """An unexpected exception returns (None, reason) — never raises."""
-
-    class _BrokenClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _BrokenClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(self, url: str, *, headers: dict[str, str]) -> None:
-            raise RuntimeError("something crashed")
-
-    monkeypatch.setattr(httpx, "AsyncClient", _BrokenClient)
+    respx_mock.get("https://api.github.com/repos/org/my-repo/releases/latest").mock(
+        side_effect=RuntimeError("something crashed")
+    )
 
     client = VersionCheckClient(_settings())
     version, source = await client.latest_version()
@@ -285,32 +218,35 @@ async def test_unexpected_error_returns_none(
 
 @pytest.mark.asyncio
 async def test_no_token_header_when_empty(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """When no token is configured, no Authorization header is sent."""
-    resp = _MockResponse({"tag_name": "0.1.0"})
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.get(
+        "https://api.github.com/repos/org/my-repo/releases/latest"
+    ).mock(return_value=httpx.Response(200, json={"tag_name": "0.1.0"}))
 
     client = VersionCheckClient(_settings())
     await client.latest_version()
-    headers = captured["calls"][0][1]
-    assert "Authorization" not in headers
+    assert "authorization" not in route.calls.last.request.headers
 
 
 @pytest.mark.asyncio
 async def test_token_header_when_configured(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """When a token is configured, Bearer auth is sent."""
-    resp = _MockResponse({"tag_name": "0.1.0"})
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.get(
+        "https://api.github.com/repos/org/my-repo/releases/latest"
+    ).mock(return_value=httpx.Response(200, json={"tag_name": "0.1.0"}))
 
     client = VersionCheckClient(
         _settings(github_token="ghp_test")  # pragma: allowlist secret
     )
     await client.latest_version()
-    headers = captured["calls"][0][1]
-    assert headers.get("Authorization") == "Bearer ghp_test"  # pragma: allowlist secret
+    assert (
+        route.calls.last.request.headers["authorization"]
+        == "Bearer ghp_test"  # pragma: allowlist secret
+    )
 
 
 # ---------------------------------------------------------------------------
@@ -320,11 +256,12 @@ async def test_token_header_when_configured(
 
 @pytest.mark.asyncio
 async def test_cache_reuses_result_within_ttl(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Two calls within cache_ttl perform only one HTTP fetch."""
-    resp = _MockResponse({"tag_name": "0.1.0"})
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.get(
+        "https://api.github.com/repos/org/my-repo/releases/latest"
+    ).mock(return_value=httpx.Response(200, json={"tag_name": "0.1.0"}))
 
     client = VersionCheckClient(_settings(cache_ttl=10.0))
     v1, s1 = await client.latest_version()
@@ -335,17 +272,23 @@ async def test_cache_reuses_result_within_ttl(
     assert s2 == "cached"
 
     # Only a single HTTP request was made.
-    assert len(captured["calls"]) == 1
+    assert route.call_count == 1
 
 
 @pytest.mark.asyncio
 async def test_failed_lookup_not_cached(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """A failed lookup is never cached — retries the HTTP call."""
-    resp = _MockResponse({}, status_code=500)
-    resp2 = _MockResponse({"tag_name": "0.2.0"})
-    captured = _install_mock_client(monkeypatch, [resp, resp2])
+    responses = iter(
+        [
+            httpx.Response(500, json={}),
+            httpx.Response(200, json={"tag_name": "0.2.0"}),
+        ]
+    )
+    route = respx_mock.get(
+        "https://api.github.com/repos/org/my-repo/releases/latest"
+    ).mock(side_effect=lambda request: next(responses))
 
     client = VersionCheckClient(_settings(cache_ttl=10.0))
     v1, s1 = await client.latest_version()
@@ -355,7 +298,7 @@ async def test_failed_lookup_not_cached(
     assert v2 == "0.2.0"
 
     # Two HTTP requests were made — the failure was not cached.
-    assert len(captured["calls"]) == 2
+    assert route.call_count == 2
 
 
 # ---------------------------------------------------------------------------
@@ -365,11 +308,12 @@ async def test_failed_lookup_not_cached(
 
 @pytest.mark.asyncio
 async def test_check_for_updates_up_to_date(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """The tool returns an up-to-date summary when current == latest."""
-    resp = _MockResponse({"tag_name": "0.1.0"})
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get("https://api.github.com/repos/org/my-repo/releases/latest").mock(
+        return_value=httpx.Response(200, json={"tag_name": "0.1.0"})
+    )
 
     tools = build_version_check_tools(_settings())
     tool = tools[0]
@@ -381,11 +325,12 @@ async def test_check_for_updates_up_to_date(
 
 @pytest.mark.asyncio
 async def test_check_for_updates_out_of_date(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """The tool warns when the deployment is behind."""
-    resp = _MockResponse({"tag_name": "0.2.0"})
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get("https://api.github.com/repos/org/my-repo/releases/latest").mock(
+        return_value=httpx.Response(200, json={"tag_name": "0.2.0"})
+    )
 
     tools = build_version_check_tools(_settings())
     tool = tools[0]
@@ -398,11 +343,12 @@ async def test_check_for_updates_out_of_date(
 
 @pytest.mark.asyncio
 async def test_check_for_updates_api_failure(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """When the API fails, the tool returns a graceful 'Could not determine' message."""
-    resp = _MockResponse({}, status_code=500)
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get("https://api.github.com/repos/org/my-repo/releases/latest").mock(
+        return_value=httpx.Response(500, json={})
+    )
 
     tools = build_version_check_tools(_settings())
     tool = tools[0]
