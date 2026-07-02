@@ -2,6 +2,7 @@
 
 - Reorganize test directory for `robotsix_chat.board` module: move tests from `tests/board_reader/`
   to `tests/board/` to match the per-module naming convention after the module rename (PR #367).
+- Register `tests/common/subsession_fakes.py` under the `robotsix_chat.common` module.
 - Extract `_close_and_publish` helper from four terminal-state methods (`mark_closed`,
   `cancel_and_close`, `fail`, `mark_interrupted`) in `SubsessionRegistry`, removing ~30 lines of
   duplicated SSE/persist logic.
