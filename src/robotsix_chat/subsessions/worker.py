@@ -23,7 +23,7 @@ import asyncio
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, TypedDict
 
 from robotsix_chat.chat.events import subsession_result_frame
 
@@ -422,6 +422,31 @@ def _entry_opt_str(entry: dict[str, object], key: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
+class _CommonEntryKwargs(TypedDict):
+    """Typed dict for the common fields extracted from a persisted entry."""
+
+    parent_id: str | None
+    depth: int
+    title: str
+    prompt: str
+    model_level: int
+    interval_seconds: float | None
+    include_previous_result: bool
+
+
+def _entry_to_common_kwargs(entry: dict[str, object]) -> _CommonEntryKwargs:
+    """Extract common SubsessionInfo/spawn_subsession fields from a persisted entry."""
+    return {
+        "parent_id": _entry_opt_str(entry, "parent_id"),
+        "depth": _entry_int(entry, "depth", 1),
+        "title": _entry_str(entry, "title"),
+        "prompt": _entry_str(entry, "prompt"),
+        "model_level": _entry_int(entry, "model_level", 3),
+        "interval_seconds": _entry_opt_float(entry, "interval_seconds"),
+        "include_previous_result": bool(entry.get("include_previous_result")),
+    }
+
+
 def _resume_entry(env: SubsessionEnv, entry: dict[str, object]) -> None:
     """Resume a single persisted registry entry (see resume_subsessions)."""
     status = _entry_str(entry, "status")
@@ -442,13 +467,7 @@ def _resume_entry(env: SubsessionEnv, entry: dict[str, object]) -> None:
             env=env,
             kind=kind,
             owner_session_id=owner,
-            parent_id=_entry_opt_str(entry, "parent_id"),
-            depth=_entry_int(entry, "depth", 1),
-            title=_entry_str(entry, "title"),
-            prompt=_entry_str(entry, "prompt"),
-            model_level=_entry_int(entry, "model_level", 3),
-            interval_seconds=_entry_opt_float(entry, "interval_seconds"),
-            include_previous_result=bool(entry.get("include_previous_result")),
+            **_entry_to_common_kwargs(entry),
             max_runs=remaining,
             sub_id=sub_id,
         )
@@ -499,16 +518,10 @@ def _restore_entry(
             id=sub_id,
             kind=SubsessionKind(_entry_str(entry, "kind", "task")),
             owner_session_id=_entry_str(entry, "owner_session_id"),
-            parent_id=_entry_opt_str(entry, "parent_id"),
-            depth=_entry_int(entry, "depth", 1),
-            title=_entry_str(entry, "title"),
-            prompt=_entry_str(entry, "prompt"),
-            model_level=_entry_int(entry, "model_level", 3),
+            **_entry_to_common_kwargs(entry),
             status=status,
             created_at=_entry_float(entry, "created_at"),
             last_activity_at=_entry_float(entry, "last_activity_at"),
-            interval_seconds=_entry_opt_float(entry, "interval_seconds"),
-            include_previous_result=bool(entry.get("include_previous_result")),
             runs=_entry_int(entry, "runs"),
             max_runs=_entry_opt_int(entry, "max_runs"),
             last_result=_entry_opt_str(entry, "last_result"),

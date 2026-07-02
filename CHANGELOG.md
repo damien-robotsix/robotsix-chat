@@ -5,6 +5,7 @@
   duplicated SSE/persist logic.
 - Removed stale `pip-audit` dev dependency and updated documentation references to `uv audit` (PR
   #349 cleanup).
+- Extract shared ``_entry_to_common_kwargs`` helper in ``subsessions/worker.py``, deduplicating the 7-field entry-mapping block used by both ``spawn_subsession`` and ``SubsessionInfo`` construction in resume/restore code.
 - Migrate board reader to shared `BoardHTTPClient` from `robotsix-board-agent`, replacing the
   standalone `BoardReader` class. Board tools (`list_board_tickets`, `read_board_ticket`,
   `create_board_ticket`) now use `ErrorStrategy.RETURN` for never-raise error handling with TTL
