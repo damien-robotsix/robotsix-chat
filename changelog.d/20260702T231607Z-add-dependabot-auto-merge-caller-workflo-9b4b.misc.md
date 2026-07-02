@@ -1,0 +1,1 @@
+Add Dependabot auto-merge caller workflow

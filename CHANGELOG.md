@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add Dependabot auto-merge caller workflow (`.github/workflows/dependabot-auto-merge.yml`).
 - Reorganize test directory for `robotsix_chat.board` module: move tests from `tests/board_reader/`
   to `tests/board/` to match the per-module naming convention after the module rename (PR #367).
 - Register `tests/common/subsession_fakes.py` under the `robotsix_chat.common` module.
