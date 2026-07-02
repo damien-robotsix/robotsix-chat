@@ -275,6 +275,30 @@ class Settings(BaseModel):
         default_factory=lambda: ["image/png", "image/jpeg", "image/gif", "image/webp"]
     )
 
+    @staticmethod
+    def _require_broker_creds(subsystem: Any, name: str) -> None:
+        """Validate broker_token and broker_host for *subsystem* when enabled.
+
+        *subsystem* must have ``broker_token`` and ``broker_host`` attrs.
+        """
+        if not subsystem.broker_token:
+            raise ValueError(
+                f"{name}.broker_token must be set when {name} is enabled — "
+                f"provide it via {name.upper()}_BROKER_TOKEN or the "
+                f"`{name}.broker_token` config field"
+            )
+        if not subsystem.broker_host:
+            raise ValueError(
+                f"{name}.broker_host must be set when {name} is enabled — "
+                f"provide it via {name.upper()}_BROKER_HOST or the config file"
+            )
+
+    @staticmethod
+    def _require_min(value: float | int, min_val: float | int, name: str) -> None:
+        """Raise :class:`ValueError` if *value* < *min_val*."""
+        if value < min_val:
+            raise ValueError(f"{name} must be >= {min_val}, got {value!r}")
+
     def model_post_init(self, __context: Any) -> None:
         """Validate fields that cannot be expressed via simple type annotations."""
         if self.llmio_model_level not in _VALID_MODEL_LEVELS:
@@ -309,75 +333,35 @@ class Settings(BaseModel):
                     "(e.g. http://host:11434/v1) — provide it via "
                     "MEMORY_EMBEDDING_ENDPOINT or the config file"
                 )
-        if self.idle_timeout_minutes < 0:
-            raise ValueError(
-                f"idle_timeout_minutes must be >= 0, got {self.idle_timeout_minutes!r}"
-            )
-        if self.subsessions.max_concurrent < 1:
-            raise ValueError(
-                f"subsessions.max_concurrent must be >= 1, "
-                f"got {self.subsessions.max_concurrent!r}"
-            )
-        if self.subsessions.max_depth < 1:
-            raise ValueError(
-                f"subsessions.max_depth must be >= 1, "
-                f"got {self.subsessions.max_depth!r}"
-            )
+        self._require_min(self.idle_timeout_minutes, 0, "idle_timeout_minutes")
+        self._require_min(
+            self.subsessions.max_concurrent, 1, "subsessions.max_concurrent"
+        )
+        self._require_min(self.subsessions.max_depth, 1, "subsessions.max_depth")
         if self.subsessions.default_model_level not in _VALID_MODEL_LEVELS:
             raise ValueError(
                 f"subsessions.default_model_level must be one of "
                 f"{sorted(_VALID_MODEL_LEVELS)}, "
                 f"got {self.subsessions.default_model_level!r}"
             )
-        if self.subsessions.min_interval_seconds < 1.0:
-            raise ValueError(
-                f"subsessions.min_interval_seconds must be >= 1.0, "
-                f"got {self.subsessions.min_interval_seconds!r}"
-            )
-        if self.subsessions.auto_stop_no_change_runs < 1:
-            raise ValueError(
-                f"subsessions.auto_stop_no_change_runs must be >= 1, "
-                f"got {self.subsessions.auto_stop_no_change_runs!r}"
-            )
+        self._require_min(
+            self.subsessions.min_interval_seconds,
+            1.0,
+            "subsessions.min_interval_seconds",
+        )
+        self._require_min(
+            self.subsessions.auto_stop_no_change_runs,
+            1,
+            "subsessions.auto_stop_no_change_runs",
+        )
         if self.mill.enabled:
-            if not self.mill.broker_token:
-                raise ValueError(
-                    "mill.broker_token must be set when mill is enabled — provide "
-                    "it via MILL_BROKER_TOKEN or the `mill.broker_token` config field"
-                )
-            if not self.mill.broker_host:
-                raise ValueError(
-                    "mill.broker_host must be set when mill is enabled — provide it "
-                    "via MILL_BROKER_HOST or the config file"
-                )
+            self._require_broker_creds(self.mill, "mill")
         # mail has no required fields beyond `enabled` — api_base_url and
         # api_token both have safe defaults for localhost operation.
         if self.calendar.enabled:
-            if not self.calendar.broker_token:
-                raise ValueError(
-                    "calendar.broker_token must be set when calendar is enabled — "
-                    "provide it via CALENDAR_BROKER_TOKEN or the "
-                    "`calendar.broker_token` config field"
-                )
-            if not self.calendar.broker_host:
-                raise ValueError(
-                    "calendar.broker_host must be set when calendar is enabled — "
-                    "provide it via CALENDAR_BROKER_HOST or the config file"
-                )
+            self._require_broker_creds(self.calendar, "calendar")
         if self.component_agent.enabled:
-            if not self.component_agent.broker_token:
-                raise ValueError(
-                    "component_agent.broker_token must be set when "
-                    "component_agent is enabled — provide it via "
-                    "COMPONENT_AGENT_BROKER_TOKEN or the "
-                    "`component_agent.broker_token` config field"
-                )
-            if not self.component_agent.broker_host:
-                raise ValueError(
-                    "component_agent.broker_host must be set when "
-                    "component_agent is enabled — provide it via "
-                    "COMPONENT_AGENT_BROKER_HOST or the config file"
-                )
+            self._require_broker_creds(self.component_agent, "component_agent")
         # component_client has no required fields beyond `enabled` —
         # an empty components list just means no agents are reachable,
         # and the list_component_agents tool returns a helpful message.
@@ -498,17 +482,17 @@ class Settings(BaseModel):
         env_override("server_host", "SERVER_HOST")
         env_override("log_level", "LOG_LEVEL")
 
-        level_val = _parse_int("LLMIO_MODEL_LEVEL", "llmio_model_level")
-        if level_val is not None:
-            raw["llmio_model_level"] = level_val
-
-        port_val = _parse_int("SERVER_PORT", "server_port")
-        if port_val is not None:
-            raw["server_port"] = port_val
-
-        idle_val = _parse_int("IDLE_TIMEOUT_MINUTES", "idle_timeout_minutes")
-        if idle_val is not None:
-            raw["idle_timeout_minutes"] = idle_val
+        _INT_ENV_PAIRS: list[tuple[str, str]] = [
+            ("LLMIO_MODEL_LEVEL", "llmio_model_level"),
+            ("SERVER_PORT", "server_port"),
+            ("IDLE_TIMEOUT_MINUTES", "idle_timeout_minutes"),
+            ("MAX_IMAGES_PER_MESSAGE", "max_images_per_message"),
+            ("MAX_IMAGE_BYTES", "max_image_bytes"),
+        ]
+        for env_var, field in _INT_ENV_PAIRS:
+            val = _parse_int(env_var, field)
+            if val is not None:
+                raw[field] = val
 
         cors_raw = os.getenv("CORS_ALLOW_ORIGINS")
         if cors_raw is not None:
@@ -517,14 +501,6 @@ class Settings(BaseModel):
             ]
 
         env_override("correlation_id_header", "CORRELATION_ID_HEADER")
-
-        max_img_val = _parse_int("MAX_IMAGES_PER_MESSAGE", "max_images_per_message")
-        if max_img_val is not None:
-            raw["max_images_per_message"] = max_img_val
-
-        max_bytes_val = _parse_int("MAX_IMAGE_BYTES", "max_image_bytes")
-        if max_bytes_val is not None:
-            raw["max_image_bytes"] = max_bytes_val
 
         allowed_types = os.getenv("ALLOWED_IMAGE_MEDIA_TYPES")
         if allowed_types is not None:
@@ -545,69 +521,28 @@ class Settings(BaseModel):
         if auth_raw:
             raw["auth"] = auth_raw
 
-        memory_raw = _build_memory_raw(flat.get("memory"))
-        if memory_raw:
-            raw["memory"] = memory_raw
-
-        mill_raw = _build_mill_raw(flat.get("mill"))
-        if mill_raw:
-            raw["mill"] = mill_raw
-
-        mail_raw = _build_mail_raw(flat.get("mail"))
-        if mail_raw:
-            raw["mail"] = mail_raw
-
-        calendar_raw = _build_calendar_raw(flat.get("calendar"))
-        if calendar_raw:
-            raw["calendar"] = calendar_raw
-
-        conversation_raw = _build_conversation_raw(flat.get("conversation"))
-        if conversation_raw:
-            raw["conversation"] = conversation_raw
-
-        refdocs_raw = _build_refdocs_raw(flat.get("refdocs"))
-        if refdocs_raw:
-            raw["refdocs"] = refdocs_raw
-
-        board_reader_raw = _build_board_reader_raw(flat.get("board_reader"))
-        if board_reader_raw:
-            raw["board_reader"] = board_reader_raw
-
-        knowledge_raw = _build_knowledge_raw(flat.get("knowledge"))
-        if knowledge_raw:
-            raw["knowledge"] = knowledge_raw
-
-        diagnostics_raw = _build_diagnostics_raw(flat.get("diagnostics"))
-        if diagnostics_raw:
-            raw["diagnostics"] = diagnostics_raw
-
-        self_review_raw = _build_self_review_raw(flat.get("self_review"))
-        if self_review_raw:
-            raw["self_review"] = self_review_raw
-
-        component_agent_raw = _build_component_agent_raw(flat.get("component_agent"))
-        if component_agent_raw:
-            raw["component_agent"] = component_agent_raw
-
-        version_check_raw = _build_version_check_raw(flat.get("version_check"))
-        if version_check_raw:
-            raw["version_check"] = version_check_raw
-
-        component_client_raw = _build_component_client_raw(flat.get("component_client"))
-        if component_client_raw:
-            raw["component_client"] = component_client_raw
-
-        subsessions_raw = _build_subsessions_raw(flat.get("subsessions"))
-        if subsessions_raw:
-            raw["subsessions"] = subsessions_raw
-
-        direct_repo_raw = _build_direct_repo_raw(flat.get("direct_repo"))
-        if direct_repo_raw:
-            raw["direct_repo"] = direct_repo_raw
-
-        skills_raw = _build_skills_raw(flat.get("skills"))
-        if skills_raw:
-            raw["skills"] = skills_raw
+        _SUBSYSTEM_BUILDERS: dict[str, Any] = {
+            "memory": _build_memory_raw,
+            "mill": _build_mill_raw,
+            "mail": _build_mail_raw,
+            "calendar": _build_calendar_raw,
+            "conversation": _build_conversation_raw,
+            "refdocs": _build_refdocs_raw,
+            "board_reader": _build_board_reader_raw,
+            "knowledge": _build_knowledge_raw,
+            "diagnostics": _build_diagnostics_raw,
+            "self_review": _build_self_review_raw,
+            "component_agent": _build_component_agent_raw,
+            "version_check": _build_version_check_raw,
+            "component_client": _build_component_client_raw,
+            "subsessions": _build_subsessions_raw,
+            "direct_repo": _build_direct_repo_raw,
+            "skills": _build_skills_raw,
+        }
+        for key, builder in _SUBSYSTEM_BUILDERS.items():
+            result = builder(flat.get(key))
+            if result:
+                raw[key] = result
 
         return cls(**raw)
 

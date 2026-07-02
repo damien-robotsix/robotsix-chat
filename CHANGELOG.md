@@ -1,5 +1,8 @@
 ## 0.0.0 (unreleased)
 
+- DRY repetitive validation and builder boilerplate in `Settings`: extract `_require_broker_creds`
+  and `_require_min` helpers for `model_post_init`, and replace 16 builder blocks and 5 `_parse_int`
+  blocks in `_build` with dict-driven loops.
 - Bump `reviewdog/action-actionlint` from v1.68.0 to v1.72.0 (dependabot PR #354).
 - Bump `actions/upload-artifact` from v4.6.2 to v7.0.1 (dependabot PR #352).
 - Bump pytest from 9.1.0 to 9.1.1 (dependabot PR #337)
