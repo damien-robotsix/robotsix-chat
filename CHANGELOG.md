@@ -8,6 +8,9 @@
 - Extract shared `_entry_to_common_kwargs` helper in `subsessions/worker.py`, deduplicating the
   7-field entry-mapping block used by both `spawn_subsession` and `SubsessionInfo` construction in
   resume/restore code.
+- Extract `_resolve_subsession` helper to deduplicate subsession-registry lookup boilerplate across
+  four route handlers (`subsessions_get_endpoint`, `subsessions_transcript_endpoint`,
+  `subsessions_message_endpoint`, `subsessions_close_endpoint`).
 - Migrate board reader to shared `BoardHTTPClient` from `robotsix-board-agent`, replacing the
   standalone `BoardReader` class. Board tools (`list_board_tickets`, `read_board_ticket`,
   `create_board_ticket`) now use `ErrorStrategy.RETURN` for never-raise error handling with TTL

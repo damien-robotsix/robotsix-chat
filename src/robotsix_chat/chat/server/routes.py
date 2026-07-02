@@ -20,7 +20,11 @@ from starlette.responses import HTMLResponse, JSONResponse, StreamingResponse
 from robotsix_chat.chat.conversation import ConversationStore
 
 if TYPE_CHECKING:
-    from robotsix_chat.subsessions import ParentDelivery, SubsessionRegistry
+    from robotsix_chat.subsessions import (
+        ParentDelivery,
+        SubsessionInfo,
+        SubsessionRegistry,
+    )
 
 logger = logging.getLogger(__name__)
 
@@ -512,6 +516,27 @@ def _get_subsession_registry(
     return registry
 
 
+def _resolve_subsession(
+    request: Request,
+) -> tuple[SubsessionRegistry, SubsessionInfo] | JSONResponse:
+    """Resolve the subsession registry and look up the requested subsession.
+
+    Returns ``(registry, info)`` on success, or a ready-to-return
+    ``JSONResponse`` (503 or 404) when the lookup fails.
+    """
+    registry = _get_subsession_registry(request)
+    if isinstance(registry, JSONResponse):
+        return registry
+    sub_id = request.path_params["sub_id"]
+    info = registry.get(sub_id)
+    if info is None:
+        return JSONResponse(
+            {"error": "unknown subsession", "subsession_id": sub_id},
+            status_code=404,
+        )
+    return (registry, info)
+
+
 async def subsessions_list_endpoint(request: Request) -> JSONResponse:
     """Return the whole subsession tree for a chat session.
 
@@ -546,17 +571,10 @@ async def subsessions_get_endpoint(request: Request) -> JSONResponse:
     ``GET /subsessions/{sub_id}`` returns the snapshot dict plus a
     ``"transcript"`` list.  404 when the id is unknown.
     """
-    registry = _get_subsession_registry(request)
-    if isinstance(registry, JSONResponse):
-        return registry
-
-    sub_id = request.path_params["sub_id"]
-    info = registry.get(sub_id)
-    if info is None:
-        return JSONResponse(
-            {"error": "unknown subsession", "subsession_id": sub_id},
-            status_code=404,
-        )
+    result = _resolve_subsession(request)
+    if isinstance(result, JSONResponse):
+        return result
+    _registry, info = result
     return JSONResponse(info.snapshot(with_transcript=True))
 
 
@@ -567,20 +585,13 @@ async def subsessions_transcript_endpoint(request: Request) -> JSONResponse:
     ``{"subsession_id": ..., "transcript": [{role, text, timestamp}, ...]}``.
     404 when the id is unknown.
     """
-    registry = _get_subsession_registry(request)
-    if isinstance(registry, JSONResponse):
-        return registry
-
-    sub_id = request.path_params["sub_id"]
-    info = registry.get(sub_id)
-    if info is None:
-        return JSONResponse(
-            {"error": "unknown subsession", "subsession_id": sub_id},
-            status_code=404,
-        )
+    result = _resolve_subsession(request)
+    if isinstance(result, JSONResponse):
+        return result
+    _registry, info = result
     return JSONResponse(
         {
-            "subsession_id": sub_id,
+            "subsession_id": info.id,
             "transcript": [entry.as_dict() for entry in info.transcript],
         }
     )
@@ -597,11 +608,11 @@ async def subsessions_message_endpoint(request: Request) -> JSONResponse:
     Returns 400 for a missing/empty ``text``, 404 for an unknown id, and
     409 when the subsession is no longer active.
     """
-    registry = _get_subsession_registry(request)
-    if isinstance(registry, JSONResponse):
-        return registry
+    result = _resolve_subsession(request)
+    if isinstance(result, JSONResponse):
+        return result
+    registry, info = result
 
-    sub_id = request.path_params["sub_id"]
     body = await _parse_json_body(request)
     if isinstance(body, JSONResponse):
         return body
@@ -612,18 +623,12 @@ async def subsessions_message_endpoint(request: Request) -> JSONResponse:
             status_code=400,
         )
 
-    info = registry.get(sub_id)
-    if info is None:
+    if not registry.enqueue_message(info.id, "user", text):
         return JSONResponse(
-            {"error": "unknown subsession", "subsession_id": sub_id},
-            status_code=404,
-        )
-    if not registry.enqueue_message(sub_id, "user", text):
-        return JSONResponse(
-            {"error": "subsession is not active", "subsession_id": sub_id},
+            {"error": "subsession is not active", "subsession_id": info.id},
             status_code=409,
         )
-    return JSONResponse({"subsession_id": sub_id, "status": "queued"}, status_code=202)
+    return JSONResponse({"subsession_id": info.id, "status": "queued"}, status_code=202)
 
 
 async def subsessions_close_endpoint(request: Request) -> JSONResponse:
@@ -637,25 +642,18 @@ async def subsessions_close_endpoint(request: Request) -> JSONResponse:
     Idempotent: an already-terminal subsession returns 200 with
     ``"closed": false`` and its current status.  404 for an unknown id.
     """
-    registry = _get_subsession_registry(request)
-    if isinstance(registry, JSONResponse):
-        return registry
-
-    sub_id = request.path_params["sub_id"]
-    info = registry.get(sub_id)
-    if info is None:
-        return JSONResponse(
-            {"error": "unknown subsession", "subsession_id": sub_id},
-            status_code=404,
-        )
+    result = _resolve_subsession(request)
+    if isinstance(result, JSONResponse):
+        return result
+    registry, info = result
 
     closed = registry.cancel_and_close(
-        sub_id, reason="closed by user", closed_by="user"
+        info.id, reason="closed by user", closed_by="user"
     )
     if closed is None:
         return JSONResponse(
             {
-                "subsession_id": sub_id,
+                "subsession_id": info.id,
                 "closed": False,
                 "status": info.status.value,
             }
@@ -667,7 +665,7 @@ async def subsessions_close_endpoint(request: Request) -> JSONResponse:
             closed, closed.summary or "", closed.close_reason or "closed"
         )
     return JSONResponse(
-        {"subsession_id": sub_id, "closed": True, "summary": closed.summary}
+        {"subsession_id": info.id, "closed": True, "summary": closed.summary}
     )
 
 
