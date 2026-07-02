@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Migrate board reader to shared `BoardHTTPClient` from `robotsix-board-agent`, replacing the standalone `BoardReader` class. Board tools (`list_board_tickets`, `read_board_ticket`, `create_board_ticket`) now use `ErrorStrategy.RETURN` for never-raise error handling with TTL caching. Removed `BoardReaderSettings` in favour of `BoardSettings`; the `board_reader` config key and `BOARD_READER_*` env vars remain unchanged.
 - Rename `spawn_subsession_tool` to `spawn_subsession` (via `__name__` / `__qualname__` mutation) so
   the LLM-visible tool name matches the system prompt.
 - Add link to robotsix-standards in README.md and AGENT.md

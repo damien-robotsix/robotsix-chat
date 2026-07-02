@@ -170,7 +170,6 @@ board_reader:
   enabled: false                   # env override: BOARD_READER_ENABLED
   # api_base_url: http://127.0.0.1:8077  # board API base URL; env: BOARD_READER_API_BASE_URL
   # api_token: ""                  # bearer token (empty = no auth); env: BOARD_READER_API_TOKEN
-  # timeout: 30.0                  # per-request HTTP seconds; env: BOARD_READER_TIMEOUT
 
 # Direct-repository-capability — lets the agent push branches and open PRs
 # against repos in the robotsix-mill GitHub App installation scope,

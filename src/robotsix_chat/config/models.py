@@ -208,12 +208,16 @@ class MailSettings(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class BoardReaderSettings(BaseModel):
-    """Direct HTTP access to the mill's board API (same endpoint the UI uses).
+class BoardSettings(BaseModel):
+    """Direct HTTP access to the mill's board API via the shared BoardHTTPClient.
 
     Lets the assistant list, read, and create tickets from the same HTTP
     endpoint the user's browser UI consumes, giving read/write parity with
     the user — no broker indirection, no NL reinterpretation.
+
+    Uses ``robotsix_board_client.BoardHTTPClient`` with
+    ``ErrorStrategy.RETURN`` so that errors are returned as structured dicts
+    rather than raised as exceptions.
 
     The board API is served by the mill's management-plane FastAPI app
     (typically on the same host at port 8077).  When *api_token* is set, it
@@ -225,7 +229,6 @@ class BoardReaderSettings(BaseModel):
             board reader works over HTTP even when the broker is offline.
         api_base_url: Base URL of the board HTTP API (no trailing slash).
         api_token: Optional bearer token; empty means no auth header.
-        timeout: Per-request HTTP timeout in seconds.
         cache_ttl: Seconds to cache board list and ticket lookups
             (monotonic clock). Failed fetches are never cached.
 
@@ -234,7 +237,6 @@ class BoardReaderSettings(BaseModel):
     enabled: bool = False
     api_base_url: str = "http://127.0.0.1:8077"
     api_token: str = ""
-    timeout: float = 30.0
     cache_ttl: float = 60.0
 
 

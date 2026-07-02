@@ -538,11 +538,11 @@ async def test_model_level_passed_to_build_agent() -> None:
     provider = create_model.return_value
 
     with patch("robotsix_chat.llm.agent.create_model", create_model):
-        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
         _ = [c async for c in agent.stream("hi")]
 
-    assert create_model.call_args.kwargs["level"] == 4
-    assert provider.build_agent.call_args.kwargs["level"] == 4
+    assert create_model.call_args.kwargs["level"] == 3
+    assert provider.build_agent.call_args.kwargs["level"] == 3
 
 
 # ---------------------------------------------------------------------------
@@ -616,7 +616,7 @@ async def test_board_narrative_guard_allows_response_when_board_was_read() -> No
     """A response with ticket IDs passes when a board tool was called during the run."""
     fabricated = "Ticket 20250624T020652Z-my-ticket-a1b2 is in the ready state."
 
-    from robotsix_chat.board_reader import board_was_read as real_var
+    from robotsix_chat.board import board_was_read as real_var
 
     handle = MagicMock()
 

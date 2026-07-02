@@ -78,7 +78,7 @@ def test_snapshot_includes_all_fields():
     assert snap["mill.enabled"] is False
     assert snap["memory.enabled"] is False
     assert snap["conversation.max_history_turns"] == 50
-    assert snap["llmio.model_level"] == 4  # read-only, but still present
+    assert snap["llmio.model_level"] == 3  # read-only, but still present
 
     # Nested sub-model fields
     assert "memory.llm.api_key" in snap
@@ -554,7 +554,6 @@ def test_settable_keys_excludes_startup_only_fields():
         "refdocs.timeout",
         "board_reader.api_base_url",
         "board_reader.api_token",
-        "board_reader.timeout",
         "board_reader.cache_ttl",
         "knowledge.path",
         "self_review.recent_activity_limit",

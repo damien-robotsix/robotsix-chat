@@ -1,1 +1,1 @@
-"""Tests for robotsix_chat.board_reader."""
+"""Tests for robotsix_chat.board."""

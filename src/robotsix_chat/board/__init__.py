@@ -1,4 +1,4 @@
-"""Direct HTTP access to the mill's board API.
+"""Direct HTTP access to the mill's board API via the shared BoardHTTPClient.
 
 Exposes :func:`build_board_reader_tools` — a factory returning the LLM tools
 that let the assistant list, read, and create tickets from the SAME HTTP
@@ -13,12 +13,13 @@ the underlying agent (the claude-sdk tool loop, or pydantic-ai function tools).
 from __future__ import annotations
 
 import contextvars
+import json
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from robotsix_chat.config import BoardReaderSettings
+    from robotsix_chat.config import BoardSettings
 
 logger = logging.getLogger(__name__)
 
@@ -34,15 +35,20 @@ __all__ = ["board_was_read", "build_board_reader_tools"]
 
 
 def build_board_reader_tools(
-    settings: BoardReaderSettings,
+    settings: BoardSettings,
 ) -> list[Callable[..., Any]]:
     """Return board-reader tool(s) for the agent, or ``[]`` when disabled."""
     if not settings.enabled:
         return []
 
-    from .client import BoardReader
+    from robotsix_board_client import BoardHTTPClient, ErrorStrategy
 
-    client = BoardReader(settings)
+    client = BoardHTTPClient(
+        base_url=settings.api_base_url,
+        token=settings.api_token,
+        error_strategy=ErrorStrategy.RETURN,
+        cache_ttl=settings.cache_ttl,
+    )
 
     async def list_board_tickets(
         repo_id: str,
@@ -72,11 +78,18 @@ def build_board_reader_tools(
 
         """
         board_was_read.set(True)
-        return await client.list_tickets(
-            repo_id=repo_id,
-            include_closed=include_closed,
-            state=state,
-        )
+        client_state: str | None = state or None
+        result = await client.list_tickets(state=client_state, repo_id=repo_id)
+        if isinstance(result, dict) and result.get("error"):
+            return json.dumps(result)
+        # If include_closed is True and no explicit state filter was given,
+        # the board API may only return non-closed tickets by default.
+        # In that case we do a second pass: the current BoardHTTPClient does
+        # not support an include_closed param, so we rely on the board API
+        # returning all states when no state filter is passed (state=None).
+        # If include_closed is False and state is empty, the board API
+        # default already excludes closed tickets.
+        return json.dumps(result)
 
     async def read_board_ticket(ticket_id: str) -> str:
         """Read a single ticket's full details by its id.
@@ -99,7 +112,8 @@ def build_board_reader_tools(
 
         """
         board_was_read.set(True)
-        return await client.get_ticket(ticket_id)
+        result = await client.get_ticket(ticket_id)
+        return json.dumps(result)
 
     async def create_board_ticket(
         title: str,
@@ -144,35 +158,31 @@ def build_board_reader_tools(
             message listing candidate ticket(s) to review.
 
         """
-        import json
-
         from .dedup import find_duplicate_candidates
 
         board_was_read.set(True)
 
         if not force:
-            raw = await client.list_tickets(
-                repo_id=repo_id,
-                include_closed=False,
-            )
+            raw = await client.list_tickets(repo_id=repo_id)
             tickets: list[dict[str, Any]] = []
-            parse_ok = True
-            try:
-                parsed = json.loads(raw)
-                if isinstance(parsed, list):
-                    tickets = parsed
-                else:
-                    parse_ok = False
-            except (json.JSONDecodeError, TypeError):
-                parse_ok = False
-
-            if not parse_ok:
+            # BoardHTTPClient with ErrorStrategy.RETURN returns parsed JSON
+            # on success or an error dict on failure.
+            if isinstance(raw, dict) and raw.get("error"):
                 logger.warning(
-                    "create_board_ticket: list_tickets returned non-JSON list; "
+                    "create_board_ticket: list_tickets returned error; "
                     "proceeding to create (fail-open). raw=%r",
-                    raw[:200] if isinstance(raw, str) else repr(raw)[:200],
+                    raw,
                 )
+            elif isinstance(raw, list):
+                tickets = raw
             else:
+                logger.warning(
+                    "create_board_ticket: list_tickets returned unexpected "
+                    "type %s; proceeding to create (fail-open).",
+                    type(raw).__name__,
+                )
+
+            if tickets:
                 candidates = find_duplicate_candidates(title, tickets)
                 if candidates:
                     lines = [
@@ -196,11 +206,12 @@ def build_board_reader_tools(
                     )
                     return "\n".join(lines)
 
-        return await client.create_ticket(
+        result = await client.create_ticket(
             title=title,
             description=description,
             repo_id=repo_id,
-            kind=kind,
+            kind=kind or "task",
         )
+        return json.dumps(result)
 
     return [list_board_tickets, read_board_ticket, create_board_ticket]

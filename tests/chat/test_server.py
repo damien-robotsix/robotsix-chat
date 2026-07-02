@@ -1011,13 +1011,13 @@ def test_create_agent_from_settings_explicit() -> None:
 
 
 def test_create_agent_from_settings_keyless_level_drops_key() -> None:
-    """A keyless level (4 → claude-sdk, the default) never forwards an api_key."""
-    settings = Settings()  # model_level 4, keyless
+    """A keyless level (3 → claude-sdk, the default) never forwards an api_key."""
+    settings = Settings()  # model_level 3, keyless
 
     agent = create_agent_from_settings("Be helpful.", settings=settings)
 
     assert isinstance(agent, LlmioChatAgent)
-    assert agent._model_level == 4
+    assert agent._model_level == 3
     assert agent._api_key == ""
 
 

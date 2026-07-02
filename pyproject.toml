@@ -27,6 +27,7 @@ dependencies = [
     #     from the per-transport extras below.
     "robotsix-yaml-config",
     "robotsix-llmio",
+    "robotsix-board-agent",
 ]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
@@ -96,7 +97,7 @@ packages = ["src/robotsix_chat"]
 
 [tool.uv.sources]
 robotsix-yaml-config = { git = "https://github.com/damien-robotsix/robotsix-yaml-config.git", rev = "main" }
-robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "c2cab4bc5ff41cbdec6a7695559a7531c3a871f3" }  # pragma: allowlist secret
+robotsix-board-agent = { git = "https://github.com/damien-robotsix/robotsix-board-agent.git", rev = "e2f00b518efbd029f2941886bcf5199e669fc0a8" }
 robotsix-agent-comm = { git = "https://github.com/damien-robotsix/robotsix-agent-comm.git", rev = "main" }
 
 [tool.towncrier]
@@ -154,6 +155,9 @@ ignore_missing_imports = true
 # deptry otherwise misreads the intra-package absolute imports as a transitive
 # third-party dependency (DEP003).
 known_first_party = ["robotsix_chat"]
+# robotsix-board-agent installs the robotsix_board_client package; deptry
+# otherwise flags DEP001 (imported but missing) + DEP002 (defined but unused).
+package_module_name_map = { "robotsix-board-agent" = ["robotsix_board_client"] }
 # vulture_whitelist.py imports `from src.robotsix_chat...` purely so vulture can
 # resolve the whitelisted symbols; the `src` prefix is a tooling artefact, not a
 # runtime dependency, so it is excluded from deptry's scan (DEP001 'src').

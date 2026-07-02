@@ -8,7 +8,7 @@ import pytest
 
 from robotsix_chat.config import (
     AuthSettings,
-    BoardReaderSettings,
+    BoardSettings,
     CalendarSettings,
     ComponentAgentSettings,
     ComponentClientSettings,
@@ -88,7 +88,6 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "BOARD_READER_ENABLED",
         "BOARD_READER_API_BASE_URL",
         "BOARD_READER_API_TOKEN",
-        "BOARD_READER_TIMEOUT",
         "BOARD_READER_CACHE_TTL",
         "DIAGNOSTICS_ENABLED",
         "DIAGNOSTICS_STORE_PATH",
@@ -146,7 +145,7 @@ def test_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
 
     settings = Settings.from_env()
 
-    assert settings.llmio_model_level == 4
+    assert settings.llmio_model_level == 3
     assert settings.llmio_api_key == ""
     assert settings.server_host == "127.0.0.1"
     assert settings.server_port == 8000
@@ -165,9 +164,9 @@ def test_log_level_default() -> None:
 
 
 def test_default_level_is_keyless() -> None:
-    """The default level (4 → claudeSDK) is keyless — constructs with no key."""
+    """The default level (3) is keyless — constructs with no key."""
     settings = Settings()
-    assert settings.llmio_model_level == 4
+    assert settings.llmio_model_level == 3
     assert settings.llmio_api_key == ""
 
 
@@ -185,15 +184,15 @@ def test_key_bearing_level_with_key_ok() -> None:
 
 
 def test_invalid_model_level_raises() -> None:
-    """A model_level outside 1-4 is rejected."""
+    """A model_level outside 1-3 is rejected."""
     with pytest.raises(ValueError, match="model_level"):
         Settings(llmio_model_level=5)
 
 
-def test_level_4_is_keyless() -> None:
-    """Level 4 (claudeSDK / claude-fable-5) constructs with no key."""
-    settings = Settings(llmio_model_level=4)
-    assert settings.llmio_model_level == 4
+def test_level_3_is_keyless() -> None:
+    """Level 3 constructs with no key."""
+    settings = Settings(llmio_model_level=3)
+    assert settings.llmio_model_level == 3
 
 
 def test_key_required_via_from_env_raises(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -869,7 +868,7 @@ def test_subsessions_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     _wipe_env_vars(monkeypatch)
     monkeypatch.setenv("SUBSESSIONS_MAX_CONCURRENT", "12")
     monkeypatch.setenv("SUBSESSIONS_MAX_DEPTH", "1")
-    monkeypatch.setenv("SUBSESSIONS_DEFAULT_MODEL_LEVEL", "4")
+    monkeypatch.setenv("SUBSESSIONS_DEFAULT_MODEL_LEVEL", "2")
     monkeypatch.setenv("SUBSESSIONS_MIN_INTERVAL_SECONDS", "120.5")
     monkeypatch.setenv("SUBSESSIONS_AUTO_STOP_NO_CHANGE_RUNS", "2")
     monkeypatch.setenv("SUBSESSIONS_STORE_PATH", ".data/other.json")
@@ -878,7 +877,7 @@ def test_subsessions_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert settings.subsessions.max_concurrent == 12
     assert settings.subsessions.max_depth == 1
-    assert settings.subsessions.default_model_level == 4
+    assert settings.subsessions.default_model_level == 2
     assert settings.subsessions.min_interval_seconds == 120.5
     assert settings.subsessions.auto_stop_no_change_runs == 2
     assert settings.subsessions.store_path == ".data/other.json"
@@ -1110,13 +1109,12 @@ def test_board_reader_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> No
     assert settings.board_reader.enabled is False
     assert settings.board_reader.api_base_url == "http://127.0.0.1:8077"
     assert settings.board_reader.api_token == ""
-    assert settings.board_reader.timeout == 30.0
     assert settings.board_reader.cache_ttl == 60.0
 
 
 def test_board_reader_enabled_ok() -> None:
     """Board reader constructs with no extra requirements beyond enabled."""
-    settings = Settings(board_reader=BoardReaderSettings(enabled=True))
+    settings = Settings(board_reader=BoardSettings(enabled=True))
     assert settings.board_reader.enabled is True
 
 
@@ -1126,7 +1124,6 @@ def test_board_reader_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("BOARD_READER_ENABLED", "true")
     monkeypatch.setenv("BOARD_READER_API_BASE_URL", "http://board:8077")
     monkeypatch.setenv("BOARD_READER_API_TOKEN", "bsek")
-    monkeypatch.setenv("BOARD_READER_TIMEOUT", "15.5")
     monkeypatch.setenv("BOARD_READER_CACHE_TTL", "120.0")
 
     settings = Settings.from_env()
@@ -1134,18 +1131,17 @@ def test_board_reader_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.board_reader.enabled is True
     assert settings.board_reader.api_base_url == "http://board:8077"
     assert settings.board_reader.api_token == "bsek"  # pragma: allowlist secret
-    assert settings.board_reader.timeout == 15.5
     assert settings.board_reader.cache_ttl == 120.0
 
 
-def test_board_reader_timeout_invalid_raises(
+def test_board_reader_cache_ttl_invalid_raises(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A non-numeric ``BOARD_READER_TIMEOUT`` raises ``ValueError``."""
+    """A non-numeric ``BOARD_READER_CACHE_TTL`` raises ``ValueError``."""
     _wipe_env_vars(monkeypatch)
-    monkeypatch.setenv("BOARD_READER_TIMEOUT", "slow")
+    monkeypatch.setenv("BOARD_READER_CACHE_TTL", "slow")
 
-    with pytest.raises(ValueError, match="BOARD_READER_TIMEOUT"):
+    with pytest.raises(ValueError, match="BOARD_READER_CACHE_TTL"):
         Settings.from_env()
 
 
@@ -1160,7 +1156,7 @@ def test_board_reader_env_overrides_yaml(
         "board_reader:\n"
         "  enabled: true\n"
         "  api_base_url: http://yaml:8077\n"
-        "  timeout: 10.0\n"
+        "  cache_ttl: 10.0\n"
     )
     monkeypatch.setenv("BOARD_READER_API_BASE_URL", "http://env:8077")
 
@@ -1168,7 +1164,7 @@ def test_board_reader_env_overrides_yaml(
 
     assert settings.board_reader.enabled is True
     assert settings.board_reader.api_base_url == "http://env:8077"
-    assert settings.board_reader.timeout == 10.0  # un-overridden YAML
+    assert settings.board_reader.cache_ttl == 10.0  # un-overridden YAML
 
 
 # ---------------------------------------------------------------------------

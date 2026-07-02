@@ -213,7 +213,7 @@ def _build_refdocs_raw(yaml_refdocs: Any) -> dict[str, Any]:
 def _build_board_reader_raw(yaml_board_reader: Any) -> dict[str, Any]:
     """Overlay ``BOARD_READER_*`` env vars onto the YAML ``board_reader`` subtree.
 
-    Returns a dict ready to parse into :class:`BoardReaderSettings`, or empty
+    Returns a dict ready to parse into :class:`BoardSettings`, or empty
     when nothing is set.
     """
     board_reader_raw: dict[str, Any] = dict(yaml_board_reader or {})
@@ -228,10 +228,6 @@ def _build_board_reader_raw(yaml_board_reader: Any) -> dict[str, Any]:
         board_reader_raw["enabled"] = _parse_bool(enabled)
     env_set("api_base_url", "BOARD_READER_API_BASE_URL")
     env_set("api_token", "BOARD_READER_API_TOKEN")
-
-    timeout_val = _parse_float("BOARD_READER_TIMEOUT", "timeout")
-    if timeout_val is not None:
-        board_reader_raw["timeout"] = timeout_val
 
     cache_ttl_val = _parse_float("BOARD_READER_CACHE_TTL", "cache_ttl")
     if cache_ttl_val is not None:

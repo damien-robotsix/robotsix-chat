@@ -37,12 +37,11 @@ modules:
       - docs/_snippets/nginx-reverse-proxy.md
       - docs/api/robotsix_chat.md
 
-  - id: robotsix_chat.board_reader
-    description: "Direct HTTP read access to the mill's board API — exposes build_board_reader_tools() that let the assistant list and read tickets from the same HTTP endpoint the user's browser UI consumes."
+  - id: robotsix_chat.board
+    description: "Direct HTTP access to the mill's board API via the shared BoardHTTPClient — exposes build_board_reader_tools() that let the assistant list, read, and create tickets from the same HTTP endpoint the user's browser UI consumes."
     paths:
-      - src/robotsix_chat/board_reader/__init__.py
-      - src/robotsix_chat/board_reader/client.py
-      - src/robotsix_chat/board_reader/dedup.py
+      - src/robotsix_chat/board/__init__.py
+      - src/robotsix_chat/board/dedup.py
       - tests/board_reader/__init__.py
       - tests/board_reader/test_board_reader.py
 

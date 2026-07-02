@@ -1,6 +1,6 @@
 """Safe HTTP request helper — one error-handling path for all clients.
 
-All three HTTP client modules (board_reader, refdocs, version_check)
+HTTP client modules (board, refdocs, version_check)
 previously duplicated the same 3-way ``except (HTTPStatusError,
 TimeoutException, Exception)`` cascade.  This module consolidates it into
 :func:`safe_http_request`, which returns an :class:`HttpResult` so callers
