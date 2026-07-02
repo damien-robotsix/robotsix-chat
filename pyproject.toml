@@ -110,7 +110,7 @@ issue_format = "[#{issue}](https://github.com/damien-robotsix/robotsix-chat/issu
 [tool.ruff]
 target-version = "py312"
 line-length = 88
-exclude = [".local-deps"]
+exclude = [".local-deps", ".local_pkgs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "S", "D", "FURB"]
@@ -157,7 +157,7 @@ known_first_party = ["robotsix_chat"]
 # vulture_whitelist.py imports `from src.robotsix_chat...` purely so vulture can
 # resolve the whitelisted symbols; the `src` prefix is a tooling artefact, not a
 # runtime dependency, so it is excluded from deptry's scan (DEP001 'src').
-extend_exclude = ["vulture_whitelist.py", ".local-deps", "local-deps", "-packages", "\\.deps"]
+extend_exclude = ["vulture_whitelist.py", ".local-deps", ".local_pkgs", "local-deps", "-packages", "\\.deps"]
 
 [tool.deptry.per_rule_ignores]
 # `transformers` is an optional `memory`-extra dependency consumed dynamically by
@@ -173,7 +173,7 @@ DEP002 = ["transformers"]
 DEP003 = ["pydantic_ai", "pyyaml"]
 
 [tool.bandit]
-exclude_dirs = ["tests"]
+exclude_dirs = ["tests", ".local_pkgs"]
 
 [tool.pytest.ini_options]
 strict = true
