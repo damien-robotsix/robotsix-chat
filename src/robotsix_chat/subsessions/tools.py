@@ -140,6 +140,9 @@ def _build_spawn_and_control_tools(
             return f"Could not start the subsession: {exc}"
         return f"Started {kind} subsession {sub_id} ('{title}')."
 
+    spawn_subsession_tool.__name__ = "spawn_subsession"
+    spawn_subsession_tool.__qualname__ = "spawn_subsession"
+
     async def message_subsession(subsession_id: str, text: str) -> str:
         """Send a steering message to one of your running subsessions.
 

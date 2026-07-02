@@ -1695,7 +1695,7 @@ def test_main_agent_gets_per_request_subsession_tools_factory() -> None:
     per_request = agent._request_tools_factory("sess-1")
     names = [t.__name__ for t in per_request]
     assert names == [
-        "spawn_subsession_tool",
+        "spawn_subsession",
         "message_subsession",
         "close_subsession",
         "list_subsessions",
@@ -1721,7 +1721,7 @@ def test_subsession_agent_gets_static_tools_with_complete() -> None:
     assert agent._request_tools_factory is None
     names = [getattr(t, "__name__", "") for t in agent._tools or []]
     assert "complete_subsession" in names
-    assert "spawn_subsession_tool" in names
+    assert "spawn_subsession" in names
 
 
 def test_bare_agent_has_no_subsession_tools() -> None:
@@ -1730,7 +1730,7 @@ def test_bare_agent_has_no_subsession_tools() -> None:
 
     assert agent._request_tools_factory is None
     names = [getattr(t, "__name__", "") for t in agent._tools or []]
-    assert "spawn_subsession_tool" not in names
+    assert "spawn_subsession" not in names
     assert "complete_subsession" not in names
 
 
