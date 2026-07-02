@@ -2738,7 +2738,7 @@ wheels = [
 [[package]]
 name = "robotsix-agent-comm"
 version = "0.1.0"
-source = { git = "https://github.com/damien-robotsix/robotsix-agent-comm.git?rev=main#555e22eef1a3083d6735083f01313e67fa1187ca" }
+source = { git = "https://github.com/damien-robotsix/robotsix-agent-comm.git?rev=555e22eef1a3083d6735083f01313e67fa1187ca#555e22eef1a3083d6735083f01313e67fa1187ca" }
 
 [[package]]
 name = "robotsix-board-agent"
@@ -2813,13 +2813,13 @@ requires-dist = [
     { name = "pyjwt" },
     { name = "python-dotenv" },
     { name = "pyyaml" },
-    { name = "robotsix-agent-comm", marker = "extra == 'broker'", git = "https://github.com/damien-robotsix/robotsix-agent-comm.git?rev=main" },
+    { name = "robotsix-agent-comm", marker = "extra == 'broker'", git = "https://github.com/damien-robotsix/robotsix-agent-comm.git?rev=555e22eef1a3083d6735083f01313e67fa1187ca" },
     { name = "robotsix-board-agent", git = "https://github.com/damien-robotsix/robotsix-board-agent.git?rev=e2f00b518efbd029f2941886bcf5199e669fc0a8" },
     { name = "robotsix-llmio" },
     { name = "robotsix-llmio", extras = ["claude-sdk"], marker = "extra == 'claude-sdk'" },
     { name = "robotsix-llmio", extras = ["openrouter"], marker = "extra == 'openrouter'" },
     { name = "robotsix-llmio", extras = ["tracing"], marker = "extra == 'tracing'" },
-    { name = "robotsix-yaml-config", git = "https://github.com/damien-robotsix/robotsix-yaml-config.git?rev=main" },
+    { name = "robotsix-yaml-config", git = "https://github.com/damien-robotsix/robotsix-yaml-config.git?rev=fbca817194ff6af20588c4c603dc3fdebadce6d0" },
     { name = "starlette" },
     { name = "transformers", marker = "extra == 'memory'" },
     { name = "uvicorn" },
@@ -2870,7 +2870,7 @@ tracing = [
 [[package]]
 name = "robotsix-yaml-config"
 version = "0.1.0"
-source = { git = "https://github.com/damien-robotsix/robotsix-yaml-config.git?rev=main#fbca817194ff6af20588c4c603dc3fdebadce6d0" }
+source = { git = "https://github.com/damien-robotsix/robotsix-yaml-config.git?rev=fbca817194ff6af20588c4c603dc3fdebadce6d0#fbca817194ff6af20588c4c603dc3fdebadce6d0" }
 dependencies = [
     { name = "pyyaml" },
 ]

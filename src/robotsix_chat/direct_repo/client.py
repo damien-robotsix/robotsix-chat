@@ -234,7 +234,7 @@ class DirectRepoClient:
             data = json.loads(result.text or "")
             state: str | None = data.get("state")
             return state
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             logger.warning(
                 "Non-JSON response for ticket %s: %s",
                 ticket_id,

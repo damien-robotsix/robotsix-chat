@@ -95,10 +95,15 @@ docs = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/robotsix_chat"]
 
+# First-party git sources are pinned to commit SHAs (repo baseline); the
+# fleet pin-bump workflow advances them through reviewed PRs.
+# robotsix-llmio deliberately has no entry here: its SHA pin is inherited from
+# robotsix-board-agent's direct-URL requirement, so the two repos can't
+# disagree on the version.
 [tool.uv.sources]
-robotsix-yaml-config = { git = "https://github.com/damien-robotsix/robotsix-yaml-config.git", rev = "main" }
+robotsix-yaml-config = { git = "https://github.com/damien-robotsix/robotsix-yaml-config.git", rev = "fbca817194ff6af20588c4c603dc3fdebadce6d0" }  # pragma: allowlist secret
 robotsix-board-agent = { git = "https://github.com/damien-robotsix/robotsix-board-agent.git", rev = "e2f00b518efbd029f2941886bcf5199e669fc0a8" }  # pragma: allowlist secret
-robotsix-agent-comm = { git = "https://github.com/damien-robotsix/robotsix-agent-comm.git", rev = "main" }
+robotsix-agent-comm = { git = "https://github.com/damien-robotsix/robotsix-agent-comm.git", rev = "555e22eef1a3083d6735083f01313e67fa1187ca" }  # pragma: allowlist secret
 
 [tool.towncrier]
 package = "robotsix_chat"
@@ -109,13 +114,21 @@ title_format = "## [{version}] - {project_date}"
 issue_format = "[#{issue}](https://github.com/damien-robotsix/robotsix-chat/issues/{issue})"
 
 [tool.ruff]
-target-version = "py312"
+target-version = "py314"
 line-length = 88
 exclude = [".local-deps", ".local_pkgs"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM", "S", "D", "FURB"]
-per-file-ignores = {"src/robotsix_chat/chat/server/routes.py" = ["S105"], "tests/**" = ["S101", "S104", "S105", "S106", "S107"], "vulture_whitelist.py" = ["D100"]}
+
+[tool.ruff.lint.per-file-ignores]
+# S105: `SSE_TOKEN_TYPE = "token"` is an SSE event-type name, not a credential.
+"src/robotsix_chat/chat/server/routes.py" = ["S105"]
+# Test files routinely use asserts (S101), bind-all-interfaces test servers
+# (S104), and hard-coded sentinel credentials/tokens (S105-S107).
+"tests/**" = ["S101", "S104", "S105", "S106", "S107"]
+# The vulture whitelist is a tooling artefact, not a documented module.
+"vulture_whitelist.py" = ["D100"]
 
 [tool.mypy]
 python_version = "3.14"

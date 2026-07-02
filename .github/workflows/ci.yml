@@ -31,7 +31,9 @@ jobs:
       python-version: "3.14"
       cov-package: "robotsix_chat"
       install-extras: ""
-      coverage-threshold: "60"
+      # Keep in sync with [tool.coverage.report] fail_under in pyproject.toml
+      # (the fleet floor is 80; never lower).
+      coverage-threshold: "88"
     # python-ci.yml's nested `tests` job uploads SARIF, so it requests
     # `security-events: write`. A caller job MUST grant at least that or
     # GitHub rejects the reusable-workflow call with a startup_failure
@@ -120,8 +122,69 @@ jobs:
       - name: Run SSE event-type check
         run: python scripts/check_sse_event_types.py
 
+  check-modules-registry:
+    # Repo-baseline standard: every file registered in docs/modules.yaml;
+    # drift (unregistered/stale/duplicate paths) fails CI.
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.14"
+      - run: pip install "pyyaml>=6"
+      - name: Check modules.yaml against the tracked tree
+        run: python scripts/check_modules_registry.py
+
+  image-scan:
+    # Standards gate: build the container image on every PR and Trivy-scan it,
+    # so vulnerable base images/dependencies surface before merge (see
+    # robotsix-standards docker-standard "CI-time image scan").
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      security-events: write
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5
+      - name: Build image (no push)
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
+        with:
+          context: .
+          file: ./Dockerfile
+          push: false
+          load: true
+          tags: robotsix-chat:ci-scan
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+      - name: Trivy scan
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: robotsix-chat:ci-scan
+          format: sarif
+          output: trivy-ci-results.sarif
+          severity: CRITICAL,HIGH
+          # Gate policy (docker standard): block only on findings with a
+          # released fix — a red gate always means "an upgrade exists, take
+          # it". Unfixable base-image CVEs stay visible via the SARIF upload
+          # and the weekly rescan but do not block PRs.
+          ignore-unfixed: true
+          exit-code: 1
+          vuln-type: os,library
+      - name: Upload SARIF
+        uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
+        if: always()
+        with:
+          sarif_file: trivy-ci-results.sarif
+          category: trivy-ci
+
   check:
-    needs: [lockfile, ci, codeql, security, deptry, pre-commit, check-sse-types]
+    needs: [lockfile, ci, codeql, security, deptry, pre-commit, check-sse-types, check-modules-registry, image-scan]
     runs-on: ubuntu-latest
     steps:
       - run: echo "All CI checks passed"

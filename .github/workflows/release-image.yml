@@ -1,9 +1,11 @@
 name: Release image
 
-# Publishes container images to GHCR.  Triggers: push to main, push of semver
-# tags, manual dispatch.  SBOM generation is enabled — BuildKit ≥0.13 has
-# native SBOM support without the docker/buildkit-syft-scanner dependency.
-# See deploy/README.md for how the server consumes the `main` tag via Watchtower.
+# Publishes the container image to GHCR via the fleet's shared reusable
+# workflow (docker standard: no hand-rolled build/push). The shared workflow
+# handles metadata/tags (main, sha-<short>, latest, X.Y.Z), SBOM + provenance
+# attestation, and a Trivy publish gate (fixable CRITICAL findings block).
+# See deploy/README.md for how the server consumes the `main` tag via
+# Watchtower.
 on:
   push:
     branches: ['main']
@@ -18,6 +20,7 @@ concurrency:
   cancel-in-progress: false
 
 jobs:
+  # Gate: never publish an image from a commit whose CI is red.
   verify:
     runs-on: ubuntu-latest
     permissions:
@@ -34,44 +37,12 @@ jobs:
             const fn = require('./.github/scripts/verify-ci.js');
             await fn({github, context, core});
 
-  docker:
+  publish:
     needs: verify
-    runs-on: ubuntu-latest
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/docker-release.yml@5cd8c1facb02299da618979e7a55f1953f9c075a  # main
     permissions:
       contents: read
       packages: write
-      id-token: write
+      id-token: write         # provenance / SBOM attestation signing
       attestations: write
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-        with:
-          persist-credentials: false
-
-      - uses: docker/setup-buildx-action@d7f5e7f509e45cec5c76c4d5afdd7de93d0b3df5
-
-      - name: Log in to GHCR
-        env:
-          GHCR_ACTOR: ${{ github.actor }}
-        run: echo "${{ secrets.GITHUB_TOKEN }}" | docker login ghcr.io -u "$GHCR_ACTOR" --password-stdin
-
-      - name: Docker metadata
-        id: meta
-        uses: docker/metadata-action@80c7e94dd9b9319bd5eb7a0e0fe9291e23a2a2e9
-        with:
-          images: ghcr.io/damien-robotsix/robotsix-chat
-          tags: |
-            type=ref,event=branch
-            type=semver,pattern={{version}}
-            type=sha
-            type=raw,value=latest,enable={{is_default_branch}}
-
-      - name: Build and push
-        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
-        with:
-          context: .
-          file: ./Dockerfile
-          push: true
-          tags: ${{ steps.meta.outputs.tags }}
-          labels: ${{ steps.meta.outputs.labels }}
-          provenance: mode=max
-          sbom: true
+      security-events: write  # Trivy SARIF upload to Code Scanning

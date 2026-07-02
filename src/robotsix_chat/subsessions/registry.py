@@ -469,7 +469,7 @@ class SubsessionRegistry:
             return []
         try:
             raw = json.loads(self._store_path.read_text(encoding="utf-8"))
-        except (OSError, ValueError):
+        except OSError, ValueError:
             logger.exception("Could not read subsession store %s", self._store_path)
             return []
         return raw if isinstance(raw, list) else []

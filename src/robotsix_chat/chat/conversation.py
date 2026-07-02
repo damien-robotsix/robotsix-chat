@@ -444,7 +444,7 @@ class ConversationStore:
             raw = json.loads(self._persist_path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return  # first run — no saved state yet
-        except (OSError, json.JSONDecodeError):
+        except OSError, json.JSONDecodeError:
             logger.exception("Failed to load conversations from %s", self._persist_path)
             return
 
