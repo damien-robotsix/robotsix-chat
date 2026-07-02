@@ -1,6 +1,6 @@
 """Tests for the direct-repo integration.
 
-:func:`build_direct_repo_tools` and :class:`DirectRepoClient`, with ``httpx``
+:func:`build_direct_repo_tools` and :class:`DirectRepoClient`, with ``respx``
 mocked so there are no real network calls.  The installation token cache is
 pre-populated in tests so PyJWT is never imported.
 """
@@ -13,14 +13,11 @@ from typing import Any
 
 import httpx
 import pytest
+import respx
 
 from robotsix_chat.config import DirectRepoSettings
 from robotsix_chat.direct_repo import build_direct_repo_tools
 from robotsix_chat.direct_repo.client import DirectRepoClient
-from tests.common.mock_helpers import MockResponse as _MockResponse
-from tests.common.mock_helpers import (
-    install_mock_client as _install_mock_client,
-)
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -48,13 +45,6 @@ def _prepopulate_installation_token(settings: DirectRepoSettings) -> str:
     token = "ghs_test_installation_token"
     _cache[settings.github_app_installation_id] = (time.monotonic(), token)
     return token
-
-
-def _mock_make_jwt(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Replace _make_jwt with a stub returning a fake JWT."""
-    from robotsix_chat.direct_repo import client as _client_mod
-
-    monkeypatch.setattr(_client_mod, "_make_jwt", lambda app_id, key: "fake-jwt-token")
 
 
 @pytest.fixture(autouse=True)
@@ -102,11 +92,14 @@ def test_build_direct_repo_tools_returns_two_tools() -> None:
 
 @pytest.mark.asyncio
 async def test_push_branch_rejects_non_blocked_ticket(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Ticket in DRAFT state → push is refused with a descriptive message."""
-    board_resp = _MockResponse(text=json.dumps({"id": "t-1", "state": "draft"}))
-    _install_mock_client(monkeypatch, board_resp)
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-1").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-1", "state": "draft"})
+        )
+    )
 
     tools = build_direct_repo_tools(_settings())
     push_fn = [t for t in tools if t.__name__ == "push_direct_repo_branch"][0]
@@ -125,37 +118,30 @@ async def test_push_branch_rejects_non_blocked_ticket(
 
 @pytest.mark.asyncio
 async def test_push_branch_allows_blocked_ticket(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Ticket in BLOCKED state → push proceeds (scope guard passes, push runs)."""
     settings = _settings()
     _prepopulate_installation_token(settings)
 
-    class _SeqClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _SeqClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(self, url: str, **kw: Any) -> _MockResponse:
-            if "/tickets/" in url:
-                return _MockResponse(text=json.dumps({"id": "t-1", "state": "blocked"}))
-            if "/installation/repositories" in url:
-                return _MockResponse(
-                    text=json.dumps({"repositories": [{"full_name": "org/repo"}]})
-                )
-            return _MockResponse(text="{}")
-
-        async def post(self, url: str, **kw: Any) -> _MockResponse:
-            if "/access_tokens" in url:
-                return _MockResponse(text=json.dumps({"token": "ghs_fake"}))
-            return _MockResponse(text="{}")
-
-    monkeypatch.setattr(httpx, "AsyncClient", _SeqClient)
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-1").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-1", "state": "blocked"})
+        )
+    )
+    respx_mock.get("https://api.github.com/installation/repositories").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    # Catch-all for remaining GitHub API calls during push
+    respx_mock.get(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
+    respx_mock.post(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
 
     tools = build_direct_repo_tools(settings)
     push_fn = [t for t in tools if t.__name__ == "push_direct_repo_branch"][0]
@@ -178,35 +164,20 @@ async def test_push_branch_allows_blocked_ticket(
 
 @pytest.mark.asyncio
 async def test_push_branch_rejects_repo_not_in_scope(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Repo not in installation scope → push is refused."""
-
-    class _ScopeClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _ScopeClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(self, url: str, **kw: Any) -> _MockResponse:
-            if "/tickets/" in url:
-                return _MockResponse(text=json.dumps({"id": "t-1", "state": "blocked"}))
-            if "/installation/repositories" in url:
-                return _MockResponse(
-                    text=json.dumps({"repositories": [{"full_name": "org/other-repo"}]})
-                )
-            return _MockResponse(text="{}")
-
-        async def post(self, url: str, **kw: Any) -> _MockResponse:
-            if "/access_tokens" in url:
-                return _MockResponse(text=json.dumps({"token": "ghs_fake"}))
-            return _MockResponse(text="{}")
-
-    monkeypatch.setattr(httpx, "AsyncClient", _ScopeClient)
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-1").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-1", "state": "blocked"})
+        )
+    )
+    respx_mock.get("https://api.github.com/installation/repositories").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/other-repo"}]}),
+        )
+    )
 
     tools = build_direct_repo_tools(_settings())
     push_fn = [t for t in tools if t.__name__ == "push_direct_repo_branch"][0]
@@ -229,11 +200,14 @@ async def test_push_branch_rejects_repo_not_in_scope(
 
 @pytest.mark.asyncio
 async def test_open_pr_rejects_non_blocked_ticket(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Ticket not in BLOCKED → PR open is refused."""
-    board_resp = _MockResponse(text=json.dumps({"id": "t-2", "state": "ready"}))
-    _install_mock_client(monkeypatch, board_resp)
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-2").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-2", "state": "ready"})
+        )
+    )
 
     tools = build_direct_repo_tools(_settings())
     pr_fn = [t for t in tools if t.__name__ == "open_direct_repo_pr"][0]
@@ -252,37 +226,30 @@ async def test_open_pr_rejects_non_blocked_ticket(
 
 @pytest.mark.asyncio
 async def test_open_pr_allows_blocked_ticket(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Ticket in BLOCKED → PR open proceeds."""
     settings = _settings()
     _prepopulate_installation_token(settings)
 
-    class _ScopeClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _ScopeClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(self, url: str, **kw: Any) -> _MockResponse:
-            if "/tickets/" in url:
-                return _MockResponse(text=json.dumps({"id": "t-2", "state": "blocked"}))
-            if "/installation/repositories" in url:
-                return _MockResponse(
-                    text=json.dumps({"repositories": [{"full_name": "org/repo"}]})
-                )
-            return _MockResponse(text="{}")
-
-        async def post(self, url: str, **kw: Any) -> _MockResponse:
-            if "/access_tokens" in url:
-                return _MockResponse(text=json.dumps({"token": "ghs_fake"}))
-            return _MockResponse(text="{}")
-
-    monkeypatch.setattr(httpx, "AsyncClient", _ScopeClient)
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-2").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-2", "state": "blocked"})
+        )
+    )
+    respx_mock.get("https://api.github.com/installation/repositories").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    # Catch-all for remaining GitHub API calls during PR creation
+    respx_mock.get(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
+    respx_mock.post(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
 
     tools = build_direct_repo_tools(settings)
     pr_fn = [t for t in tools if t.__name__ == "open_direct_repo_pr"][0]
@@ -331,39 +298,21 @@ def test_no_merge_tool_returned() -> None:
 
 @pytest.mark.asyncio
 async def test_create_pr_does_not_enable_auto_merge(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """create_pr must NOT set auto_merge or merge-related fields in the payload."""
     settings = _settings()
     _prepopulate_installation_token(settings)
 
-    captured_post: dict[str, Any] = {}
-
-    class _CaptureClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _CaptureClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(self, url: str, **kw: Any) -> _MockResponse:
-            if "/repos/org/repo" in url and "/pulls" not in url:
-                return _MockResponse(text=json.dumps({"default_branch": "main"}))
-            return _MockResponse(text="{}")
-
-        async def post(self, url: str, **kw: Any) -> _MockResponse:
-            captured_post["url"] = url
-            captured_post["json"] = kw.get("json")
-            if "/access_tokens" in url:
-                return _MockResponse(text=json.dumps({"token": "ghs_fake"}))
-            return _MockResponse(
-                text=json.dumps({"html_url": "https://github.com/org/repo/pull/1"})
-            )
-
-    monkeypatch.setattr(httpx, "AsyncClient", _CaptureClient)
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text=json.dumps({"default_branch": "main"}))
+    )
+    pr_route = respx_mock.post("https://api.github.com/repos/org/repo/pulls").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"html_url": "https://github.com/org/repo/pull/1"}),
+        )
+    )
 
     client = DirectRepoClient(settings)
     result = await client.create_pr(
@@ -377,7 +326,7 @@ async def test_create_pr_does_not_enable_auto_merge(
     assert "Auto-merge is NOT enabled" in result
 
     # Verify the POST payload does NOT include merge-related fields
-    post_json = captured_post.get("json", {})
+    post_json = json.loads(pr_route.calls.last.request.content.decode())
     for key in post_json:
         assert "merge" not in key.lower(), f"Merge-related key in PR payload: {key}"
     assert "auto_merge" not in (str(k).lower() for k in post_json)
@@ -390,35 +339,20 @@ async def test_create_pr_does_not_enable_auto_merge(
 
 @pytest.mark.asyncio
 async def test_push_branch_rejects_invalid_files_json(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Malformed files_json → descriptive error, no API calls beyond guards."""
-    board_resp = _MockResponse(text=json.dumps({"id": "t-1", "state": "blocked"}))
-    repos_resp = _MockResponse(
-        text=json.dumps({"repositories": [{"full_name": "org/repo"}]})
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-1").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-1", "state": "blocked"})
+        )
     )
-
-    class _SeqClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _SeqClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(self, url: str, **kw: Any) -> _MockResponse:
-            if "/tickets/" in url:
-                return board_resp
-            if "/installation/repositories" in url:
-                return repos_resp
-            return _MockResponse(text="{}")
-
-        async def post(self, url: str, **kw: Any) -> _MockResponse:
-            return _MockResponse(text="{}")
-
-    monkeypatch.setattr(httpx, "AsyncClient", _SeqClient)
+    respx_mock.get("https://api.github.com/installation/repositories").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
 
     tools = build_direct_repo_tools(_settings())
     push_fn = [t for t in tools if t.__name__ == "push_direct_repo_branch"][0]
@@ -451,12 +385,12 @@ async def test_push_branch_rejects_invalid_files_json(
 
 @pytest.mark.asyncio
 async def test_get_ticket_state_returns_none_on_error(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """When the board API returns an error, get_ticket_state returns None."""
-    # Simulate a 500 from board API by returning an error-like response
-    board_resp = _MockResponse(text="Board API error 500: boom", status_code=500)
-    _install_mock_client(monkeypatch, board_resp)
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-err").mock(
+        return_value=httpx.Response(500, text="Board API error 500: boom")
+    )
 
     tools = build_direct_repo_tools(_settings())
     push_fn = [t for t in tools if t.__name__ == "push_direct_repo_branch"][0]
@@ -478,47 +412,32 @@ async def test_get_ticket_state_returns_none_on_error(
 
 @pytest.mark.asyncio
 async def test_open_pr_default_body_links_ticket_id(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """When no body is provided, the tool generates one referencing the ticket."""
     settings = _settings()
     _prepopulate_installation_token(settings)
 
-    captured_post: dict[str, Any] = {}
-
-    class _CaptureClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _CaptureClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(self, url: str, **kw: Any) -> _MockResponse:
-            if "/tickets/" in url:
-                return _MockResponse(text=json.dumps({"id": "t-3", "state": "blocked"}))
-            if "/installation/repositories" in url:
-                return _MockResponse(
-                    text=json.dumps({"repositories": [{"full_name": "org/repo"}]})
-                )
-            if "/repos/org/repo" in url and "/pulls" not in url:
-                return _MockResponse(text=json.dumps({"default_branch": "main"}))
-            return _MockResponse(text="{}")
-
-        async def post(self, url: str, **kw: Any) -> _MockResponse:
-            captured_post["url"] = url
-            captured_post["json"] = kw.get("json")
-            if "/access_tokens" in url:
-                return _MockResponse(text=json.dumps({"token": "ghs_fake"}))
-            if "/pulls" in url:
-                return _MockResponse(
-                    text=json.dumps({"html_url": "https://github.com/org/repo/pull/1"})
-                )
-            return _MockResponse(text="{}")
-
-    monkeypatch.setattr(httpx, "AsyncClient", _CaptureClient)
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-3").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-3", "state": "blocked"})
+        )
+    )
+    respx_mock.get("https://api.github.com/installation/repositories").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text=json.dumps({"default_branch": "main"}))
+    )
+    pr_route = respx_mock.post("https://api.github.com/repos/org/repo/pulls").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"html_url": "https://github.com/org/repo/pull/1"}),
+        )
+    )
 
     tools = build_direct_repo_tools(settings)
     pr_fn = [t for t in tools if t.__name__ == "open_direct_repo_pr"][0]
@@ -531,7 +450,7 @@ async def test_open_pr_default_body_links_ticket_id(
         body="",  # empty → default generated
     )
 
-    body = captured_post.get("json", {}).get("body", "")
+    body = json.loads(pr_route.calls.last.request.content.decode()).get("body", "")
     assert "t-3" in body
     assert "human review required" in body.lower()
 
@@ -543,56 +462,50 @@ async def test_open_pr_default_body_links_ticket_id(
 
 @pytest.mark.asyncio
 async def test_push_branch_uses_ticket_id_in_commit(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Commit message references the ticket id even when commit_message not given."""
     settings = _settings()
     _prepopulate_installation_token(settings)
 
-    captured_commits: list[dict[str, Any]] = []
-
-    class _CaptureClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _CaptureClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(self, url: str, **kw: Any) -> _MockResponse:
-            if "/tickets/" in url:
-                return _MockResponse(text=json.dumps({"id": "t-4", "state": "blocked"}))
-            if "/installation/repositories" in url:
-                return _MockResponse(
-                    text=json.dumps({"repositories": [{"full_name": "org/repo"}]})
-                )
-            if "/repos/org/repo" in url and "/git/ref/heads/main" in url:
-                return _MockResponse(text=json.dumps({"object": {"sha": "abc123"}}))
-            if "/repos/org/repo" in url and "/pulls" not in url and "/git/" not in url:
-                return _MockResponse(text=json.dumps({"default_branch": "main"}))
-            if "/git/commits/" in url:
-                return _MockResponse(
-                    text=json.dumps({"sha": "commit-sha", "tree": {"sha": "tree-sha"}})
-                )
-            return _MockResponse(text="{}")
-
-        async def post(self, url: str, **kw: Any) -> _MockResponse:
-            if "/access_tokens" in url:
-                return _MockResponse(text=json.dumps({"token": "ghs_fake"}))
-            if "/git/commits" in url:
-                captured_commits.append(kw.get("json", {}))
-                return _MockResponse(text=json.dumps({"sha": "commit-sha"}))
-            if "/git/blobs" in url:
-                return _MockResponse(text=json.dumps({"sha": "blob-sha"}))
-            if "/git/trees" in url:
-                return _MockResponse(text=json.dumps({"sha": "tree-sha"}))
-            if "/git/refs" in url:
-                return _MockResponse(text=json.dumps({"ref": "refs/heads/fix/t-4"}))
-            return _MockResponse(text="{}")
-
-    monkeypatch.setattr(httpx, "AsyncClient", _CaptureClient)
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-4").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-4", "state": "blocked"})
+        )
+    )
+    respx_mock.get("https://api.github.com/installation/repositories").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text=json.dumps({"default_branch": "main"}))
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/ref/heads/main").mock(
+        return_value=httpx.Response(200, text=json.dumps({"object": {"sha": "abc123"}}))
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/blobs").mock(
+        return_value=httpx.Response(200, text=json.dumps({"sha": "blob-sha"}))
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/commits/abc123").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"sha": "commit-sha", "tree": {"sha": "tree-sha"}}),
+        )
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/trees").mock(
+        return_value=httpx.Response(200, text=json.dumps({"sha": "tree-sha"}))
+    )
+    commit_route = respx_mock.post(
+        "https://api.github.com/repos/org/repo/git/commits"
+    ).mock(return_value=httpx.Response(200, text=json.dumps({"sha": "commit-sha"})))
+    respx_mock.post("https://api.github.com/repos/org/repo/git/refs").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"ref": "refs/heads/fix/t-4"}),
+        )
+    )
 
     tools = build_direct_repo_tools(settings)
     push_fn = [t for t in tools if t.__name__ == "push_direct_repo_branch"][0]
@@ -605,8 +518,11 @@ async def test_push_branch_uses_ticket_id_in_commit(
         commit_message="",  # empty → default
     )
 
-    assert len(captured_commits) == 1
-    assert "t-4" in captured_commits[0].get("message", "")
+    assert commit_route.called
+    commit_msg = json.loads(commit_route.calls.last.request.content.decode()).get(
+        "message", ""
+    )
+    assert "t-4" in commit_msg
 
 
 # ---------------------------------------------------------------------------
@@ -616,42 +532,25 @@ async def test_push_branch_uses_ticket_id_in_commit(
 
 @pytest.mark.asyncio
 async def test_list_installation_repos_parses_response(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """list_installation_repos returns full_names from the API response."""
     settings = _settings()
     _prepopulate_installation_token(settings)
 
-    class _FakeClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _FakeClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(self, url: str, **kw: Any) -> _MockResponse:
-            if "/installation/repositories" in url:
-                return _MockResponse(
-                    text=json.dumps(
-                        {
-                            "repositories": [
-                                {"full_name": "org/repo-a"},
-                                {"full_name": "org/repo-b"},
-                            ]
-                        }
-                    )
-                )
-            return _MockResponse(text="{}")
-
-        async def post(self, url: str, **kw: Any) -> _MockResponse:
-            if "/access_tokens" in url:
-                return _MockResponse(text=json.dumps({"token": "ghs_fake"}))
-            return _MockResponse(text="{}")
-
-    monkeypatch.setattr(httpx, "AsyncClient", _FakeClient)
+    respx_mock.get("https://api.github.com/installation/repositories").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "repositories": [
+                        {"full_name": "org/repo-a"},
+                        {"full_name": "org/repo-b"},
+                    ]
+                }
+            ),
+        )
+    )
 
     client = DirectRepoClient(settings)
     repos = await client.list_installation_repos()

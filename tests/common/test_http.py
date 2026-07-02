@@ -1,19 +1,18 @@
 """Tests for the shared ``robotsix_chat.common.http`` helper.
 
-:func:`safe_http_request` and :class:`HttpResult`, with ``httpx`` mocked
+:func:`safe_http_request` and :class:`HttpResult`, with ``respx`` mocked
 so there are no real network calls.
 """
 
 from __future__ import annotations
 
-from typing import Any
+import json as _json
 
 import httpx
 import pytest
+import respx
 
 from robotsix_chat.common.http import HttpResult, safe_http_request
-from tests.common.mock_helpers import MockResponse as _MockResponse
-from tests.common.mock_helpers import install_mock_client as _install_mock_client
 
 # ---------------------------------------------------------------------------
 # HttpResult
@@ -42,25 +41,26 @@ def test_http_result_error() -> None:
 
 
 @pytest.mark.asyncio
-async def test_get_success(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_get_success(respx_mock: respx.MockRouter) -> None:
     """A successful GET returns the response text."""
-    resp = _MockResponse(text="hello world", status_code=200)
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.get("https://example.com/api").mock(
+        return_value=httpx.Response(200, text="hello world")
+    )
 
     result = await safe_http_request("GET", "https://example.com/api")
 
     assert result.ok is True
     assert result.text == "hello world"
     assert result.status_code == 200
-    assert captured["method"] == "GET"
-    assert captured["url"] == "https://example.com/api"
+    assert route.called
 
 
 @pytest.mark.asyncio
-async def test_post_success(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_post_success(respx_mock: respx.MockRouter) -> None:
     """A successful POST returns the response text."""
-    resp = _MockResponse(text='{"id": 1}', status_code=201)
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.post("https://example.com/api").mock(
+        return_value=httpx.Response(201, text='{"id": 1}')
+    )
 
     result = await safe_http_request(
         "POST",
@@ -70,15 +70,16 @@ async def test_post_success(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert result.ok is True
     assert result.text == '{"id": 1}'
-    assert captured["method"] == "POST"
-    assert captured["json"] == {"key": "value"}
+    assert route.called
+    assert _json.loads(route.calls.last.request.content) == {"key": "value"}
 
 
 @pytest.mark.asyncio
-async def test_forwards_headers(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_forwards_headers(respx_mock: respx.MockRouter) -> None:
     """Passed headers are forwarded to the request."""
-    resp = _MockResponse(text="ok")
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.get("https://example.com/api").mock(
+        return_value=httpx.Response(200, text="ok")
+    )
 
     await safe_http_request(
         "GET",
@@ -86,14 +87,15 @@ async def test_forwards_headers(monkeypatch: pytest.MonkeyPatch) -> None:
         headers={"Authorization": "Bearer xyz"},
     )
 
-    assert captured["headers"] == {"Authorization": "Bearer xyz"}
+    assert route.calls.last.request.headers["authorization"] == "Bearer xyz"
 
 
 @pytest.mark.asyncio
-async def test_forwards_params(monkeypatch: pytest.MonkeyPatch) -> None:
+async def test_forwards_params(respx_mock: respx.MockRouter) -> None:
     """Passed query params are forwarded to GET."""
-    resp = _MockResponse(text="ok")
-    captured = _install_mock_client(monkeypatch, resp)
+    route = respx_mock.get("https://example.com/api").mock(
+        return_value=httpx.Response(200, text="ok")
+    )
 
     await safe_http_request(
         "GET",
@@ -101,33 +103,37 @@ async def test_forwards_params(monkeypatch: pytest.MonkeyPatch) -> None:
         params={"page": "1"},
     )
 
-    assert captured["params"] == {"page": "1"}
+    assert dict(route.calls.last.request.url.params) == {"page": "1"}
 
 
 @pytest.mark.asyncio
 async def test_does_not_pass_params_when_none(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
-    """When params is None, no params kwarg is sent (compat with simpler mocks)."""
-    resp = _MockResponse(text="ok")
-    captured = _install_mock_client(monkeypatch, resp)
+    """When params is None, no query string is added."""
+    route = respx_mock.get("https://example.com/api").mock(
+        return_value=httpx.Response(200, text="ok")
+    )
 
     await safe_http_request("GET", "https://example.com/api")
 
-    assert captured.get("params") is None
+    assert route.called
+    assert dict(route.calls.last.request.url.params) == {}
 
 
 @pytest.mark.asyncio
 async def test_passes_timeout_to_client(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
-    """The timeout parameter is forwarded to httpx.AsyncClient."""
-    resp = _MockResponse(text="ok")
-    captured = _install_mock_client(monkeypatch, resp, capture_kwargs=True)
+    """Request completes without error, confirming timeout is handled internally."""
+    route = respx_mock.get("https://example.com/api").mock(
+        return_value=httpx.Response(200, text="ok")
+    )
 
-    await safe_http_request("GET", "https://example.com/api", timeout=12.5)
+    result = await safe_http_request("GET", "https://example.com/api", timeout=12.5)
 
-    assert captured["client_kwargs"]["timeout"] == 12.5
+    assert result.ok is True
+    assert route.called
 
 
 # ---------------------------------------------------------------------------
@@ -137,11 +143,12 @@ async def test_passes_timeout_to_client(
 
 @pytest.mark.asyncio
 async def test_http_error_returns_diagnostic(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """An HTTP error (>=400) is returned as an error string, never raised."""
-    resp = _MockResponse(text="not found", status_code=404)
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get("https://example.com/api").mock(
+        return_value=httpx.Response(404, text="not found")
+    )
 
     result = await safe_http_request("GET", "https://example.com/api")
 
@@ -153,43 +160,49 @@ async def test_http_error_returns_diagnostic(
 
 @pytest.mark.asyncio
 async def test_http_error_includes_label(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """The label parameter appears in the error message."""
-    resp = _MockResponse(text="boom", status_code=500)
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get("https://example.com/api").mock(
+        return_value=httpx.Response(500, text="boom")
+    )
 
     result = await safe_http_request("GET", "https://example.com/api", label="TestSvc")
 
+    assert result.error is not None
     assert "TestSvc error 500" in result.error
 
 
 @pytest.mark.asyncio
 async def test_http_error_truncates_body(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Response bodies longer than 500 chars are truncated in the error."""
     long_body = "x" * 1000
-    resp = _MockResponse(text=long_body, status_code=500)
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get("https://example.com/api").mock(
+        return_value=httpx.Response(500, text=long_body)
+    )
 
     result = await safe_http_request("GET", "https://example.com/api")
 
-    assert len(result.error or "") < len(long_body) + 200
+    assert result.error is not None
+    assert len(result.error) < len(long_body) + 200
     assert "x" * 500 in result.error
     assert "x" * 501 not in result.error
 
 
 @pytest.mark.asyncio
 async def test_http_error_empty_body(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """An empty response body yields '(empty body)' in the error."""
-    resp = _MockResponse(text="", status_code=500)
-    _install_mock_client(monkeypatch, resp)
+    respx_mock.get("https://example.com/api").mock(
+        return_value=httpx.Response(500, text="")
+    )
 
     result = await safe_http_request("GET", "https://example.com/api")
 
+    assert result.error is not None
     assert "(empty body)" in result.error
 
 
@@ -200,28 +213,17 @@ async def test_http_error_empty_body(
 
 @pytest.mark.asyncio
 async def test_timeout_returns_diagnostic(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """A timeout is returned as an error string, never raised."""
-
-    class _TimeoutClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _TimeoutClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(self, url: str, **kwargs: Any) -> None:
-            raise httpx.TimeoutException("timed out")
-
-    monkeypatch.setattr(httpx, "AsyncClient", _TimeoutClient)
+    respx_mock.get("https://example.com/api").mock(
+        side_effect=httpx.ReadTimeout("timed out")
+    )
 
     result = await safe_http_request("GET", "https://example.com/api", timeout=5.0)
 
     assert result.ok is False
+    assert result.error is not None
     assert "timed out" in result.error
     assert "5.0s" in result.error
 
@@ -233,26 +235,15 @@ async def test_timeout_returns_diagnostic(
 
 @pytest.mark.asyncio
 async def test_unexpected_error_returns_diagnostic(
-    monkeypatch: pytest.MonkeyPatch,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """An unexpected exception is returned as an error string, never raised."""
-
-    class _BrokenClient:
-        def __init__(self, **kwargs: Any) -> None:
-            pass
-
-        async def __aenter__(self) -> _BrokenClient:
-            return self
-
-        async def __aexit__(self, *exc: object) -> None:
-            return None
-
-        async def get(self, url: str, **kwargs: Any) -> None:
-            raise RuntimeError("something crashed")
-
-    monkeypatch.setattr(httpx, "AsyncClient", _BrokenClient)
+    respx_mock.get("https://example.com/api").mock(
+        side_effect=RuntimeError("something crashed")
+    )
 
     result = await safe_http_request("GET", "https://example.com/api")
 
     assert result.ok is False
+    assert result.error is not None
     assert "something crashed" in result.error

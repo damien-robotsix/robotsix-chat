@@ -82,6 +82,7 @@ dev = [
     "pytest-asyncio",
     "pytest-cov",
     "pytest-xdist[psutil]",
+    "respx",
     "ruff",
     "towncrier",
 ]
