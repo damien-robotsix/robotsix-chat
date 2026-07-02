@@ -261,7 +261,8 @@ format and workflow.
 
 ## Standards
 
-This repo follows the [robotsix stack standards](https://github.com/damien-robotsix/robotsix-standards).
+This repo follows the
+[robotsix stack standards](https://github.com/damien-robotsix/robotsix-standards).
 
 ## License
 
