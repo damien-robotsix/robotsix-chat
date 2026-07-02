@@ -78,6 +78,7 @@ def build_board_reader_tools(
 
         """
         board_was_read.set(True)
+        _ = include_closed  # reserved for future client support
         client_state: str | None = state or None
         result = await client.list_tickets(state=client_state, repo_id=repo_id)
         if isinstance(result, dict) and result.get("error"):

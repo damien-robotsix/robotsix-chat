@@ -71,7 +71,7 @@ try:
 
     _LEVEL_DEFAULTS[4] = LEVEL4_DEFAULT
 except ImportError:
-    pass
+    pass  # LEVEL4_DEFAULT removed in newer robotsix-llmio
 
 # Provider prefix for the keyless Claude SDK tier (auth via logged-in
 # `claude` CLI — no API key needed).
