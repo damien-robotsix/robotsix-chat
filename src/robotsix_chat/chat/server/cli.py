@@ -236,7 +236,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             return
         try:
             found = importlib.util.find_spec("robotsix_agent_comm")
-        except (ValueError, ModuleNotFoundError):
+        except ValueError, ModuleNotFoundError:
             found = None
         if not found:
             logger.info(

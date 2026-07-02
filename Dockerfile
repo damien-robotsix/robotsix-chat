@@ -59,7 +59,12 @@ RUN apt-get update \
     && claude --version \
     && apt-get purge -y --auto-remove curl gnupg \
     && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /root/.npm
+    # npm/corepack are build-time-only (used just above to install the claude
+    # CLI); dropping them from the runtime image removes their bundled
+    # vulnerable deps (picomatch, sigstore flagged by the CI Trivy gate).
+    && rm -rf /var/lib/apt/lists/* /root/.npm \
+        /usr/lib/node_modules/npm /usr/lib/node_modules/corepack \
+        /usr/bin/npm /usr/bin/npx /usr/bin/corepack
 
 # Copy the prebuilt virtual environment (deps + project) from the builder stage.
 COPY --from=builder /opt/venv /opt/venv

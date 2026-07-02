@@ -228,7 +228,7 @@ class EffectivenessStore(JsonStoreBase[Any]):
             return
         try:
             raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+        except json.JSONDecodeError, OSError:
             logger.warning(
                 "Could not read effectiveness store file %s; starting empty",
                 self._path,
@@ -428,5 +428,5 @@ def _parse_ts(iso_string: str) -> datetime | None:
     """Parse an ISO-8601 string to a datetime; return ``None`` on failure."""
     try:
         return datetime.fromisoformat(iso_string)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         return None

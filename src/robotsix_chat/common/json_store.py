@@ -94,7 +94,7 @@ class JsonStoreBase[T]:
             return
         try:
             raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except (json.JSONDecodeError, OSError):
+        except json.JSONDecodeError, OSError:
             logger.warning(
                 "Could not read %s file %s; starting empty",
                 self._store_name,

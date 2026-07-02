@@ -67,8 +67,6 @@ jobs:
           format: cyclonedx-json
           dependency-snapshot: true
 
-  publish:
-    needs: verify
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-release.yml@5cd8c1facb02299da618979e7a55f1953f9c075a  # main
-    permissions:
-      id-token: write
+# No `publish` job on purpose: the stack publishes to no package index
+# (robotsix-standards repo baseline) — the component ships as a container
+# image via release-image.yml; libraries are consumed from git.

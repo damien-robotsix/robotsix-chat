@@ -140,7 +140,7 @@ class BaseBrokeredClient:
             return True, ""
         try:
             agents = {a.get("agent_id") for a in resp.json().get("agents", [])}
-        except (ValueError, AttributeError, TypeError):
+        except ValueError, AttributeError, TypeError:
             return True, ""
         if self._target_agent_id not in agents:
             return False, (

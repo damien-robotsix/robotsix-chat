@@ -132,7 +132,7 @@ class DiagnosticStore(JsonStoreBase[DiagnosticBundle]):
                 continue
             try:
                 ts = datetime.fromisoformat(e.created_at)
-            except (ValueError, TypeError):
+            except ValueError, TypeError:
                 continue
             if ts >= since:
                 result.append(e)

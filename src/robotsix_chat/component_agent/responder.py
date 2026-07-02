@@ -90,7 +90,7 @@ class ComponentAgentResponder:
         """
         try:
             found = importlib.util.find_spec("robotsix_agent_comm")
-        except (ValueError, ModuleNotFoundError):
+        except ValueError, ModuleNotFoundError:
             found = None
         if not found:
             raise ComponentAgentResponderError(

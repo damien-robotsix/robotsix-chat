@@ -159,7 +159,7 @@ class BoardWriteRetryQueue:
                         m, s = divmod(int(delta), 60)
                         h, m = divmod(m, 60)
                         rel = f"in {h}h {m}m {s}s" if h else f"in {m}m {s}s"
-                except (ValueError, TypeError):
+                except ValueError, TypeError:
                     rel = str(nxt)
             else:
                 rel = "-"

@@ -321,7 +321,7 @@ async def test_events_endpoint_opens_with_heartbeat() -> None:
         assert response.media_type == SSE_CONTENT_TYPE
         assert response.headers["Content-Type"] == SSE_CONTENT_TYPE
 
-        body_iter: AsyncGenerator[bytes, None] = response.body_iterator  # type: ignore[assignment]
+        body_iter: AsyncGenerator[bytes] = response.body_iterator  # type: ignore[assignment]
         try:
             chunk = await asyncio.wait_for(body_iter.__anext__(), timeout=2.0)
             assert chunk == b": keepalive\n\n"
@@ -339,7 +339,7 @@ async def test_events_endpoint_receives_pushed_frame() -> None:
         response = await events_endpoint(request)
         assert isinstance(response, StreamingResponse)
 
-        body_iter: AsyncGenerator[bytes, None] = response.body_iterator  # type: ignore[assignment]
+        body_iter: AsyncGenerator[bytes] = response.body_iterator  # type: ignore[assignment]
         try:
             # Consume the heartbeat
             chunk = await asyncio.wait_for(body_iter.__anext__(), timeout=2.0)
@@ -378,7 +378,7 @@ async def test_events_endpoint_unsubscribes_on_disconnect() -> None:
         response = await events_endpoint(request)
         assert isinstance(response, StreamingResponse)
 
-        body_iter: AsyncGenerator[bytes, None] = response.body_iterator  # type: ignore[assignment]
+        body_iter: AsyncGenerator[bytes] = response.body_iterator  # type: ignore[assignment]
         # Consume the heartbeat so we know subscription happened
         chunk = await asyncio.wait_for(body_iter.__anext__(), timeout=2.0)
         assert chunk == b": keepalive\n\n"
