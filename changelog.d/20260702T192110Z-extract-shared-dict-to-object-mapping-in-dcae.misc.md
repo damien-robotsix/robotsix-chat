@@ -1,0 +1,1 @@
+Extract shared dict-to-object mapping in subsessions/worker.py
