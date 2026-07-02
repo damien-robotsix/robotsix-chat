@@ -192,7 +192,9 @@ async def test_list_files_returns_formatted_listing(
     respx_mock: respx.MockRouter,
 ) -> None:
     """The list tool formats a directory listing from a GitHub array response."""
-    respx_mock.get("https://api.github.com/repos/org/allowed-repo/contents?ref=main").mock(
+    respx_mock.get(
+        "https://api.github.com/repos/org/allowed-repo/contents?ref=main"
+    ).mock(
         return_value=httpx.Response(
             200,
             json=[
@@ -233,9 +235,9 @@ async def test_list_files_network_error_returns_string(
     respx_mock: respx.MockRouter,
 ) -> None:
     """A network error in list_files is returned as a string, never raised."""
-    respx_mock.get("https://api.github.com/repos/org/allowed-repo/contents?ref=main").mock(
-        side_effect=OSError("timeout")
-    )
+    respx_mock.get(
+        "https://api.github.com/repos/org/allowed-repo/contents?ref=main"
+    ).mock(side_effect=OSError("timeout"))
 
     client = RefDocsClient(_settings())
     out = await client.list_files("org/allowed-repo", "")

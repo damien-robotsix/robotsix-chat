@@ -1,3 +1,4 @@
+exclude: ^\.local_pkgs/
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
     rev: v5.0.0
@@ -52,8 +53,6 @@ repos:
     hooks:
       - id: detect-secrets
         args: ["--baseline", ".secrets.baseline"]
-        exclude: ^\.local_pkgs/
-
 
   - repo: local
     hooks:
@@ -78,7 +77,6 @@ repos:
     hooks:
       - id: mdformat
         args: ["--number", "--wrap", "100"]
-        exclude: ^\.local_pkgs/
         additional_dependencies:
           - mdformat-gfm
           - mdformat-frontmatter
