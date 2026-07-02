@@ -162,19 +162,31 @@ jobs:
           tags: robotsix-chat:ci-scan
           cache-from: type=gha
           cache-to: type=gha,mode=max
-      - name: Trivy scan
+      # Gate policy (docker standard): block only on CRITICAL/HIGH findings
+      # with a released fix — a red gate always means "an upgrade exists,
+      # take it". Unfixable base-image CVEs stay visible via the SARIF run
+      # below and the weekly rescan but do not block PRs.
+      # Two steps on purpose (mirrors the shared docker-release.yml): the
+      # trivy-action unsets TRIVY_SEVERITY when format=sarif, and SARIF mode
+      # swallows the findings table — so the gate runs in table format and a
+      # separate no-exit-code SARIF run feeds Code Scanning.
+      - name: Trivy scan (gate)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: robotsix-chat:ci-scan
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: 1
+          vuln-type: os,library
+      - name: Trivy scan (SARIF for code-scanning)
+        if: always()
         uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
         with:
           image-ref: robotsix-chat:ci-scan
           format: sarif
           output: trivy-ci-results.sarif
-          severity: CRITICAL,HIGH
-          # Gate policy (docker standard): block only on findings with a
-          # released fix — a red gate always means "an upgrade exists, take
-          # it". Unfixable base-image CVEs stay visible via the SARIF upload
-          # and the weekly rescan but do not block PRs.
           ignore-unfixed: true
-          exit-code: 1
           vuln-type: os,library
       - name: Upload SARIF
         uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
