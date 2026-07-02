@@ -1,11 +1,11 @@
 """Deterministic, side-effect-free duplicate-detection helpers.
 
-Used by :func:`~robotsix_chat.board_reader.create_board_ticket` to guard
-against near-duplicate filings before POSTing to the board API.  All
-functions are pure and importable in tests.
+Used by :func:`~robotsix_chat.board.create_board_ticket` to guard against
+near-duplicate filings before POSTing to the board API.  All functions are
+pure and importable in tests.
 
-Narrowing heuristic, not semantic guarantee — the LLM retains final
-intent judgement on any surfaced candidates.
+Narrowing heuristic, not semantic guarantee — the LLM retains final intent
+judgement on any surfaced candidates.
 """
 
 from __future__ import annotations

@@ -109,7 +109,7 @@ class SubsessionInfo:
     depth: int  # 1..max_depth (the main chat session is depth 0)
     title: str
     prompt: str  # initial, self-contained instructions
-    model_level: int  # llmio capability level 1..4
+    model_level: int  # llmio capability level 1..3
     status: SubsessionStatus
     created_at: float
     last_activity_at: float

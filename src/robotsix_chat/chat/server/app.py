@@ -20,7 +20,7 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.routing import Route
 
 from robotsix_chat import PROJECT_TITLE
-from robotsix_chat.board_reader import build_board_reader_tools
+from robotsix_chat.board import build_board_reader_tools
 from robotsix_chat.calendar import build_calendar_tools
 from robotsix_chat.chat.auth import BasicAuthConfig, BasicAuthMiddleware
 from robotsix_chat.chat.conversation import ConversationStore

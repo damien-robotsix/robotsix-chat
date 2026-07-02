@@ -47,7 +47,7 @@ from robotsix_chat.config.env_builders import (
 )
 from robotsix_chat.config.models import (
     AuthSettings,
-    BoardReaderSettings,
+    BoardSettings,
     CalendarSettings,
     ComponentAgentSettings,
     ComponentClientSettings,
@@ -73,7 +73,7 @@ logger = logging.getLogger(__name__)
 SYSTEM_PROMPT_VERSION = 15
 
 # Valid model levels (import-time constant so the set is built once).
-_VALID_MODEL_LEVELS = frozenset({1, 2, 3, 4})
+_VALID_MODEL_LEVELS = frozenset({1, 2, 3})
 
 
 class Settings(BaseModel):
@@ -85,10 +85,9 @@ class Settings(BaseModel):
 
     Attributes:
         llmio_model_level: Capability level — ``1`` (cheapest/fastest) to
-            ``4`` (frontier). The level encodes the provider + model: by
+            ``3`` (frontier). The level encodes the provider + model: by
             default levels 1-2 use ``openrouter``, level 3 uses
-            ``claudeSDK``/``opus`` and level 4 uses
-            ``claudeSDK``/``claude-fable-5``.
+            ``claudeSDK``/``opus``.
         llmio_api_key: Provider API key, forwarded to llmio when the chosen
             level's provider needs one (e.g. ``openrouter``); unused
             by keyless providers like ``claudeSDK``.
@@ -120,7 +119,7 @@ class Settings(BaseModel):
 
     """
 
-    llmio_model_level: int = 4
+    llmio_model_level: int = 3
     llmio_api_key: str = ""
     agent_instruction: str = (
         "You are a helpful assistant. "
@@ -256,7 +255,7 @@ class Settings(BaseModel):
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)
     diagnostics: DiagnosticsSettings = Field(default_factory=DiagnosticsSettings)
     refdocs: RefDocsSettings = Field(default_factory=RefDocsSettings)
-    board_reader: BoardReaderSettings = Field(default_factory=BoardReaderSettings)
+    board_reader: BoardSettings = Field(default_factory=BoardSettings)
     knowledge: KnowledgeSettings = Field(default_factory=KnowledgeSettings)
     self_review: SelfReviewSettings = Field(default_factory=SelfReviewSettings)
     component_agent: ComponentAgentSettings = Field(

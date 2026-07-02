@@ -17,7 +17,7 @@ from robotsix_chat.config.env_builders import (
 )
 from robotsix_chat.config.models import (
     AuthSettings,
-    BoardReaderSettings,
+    BoardSettings,
     CalendarSettings,
     ComponentAgentSettings,
     ComponentClientSettings,
@@ -44,7 +44,7 @@ from robotsix_chat.config.settings import (
 
 __all__ = [
     "AuthSettings",
-    "BoardReaderSettings",
+    "BoardSettings",
     "CONFIG_PATH_ENV",
     "CalendarSettings",
     "ComponentAgentSettings",
