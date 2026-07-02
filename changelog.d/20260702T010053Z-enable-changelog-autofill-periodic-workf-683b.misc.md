@@ -1,0 +1,1 @@
+Enable changelog_autofill periodic workflow for robotsix-chat
