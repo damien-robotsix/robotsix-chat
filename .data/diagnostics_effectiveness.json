@@ -44,6 +44,11 @@
       "fix_proposal_id": "bba83c1d70cb441c97032d5846d008ea",
       "category": "CI_FAILURE",
       "applied_at": "2026-07-01T23:34:35.800733+00:00"
+    },
+    {
+      "fix_proposal_id": "51006d4217d243cfbc714dca44b198cf",
+      "category": "CI_FAILURE",
+      "applied_at": "2026-07-02T01:22:31.235169+00:00"
     }
   ],
   "reports": []

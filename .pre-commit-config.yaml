@@ -52,6 +52,8 @@ repos:
     hooks:
       - id: detect-secrets
         args: ["--baseline", ".secrets.baseline"]
+        exclude: ^\.local_pkgs/
+
 
   - repo: local
     hooks:
@@ -76,6 +78,7 @@ repos:
     hooks:
       - id: mdformat
         args: ["--number", "--wrap", "100"]
+        exclude: ^\.local_pkgs/
         additional_dependencies:
           - mdformat-gfm
           - mdformat-frontmatter

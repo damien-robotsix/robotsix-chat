@@ -192,7 +192,7 @@ async def test_list_files_returns_formatted_listing(
     respx_mock: respx.MockRouter,
 ) -> None:
     """The list tool formats a directory listing from a GitHub array response."""
-    respx_mock.get("https://api.github.com/repos/org/allowed-repo/contents/").mock(
+    respx_mock.get("https://api.github.com/repos/org/allowed-repo/contents?ref=main").mock(
         return_value=httpx.Response(
             200,
             json=[
@@ -217,7 +217,7 @@ async def test_list_files_file_response_returns_guidance(
 ) -> None:
     """When the GitHub response is a file (not a list), guide to read tool."""
     respx_mock.get(
-        "https://api.github.com/repos/org/allowed-repo/contents/README.md"
+        "https://api.github.com/repos/org/allowed-repo/contents/README.md?ref=main"
     ).mock(
         return_value=httpx.Response(200, json={"content": "YQ==", "encoding": "base64"})
     )
@@ -233,7 +233,7 @@ async def test_list_files_network_error_returns_string(
     respx_mock: respx.MockRouter,
 ) -> None:
     """A network error in list_files is returned as a string, never raised."""
-    respx_mock.get("https://api.github.com/repos/org/allowed-repo/contents/").mock(
+    respx_mock.get("https://api.github.com/repos/org/allowed-repo/contents?ref=main").mock(
         side_effect=OSError("timeout")
     )
 
@@ -256,7 +256,7 @@ async def test_read_file_truncates_large_content(
     big = "x" * 40_000
     encoded = base64.b64encode(big.encode("utf-8")).decode("ascii")
     respx_mock.get(
-        "https://api.github.com/repos/org/allowed-repo/contents/big.txt"
+        "https://api.github.com/repos/org/allowed-repo/contents/big.txt?ref=main"
     ).mock(
         return_value=httpx.Response(
             200, json={"content": encoded, "encoding": "base64"}

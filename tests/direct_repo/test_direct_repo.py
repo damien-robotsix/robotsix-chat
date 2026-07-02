@@ -167,6 +167,9 @@ async def test_push_branch_rejects_repo_not_in_scope(
     respx_mock: respx.MockRouter,
 ) -> None:
     """Repo not in installation scope → push is refused."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
     respx_mock.get("http://127.0.0.1:8077/tickets/t-1").mock(
         return_value=httpx.Response(
             200, text=json.dumps({"id": "t-1", "state": "blocked"})
