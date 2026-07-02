@@ -110,7 +110,6 @@ modules:
       - src/robotsix_chat/common/json_store.py
       - tests/common/__init__.py
       - tests/common/agent_comm_fakes.py
-      - tests/common/mock_helpers.py
       - tests/common/test_http.py
       - tests/common/test_json_store.py
 
