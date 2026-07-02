@@ -1,5 +1,7 @@
 ## 0.0.0 (unreleased)
 
+- Rename `spawn_subsession_tool` to `spawn_subsession` (via `__name__` / `__qualname__` mutation) so
+  the LLM-visible tool name matches the system prompt.
 - Add link to robotsix-standards in README.md and AGENT.md
 - DRY repetitive validation and builder boilerplate in `Settings`: extract `_require_broker_creds`
   and `_require_min` helpers for `model_post_init`, and replace 16 builder blocks and 5 `_parse_int`

@@ -70,7 +70,7 @@ def test_main_agent_gets_spawn_control_tools_only() -> None:
     tools = build_subsession_tools(env, ctx=_ctx())
 
     assert _tool_names(tools) == [
-        "spawn_subsession_tool",
+        "spawn_subsession",
         "message_subsession",
         "close_subsession",
         "list_subsessions",
@@ -86,7 +86,7 @@ def test_subsession_agent_gets_complete_tool_too() -> None:
     )
 
     assert _tool_names(tools) == [
-        "spawn_subsession_tool",
+        "spawn_subsession",
         "message_subsession",
         "close_subsession",
         "list_subsessions",
@@ -123,7 +123,7 @@ def test_no_close_state_at_max_depth_yields_no_tools() -> None:
 async def test_spawn_tool_unknown_kind_polite_refusal() -> None:
     """An unknown kind string returns a refusal, not an exception."""
     env = build_env()
-    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession_tool")
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
 
     result = await spawn("banana", "t", "do it")
 
@@ -137,7 +137,7 @@ async def test_spawn_tool_capacity_refusal() -> None:
     """A full registry maps ``SubsessionCapacityError`` to a refusal string."""
     env = build_env(settings=make_settings(max_concurrent=1))
     _register(env)  # occupies the single slot (active, no worker)
-    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession_tool")
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
 
     result = await spawn("task", "t", "do it")
 
@@ -150,7 +150,7 @@ async def test_spawn_tool_depth_refusal() -> None:
     """A depth overflow maps ``SubsessionDepthError`` to a refusal string."""
     env = build_env(settings=make_settings(max_depth=2))
     tools = build_subsession_tools(env, ctx=_ctx(subsession_id="sub-1", depth=1))
-    spawn = _by_name(tools, "spawn_subsession_tool")
+    spawn = _by_name(tools, "spawn_subsession")
     # Tighten the depth limit after tool construction so the spawn
     # (depth 2) now exceeds it — exercising the refusal mapping.
     env.settings.subsessions.max_depth = 1
@@ -165,7 +165,7 @@ async def test_spawn_tool_depth_refusal() -> None:
 async def test_spawn_tool_invalid_level_refusal() -> None:
     """Model level 5 maps ``SubsessionLevelError`` to a refusal string."""
     env = build_env()
-    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession_tool")
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
 
     result = await spawn("task", "t", "do it", model_level=5)
 
@@ -177,7 +177,7 @@ async def test_spawn_tool_invalid_level_refusal() -> None:
 async def test_spawn_tool_keyless_level_refusal() -> None:
     """Level 1 without an API key is refused with a level-3/4 hint."""
     env = build_env(settings=make_settings(llmio_api_key=""))
-    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession_tool")
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
 
     result = await spawn("task", "t", "do it", model_level=1)
 
@@ -193,7 +193,7 @@ async def test_spawn_tool_refused_for_closed_session() -> None:
     store.close_session("owner-1", sid)
     env = build_env(store=store)
     ctx = SubsessionContext(owner_session_id=sid, subsession_id=None, depth=0)
-    spawn = _by_name(build_subsession_tools(env, ctx=ctx), "spawn_subsession_tool")
+    spawn = _by_name(build_subsession_tools(env, ctx=ctx), "spawn_subsession")
 
     result = await spawn("task", "t", "do it")
 
@@ -206,7 +206,7 @@ async def test_spawn_tool_starts_a_worker() -> None:
     """A valid spawn starts the worker and reports the new id."""
     agent = FakeAgent(["done quickly"])
     env = build_env(agent=agent)
-    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession_tool")
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
 
     result = await spawn("task", "quick job", "do it")
 
@@ -307,7 +307,7 @@ async def test_close_tool_cancels_worker_and_delivers_summary() -> None:
     gate = asyncio.Event()  # never set — the worker stays mid-turn
     agent = FakeAgent(["never"], gate=gate)
     env = build_env(agent=agent)
-    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession_tool")
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
     close = _by_name(build_subsession_tools(env, ctx=_ctx()), "close_subsession")
 
     await spawn("task", "long job", "work forever")
