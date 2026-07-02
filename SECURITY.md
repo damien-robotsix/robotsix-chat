@@ -69,7 +69,7 @@ over HTTP.
 Dependencies are scanned automatically via:
 
 - **Dependabot** — alerts for known vulnerabilities in direct and transitive dependencies.
-- **pip-audit** — runs in CI against the project's lockfile on every push to `main`.
+- **uv audit** — runs in CI against the project's lockfile on every push to `main`.
 
 We aim to patch or mitigate dependency vulnerabilities within the response timeline above.
 

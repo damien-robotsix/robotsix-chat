@@ -15,7 +15,7 @@ pre-commit install
 ```
 
 `pre-commit install` activates the Git hooks that run on every commit: trailing-whitespace,
-YAML/TOML checks, ruff (lint + format), mypy, bandit, pip-audit, and detect-secrets.
+YAML/TOML checks, ruff (lint + format), mypy, bandit, uv audit, and detect-secrets.
 
 ## Running checks manually
 
@@ -30,7 +30,7 @@ commands below; the Makefile targets are simple wrappers with no hidden logic.
 | ruff (format check) | `make format-check`             | `uv run ruff format --check src/robotsix_chat tests && uv run ruff check src/robotsix_chat tests` | Code formatting                       |
 | mypy                | `make typecheck`                | `uv run mypy src/robotsix_chat tests`                                                             | Static type checking (strict mode)    |
 | bandit              | `make security`                 | `uv run bandit -c pyproject.toml -r src/`                                                         | Security linting                      |
-| pip-audit           | *(no target — use raw command)* | `uv run pip-audit`                                                                                | Known vulnerabilities in dependencies |
+| uv audit            | *(no target — use raw command)* | `uv audit`                                                                                        | Known vulnerabilities in dependencies |
 | pytest              | `make test`                     | `uv run pytest`                                                                                   | Test suite                            |
 | all of the above    | `make all`                      | *(runs lint, format-check, typecheck, test)*                                                      | Pre-PR validation                     |
 
@@ -49,9 +49,9 @@ class-construction time through `sys.modules`, not through `find_spec`.
 
 ## Dependency auditing
 
-`pip-audit` checks installed packages against the
+`uv audit` checks installed packages against the
 [PyPA Advisory Database](https://github.com/pypa/advisory-database). It runs automatically as a
-pre-commit hook when `uv.lock` changes, and you can run it manually with `uv run pip-audit`.
+pre-commit hook when `uv.lock` changes, and you can run it manually with `uv audit`.
 
 If a vulnerability is flagged, see [`SECURITY.md`](SECURITY.md) for the reporting and response
 process.
@@ -93,7 +93,7 @@ After `pre-commit install`, the following hooks run on staged files:
 2. **ruff** — lint with auto-fix, then format
 3. **mypy** — strict type checking
 4. **bandit** — security-focused AST scanner
-5. **pip-audit** — dependency vulnerability scan (only when `uv.lock` changes)
+5. **uv audit** — dependency vulnerability scan (only when `uv.lock` changes)
 6. **detect-secrets** — secret leakage prevention
 7. **markdownlint-cli2** — structural Markdown linting (broken links, duplicate headings, missing
    alt text)
