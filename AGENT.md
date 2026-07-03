@@ -48,8 +48,8 @@ contract violations).
 - **Service**: single `robotsix-chat` service (implicitly primary).
 - **Port**: `8088:8080` — routed by the central-deploy gateway, not published on the host.
 - **Environment**: carries only infrastructure wiring — the config-file path pointer
-  (`CHAT_CONFIG_PATH: config/chat.local.yaml`).  Application config and secrets live in the
-  mounted config file (injected via the `robotsix.deploy.config-target` label).
+  (`CHAT_CONFIG_PATH: config/chat.local.yaml`). Application config and secrets live in the mounted
+  config file (injected via the `robotsix.deploy.config-target` label).
 - **Volumes**: named volume `chat-data` → `/home/app/.data` (persistent agent state; flagged
   `robotsix.deploy.stateful`).
 - **Claude credentials**: label `robotsix.deploy.claude-mount: "true"` — central-deploy binds the
@@ -78,12 +78,11 @@ The app reads YAML config from `config/chat.local.yaml` inside the container (re
 
 - **Local dev**: mounts the single file `./config/chat.local.yaml` read-only.
 - **Production (central-deploy)**: configuration lives in a single YAML config file
-  (`config/chat.local.yaml`) mounted by central-deploy via the
-  `robotsix.deploy.config-target` label.  The operator copies `deploy/config.example.yaml`
-  to `config/chat.local.yaml`, fills in real values, and central-deploy injects it into
-  the container.  The `CHAT_CONFIG_PATH` env var (the only config-related key in
-  `environment:`) points the app at this file — no application config or secrets live in
-  `environment:`.
+  (`config/chat.local.yaml`) mounted by central-deploy via the `robotsix.deploy.config-target`
+  label. The operator copies `deploy/config.example.yaml` to `config/chat.local.yaml`, fills in real
+  values, and central-deploy injects it into the container. The `CHAT_CONFIG_PATH` env var (the only
+  config-related key in `environment:`) points the app at this file — no application config or
+  secrets live in `environment:`.
 
 The canonical template is `config/chat.local.example.yaml` (committed). The operator copies it to
 `config/chat.local.yaml` (gitignored).
@@ -106,11 +105,11 @@ with `WORKDIR /home/app`. All container-relative paths in compose files (e.g.
 ## Production configuration (central-deploy)
 
 Production configuration lives in a single YAML config file (`config/chat.local.yaml`) mounted by
-central-deploy via the `robotsix.deploy.config-target` label.  The operator fills real values
-(secret slots, tuned defaults) in that file; central-deploy injects it into the container at deploy
-time.  The `CHAT_CONFIG_PATH` env var in the deploy compose points the app at this file — it is
-infrastructure wiring only, not application configuration.  `AUTH_ENABLED` defaults to `true` in
-the config example; leave it on for any deployed instance.
+central-deploy via the `robotsix.deploy.config-target` label. The operator fills real values (secret
+slots, tuned defaults) in that file; central-deploy injects it into the container at deploy time.
+The `CHAT_CONFIG_PATH` env var in the deploy compose points the app at this file — it is
+infrastructure wiring only, not application configuration. `AUTH_ENABLED` defaults to `true` in the
+config example; leave it on for any deployed instance.
 
 The root `.env.example` documents the application-level environment variables that `python-dotenv`
 loads at runtime for **local** runs (used by `Settings.load()` in
