@@ -160,8 +160,10 @@ jobs:
           push: false
           load: true
           tags: robotsix-chat:ci-scan
-          cache-from: type=gha
-          cache-to: type=gha,mode=max
+          # No GHA layer cache on purpose: exporting this multi-GB image's
+          # layers to the cache API took 45-55 min per run, while a cold
+          # build takes ~4 min. Measured 2026-07-03; do not re-add without
+          # timing it.
       # Gate policy (docker standard): block only on CRITICAL/HIGH findings
       # with a released fix — a red gate always means "an upgrade exists,
       # take it". Unfixable base-image CVEs stay visible via the SARIF run
