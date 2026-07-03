@@ -234,7 +234,9 @@ def _install_fake_litellm(monkeypatch: pytest.MonkeyPatch) -> Any:
             exporter: str = "console",
             endpoint: str | None = None,
             headers: str | None = None,
+            skip_set_global: bool = False,
         ) -> None:
+            self.skip_set_global = skip_set_global
             self.exporter = exporter
             self.endpoint = endpoint
             self.headers = headers
@@ -341,6 +343,9 @@ async def test_litellm_langfuse_callback_configured_with_dedicated_creds(
     lg = fake_litellm.callbacks[0]
     assert isinstance(lg, fake_litellm.LangfuseOtelLogger)
     assert lg.config.exporter == "otlp_http"
+    # Must NOT attach to the globally-registered tracer provider (llmio's,
+    # main project) — cognee spans need their own isolated provider.
+    assert lg.config.skip_set_global is True
     assert (
         lg.config.endpoint == "https://langfuse.robotsix.net/api/public/otel/v1/traces"
     )

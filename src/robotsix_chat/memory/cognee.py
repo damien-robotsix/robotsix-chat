@@ -208,6 +208,11 @@ class CogneeMemory:
                 exporter="otlp_http",
                 endpoint=endpoint,
                 headers=f"Authorization=Basic {auth}",
+                # llmio registers the GLOBAL tracer provider (main-project
+                # exporter) at server startup; without this flag litellm
+                # attaches to it and cognee spans land in the MAIN Langfuse
+                # project. Forces a private, isolated provider instead.
+                skip_set_global=True,
             )
         )
         litellm.callbacks.append(otel_logger)
