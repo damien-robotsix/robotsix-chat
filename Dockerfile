@@ -71,7 +71,7 @@ RUN apt-get update \
         > /etc/apt/sources.list.d/nodesource.list \
     && apt-get update \
     && apt-get install -y --no-install-recommends nodejs="22.*" \
-    && npm install -g @anthropic-ai/claude-code \
+    && npm install -g @anthropic-ai/claude-code@2.1.199 \
     && claude --version \
     && apt-get purge -y --auto-remove curl gnupg \
     && apt-get clean \

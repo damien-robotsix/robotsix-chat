@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Pin `@anthropic-ai/claude-code` npm version to `2.1.199` in Dockerfile (resolves hadolint DL3016).
 - Move persistent-data mount from `/home/app/.data` to `/data` per round-4 container standard. All
   code-level path defaults (memory data_dir, diagnostics store/proposals/effectiveness, knowledge
   path, subsessions store_path, conversation persist_path) now use absolute `/data/…` paths.
