@@ -17,6 +17,7 @@ extra); this module is only imported at all when that extra is installed.
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import os
 from pathlib import Path
@@ -130,12 +131,17 @@ class CogneeMemory:
         self._register_litellm_langfuse_callback()
 
     def _register_litellm_langfuse_callback(self) -> None:
-        """Wire litellm's ``langfuse_otel`` callback with dedicated cognee creds.
+        """Wire litellm Langfuse OTLP tracing with dedicated cognee creds.
 
-        Uses the OTLP-based callback (``langfuse_otel``) rather than the SDK
-        callback (``langfuse``) because the Docker image ships no langfuse v2
-        SDK.  The OTLP path only needs the OpenTelemetry exporter already
-        available through the ``tracing`` extra.
+        Registers an explicitly-configured ``LangfuseOtelLogger`` *instance*
+        (OTLP over HTTP) rather than the ``"langfuse_otel"`` string callback:
+        the string form makes litellm build its config from the
+        ``LANGFUSE_PUBLIC_KEY``/``LANGFUSE_SECRET_KEY``/``LANGFUSE_HOST``
+        environment **lazily on the first LLM call** — which would pick up the
+        main chat project's credentials (and, with ``LANGFUSE_HOST`` unset,
+        default the exporter to Langfuse US cloud). An instance carries its
+        own endpoint + Basic-auth header, so neither the process env nor
+        llmio's already-initialized tracing is involved at all.
 
         Cognee's internal LLM traffic lands in the separate
         ``robotsix-chat-cognee`` Langfuse project (per-standards: one
@@ -151,8 +157,28 @@ class CogneeMemory:
             )
             return
 
+        # The cognee project lives on the same Langfuse instance as the main
+        # project, so reuse the deployment's base URL (llmio's env name, with
+        # litellm's LANGFUSE_HOST honored as a fallback).
+        lf_host = os.environ.get("LANGFUSE_BASE_URL") or os.environ.get(
+            "LANGFUSE_HOST", ""
+        )
+        if not lf_host:
+            logger.warning(
+                "cognee Langfuse creds set but no LANGFUSE_BASE_URL/LANGFUSE_HOST; "
+                "skipping litellm Langfuse callback (exporter would default to "
+                "Langfuse US cloud)"
+            )
+            return
+
         try:
             import litellm  # type: ignore[import-not-found]
+            from litellm.integrations.langfuse.langfuse_otel import (  # type: ignore[import-not-found]
+                LangfuseOtelLogger,
+            )
+            from litellm.integrations.opentelemetry import (  # type: ignore[import-not-found]
+                OpenTelemetryConfig,
+            )
 
             # opentelemetry-exporter-otlp-proto-http ships with the ``tracing``
             # extra; import-check so we fail fast with a warning, not at call-time.
@@ -167,55 +193,37 @@ class CogneeMemory:
             )
             return
 
-        # litellm's LangfuseOtelLogger reads credentials from the environment
-        # at callback-registration time (LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY,
-        # LANGFUSE_HOST). Temporarily swap in the memory-project creds, initialise
-        # the callback, then restore the main-project creds so llmio's
-        # already-running OTel tracing is unaffected.
-        lf_host = os.environ.get("LANGFUSE_HOST", "")
-        saved: dict[str, str | None] = {}
-        for var, val in (
-            ("LANGFUSE_PUBLIC_KEY", lf_public),
-            ("LANGFUSE_SECRET_KEY", lf_secret),
-        ):
-            saved[var] = os.environ.get(var)
-            os.environ[var] = val
-        if lf_host:
-            saved["LANGFUSE_HOST"] = os.environ.get("LANGFUSE_HOST")
-            os.environ["LANGFUSE_HOST"] = lf_host
+        # Idempotent: setup() can run more than once per process.
+        if any(isinstance(cb, LangfuseOtelLogger) for cb in litellm.callbacks):
+            return
 
-        try:
-            # Belt-and-suspenders: set both programmatic attrs and env vars.
-            litellm.langfuse_public_key = lf_public
-            litellm.langfuse_secret_key = lf_secret
-            if lf_host:
-                litellm.langfuse_host = lf_host
+        if not lf_host.startswith("http"):
+            lf_host = "https://" + lf_host
+        # Langfuse's OTLP route needs the full signal path — the bare
+        # /api/public/otel prefix 404s (verified against the live instance).
+        endpoint = lf_host.rstrip("/") + "/api/public/otel/v1/traces"
+        auth = base64.b64encode(f"{lf_public}:{lf_secret}".encode()).decode()
+        otel_logger = LangfuseOtelLogger(
+            config=OpenTelemetryConfig(
+                exporter="otlp_http",
+                endpoint=endpoint,
+                headers=f"Authorization=Basic {auth}",
+            )
+        )
+        litellm.callbacks.append(otel_logger)
 
-            # Idempotent registration on both success and failure callbacks.
-            if "langfuse_otel" not in litellm.success_callback:
-                litellm.success_callback.append("langfuse_otel")
-            if "langfuse_otel" not in litellm.failure_callback:
-                litellm.failure_callback.append("langfuse_otel")
+        # Stamp all cognee-issued litellm calls with a component tag so they
+        # are distinguishable at a glance in the Langfuse project.
+        tag = "component:cognee"
+        if litellm.langfuse_default_tags is None:
+            litellm.langfuse_default_tags = [tag]
+        elif tag not in litellm.langfuse_default_tags:
+            litellm.langfuse_default_tags = list(litellm.langfuse_default_tags) + [tag]
 
-            # Stamp all cognee-issued litellm calls with a component tag so
-            # they are distinguishable from main-agent traces in the Langfuse
-            # project. langfuse_default_tags is read by LangfuseOtelLogger's
-            # span-attribute logic.
-            tag = "component:cognee"
-            if litellm.langfuse_default_tags is None:
-                litellm.langfuse_default_tags = [tag]
-            elif tag not in litellm.langfuse_default_tags:
-                litellm.langfuse_default_tags = list(litellm.langfuse_default_tags) + [
-                    tag
-                ]
-
-            logger.info("litellm langfuse_otel callback configured for cognee traffic")
-        finally:
-            for var, old in saved.items():
-                if old is None:
-                    os.environ.pop(var, None)
-                else:
-                    os.environ[var] = old
+        logger.info(
+            "litellm Langfuse OTLP tracing configured for cognee traffic (%s)",
+            endpoint,
+        )
 
     # -- read -------------------------------------------------------------
 
