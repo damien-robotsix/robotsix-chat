@@ -52,7 +52,6 @@
     padding: 0.5rem 1rem;
     background: var(--header-bg); color: var(--header-fg);
     flex-shrink: 0;
-    position: relative;   /* anchor for settings panel */
   }
   #header .title {
     font-weight: 700; font-size: 1.05rem; flex: 1;
@@ -65,9 +64,9 @@
   }
   #connection-dot.error { background: var(--dot-red); }
 
-  /* Shared style for the labeled header buttons (Chats / Settings /
-     Subsessions). Icon + short text label + title tooltip, so their
-     purpose is clear at a glance. */
+  /* Shared style for the labeled header buttons (Chats / Subsessions).
+     Icon + short text label + title tooltip, so their purpose is clear
+     at a glance. */
   .header-btn {
     display: inline-flex; align-items: center; gap: 0.3rem;
     background: none; border: 1px solid rgba(255,255,255,0.18);
@@ -77,20 +76,6 @@
     transition: background 0.15s;
   }
   .header-btn:hover { background: rgba(255,255,255,0.15); }
-
-  #settings-panel {
-    display: none; position: absolute; top: 2.5rem; right: 1rem;
-    background: var(--composer-bg); color: var(--text-fg); border: 1px solid var(--composer-border);
-    border-radius: 8px; padding: 0.75rem; z-index: 10;
-    box-shadow: 0 4px 12px rgba(0,0,0,0.15);
-    min-width: 280px;
-  }
-  #settings-panel.visible { display: block; }
-  #settings-panel label { display: block; font-size: 0.85rem; margin-bottom: 0.3rem; }
-  #settings-panel input[type=text] {
-    width: 100%; padding: 0.4rem 0.5rem; border: 1px solid var(--composer-border);
-    border-radius: 4px; font-size: 0.9rem;
-  }
 
   /* ------------------------------------------------------------------ */
   /* Subsessions side panel                                              */
@@ -545,14 +530,8 @@
   <span class="title">{{ PROJECT_TITLE }}</span>
   <button id="sessions-toggle" class="header-btn" title="Show your chat sessions" aria-label="Chat sessions">💬 Chats</button>
   <span id="connection-dot" title="Connection status"></span>
-  <button id="settings-toggle" class="header-btn" title="Server settings" aria-label="Server settings">⚙ Settings</button>
   <button id="subsessions-toggle" class="header-btn" title="Show background subsessions" aria-label="Subsessions">🗂 Subsessions</button>
 </header>
-
-<div id="settings-panel">
-  <label for="server-url-input">Server URL (POST /chat)</label>
-  <input type="text" id="server-url-input" placeholder="http://localhost:8000/chat">
-</div>
 
 <!-- ================================================================= -->
 <!-- Sessions panel (left sidebar)                                      -->
@@ -620,9 +599,6 @@
   const errorMsgEl   = errorBanner.querySelector(".msg");
   const errorDismiss = errorBanner.querySelector(".dismiss");
   const connDot      = document.getElementById("connection-dot");
-  const settingsToggle = document.getElementById("settings-toggle");
-  const settingsPanel  = document.getElementById("settings-panel");
-  const serverUrlInput = document.getElementById("server-url-input");
   const sessionsToggle  = document.getElementById("sessions-toggle");
   const sessionsPanel   = document.getElementById("sessions-panel");
   const sessionsDismiss = sessionsPanel.querySelector(".dismiss");
@@ -765,9 +741,6 @@
     return state === "sending" || state === "streaming";
   }
 
-  // ---- Server URL (localStorage-backed) --------------------------------
-  var LS_KEY = "{{ PROJECT_TITLE }}-server-url";
-
   // ---- Idle timeout (minutes; 0 = disabled) ----------------------------
   var IDLE_TIMEOUT_MINUTES = {{ IDLE_TIMEOUT_MINUTES }};
   var idleTimerId = null;
@@ -799,7 +772,7 @@
     scrollToBottom();
   }
 
-  function defaultUrl() {
+  function serverUrl() {
     var origin = window.location.origin;
     // file:// origins report the string "null" — fall back to localhost.
     if (!origin || origin === "null") {
@@ -807,17 +780,6 @@
     }
     return origin + "/chat";
   }
-
-  function getServerUrl() {
-    try { return localStorage.getItem(LS_KEY) || defaultUrl(); }
-    catch (_) { return defaultUrl(); }
-  }
-
-  function setServerUrl(url) {
-    try { localStorage.setItem(LS_KEY, url); } catch (_) {}
-  }
-
-  serverUrlInput.value = getServerUrl();
 
   // ---- Conversation client id (localStorage-backed) --------------------
   // A stable per-browser id sent with every message so the server can thread
@@ -866,7 +828,7 @@
 
   // ---- Session API helpers --------------------------------------------
   function apiBase() {
-    return getServerUrl().replace(/\/chat$/, "");
+    return serverUrl().replace(/\/chat$/, "");
   }
 
   function fetchSessions() {
@@ -2086,7 +2048,7 @@
       }
     };
 
-    var url = getServerUrl();
+    var url = serverUrl();
 
     var body = { message: message, session_id: activeSessionId, owner_id: clientId };
     if (messageId) body.message_id = messageId;
@@ -2186,25 +2148,6 @@
     if (files && files.length > 0) {
       validateAndAddFiles(files);
     }
-  });
-
-  // Settings toggle
-  settingsToggle.addEventListener("click", function (e) {
-    e.stopPropagation();
-    settingsPanel.classList.toggle("visible");
-  });
-
-  document.addEventListener("click", function () {
-    settingsPanel.classList.remove("visible");
-  });
-
-  settingsPanel.addEventListener("click", function (e) {
-    e.stopPropagation();
-  });
-
-  serverUrlInput.addEventListener("input", function () {
-    var val = serverUrlInput.value.trim();
-    if (val) setServerUrl(val);
   });
 
   // ---- Session panel toggle and resize --------------------------------
@@ -2322,8 +2265,7 @@
     positionSessionsResizeHandle();
   });
 
-  // ---- Subsessions panel toggle — no auto-close on outside click (unlike
-  // settings).
+  // ---- Subsessions panel toggle — no auto-close on outside click.
   var subsDismiss = subsPanel.querySelector(".dismiss");
   subsToggle.addEventListener("click", function (e) {
     e.stopPropagation();
