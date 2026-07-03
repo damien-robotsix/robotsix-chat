@@ -13,6 +13,13 @@ from typing import Any
 from robotsix_chat.config.constants import _parse_bool, _parse_float, _parse_int
 
 
+def _env_set(raw_dict: dict[str, Any], field: str, env_name: str) -> None:
+    """Set *raw_dict[field]* from *env_name* if the env var is present."""
+    value = os.getenv(env_name)
+    if value is not None:
+        raw_dict[field] = value
+
+
 def _build_memory_raw(yaml_memory: Any) -> dict[str, Any]:
     """Overlay ``MEMORY_*`` env vars onto the YAML ``memory`` subtree.
 
@@ -23,30 +30,25 @@ def _build_memory_raw(yaml_memory: Any) -> dict[str, Any]:
     llm_raw: dict[str, Any] = dict(memory_raw.get("llm") or {})
     embed_raw: dict[str, Any] = dict(memory_raw.get("embedding") or {})
 
-    def env_set(target: dict[str, Any], field: str, env_name: str) -> None:
-        value = os.getenv(env_name)
-        if value is not None:
-            target[field] = value
-
     enabled = os.getenv("MEMORY_ENABLED")
     if enabled is not None:
         memory_raw["enabled"] = _parse_bool(enabled)
-    env_set(memory_raw, "data_dir", "MEMORY_DATA_DIR")
-    env_set(memory_raw, "recall_search_type", "MEMORY_RECALL_SEARCH_TYPE")
+    _env_set(memory_raw, "data_dir", "MEMORY_DATA_DIR")
+    _env_set(memory_raw, "recall_search_type", "MEMORY_RECALL_SEARCH_TYPE")
 
-    env_set(llm_raw, "provider", "MEMORY_LLM_PROVIDER")
-    env_set(llm_raw, "model", "MEMORY_LLM_MODEL")
-    env_set(llm_raw, "endpoint", "MEMORY_LLM_ENDPOINT")
-    env_set(llm_raw, "api_key", "MEMORY_LLM_API_KEY")
+    _env_set(llm_raw, "provider", "MEMORY_LLM_PROVIDER")
+    _env_set(llm_raw, "model", "MEMORY_LLM_MODEL")
+    _env_set(llm_raw, "endpoint", "MEMORY_LLM_ENDPOINT")
+    _env_set(llm_raw, "api_key", "MEMORY_LLM_API_KEY")
 
-    env_set(memory_raw, "langfuse_public_key", "MEMORY_LANGFUSE_PUBLIC_KEY")
-    env_set(memory_raw, "langfuse_secret_key", "MEMORY_LANGFUSE_SECRET_KEY")
+    _env_set(memory_raw, "langfuse_public_key", "MEMORY_LANGFUSE_PUBLIC_KEY")
+    _env_set(memory_raw, "langfuse_secret_key", "MEMORY_LANGFUSE_SECRET_KEY")
 
-    env_set(embed_raw, "provider", "MEMORY_EMBEDDING_PROVIDER")
-    env_set(embed_raw, "model", "MEMORY_EMBEDDING_MODEL")
-    env_set(embed_raw, "endpoint", "MEMORY_EMBEDDING_ENDPOINT")
-    env_set(embed_raw, "api_key", "MEMORY_EMBEDDING_API_KEY")
-    env_set(embed_raw, "huggingface_tokenizer", "MEMORY_EMBEDDING_TOKENIZER")
+    _env_set(embed_raw, "provider", "MEMORY_EMBEDDING_PROVIDER")
+    _env_set(embed_raw, "model", "MEMORY_EMBEDDING_MODEL")
+    _env_set(embed_raw, "endpoint", "MEMORY_EMBEDDING_ENDPOINT")
+    _env_set(embed_raw, "api_key", "MEMORY_EMBEDDING_API_KEY")
+    _env_set(embed_raw, "huggingface_tokenizer", "MEMORY_EMBEDDING_TOKENIZER")
 
     dims = _parse_int("MEMORY_EMBEDDING_DIMENSIONS", "dimensions")
     if dims is not None:
@@ -67,20 +69,15 @@ def _build_mill_raw(yaml_mill: Any) -> dict[str, Any]:
     """
     mill_raw: dict[str, Any] = dict(yaml_mill or {})
 
-    def env_set(field: str, env_name: str) -> None:
-        value = os.getenv(env_name)
-        if value is not None:
-            mill_raw[field] = value
-
     enabled = os.getenv("MILL_ENABLED")
     if enabled is not None:
         mill_raw["enabled"] = _parse_bool(enabled)
-    env_set("broker_host", "MILL_BROKER_HOST")
-    env_set("broker_scheme", "MILL_BROKER_SCHEME")
-    env_set("broker_token", "MILL_BROKER_TOKEN")
-    env_set("agent_id", "MILL_AGENT_ID")
-    env_set("board_manager_id", "MILL_BOARD_MANAGER_ID")
-    env_set("repo_id", "MILL_REPO_ID")
+    _env_set(mill_raw, "broker_host", "MILL_BROKER_HOST")
+    _env_set(mill_raw, "broker_scheme", "MILL_BROKER_SCHEME")
+    _env_set(mill_raw, "broker_token", "MILL_BROKER_TOKEN")
+    _env_set(mill_raw, "agent_id", "MILL_AGENT_ID")
+    _env_set(mill_raw, "board_manager_id", "MILL_BOARD_MANAGER_ID")
+    _env_set(mill_raw, "repo_id", "MILL_REPO_ID")
 
     port_val = _parse_int("MILL_BROKER_PORT", "broker_port")
     if port_val is not None:
@@ -101,16 +98,11 @@ def _build_mail_raw(yaml_mail: Any) -> dict[str, Any]:
     """
     mail_raw: dict[str, Any] = dict(yaml_mail or {})
 
-    def env_set(field: str, env_name: str) -> None:
-        value = os.getenv(env_name)
-        if value is not None:
-            mail_raw[field] = value
-
     enabled = os.getenv("MAIL_ENABLED")
     if enabled is not None:
         mail_raw["enabled"] = _parse_bool(enabled)
-    env_set("api_base_url", "MAIL_API_BASE_URL")
-    env_set("api_token", "MAIL_API_TOKEN")
+    _env_set(mail_raw, "api_base_url", "MAIL_API_BASE_URL")
+    _env_set(mail_raw, "api_token", "MAIL_API_TOKEN")
 
     timeout_val = _parse_float("MAIL_TIMEOUT", "timeout")
     if timeout_val is not None:
@@ -127,19 +119,14 @@ def _build_calendar_raw(yaml_calendar: Any) -> dict[str, Any]:
     """
     calendar_raw: dict[str, Any] = dict(yaml_calendar or {})
 
-    def env_set(field: str, env_name: str) -> None:
-        value = os.getenv(env_name)
-        if value is not None:
-            calendar_raw[field] = value
-
     enabled = os.getenv("CALENDAR_ENABLED")
     if enabled is not None:
         calendar_raw["enabled"] = _parse_bool(enabled)
-    env_set("broker_host", "CALENDAR_BROKER_HOST")
-    env_set("broker_scheme", "CALENDAR_BROKER_SCHEME")
-    env_set("broker_token", "CALENDAR_BROKER_TOKEN")
-    env_set("agent_id", "CALENDAR_AGENT_ID")
-    env_set("calendar_agent_id", "CALENDAR_CALENDAR_AGENT_ID")
+    _env_set(calendar_raw, "broker_host", "CALENDAR_BROKER_HOST")
+    _env_set(calendar_raw, "broker_scheme", "CALENDAR_BROKER_SCHEME")
+    _env_set(calendar_raw, "broker_token", "CALENDAR_BROKER_TOKEN")
+    _env_set(calendar_raw, "agent_id", "CALENDAR_AGENT_ID")
+    _env_set(calendar_raw, "calendar_agent_id", "CALENDAR_CALENDAR_AGENT_ID")
 
     port_val = _parse_int("CALENDAR_BROKER_PORT", "broker_port")
     if port_val is not None:
@@ -188,17 +175,12 @@ def _build_refdocs_raw(yaml_refdocs: Any) -> dict[str, Any]:
     """
     refdocs_raw: dict[str, Any] = dict(yaml_refdocs or {})
 
-    def env_set(field: str, env_name: str) -> None:
-        value = os.getenv(env_name)
-        if value is not None:
-            refdocs_raw[field] = value
-
     enabled = os.getenv("REFDOCS_ENABLED")
     if enabled is not None:
         refdocs_raw["enabled"] = _parse_bool(enabled)
-    env_set("github_token", "REFDOCS_GITHUB_TOKEN")
-    env_set("ref", "REFDOCS_REF")
-    env_set("base_url", "REFDOCS_BASE_URL")
+    _env_set(refdocs_raw, "github_token", "REFDOCS_GITHUB_TOKEN")
+    _env_set(refdocs_raw, "ref", "REFDOCS_REF")
+    _env_set(refdocs_raw, "base_url", "REFDOCS_BASE_URL")
 
     repos_raw = os.getenv("REFDOCS_REPOS")
     if repos_raw is not None:
@@ -221,16 +203,11 @@ def _build_board_reader_raw(yaml_board_reader: Any) -> dict[str, Any]:
     """
     board_reader_raw: dict[str, Any] = dict(yaml_board_reader or {})
 
-    def env_set(field: str, env_name: str) -> None:
-        value = os.getenv(env_name)
-        if value is not None:
-            board_reader_raw[field] = value
-
     enabled = os.getenv("BOARD_READER_ENABLED")
     if enabled is not None:
         board_reader_raw["enabled"] = _parse_bool(enabled)
-    env_set("api_base_url", "BOARD_READER_API_BASE_URL")
-    env_set("api_token", "BOARD_READER_API_TOKEN")
+    _env_set(board_reader_raw, "api_base_url", "BOARD_READER_API_BASE_URL")
+    _env_set(board_reader_raw, "api_token", "BOARD_READER_API_TOKEN")
 
     cache_ttl_val = _parse_float("BOARD_READER_CACHE_TTL", "cache_ttl")
     if cache_ttl_val is not None:
@@ -292,20 +269,19 @@ def _build_direct_repo_raw(yaml_direct_repo: Any) -> dict[str, Any]:
     """
     dr_raw: dict[str, Any] = dict(yaml_direct_repo or {})
 
-    def env_set(field: str, env_name: str) -> None:
-        value = os.getenv(env_name)
-        if value is not None:
-            dr_raw[field] = value
-
     enabled = os.getenv("DIRECT_REPO_ENABLED")
     if enabled is not None:
         dr_raw["enabled"] = _parse_bool(enabled)
-    env_set("github_app_id", "DIRECT_REPO_GITHUB_APP_ID")
-    env_set("github_app_private_key", "DIRECT_REPO_GITHUB_APP_PRIVATE_KEY")
-    env_set("github_app_installation_id", "DIRECT_REPO_GITHUB_APP_INSTALLATION_ID")
-    env_set("github_api_base_url", "DIRECT_REPO_GITHUB_API_BASE_URL")
-    env_set("board_api_base_url", "DIRECT_REPO_BOARD_API_BASE_URL")
-    env_set("board_api_token", "DIRECT_REPO_BOARD_API_TOKEN")
+    _env_set(dr_raw, "github_app_id", "DIRECT_REPO_GITHUB_APP_ID")
+    _env_set(dr_raw, "github_app_private_key", "DIRECT_REPO_GITHUB_APP_PRIVATE_KEY")
+    _env_set(
+        dr_raw,
+        "github_app_installation_id",
+        "DIRECT_REPO_GITHUB_APP_INSTALLATION_ID",
+    )
+    _env_set(dr_raw, "github_api_base_url", "DIRECT_REPO_GITHUB_API_BASE_URL")
+    _env_set(dr_raw, "board_api_base_url", "DIRECT_REPO_BOARD_API_BASE_URL")
+    _env_set(dr_raw, "board_api_token", "DIRECT_REPO_BOARD_API_TOKEN")
 
     timeout_val = _parse_float("DIRECT_REPO_TIMEOUT", "timeout")
     if timeout_val is not None:
@@ -424,18 +400,13 @@ def _build_component_agent_raw(yaml_component_agent: Any) -> dict[str, Any]:
     """
     component_agent_raw: dict[str, Any] = dict(yaml_component_agent or {})
 
-    def env_set(field: str, env_name: str) -> None:
-        value = os.getenv(env_name)
-        if value is not None:
-            component_agent_raw[field] = value
-
     enabled = os.getenv("COMPONENT_AGENT_ENABLED")
     if enabled is not None:
         component_agent_raw["enabled"] = _parse_bool(enabled)
-    env_set("broker_host", "COMPONENT_AGENT_BROKER_HOST")
-    env_set("broker_scheme", "COMPONENT_AGENT_BROKER_SCHEME")
-    env_set("broker_token", "COMPONENT_AGENT_BROKER_TOKEN")
-    env_set("agent_id", "COMPONENT_AGENT_AGENT_ID")
+    _env_set(component_agent_raw, "broker_host", "COMPONENT_AGENT_BROKER_HOST")
+    _env_set(component_agent_raw, "broker_scheme", "COMPONENT_AGENT_BROKER_SCHEME")
+    _env_set(component_agent_raw, "broker_token", "COMPONENT_AGENT_BROKER_TOKEN")
+    _env_set(component_agent_raw, "agent_id", "COMPONENT_AGENT_AGENT_ID")
 
     port_val = _parse_int("COMPONENT_AGENT_BROKER_PORT", "broker_port")
     if port_val is not None:
@@ -456,17 +427,12 @@ def _build_version_check_raw(yaml_version_check: Any) -> dict[str, Any]:
     """
     version_check_raw: dict[str, Any] = dict(yaml_version_check or {})
 
-    def env_set(field: str, env_name: str) -> None:
-        value = os.getenv(env_name)
-        if value is not None:
-            version_check_raw[field] = value
-
     enabled = os.getenv("VERSION_CHECK_ENABLED")
     if enabled is not None:
         version_check_raw["enabled"] = _parse_bool(enabled)
-    env_set("repo", "VERSION_CHECK_REPO")
-    env_set("github_token", "VERSION_CHECK_GITHUB_TOKEN")
-    env_set("base_url", "VERSION_CHECK_BASE_URL")
+    _env_set(version_check_raw, "repo", "VERSION_CHECK_REPO")
+    _env_set(version_check_raw, "github_token", "VERSION_CHECK_GITHUB_TOKEN")
+    _env_set(version_check_raw, "base_url", "VERSION_CHECK_BASE_URL")
 
     timeout_val = _parse_float("VERSION_CHECK_TIMEOUT", "timeout")
     if timeout_val is not None:
