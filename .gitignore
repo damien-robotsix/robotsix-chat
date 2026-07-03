@@ -59,3 +59,6 @@ src/bin/
 .local-deps/
 *-deps/
 *-packages/
+
+# Pre-commit tool binaries accidentally committed during local testing
+actionlint
