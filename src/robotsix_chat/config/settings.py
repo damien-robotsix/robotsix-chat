@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel, Field
+from robotsix_llmio.config import TierLevel
 from robotsix_yaml_config import (
     YamlConfigError,
     flatten_config,
@@ -72,8 +73,11 @@ logger = logging.getLogger(__name__)
 # docs/system_prompt_changelog.md with a new entry + SHA256.
 SYSTEM_PROMPT_VERSION = 15
 
-# Valid model levels (import-time constant so the set is built once).
-_VALID_MODEL_LEVELS = frozenset({1, 2, 3})
+# Valid model levels, derived from llmio's tier enum (import-time constant so
+# the set is built once and can never drift from the tiers llmio ships).
+_VALID_MODEL_LEVELS = frozenset(
+    int(level.value.removeprefix("level")) for level in TierLevel
+)
 
 
 class Settings(BaseModel):
@@ -85,9 +89,9 @@ class Settings(BaseModel):
 
     Attributes:
         llmio_model_level: Capability level — ``1`` (cheapest/fastest) to
-            ``3`` (frontier). The level encodes the provider + model: by
+            ``4`` (frontier). The level encodes the provider + model: by
             default levels 1-2 use ``openrouter``, level 3 uses
-            ``claudeSDK``/``opus``.
+            ``claudeSDK``/``opus``, level 4 ``claudeSDK``/``claude-fable-5``.
         llmio_api_key: Provider API key, forwarded to llmio when the chosen
             level's provider needs one (e.g. ``openrouter``); unused
             by keyless providers like ``claudeSDK``.
