@@ -191,7 +191,9 @@ DEP002 = ["transformers"]
 # this transitive import (DEP003) is deliberate.
 # `pyyaml` ships through robotsix-yaml-config; we use it directly in the skills
 # loader and ChatConfig YAML parsing — transitive by design.
-DEP003 = ["pydantic_ai", "pyyaml"]
+# `opentelemetry` is the OTLP exporter (``tracing`` extra); guarded by a
+# try/except ImportError in cognee's Langfuse callback registration.
+DEP003 = ["pydantic_ai", "pyyaml", "opentelemetry"]
 
 [tool.bandit]
 exclude_dirs = ["tests", ".local_pkgs"]

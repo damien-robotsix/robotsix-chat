@@ -219,10 +219,12 @@ async def test_configure_restores_langfuse_env(
 def _install_fake_litellm(monkeypatch: pytest.MonkeyPatch) -> Any:
     """Install a stub ``litellm`` module and return it."""
     fake: Any = types.ModuleType("litellm")
-    fake.success_callback = None
+    fake.success_callback = []
+    fake.failure_callback = []
     fake.langfuse_public_key = None
     fake.langfuse_secret_key = None
     fake.langfuse_host = None
+    fake.langfuse_default_tags = None
     monkeypatch.setitem(sys.modules, "litellm", fake)
     return fake
 
@@ -248,13 +250,15 @@ async def test_litellm_langfuse_callback_configured_with_dedicated_creds(
 ) -> None:
     """When dedicated creds are set, litellm's Langfuse callback is wired."""
     mem, _, fake_litellm = cognee_memory_with_langfuse_creds
-    monkeypatch.setenv("LANGFUSE_BASE_URL", "https://langfuse.robotsix.net")
+    monkeypatch.setenv("LANGFUSE_HOST", "https://langfuse.robotsix.net")
     await mem.setup()
 
     assert fake_litellm.success_callback == ["langfuse_otel"]
+    assert fake_litellm.failure_callback == ["langfuse_otel"]
     assert fake_litellm.langfuse_public_key == "pk-lf-dedicated"
     assert fake_litellm.langfuse_secret_key == "sk-lf-dedicated"
-    assert fake_litellm.langfuse_base_url == "https://langfuse.robotsix.net"
+    assert fake_litellm.langfuse_host == "https://langfuse.robotsix.net"
+    assert fake_litellm.langfuse_default_tags == ["component:cognee"]
 
 
 @pytest.mark.asyncio
@@ -268,9 +272,11 @@ async def test_litellm_langfuse_callback_skipped_without_creds(
     await mem.setup()
 
     # litellm should remain untouched — no callback configured.
-    assert fake_litellm.success_callback is None
+    assert fake_litellm.success_callback == []
+    assert fake_litellm.failure_callback == []
     assert fake_litellm.langfuse_public_key is None
     assert fake_litellm.langfuse_secret_key is None
+    assert fake_litellm.langfuse_default_tags is None
 
 
 # ---------------------------------------------------------------------------

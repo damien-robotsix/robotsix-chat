@@ -119,8 +119,6 @@ class CogneeMemory:
             }
         )
 
-        self._register_litellm_langfuse_callback()
-
         logger.info(
             "cognee memory configured (data_dir=%s, embed=%s@%s, llm=%s)",
             data_dir,
@@ -128,6 +126,8 @@ class CogneeMemory:
             s.embedding.endpoint,
             s.llm.model,
         )
+
+        self._register_litellm_langfuse_callback()
 
     def _register_litellm_langfuse_callback(self) -> None:
         """Wire litellm's ``langfuse_otel`` callback with dedicated cognee creds.
@@ -151,13 +151,28 @@ class CogneeMemory:
             )
             return
 
-        import litellm  # type: ignore[import-not-found]
+        try:
+            import litellm  # type: ignore[import-not-found]
 
-        # litellm's Langfuse logger reads credentials from the environment at
-        # callback-registration time. Temporarily swap in the memory-project
-        # creds, initialise the callback, then restore the main-project creds
-        # so llmio's already-running OTel tracing is unaffected.
-        lf_base_url = os.environ.get("LANGFUSE_BASE_URL", "")
+            # opentelemetry-exporter-otlp-proto-http ships with the ``tracing``
+            # extra; import-check so we fail fast with a warning, not at call-time.
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # type: ignore[import-not-found]  # noqa: F401
+                OTLPSpanExporter,
+            )
+        except ImportError as exc:
+            logger.warning(
+                "litellm Langfuse OTEL tracing unavailable (%s); "
+                "install the 'tracing' extra alongside 'memory' to enable it",
+                exc,
+            )
+            return
+
+        # litellm's LangfuseOtelLogger reads credentials from the environment
+        # at callback-registration time (LANGFUSE_PUBLIC_KEY, LANGFUSE_SECRET_KEY,
+        # LANGFUSE_HOST). Temporarily swap in the memory-project creds, initialise
+        # the callback, then restore the main-project creds so llmio's
+        # already-running OTel tracing is unaffected.
+        lf_host = os.environ.get("LANGFUSE_HOST", "")
         saved: dict[str, str | None] = {}
         for var, val in (
             ("LANGFUSE_PUBLIC_KEY", lf_public),
@@ -165,23 +180,34 @@ class CogneeMemory:
         ):
             saved[var] = os.environ.get(var)
             os.environ[var] = val
-        if lf_base_url:
-            saved["LANGFUSE_BASE_URL"] = os.environ.get("LANGFUSE_BASE_URL")
-            os.environ["LANGFUSE_BASE_URL"] = lf_base_url
+        if lf_host:
+            saved["LANGFUSE_HOST"] = os.environ.get("LANGFUSE_HOST")
+            os.environ["LANGFUSE_HOST"] = lf_host
 
         try:
             # Belt-and-suspenders: set both programmatic attrs and env vars.
             litellm.langfuse_public_key = lf_public
             litellm.langfuse_secret_key = lf_secret
-            if lf_base_url:
-                litellm.langfuse_base_url = lf_base_url
+            if lf_host:
+                litellm.langfuse_host = lf_host
 
-            callbacks: list[str] = (
-                list(litellm.success_callback) if litellm.success_callback else []
-            )
-            if "langfuse_otel" not in callbacks:
-                callbacks.append("langfuse_otel")
-            litellm.success_callback = callbacks
+            # Idempotent registration on both success and failure callbacks.
+            if "langfuse_otel" not in litellm.success_callback:
+                litellm.success_callback.append("langfuse_otel")
+            if "langfuse_otel" not in litellm.failure_callback:
+                litellm.failure_callback.append("langfuse_otel")
+
+            # Stamp all cognee-issued litellm calls with a component tag so
+            # they are distinguishable from main-agent traces in the Langfuse
+            # project. langfuse_default_tags is read by LangfuseOtelLogger's
+            # span-attribute logic.
+            tag = "component:cognee"
+            if litellm.langfuse_default_tags is None:
+                litellm.langfuse_default_tags = [tag]
+            elif tag not in litellm.langfuse_default_tags:
+                litellm.langfuse_default_tags = list(litellm.langfuse_default_tags) + [
+                    tag
+                ]
 
             logger.info("litellm langfuse_otel callback configured for cognee traffic")
         finally:
