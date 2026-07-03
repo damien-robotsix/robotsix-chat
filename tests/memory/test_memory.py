@@ -300,7 +300,7 @@ async def test_configure_langfuse_env_guard_regression(
     popped: list[str] = []
     _real_pop = os.environ.pop
 
-    def _tracking_pop(key, *args):
+    def _tracking_pop(key: str, *args: Any) -> Any:
         result = _real_pop(key, *args)
         popped.append(key)
         return result
