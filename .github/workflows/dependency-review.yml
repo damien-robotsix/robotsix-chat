@@ -4,14 +4,19 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: read  # baseline: checkout the repo
+
+concurrency:
+  group: dependency-review-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   dependency-review:
+    name: Dependency Review
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      pull-requests: write
+      contents: read        # checkout the repo
+      pull-requests: write  # post comment-summary-in-pr
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:

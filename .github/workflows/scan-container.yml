@@ -4,8 +4,14 @@ on:
     - cron: '0 6 * * 1'
   workflow_dispatch:
 permissions:
-  contents: read
-  security-events: write
+  contents: read          # baseline: checkout the repo
+  security-events: write  # upload Trivy SARIF to Code Scanning
+
+concurrency:
+  group: scan-container-${{ github.ref }}
+  cancel-in-progress: false
+
 jobs:
   rescan:
+    name: Weekly Trivy rescan (shared)
     uses: damien-robotsix/robotsix-github-workflows/.github/workflows/scan-container.yml@5fdc956e980cfb70ea36e33bc670a0376750dec6  # main
