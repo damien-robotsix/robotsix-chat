@@ -346,7 +346,7 @@ def test_apply_conversation_persist_path():
     audit = apply_config_update(s, {"conversation.persist_path": "/tmp/convs.json"})  # noqa: S108
     assert s.conversation.persist_path == "/tmp/convs.json"  # noqa: S108
     assert audit["conversation.persist_path"] == (
-        ".data/conversations.json",
+        "/data/conversations.json",
         "/tmp/convs.json",  # noqa: S108
     )
 

@@ -100,7 +100,7 @@ ENV SERVER_HOST=0.0.0.0 \
     SERVER_PORT=8080 \
     # Cache the HuggingFace tokenizer (bge-m3) on the persistent .data mount so
     # the cognee `memory` extra doesn't re-download it on every redeploy.
-    HF_HOME=/home/app/.data/huggingface
+    HF_HOME=/data/huggingface
 EXPOSE 8080
 
 # Probe the in-container /health route using only the Python stdlib.

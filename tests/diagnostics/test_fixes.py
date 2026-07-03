@@ -513,8 +513,8 @@ class TestDiagnosticsSettings:
     def test_defaults(self) -> None:
         s = DiagnosticsSettings()
         assert s.enabled is True
-        assert s.store_path == ".data/diagnostics.json"
-        assert s.proposals_path == ".data/fix_proposals.json"
+        assert s.store_path == "/data/diagnostics.json"
+        assert s.proposals_path == "/data/fix_proposals.json"
         assert s.recurrence_threshold == 3
         assert s.recurrence_window_days == 30
 

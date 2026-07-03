@@ -1,7 +1,7 @@
 """Diagnostic event store — persists captured diagnostic bundles to JSON.
 
 A :class:`DiagnosticStore` persists structured diagnostic events to a single
-JSON file on disk — default ``.data/diagnostics.json`` — with best-effort
+JSON file on disk — default ``/data/diagnostics.json`` — with best-effort
 atomic-ish writes.  On load it tolerates a missing, empty, or corrupt file
 by starting empty.
 
@@ -46,7 +46,7 @@ class DiagnosticBundle:
 
 
 class DiagnosticStore(JsonStoreBase[DiagnosticBundle]):
-    """Persist diagnostic bundles to ``.data/diagnostics.json`` (or custom path).
+    """Persist diagnostic bundles to ``/data/diagnostics.json`` (or custom path).
 
     Construct with an overridable ``path`` and ``clock`` injectable (defaults
     to ``datetime.now(timezone.utc)``) so tests can pin timestamps.
@@ -59,7 +59,7 @@ class DiagnosticStore(JsonStoreBase[DiagnosticBundle]):
 
     def __init__(
         self,
-        path: str | Path = ".data/diagnostics.json",
+        path: str | Path = "/data/diagnostics.json",
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:

@@ -22,7 +22,7 @@ from robotsix_chat.memory import NullMemory, build_memory
 from robotsix_chat.memory.cognee import CogneeMemory, _format_results
 
 
-def _enabled_settings(data_dir: str = ".data/cognee") -> MemorySettings:
+def _enabled_settings(data_dir: str = "/data/cognee") -> MemorySettings:
     """Return a valid enabled MemorySettings with key and endpoint present."""
     return MemorySettings(
         enabled=True,

@@ -97,7 +97,7 @@ class FixProposalStore(JsonStoreBase[FixProposal]):
 
     def __init__(
         self,
-        path: str | Path = ".data/fix_proposals.json",
+        path: str | Path = "/data/fix_proposals.json",
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:

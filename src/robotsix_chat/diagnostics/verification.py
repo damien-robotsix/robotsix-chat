@@ -100,7 +100,7 @@ class EffectivenessStore(JsonStoreBase[Any]):
 
     def __init__(
         self,
-        path: str | Path = ".data/diagnostics_effectiveness.json",
+        path: str | Path = "/data/diagnostics_effectiveness.json",
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:

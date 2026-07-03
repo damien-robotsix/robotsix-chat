@@ -214,7 +214,7 @@ When enabled, the agent gains cross-conversation memory:
 
 - **Recall**: before each reply, retrieves relevant past context.
 - **Consolidation**: after replying, persists the exchange in the background (never adds latency).
-- **Storage**: cognee data lives under `memory.data_dir` (default `.data/cognee`), bind-mounted for
+- **Storage**: cognee data lives under `memory.data_dir` (default `/data/cognee`), bind-mounted for
   persistence across container redeploys.
 - **Dependencies**: a remote embedding server (OpenAI-compatible, e.g. Ollama with `bge-m3`) and an
   extraction LLM (OpenRouter DeepSeek). Neither runs on the chat host.
@@ -223,13 +223,13 @@ ______________________________________________________________________
 
 ## Persistence
 
-State that survives restarts when `.data/` is bind-mounted:
+State that survives restarts when `/data/` is bind-mounted:
 
 | File                       | Content                                                               |
 | -------------------------- | --------------------------------------------------------------------- |
-| `.data/conversations.json` | Multi-session conversation history (auto-migrated from legacy format) |
-| `.data/subsessions.json`   | Subsession state (periodic subsessions resumed on startup)            |
-| `.data/cognee/`            | Long-term memory storage (cognee)                                     |
+| `/data/conversations.json` | Multi-session conversation history (auto-migrated from legacy format) |
+| `/data/subsessions.json`   | Subsession state (periodic subsessions resumed on startup)            |
+| `/data/cognee/`            | Long-term memory storage (cognee)                                     |
 
 ______________________________________________________________________
 

@@ -39,7 +39,7 @@ auth:
 # memory.llm.api_key and memory.embedding.endpoint are required.
 memory:
   enabled: false                  # env override: MEMORY_ENABLED
-  # data_dir: .data/cognee        # cognee stores live here; env: MEMORY_DATA_DIR
+  # data_dir: /data/cognee        # cognee stores live here; env: MEMORY_DATA_DIR
   llm:
     api_key: ""                   # OpenRouter key, required when enabled; env: MEMORY_LLM_API_KEY
   embedding:

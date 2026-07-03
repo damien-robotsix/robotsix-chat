@@ -1,7 +1,7 @@
 """Local, durable knowledge store for agent-authored operational notes.
 
 A :class:`KnowledgeStore` persists structured notes to a single JSON file on
-disk — default ``.data/knowledge.json`` — with best-effort atomic-ish writes.
+disk — default ``/data/knowledge.json`` — with best-effort atomic-ish writes.
 On load it tolerates a missing, empty, or corrupt file by starting empty,
 and forward-compatibly defaults missing keys to ``None``.
 
@@ -37,7 +37,7 @@ class KnowledgeEntry:
 
 
 class KnowledgeStore(JsonStoreBase[KnowledgeEntry]):
-    """Persist agent-authored notes to ``.data/knowledge.json`` (or custom path).
+    """Persist agent-authored notes to ``/data/knowledge.json`` (or custom path).
 
     Construct with an overridable ``path`` and ``clock`` injectable (defaults
     to ``datetime.now(timezone.utc)``) so tests can pin timestamps.
@@ -52,7 +52,7 @@ class KnowledgeStore(JsonStoreBase[KnowledgeEntry]):
 
     def __init__(
         self,
-        path: str | Path = ".data/knowledge.json",
+        path: str | Path = "/data/knowledge.json",
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
