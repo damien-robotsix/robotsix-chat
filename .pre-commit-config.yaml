@@ -11,6 +11,7 @@ repos:
       - id: check-added-large-files
       - id: check-json
       - id: detect-private-key
+        exclude: ^docs/configuration\.md$
 
   - repo: https://github.com/crate-ci/typos
     rev: b859c0df7f391deba73030f79b957e62b4d81dc6  # varcon-core-v5.0.7
