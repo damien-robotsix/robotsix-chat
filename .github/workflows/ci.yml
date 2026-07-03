@@ -45,8 +45,8 @@ jobs:
     # GitHub rejects the reusable-workflow call with a startup_failure
     # ("nested job 'tests' is requesting 'security-events: write'").
     permissions:
-      contents: read
-      security-events: write
+      contents: read         # checkout the repo
+      security-events: write  # required by python-ci.yml's nested `tests` job for SARIF upload
 
   codeql:
     name: CodeQL analysis
