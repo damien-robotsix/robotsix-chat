@@ -22,7 +22,6 @@ from starlette.routing import Route
 from robotsix_chat import PROJECT_TITLE
 from robotsix_chat.board import build_board_reader_tools
 from robotsix_chat.calendar import build_calendar_tools
-from robotsix_chat.chat.auth import BasicAuthConfig, BasicAuthMiddleware
 from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus
 from robotsix_chat.component_client import build_component_tools
@@ -133,7 +132,6 @@ def create_app(
     max_image_bytes: int = 5_242_880,
     allowed_image_media_types: list[str] | None = None,
     cors_allow_origins: list[str] | None = None,
-    auth: BasicAuthConfig | None = None,
     correlation_id_header: str = "X-Request-ID",
     conversation_store: ConversationStore | None = None,
     event_bus: EventBus | None = None,
@@ -167,9 +165,6 @@ def create_app(
         cors_allow_origins: Origins permitted to call ``/chat`` cross-origin
             (e.g. when the UI is hosted separately). ``None`` (default)
             adds no CORS headers; ``["*"]`` allows any origin.
-        auth: When set, gate every request except ``GET /health`` behind
-            HTTP Basic Auth with these credentials. ``None`` (default)
-            leaves the server open.
         correlation_id_header: HTTP header name for the correlation /
             request-id. Default ``X-Request-ID``.
         conversation_store: Tracks per-client multi-turn conversation history
@@ -247,8 +242,8 @@ def create_app(
         routes.append(Route("/", ui_endpoint, methods=["GET"]))
 
     # CorrelationIdMiddleware is outermost so every request (and its log lines)
-    # carries a request id. CORS comes next so it can answer preflight
-    # ``OPTIONS`` (which carry no credentials) before the auth layer rejects them.
+    # carries a request id. Authentication is centralized at the
+    # central-deploy gateway — the app adds no auth layer of its own.
     middleware = [
         Middleware(CorrelationIdMiddleware, header_name=correlation_id_header)
     ]
@@ -261,8 +256,6 @@ def create_app(
                 allow_headers=["Content-Type"],
             )
         )
-    if auth is not None:
-        middleware.append(Middleware(BasicAuthMiddleware, config=auth))
 
     app = Starlette(
         routes=routes,

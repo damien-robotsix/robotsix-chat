@@ -153,10 +153,10 @@ Each subpackage lives under `src/robotsix_chat/`.
 
 | Package            | Role                                                                                                                                                                                                                                                              |
 | ------------------ | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| **`chat/`**        | Starlette app factory, route handlers, entry point, auth middleware (`auth.py`). Conversation store (`conversation.py`) and SSE event bus (`events.py`).                                                                                                          |
+| **`chat/`**        | Starlette app factory, route handlers, entry point. Conversation store (`conversation.py`) and SSE event bus (`events.py`).                                                                                                                                       |
 | **`subsessions/`** | Unified subsession system — models, registry (state + inbox + persistence), worker turn loop, parent summary delivery, and the depth-aware agent tools (`spawn_subsession`, `message_subsession`, `close_subsession`, `list_subsessions`, `complete_subsession`). |
 | **`llm/`**         | `LlmioChatAgent` — satisfies the `ChatAgent` protocol. Wraps `robotsix-llmio`'s `create_model(level)`, producing single-block (non-streamed) replies for claudeSDK transports.                                                                                    |
-| **`config/`**      | Pydantic `Settings` model (all configuration in one place). Cascade: field defaults → YAML (`config/chat.local.yaml`) → environment variables. ~30 settings spanning LLM, server, auth, memory, and all tool gates.                                               |
+| **`config/`**      | Pydantic `Settings` model (all configuration in one place). Cascade: field defaults → YAML (`config/chat.local.yaml`) → environment variables. ~30 settings spanning LLM, server, memory, and all tool gates.                                                     |
 | **`ui/`**          | Single-file browser chat UI (`index.html`). No build step, no framework — served directly by `GET /`.                                                                                                                                                             |
 
 ### Optional Tools (gated by `settings.<tool>.enabled`)
@@ -199,7 +199,7 @@ pydantic field defaults  →  YAML (config/chat.local.yaml)  →  environment va
 - **YAML**: `config/chat.local.yaml` is the primary operator-facing config file. A canonical
   template lives at `config/chat.local.example.yaml`.
 - **Environment**: every setting has a corresponding env var (e.g. `SERVER_PORT`,
-  `LLMIO_MODEL_LEVEL`, `AUTH_ENABLED`). Env vars override YAML, which overrides defaults.
+  `LLMIO_MODEL_LEVEL`). Env vars override YAML, which overrides defaults.
 
 The LLM provider is selected indirectly: `model_level` (1–4) is passed to `robotsix-llmio`, which
 resolves it to a concrete provider (levels 3–4 → claudeSDK, levels 1–2 → OpenRouter DeepSeek). Level
@@ -239,7 +239,8 @@ Two Docker Compose stacks:
 
 - **Root `docker-compose.yml`** — local development: builds from the multi-stage `Dockerfile`,
   mounts `config/chat.local.yaml` and `~/.claude` (for claudeSDK auth), binds port 8080.
-- **`deploy/docker-compose.yml`** — production: pulls the GHCR image, binds loopback-only, adds a
-  Watchtower sidecar for auto-redeploy, hardcodes `AUTH_ENABLED=1`.
+- **`deploy/docker-compose.yml`** — production: the central-deploy contract (pre-built GHCR image,
+  named volumes, env secret slots). Lifecycle, networking, and authentication are handled by
+  central-deploy and its gateway.
 
 See `docs/getting-started.md` for setup instructions.

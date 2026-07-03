@@ -47,10 +47,10 @@ contract violations).
 
 - **Service**: single `robotsix-chat` service (implicitly primary).
 - **Port**: `8088:8080` — routed by the central-deploy gateway, not published on the host.
-- **Environment**: empty values are operator-filled secret slots (`AUTH_PASSWORD`,
-  `MEMORY_LLM_API_KEY`, broker tokens…); non-empty values are editable defaults
-  (`LLMIO_MODEL_LEVEL=3`, `AUTH_ENABLED=1`). Config is env-based until the planned robotsix-config
-  one-file migration.
+- **Environment**: empty values are operator-filled secret slots (`MEMORY_LLM_API_KEY`, broker
+  tokens…); non-empty values are editable defaults (`LLMIO_MODEL_LEVEL=3`). Config is env-based
+  until the planned robotsix-config one-file migration. No auth vars — authentication is centralized
+  at the central-deploy gateway.
 - **Volumes**: named volume `chat-data` → `/home/app/.data` (persistent agent state; flagged
   `robotsix.deploy.stateful`).
 - **Claude credentials**: label `robotsix.deploy.claude-mount: "true"` — central-deploy binds the
@@ -105,8 +105,8 @@ with `WORKDIR /home/app`. All container-relative paths in compose files (e.g.
 Production configuration is entered in the central-deploy dashboard: the `environment:` keys in
 `deploy/docker-compose.yml` with empty values are operator-filled secret slots (masked in the UI),
 non-empty values are editable defaults. central-deploy injects them into the container at deploy
-time — there is no `.env` file on the server and no config file mount. `AUTH_ENABLED` defaults to
-`1`; leave it on for any deployed instance.
+time — there is no `.env` file on the server and no config file mount. Authentication happens at the
+central-deploy gateway; the server ships none (robotsix-standards component standard).
 
 The root `.env.example` documents the application-level environment variables that `python-dotenv`
 loads at runtime for **local** runs (used by `Settings.load()` in
@@ -114,7 +114,6 @@ loads at runtime for **local** runs (used by `Settings.load()` in
 
 - `LLMIO_MODEL_LEVEL`, `LLMIO_API_KEY` — LLM selection
 - `SERVER_HOST`, `SERVER_PORT`, `LOG_LEVEL`, `CORS_ALLOW_ORIGINS` — server
-- `AUTH_ENABLED`, `AUTH_USERNAME`, `AUTH_PASSWORD` — HTTP Basic Auth
 
 ## Long-term memory (cognee)
 

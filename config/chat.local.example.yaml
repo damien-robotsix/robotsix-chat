@@ -53,14 +53,6 @@ subsessions:
   # auto_stop_no_change_runs: 5  # periodic auto-close after N NO_CHANGE runs; env: SUBSESSIONS_AUTO_STOP_NO_CHANGE_RUNS
   # store_path: .data/subsessions.json  # persistence (periodic resume); env: SUBSESSIONS_STORE_PATH
 
-# Login — gate the browser UI and /chat behind HTTP Basic Auth. Disabled by
-# default so local runs need no credentials. Enable for any deployment that
-# is reachable beyond localhost.
-auth:
-  enabled: false                   # env override: AUTH_ENABLED
-  username: admin                  # env override: AUTH_USERNAME
-  password: ""                     # required when enabled; env override: AUTH_PASSWORD
-
 # Long-term memory (cognee) — gives the agent continuity across conversations:
 # it recalls relevant memory before each reply and persists the exchange after
 # (the write runs in the background, off the reply's latency path). Disabled by

@@ -41,8 +41,6 @@ container. Use this for development, testing, or ad-hoc runs.
 # 1. Create a local config file
 cp config/chat.local.example.yaml config/chat.local.yaml
 
-# 2. (Optional) Edit config/chat.local.yaml to set auth.enabled: true
-#    and auth.password if you want Basic auth on the dev instance.
 
 # 3. Build and start
 docker compose up --build
@@ -103,7 +101,7 @@ Production deployment is handled by the central-deploy dashboard; there is nothi
    into the container at `/home/app/.claude`).
 2. Onboard the repo in the dashboard — preflight parses `deploy/docker-compose.yml`
    (`# central-deploy-contract-version: 1`).
-3. Fill the secret slots (at minimum `AUTH_PASSWORD`), acknowledge the `chat-data` stateful-volume
+3. Fill any secret slots you need (memory/broker keys), acknowledge the `chat-data` stateful-volume
    warning, confirm the Claude-mount toggle, and deploy.
 
 Verify from the server:
@@ -158,22 +156,13 @@ This is an operator decision — the default stack uses the volume mount for sim
 
 ______________________________________________________________________
 
-## 5. HTTP Basic Auth
+## 5. Authentication
 
-The chat server's built-in HTTP Basic auth protects the browser UI and the `/chat` SSE endpoint. The
-`/health` endpoint is exempt (no auth required).
-
-Auth is configured through two layers (the usual cascade applies — env vars override YAML):
-
-| Setting        | YAML path       | Env var         | Default |
-| -------------- | --------------- | --------------- | ------- |
-| Enable/disable | `auth.enabled`  | `AUTH_ENABLED`  | `false` |
-| Username       | `auth.username` | `AUTH_USERNAME` | `admin` |
-| Password       | `auth.password` | `AUTH_PASSWORD` | (none)  |
-
-The deploy compose file sets `AUTH_ENABLED=1` and pulls the password from the `.env` file via
-`${CHAT_AUTH_PASSWORD:?err}`. The `:?err` syntax causes `docker compose up` to fail with an error if
-the variable is unset or empty, preventing accidental deployments without auth.
+The chat server ships **no authentication of its own** (robotsix-standards component standard): in
+production it is served exclusively through the central-deploy gateway, which validates the
+operator's session on every proxied HTTP/WS request. Deployed any other way (own reverse proxy,
+exposed port), authentication is the operator's responsibility — put auth at the proxy; never expose
+the server directly to an untrusted network.
 
 ### Agent instruction
 

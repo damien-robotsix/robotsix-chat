@@ -9,22 +9,6 @@ from __future__ import annotations
 from pydantic import BaseModel, Field
 
 
-class AuthSettings(BaseModel):
-    """HTTP Basic Auth settings gating the browser UI and ``/chat``.
-
-    Attributes:
-        enabled: When ``True``, every request except ``GET /health`` must
-            carry valid HTTP Basic credentials.
-        username: The single accepted username.
-        password: The single accepted password (required when *enabled*).
-
-    """
-
-    enabled: bool = False
-    username: str = "admin"
-    password: str = ""
-
-
 class MemoryLlmSettings(BaseModel):
     """Extraction-LLM config for cognee memory (OpenRouter via litellm).
 

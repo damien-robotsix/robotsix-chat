@@ -51,7 +51,7 @@ __all__ = [
     "level_needs_api_key",
 ]
 
-# Case-insensitive truthy spellings for the AUTH_ENABLED env override.
+# Case-insensitive truthy spellings for boolean env overrides.
 _TRUE_VALUES = {"1", "true", "yes", "on"}
 
 # robotsix-llmio now owns the level → provider-model mapping. The chat
@@ -86,8 +86,6 @@ def level_needs_api_key(level: int) -> bool:
 
 
 # Maps nested YAML ``section.field`` paths to ``Settings`` field names.
-# The whole ``auth`` mapping is passed through as-is (a dict) so pydantic
-# parses it into the nested :class:`AuthSettings` model.
 _YAML_PATH_TO_FIELD: dict[str, str] = {
     "llmio.model_level": "llmio_model_level",
     "llmio.api_key": "llmio_api_key",  # pragma: allowlist secret
@@ -98,7 +96,6 @@ _YAML_PATH_TO_FIELD: dict[str, str] = {
     "server.log_level": "log_level",
     "server.cors_allow_origins": "cors_allow_origins",
     "server.correlation_id_header": "correlation_id_header",
-    "auth": "auth",
     "memory": "memory",
     "mill": "mill",
     "mail": "mail",
