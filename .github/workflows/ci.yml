@@ -6,13 +6,18 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: read  # baseline: checkout the repo, nothing else
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   lockfile:
+    name: Lockfile and audit
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: read  # checkout the repo
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -26,6 +31,7 @@ jobs:
         run: uv audit --ignore-until-fixed GHSA-w8v5-vhqr-4h9v
 
   ci:
+    name: Python CI (shared)
     uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-ci.yml@5cd8c1facb02299da618979e7a55f1953f9c075a  # main
     with:
       python-version: "3.14"
@@ -43,11 +49,12 @@ jobs:
       security-events: write
 
   codeql:
+    name: CodeQL analysis
     runs-on: ubuntu-latest
     permissions:
-      actions: read
-      contents: read
-      security-events: write
+      actions: read       # CodeQL needs to read workflow metadata
+      contents: read      # checkout the repo
+      security-events: write  # upload SARIF results
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -60,19 +67,21 @@ jobs:
       - uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
 
   security:
+    name: Security scan (shared)
     uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-security.yml@5cd8c1facb02299da618979e7a55f1953f9c075a  # main
     with:
       install-extras: ""
       trufflehog-pr-diff: true
       trufflehog-extra-args: "--results=verified,unknown"
     permissions:
-      contents: read
+      contents: read  # the shared workflow checks out inside its own job
 
   changelog:
+    name: Changelog fragment check
     runs-on: ubuntu-latest
     if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'skip-changelog')
     permissions:
-      contents: read
+      contents: read  # checkout the repo with full history
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -85,9 +94,10 @@ jobs:
         run: uv run --with towncrier towncrier check --compare-with "origin/${BASE_REF}"
 
   deptry:
+    name: Dependency hygiene (deptry)
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: read  # checkout the repo
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -97,9 +107,10 @@ jobs:
         run: uv run --with deptry deptry .
 
   pre-commit:
+    name: Pre-commit hooks
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: read  # checkout the repo
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -112,9 +123,10 @@ jobs:
         run: uv run --with pre-commit --with vulture pre-commit run --all-files --show-diff-on-failure
 
   check-sse-types:
+    name: SSE event type audit
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: read  # checkout the repo
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -123,11 +135,12 @@ jobs:
         run: python scripts/check_sse_event_types.py
 
   check-modules-registry:
+    name: Modules registry audit
     # Repo-baseline standard: every file registered in docs/modules.yaml;
     # drift (unregistered/stale/duplicate paths) fails CI.
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: read  # checkout the repo
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -140,13 +153,14 @@ jobs:
         run: python scripts/check_modules_registry.py
 
   image-scan:
+    name: Container image scan (Trivy)
     # Standards gate: build the container image on every PR and Trivy-scan it,
     # so vulnerable base images/dependencies surface before merge (see
     # robotsix-standards docker-standard "CI-time image scan").
     runs-on: ubuntu-latest
     permissions:
-      contents: read
-      security-events: write
+      contents: read         # checkout the repo
+      security-events: write  # upload Trivy SARIF to Code Scanning
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -198,6 +212,7 @@ jobs:
           category: trivy-ci
 
   check:
+    name: All CI checks passed
     needs: [lockfile, ci, codeql, security, deptry, pre-commit, check-sse-types, check-modules-registry, image-scan]
     runs-on: ubuntu-latest
     steps:

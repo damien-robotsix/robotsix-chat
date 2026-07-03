@@ -13,8 +13,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
-  attestations: write
+  contents: read        # baseline: checkout the repo
+  attestations: write   # provenance / SBOM attestation at the workflow level
 
 concurrency:
   group: release-${{ github.ref }}
@@ -23,10 +23,11 @@ concurrency:
 jobs:
   # Gate: never publish an image from a commit whose CI is red.
   verify:
+    name: Verify CI is green
     runs-on: ubuntu-latest
     permissions:
-      checks: read
-      contents: read
+      checks: read    # query CI check-run status
+      contents: read  # checkout the repo
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -39,6 +40,7 @@ jobs:
             await fn({github, context, core});
 
   publish:
+    name: Build, scan, and publish image
     needs: verify
     uses: damien-robotsix/robotsix-github-workflows/.github/workflows/docker-release.yml@5cd8c1facb02299da618979e7a55f1953f9c075a  # main
     permissions:

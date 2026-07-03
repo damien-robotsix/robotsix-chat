@@ -6,10 +6,15 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: read  # baseline: checkout the repo; job overrides for gh-pages push
+
+concurrency:
+  group: docs-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
   docs:
+    name: Build and deploy docs
     # python-docs.yml's nested job pushes the built site to gh-pages, so it
     # requests `contents: write`. The caller must grant it or GitHub rejects
     # the reusable-workflow call with a startup_failure.

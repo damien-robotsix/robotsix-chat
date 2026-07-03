@@ -5,14 +5,19 @@ on:
     types: [published]
 
 permissions:
-  contents: read
+  contents: read  # baseline: checkout the repo
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   verify:
+    name: Verify release tag and CI status
     runs-on: ubuntu-latest
     permissions:
-      checks: read
-      contents: read
+      checks: read    # query CI check-run status
+      contents: read  # checkout the repo
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
@@ -38,10 +43,11 @@ jobs:
             await fn({github, context, core});
 
   sbom:
+    name: Generate and submit SBOM
     needs: verify
     runs-on: ubuntu-latest
     permissions:
-      contents: write
+      contents: write  # upload-artifact + submit SBOM to dependency graph
     steps:
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
