@@ -388,6 +388,12 @@ def _build_subsessions_raw(yaml_data: Any) -> dict[str, Any]:
     if store_path is not None:
         raw["store_path"] = store_path
 
+    transcript_max_entries = _parse_int(
+        "SUBSESSIONS_TRANSCRIPT_MAX_ENTRIES", "transcript_max_entries"
+    )
+    if transcript_max_entries is not None:
+        raw["transcript_max_entries"] = transcript_max_entries
+
     return raw
 
 

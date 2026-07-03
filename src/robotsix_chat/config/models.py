@@ -524,6 +524,7 @@ class SubsessionsSettings(BaseModel):
         store_path: JSON persistence file (periodic subsessions resume
             across restarts).  Env override: ``SUBSESSIONS_STORE_PATH``.
         transcript_max_entries: Per-subsession transcript retention cap.
+            Env override: ``SUBSESSIONS_TRANSCRIPT_MAX_ENTRIES``.
 
     """
 

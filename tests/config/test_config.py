@@ -120,6 +120,7 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "MAX_IMAGE_BYTES",
         "PENDING_QUESTIONS_ENABLED",
         "ALLOWED_IMAGE_MEDIA_TYPES",
+        "SUBSESSIONS_TRANSCRIPT_MAX_ENTRIES",
         "SELF_REVIEW_ENABLED",
         "SELF_REVIEW_RECENT_ACTIVITY_LIMIT",
         "VERSION_CHECK_ENABLED",
@@ -802,6 +803,7 @@ def test_subsessions_defaults() -> None:
     assert settings.subsessions.min_interval_seconds == 60.0
     assert settings.subsessions.auto_stop_no_change_runs == 5
     assert settings.subsessions.store_path == "/data/subsessions.json"
+    assert settings.subsessions.transcript_max_entries == 200
 
 
 def test_subsessions_from_yaml(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -834,6 +836,7 @@ def test_subsessions_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("SUBSESSIONS_MIN_INTERVAL_SECONDS", "120.5")
     monkeypatch.setenv("SUBSESSIONS_AUTO_STOP_NO_CHANGE_RUNS", "2")
     monkeypatch.setenv("SUBSESSIONS_STORE_PATH", ".data/other.json")
+    monkeypatch.setenv("SUBSESSIONS_TRANSCRIPT_MAX_ENTRIES", "500")
 
     settings = Settings.from_env()
 
@@ -843,6 +846,7 @@ def test_subsessions_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.subsessions.min_interval_seconds == 120.5
     assert settings.subsessions.auto_stop_no_change_runs == 2
     assert settings.subsessions.store_path == ".data/other.json"
+    assert settings.subsessions.transcript_max_entries == 500
 
 
 def test_subsessions_env_override_yaml(
