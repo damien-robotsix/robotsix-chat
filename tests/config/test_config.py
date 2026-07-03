@@ -7,7 +7,6 @@ from pathlib import Path
 import pytest
 
 from robotsix_chat.config import (
-    AuthSettings,
     BoardSettings,
     CalendarSettings,
     ComponentAgentSettings,
@@ -44,9 +43,6 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "LOG_LEVEL",
         "CORS_ALLOW_ORIGINS",
         "CORRELATION_ID_HEADER",
-        "AUTH_ENABLED",
-        "AUTH_USERNAME",
-        "AUTH_PASSWORD",
         "CHAT_CONFIG_PATH",
         "MEMORY_ENABLED",
         "MEMORY_DATA_DIR",
@@ -300,41 +296,6 @@ def test_dotenv_file_loaded(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> 
 
 
 # ---------------------------------------------------------------------------
-# Auth + agent instruction
-# ---------------------------------------------------------------------------
-
-
-def test_auth_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Auth is off by default."""
-    _wipe_env_vars(monkeypatch)
-
-    settings = Settings.from_env()
-
-    assert settings.auth.enabled is False
-    assert settings.auth.username == "admin"
-
-
-def test_auth_enabled_without_password_raises() -> None:
-    """Enabling auth without a password is rejected at construction."""
-    with pytest.raises(ValueError, match="auth.password"):
-        Settings(auth=AuthSettings(enabled=True))
-
-
-def test_auth_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``AUTH_*`` env vars populate the nested auth settings."""
-    _wipe_env_vars(monkeypatch)
-    monkeypatch.setenv("AUTH_ENABLED", "true")
-    monkeypatch.setenv("AUTH_USERNAME", "ops")
-    monkeypatch.setenv("AUTH_PASSWORD", "s3cret")
-
-    settings = Settings.from_env()
-
-    assert settings.auth.enabled is True
-    assert settings.auth.username == "ops"
-    assert settings.auth.password == "s3cret"  # pragma: allowlist secret
-
-
-# ---------------------------------------------------------------------------
 # YAML config file loading
 # ---------------------------------------------------------------------------
 
@@ -354,10 +315,6 @@ def test_load_from_yaml_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
         "  host: 0.0.0.0\n"
         "  port: 9000\n"
         "  cors_allow_origins: ['https://ui.example.com']\n"
-        "auth:\n"
-        "  enabled: true\n"
-        "  username: ops\n"
-        "  password: hunter2\n"
     )
 
     settings = Settings.load(config_path=config_file)
@@ -368,9 +325,6 @@ def test_load_from_yaml_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     assert settings.server_host == "0.0.0.0"
     assert settings.server_port == 9000
     assert settings.cors_allow_origins == ["https://ui.example.com"]
-    assert settings.auth.enabled is True
-    assert settings.auth.username == "ops"
-    assert settings.auth.password == "hunter2"  # pragma: allowlist secret
 
 
 def test_load_claude_sdk_yaml_needs_no_key(

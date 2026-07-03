@@ -27,10 +27,6 @@ services:
       # above; 1-2 = OpenRouter (needs LLMIO_API_KEY).
       LLMIO_MODEL_LEVEL: "3"
       LLMIO_API_KEY: ""
-      # HTTP Basic auth gate for the UI and /chat.
-      AUTH_ENABLED: "1"
-      AUTH_USERNAME: admin
-      AUTH_PASSWORD: ""
       # Long-term memory (cognee). Needs the embedding endpoint + OpenRouter
       # key when enabled; stores live under the chat-data volume.
       MEMORY_ENABLED: "0"

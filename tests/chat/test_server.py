@@ -1120,7 +1120,6 @@ async def test_run_server_from_config_creates_agent_from_settings(
                 "image/webp",
             ],
             "cors_allow_origins": [],
-            "auth": None,
             "correlation_id_header": "X-Request-ID",
         }
 

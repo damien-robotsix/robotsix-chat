@@ -5,15 +5,7 @@ from __future__ import annotations
 from hypothesis import given
 from hypothesis import strategies as st
 
-from robotsix_chat.config import AuthSettings, Settings
-
-
-@given(st.builds(AuthSettings))
-def test_auth_settings_roundtrip(settings: AuthSettings) -> None:
-    """model_dump() -> model_validate() is an identity."""
-    dumped = settings.model_dump()
-    restored = AuthSettings.model_validate(dumped)
-    assert restored.model_dump() == dumped
+from robotsix_chat.config import Settings
 
 
 @given(st.builds(Settings))

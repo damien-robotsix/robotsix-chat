@@ -90,7 +90,6 @@ def test_snapshot_redacts_secrets():
     s = Settings(
         llmio_api_key="sk-secret-123",
         mill={"broker_token": "tok-mill"},
-        auth={"password": "hunter2"},
         refdocs={"github_token": "ghp_secret"},
         board_reader={"api_token": "br-token"},
     )
@@ -104,7 +103,6 @@ def test_snapshot_redacts_secrets():
         "calendar.broker_token",
         "refdocs.github_token",
         "board_reader.api_token",
-        "auth.password",
         "memory.llm.api_key",
         "memory.embedding.api_key",
     ]
@@ -287,18 +285,6 @@ def test_validate_rejects_cross_field_memory_enabled_without_llm_api_key():
     err = exc_info.value
     assert err.code == "CROSS_FIELD_INVALID"
     assert "api_key" in err.message.lower() or "memory" in err.message.lower()
-
-
-def test_validate_rejects_auth_enabled_without_password():
-    """Enabling auth without a password fails cross-field validation."""
-    s = Settings(auth={"password": ""})
-    with pytest.raises(ConfigContractError) as exc_info:
-        validate_config_update(s, {"auth.enabled": True})  # not settable anyway
-    # auth.enabled is not in SETTABLE_KEYS, so this hits UNKNOWN_KEY first.
-    # That's fine — the key isn't settable.  We test cross-field via mill
-    # above.  This test just documents that auth.enabled isn't settable.
-    err = exc_info.value
-    assert err.code == "UNKNOWN_KEY"
 
 
 def test_validate_rejects_refdocs_enabled_without_repos():
@@ -514,9 +500,6 @@ def test_settable_keys_excludes_startup_only_fields():
         "llmio.check_loop_model",
         "agent.instruction",
         "server.correlation_id_header",
-        "auth.enabled",
-        "auth.username",
-        "auth.password",
         "mill.broker_host",
         "mill.broker_port",
         "mill.broker_scheme",

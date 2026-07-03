@@ -15,7 +15,6 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import Any
 
-from robotsix_chat.chat.auth import BasicAuthConfig
 from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus
 from robotsix_chat.config import Settings
@@ -38,7 +37,6 @@ def run_server(
     max_image_bytes: int = 5_242_880,
     allowed_image_media_types: list[str] | None = None,
     cors_allow_origins: list[str] | None = None,
-    auth: BasicAuthConfig | None = None,
     correlation_id_header: str = "X-Request-ID",
     conversation_store: ConversationStore | None = None,
     event_bus: EventBus | None = None,
@@ -64,7 +62,6 @@ def run_server(
         max_image_bytes=max_image_bytes,
         allowed_image_media_types=allowed_image_media_types,
         cors_allow_origins=cors_allow_origins,
-        auth=auth,
         correlation_id_header=correlation_id_header,
         conversation_store=conversation_store,
         event_bus=event_bus,
@@ -107,8 +104,9 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     Resolves settings through the full cascade (pydantic defaults → YAML
     config file → environment, with ``.env`` support), configures Python
     logging, builds a default :class:`LlmioChatAgent` when *agent* is
-    ``None`` (using ``agent_instruction`` from config), enables HTTP Basic
-    Auth when ``auth.enabled`` is set, and delegates to :func:`run_server`.
+    ``None`` (using ``agent_instruction`` from config), and delegates to
+    :func:`run_server`. (Authentication is centralized at the central-deploy
+    gateway — the server itself is unauthenticated.)
     """
     # Lazy import so tests can patch ``robotsix_chat.chat.server.run_server``
     # and the patch is visible through the package re-export.
@@ -264,13 +262,6 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         if responder is not None:
             await responder.stop()
 
-    auth = (
-        BasicAuthConfig(
-            username=settings.auth.username, password=settings.auth.password
-        )
-        if settings.auth.enabled
-        else None
-    )
     _run_server(
         agent,
         host=settings.server_host,
@@ -280,7 +271,6 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         max_image_bytes=settings.max_image_bytes,
         allowed_image_media_types=settings.allowed_image_media_types,
         cors_allow_origins=settings.cors_allow_origins,
-        auth=auth,
         correlation_id_header=settings.correlation_id_header,
         conversation_store=conversation_store,
         event_bus=event_bus,

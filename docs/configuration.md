@@ -41,13 +41,11 @@ or 2 (e.g. `llmio.model_level: 2` with a multimodal model). Full level-3 image s
 external change to `robotsix_llmio`'s claude_sdk model to map image parts into the Claude SDK
 request format.
 
-## HTTP Basic Auth
+## Authentication
 
-| YAML path       | Env var         | Default   | Description                                                                                                                                                       |
-| --------------- | --------------- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `auth.enabled`  | `AUTH_ENABLED`  | `false`   | Enable HTTP Basic Auth gating the browser UI and `/chat`. Truthy: `"1"`, `"true"`, `"yes"`, `"on"`. The production deploy compose file hardcodes this to `1`.     |
-| `auth.username` | `AUTH_USERNAME` | `"admin"` | Basic Auth username.                                                                                                                                              |
-| `auth.password` | `AUTH_PASSWORD` | `""`      | Basic Auth password. Required when auth is enabled. In production the deploy compose file enforces `CHAT_AUTH_PASSWORD` and passes it through as `AUTH_PASSWORD`. |
+The server ships no auth of its own (robotsix-standards component standard): production traffic is
+authenticated at the central-deploy gateway. Deployed any other way, put authentication at your
+reverse proxy.
 
 ## Conversation
 
@@ -357,11 +355,6 @@ server:
   port: 8080
   cors_allow_origins: ["https://chat.example.com"]
   idle_timeout_minutes: 60
-
-auth:
-  enabled: true
-  username: "admin"
-  password: ""  # set via AUTH_PASSWORD env var in production
 
 memory:
   enabled: true

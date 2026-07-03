@@ -24,7 +24,6 @@ from robotsix_chat.config.constants import (
     CONFIG_PATH_ENV,
     DEFAULT_CONFIG_PATH,
     ConfigError,
-    _parse_bool,
     _parse_int,
     level_needs_api_key,
 )
@@ -47,7 +46,6 @@ from robotsix_chat.config.env_builders import (
     _build_version_check_raw,
 )
 from robotsix_chat.config.models import (
-    AuthSettings,
     BoardSettings,
     CalendarSettings,
     ComponentAgentSettings,
@@ -110,7 +108,6 @@ class Settings(BaseModel):
             UI is hosted on a different origin than the server.
         correlation_id_header: HTTP header name used for the correlation /
             request-id (both inbound and outbound). Default ``X-Request-ID``.
-        auth: HTTP Basic Auth settings gating the UI and ``/chat``.
         max_images_per_message: Maximum number of images a client may attach to
             a single ``POST /chat`` request.  Default ``8``.
             Env override: ``MAX_IMAGES_PER_MESSAGE``.
@@ -251,7 +248,6 @@ class Settings(BaseModel):
     log_level: str = "INFO"
     cors_allow_origins: list[str] = Field(default_factory=list)
     correlation_id_header: str = "X-Request-ID"
-    auth: AuthSettings = Field(default_factory=AuthSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     mill: MillSettings = Field(default_factory=MillSettings)
     mail: MailSettings = Field(default_factory=MailSettings)
@@ -317,11 +313,6 @@ class Settings(BaseModel):
                 f"{self.llmio_model_level} (its provider needs a key) — provide "
                 "it via LLMIO_API_KEY, a .env file, or the `llmio.api_key` field "
                 "of your config file (or use model_level 3, which is keyless)"
-            )
-        if self.auth.enabled and not self.auth.password:
-            raise ValueError(
-                "auth.password must be set when auth is enabled — provide it "
-                "via AUTH_PASSWORD or the `auth.password` field of your config file"
             )
         if self.memory.enabled:
             if not self.memory.llm.api_key:
@@ -458,7 +449,6 @@ class Settings(BaseModel):
             for k, v in flat.items()
             if k
             not in (
-                "auth",
                 "memory",
                 "mill",
                 "mail",
@@ -473,7 +463,6 @@ class Settings(BaseModel):
                 "diagnostics",
             )
         }
-        auth_raw: dict[str, Any] = dict(flat.get("auth") or {})
 
         def env_override(field: str, env_name: str) -> None:
             value = os.getenv(env_name)
@@ -510,19 +499,6 @@ class Settings(BaseModel):
             raw["allowed_image_media_types"] = [
                 t.strip() for t in allowed_types.split(",") if t.strip()
             ]
-
-        auth_enabled = os.getenv("AUTH_ENABLED")
-        if auth_enabled is not None:
-            auth_raw["enabled"] = _parse_bool(auth_enabled)
-        auth_username = os.getenv("AUTH_USERNAME")
-        if auth_username is not None:
-            auth_raw["username"] = auth_username
-        auth_password = os.getenv("AUTH_PASSWORD")
-        if auth_password is not None:
-            auth_raw["password"] = auth_password
-
-        if auth_raw:
-            raw["auth"] = auth_raw
 
         _SUBSYSTEM_BUILDERS: dict[str, Any] = {
             "memory": _build_memory_raw,

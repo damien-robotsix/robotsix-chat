@@ -135,10 +135,6 @@ server:
   # log_level: INFO
   # cors_allow_origins: []   # ["*"] = any; only when the UI is hosted elsewhere
 
-auth:                        # HTTP Basic Auth gating the UI and /chat
-  enabled: false
-  username: admin
-  password: ""               # required when enabled
 ```
 
 ### Model level
@@ -167,12 +163,11 @@ place.
 > Replies are returned as a single block (not token-streamed): llmio's Claude SDK model does not yet
 > support incremental streaming through pydantic-ai.
 
-### Login (authentication)
+### Authentication
 
-Set `auth.enabled: true` (with a `password`) to gate the browser UI and the `/chat` endpoint behind
-HTTP Basic Auth. The `GET /health` probe stays open. The browser prompts for credentials on first
-load and reuses them for the chat requests, so no UI changes are needed. **Enable this for any
-deployment reachable beyond `localhost`.**
+The server ships no auth of its own (robotsix-standards component standard): production traffic is
+authenticated once at the central-deploy gateway. If you expose the server any other way, put
+authentication at your reverse proxy — never expose it directly to an untrusted network.
 
 ### Environment variables
 
@@ -188,9 +183,6 @@ config file.
 | `SERVER_PORT`        | `server.port`               | `8000`                         | Port the server listens on.                                                                                            |
 | `LOG_LEVEL`          | `server.log_level`          | `INFO`                         | Python logging level.                                                                                                  |
 | `CORS_ALLOW_ORIGINS` | `server.cors_allow_origins` | *(empty)*                      | Comma-separated origins allowed to call `/chat` cross-origin (`*` = any). Only needed when the UI is hosted elsewhere. |
-| `AUTH_ENABLED`       | `auth.enabled`              | `false`                        | Gate the UI and `/chat` behind HTTP Basic Auth.                                                                        |
-| `AUTH_USERNAME`      | `auth.username`             | `admin`                        | Accepted username.                                                                                                     |
-| `AUTH_PASSWORD`      | `auth.password`             | *(empty)*                      | Accepted password (required when auth is enabled).                                                                     |
 
 ### Calendar & tasks (broker integration)
 
@@ -225,11 +217,10 @@ All settings are listed in the
 
 ## Application factory
 
-`create_app(agent, *, serve_ui=True, cors_allow_origins=None, auth=None)` returns a Starlette ASGI
-app you can mount in tests via `httpx.ASGITransport` or run with `uvicorn`. Pass a
-`robotsix_chat.chat.auth.BasicAuthConfig` as `auth` to gate every request except `GET /health`. Any
-object with an `async def stream(self, message: str) -> AsyncIterator[str]` method satisfies the
-`ChatAgent` protocol.
+`create_app(agent, *, serve_ui=True, cors_allow_origins=None)` returns a Starlette ASGI app you can
+mount in tests via `httpx.ASGITransport` or run with `uvicorn`. Any object with an
+`async def stream(self, message: str) -> AsyncIterator[str]` method satisfies the `ChatAgent`
+protocol.
 
 ## Development
 
