@@ -33,7 +33,7 @@ _MAX_RETRY_REQUEST_CHARS = 4000  # ~1k tokens; avoids re-sending full context on
 def _next_delay(attempt_count: int) -> float:
     """Compute retry delay for *attempt_count* with exponential backoff and jitter."""
     raw: float = min(_INITIAL_DELAY * (_BACKOFF_FACTOR**attempt_count), _MAX_DELAY)
-    return raw * random.uniform(  # noqa: S311 — jitter, not cryptography
+    return raw * random.uniform(  # noqa: S311  # nosec B311 — jitter, not cryptography
         1 - _JITTER_FRACTION, 1 + _JITTER_FRACTION
     )
 

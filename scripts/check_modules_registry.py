@@ -12,7 +12,7 @@ longer tracked (stale), or a path registered under more than one module.
 
 from __future__ import annotations
 
-import subprocess
+import subprocess  # nosec B404 — fixed argv, no user input
 import sys
 from collections import Counter
 from pathlib import Path
@@ -26,7 +26,7 @@ MANIFEST = Path("docs/modules.yaml")
 
 def tracked_files() -> set[str]:
     """Return git-tracked files under the checked trees, minus exemptions."""
-    out = subprocess.run(  # noqa: S603 — fixed argv, no user input
+    out = subprocess.run(  # noqa: S603  # nosec B603, B607 — fixed argv, no user input
         ["git", "ls-files", "--", *CHECKED_TREES],  # noqa: S607
         capture_output=True,
         text=True,
