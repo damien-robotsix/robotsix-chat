@@ -56,7 +56,7 @@ __all__ = [
 # ---------------------------------------------------------------------------
 
 # Dotted-key components that indicate a secret-bearing field.
-_SECRET_PATTERNS = ("api_key", "token", "password")
+_SECRET_PATTERNS = ("api_key", "token", "password", "private_key")
 _REDACTED_SENTINEL = "***"
 
 

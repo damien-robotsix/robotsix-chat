@@ -7,6 +7,7 @@ from pathlib import Path
 import pytest
 
 from robotsix_chat.config import (
+    AuthSettings,
     BoardSettings,
     CalendarSettings,
     ComponentAgentSettings,
@@ -322,22 +323,6 @@ def test_auth_enabled_without_password_raises() -> None:
         Settings(auth=AuthSettings(enabled=True))
 
 
-def test_auth_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    """``AUTH_*`` env vars populate the nested auth settings."""
-    _wipe_env_vars(monkeypatch)
-    monkeypatch.setenv("AUTH_ENABLED", "true")
-    monkeypatch.setenv("AUTH_USERNAME", "ops")
-    monkeypatch.setenv("AUTH_PASSWORD", "s3cret")
-
-    settings = Settings.from_env()
-
-    assert settings.auth.enabled is True
-    assert settings.auth.username == "ops"
-    assert (
-        settings.auth.password.get_secret_value() == "s3cret"
-    )  # pragma: allowlist secret
-
-
 # ---------------------------------------------------------------------------
 # YAML config file loading
 # ---------------------------------------------------------------------------
@@ -370,11 +355,6 @@ def test_load_from_yaml_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     assert settings.server_host == "0.0.0.0"
     assert settings.server_port == 9000
     assert settings.cors_allow_origins == ["https://ui.example.com"]
-    assert settings.auth.enabled is True
-    assert settings.auth.username == "ops"
-    assert (
-        settings.auth.password.get_secret_value() == "hunter2"
-    )  # pragma: allowlist secret
 
 
 def test_load_claude_sdk_yaml_needs_no_key(

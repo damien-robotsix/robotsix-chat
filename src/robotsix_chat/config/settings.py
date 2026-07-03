@@ -46,6 +46,7 @@ from robotsix_chat.config.env_builders import (
     _build_version_check_raw,
 )
 from robotsix_chat.config.models import (
+    AuthSettings,
     BoardSettings,
     CalendarSettings,
     ComponentAgentSettings,
@@ -248,6 +249,7 @@ class Settings(BaseModel):
     log_level: str = "INFO"
     cors_allow_origins: list[str] = Field(default_factory=list)
     correlation_id_header: str = "X-Request-ID"
+    auth: AuthSettings = Field(default_factory=AuthSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     mill: MillSettings = Field(default_factory=MillSettings)
     mail: MailSettings = Field(default_factory=MailSettings)
@@ -457,6 +459,7 @@ class Settings(BaseModel):
             for k, v in flat.items()
             if k
             not in (
+                "auth",
                 "memory",
                 "mill",
                 "mail",

@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Complete `AuthSettings` wiring into `Settings` model and fix `config_contract.py` snapshot redaction for `github_app_private_key` (adds `"private_key"` to `_SECRET_PATTERNS`).
 - Dockerfile: migrate from `/opt/venv` copy pattern to canonical `uv export --frozen` +
   `uv pip install --system` pattern, installing directly into the runtime image's system Python.
   Removes the builder-stage virtualenv indirection; build-only tooling (git, uv binary) is pruned

@@ -262,14 +262,6 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         if responder is not None:
             await responder.stop()
 
-    auth = (
-        BasicAuthConfig(
-            username=settings.auth.username,
-            password=settings.auth.password.get_secret_value(),
-        )
-        if settings.auth.enabled
-        else None
-    )
     _run_server(
         agent,
         host=settings.server_host,

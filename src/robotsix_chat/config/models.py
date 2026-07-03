@@ -25,7 +25,6 @@ class AuthSettings(BaseModel):
     password: SecretStr = SecretStr("")
 
 
-
 class MemoryLlmSettings(BaseModel):
     """Extraction-LLM config for cognee memory (OpenRouter via litellm).
 
