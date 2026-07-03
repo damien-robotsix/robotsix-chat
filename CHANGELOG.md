@@ -9,6 +9,17 @@
   format handling from the in-memory session/owner lifecycle.
 - Add `SUBSESSIONS_TRANSCRIPT_MAX_ENTRIES` env var override for
   `SubsessionsSettings.transcript_max_entries` (was previously only settable via YAML).
+- Migrate from YAML config (``robotsix-yaml-config``, ``config/chat.local.yaml``) to
+  JSON config via ``robotsix-config`` (``config/config.json``, located by
+  ``ROBOTSIX_CONFIG_FILE``).  All secret fields are now ``SecretStr``; the
+  environment-variable overlay is removed.  ``LangfuseSettings`` sub-model added
+  to both the top-level ``Settings`` and ``MemorySettings``.  Config fields that
+  were ``str`` are now ``SecretStr``: ``llmio_api_key``, ``MemoryLlmSettings.api_key``,
+  ``MemoryEmbeddingSettings.api_key``, all ``broker_token`` fields, ``api_token``,
+  ``github_token``, ``github_app_private_key``, and ``board_api_token``.
+  Langfuse credentials are exported to process env at startup (per
+  component-standard).  The ``CHAT_CONFIG_PATH`` env var is replaced by
+  ``ROBOTSIX_CONFIG_FILE``.
 - Fixed `docs/configuration.md` `llmio.model_level` default column from `4` to `3` to match the
   pydantic field default. Added CI test to catch future docs-vs-code default mismatches.
 - Cognee's litellm LLM calls (cognify + recall) are now traced in Langfuse via the OTLP-based

@@ -6,7 +6,16 @@ be imported directly without pulling in the full Settings cascade.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
+
+
+class LangfuseSettings(BaseModel):
+    """Langfuse observability credentials."""
+
+    public_key: SecretStr = SecretStr("")
+    secret_key: SecretStr = SecretStr("")
+    host: str = "https://cloud.langfuse.com"
+    model_config = ConfigDict(extra="forbid")
 
 
 class MemoryLlmSettings(BaseModel):
@@ -20,7 +29,7 @@ class MemoryLlmSettings(BaseModel):
     provider: str = "custom"
     model: str = "openrouter/deepseek/deepseek-v4-flash"
     endpoint: str = "https://openrouter.ai/api/v1"
-    api_key: str = ""
+    api_key: SecretStr = SecretStr("")
 
 
 class MemoryEmbeddingSettings(BaseModel):
@@ -37,7 +46,7 @@ class MemoryEmbeddingSettings(BaseModel):
     model: str = "bge-m3"
     endpoint: str = ""
     dimensions: int = 1024
-    api_key: str = "ollama"
+    api_key: SecretStr = SecretStr("ollama")
     huggingface_tokenizer: str = "BAAI/bge-m3"
 
 
@@ -57,10 +66,10 @@ class MemorySettings(BaseModel):
             payloads.
         llm: Extraction-LLM config (graph building / consolidation).
         embedding: Embedding-server config (semantic search).
-        langfuse_public_key: Dedicated Langfuse public key for the
+        langfuse: Dedicated Langfuse credentials for the
             ``robotsix-chat-cognee`` project (separate from the main chat's
-            Langfuse project). When absent, cognee LLM calls are not traced.
-        langfuse_secret_key: Matching secret key for the cognee project.
+            Langfuse project). When the public key is empty, cognee LLM calls
+            are not traced.
 
     """
 
@@ -69,8 +78,7 @@ class MemorySettings(BaseModel):
     recall_search_type: str = "GRAPH_COMPLETION"
     llm: MemoryLlmSettings = Field(default_factory=MemoryLlmSettings)
     embedding: MemoryEmbeddingSettings = Field(default_factory=MemoryEmbeddingSettings)
-    langfuse_public_key: SecretStr = SecretStr("")
-    langfuse_secret_key: SecretStr = SecretStr("")
+    langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)
 
 
 class RefDocsSettings(BaseModel):
@@ -98,7 +106,7 @@ class RefDocsSettings(BaseModel):
     enabled: bool = False
     repos: list[str] = Field(default_factory=list)
     ref: str = "main"
-    github_token: str = ""
+    github_token: SecretStr = SecretStr("")
     base_url: str = "https://api.github.com"
     timeout: float = 30.0
 
@@ -126,7 +134,7 @@ class VersionCheckSettings(BaseModel):
 
     enabled: bool = False
     repo: str = ""
-    github_token: str = ""
+    github_token: SecretStr = SecretStr("")
     base_url: str = "https://api.github.com"
     timeout: float = 30.0
     cache_ttl: float = 300.0
@@ -165,7 +173,7 @@ class MillSettings(BaseModel):
     broker_host: str = "ai-broker.robotsix.net"
     broker_port: int = 443
     broker_scheme: str = "https"
-    broker_token: str = ""
+    broker_token: SecretStr = SecretStr("")
     agent_id: str = "robotsix-chat"
     board_manager_id: str = "board-manager-robotsix-mill"
     repo_id: str = ""
@@ -192,7 +200,7 @@ class MailSettings(BaseModel):
 
     enabled: bool = False
     api_base_url: str = "http://127.0.0.1:8077"
-    api_token: str = ""
+    api_token: SecretStr = SecretStr("")
     timeout: float = 30.0
 
     model_config = {"extra": "forbid"}
@@ -226,7 +234,7 @@ class BoardSettings(BaseModel):
 
     enabled: bool = False
     api_base_url: str = "http://127.0.0.1:8077"
-    api_token: str = ""
+    api_token: SecretStr = SecretStr("")
     cache_ttl: float = 60.0
 
 
@@ -331,11 +339,11 @@ class DirectRepoSettings(BaseModel):
 
     enabled: bool = False
     github_app_id: str = ""
-    github_app_private_key: str = ""
+    github_app_private_key: SecretStr = SecretStr("")
     github_app_installation_id: str = ""
     github_api_base_url: str = "https://api.github.com"
     board_api_base_url: str = "http://127.0.0.1:8077"
-    board_api_token: str = ""
+    board_api_token: SecretStr = SecretStr("")
     timeout: float = 30.0
 
 
@@ -424,7 +432,7 @@ class CalendarSettings(BaseModel):
     broker_host: str = "ai-broker.robotsix.net"
     broker_port: int = 443
     broker_scheme: str = "https"
-    broker_token: str = ""
+    broker_token: SecretStr = SecretStr("")
     agent_id: str = "robotsix-chat"
     calendar_agent_id: str = "robotsix-calendar"
     timeout: float = 240.0
@@ -458,7 +466,7 @@ class ComponentAgentSettings(BaseModel):
     broker_host: str = "ai-broker.robotsix.net"
     broker_port: int = 443
     broker_scheme: str = "https"
-    broker_token: str = ""
+    broker_token: SecretStr = SecretStr("")
     agent_id: str = "robotsix-chat-component"
     timeout: float = 240.0
 

@@ -1,0 +1,799 @@
+{
+  "$defs": {
+    "BoardSettings": {
+      "description": "Direct HTTP access to the mill's board API via the shared BoardHTTPClient.\n\nLets the assistant list, read, and create tickets from the same HTTP\nendpoint the user's browser UI consumes, giving read/write parity with\nthe user \u2014 no broker indirection, no NL reinterpretation.\n\nUses ``robotsix_board_client.BoardHTTPClient`` with\n``ErrorStrategy.RETURN`` so that errors are returned as structured dicts\nrather than raised as exceptions.\n\nThe board API is served by the mill's management-plane FastAPI app\n(typically on the same host at port 8077).  When *api_token* is set, it\nis sent as a ``Bearer`` token; on localhost deployments auth is often\ndisabled (empty token = no ``Authorization`` header sent).\n\nAttributes:\n    enabled: Master switch.  Independent of ``mill.enabled`` \u2014 the\n        board reader works over HTTP even when the broker is offline.\n    api_base_url: Base URL of the board HTTP API (no trailing slash).\n    api_token: Optional bearer token; empty means no auth header.\n    cache_ttl: Seconds to cache board list and ticket lookups\n        (monotonic clock). Failed fetches are never cached.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "api_base_url": {
+          "default": "http://127.0.0.1:8077",
+          "title": "Api Base Url",
+          "type": "string"
+        },
+        "api_token": {
+          "default": "",
+          "format": "password",
+          "title": "Api Token",
+          "type": "string",
+          "writeOnly": true
+        },
+        "cache_ttl": {
+          "default": 60.0,
+          "title": "Cache Ttl",
+          "type": "number"
+        }
+      },
+      "title": "BoardSettings",
+      "type": "object"
+    },
+    "CalendarSettings": {
+      "description": "Calendar/tasks integration over the agent-comm broker. Disabled by default.\n\nWhen enabled, the chat agent gains tools that forward natural-language\ncalendar and task requests to ``robotsix-calendar-agent`` over the broker\nand relay its reply \u2014 so a user can query their schedule, create/update\nevents, and manage to-dos from chat. Mirrors the mill\u2192board pattern.\n\nBoth calendar and task requests route to the same recipient\n(``calendar_agent_id``) under the assumption that a single calendar agent\nhandles CalDAV events (``VEVENT``) and to-dos (``VTODO``). If a separate\ntasks recipient is needed later, add a ``tasks_agent_id`` field and pass it\nfrom the task tools.\n\nAttributes:\n    enabled: Master switch. Requires the ``broker`` extra (robotsix-agent-comm).\n    broker_host: Broker hostname (the shared agent-comm broker).\n    broker_port: Broker port (443 for the public TLS endpoint).\n    broker_scheme: ``https`` (TLS) or ``http``.\n    broker_token: This agent's bearer token, registered on the broker.\n        Required when enabled.\n    agent_id: This agent's id on the broker.\n    calendar_agent_id: Recipient agent id \u2014 the calendar/tasks agent.\n    timeout: Per-request timeout (seconds); generous, the recipient is an LLM.\n    cache_ttl: How long to cache query results (seconds).  Query calls\n        (``query_calendar``, ``query_tasks``) within this window return\n        the cached result without a broker round-trip.  Manage calls\n        (``manage_calendar``, ``manage_tasks``) invalidate the cache\n        for their domain.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "broker_host": {
+          "default": "ai-broker.robotsix.net",
+          "title": "Broker Host",
+          "type": "string"
+        },
+        "broker_port": {
+          "default": 443,
+          "title": "Broker Port",
+          "type": "integer"
+        },
+        "broker_scheme": {
+          "default": "https",
+          "title": "Broker Scheme",
+          "type": "string"
+        },
+        "broker_token": {
+          "default": "",
+          "format": "password",
+          "title": "Broker Token",
+          "type": "string",
+          "writeOnly": true
+        },
+        "agent_id": {
+          "default": "robotsix-chat",
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "calendar_agent_id": {
+          "default": "robotsix-calendar",
+          "title": "Calendar Agent Id",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 240.0,
+          "title": "Timeout",
+          "type": "number"
+        },
+        "cache_ttl": {
+          "default": 60.0,
+          "title": "Cache Ttl",
+          "type": "number"
+        }
+      },
+      "title": "CalendarSettings",
+      "type": "object"
+    },
+    "ComponentAgentSettings": {
+      "description": "Component agent responder settings. Disabled by default.\n\nWhen enabled, robotsix-chat registers itself on the agent-comm broker\nas a discoverable component agent, serving ``monitor``, ``config-get``,\nand ``config-set`` request kinds so external callers can inspect live\nruntime state and mutate configuration over the existing bearer-token\nchannel \u2014 no new side channel.\n\nAttributes:\n    enabled: Master switch. Requires the ``broker`` extra (robotsix-agent-comm).\n    broker_host: Broker hostname (the shared agent-comm broker).\n    broker_port: Broker port (443 for the public TLS endpoint).\n    broker_scheme: ``https`` (TLS) or ``http``.\n    broker_token: This agent's bearer token, registered on the broker.\n        Required when enabled.\n    agent_id: This agent's id on the broker (the responder's identity).\n        Default ``robotsix-chat-component`` \u2014 distinct from the client ids\n        used by mill/calendar.\n    timeout: Per-request timeout (seconds).",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "broker_host": {
+          "default": "ai-broker.robotsix.net",
+          "title": "Broker Host",
+          "type": "string"
+        },
+        "broker_port": {
+          "default": 443,
+          "title": "Broker Port",
+          "type": "integer"
+        },
+        "broker_scheme": {
+          "default": "https",
+          "title": "Broker Scheme",
+          "type": "string"
+        },
+        "broker_token": {
+          "default": "",
+          "format": "password",
+          "title": "Broker Token",
+          "type": "string",
+          "writeOnly": true
+        },
+        "agent_id": {
+          "default": "robotsix-chat-component",
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 240.0,
+          "title": "Timeout",
+          "type": "number"
+        }
+      },
+      "title": "ComponentAgentSettings",
+      "type": "object"
+    },
+    "ComponentClientSettings": {
+      "description": "Component agent client settings \u2014 inspect and configure remote agents.\n\nWhen enabled, the chat agent gains four tools: ``list_component_agents``,\n``get_component_telemetry``, ``get_component_config``, and\n``set_component_config`` so it can enumerate configured component agents,\nread live telemetry, and read/update configuration on demand via direct\nHTTP.\n\nAttributes:\n    enabled: Master switch.\n    timeout: Per-request HTTP timeout (seconds).\n    components: Allowlist of component agents the chat may contact.\n        Each entry has a ``base_url`` and an optional ``label``.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "timeout": {
+          "default": 240.0,
+          "title": "Timeout",
+          "type": "number"
+        },
+        "components": {
+          "items": {
+            "$ref": "#/$defs/ComponentTarget"
+          },
+          "title": "Components",
+          "type": "array"
+        }
+      },
+      "title": "ComponentClientSettings",
+      "type": "object"
+    },
+    "ComponentTarget": {
+      "description": "A single component agent that the chat may inspect or configure.\n\nAttributes:\n    base_url: Base URL of the component agent (e.g.\n        ``\"http://comp-1:8090\"``).\n    label: Optional human-readable label shown in discovery output.",
+      "properties": {
+        "base_url": {
+          "title": "Base Url",
+          "type": "string"
+        },
+        "label": {
+          "default": "",
+          "title": "Label",
+          "type": "string"
+        }
+      },
+      "required": [
+        "base_url"
+      ],
+      "title": "ComponentTarget",
+      "type": "object"
+    },
+    "ConversationSettings": {
+      "description": "Multi-session conversation continuity for the browser chat.\n\nThe server groups conversations by a per-browser ``owner_id`` and addresses\nindividual sessions by ``session_id``. Each owner can have multiple named\nsessions with independent turn histories. History is **never** wiped on\nidle \u2014 sessions are persistent when ``persist_path`` is configured.\n\nAttributes:\n    idle_reset_seconds: Retained for compatibility; no longer triggers\n        destructive history reset (sessions are explicit and persistent).\n    max_history_turns: Most recent user/assistant turns kept per\n        session and replayed to the agent (bounds prompt size).\n    max_conversations: Maximum number of distinct sessions tracked at once\n        (LRU-evicted); bounds the in-memory store.\n    persist_path: Path to the JSON persistence file. Default\n        ``/data/conversations.json``. Set to an empty string to disable.",
+      "properties": {
+        "idle_reset_seconds": {
+          "default": 1800,
+          "title": "Idle Reset Seconds",
+          "type": "integer"
+        },
+        "max_history_turns": {
+          "default": 50,
+          "title": "Max History Turns",
+          "type": "integer"
+        },
+        "max_conversations": {
+          "default": 1000,
+          "title": "Max Conversations",
+          "type": "integer"
+        },
+        "persist_path": {
+          "default": "/data/conversations.json",
+          "title": "Persist Path",
+          "type": "string"
+        }
+      },
+      "title": "ConversationSettings",
+      "type": "object"
+    },
+    "DiagnosticsSettings": {
+      "description": "Diagnostics capture and systemic fix surfacing.\n\nWhen enabled, the agent captures diagnostic bundles for failure events\nand can detect recurring failure categories.  When a category crosses\nthe recurrence threshold a ``FixProposal`` is auto-generated (but NOT\nauto-applied) for agent or human review.\n\nApplied fixes are tracked in the effectiveness store; after the\nobservation window elapses a ``FixEffectivenessReport`` is generated\ncomparing pre-fix and post-fix recurrence counts.\n\nAttributes:\n    enabled: Master switch.  Default ``True``.\n    store_path: Path to the diagnostic-event JSON persistence file.\n        Default ``/data/diagnostics.json``.\n    proposals_path: Path to the fix-proposal JSON persistence file.\n        Default ``/data/fix_proposals.json``.\n    effectiveness_path: Path to the effectiveness-report JSON\n        persistence file.  Default ``/data/diagnostics_effectiveness.json``.\n    recurrence_threshold: Minimum number of occurrences within the\n        window to trigger a recurrence alert.  Default ``3``.\n    recurrence_window_days: Look-back window in days for recurrence\n        detection.  Default ``30``.\n    observation_window_days: Days after a fix is applied to wait before\n        generating an effectiveness report.  The pre-fix and post-fix\n        windows are both this many days.  Default ``30``.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "store_path": {
+          "default": "/data/diagnostics.json",
+          "title": "Store Path",
+          "type": "string"
+        },
+        "proposals_path": {
+          "default": "/data/fix_proposals.json",
+          "title": "Proposals Path",
+          "type": "string"
+        },
+        "effectiveness_path": {
+          "default": "/data/diagnostics_effectiveness.json",
+          "title": "Effectiveness Path",
+          "type": "string"
+        },
+        "recurrence_threshold": {
+          "default": 3,
+          "title": "Recurrence Threshold",
+          "type": "integer"
+        },
+        "recurrence_window_days": {
+          "default": 30,
+          "title": "Recurrence Window Days",
+          "type": "integer"
+        },
+        "observation_window_days": {
+          "default": 30,
+          "title": "Observation Window Days",
+          "type": "integer"
+        }
+      },
+      "title": "DiagnosticsSettings",
+      "type": "object"
+    },
+    "DirectRepoSettings": {
+      "description": "Direct-repo push-branch + open-PR capability as the robotsix-mill GitHub App.\n\nWhen enabled, the chat agent gains two tools: ``push_direct_repo_branch``\n(create/push a branch with file changes) and ``open_direct_repo_pr``\n(open a PR from a branch).  Both authenticate as the configured GitHub App\ninstallation (JWT \u2192 short-lived installation token) and dynamically resolve\nthe allowed repo set from the installation at action time \u2014 no static\nallowlist.\n\n**Guardrails built into the tools (not configurable):**\n- Actions are ONLY permitted for tickets in BLOCKED state.\n- Repo scope is resolved dynamically from the GitHub App installation.\n- PRs are opened in a reviewable state with no auto-merge.\n- No merge capability exists on this path.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no direct-repo tools are\n        offered.\n    github_app_id: The GitHub App's numeric or slug id.  Required when\n        *enabled*.\n    github_app_private_key: The app's RSA private key in PEM format.\n        Required when *enabled*.  Stored in config only \u2014 never\n        hardcoded.\n    github_app_installation_id: The installation id to act as.  The\n        app must be installed on the target org/account.  Required when\n        *enabled*.\n    github_api_base_url: Overridable base URL for GitHub Enterprise.\n    board_api_base_url: Base URL of the board HTTP API for ticket-state\n        lookups (verifying BLOCKED state).\n    board_api_token: Optional bearer token for the board API.\n    timeout: Per-request HTTP timeout in seconds.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "github_app_id": {
+          "default": "",
+          "title": "Github App Id",
+          "type": "string"
+        },
+        "github_app_private_key": {
+          "default": "",
+          "format": "password",
+          "title": "Github App Private Key",
+          "type": "string",
+          "writeOnly": true
+        },
+        "github_app_installation_id": {
+          "default": "",
+          "title": "Github App Installation Id",
+          "type": "string"
+        },
+        "github_api_base_url": {
+          "default": "https://api.github.com",
+          "title": "Github Api Base Url",
+          "type": "string"
+        },
+        "board_api_base_url": {
+          "default": "http://127.0.0.1:8077",
+          "title": "Board Api Base Url",
+          "type": "string"
+        },
+        "board_api_token": {
+          "default": "",
+          "format": "password",
+          "title": "Board Api Token",
+          "type": "string",
+          "writeOnly": true
+        },
+        "timeout": {
+          "default": 30.0,
+          "title": "Timeout",
+          "type": "number"
+        }
+      },
+      "title": "DirectRepoSettings",
+      "type": "object"
+    },
+    "KnowledgeSettings": {
+      "description": "Local, writable knowledge base for agent-authored operational notes.\n\nA deliberate, explicit, agent-curated store of durable lessons and findings\n\u2014 plain local JSON, no embeddings, no external service, always-on.  The\nagent writes notes via five tools (``add/append/update/list/read_knowledge_note``)\nand can re-read and revise them by id across sessions.\n\nThis store is **complementary to**, not a duplicate of, the optional cognee\nepisodic memory system (``memory/``).  cognee automatically recalls past\nconversations by similarity; this knowledge base holds notes the agent\ndeliberately authors and addresses by id.\n\nAttributes:\n    enabled: Master switch.  Default ``True`` \u2014 this is a purely local,\n        no-credential, no-external-dependency primitive.\n    path: Path to the JSON persistence file.  Default\n        ``/data/knowledge.json``.",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "path": {
+          "default": "/data/knowledge.json",
+          "title": "Path",
+          "type": "string"
+        }
+      },
+      "title": "KnowledgeSettings",
+      "type": "object"
+    },
+    "LangfuseSettings": {
+      "additionalProperties": false,
+      "description": "Langfuse observability credentials.",
+      "properties": {
+        "public_key": {
+          "default": "",
+          "format": "password",
+          "title": "Public Key",
+          "type": "string",
+          "writeOnly": true
+        },
+        "secret_key": {
+          "default": "",
+          "format": "password",
+          "title": "Secret Key",
+          "type": "string",
+          "writeOnly": true
+        },
+        "host": {
+          "default": "https://cloud.langfuse.com",
+          "title": "Host",
+          "type": "string"
+        }
+      },
+      "title": "LangfuseSettings",
+      "type": "object"
+    },
+    "MailSettings": {
+      "additionalProperties": false,
+      "description": "Direct HTTP access to the auto-mail board server. Disabled by default.\n\nWhen enabled, the chat agent gains discrete tools that call the\nauto-mail board HTTP API directly (no broker indirection, no NL\nreinterpretation): get the board content, check email status, move\n/ delete / archive emails, and run triage.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no mail tools are offered.\n    api_base_url: Base URL of the auto-mail board HTTP server (no\n        trailing slash).  Default ``http://127.0.0.1:8077``.\n    api_token: Optional Bearer token; empty means no Authorization\n        header.\n    timeout: Per-request HTTP timeout in seconds.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "api_base_url": {
+          "default": "http://127.0.0.1:8077",
+          "title": "Api Base Url",
+          "type": "string"
+        },
+        "api_token": {
+          "default": "",
+          "format": "password",
+          "title": "Api Token",
+          "type": "string",
+          "writeOnly": true
+        },
+        "timeout": {
+          "default": 30.0,
+          "title": "Timeout",
+          "type": "number"
+        }
+      },
+      "title": "MailSettings",
+      "type": "object"
+    },
+    "MemoryEmbeddingSettings": {
+      "description": "Embedding config for cognee memory (remote OpenAI-compatible server).\n\nDefaults target a self-hosted Ollama ``bge-m3`` endpoint. ``provider`` must\nbe ``openai_compatible`` for that path (it tolerates a non-OpenAI model\nname); ``endpoint`` (e.g. ``http://host:11434/v1``) is required when memory\nis enabled. ``dimensions`` is sticky \u2014 changing it invalidates stored\nvectors.",
+      "properties": {
+        "provider": {
+          "default": "openai_compatible",
+          "title": "Provider",
+          "type": "string"
+        },
+        "model": {
+          "default": "bge-m3",
+          "title": "Model",
+          "type": "string"
+        },
+        "endpoint": {
+          "default": "",
+          "title": "Endpoint",
+          "type": "string"
+        },
+        "dimensions": {
+          "default": 1024,
+          "title": "Dimensions",
+          "type": "integer"
+        },
+        "api_key": {
+          "default": "**********",
+          "format": "password",
+          "title": "Api Key",
+          "type": "string",
+          "writeOnly": true
+        },
+        "huggingface_tokenizer": {
+          "default": "BAAI/bge-m3",
+          "title": "Huggingface Tokenizer",
+          "type": "string"
+        }
+      },
+      "title": "MemoryEmbeddingSettings",
+      "type": "object"
+    },
+    "MemoryLlmSettings": {
+      "description": "Extraction-LLM config for cognee memory (OpenRouter via litellm).\n\nDefaults match the validated robotsix setup: the cheap OpenRouter DeepSeek\nmodel through the ``custom`` provider. ``api_key`` is required when memory\nis enabled (provide it via ``MEMORY_LLM_API_KEY``).",
+      "properties": {
+        "provider": {
+          "default": "custom",
+          "title": "Provider",
+          "type": "string"
+        },
+        "model": {
+          "default": "openrouter/deepseek/deepseek-v4-flash",
+          "title": "Model",
+          "type": "string"
+        },
+        "endpoint": {
+          "default": "https://openrouter.ai/api/v1",
+          "title": "Endpoint",
+          "type": "string"
+        },
+        "api_key": {
+          "default": "",
+          "format": "password",
+          "title": "Api Key",
+          "type": "string",
+          "writeOnly": true
+        }
+      },
+      "title": "MemoryLlmSettings",
+      "type": "object"
+    },
+    "MemorySettings": {
+      "description": "Long-term agent memory (cognee). Disabled by default.\n\nAttributes:\n    enabled: When ``True``, the agent recalls before and persists after each\n        reply. Requires the ``memory`` extra (cognee) installed.\n    data_dir: Directory for cognee's stores (relative to the working dir).\n        Put it under the persistent ``.data`` mount so memory survives\n        container redeploys.\n    recall_search_type: cognee ``SearchType`` name used for recall.\n        ``GRAPH_COMPLETION`` (default) returns clean, relevant facts as text\n        but costs one (cheap) LLM call per message; retrieval-only types\n        like ``CHUNKS``/``SUMMARIES`` are faster but return raw, noisier\n        payloads.\n    llm: Extraction-LLM config (graph building / consolidation).\n    embedding: Embedding-server config (semantic search).\n    langfuse: Dedicated Langfuse credentials for the\n        ``robotsix-chat-cognee`` project (separate from the main chat's\n        Langfuse project). When the public key is empty, cognee LLM calls\n        are not traced.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "data_dir": {
+          "default": "/data/cognee",
+          "title": "Data Dir",
+          "type": "string"
+        },
+        "recall_search_type": {
+          "default": "GRAPH_COMPLETION",
+          "title": "Recall Search Type",
+          "type": "string"
+        },
+        "llm": {
+          "$ref": "#/$defs/MemoryLlmSettings"
+        },
+        "embedding": {
+          "$ref": "#/$defs/MemoryEmbeddingSettings"
+        },
+        "langfuse": {
+          "$ref": "#/$defs/LangfuseSettings"
+        }
+      },
+      "title": "MemorySettings",
+      "type": "object"
+    },
+    "MillSettings": {
+      "description": "robotsix-mill integration over the agent-comm broker. Disabled by default.\n\nWhen enabled, the chat agent gains a tool that forwards natural-language\nrequests to the mill's board manager (``board-manager-robotsix-mill``) over\nthe broker and relays its reply \u2014 so a user can have the mill track/do\ndevelopment work from chat. Mirrors the cost-analyst \u2192 board pattern.\n\nAttributes:\n    enabled: Master switch. Requires the ``broker`` extra (robotsix-agent-comm).\n    broker_host: Broker hostname (the shared agent-comm broker).\n    broker_port: Broker port (443 for the public TLS endpoint).\n    broker_scheme: ``https`` (TLS) or ``http``.\n    broker_token: This agent's bearer token, registered on the broker.\n        Required when enabled.\n    agent_id: This agent's id on the broker.\n    board_manager_id: Recipient agent id \u2014 the mill's NL board manager.\n    repo_id: Optional repo to scope requests to; empty lets the board manager\n        choose the target repo from the conversation.\n    timeout: Per-request timeout (seconds). The board manager is a\n        multi-turn LLM agent that legitimately takes tens of seconds \u2014 and\n        longer when its replies queue behind other mill work \u2014 so this is\n        deliberately generous. A fast pre-flight reachability check (see\n        ``BaseBrokeredClient``) fails in seconds when the broker/recipient\n        is actually unreachable, so this long timeout only governs a\n        reachable-but-slow board manager.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "broker_host": {
+          "default": "ai-broker.robotsix.net",
+          "title": "Broker Host",
+          "type": "string"
+        },
+        "broker_port": {
+          "default": 443,
+          "title": "Broker Port",
+          "type": "integer"
+        },
+        "broker_scheme": {
+          "default": "https",
+          "title": "Broker Scheme",
+          "type": "string"
+        },
+        "broker_token": {
+          "default": "",
+          "format": "password",
+          "title": "Broker Token",
+          "type": "string",
+          "writeOnly": true
+        },
+        "agent_id": {
+          "default": "robotsix-chat",
+          "title": "Agent Id",
+          "type": "string"
+        },
+        "board_manager_id": {
+          "default": "board-manager-robotsix-mill",
+          "title": "Board Manager Id",
+          "type": "string"
+        },
+        "repo_id": {
+          "default": "",
+          "title": "Repo Id",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 600.0,
+          "title": "Timeout",
+          "type": "number"
+        }
+      },
+      "title": "MillSettings",
+      "type": "object"
+    },
+    "RefDocsSettings": {
+      "description": "Read-only reference-docs tool for the agent.\n\nLets the agent fetch documentation from allowlisted GitHub repos on\ndemand. Primarily used to consult the board-workflow reference repo\nwhen deciding whether a ticket needs manual human action. The tool is\nstrictly read-only, fetches are on-demand (no bulk ingestion), and only\nrepos in the *repos* allowlist are reachable.\n\nAttributes:\n    enabled: Master switch. When ``False``, no refdocs tools are offered.\n    repos: Allowlist of ``owner/name`` GitHub repos the agent may read.\n        The board-workflow reference repo goes here. The tool refuses\n        any repo not in this list.\n    ref: Default git ref/branch to read from (``\"main\"``).\n    github_token: Optional PAT for private team repos; public repos work\n        without a token.\n    base_url: Overridable base URL for GitHub Enterprise.\n    timeout: Per-request HTTP timeout in seconds.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "repos": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Repos",
+          "type": "array"
+        },
+        "ref": {
+          "default": "main",
+          "title": "Ref",
+          "type": "string"
+        },
+        "github_token": {
+          "default": "",
+          "format": "password",
+          "title": "Github Token",
+          "type": "string",
+          "writeOnly": true
+        },
+        "base_url": {
+          "default": "https://api.github.com",
+          "title": "Base Url",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 30.0,
+          "title": "Timeout",
+          "type": "number"
+        }
+      },
+      "title": "RefDocsSettings",
+      "type": "object"
+    },
+    "SelfReviewSettings": {
+      "description": "Self-review tool \u2014 a read-only digest of live conversation activity.\n\nWhen enabled, the agent gains a ``read_recent_activity`` tool that\nreads the in-process :class:`~robotsix_chat.chat.conversation.ConversationStore`\n(short-lived per-client conversation turns) and returns a human-readable\nmulti-session digest.  This is a deliberate, explicit, cross-client\nsnapshot \u2014 complementary to, but independent of, the optional cognee\nepisodic memory subsystem (``src/robotsix_chat/memory/``).\n\nDefault-disabled so behaviour is unchanged unless explicitly turned on.\n\nAttributes:\n    enabled: Master switch. When ``True``, the ``read_recent_activity``\n        tool is attached to the agent.\n    recent_activity_limit: Maximum number of conversations returned by\n        the tool (clamps the caller's ``limit`` argument).",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "recent_activity_limit": {
+          "default": 20,
+          "title": "Recent Activity Limit",
+          "type": "integer"
+        }
+      },
+      "title": "SelfReviewSettings",
+      "type": "object"
+    },
+    "SkillsSettings": {
+      "description": "Skill/capability loading from declarative YAML manifests.\n\nWhen enabled, the chat agent discovers broker capabilities from\n``*.skill.yaml`` files under *manifests_dir* and surfaces each\ncapability as an LLM-callable tool \u2014 replacing the hardcoded\n``build_*_tools()`` pattern.\n\nEach manifest declares a broker's capabilities with structured\nparameter schemas and per-capability scoping, so the assistant gets\nonly the specific functions a broker exposes \u2014 not a generic\n\"send arbitrary message to agent\" passthrough.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no skill-based tools\n        are attached (even if manifests exist).\n    manifests_dir: Directory containing ``*.skill.yaml`` files.\n        Default ``config/skills/`` relative to the working directory.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "manifests_dir": {
+          "default": "config/skills",
+          "title": "Manifests Dir",
+          "type": "string"
+        }
+      },
+      "title": "SkillsSettings",
+      "type": "object"
+    },
+    "SubsessionsSettings": {
+      "description": "Unified subsession system \u2014 background agents spawned from a chat.\n\nA subsession is a background agent run (``task``, ``periodic``, or\n``user_chat``) spawned by the main chat agent \u2014 or, nested, by another\nsubsession \u2014 with its own model level chosen by task difficulty.\n\nAttributes:\n    max_concurrent: Process-wide cap on simultaneously active\n        subsessions (all kinds, all depths).\n        Env override: ``SUBSESSIONS_MAX_CONCURRENT``.\n    max_depth: Maximum nesting depth.  The main chat session is depth\n        0; its subsessions are depth 1.  Agents at ``max_depth`` get\n        no spawn tools.  Env override: ``SUBSESSIONS_MAX_DEPTH``.\n    default_model_level: llmio capability level used when the\n        spawning agent does not pick one explicitly (1 cheapest \u2026 4\n        frontier).  Env override: ``SUBSESSIONS_DEFAULT_MODEL_LEVEL``.\n    min_interval_seconds: Minimum interval for ``periodic``\n        subsessions.  Env override: ``SUBSESSIONS_MIN_INTERVAL_SECONDS``.\n    auto_stop_no_change_runs: A periodic subsession auto-closes after\n        this many consecutive ``NO_CHANGE`` runs.\n        Env override: ``SUBSESSIONS_AUTO_STOP_NO_CHANGE_RUNS``.\n    store_path: JSON persistence file (periodic subsessions resume\n        across restarts).  Env override: ``SUBSESSIONS_STORE_PATH``.\n    transcript_max_entries: Per-subsession transcript retention cap.",
+      "properties": {
+        "max_concurrent": {
+          "default": 8,
+          "title": "Max Concurrent",
+          "type": "integer"
+        },
+        "max_depth": {
+          "default": 3,
+          "title": "Max Depth",
+          "type": "integer"
+        },
+        "default_model_level": {
+          "default": 3,
+          "title": "Default Model Level",
+          "type": "integer"
+        },
+        "min_interval_seconds": {
+          "default": 60.0,
+          "title": "Min Interval Seconds",
+          "type": "number"
+        },
+        "auto_stop_no_change_runs": {
+          "default": 5,
+          "title": "Auto Stop No Change Runs",
+          "type": "integer"
+        },
+        "store_path": {
+          "default": "/data/subsessions.json",
+          "title": "Store Path",
+          "type": "string"
+        },
+        "transcript_max_entries": {
+          "default": 200,
+          "title": "Transcript Max Entries",
+          "type": "integer"
+        }
+      },
+      "title": "SubsessionsSettings",
+      "type": "object"
+    },
+    "VersionCheckSettings": {
+      "description": "Self-version-check tool: compare running version vs latest GitHub release.\n\nDisabled by default. When enabled, the agent gains a tool that reports the\nrunning ``robotsix_chat.__version__`` and the latest published release of\nthe configured GitHub repo, and flags when the deployment is out of date.\n\nAttributes:\n    enabled: Master switch. When ``False``, no version-check tool is offered.\n    repo: GitHub ``owner/name`` (e.g. ``robotsix/robotsix-chat``). Required\n        when *enabled*.\n    github_token: Optional PAT to avoid unauthenticated rate limits.\n    base_url: Overridable base URL for GitHub Enterprise.\n    timeout: Per-request HTTP timeout in seconds.\n    cache_ttl: Seconds to cache the latest-release lookup (monotonic clock).\n\nNote: the check is only meaningful when releases bump\n``robotsix_chat.__version__`` in lockstep with the GitHub release tag.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "repo": {
+          "default": "",
+          "title": "Repo",
+          "type": "string"
+        },
+        "github_token": {
+          "default": "",
+          "format": "password",
+          "title": "Github Token",
+          "type": "string",
+          "writeOnly": true
+        },
+        "base_url": {
+          "default": "https://api.github.com",
+          "title": "Base Url",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 30.0,
+          "title": "Timeout",
+          "type": "number"
+        },
+        "cache_ttl": {
+          "default": 300.0,
+          "title": "Cache Ttl",
+          "type": "number"
+        }
+      },
+      "title": "VersionCheckSettings",
+      "type": "object"
+    }
+  },
+  "description": "Application settings, loaded from a single JSON config file.\n\nThe LLM is configured the robotsix-llmio way \u2014 pick a capability\n``model_level`` and llmio resolves the provider + model for that level\n(from its baked default :class:`~robotsix_llmio.config.TierLevelConfig`).\n\nAttributes:\n    llmio_model_level: Capability level \u2014 ``1`` (cheapest/fastest) to\n        ``4`` (frontier). The level encodes the provider + model: by\n        default levels 1-2 use ``openrouter``, level 3 uses\n        ``claudeSDK``/``opus``, level 4 ``claudeSDK``/``claude-fable-5``.\n    llmio_api_key: Provider API key, forwarded to llmio when the chosen\n        level's provider needs one (e.g. ``openrouter``); unused\n        by keyless providers like ``claudeSDK``.\n    agent_instruction: System instruction handed to the LLM agent.\n        Includes guidance on spawning subsessions for background work.\n    server_host: Host address the chat SSE server binds to.\n    server_port: Port the chat SSE server listens on.\n    idle_timeout_minutes: Minutes of no user activity before the UI\n        auto-restarts the conversation; ``0`` disables the feature.\n    subsessions: Unified subsession system (background/periodic/user-chat\n        sub-agents) \u2014 see :class:`SubsessionsSettings`.\n    log_level: Python logging level name.\n    cors_allow_origins: Origins allowed to call /chat cross-origin\n        (empty = none; ``[\"*\"]`` = any). Only needed when the browser\n        UI is hosted on a different origin than the server.\n    correlation_id_header: HTTP header name used for the correlation /\n        request-id (both inbound and outbound). Default ``X-Request-ID``.\n    langfuse: Main-agent Langfuse observability credentials.\n    max_images_per_message: Maximum number of images a client may attach to\n        a single ``POST /chat`` request.  Default ``8``.\n    max_image_bytes: Maximum decoded size (bytes) of a single attached\n        image.  Default ``5_242_880`` (5 MiB).\n    allowed_image_media_types: Media types accepted for image attachments.\n        Default ``[\"image/png\", \"image/jpeg\", \"image/gif\", \"image/webp\"]``.",
+  "properties": {
+    "llmio_model_level": {
+      "default": 3,
+      "title": "Llmio Model Level",
+      "type": "integer"
+    },
+    "llmio_api_key": {
+      "default": "",
+      "format": "password",
+      "title": "Llmio Api Key",
+      "type": "string",
+      "writeOnly": true
+    },
+    "agent_instruction": {
+      "default": "You are a helpful assistant. You have a local, durable knowledge base (add/append/update/list/read_knowledge_note) for operational notes and lessons you deliberately author \u2014 consult it at the start of every session and write durable findings to it. Unlike the stable, human-governed system prompt (which you must not modify), these notes are yours to author and revise by id. This store is distinct from the automatic cognee conversation memory \u2014 cognee recalls past exchanges by similarity, while these notes you explicitly create and address by id. Answer quick questions inline.\n\nSubsessions:\n\u2013 spawn_subsession offloads work to a background sub-agent that has the same tools you do. Three kinds: 'task' (one-shot job \u2014 multi-step research, long generation, anything that would stall your reply), 'periodic' (re-runs instructions on an interval \u2014 monitoring, polling), and 'user_chat' (a side-chat with the user for a focused question or decision \u2014 use it instead of blocking this conversation while you wait for an answer).\n\u2013 Pick model_level by difficulty and cost: 1-2 are cheap OpenRouter tiers for trivial polling or extraction (only when an API key is configured), 3 is the default for general work, 4 is the frontier tier \u2014 reserve it for genuinely hard reasoning. Never spawn at level 4 for routine checks.\n\u2013 Write instructions that are complete and self-contained: the subsession starts with NO conversation history, so include every id, URL, constraint, and expected outcome it needs.\n\u2013 The subsession's summary arrives in this conversation when it closes. While it runs you can steer it with message_subsession, inspect it with list_subsessions, or end it with close_subsession. Tell the user the work is running in the background.\n\u2013 Inside a subsession, call complete_subsession(summary) as soon as your goal is reached \u2014 for periodic work, that means as soon as the monitored condition reaches a verified terminal state; do NOT keep re-reporting a finished state. Reply exactly NO_CHANGE on a periodic run where nothing changed.\n\u2013 In a user_chat subsession, ask a pending question ONCE and wait for the user's reply; close with a summary once the discussion reaches a conclusion. The user can also close it at any time.\n\u2013 Subsessions can spawn their own subsessions (nesting is depth-limited) \u2014 split genuinely independent subtasks, do not chain for its own sake. Check list_subsessions before spawning to avoid duplicating running work.\n\nBoard/mill rules:\n\u2013 To READ board/ticket state, always use list_board_tickets or read_board_ticket \u2014 these call the SAME HTTP endpoint the user's browser UI consumes, so you see exactly what the user sees.  Never narrate or fabricate ticket states; always verify with the board reader tools first. This applies inside subsessions too: a periodic subsession monitoring board/ticket status must re-read the board every run before reporting.\n\u2013 For complex WRITE operations (migrate tickets between repos, transition ticket state, triage that requires board-manager intelligence), use consult_mill \u2014 the broker-based board manager handles these. For simple ticket creation, use create_board_ticket \u2014 it is faster, uses fewer tokens, and includes built-in duplicate detection.\n\u2013 Prefer doing board work inline. If you do hand board work to a subsession, its instructions MUST require verifying the result with list_board_tickets before reporting success.\n\u2013 Before filing ANY new ticket, list_board_tickets for the target repo and check whether an existing OPEN ticket already covers the same intent; comment on / reuse it instead of filing a duplicate. create_board_ticket does this for you automatically and will warn if a similar ticket exists \u2014 act on that warning.\n\u2013 After creating a ticket, verify it landed on the correct board with list_board_tickets. The board manager (consult_mill) may route tickets to robotsix-mill by default; if misplaced, request a migration to the correct board (e.g. robotsix-chat) \u2014 also inline via consult_mill.\n\u2013 Never offer to manually promote a ticket from draft to ready. The draft\u2192ready transition is automatic (auto-pickup); the system picks up tickets on its own once they leave draft.\n\nCalendar/task tools:\n\u2013 query_calendar, manage_calendar, query_tasks, and manage_tasks are available for calendar and task management through the configured calendar agent. They may be disabled in deployments that lack a calendar integration. Never propose building a new calendar integration \u2014 if these tools are unavailable, briefly note it rather than suggesting alternatives.\n\nAutonomy:\n\u2013 Proactively perform actions that are clearly safe and reversible without waiting for explicit human validation \u2014 do not ask for permission when the action is low-risk and can be easily undone. Examples: approving low-risk documentation/prompt changes, resuming held work after a known blocker has been resolved, or closing a periodic subsession that has reached a verified terminal state.\n\u2013 Gate risky, destructive, irreversible, or ambiguous actions behind human approval \u2014 when in doubt about safety or reversibility, ask before acting.\n\n\nEfficiency:\n\u2013 If a required tool is missing, state it in one sentence and stop \u2014 do not explore alternatives, explain why, or narrate checking for it.\n\u2013 Answer in three sentences or fewer unless the user explicitly asks you to elaborate. Do NOT volunteer multi-row markdown tables, timeline/audit dumps, or recap lists \u2014 emit those formats ONLY when the user explicitly requests them (e.g. 'show me a table', 'give me the full audit'). Never repeat content already shown earlier in the same conversation.\n\u2013 All tools are already loaded and available for the entire session; there is no separate tool-loading step. Never narrate loading, preparing, or fetching tools (e.g. 'I'll load the tools\u2026', 'Let me load the task management tool first') and never announce or run a 'capability check'. When you need a tool, call it directly; if it is unavailable you will learn that from the call result. Do not restate tool descriptions across turns.\n\nYou are a conversational assistant with no ability to run shell commands, read or edit files, browse the web, or otherwise access the host system or its network. You can only converse and use the tools explicitly provided to you in this session. If a request needs access you don't have, briefly say so and suggest an alternative; never narrate or pretend to perform such actions.",
+      "title": "Agent Instruction",
+      "type": "string"
+    },
+    "server_host": {
+      "default": "127.0.0.1",
+      "title": "Server Host",
+      "type": "string"
+    },
+    "server_port": {
+      "default": 8000,
+      "title": "Server Port",
+      "type": "integer"
+    },
+    "idle_timeout_minutes": {
+      "default": 30,
+      "title": "Idle Timeout Minutes",
+      "type": "integer"
+    },
+    "log_level": {
+      "default": "INFO",
+      "title": "Log Level",
+      "type": "string"
+    },
+    "cors_allow_origins": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Cors Allow Origins",
+      "type": "array"
+    },
+    "correlation_id_header": {
+      "default": "X-Request-ID",
+      "title": "Correlation Id Header",
+      "type": "string"
+    },
+    "langfuse": {
+      "$ref": "#/$defs/LangfuseSettings"
+    },
+    "memory": {
+      "$ref": "#/$defs/MemorySettings"
+    },
+    "mill": {
+      "$ref": "#/$defs/MillSettings"
+    },
+    "mail": {
+      "$ref": "#/$defs/MailSettings"
+    },
+    "calendar": {
+      "$ref": "#/$defs/CalendarSettings"
+    },
+    "conversation": {
+      "$ref": "#/$defs/ConversationSettings"
+    },
+    "diagnostics": {
+      "$ref": "#/$defs/DiagnosticsSettings"
+    },
+    "refdocs": {
+      "$ref": "#/$defs/RefDocsSettings"
+    },
+    "board_reader": {
+      "$ref": "#/$defs/BoardSettings"
+    },
+    "knowledge": {
+      "$ref": "#/$defs/KnowledgeSettings"
+    },
+    "self_review": {
+      "$ref": "#/$defs/SelfReviewSettings"
+    },
+    "component_agent": {
+      "$ref": "#/$defs/ComponentAgentSettings"
+    },
+    "version_check": {
+      "$ref": "#/$defs/VersionCheckSettings"
+    },
+    "component_client": {
+      "$ref": "#/$defs/ComponentClientSettings"
+    },
+    "subsessions": {
+      "$ref": "#/$defs/SubsessionsSettings"
+    },
+    "direct_repo": {
+      "$ref": "#/$defs/DirectRepoSettings"
+    },
+    "skills": {
+      "$ref": "#/$defs/SkillsSettings"
+    },
+    "max_images_per_message": {
+      "default": 8,
+      "title": "Max Images Per Message",
+      "type": "integer"
+    },
+    "max_image_bytes": {
+      "default": 5242880,
+      "title": "Max Image Bytes",
+      "type": "integer"
+    },
+    "allowed_image_media_types": {
+      "items": {
+        "type": "string"
+      },
+      "title": "Allowed Image Media Types",
+      "type": "array"
+    }
+  },
+  "title": "Settings",
+  "type": "object"
+}

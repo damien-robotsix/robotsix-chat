@@ -29,7 +29,7 @@ def _enabled_settings(data_dir: str = "/data/cognee") -> MemorySettings:
     return MemorySettings(
         enabled=True,
         data_dir=data_dir,
-        llm=MemoryLlmSettings(api_key="sk-or-x"),  # pragma: allowlist secret
+        llm=MemoryLlmSettings(api_key=SecretStr("sk-or-x")),  # pragma: allowlist secret
         embedding=MemoryEmbeddingSettings(endpoint="http://box:11434/v1"),
     )
 
@@ -319,8 +319,8 @@ def cognee_memory_with_langfuse_creds(
     fake_litellm = _install_fake_litellm(monkeypatch)
     fake_otel = _install_fake_opentelemetry(monkeypatch)
     settings = _enabled_settings(str(tmp_path / "cognee"))
-    settings.langfuse_public_key = SecretStr("pk-lf-dedicated")
-    settings.langfuse_secret_key = SecretStr("sk-lf-dedicated")
+    settings.langfuse.public_key = SecretStr("pk-lf-dedicated")
+    settings.langfuse.secret_key = SecretStr("sk-lf-dedicated")
     mem = CogneeMemory(settings)
     return mem, fake_cognee, fake_litellm, fake_otel
 

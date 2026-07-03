@@ -61,8 +61,9 @@ def _get_jwt(settings: DirectRepoSettings) -> str:
     """Return a cached or fresh JWT for the configured GitHub App."""
     import hashlib
 
+    app_private_key = settings.github_app_private_key.get_secret_value()
     key_hash = hashlib.sha256(
-        f"{settings.github_app_id}:{settings.github_app_private_key[:20]}".encode()
+        f"{settings.github_app_id}:{app_private_key[:20]}".encode()
     ).hexdigest()
 
     now = time.monotonic()
@@ -71,7 +72,7 @@ def _get_jwt(settings: DirectRepoSettings) -> str:
         if now - ts < _JWT_LIFETIME_SECONDS - 60:
             return token
 
-    jwt_token = _make_jwt(settings.github_app_id, settings.github_app_private_key)
+    jwt_token = _make_jwt(settings.github_app_id, app_private_key)
     _GITHUB_APP_JWT_CACHE[key_hash] = (now, jwt_token)
     return jwt_token
 
@@ -216,8 +217,10 @@ class DirectRepoClient:
         board_url = self._s.board_api_base_url.rstrip("/")
         url = f"{board_url}/tickets/{ticket_id}"
         headers: dict[str, str] = {"Accept": "application/json"}
-        if self._s.board_api_token:
-            headers["Authorization"] = f"Bearer {self._s.board_api_token}"
+        if self._s.board_api_token.get_secret_value():
+            headers["Authorization"] = (
+                f"Bearer {self._s.board_api_token.get_secret_value()}"
+            )
         result = await safe_http_request(
             "GET",
             url,

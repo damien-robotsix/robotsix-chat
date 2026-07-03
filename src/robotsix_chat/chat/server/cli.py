@@ -11,6 +11,7 @@ from __future__ import annotations
 import importlib.util
 import logging
 import logging.config
+import os
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
@@ -98,6 +99,18 @@ def _setup_observability() -> None:
     setup_langfuse_tracing()
 
 
+def _export_langfuse_env(settings: Settings) -> None:
+    """Export main-agent Langfuse config to process env before SDK init."""
+    pk = settings.langfuse.public_key.get_secret_value()
+    if pk:
+        os.environ.setdefault("LANGFUSE_PUBLIC_KEY", pk)
+        os.environ.setdefault(
+            "LANGFUSE_SECRET_KEY",
+            settings.langfuse.secret_key.get_secret_value(),
+        )
+        os.environ.setdefault("LANGFUSE_HOST", settings.langfuse.host)
+
+
 def run_server_from_config(agent: ChatAgent | None = None) -> None:
     """Start the chat SSE server using ``Settings.load()`` for configuration.
 
@@ -145,6 +158,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     )
 
     # -- tracing / observability (graceful no-op when deps or creds absent) --
+    _export_langfuse_env(settings)
     _setup_observability()
 
     # -- unified subsession system -----------------------------------------

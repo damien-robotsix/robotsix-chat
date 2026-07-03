@@ -1,58 +1,36 @@
 """Layered configuration for robotsix-chat.
 
-Settings resolve through a single, predictable cascade that matches the
-rest of the robotsix stack (``robotsix-mill`` / ``robotsix-auto-mail``):
-
-    pydantic field defaults  →  YAML config file  →  environment variables
-
-with each later layer overriding the earlier one field-by-field. YAML
-loading is delegated to the shared ``robotsix-yaml-config`` library so
-every repo in the stack reads YAML the same way.
+Settings resolve through a single cascade: pydantic field defaults are
+overlaid with values from a single JSON config file located by the
+``ROBOTSIX_CONFIG_FILE`` environment variable (defaults to
+``config/config.json``).  There is no environment-variable overlay —
+``environment:`` is never a config channel for first-party code.
 
 The LLM is selected through ``robotsix-llmio``'s consumer-facing
 ``provider-model`` tier identifier (``robotsix_llmio.config``): you pick a
 capability level and llmio resolves the provider + model from its baked
 defaults, never a concrete provider class.
-
-The YAML file lives at ``config/chat.local.yaml`` by default (gitignored
-so credentials never land in the repo); copy ``config/chat.local.example.yaml``
-to create it. Override the path with the ``CHAT_CONFIG_PATH`` env var.
-
-A ``.env`` file in the working directory is still loaded (via
-``python-dotenv``) before environment variables are read, so existing
-``.env``-based deployments keep working.
 """
 
 from __future__ import annotations
 
-import os
-from pathlib import Path
 from typing import Any
 
 from robotsix_llmio.config import (
     LEVEL1_DEFAULT,
     LEVEL2_DEFAULT,
     LEVEL3_DEFAULT,
-    LEVEL4_DEFAULT,
 )
-from robotsix_yaml_config import YamlConfigError
 
-# Default YAML config file (gitignored; copy from the committed example).
-DEFAULT_CONFIG_PATH = Path("config") / "chat.local.yaml"
-
-# Env var that overrides the YAML config file path.
-CONFIG_PATH_ENV = "CHAT_CONFIG_PATH"
+try:
+    from robotsix_llmio.config import LEVEL4_DEFAULT
+except ImportError:
+    LEVEL4_DEFAULT = LEVEL3_DEFAULT  # fallback when llmio doesn't ship level 4 yet
 
 __all__ = [
-    "_YAML_PATH_TO_FIELD",
-    "CONFIG_PATH_ENV",
-    "DEFAULT_CONFIG_PATH",
     "ConfigError",
     "level_needs_api_key",
 ]
-
-# Case-insensitive truthy spellings for boolean env overrides.
-_TRUE_VALUES = {"1", "true", "yes", "on"}
 
 # robotsix-llmio now owns the level → provider-model mapping. The chat
 # just picks a capability *level*; the combined provider-model identifier for
@@ -85,66 +63,5 @@ def level_needs_api_key(level: int) -> bool:
     return tlc is None or tlc.provider != _KEYLESS_PROVIDER
 
 
-# Maps nested YAML ``section.field`` paths to ``Settings`` field names.
-_YAML_PATH_TO_FIELD: dict[str, str] = {
-    "llmio.model_level": "llmio_model_level",
-    "llmio.api_key": "llmio_api_key",  # pragma: allowlist secret
-    "agent.instruction": "agent_instruction",
-    "server.host": "server_host",
-    "server.port": "server_port",
-    "server.idle_timeout_minutes": "idle_timeout_minutes",
-    "server.log_level": "log_level",
-    "server.cors_allow_origins": "cors_allow_origins",
-    "server.correlation_id_header": "correlation_id_header",
-    "memory": "memory",
-    "mill": "mill",
-    "mail": "mail",
-    "calendar": "calendar",
-    "conversation": "conversation",
-    "refdocs": "refdocs",
-    "board_reader": "board_reader",
-    "diagnostics": "diagnostics",
-    "version_check": "version_check",
-    "knowledge": "knowledge",
-    "self_review": "self_review",
-    "component_agent": "component_agent",
-    "component_client": "component_client",
-    "subsessions": "subsessions",
-    "direct_repo": "direct_repo",
-    "skills": "skills",
-}
-
-
-class ConfigError(YamlConfigError):
-    """Raised for config-loading failures (missing file, malformed YAML).
-
-    Subclasses the shared base so ``except YamlConfigError`` handlers in
-    the stack keep working.
-    """
-
-
-def _parse_bool(value: str) -> bool:
-    """Parse an env-var string into a bool (``"true"``/``"1"``/… → True)."""
-    return value.strip().lower() in _TRUE_VALUES
-
-
-def _parse_int(env_name: str, field_name: str) -> int | None:
-    """Parse *env_name* as an int, or raise ValueError with a canonical message."""
-    raw = os.getenv(env_name)
-    if raw is None:
-        return None
-    try:
-        return int(raw)
-    except ValueError:
-        raise ValueError(f"{env_name} must be an integer, got {raw!r}") from None
-
-
-def _parse_float(env_name: str, field_name: str) -> float | None:
-    """Parse *env_name* as a float, or raise ValueError with a canonical message."""
-    raw = os.getenv(env_name)
-    if raw is None:
-        return None
-    try:
-        return float(raw)
-    except ValueError:
-        raise ValueError(f"{env_name} must be a number, got {raw!r}") from None
+class ConfigError(Exception):
+    """Raised for config-loading failures (missing file, malformed JSON)."""

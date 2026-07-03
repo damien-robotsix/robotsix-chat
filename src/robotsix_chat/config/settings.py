@@ -1,50 +1,19 @@
 """Top-level :class:`Settings` model and its factories.
 
 Composes the sub-models from :mod:`robotsix_chat.config.models` and
-implements the full defaults → YAML → environment cascade.
+loads from a single JSON file located by ``ROBOTSIX_CONFIG_FILE``.
 """
 
 from __future__ import annotations
 
 import logging
-import os
-from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
+from robotsix_config import load_config
 from robotsix_llmio.config import TierLevel
-from robotsix_yaml_config import (
-    YamlConfigError,
-    flatten_config,
-    read_yaml_file,
-)
 
-from robotsix_chat.config.constants import (
-    _YAML_PATH_TO_FIELD,
-    CONFIG_PATH_ENV,
-    DEFAULT_CONFIG_PATH,
-    ConfigError,
-    _parse_int,
-    level_needs_api_key,
-)
-from robotsix_chat.config.env_builders import (
-    _build_board_reader_raw,
-    _build_calendar_raw,
-    _build_component_agent_raw,
-    _build_component_client_raw,
-    _build_conversation_raw,
-    _build_diagnostics_raw,
-    _build_direct_repo_raw,
-    _build_knowledge_raw,
-    _build_mail_raw,
-    _build_memory_raw,
-    _build_mill_raw,
-    _build_refdocs_raw,
-    _build_self_review_raw,
-    _build_skills_raw,
-    _build_subsessions_raw,
-    _build_version_check_raw,
-)
+from robotsix_chat.config.constants import level_needs_api_key
 from robotsix_chat.config.models import (
     BoardSettings,
     CalendarSettings,
@@ -54,6 +23,7 @@ from robotsix_chat.config.models import (
     DiagnosticsSettings,
     DirectRepoSettings,
     KnowledgeSettings,
+    LangfuseSettings,
     MailSettings,
     MemorySettings,
     MillSettings,
@@ -79,7 +49,7 @@ _VALID_MODEL_LEVELS = frozenset(
 
 
 class Settings(BaseModel):
-    """Application settings, resolved from defaults → YAML → environment.
+    """Application settings, loaded from a single JSON config file.
 
     The LLM is configured the robotsix-llmio way — pick a capability
     ``model_level`` and llmio resolves the provider + model for that level
@@ -99,7 +69,6 @@ class Settings(BaseModel):
         server_port: Port the chat SSE server listens on.
         idle_timeout_minutes: Minutes of no user activity before the UI
             auto-restarts the conversation; ``0`` disables the feature.
-            Env override: ``IDLE_TIMEOUT_MINUTES``.
         subsessions: Unified subsession system (background/periodic/user-chat
             sub-agents) — see :class:`SubsessionsSettings`.
         log_level: Python logging level name.
@@ -108,20 +77,18 @@ class Settings(BaseModel):
             UI is hosted on a different origin than the server.
         correlation_id_header: HTTP header name used for the correlation /
             request-id (both inbound and outbound). Default ``X-Request-ID``.
+        langfuse: Main-agent Langfuse observability credentials.
         max_images_per_message: Maximum number of images a client may attach to
             a single ``POST /chat`` request.  Default ``8``.
-            Env override: ``MAX_IMAGES_PER_MESSAGE``.
         max_image_bytes: Maximum decoded size (bytes) of a single attached
-            image.  Default ``5_242_880`` (5 MiB).  Env override:
-            ``MAX_IMAGE_BYTES``.
+            image.  Default ``5_242_880`` (5 MiB).
         allowed_image_media_types: Media types accepted for image attachments.
             Default ``["image/png", "image/jpeg", "image/gif", "image/webp"]``.
-            Env override: ``ALLOWED_IMAGE_MEDIA_TYPES`` (comma-separated).
 
     """
 
     llmio_model_level: int = 3
-    llmio_api_key: str = ""
+    llmio_api_key: SecretStr = SecretStr("")
     agent_instruction: str = (
         "You are a helpful assistant. "
         "You have a local, durable knowledge base "
@@ -248,6 +215,7 @@ class Settings(BaseModel):
     log_level: str = "INFO"
     cors_allow_origins: list[str] = Field(default_factory=list)
     correlation_id_header: str = "X-Request-ID"
+    langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
     mill: MillSettings = Field(default_factory=MillSettings)
     mail: MailSettings = Field(default_factory=MailSettings)
@@ -280,16 +248,15 @@ class Settings(BaseModel):
 
         *subsystem* must have ``broker_token`` and ``broker_host`` attrs.
         """
-        if not subsystem.broker_token:
+        if not subsystem.broker_token.get_secret_value():
             raise ValueError(
                 f"{name}.broker_token must be set when {name} is enabled — "
-                f"provide it via {name.upper()}_BROKER_TOKEN or the "
-                f"`{name}.broker_token` config field"
+                f"provide it via the `{name}.broker_token` config field"
             )
         if not subsystem.broker_host:
             raise ValueError(
                 f"{name}.broker_host must be set when {name} is enabled — "
-                f"provide it via {name.upper()}_BROKER_HOST or the config file"
+                f"provide it via the config file"
             )
 
     @staticmethod
@@ -307,25 +274,28 @@ class Settings(BaseModel):
             )
         # The keyless Claude SDK provider (level 3) needs no API key;
         # key-bearing providers (e.g. openrouter, levels 1-2) require one.
-        if level_needs_api_key(self.llmio_model_level) and not self.llmio_api_key:
+        if (
+            level_needs_api_key(self.llmio_model_level)
+            and not self.llmio_api_key.get_secret_value()
+        ):
             raise ValueError(
                 f"llmio.api_key must be set for model_level "
                 f"{self.llmio_model_level} (its provider needs a key) — provide "
-                "it via LLMIO_API_KEY, a .env file, or the `llmio.api_key` field "
-                "of your config file (or use model_level 3, which is keyless)"
+                "it via the `llmio.api_key` field of your config file "
+                "(or use model_level 3, which is keyless)"
             )
         if self.memory.enabled:
-            if not self.memory.llm.api_key:
+            if not self.memory.llm.api_key.get_secret_value():
                 raise ValueError(
                     "memory.llm.api_key must be set when memory is enabled — "
-                    "provide it via MEMORY_LLM_API_KEY or the `memory.llm.api_key` "
+                    "provide it via the `memory.llm.api_key` "
                     "field of your config file"
                 )
             if not self.memory.embedding.endpoint:
                 raise ValueError(
                     "memory.embedding.endpoint must be set when memory is enabled "
                     "(e.g. http://host:11434/v1) — provide it via "
-                    "MEMORY_EMBEDDING_ENDPOINT or the config file"
+                    "the config file"
                 )
         self._require_min(self.idle_timeout_minutes, 0, "idle_timeout_minutes")
         self._require_min(
@@ -362,13 +332,12 @@ class Settings(BaseModel):
         if self.refdocs.enabled and not self.refdocs.repos:
             raise ValueError(
                 "refdocs.repos must be non-empty when refdocs is enabled — "
-                "provide it via REFDOCS_REPOS or the `refdocs.repos` config field"
+                "provide it via the `refdocs.repos` config field"
             )
         if self.version_check.enabled and not self.version_check.repo:
             raise ValueError(
                 "version_check.repo is required when version_check.enabled is true — "
-                "provide it via VERSION_CHECK_REPO or the "
-                "`version_check.repo` config field"
+                "provide it via the `version_check.repo` config field"
             )
 
     # ------------------------------------------------------------------
@@ -376,161 +345,6 @@ class Settings(BaseModel):
     # ------------------------------------------------------------------
 
     @classmethod
-    def load(cls, config_path: str | Path | None = None) -> Settings:
-        """Load settings through the full cascade (YAML file + environment).
-
-        Resolution order (highest priority last):
-
-        1. pydantic field defaults
-        2. the YAML config file — explicit *config_path* arg, else the
-           ``CHAT_CONFIG_PATH`` env var, else ``config/chat.local.yaml`` if
-           present (otherwise no file)
-        3. environment variables (with ``.env`` support)
-
-        Pass ``config_path=""`` to skip the YAML file entirely (used by the
-        test suite).
-        """
-        _load_dotenv()
-        nested = cls._read_yaml(config_path)
-        flat = flatten_config(nested, _YAML_PATH_TO_FIELD)
-        return cls._build(flat)
-
-    @classmethod
-    def from_env(cls) -> Settings:
-        """Load settings from environment variables only (no YAML file).
-
-        Calls ``load_dotenv()`` first so a ``.env`` file in the working
-        directory (or any parent) is picked up automatically. Equivalent
-        to ``Settings.load(config_path="")``.
-        """
-        _load_dotenv()
-        return cls._build({})
-
-    # ------------------------------------------------------------------
-    # Internals
-    # ------------------------------------------------------------------
-
-    @classmethod
-    def _read_yaml(cls, config_path: str | Path | None) -> dict[str, Any]:
-        """Resolve the YAML config path and read it into a nested dict.
-
-        Returns an empty dict when no file applies. Raises
-        :class:`FileNotFoundError` when an explicit path (arg or
-        ``CHAT_CONFIG_PATH``) points at a missing file, and
-        :class:`ConfigError` on malformed YAML.
-        """
-        explicit = True
-        if config_path is not None:
-            if config_path == "":
-                return {}
-            path = Path(config_path)
-        else:
-            env_path = os.getenv(CONFIG_PATH_ENV)
-            if env_path:
-                path = Path(env_path)
-            elif DEFAULT_CONFIG_PATH.exists():
-                path, explicit = DEFAULT_CONFIG_PATH, False
-            else:
-                return {}
-
-        if explicit and not path.exists():
-            raise FileNotFoundError(f"Config file not found: {path}")
-
-        try:
-            return read_yaml_file(path)
-        except YamlConfigError as exc:
-            raise ConfigError(str(exc)) from exc
-
-    @classmethod
-    def _build(cls, flat: dict[str, Any]) -> Settings:
-        """Overlay environment variables onto *flat* YAML values and build."""
-        raw: dict[str, Any] = {
-            k: v
-            for k, v in flat.items()
-            if k
-            not in (
-                "memory",
-                "mill",
-                "mail",
-                "calendar",
-                "conversation",
-                "refdocs",
-                "knowledge",
-                "self_review",
-                "version_check",
-                "component_agent",
-                "component_client",
-                "diagnostics",
-            )
-        }
-
-        def env_override(field: str, env_name: str) -> None:
-            value = os.getenv(env_name)
-            if value is not None:
-                raw[field] = value
-
-        env_override("llmio_api_key", "LLMIO_API_KEY")
-        env_override("agent_instruction", "AGENT_INSTRUCTION")
-        env_override("server_host", "SERVER_HOST")
-        env_override("log_level", "LOG_LEVEL")
-
-        _INT_ENV_PAIRS: list[tuple[str, str]] = [
-            ("LLMIO_MODEL_LEVEL", "llmio_model_level"),
-            ("SERVER_PORT", "server_port"),
-            ("IDLE_TIMEOUT_MINUTES", "idle_timeout_minutes"),
-            ("MAX_IMAGES_PER_MESSAGE", "max_images_per_message"),
-            ("MAX_IMAGE_BYTES", "max_image_bytes"),
-        ]
-        for env_var, field in _INT_ENV_PAIRS:
-            val = _parse_int(env_var, field)
-            if val is not None:
-                raw[field] = val
-
-        cors_raw = os.getenv("CORS_ALLOW_ORIGINS")
-        if cors_raw is not None:
-            raw["cors_allow_origins"] = [
-                origin.strip() for origin in cors_raw.split(",") if origin.strip()
-            ]
-
-        env_override("correlation_id_header", "CORRELATION_ID_HEADER")
-
-        allowed_types = os.getenv("ALLOWED_IMAGE_MEDIA_TYPES")
-        if allowed_types is not None:
-            raw["allowed_image_media_types"] = [
-                t.strip() for t in allowed_types.split(",") if t.strip()
-            ]
-
-        _SUBSYSTEM_BUILDERS: dict[str, Any] = {
-            "memory": _build_memory_raw,
-            "mill": _build_mill_raw,
-            "mail": _build_mail_raw,
-            "calendar": _build_calendar_raw,
-            "conversation": _build_conversation_raw,
-            "refdocs": _build_refdocs_raw,
-            "board_reader": _build_board_reader_raw,
-            "knowledge": _build_knowledge_raw,
-            "diagnostics": _build_diagnostics_raw,
-            "self_review": _build_self_review_raw,
-            "component_agent": _build_component_agent_raw,
-            "version_check": _build_version_check_raw,
-            "component_client": _build_component_client_raw,
-            "subsessions": _build_subsessions_raw,
-            "direct_repo": _build_direct_repo_raw,
-            "skills": _build_skills_raw,
-        }
-        for key, builder in _SUBSYSTEM_BUILDERS.items():
-            result = builder(flat.get(key))
-            if result:
-                raw[key] = result
-
-        return cls(**raw)
-
-
-def _load_dotenv() -> None:
-    """Load a ``.env`` file into the environment if python-dotenv is present."""
-    try:
-        from dotenv import load_dotenv
-
-        load_dotenv()
-    except ImportError:  # pragma: no cover — python-dotenv is a required dep
-        logger.debug("python-dotenv not installed; skipping .env loading")
+    def load(cls) -> Settings:
+        """Load from the JSON file located by ``ROBOTSIX_CONFIG_FILE``."""
+        return load_config(cls)

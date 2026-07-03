@@ -108,7 +108,7 @@ class ComponentAgentResponder:
             broker_host=ca.broker_host,
             broker_port=ca.broker_port,
             broker_scheme=ca.broker_scheme,
-            broker_token=ca.broker_token,
+            broker_token=ca.broker_token.get_secret_value(),
             timeout=ca.timeout,
             on_request=self._on_request,
         )

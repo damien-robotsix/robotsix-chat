@@ -9,6 +9,7 @@ from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
+from pydantic import SecretStr
 
 from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.server import (
@@ -1035,16 +1036,16 @@ async def test_create_agent_from_settings_uses_load_when_none(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """``create_agent_from_settings`` resolves config when *settings* is None."""
-    # Isolate from any on-disk config/chat.local.yaml so resolution is env-only.
-    monkeypatch.setattr(
-        "robotsix_chat.config.constants.DEFAULT_CONFIG_PATH",
-        Path("/nonexistent/chat.local.yaml"),
-    )
-    monkeypatch.delenv("CHAT_CONFIG_PATH", raising=False)
-    monkeypatch.setenv("LLMIO_MODEL_LEVEL", "1")
-    monkeypatch.setenv("LLMIO_API_KEY", "sk-env-test")
+    # Patch load_config to return a Settings with desired values.
+    from robotsix_chat.config import Settings
 
-    result = create_agent_from_settings("Helpful bot.")
+    with patch(
+        "robotsix_chat.config.settings.load_config",
+        return_value=Settings(
+            llmio_model_level=1, llmio_api_key=SecretStr("sk-env-test")
+        ),
+    ):
+        result = create_agent_from_settings("Helpful bot.")
 
     assert isinstance(result, LlmioChatAgent)
     assert result._model_level == 1
@@ -1065,17 +1066,19 @@ async def test_run_server_from_config_creates_agent_from_settings(
     ``run_server_from_config()`` with no *agent* argument creates the
     agent and forwards server options.
     """
-    # Isolate from any on-disk config/chat.local.yaml so resolution is env-only.
-    monkeypatch.setattr(
-        "robotsix_chat.config.constants.DEFAULT_CONFIG_PATH",
-        Path("/nonexistent/chat.local.yaml"),
-    )
-    monkeypatch.delenv("CHAT_CONFIG_PATH", raising=False)
-    monkeypatch.setenv("LLMIO_MODEL_LEVEL", "3")
-    monkeypatch.setenv("SERVER_HOST", "127.0.0.1")
-    monkeypatch.setenv("SERVER_PORT", "8080")
+    from robotsix_chat.config import Settings
 
-    with patch("robotsix_chat.chat.server.run_server") as mock_run_server:
+    with (
+        patch(
+            "robotsix_chat.config.settings.load_config",
+            return_value=Settings(
+                llmio_model_level=3,
+                server_host="127.0.0.1",
+                server_port=8080,
+            ),
+        ),
+        patch("robotsix_chat.chat.server.run_server") as mock_run_server,
+    ):
         run_server_from_config()
 
         call_args = mock_run_server.call_args
@@ -1133,16 +1136,15 @@ async def test_run_server_from_config_passes_explicit_agent(
     ``run_server_from_config(agent)`` passes *agent* through without
     creating a new one.
     """
-    # Isolate from any on-disk config; the default (claude-sdk) needs no key.
-    monkeypatch.setattr(
-        "robotsix_chat.config.constants.DEFAULT_CONFIG_PATH",
-        Path("/nonexistent/chat.local.yaml"),
-    )
-    monkeypatch.delenv("CHAT_CONFIG_PATH", raising=False)
-    mock_agent = MagicMock()
+    # Patch load_config to use defaults (level 3 = keyless, no key needed).
+    with patch(
+        "robotsix_chat.config.settings.load_config",
+        return_value=Settings(),
+    ):
+        mock_agent = MagicMock()
 
-    with patch("robotsix_chat.chat.server.run_server") as mock_run_server:
-        run_server_from_config(mock_agent)
+        with patch("robotsix_chat.chat.server.run_server") as mock_run_server:
+            run_server_from_config(mock_agent)
 
         mock_run_server.assert_called_once()
         passed_agent = mock_run_server.call_args[0][0]
