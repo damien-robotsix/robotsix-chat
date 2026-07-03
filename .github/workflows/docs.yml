@@ -19,5 +19,5 @@ jobs:
     # requests `contents: write`. The caller must grant it or GitHub rejects
     # the reusable-workflow call with a startup_failure.
     permissions:
-      contents: write
+      contents: write  # push built site to gh-pages
     uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-docs.yml@5cd8c1facb02299da618979e7a55f1953f9c075a  # main

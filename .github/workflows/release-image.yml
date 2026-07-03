@@ -13,8 +13,7 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read        # baseline: checkout the repo
-  attestations: write   # provenance / SBOM attestation at the workflow level
+  contents: read  # baseline: checkout the repo
 
 concurrency:
   group: release-${{ github.ref }}
@@ -44,8 +43,8 @@ jobs:
     needs: verify
     uses: damien-robotsix/robotsix-github-workflows/.github/workflows/docker-release.yml@5cd8c1facb02299da618979e7a55f1953f9c075a  # main
     permissions:
-      contents: read
-      packages: write
-      attestations: write
+      contents: read          # checkout the repo
+      packages: write         # push image to GHCR
+      attestations: write     # provenance / SBOM attestation
       id-token: write         # provenance / SBOM attestation signing
       security-events: write  # Trivy SARIF upload to Code Scanning
