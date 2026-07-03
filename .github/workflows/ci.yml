@@ -105,6 +105,13 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
+      - name: Install actionlint and hadolint
+        run: |
+          curl -sSL https://github.com/rhysd/actionlint/releases/download/v1.6.24/actionlint_1.6.24_linux_amd64.tar.gz \
+            | sudo tar xz -C /usr/local/bin actionlint
+          sudo curl -sSL https://github.com/hadolint/hadolint/releases/download/v2.12.0/hadolint-Linux-x86_64 \
+            -o /usr/local/bin/hadolint
+          sudo chmod +x /usr/local/bin/hadolint
       - name: Run pre-commit
         # mypy resolves from the project's dev group via `uv run`; vulture is
         # not a declared dependency (only a system-hook tool), so provision it
