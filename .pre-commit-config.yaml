@@ -35,14 +35,10 @@ repos:
         pass_filenames: false
         require_serial: true
 
-  - repo: local
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.6.24
     hooks:
       - id: actionlint
-        name: actionlint
-        entry: actionlint
-        language: system
-        types: [yaml]
-        files: ^\.github/workflows/
 
   - repo: local
     hooks:
@@ -56,13 +52,10 @@ repos:
         pass_filenames: false
         files: ^uv\.lock$
 
-  - repo: local
+  - repo: https://github.com/hadolint/hadolint
+    rev: v1.19.0
     hooks:
       - id: hadolint
-        name: hadolint
-        entry: hadolint
-        language: system
-        types: [dockerfile]
 
   - repo: https://github.com/Yelp/detect-secrets
     rev: v1.5.0
