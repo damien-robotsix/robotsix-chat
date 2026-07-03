@@ -33,7 +33,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 SSE_CONTENT_TYPE = "text/event-stream"
-SSE_TOKEN_TYPE = "token"
+SSE_TOKEN_TYPE = "token"  # nosec B105 — SSE event type name, not a credential
 SSE_DONE_TYPE = "done"
 SSE_ERROR_TYPE = "error"
 
