@@ -44,5 +44,6 @@ jobs:
     permissions:
       contents: read
       packages: write
+      attestations: write
       id-token: write         # provenance / SBOM attestation signing
       security-events: write  # Trivy SARIF upload to Code Scanning
