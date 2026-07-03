@@ -79,12 +79,13 @@ RUN apt-get update \
         /usr/bin/npm /usr/bin/npx /usr/bin/corepack
 
 # Standardized robotsix container layout (see robotsix-standards, docker
-# page): non-root user `app`, uid/gid 1001, home /home/app. The UID matches
-# the deploy host's operator so mounted mode-600 credentials (~/.claude for
-# the level-3 claude-sdk transport; central-deploy binds it to
-# /home/app/.claude) are readable. Build args allow other hosts to override.
-ARG APP_UID=1001
-ARG APP_GID=1001
+# page): non-root user `app`, uid/gid 1000 (robotsix-standards default,
+# 2026-07 revision), home /home/app. Central-deploy overrides the container
+# user to the deploy-host operator uid:gid at container-create time; the
+# 1000 default matches the common `debian` operator uid. Build args allow
+# other hosts to override.
+ARG APP_UID=1000
+ARG APP_GID=1000
 RUN groupadd --gid ${APP_GID} app \
     && useradd --create-home --uid ${APP_UID} --gid ${APP_GID} app
 WORKDIR /home/app
