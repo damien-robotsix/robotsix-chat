@@ -61,7 +61,7 @@ class MemorySettings(BaseModel):
     """
 
     enabled: bool = False
-    data_dir: str = ".data/cognee"
+    data_dir: str = "/data/cognee"
     recall_search_type: str = "GRAPH_COMPLETION"
     llm: MemoryLlmSettings = Field(default_factory=MemoryLlmSettings)
     embedding: MemoryEmbeddingSettings = Field(default_factory=MemoryEmbeddingSettings)
@@ -239,11 +239,11 @@ class DiagnosticsSettings(BaseModel):
     Attributes:
         enabled: Master switch.  Default ``True``.
         store_path: Path to the diagnostic-event JSON persistence file.
-            Default ``.data/diagnostics.json``.
+            Default ``/data/diagnostics.json``.
         proposals_path: Path to the fix-proposal JSON persistence file.
-            Default ``.data/fix_proposals.json``.
+            Default ``/data/fix_proposals.json``.
         effectiveness_path: Path to the effectiveness-report JSON
-            persistence file.  Default ``.data/diagnostics_effectiveness.json``.
+            persistence file.  Default ``/data/diagnostics_effectiveness.json``.
         recurrence_threshold: Minimum number of occurrences within the
             window to trigger a recurrence alert.  Default ``3``.
         recurrence_window_days: Look-back window in days for recurrence
@@ -255,9 +255,9 @@ class DiagnosticsSettings(BaseModel):
     """
 
     enabled: bool = True
-    store_path: str = ".data/diagnostics.json"
-    proposals_path: str = ".data/fix_proposals.json"
-    effectiveness_path: str = ".data/diagnostics_effectiveness.json"
+    store_path: str = "/data/diagnostics.json"
+    proposals_path: str = "/data/fix_proposals.json"
+    effectiveness_path: str = "/data/diagnostics_effectiveness.json"
     recurrence_threshold: int = 3
     recurrence_window_days: int = 30
     observation_window_days: int = 30
@@ -350,12 +350,12 @@ class KnowledgeSettings(BaseModel):
         enabled: Master switch.  Default ``True`` — this is a purely local,
             no-credential, no-external-dependency primitive.
         path: Path to the JSON persistence file.  Default
-            ``.data/knowledge.json``.
+            ``/data/knowledge.json``.
 
     """
 
     enabled: bool = True
-    path: str = ".data/knowledge.json"
+    path: str = "/data/knowledge.json"
 
 
 class SelfReviewSettings(BaseModel):
@@ -526,7 +526,7 @@ class SubsessionsSettings(BaseModel):
     default_model_level: int = 3
     min_interval_seconds: float = 60.0
     auto_stop_no_change_runs: int = 5
-    store_path: str = ".data/subsessions.json"
+    store_path: str = "/data/subsessions.json"
     transcript_max_entries: int = 200
 
 
@@ -546,11 +546,11 @@ class ConversationSettings(BaseModel):
         max_conversations: Maximum number of distinct sessions tracked at once
             (LRU-evicted); bounds the in-memory store.
         persist_path: Path to the JSON persistence file. Default
-            ``.data/conversations.json``. Set to an empty string to disable.
+            ``/data/conversations.json``. Set to an empty string to disable.
 
     """
 
     idle_reset_seconds: int = 1800
     max_history_turns: int = 50
     max_conversations: int = 1000
-    persist_path: str = ".data/conversations.json"
+    persist_path: str = "/data/conversations.json"

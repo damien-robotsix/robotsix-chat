@@ -59,7 +59,7 @@ the window expires a fresh conversation starts with empty history.
 | `conversation.idle_reset_seconds` | `CONVERSATION_IDLE_RESET_SECONDS` | `1800`                       | Idle gap (seconds) after which the next message starts a new conversation. Default 1800 = 30 minutes.       |
 | `conversation.max_history_turns`  | `CONVERSATION_MAX_HISTORY_TURNS`  | `50`                         | Most recent user/assistant turn-pairs kept per conversation and replayed to the agent (bounds prompt size). |
 | `conversation.max_conversations`  | `CONVERSATION_MAX_CONVERSATIONS`  | `1000`                       | Maximum number of distinct clients tracked at once (LRU-evicted). Bounds the in-memory store.               |
-| `conversation.persist_path`       | `CONVERSATION_PERSIST_PATH`       | `".data/conversations.json"` | Path to the JSON persistence file for conversation sessions. Set to empty string to disable persistence.    |
+| `conversation.persist_path`       | `CONVERSATION_PERSIST_PATH`       | `"/data/conversations.json"` | Path to the JSON persistence file for conversation sessions. Set to empty string to disable persistence.    |
 
 ## Subsessions
 
@@ -75,7 +75,7 @@ conversation when they close.
 | `subsessions.default_model_level`      | `SUBSESSIONS_DEFAULT_MODEL_LEVEL`      | `3`                        | llmio capability level used when the spawning agent does not pick one (1 cheapest … 4 frontier). |
 | `subsessions.min_interval_seconds`     | `SUBSESSIONS_MIN_INTERVAL_SECONDS`     | `60.0`                     | Minimum interval for periodic subsessions, in seconds.                                           |
 | `subsessions.auto_stop_no_change_runs` | `SUBSESSIONS_AUTO_STOP_NO_CHANGE_RUNS` | `5`                        | A periodic subsession auto-closes after this many consecutive `NO_CHANGE` runs.                  |
-| `subsessions.store_path`               | `SUBSESSIONS_STORE_PATH`               | `".data/subsessions.json"` | JSON persistence file; periodic subsessions resume across restarts.                              |
+| `subsessions.store_path`               | `SUBSESSIONS_STORE_PATH`               | `"/data/subsessions.json"` | JSON persistence file; periodic subsessions resume across restarts.                              |
 
 ## Memory (cognee)
 
@@ -91,7 +91,7 @@ When enabled, `memory.llm.api_key` and `memory.embedding.endpoint` are required.
 | YAML path                   | Env var                     | Default              | Description                                                                                                                                                                                                |
 | --------------------------- | --------------------------- | -------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `memory.enabled`            | `MEMORY_ENABLED`            | `false`              | Enable embedded cognee long-term memory.                                                                                                                                                                   |
-| `memory.data_dir`           | `MEMORY_DATA_DIR`           | `".data/cognee"`     | Directory for cognee stores. Keep on a persistent mount (`.data`) so memory survives container redeploys.                                                                                                  |
+| `memory.data_dir`           | `MEMORY_DATA_DIR`           | `"/data/cognee"`     | Directory for cognee stores. Keep on a persistent mount (`/data`) so memory survives container redeploys.                                                                                                  |
 | `memory.recall_search_type` | `MEMORY_RECALL_SEARCH_TYPE` | `"GRAPH_COMPLETION"` | Cognee search type used for recall. `GRAPH_COMPLETION` returns clean, relevant facts as text but costs one (cheap) LLM call per message. `CHUNKS`/`SUMMARIES` are faster but return raw, noisier payloads. |
 
 ### Memory LLM (extraction)
@@ -243,9 +243,9 @@ default.
 | YAML path                             | Env var                               | Default                                  | Description                                                                    |
 | ------------------------------------- | ------------------------------------- | ---------------------------------------- | ------------------------------------------------------------------------------ |
 | `diagnostics.enabled`                 | `DIAGNOSTICS_ENABLED`                 | `true`                                   | Master switch.                                                                 |
-| `diagnostics.store_path`              | `DIAGNOSTICS_STORE_PATH`              | `".data/diagnostics.json"`               | Path to the diagnostic-event JSON persistence file.                            |
-| `diagnostics.proposals_path`          | `DIAGNOSTICS_PROPOSALS_PATH`          | `".data/fix_proposals.json"`             | Path to the fix-proposal JSON persistence file.                                |
-| `diagnostics.effectiveness_path`      | `DIAGNOSTICS_EFFECTIVENESS_PATH`      | `".data/diagnostics_effectiveness.json"` | Path to the effectiveness-report JSON persistence file.                        |
+| `diagnostics.store_path`              | `DIAGNOSTICS_STORE_PATH`              | `"/data/diagnostics.json"`               | Path to the diagnostic-event JSON persistence file.                            |
+| `diagnostics.proposals_path`          | `DIAGNOSTICS_PROPOSALS_PATH`          | `"/data/fix_proposals.json"`             | Path to the fix-proposal JSON persistence file.                                |
+| `diagnostics.effectiveness_path`      | `DIAGNOSTICS_EFFECTIVENESS_PATH`      | `"/data/diagnostics_effectiveness.json"` | Path to the effectiveness-report JSON persistence file.                        |
 | `diagnostics.recurrence_threshold`    | `DIAGNOSTICS_RECURRENCE_THRESHOLD`    | `3`                                      | Minimum number of occurrences within the window to trigger a recurrence alert. |
 | `diagnostics.recurrence_window_days`  | `DIAGNOSTICS_RECURRENCE_WINDOW_DAYS`  | `30`                                     | Look-back window in days for recurrence detection.                             |
 | `diagnostics.observation_window_days` | `DIAGNOSTICS_OBSERVATION_WINDOW_DAYS` | `30`                                     | Days after a fix is applied to wait before generating an effectiveness report. |
@@ -341,7 +341,7 @@ recalled"; this KB = "operational notes/lessons I deliberately authored and can 
 | YAML path           | Env var             | Default                  | Description                                                          |
 | ------------------- | ------------------- | ------------------------ | -------------------------------------------------------------------- |
 | `knowledge.enabled` | `KNOWLEDGE_ENABLED` | `true`                   | Enable the writable knowledge base (adds five knowledge-note tools). |
-| `knowledge.path`    | `KNOWLEDGE_PATH`    | `".data/knowledge.json"` | Path to the JSON persistence file.                                   |
+| `knowledge.path`    | `KNOWLEDGE_PATH`    | `"/data/knowledge.json"` | Path to the JSON persistence file.                                   |
 
 ## Example YAML
 
@@ -358,7 +358,7 @@ server:
 
 memory:
   enabled: true
-  data_dir: ".data/cognee"
+  data_dir: "/data/cognee"
   llm:
     api_key: "sk-or-..."  # pragma: allowlist secret
   embedding:
@@ -396,5 +396,5 @@ direct_repo:
 
 knowledge:
   enabled: true
-  path: ".data/knowledge.json"
+  path: "/data/knowledge.json"
 ```

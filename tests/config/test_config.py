@@ -407,7 +407,7 @@ def test_memory_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings.from_env()
 
     assert settings.memory.enabled is False
-    assert settings.memory.data_dir == ".data/cognee"
+    assert settings.memory.data_dir == "/data/cognee"
     assert settings.memory.recall_search_type == "GRAPH_COMPLETION"
     assert settings.memory.llm.model == "openrouter/deepseek/deepseek-v4-flash"
     assert settings.memory.embedding.provider == "openai_compatible"
@@ -671,7 +671,7 @@ def test_knowledge_enabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings.from_env()
 
     assert settings.knowledge.enabled is True
-    assert settings.knowledge.path == ".data/knowledge.json"
+    assert settings.knowledge.path == "/data/knowledge.json"
 
 
 def test_knowledge_disabled_ok() -> None:
@@ -799,7 +799,7 @@ def test_subsessions_defaults() -> None:
     assert settings.subsessions.default_model_level == 3
     assert settings.subsessions.min_interval_seconds == 60.0
     assert settings.subsessions.auto_stop_no_change_runs == 5
-    assert settings.subsessions.store_path == ".data/subsessions.json"
+    assert settings.subsessions.store_path == "/data/subsessions.json"
 
 
 def test_subsessions_from_yaml(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -1139,10 +1139,10 @@ def test_diagnostics_enabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None
     settings = Settings.from_env()
 
     assert settings.diagnostics.enabled is True
-    assert settings.diagnostics.store_path == ".data/diagnostics.json"
-    assert settings.diagnostics.proposals_path == ".data/fix_proposals.json"
+    assert settings.diagnostics.store_path == "/data/diagnostics.json"
+    assert settings.diagnostics.proposals_path == "/data/fix_proposals.json"
     assert settings.diagnostics.effectiveness_path == (
-        ".data/diagnostics_effectiveness.json"
+        "/data/diagnostics_effectiveness.json"
     )
     assert settings.diagnostics.recurrence_threshold == 3
     assert settings.diagnostics.recurrence_window_days == 30

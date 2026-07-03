@@ -22,7 +22,7 @@ logger = logging.getLogger(__name__)
 
 __all__ = ["BoardWriteRetryQueue"]
 
-_QUEUE_PATH = Path(".data/board_write_queue.json")
+_QUEUE_PATH = Path("/data/board_write_queue.json")
 _INITIAL_DELAY = 900  # 15 min
 _MAX_DELAY = 14_400  # 4 hr
 _BACKOFF_FACTOR = 2

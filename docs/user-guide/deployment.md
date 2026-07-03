@@ -31,8 +31,8 @@ container. Use this for development, testing, or ad-hoc runs.
 
 - Docker Engine 24+ and Compose v2
 - Claude subscription: `claude login` (populates `~/.claude`)
-- **Persistent `.data` volume**: conversation history is written to `.data/conversations.json`
-  inside the container. In production the named volume `chat-data` is mounted at `/home/app/.data`
+- **Persistent `/data` volume**: conversation history is written to `/data/conversations.json`
+  inside the container. In production the named volume `chat-data` is mounted at `/data`
   (read-write) so chat history survives redeploys.
 
 ### Steps
@@ -197,9 +197,9 @@ ______________________________________________________________________
 
 ## Conversation history across restarts
 
-The server persists each completed chat exchange to `.data/conversations.json` (one write per turn).
+The server persists each completed chat exchange to `/data/conversations.json` (one write per turn).
 On startup, any saved conversations are loaded back into memory, so a user's prior turns are
-restored even after a full container restart — provided the `.data` directory lives on a persistent
+restored even after a full container restart — provided the `/data` directory lives on a persistent
 volume mount (see [volume mounts](#prerequisites) above).
 
 Key characteristics:
@@ -214,7 +214,7 @@ Key characteristics:
   `/history?client_id=...` to restore message bubbles. This works regardless of whether the server
   persisted to disk (the in-memory store is sufficient for reloads within the same process
   lifetime).
-- **Container restart**: history loaded from `.data/conversations.json` is fully functional —
+- **Container restart**: history loaded from `/data/conversations.json` is fully functional —
   idle-reset behaviour, the 50-turn cap, and LRU eviction all apply to restored conversations.
 
 ## 7. Updating

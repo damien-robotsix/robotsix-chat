@@ -7,7 +7,7 @@ subsession in the process.  It owns:
 * a strong reference to each in-flight worker :class:`asyncio.Task`,
 * a per-subsession **inbox** (deque + wake event) for messages delivered
   at the subsession's next turn boundary,
-* JSON persistence at ``.data/subsessions.json`` (full-state rewrite on
+* JSON persistence at ``/data/subsessions.json`` (full-state rewrite on
   every mutation, mirroring the previous check-loop registry), and
 * SSE lifecycle publishing via the injected
   :class:`~robotsix_chat.chat.events.EventSink` — every frame is
@@ -61,14 +61,14 @@ class SubsessionRegistry:
         self,
         *,
         event_sink: EventSink | None = None,
-        store_path: Path | None = Path(".data/subsessions.json"),
+        store_path: Path | None = Path("/data/subsessions.json"),
         clock: Callable[[], float] = time.time,
         id_factory: Callable[[], str] | None = None,
         transcript_max_entries: int = 200,
     ) -> None:
         """Configure the sink, JSON store path, clock, and transcript cap.
 
-        *store_path* defaults to ``.data/subsessions.json``; pass ``None``
+        *store_path* defaults to ``/data/subsessions.json``; pass ``None``
         to disable persistence (tests).  *clock* must return wall-clock
         seconds (``time.time``) — timestamps are shown in the UI and
         persisted across restarts.

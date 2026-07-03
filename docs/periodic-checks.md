@@ -78,7 +78,7 @@ POST /subsessions/{subsession_id}/close
 6. **Terminal-state discipline.** The sub-agent calls its `complete_subsession(summary)` tool as
    soon as the monitored condition reaches a verified terminal state — the summary is delivered to
    the parent and the subsession closes.
-7. Subsessions persist to `.data/subsessions.json`; periodic ones are automatically resumed after a
+7. Subsessions persist to `/data/subsessions.json`; periodic ones are automatically resumed after a
    process restart (e.g. Watchtower redeploy) with their remaining run budget.
 8. Concurrency is bounded by `subsessions.max_concurrent` (default 8, across all subsession kinds);
    exceeding it returns a friendly refusal rather than raising.

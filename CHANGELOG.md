@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Move persistent-data mount from `/home/app/.data` to `/data` per round-4 container standard. All code-level path defaults (memory data_dir, diagnostics store/proposals/effectiveness, knowledge path, subsessions store_path, conversation persist_path) now use absolute `/data/…` paths.
 - Dockerfile: add `SHELL` with pipefail and pin apt package versions for hadolint compliance.
 - Dockerfile: change `APP_UID`/`APP_GID` ARG defaults from 1001 to 1000 to align with the
   robotsix-standards 2026-07 revision (central-deploy overrides the container user to the

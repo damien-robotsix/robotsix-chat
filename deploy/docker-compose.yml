@@ -38,7 +38,7 @@ services:
       start_period: 15s
     volumes:
       # Persistent agent state (knowledge store, cognee memory, HF cache).
-      - chat-data:/home/app/.data
+      - chat-data:/data
 
 volumes:
   chat-data:
