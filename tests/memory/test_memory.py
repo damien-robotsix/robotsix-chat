@@ -229,27 +229,71 @@ def _install_fake_litellm(monkeypatch: pytest.MonkeyPatch) -> Any:
     return fake
 
 
+def _install_fake_opentelemetry(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Install stub ``opentelemetry`` modules so the OTLP import guard passes."""
+    fake_otel = types.ModuleType("opentelemetry")
+    fake_otel_exporter = types.ModuleType("opentelemetry.exporter")
+    fake_otel_exporter_otlp = types.ModuleType("opentelemetry.exporter.otlp")
+    fake_otel_exporter_otlp_proto = types.ModuleType(
+        "opentelemetry.exporter.otlp.proto"
+    )
+    fake_otel_exporter_otlp_proto_http = types.ModuleType(
+        "opentelemetry.exporter.otlp.proto.http"
+    )
+    fake_otel_exporter_otlp_proto_http_trace = types.ModuleType(
+        "opentelemetry.exporter.otlp.proto.http.trace_exporter"
+    )
+
+    class OTLPSpanExporter:
+        pass
+
+    fake_otel_exporter_otlp_proto_http_trace.OTLPSpanExporter = OTLPSpanExporter
+
+    monkeypatch.setitem(sys.modules, "opentelemetry", fake_otel)
+    monkeypatch.setitem(sys.modules, "opentelemetry.exporter", fake_otel_exporter)
+    monkeypatch.setitem(
+        sys.modules, "opentelemetry.exporter.otlp", fake_otel_exporter_otlp
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "opentelemetry.exporter.otlp.proto",
+        fake_otel_exporter_otlp_proto,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "opentelemetry.exporter.otlp.proto.http",
+        fake_otel_exporter_otlp_proto_http,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "opentelemetry.exporter.otlp.proto.http.trace_exporter",
+        fake_otel_exporter_otlp_proto_http_trace,
+    )
+    return fake_otel_exporter_otlp_proto_http_trace
+
+
 @pytest.fixture
 def cognee_memory_with_langfuse_creds(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Any
-) -> tuple[CogneeMemory, Any, Any]:
-    """CogneeMemory with dedicated Langfuse creds and a stubbed litellm."""
+) -> tuple[CogneeMemory, Any, Any, Any]:
+    """CogneeMemory with dedicated Langfuse creds and stubbed litellm/otel."""
     fake_cognee = _install_fake_cognee(monkeypatch)
     fake_litellm = _install_fake_litellm(monkeypatch)
+    fake_otel = _install_fake_opentelemetry(monkeypatch)
     settings = _enabled_settings(str(tmp_path / "cognee"))
     settings.langfuse_public_key = SecretStr("pk-lf-dedicated")
     settings.langfuse_secret_key = SecretStr("sk-lf-dedicated")
     mem = CogneeMemory(settings)
-    return mem, fake_cognee, fake_litellm
+    return mem, fake_cognee, fake_litellm, fake_otel
 
 
 @pytest.mark.asyncio
 async def test_litellm_langfuse_callback_configured_with_dedicated_creds(
-    cognee_memory_with_langfuse_creds: tuple[CogneeMemory, Any, Any],
+    cognee_memory_with_langfuse_creds: tuple[CogneeMemory, Any, Any, Any],
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When dedicated creds are set, litellm's Langfuse callback is wired."""
-    mem, _, fake_litellm = cognee_memory_with_langfuse_creds
+    mem, _, fake_litellm, _ = cognee_memory_with_langfuse_creds
     monkeypatch.setenv("LANGFUSE_HOST", "https://langfuse.robotsix.net")
     await mem.setup()
 
