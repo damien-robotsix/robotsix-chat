@@ -5,6 +5,7 @@ from __future__ import annotations
 from typing import Any
 
 import pytest
+import pytest_asyncio
 from robotsix_agent_comm.protocol import Metadata
 from robotsix_agent_comm.protocol.messages import Request
 
@@ -64,16 +65,9 @@ def fake_broker(monkeypatch):
     return captured
 
 
-# ---------------------------------------------------------------------------
-# Registration + lifecycle
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_responder_start_registers_handler(
-    responder_deps, fake_broker, monkeypatch
-):
-    """Starting the responder constructs a BrokeredAgent with the on_request handler."""
+@pytest_asyncio.fixture
+async def started_responder(responder_deps, fake_broker):
+    """Build and start a ComponentAgentResponder; stop it after the test."""
     responder = ComponentAgentResponder(
         settings=responder_deps["settings"],
         subsession_registry=responder_deps["subsession_registry"],
@@ -81,13 +75,22 @@ async def test_responder_start_registers_handler(
         event_bus=responder_deps["event_bus"],
     )
     await responder.start()
+    yield responder
+    await responder.stop()
 
+
+# ---------------------------------------------------------------------------
+# Registration + lifecycle
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_responder_start_registers_handler(started_responder):
+    """Starting the responder constructs a BrokeredAgent with the on_request handler."""
     # The fake agent is stored as self._agent.
-    agent = responder._agent
+    agent = started_responder._agent
     assert agent.agent_id == "robotsix-chat-component"
     assert agent._on_request is not None
-
-    await responder.stop()
 
 
 @pytest.mark.asyncio
@@ -139,7 +142,7 @@ async def test_responder_missing_broker_extra_raises(responder_deps, monkeypatch
 
 
 @pytest.mark.asyncio
-async def test_monitor_returns_live_telemetry(responder_deps, fake_broker):
+async def test_monitor_returns_live_telemetry(responder_deps, started_responder):
     """Monitor returns genuine counts reflecting seeded state."""
     sub_registry = responder_deps["subsession_registry"]
     conv_store = responder_deps["conversation_store"]
@@ -169,18 +172,9 @@ async def test_monitor_returns_live_telemetry(responder_deps, fake_broker):
         max_runs=5,
     )
 
-    # Build responder and start it.
-    responder = ComponentAgentResponder(
-        settings=responder_deps["settings"],
-        subsession_registry=sub_registry,
-        conversation_store=conv_store,
-        event_bus=event_bus,
-    )
-    await responder.start()
-
     # Dispatch a monitor request.
     req = _make_request("monitor")
-    reply = responder._agent._on_request(req)
+    reply = started_responder._agent._on_request(req)
 
     # The reply should be a Response.
     from robotsix_agent_comm.protocol.messages import Response
@@ -206,8 +200,6 @@ async def test_monitor_returns_live_telemetry(responder_deps, fake_broker):
     assert result["settings"]["mill.broker_token"] == "***"
     assert result["settings"]["component_agent.broker_token"] == "***"
 
-    await responder.stop()
-
 
 # ---------------------------------------------------------------------------
 # config-get handler
@@ -215,20 +207,10 @@ async def test_monitor_returns_live_telemetry(responder_deps, fake_broker):
 
 
 @pytest.mark.asyncio
-async def test_config_get_returns_snapshot_and_settable_keys(
-    responder_deps, fake_broker
-):
+async def test_config_get_returns_snapshot_and_settable_keys(started_responder):
     """config-get returns redacted snapshot + settable metadata."""
-    responder = ComponentAgentResponder(
-        settings=responder_deps["settings"],
-        subsession_registry=responder_deps["subsession_registry"],
-        conversation_store=responder_deps["conversation_store"],
-        event_bus=responder_deps["event_bus"],
-    )
-    await responder.start()
-
     req = _make_request("config-get")
-    reply = responder._agent._on_request(req)
+    reply = started_responder._agent._on_request(req)
 
     from robotsix_agent_comm.protocol.messages import Response
 
@@ -243,8 +225,6 @@ async def test_config_get_returns_snapshot_and_settable_keys(
     assert "server.log_level" in result["settable"]
     assert result["settable"]["server.log_level"]["type"] == "str"
 
-    await responder.stop()
-
 
 # ---------------------------------------------------------------------------
 # config-set handler
@@ -252,19 +232,11 @@ async def test_config_get_returns_snapshot_and_settable_keys(
 
 
 @pytest.mark.asyncio
-async def test_config_set_applies_valid_update(responder_deps, fake_broker):
+async def test_config_set_applies_valid_update(responder_deps, started_responder):
     """config-set applies a valid update and returns the audit record."""
-    responder = ComponentAgentResponder(
-        settings=responder_deps["settings"],
-        subsession_registry=responder_deps["subsession_registry"],
-        conversation_store=responder_deps["conversation_store"],
-        event_bus=responder_deps["event_bus"],
-    )
-    await responder.start()
-
     original = responder_deps["settings"].log_level
     req = _make_request("config-set", {"updates": {"server.log_level": "DEBUG"}})
-    reply = responder._agent._on_request(req)
+    reply = started_responder._agent._on_request(req)
 
     from robotsix_agent_comm.protocol.messages import Response
 
@@ -272,23 +244,13 @@ async def test_config_set_applies_valid_update(responder_deps, fake_broker):
     assert reply.body["applied"]["server.log_level"] == (original, "DEBUG")
     assert responder_deps["settings"].log_level == "DEBUG"
 
-    await responder.stop()
-
 
 @pytest.mark.asyncio
-async def test_config_set_rejects_unknown_key(responder_deps, fake_broker):
+async def test_config_set_rejects_unknown_key(responder_deps, started_responder):
     """config-set rejects an unknown key without mutating settings."""
-    responder = ComponentAgentResponder(
-        settings=responder_deps["settings"],
-        subsession_registry=responder_deps["subsession_registry"],
-        conversation_store=responder_deps["conversation_store"],
-        event_bus=responder_deps["event_bus"],
-    )
-    await responder.start()
-
     original_level = responder_deps["settings"].log_level
     req = _make_request("config-set", {"updates": {"no.such.key": 42}})
-    reply = responder._agent._on_request(req)
+    reply = started_responder._agent._on_request(req)
 
     from robotsix_agent_comm.protocol.messages import Error
 
@@ -296,23 +258,13 @@ async def test_config_set_rejects_unknown_key(responder_deps, fake_broker):
     assert reply.body["code"] == "UNKNOWN_KEY"
     assert responder_deps["settings"].log_level == original_level
 
-    await responder.stop()
-
 
 @pytest.mark.asyncio
-async def test_config_set_rejects_type_mismatch(responder_deps, fake_broker):
+async def test_config_set_rejects_type_mismatch(responder_deps, started_responder):
     """config-set rejects a type mismatch without mutating settings."""
-    responder = ComponentAgentResponder(
-        settings=responder_deps["settings"],
-        subsession_registry=responder_deps["subsession_registry"],
-        conversation_store=responder_deps["conversation_store"],
-        event_bus=responder_deps["event_bus"],
-    )
-    await responder.start()
-
     original_enabled = responder_deps["settings"].component_agent.enabled
     req = _make_request("config-set", {"updates": {"component_agent.enabled": "yes"}})
-    reply = responder._agent._on_request(req)
+    reply = started_responder._agent._on_request(req)
 
     from robotsix_agent_comm.protocol.messages import Error
 
@@ -320,31 +272,21 @@ async def test_config_set_rejects_type_mismatch(responder_deps, fake_broker):
     assert reply.body["code"] == "TYPE_MISMATCH"
     assert responder_deps["settings"].component_agent.enabled == original_enabled
 
-    await responder.stop()
-
 
 @pytest.mark.asyncio
-async def test_config_set_rejects_cross_field_invalid(responder_deps, fake_broker):
+async def test_config_set_rejects_cross_field_invalid(
+    responder_deps, started_responder
+):
     """config-set rejects an update that would violate cross-field invariants."""
-    responder = ComponentAgentResponder(
-        settings=responder_deps["settings"],
-        subsession_registry=responder_deps["subsession_registry"],
-        conversation_store=responder_deps["conversation_store"],
-        event_bus=responder_deps["event_bus"],
-    )
-    await responder.start()
-
     original_mill_enabled = responder_deps["settings"].mill.enabled
     req = _make_request("config-set", {"updates": {"mill.enabled": True}})
-    reply = responder._agent._on_request(req)
+    reply = started_responder._agent._on_request(req)
 
     from robotsix_agent_comm.protocol.messages import Error
 
     assert isinstance(reply, Error)
     assert reply.body["code"] == "CROSS_FIELD_INVALID"
     assert responder_deps["settings"].mill.enabled == original_mill_enabled
-
-    await responder.stop()
 
 
 # ---------------------------------------------------------------------------
@@ -353,25 +295,15 @@ async def test_config_set_rejects_cross_field_invalid(responder_deps, fake_broke
 
 
 @pytest.mark.asyncio
-async def test_unknown_kind_returns_error(responder_deps, fake_broker):
+async def test_unknown_kind_returns_error(started_responder):
     """An unknown request kind returns an Error."""
-    responder = ComponentAgentResponder(
-        settings=responder_deps["settings"],
-        subsession_registry=responder_deps["subsession_registry"],
-        conversation_store=responder_deps["conversation_store"],
-        event_bus=responder_deps["event_bus"],
-    )
-    await responder.start()
-
     req = _make_request("nonexistent-kind")
-    reply = responder._agent._on_request(req)
+    reply = started_responder._agent._on_request(req)
 
     from robotsix_agent_comm.protocol.messages import Error
 
     assert isinstance(reply, Error)
     assert reply.body["code"] == "UNKNOWN_KIND"
-
-    await responder.stop()
 
 
 # ---------------------------------------------------------------------------

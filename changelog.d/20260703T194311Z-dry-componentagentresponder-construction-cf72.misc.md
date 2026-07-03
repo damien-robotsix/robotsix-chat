@@ -1,0 +1,1 @@
+DRY ComponentAgentResponder construction + start/stop boilerplate in test_responder.py
