@@ -1,6 +1,9 @@
 ## 0.0.0 (unreleased)
 
-- Silence bandit false positives in `scripts/check_modules_registry.py` (B404, B603, B607), `src/robotsix_chat/chat/server/routes.py` (B105), and `src/robotsix_chat/mill/retry_queue.py` (B311) with `# nosec` comments; update `.secrets.baseline` for the `.pre-commit-config.yaml` typos rev SHA.
+- Silence bandit false positives in `scripts/check_modules_registry.py` (B404, B603, B607),
+  `src/robotsix_chat/chat/server/routes.py` (B105), and `src/robotsix_chat/mill/retry_queue.py`
+  (B311) with `# nosec` comments; update `.secrets.baseline` for the `.pre-commit-config.yaml` typos
+  rev SHA.
 - Dockerfile: migrate from `/opt/venv` copy pattern to canonical `uv export --frozen` +
   `uv pip install --system` pattern, installing directly into the runtime image's system Python.
   Removes the builder-stage virtualenv indirection; build-only tooling (git, uv binary) is pruned
