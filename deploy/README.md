@@ -14,10 +14,12 @@ directly. The root `docker-compose.yml` remains the local-dev stack.
 - Lifecycle is managed by central-deploy: restart policy, networking, gateway routing
   (`deploy.robotsix.net/<component>/*` → container port 8080), and redeploys from the dashboard. No
   Watchtower.
-- **Configuration** is env-based for now: empty-value `environment:` keys in the compose are secret
-  slots the operator fills in the dashboard (`MEMORY_LLM_API_KEY`, broker tokens…); non-empty values
-  are editable defaults. The planned robotsix-config migration will replace these with one mounted
-  `config/config.json`.
+- **Configuration** lives in a single YAML config file mounted by central-deploy.
+  `deploy/config.example.yaml` is the committed template — the operator copies it to
+  `config/chat.local.yaml`, fills in real values (secret slots, tune defaults), and central-deploy
+  injects it into the container via the `robotsix.deploy.config-target` label. The container reads
+  it via the `CHAT_CONFIG_PATH` env var (infrastructure wiring only). No application config or
+  secrets live in `environment:`.
 - **Persistent state** (knowledge store, cognee memory, HF cache) lives in the named volume
   `chat-data`, mounted at `/home/app/.data` and flagged `robotsix.deploy.stateful` — it starts EMPTY
   on first onboard; migrate data from a previous deployment first if needed.
@@ -30,8 +32,9 @@ directly. The root `docker-compose.yml` remains the local-dev stack.
 
 1. In the central-deploy dashboard, start onboarding and point it at this repository. Preflight
    parses `deploy/docker-compose.yml`.
-2. Fill any secret slots you need (memory/broker keys). Authentication is handled by the
-   central-deploy gateway — the app ships none.
+2. Fill the config file: copy `deploy/config.example.yaml` to `config/chat.local.yaml` and fill in
+   the secret slots (at minimum `auth.password`). central-deploy injects this file into the
+   container at the path declared by the `robotsix.deploy.config-target` label.
 3. Acknowledge the `chat-data` stateful-volume warning (empty on first deploy) and confirm the
    Claude-mount toggle.
 4. Deploy.

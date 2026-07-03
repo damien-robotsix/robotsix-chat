@@ -6,10 +6,11 @@
 # system. Lifecycle (restart policy, networking, gateway routing, redeploys)
 # is managed by central-deploy — no Watchtower, no restart:, no host binds.
 #
-# Configuration is currently env-based (empty value = operator-filled secret
-# slot, non-empty = editable default). The one-file robotsix-config migration
-# (config/config.json + config-target label) is planned and will replace most
-# of these environment keys.
+# Application config and secrets live in the mounted config file
+# (config/chat.local.yaml, injected by central-deploy via the
+# config-target label below). The environment: block carries only
+# infrastructure wiring — the config-file path pointer and anything
+# the container needs to locate/serve, not application behaviour.
 services:
   robotsix-chat:
     image: ghcr.io/damien-robotsix/robotsix-chat:main
@@ -19,26 +20,16 @@ services:
       # binds host ~/.claude -> /home/app/.claude (the standardized container
       # user's home).
       robotsix.deploy.claude-mount: "true"
+      # Application config file — central-deploy injects the operator-managed
+      # config file at the in-container path the app reads via CHAT_CONFIG_PATH.
+      robotsix.deploy.config-target: "config/chat.local.yaml"
     ports:
       - "8088:8080"
     environment:
-      # LLM capability level (robotsix-llmio): 3 = claude-sdk/opus,
-      # 4 = claude-sdk/fable-5 (frontier) — both keyless via the claude-mount
-      # above; 1-2 = OpenRouter (needs LLMIO_API_KEY).
-      LLMIO_MODEL_LEVEL: "3"
-      LLMIO_API_KEY: ""
-      # Long-term memory (cognee). Needs the embedding endpoint + OpenRouter
-      # key when enabled; stores live under the chat-data volume.
-      MEMORY_ENABLED: "0"
-      MEMORY_DATA_DIR: .data/cognee
-      MEMORY_LLM_API_KEY: ""
-      MEMORY_EMBEDDING_ENDPOINT: ""
-      MEMORY_EMBEDDING_API_KEY: ""
-      # Agent-comm broker integrations (mill board manager, calendar agent).
-      MILL_ENABLED: "0"
-      MILL_BROKER_TOKEN: ""
-      CALENDAR_ENABLED: "0"
-      CALENDAR_BROKER_TOKEN: ""
+      # Infrastructure wiring only — path to the mounted config file
+      # (injected via the config-target label above). Application config
+      # and secrets live in that file, not here.
+      CHAT_CONFIG_PATH: config/chat.local.yaml
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health').status==200 else 1)"]
       interval: 30s

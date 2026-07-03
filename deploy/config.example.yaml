@@ -1,0 +1,57 @@
+# Example configuration for robotsix-chat production deployment.
+#
+# This file lists every application config key and secret that previously
+# lived in environment: slots in deploy/docker-compose.yml.  The operator
+# copies this to config/chat.local.yaml, fills in real values, and
+# central-deploy injects it into the container via the config-target label
+# (robotsix.deploy.config-target: "config/chat.local.yaml").
+#
+#     cp deploy/config.example.yaml config/chat.local.yaml
+#     # edit config/chat.local.yaml — fill secret slots, tune defaults
+#
+# config/chat.local.yaml is git-ignored so credentials never land in the
+# repo.  The container reads it via the CHAT_CONFIG_PATH env var
+# (infrastructure wiring in the deploy compose).  Every value you omit
+# falls back to its built-in default (shown commented below).
+
+# LLM selection — delegated to robotsix-llmio.
+#
+# Levels 1-2 → OpenRouter (needs api_key).  Levels 3-4 → Claude Agent SDK
+# (keyless — needs the claude-mount label and `claude login` on the host).
+llmio:
+  model_level: 3                  # 3 = claude-sdk/opus (keyless); env: LLMIO_MODEL_LEVEL
+  # api_key: ""                   # required for levels 1-2 (OpenRouter); env: LLMIO_API_KEY
+
+# HTTP/SSE server.
+server:
+  # host: 0.0.0.0                 # env override: SERVER_HOST
+  # port: 8080                    # env override: SERVER_PORT
+  # log_level: INFO               # env override: LOG_LEVEL
+
+# HTTP Basic Auth — gate the browser UI and /chat.  Enabled by default in
+# production; the operator MUST set a strong password.
+auth:
+  enabled: true                   # env override: AUTH_ENABLED
+  username: admin                 # env override: AUTH_USERNAME
+  password: ""                    # REQUIRED — set a strong random value; env: AUTH_PASSWORD
+
+# Long-term memory (cognee).  Disabled by default; when enabled, both
+# memory.llm.api_key and memory.embedding.endpoint are required.
+memory:
+  enabled: false                  # env override: MEMORY_ENABLED
+  # data_dir: .data/cognee        # cognee stores live here; env: MEMORY_DATA_DIR
+  llm:
+    api_key: ""                   # OpenRouter key, required when enabled; env: MEMORY_LLM_API_KEY
+  embedding:
+    endpoint: ""                  # e.g. http://host:11434/v1; env: MEMORY_EMBEDDING_ENDPOINT
+    # api_key: ""                 # env override: MEMORY_EMBEDDING_API_KEY
+
+# robotsix-mill integration over the agent-comm broker.  Disabled by default.
+mill:
+  enabled: false                  # env override: MILL_ENABLED
+  broker_token: ""                # this agent's bearer token; env: MILL_BROKER_TOKEN
+
+# robotsix-calendar integration over the agent-comm broker.  Disabled by default.
+calendar:
+  enabled: false                  # env override: CALENDAR_ENABLED
+  broker_token: ""                # this agent's bearer token; env: CALENDAR_BROKER_TOKEN
