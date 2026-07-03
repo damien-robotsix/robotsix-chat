@@ -1,8 +1,8 @@
 # syntax=docker/dockerfile:1
 
 # ---------------------------------------------------------------------------
-# Builder stage: resolve and install locked dependencies + the project into a
-# self-contained virtual environment that the runtime stage can simply COPY.
+# Builder stage: resolve the locked dependency set and export a requirements.txt
+# for installation in the runtime stage.
 # ---------------------------------------------------------------------------
 FROM python:3.14-slim@sha256:44dd04494ee8f3b538294360e7c4b3acb87c8268e4d0a4828a6500b1eff50061 AS builder
 
@@ -13,11 +13,6 @@ ENV UV_LINK_MODE=copy \
     UV_PYTHON_DOWNLOADS=0
 
 WORKDIR /app
-
-# Create the self-contained virtual environment up front.
-RUN python -m venv /opt/venv
-ENV VIRTUAL_ENV=/opt/venv \
-    PATH="/opt/venv/bin:$PATH"
 
 # Copy only what is needed to resolve and build the project.
 COPY pyproject.toml uv.lock ./
@@ -32,17 +27,34 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Export the locked dependency set (claude-sdk for the LLM transport + tracing
-# for Langfuse observability), install it, then install the project itself
-# without re-resolving dependencies.
-RUN uv export --frozen --no-emit-project --no-hashes --extra claude-sdk --extra tracing --extra memory --extra broker > requirements.txt \
-    && uv pip install --python /opt/venv/bin/python -r requirements.txt \
-    && uv pip install --python /opt/venv/bin/python --no-deps .
+# for Langfuse observability + memory for cognee + broker for agent-comm).
+RUN uv export --frozen --no-emit-project --no-hashes --extra claude-sdk --extra tracing --extra memory --extra broker > requirements.txt
 
 # ---------------------------------------------------------------------------
-# Runtime stage: minimal image with Node.js + the claude CLI and the prebuilt
-# virtual environment, running as a non-root user.
+# Runtime stage: install locked deps + project into the system Python, then
+# add Node.js + the claude CLI, running as a non-root user.
 # ---------------------------------------------------------------------------
 FROM python:3.14-slim@sha256:44dd04494ee8f3b538294360e7c4b3acb87c8268e4d0a4828a6500b1eff50061 AS runtime
+
+# Bring in uv and the exported requirements for the --system install.
+COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /usr/local/bin/uv
+COPY --from=builder /app/requirements.txt /tmp/requirements.txt
+
+# Copy project source (needed for the --no-deps self-install; removed after).
+COPY pyproject.toml uv.lock README.md /tmp/project/
+COPY src /tmp/project/src
+
+# Install git temporarily so uv can fetch the git-sourced dependencies
+# (robotsix-yaml-config, robotsix-llmio), install the locked deps and the
+# project into the system site-packages, then remove git, uv, and the
+# transient source to keep the runtime layer lean.
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends git \
+    && uv pip install --system -r /tmp/requirements.txt \
+    && uv pip install --system --no-deps /tmp/project \
+    && apt-get purge -y --auto-remove git \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/* /tmp/requirements.txt /tmp/project /usr/local/bin/uv
 
 # Install Node.js (LTS) and the claude CLI, then prune build-only packages and
 # caches to keep the layer lean.
@@ -65,11 +77,6 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* /root/.npm \
         /usr/lib/node_modules/npm /usr/lib/node_modules/corepack \
         /usr/bin/npm /usr/bin/npx /usr/bin/corepack
-
-# Copy the prebuilt virtual environment (deps + project) from the builder stage.
-COPY --from=builder /opt/venv /opt/venv
-ENV VIRTUAL_ENV=/opt/venv \
-    PATH="/opt/venv/bin:$PATH"
 
 # Standardized robotsix container layout (see robotsix-standards, docker
 # page): non-root user `app`, uid/gid 1001, home /home/app. The UID matches
