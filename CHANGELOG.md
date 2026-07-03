@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Enable triage_boilerplate periodic workflow for automated triage boilerplate response templates.
 - Extract `_fetch_json(repo, path, action)` private helper in `RefDocsClient` to deduplicate the
   allowlist-check + URL-build + fetch preamble shared by `read_file` and `list_files`.
 - Extract repeated `env_set` closures from `env_builders` `_build_*_raw()` functions into a
