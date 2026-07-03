@@ -199,6 +199,7 @@ modules:
       - tests/subsessions/test_worker.py
       - tests/subsessions/test_tools.py
       - tests/subsessions/test_resume.py
+      - tests/subsessions/test_delivery.py
 
   - id: robotsix_chat.refdocs
     description: "Read-only reference-docs tool — lets the chat agent read team repos."
