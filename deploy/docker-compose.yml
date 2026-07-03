@@ -14,15 +14,17 @@ services:
   robotsix-chat:
     image: ghcr.io/damien-robotsix/robotsix-chat:main
     labels:
-      # Subscription auth for the level-3 claude-sdk transport: central-deploy
+      # Subscription auth for the claude-sdk transports (levels 3-4):
+      # central-deploy
       # binds host ~/.claude -> /home/app/.claude (the standardized container
       # user's home).
       robotsix.deploy.claude-mount: "true"
     ports:
       - "8088:8080"
     environment:
-      # LLM capability level (robotsix-llmio): 3 = claude-sdk/opus, keyless
-      # via the claude-mount above; 1-2 = OpenRouter (needs LLMIO_API_KEY).
+      # LLM capability level (robotsix-llmio): 3 = claude-sdk/opus,
+      # 4 = claude-sdk/fable-5 (frontier) — both keyless via the claude-mount
+      # above; 1-2 = OpenRouter (needs LLMIO_API_KEY).
       LLMIO_MODEL_LEVEL: "3"
       LLMIO_API_KEY: ""
       # HTTP Basic auth gate for the UI and /chat.

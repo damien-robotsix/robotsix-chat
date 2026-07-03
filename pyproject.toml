@@ -103,7 +103,7 @@ packages = ["src/robotsix_chat"]
 # disagree on the version.
 [tool.uv.sources]
 robotsix-yaml-config = { git = "https://github.com/damien-robotsix/robotsix-yaml-config.git", rev = "fbca817194ff6af20588c4c603dc3fdebadce6d0" }  # pragma: allowlist secret
-robotsix-board-agent = { git = "https://github.com/damien-robotsix/robotsix-board-agent.git", rev = "e2f00b518efbd029f2941886bcf5199e669fc0a8" }  # pragma: allowlist secret
+robotsix-board-agent = { git = "https://github.com/damien-robotsix/robotsix-board-agent.git", rev = "ec89dc44d8a462e1d0d2a5748fcc1819d0770d03" }  # pragma: allowlist secret
 robotsix-agent-comm = { git = "https://github.com/damien-robotsix/robotsix-agent-comm.git", rev = "555e22eef1a3083d6735083f01313e67fa1187ca" }  # pragma: allowlist secret
 
 [tool.towncrier]
