@@ -1,5 +1,7 @@
 ## 0.0.0 (unreleased)
 
+- Complete `AuthSettings` wiring into `Settings` model and fix `config_contract.py` snapshot
+  redaction for `github_app_private_key` (adds `"private_key"` to `_SECRET_PATTERNS`).
 - Dockerfile: migrate from `/opt/venv` copy pattern to canonical `uv export --frozen` +
   `uv pip install --system` pattern, installing directly into the runtime image's system Python.
   Removes the builder-stage virtualenv indirection; build-only tooling (git, uv binary) is pruned
@@ -8,6 +10,11 @@
   file (`robotsix.deploy.config-target` label). `deploy/docker-compose.yml` `environment:` now
   carries only infrastructure wiring (`CHAT_CONFIG_PATH`); a committed `deploy/config.example.yaml`
   replaces the old per-key env slots.
+- Convert all credential-bearing config fields (`llmio_api_key`, `auth.password`, memory/embedding
+  `api_key`, broker `token`, mail/board/calendar/component_agent `api_token` / `broker_token`,
+  refdocs/version_check `github_token`, direct_repo `github_app_private_key` / `board_api_token`)
+  from plain `str` to `pydantic.SecretStr` so secrets never leak through `repr()`, logs,
+  `model_dump()`, or f-string interpolation.
 - Add `hypothesis` dev dependency and property-based roundtrip tests for Pydantic config models
   (`AuthSettings`, `Settings`), catching validation edge cases in combinatorial field interactions.
 - Add Dependabot auto-merge caller workflow (`.github/workflows/dependabot-auto-merge.yml`).

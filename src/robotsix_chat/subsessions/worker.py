@@ -176,7 +176,10 @@ def _validate_model_level(settings: Settings, model_level: int) -> None:
 
     if model_level not in (1, 2, 3):
         raise SubsessionLevelError("model_level must be between 1 and 3")
-    if level_needs_api_key(model_level) and not settings.llmio_api_key:
+    if (
+        level_needs_api_key(model_level)
+        and not settings.llmio_api_key.get_secret_value()
+    ):
         raise SubsessionLevelError(
             f"model level {model_level} needs an API key which is not "
             "configured — use level 3 or 4"

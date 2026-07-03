@@ -9,7 +9,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 __all__ = [
     "BrokerConfig",
@@ -86,7 +86,7 @@ class BrokerConfig(BaseModel):
     host: str = "ai-broker.robotsix.net"
     port: int = 443
     scheme: str = "https"
-    token: str = ""
+    token: SecretStr = SecretStr("")
     timeout: float = 240.0
     request_key: str = "message"
 

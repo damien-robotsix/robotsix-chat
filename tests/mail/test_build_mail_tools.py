@@ -32,7 +32,7 @@ def test_mail_settings_defaults() -> None:
     s = MailSettings()
     assert s.enabled is False
     assert s.api_base_url == "http://127.0.0.1:8077"
-    assert s.api_token == ""
+    assert s.api_token.get_secret_value() == ""
     assert s.timeout == 30.0
 
 

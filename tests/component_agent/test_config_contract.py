@@ -105,6 +105,10 @@ def test_snapshot_redacts_secrets():
         "board_reader.api_token",
         "memory.llm.api_key",
         "memory.embedding.api_key",
+        "direct_repo.github_app_private_key",
+        "direct_repo.board_api_token",
+        "component_agent.broker_token",
+        "version_check.github_token",
     ]
     for key in secret_keys:
         assert snap.get(key) == _REDACTED_SENTINEL, (

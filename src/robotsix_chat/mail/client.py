@@ -40,7 +40,7 @@ class MailClient:
     def __init__(self, settings: MailSettings) -> None:
         """Store the board API URL, auth token, and timeout."""
         self._base_url = settings.api_base_url.rstrip("/")
-        self._token = settings.api_token
+        self._token = settings.api_token.get_secret_value()
         self._timeout = settings.timeout
         headers: dict[str, str] = {}
         if self._token:

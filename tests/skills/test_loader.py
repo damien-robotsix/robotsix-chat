@@ -106,7 +106,7 @@ broker:
     )
     manifests = discover_manifests(str(skills_dir))
     assert manifests[0].broker is not None
-    assert manifests[0].broker.token == "secret123"
+    assert manifests[0].broker.token.get_secret_value() == "secret123"
 
 
 def test_discover_skips_invalid_yaml(tmp_path: Path) -> None:
