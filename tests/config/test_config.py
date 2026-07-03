@@ -142,7 +142,7 @@ def test_defaults(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings.from_env()
 
     assert settings.llmio_model_level == 3
-    assert settings.llmio_api_key == ""
+    assert settings.llmio_api_key.get_secret_value() == ""
     assert settings.server_host == "127.0.0.1"
     assert settings.server_port == 8000
     assert settings.log_level == "INFO"
@@ -163,7 +163,7 @@ def test_default_level_is_keyless() -> None:
     """The default level (3) is keyless — constructs with no key."""
     settings = Settings()
     assert settings.llmio_model_level == 3
-    assert settings.llmio_api_key == ""
+    assert settings.llmio_api_key.get_secret_value() == ""
 
 
 def test_key_bearing_level_requires_api_key() -> None:
@@ -176,7 +176,9 @@ def test_key_bearing_level_with_key_ok() -> None:
     """Level 1 constructs fine with a key."""
     settings = Settings(llmio_model_level=1, llmio_api_key="sk-x")
     assert settings.llmio_model_level == 1
-    assert settings.llmio_api_key == "sk-x"  # pragma: allowlist secret
+    assert (
+        settings.llmio_api_key.get_secret_value() == "sk-x"
+    )  # pragma: allowlist secret
 
 
 def test_invalid_model_level_raises() -> None:
@@ -223,7 +225,9 @@ def test_loads_from_environment(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings.from_env()
 
     assert settings.llmio_model_level == 2
-    assert settings.llmio_api_key == "sk-env-test"  # pragma: allowlist secret
+    assert (
+        settings.llmio_api_key.get_secret_value() == "sk-env-test"
+    )  # pragma: allowlist secret
     assert settings.server_host == "0.0.0.0"
     assert settings.server_port == 9090
     assert settings.log_level == "DEBUG"
@@ -290,9 +294,48 @@ def test_dotenv_file_loaded(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> 
     settings = Settings.from_env()
 
     assert settings.llmio_model_level == 2
-    assert settings.llmio_api_key == "sk-dotenv-test"  # pragma: allowlist secret
+    assert (
+        settings.llmio_api_key.get_secret_value() == "sk-dotenv-test"
+    )  # pragma: allowlist secret
     assert settings.server_host == "0.0.0.0"
     assert settings.server_port == 3000
+
+
+# ---------------------------------------------------------------------------
+# Auth + agent instruction
+# ---------------------------------------------------------------------------
+
+
+def test_auth_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Auth is off by default."""
+    _wipe_env_vars(monkeypatch)
+
+    settings = Settings.from_env()
+
+    assert settings.auth.enabled is False
+    assert settings.auth.username == "admin"
+
+
+def test_auth_enabled_without_password_raises() -> None:
+    """Enabling auth without a password is rejected at construction."""
+    with pytest.raises(ValueError, match="auth.password"):
+        Settings(auth=AuthSettings(enabled=True))
+
+
+def test_auth_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    """``AUTH_*`` env vars populate the nested auth settings."""
+    _wipe_env_vars(monkeypatch)
+    monkeypatch.setenv("AUTH_ENABLED", "true")
+    monkeypatch.setenv("AUTH_USERNAME", "ops")
+    monkeypatch.setenv("AUTH_PASSWORD", "s3cret")
+
+    settings = Settings.from_env()
+
+    assert settings.auth.enabled is True
+    assert settings.auth.username == "ops"
+    assert (
+        settings.auth.password.get_secret_value() == "s3cret"
+    )  # pragma: allowlist secret
 
 
 # ---------------------------------------------------------------------------
@@ -320,11 +363,18 @@ def test_load_from_yaml_file(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) ->
     settings = Settings.load(config_path=config_file)
 
     assert settings.llmio_model_level == 2
-    assert settings.llmio_api_key == "sk-yaml"  # pragma: allowlist secret
+    assert (
+        settings.llmio_api_key.get_secret_value() == "sk-yaml"
+    )  # pragma: allowlist secret
     assert settings.agent_instruction == "Be terse."
     assert settings.server_host == "0.0.0.0"
     assert settings.server_port == 9000
     assert settings.cors_allow_origins == ["https://ui.example.com"]
+    assert settings.auth.enabled is True
+    assert settings.auth.username == "ops"
+    assert (
+        settings.auth.password.get_secret_value() == "hunter2"
+    )  # pragma: allowlist secret
 
 
 def test_load_claude_sdk_yaml_needs_no_key(
@@ -339,7 +389,7 @@ def test_load_claude_sdk_yaml_needs_no_key(
     settings = Settings.load(config_path=config_file)
 
     assert settings.llmio_model_level == 3
-    assert settings.llmio_api_key == ""
+    assert settings.llmio_api_key.get_secret_value() == ""
 
 
 def test_env_overrides_yaml(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
@@ -356,7 +406,9 @@ def test_env_overrides_yaml(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> 
     settings = Settings.load(config_path=config_file)
 
     # Overridden by env...
-    assert settings.llmio_api_key == "sk-env"  # pragma: allowlist secret
+    assert (
+        settings.llmio_api_key.get_secret_value() == "sk-env"
+    )  # pragma: allowlist secret
     assert settings.server_port == 1234
     # ...but the un-overridden YAML value survives.
     assert settings.llmio_model_level == 1
@@ -459,7 +511,9 @@ def test_memory_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings.from_env()
 
     assert settings.memory.enabled is True
-    assert settings.memory.llm.api_key == "sk-or-env"  # pragma: allowlist secret
+    assert (
+        settings.memory.llm.api_key.get_secret_value() == "sk-or-env"
+    )  # pragma: allowlist secret
     assert settings.memory.embedding.endpoint == "http://box:11434/v1"
     assert settings.memory.embedding.dimensions == 768
 
@@ -486,7 +540,9 @@ def test_memory_env_overrides_yaml(
     settings = Settings.load(config_path=config_file)
 
     assert settings.memory.enabled is True
-    assert settings.memory.llm.api_key == "sk-env"  # pragma: allowlist secret
+    assert (
+        settings.memory.llm.api_key.get_secret_value() == "sk-env"
+    )  # pragma: allowlist secret
     assert settings.memory.embedding.endpoint == "http://env:11434/v1"
     # Un-overridden YAML value survives.
     assert settings.memory.llm.model == "yaml-model"
@@ -543,7 +599,9 @@ def test_mill_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings.from_env()
 
     assert settings.mill.enabled is True
-    assert settings.mill.broker_token == "sek"  # pragma: allowlist secret
+    assert (
+        settings.mill.broker_token.get_secret_value() == "sek"
+    )  # pragma: allowlist secret
     assert settings.mill.broker_port == 8443
     assert settings.mill.repo_id == "robotsix-chat"
 
@@ -610,7 +668,7 @@ def test_refdocs_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.refdocs.enabled is False
     assert settings.refdocs.repos == []
     assert settings.refdocs.ref == "main"
-    assert settings.refdocs.github_token == ""
+    assert settings.refdocs.github_token.get_secret_value() == ""
     assert settings.refdocs.base_url == "https://api.github.com"
     assert settings.refdocs.timeout == 30.0
 
@@ -645,7 +703,9 @@ def test_refdocs_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     assert settings.refdocs.enabled is True
     assert settings.refdocs.repos == ["org/repo-a", "org/repo-b"]
     assert settings.refdocs.ref == "develop"
-    assert settings.refdocs.github_token == "ghp_test"  # pragma: allowlist secret
+    assert (
+        settings.refdocs.github_token.get_secret_value() == "ghp_test"
+    )  # pragma: allowlist secret
     assert settings.refdocs.base_url == "https://ghe.example.com/api/v3"
     assert settings.refdocs.timeout == 15.5
 
@@ -919,7 +979,7 @@ def test_mail_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert settings.mail.enabled is False
     assert settings.mail.api_base_url == "http://127.0.0.1:8077"
-    assert settings.mail.api_token == ""
+    assert settings.mail.api_token.get_secret_value() == ""
     assert settings.mail.timeout == 30.0
 
 
@@ -940,7 +1000,9 @@ def test_mail_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert settings.mail.enabled is True
     assert settings.mail.api_base_url == "https://mail.example.com:9000"
-    assert settings.mail.api_token == "sek"  # pragma: allowlist secret
+    assert (
+        settings.mail.api_token.get_secret_value() == "sek"
+    )  # pragma: allowlist secret
 
 
 def test_mail_timeout_invalid_raises(monkeypatch: pytest.MonkeyPatch) -> None:
@@ -970,7 +1032,9 @@ def test_mail_env_overrides_yaml(
 
     assert settings.mail.enabled is True
     assert settings.mail.api_base_url == "http://env-host:9000"
-    assert settings.mail.api_token == "env-tok"  # pragma: allowlist secret
+    assert (
+        settings.mail.api_token.get_secret_value() == "env-tok"
+    )  # pragma: allowlist secret
 
 
 # ---------------------------------------------------------------------------
@@ -1017,7 +1081,9 @@ def test_calendar_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings.from_env()
 
     assert settings.calendar.enabled is True
-    assert settings.calendar.broker_token == "sek"  # pragma: allowlist secret
+    assert (
+        settings.calendar.broker_token.get_secret_value() == "sek"
+    )  # pragma: allowlist secret
     assert settings.calendar.broker_port == 8443
     assert settings.calendar.calendar_agent_id == "my-cal-agent"
     assert settings.calendar.cache_ttl == 120.0
@@ -1052,7 +1118,9 @@ def test_calendar_env_overrides_yaml(
 
     assert settings.calendar.enabled is True
     assert settings.calendar.broker_host == "env-host"
-    assert settings.calendar.broker_token == "env-tok"  # pragma: allowlist secret
+    assert (
+        settings.calendar.broker_token.get_secret_value() == "env-tok"
+    )  # pragma: allowlist secret
 
 
 # ---------------------------------------------------------------------------
@@ -1068,7 +1136,7 @@ def test_board_reader_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> No
 
     assert settings.board_reader.enabled is False
     assert settings.board_reader.api_base_url == "http://127.0.0.1:8077"
-    assert settings.board_reader.api_token == ""
+    assert settings.board_reader.api_token.get_secret_value() == ""
     assert settings.board_reader.cache_ttl == 60.0
 
 
@@ -1090,7 +1158,9 @@ def test_board_reader_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert settings.board_reader.enabled is True
     assert settings.board_reader.api_base_url == "http://board:8077"
-    assert settings.board_reader.api_token == "bsek"  # pragma: allowlist secret
+    assert (
+        settings.board_reader.api_token.get_secret_value() == "bsek"
+    )  # pragma: allowlist secret
     assert settings.board_reader.cache_ttl == 120.0
 
 
@@ -1281,7 +1351,7 @@ def test_version_check_disabled_by_default(monkeypatch: pytest.MonkeyPatch) -> N
 
     assert settings.version_check.enabled is False
     assert settings.version_check.repo == ""
-    assert settings.version_check.github_token == ""
+    assert settings.version_check.github_token.get_secret_value() == ""
     assert settings.version_check.base_url == "https://api.github.com"
     assert settings.version_check.timeout == 30.0
     assert settings.version_check.cache_ttl == 300.0
@@ -1315,7 +1385,9 @@ def test_version_check_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
 
     assert settings.version_check.enabled is True
     assert settings.version_check.repo == "org/repo"
-    assert settings.version_check.github_token == "ghp_test"  # pragma: allowlist secret
+    assert (
+        settings.version_check.github_token.get_secret_value() == "ghp_test"
+    )  # pragma: allowlist secret
     assert settings.version_check.base_url == "https://ghe.example.com/api/v3"
     assert settings.version_check.timeout == 15.0
     assert settings.version_check.cache_ttl == 600.0
@@ -1395,7 +1467,9 @@ def test_component_agent_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
     settings = Settings.from_env()
 
     assert settings.component_agent.enabled is True
-    assert settings.component_agent.broker_token == "sek"  # pragma: allowlist secret
+    assert (
+        settings.component_agent.broker_token.get_secret_value() == "sek"
+    )  # pragma: allowlist secret
     assert settings.component_agent.broker_port == 8443
     assert settings.component_agent.agent_id == "my-component"
 
@@ -1432,7 +1506,7 @@ def test_component_agent_env_overrides_yaml(
     assert settings.component_agent.enabled is True
     assert settings.component_agent.broker_host == "env-host"
     assert (
-        settings.component_agent.broker_token == "env-tok"
+        settings.component_agent.broker_token.get_secret_value() == "env-tok"
     )  # pragma: allowlist secret
 
 

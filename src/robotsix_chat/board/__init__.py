@@ -45,7 +45,7 @@ def build_board_reader_tools(
 
     client = BoardHTTPClient(
         base_url=settings.api_base_url,
-        token=settings.api_token,
+        token=settings.api_token.get_secret_value(),
         error_strategy=ErrorStrategy.RETURN,
         cache_ttl=settings.cache_ttl,
     )

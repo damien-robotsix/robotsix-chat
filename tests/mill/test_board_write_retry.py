@@ -411,6 +411,10 @@ def _settings(**kw: Any) -> Any:
         "timeout": 60.0,
     }
     defaults.update(kw)
+    from pydantic import SecretStr
+
+    if "broker_token" in defaults:
+        defaults["broker_token"] = SecretStr(defaults["broker_token"])
     return SimpleNamespace(**defaults)
 
 

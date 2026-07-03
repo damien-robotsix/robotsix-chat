@@ -11,7 +11,7 @@ import os
 from pathlib import Path
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 from robotsix_llmio.config import TierLevel
 from robotsix_yaml_config import (
     YamlConfigError,
@@ -121,7 +121,7 @@ class Settings(BaseModel):
     """
 
     llmio_model_level: int = 3
-    llmio_api_key: str = ""
+    llmio_api_key: SecretStr = SecretStr("")
     agent_instruction: str = (
         "You are a helpful assistant. "
         "You have a local, durable knowledge base "
@@ -280,7 +280,7 @@ class Settings(BaseModel):
 
         *subsystem* must have ``broker_token`` and ``broker_host`` attrs.
         """
-        if not subsystem.broker_token:
+        if not subsystem.broker_token.get_secret_value():
             raise ValueError(
                 f"{name}.broker_token must be set when {name} is enabled — "
                 f"provide it via {name.upper()}_BROKER_TOKEN or the "
@@ -307,15 +307,23 @@ class Settings(BaseModel):
             )
         # The keyless Claude SDK provider (level 3) needs no API key;
         # key-bearing providers (e.g. openrouter, levels 1-2) require one.
-        if level_needs_api_key(self.llmio_model_level) and not self.llmio_api_key:
+        if (
+            level_needs_api_key(self.llmio_model_level)
+            and not self.llmio_api_key.get_secret_value()
+        ):
             raise ValueError(
                 f"llmio.api_key must be set for model_level "
                 f"{self.llmio_model_level} (its provider needs a key) — provide "
                 "it via LLMIO_API_KEY, a .env file, or the `llmio.api_key` field "
                 "of your config file (or use model_level 3, which is keyless)"
             )
+        if self.auth.enabled and not self.auth.password.get_secret_value():
+            raise ValueError(
+                "auth.password must be set when auth is enabled — provide it "
+                "via AUTH_PASSWORD or the `auth.password` field of your config file"
+            )
         if self.memory.enabled:
-            if not self.memory.llm.api_key:
+            if not self.memory.llm.api_key.get_secret_value():
                 raise ValueError(
                     "memory.llm.api_key must be set when memory is enabled — "
                     "provide it via MEMORY_LLM_API_KEY or the `memory.llm.api_key` "

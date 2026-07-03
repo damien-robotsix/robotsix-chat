@@ -49,6 +49,31 @@
       "fix_proposal_id": "51006d4217d243cfbc714dca44b198cf",
       "category": "CI_FAILURE",
       "applied_at": "2026-07-02T01:22:31.235169+00:00"
+    },
+    {
+      "fix_proposal_id": "4fe3d3d7918145a08714fa0cff610261",
+      "category": "CI_FAILURE",
+      "applied_at": "2026-07-03T08:29:38.779817+00:00"
+    },
+    {
+      "fix_proposal_id": "415c5b28be584c4dad59ffeb634c2f0c",
+      "category": "CI_FAILURE",
+      "applied_at": "2026-07-03T08:30:30.844904+00:00"
+    },
+    {
+      "fix_proposal_id": "2a33830b1228428799abf48ddaf7c217",
+      "category": "CI_FAILURE",
+      "applied_at": "2026-07-03T08:31:31.279040+00:00"
+    },
+    {
+      "fix_proposal_id": "39c38b1067a74f5d9a6b971d58203fea",
+      "category": "CI_FAILURE",
+      "applied_at": "2026-07-03T08:32:01.117802+00:00"
+    },
+    {
+      "fix_proposal_id": "f436d6316d84462b902bcaeececd563d",
+      "category": "CI_FAILURE",
+      "applied_at": "2026-07-03T08:33:56.861496+00:00"
     }
   ],
   "reports": []

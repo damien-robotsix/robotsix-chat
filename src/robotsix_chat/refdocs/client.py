@@ -125,8 +125,10 @@ class RefDocsClient:
 
     async def _get_json(self, url: str) -> Any:
         headers: dict[str, str] = {"Accept": "application/vnd.github+json"}
-        if self._s.github_token:
-            headers["Authorization"] = f"Bearer {self._s.github_token}"
+        if self._s.github_token.get_secret_value():
+            headers["Authorization"] = (
+                f"Bearer {self._s.github_token.get_secret_value()}"
+            )
         result = await safe_http_request(
             "GET",
             url,

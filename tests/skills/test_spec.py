@@ -91,7 +91,7 @@ def test_broker_config_minimal() -> None:
     assert b.host == "ai-broker.robotsix.net"
     assert b.port == 443
     assert b.scheme == "https"
-    assert b.token == ""
+    assert b.token.get_secret_value() == ""
     assert b.timeout == 240.0
     assert b.request_key == "message"
 
@@ -147,6 +147,6 @@ def test_skill_manifest_full_from_dict() -> None:
     assert m.enabled is True
     assert m.broker is not None
     assert m.broker.target_agent_id == "board-manager"
-    assert m.broker.token == "secret"
+    assert m.broker.token.get_secret_value() == "secret"
     assert len(m.capabilities) == 1
     assert m.capabilities[0].name == "consult"

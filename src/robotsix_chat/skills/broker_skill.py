@@ -185,7 +185,7 @@ class BrokerSkill:
             broker_host=broker.host,
             broker_port=broker.port,
             broker_scheme=broker.scheme,
-            broker_token=broker.token,
+            broker_token=broker.token.get_secret_value(),
             timeout=broker.timeout,
             default_reply=f"The {self.skill_id} agent returned an empty reply.",
         )
