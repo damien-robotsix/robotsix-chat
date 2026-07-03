@@ -79,6 +79,224 @@ class _OwnerState:
     session_ids: set[str] = field(default_factory=set)
 
 
+class ConversationStoreSerializer:
+    """File I/O and format handling for :class:`ConversationStore` persistence.
+
+    Decouples the on-disk JSON serialisation from the in-memory store so
+    that :class:`ConversationStore` stays focused on session/owner lifecycle
+    and LRU eviction.
+    """
+
+    def __init__(self, persist_path: Path) -> None:
+        """*persist_path* — filesystem path for the JSON persistence file."""
+        self._persist_path = persist_path
+
+    # -- load ---------------------------------------------------------------
+
+    def load(
+        self,
+        sessions: OrderedDict[str, Session],
+        owners: dict[str, _OwnerState],
+        *,
+        max_history_turns: int,
+        wall_clock: Callable[[], float],
+    ) -> None:
+        """Restore sessions from the persist file (best-effort).
+
+        Supports both the legacy ``{client_id: {session_id, turns}}``
+        format (migrated on load) and the current owner→sessions format.
+        """
+        try:
+            raw = json.loads(self._persist_path.read_text(encoding="utf-8"))
+        except FileNotFoundError:
+            return  # first run — no saved state yet
+        except OSError, json.JSONDecodeError:
+            logger.exception("Failed to load conversations from %s", self._persist_path)
+            return
+
+        if not isinstance(raw, dict):
+            return
+
+        now = wall_clock()
+
+        # Detect format: if top-level values are dicts with "turns" (no
+        # "active_session_id" or "sessions" sub-object), it's the legacy
+        # {client_id: {session_id, turns}} format.
+        is_legacy = False
+        for entry in raw.values():
+            if isinstance(entry, dict) and "turns" in entry:
+                is_legacy = True
+            break
+
+        if is_legacy:
+            self._load_legacy_format(raw, sessions, owners, max_history_turns, now)
+        else:
+            self._load_current_format(raw, sessions, owners, max_history_turns, now)
+
+    def _load_legacy_format(
+        self,
+        raw: dict[str, object],
+        sessions: OrderedDict[str, Session],
+        owners: dict[str, _OwnerState],
+        max_history_turns: int,
+        now: float,
+    ) -> None:
+        """Migrate the legacy ``{client_id: {session_id, turns}}`` format.
+
+        Each top-level key becomes an ``owner_id`` whose single session
+        (``session_id`` from the stored value or the key itself) becomes
+        that owner's default active session.
+        """
+        for client_id, entry in raw.items():
+            if not isinstance(entry, dict):
+                continue
+            turns_raw = entry.get("turns")
+            if not isinstance(turns_raw, list):
+                continue
+            turns: list[Turn] = []
+            for t in turns_raw:
+                if isinstance(t, list) and len(t) == 2:
+                    turns.append((str(t[0]), str(t[1])))
+            if not turns:
+                continue
+
+            if len(turns) > max_history_turns:
+                turns = turns[-max_history_turns:]
+
+            session_id = str(entry.get("session_id", client_id))
+            title = _DEFAULT_TITLE
+            if turns:
+                title = _derive_title(turns[0][0])
+
+            session = Session(
+                session_id=session_id,
+                title=title,
+                wall_last_active=now,
+                turns=turns,
+                turn_count=len(turns),
+            )
+            sessions[session_id] = session
+            owners[client_id] = _OwnerState(
+                active_session_id=session_id,
+                session_ids={session_id},
+            )
+
+    def _load_current_format(
+        self,
+        raw: dict[str, object],
+        sessions: OrderedDict[str, Session],
+        owners: dict[str, _OwnerState],
+        max_history_turns: int,
+        now: float,
+    ) -> None:
+        """Restore from the current owner→sessions format.
+
+        Expected shape::
+
+            {
+              "<owner_id>": {
+                "active_session_id": "...",
+                "sessions": [
+                  {"session_id": "...", "title": "...",
+                   "last_active": 1.0, "turn_count": 3,
+                   "turns": [["q", "a"], ...]},
+                  ...
+                ]
+              }
+            }
+        """
+        for owner_id, owner_raw in raw.items():
+            if not isinstance(owner_raw, dict):
+                continue
+            active = owner_raw.get("active_session_id")
+            sessions_raw = owner_raw.get("sessions")
+            if not isinstance(sessions_raw, list):
+                continue
+
+            session_ids: set[str] = set()
+            for sraw in sessions_raw:
+                if not isinstance(sraw, dict):
+                    continue
+                sid = sraw.get("session_id")
+                if not isinstance(sid, str):
+                    continue
+                turns_raw = sraw.get("turns")
+                turns: list[Turn] = []
+                if isinstance(turns_raw, list):
+                    for t in turns_raw:
+                        if isinstance(t, list) and len(t) == 2:
+                            turns.append((str(t[0]), str(t[1])))
+                if len(turns) > max_history_turns:
+                    turns = turns[-max_history_turns:]
+
+                title = str(sraw.get("title", _DEFAULT_TITLE))
+                last_active = sraw.get("last_active")
+                if not isinstance(last_active, int | float):
+                    last_active = now
+
+                session = Session(
+                    session_id=sid,
+                    title=title,
+                    wall_last_active=float(last_active),
+                    turns=turns,
+                    turn_count=int(sraw.get("turn_count", len(turns))),
+                    closed=bool(sraw.get("closed", False)),
+                )
+                sessions[sid] = session
+                session_ids.add(sid)
+
+            if not session_ids:
+                continue
+
+            active_sid = (
+                str(active)
+                if isinstance(active, str) and active in session_ids
+                else next(iter(session_ids))
+            )
+            owners[owner_id] = _OwnerState(
+                active_session_id=active_sid,
+                session_ids=session_ids,
+            )
+
+    # -- persist ------------------------------------------------------------
+
+    def persist(
+        self,
+        owners: dict[str, _OwnerState],
+        sessions: OrderedDict[str, Session],
+    ) -> None:
+        """Write the full conversation state to the persist file."""
+        data: dict[str, dict[str, object]] = {}
+        for owner_id, owner_state in owners.items():
+            sessions_list: list[dict[str, object]] = []
+            for sid in owner_state.session_ids:
+                session = sessions.get(sid)
+                if session is None:
+                    continue
+                sessions_list.append(
+                    {
+                        "session_id": session.session_id,
+                        "title": session.title,
+                        "last_active": session.wall_last_active,
+                        "turn_count": session.turn_count,
+                        "turns": [list(t) for t in session.turns],
+                        "closed": session.closed,
+                    }
+                )
+            if sessions_list:
+                data[owner_id] = {
+                    "active_session_id": owner_state.active_session_id,
+                    "sessions": sessions_list,
+                }
+
+        try:
+            self._persist_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        except OSError:
+            logger.exception(
+                "Failed to persist conversations to %s", self._persist_path
+            )
+
+
 class ConversationStore:
     """Track per-session conversation history with owner grouping.
 
@@ -115,15 +333,21 @@ class ConversationStore:
         self._max_conversations = max_conversations
         self._wall_clock = wall_clock
         self._session_factory = session_factory or (lambda: uuid.uuid4().hex)
-        self._persist_path = persist_path
 
         # session_id → Session  (global, insertion-ordered for LRU)
         self._sessions: OrderedDict[str, Session] = OrderedDict()
         # owner_id → _OwnerState
         self._owners: dict[str, _OwnerState] = {}
 
-        if self._persist_path is not None:
-            self._load_from_disk()
+        self._serializer: ConversationStoreSerializer | None = None
+        if persist_path is not None:
+            self._serializer = ConversationStoreSerializer(persist_path)
+            self._serializer.load(
+                self._sessions,
+                self._owners,
+                max_history_turns=self._max_history_turns,
+                wall_clock=self._wall_clock,
+            )
 
     # ------------------------------------------------------------------
     # Public API
@@ -193,8 +417,8 @@ class ConversationStore:
                 owner.active_session_id = session_id
                 owner.session_ids.add(session_id)
 
-        if self._persist_path is not None:
-            self._persist()
+        if self._serializer is not None:
+            self._serializer.persist(self._owners, self._sessions)
 
     def record_for_owner(
         self, owner_id: str, user_message: str, assistant_reply: str
@@ -270,8 +494,8 @@ class ConversationStore:
                 session_ids={sid},
             )
             self._evict_overflow()
-            if self._persist_path is not None:
-                self._persist()
+            if self._serializer is not None:
+                self._serializer.persist(self._owners, self._sessions)
             return (
                 [
                     {
@@ -325,8 +549,8 @@ class ConversationStore:
         self._sessions.move_to_end(sid)
         self._evict_overflow()
 
-        if self._persist_path is not None:
-            self._persist()
+        if self._serializer is not None:
+            self._serializer.persist(self._owners, self._sessions)
 
         return {
             "session_id": sid,
@@ -380,8 +604,8 @@ class ConversationStore:
                 owner.active_session_id = sid
                 self._evict_overflow()
 
-        if self._persist_path is not None:
-            self._persist()
+        if self._serializer is not None:
+            self._serializer.persist(self._owners, self._sessions)
 
         return {"deleted": True, "active_session_id": owner.active_session_id}
 
@@ -404,8 +628,8 @@ class ConversationStore:
         if session is None:
             return {"closed": False, "reason": "session not found"}
         session.closed = True
-        if self._persist_path is not None:
-            self._persist()
+        if self._serializer is not None:
+            self._serializer.persist(self._owners, self._sessions)
         return {"closed": True}
 
     def is_session_closed(self, session_id: str) -> bool:
@@ -429,154 +653,6 @@ class ConversationStore:
             # Remove from all owner registries.
             for owner_state in self._owners.values():
                 owner_state.session_ids.discard(evicted_sid)
-
-    # -- on-disk persistence ----------------------------------------------
-
-    def _load_from_disk(self) -> None:
-        """Restore sessions from the persist file (best-effort).
-
-        Supports both the legacy ``{client_id: {session_id, turns}}`` format
-        (migrated on load) and the current owner→sessions format.
-        """
-        if self._persist_path is None:  # only called when configured
-            return
-        try:
-            raw = json.loads(self._persist_path.read_text(encoding="utf-8"))
-        except FileNotFoundError:
-            return  # first run — no saved state yet
-        except OSError, json.JSONDecodeError:
-            logger.exception("Failed to load conversations from %s", self._persist_path)
-            return
-
-        if not isinstance(raw, dict):
-            return
-
-        now = self._wall_clock()
-
-        # Detect format: if top-level values are dicts with "turns" (no
-        # "active_session_id" or "sessions" sub-object), it's the legacy
-        # {client_id: {session_id, turns}} format.
-        is_legacy = False
-        for entry in raw.values():
-            if isinstance(entry, dict) and "turns" in entry:
-                is_legacy = True
-            break
-
-        if is_legacy:
-            self._load_legacy_format(raw, now)
-        else:
-            self._load_current_format(raw, now)
-
-    def _load_legacy_format(self, raw: dict[str, object], now: float) -> None:
-        """Migrate the legacy ``{client_id: {session_id, turns}}`` format.
-
-        Each top-level key becomes an ``owner_id`` whose single session
-        (``session_id`` from the stored value or the key itself) becomes
-        that owner's default active session.
-        """
-        for client_id, entry in raw.items():
-            if not isinstance(entry, dict):
-                continue
-            turns_raw = entry.get("turns")
-            if not isinstance(turns_raw, list):
-                continue
-            turns: list[Turn] = []
-            for t in turns_raw:
-                if isinstance(t, list) and len(t) == 2:
-                    turns.append((str(t[0]), str(t[1])))
-            if not turns:
-                continue
-
-            if len(turns) > self._max_history_turns:
-                turns = turns[-self._max_history_turns :]
-
-            session_id = str(entry.get("session_id", client_id))
-            title = _DEFAULT_TITLE
-            if turns:
-                title = _derive_title(turns[0][0])
-
-            session = Session(
-                session_id=session_id,
-                title=title,
-                wall_last_active=now,
-                turns=turns,
-                turn_count=len(turns),
-            )
-            self._sessions[session_id] = session
-            self._owners[client_id] = _OwnerState(
-                active_session_id=session_id,
-                session_ids={session_id},
-            )
-
-    def _load_current_format(self, raw: dict[str, object], now: float) -> None:
-        """Restore from the current owner→sessions format.
-
-        Expected shape::
-
-            {
-              "<owner_id>": {
-                "active_session_id": "...",
-                "sessions": [
-                  {"session_id": "...", "title": "...",
-                   "last_active": 1.0, "turn_count": 3,
-                   "turns": [["q", "a"], ...]},
-                  ...
-                ]
-              }
-            }
-        """
-        for owner_id, owner_raw in raw.items():
-            if not isinstance(owner_raw, dict):
-                continue
-            active = owner_raw.get("active_session_id")
-            sessions_raw = owner_raw.get("sessions")
-            if not isinstance(sessions_raw, list):
-                continue
-
-            session_ids: set[str] = set()
-            for sraw in sessions_raw:
-                if not isinstance(sraw, dict):
-                    continue
-                sid = sraw.get("session_id")
-                if not isinstance(sid, str):
-                    continue
-                turns_raw = sraw.get("turns")
-                turns: list[Turn] = []
-                if isinstance(turns_raw, list):
-                    for t in turns_raw:
-                        if isinstance(t, list) and len(t) == 2:
-                            turns.append((str(t[0]), str(t[1])))
-                if len(turns) > self._max_history_turns:
-                    turns = turns[-self._max_history_turns :]
-
-                title = str(sraw.get("title", _DEFAULT_TITLE))
-                last_active = sraw.get("last_active")
-                if not isinstance(last_active, int | float):
-                    last_active = now
-
-                session = Session(
-                    session_id=sid,
-                    title=title,
-                    wall_last_active=float(last_active),
-                    turns=turns,
-                    turn_count=int(sraw.get("turn_count", len(turns))),
-                    closed=bool(sraw.get("closed", False)),
-                )
-                self._sessions[sid] = session
-                session_ids.add(sid)
-
-            if not session_ids:
-                continue
-
-            active_sid = (
-                str(active)
-                if isinstance(active, str) and active in session_ids
-                else next(iter(session_ids))
-            )
-            self._owners[owner_id] = _OwnerState(
-                active_session_id=active_sid,
-                session_ids=session_ids,
-            )
 
     def recent_activity(
         self, *, limit: int = 20, max_turns: int = 6
@@ -633,38 +709,3 @@ class ConversationStore:
             "owners": len(self._owners),
             "total_turns": total_turns,
         }
-
-    def _persist(self) -> None:
-        """Write the full conversation state to the persist file."""
-        if self._persist_path is None:
-            return
-
-        data: dict[str, dict[str, object]] = {}
-        for owner_id, owner_state in self._owners.items():
-            sessions_list: list[dict[str, object]] = []
-            for sid in owner_state.session_ids:
-                session = self._sessions.get(sid)
-                if session is None:
-                    continue
-                sessions_list.append(
-                    {
-                        "session_id": session.session_id,
-                        "title": session.title,
-                        "last_active": session.wall_last_active,
-                        "turn_count": session.turn_count,
-                        "turns": [list(t) for t in session.turns],
-                        "closed": session.closed,
-                    }
-                )
-            if sessions_list:
-                data[owner_id] = {
-                    "active_session_id": owner_state.active_session_id,
-                    "sessions": sessions_list,
-                }
-
-        try:
-            self._persist_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        except OSError:
-            logger.exception(
-                "Failed to persist conversations to %s", self._persist_path
-            )
