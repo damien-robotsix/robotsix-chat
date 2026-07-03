@@ -80,6 +80,7 @@ modules:
       - tests/config/__init__.py
       - tests/config/test_config.py
       - tests/config/test_system_prompt_governance.py
+      - tests/config/test_config_hypothesis.py
 
   - id: robotsix_chat.chat
     description: "Chat SSE server — HTTP + Server-Sent Events bridge for human-to-agent chat."
