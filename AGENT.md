@@ -27,37 +27,35 @@ Builds the multi-stage `Dockerfile`, tags `robotsix-chat:local`, and runs the im
   the Dockerfile).
 - **Environment**: `LLMIO_MODEL_LEVEL=3`, `CHAT_CONFIG_PATH=config/chat.local.yaml`.
 - **Volume mounts**:
-  - `./config/chat.local.yaml:/home/appuser/config/chat.local.yaml:ro`
-  - `~/.claude:/home/appuser/.claude:ro`
+  - `./config/chat.local.yaml:/home/app/config/chat.local.yaml:ro`
+  - `~/.claude:/home/app/.claude:ro`
 
 Prerequisites (one-time):
 
 1. `cp config/chat.local.example.yaml config/chat.local.yaml`
 2. `claude login` (populates `~/.claude` with subscription credentials)
 
-### `deploy/docker-compose.yml` — production
+### `deploy/docker-compose.yml` — production (central-deploy contract)
 
-Pulls `ghcr.io/damien-robotsix/robotsix-chat:${IMAGE_TAG}` (no build), binds loopback-only, and adds
-a Watchtower sidecar for auto-redeploy.
+The production deployment is managed by
+[robotsix-central-deploy](https://github.com/damien-robotsix/robotsix-central-deploy); this file is
+the contract it consumes (first line: `# central-deploy-contract-version: 1`). central-deploy pulls
+the pre-built `ghcr.io/damien-robotsix/robotsix-chat:main` image, injects environment secrets filled
+by the operator in the dashboard, applies its own restart policy/networking/gateway routing, and
+redeploys on demand — there is no Watchtower sidecar and no `restart:`/host-bind entries (both are
+contract violations).
 
-- **Services**: `chat` + `watchtower`, both `restart: unless-stopped`.
-- **Port mapping**: `127.0.0.1:${CHAT_PORT:-8088}:8080` (loopback only; `CHAT_PORT` defaults to
-  8088).
-- **Environment** (chat service):
-  - `CHAT_CONFIG_PATH=config/chat.local.yaml`
-  - `LLMIO_MODEL_LEVEL=3`
-  - `AUTH_ENABLED=1` (hardcoded; ignores any `.env` value)
-  - `AUTH_PASSWORD=${CHAT_AUTH_PASSWORD:?err}` (mandatory; compose refuses to start if unset)
-- **Volume mounts** (chat service):
-  - `./config:/home/appuser/config` (whole directory, read-write — config changes persist across
-    redeploys)
-  - `./data:/home/appuser/.data` (persistent agent data, e.g. memory — read-write; survives
-    container redeploys. Follows the fleet convention shared with
-    `robotsix-cost-monitor`/`robotsix-auto-mail`, which bind-mount `./data` into the container's
-    `.data` dir.)
-  - `~/.claude:/home/appuser/.claude:ro`
-- **Watchtower** sidecar: `containrrr/watchtower`, `--interval 30 --label-enable --cleanup`,
-  targeting the label `com.centurylinklabs.watchtower.enable=true` on the chat container.
+- **Service**: single `robotsix-chat` service (implicitly primary).
+- **Port**: `8088:8080` — routed by the central-deploy gateway, not published on the host.
+- **Environment**: empty values are operator-filled secret slots (`AUTH_PASSWORD`,
+  `MEMORY_LLM_API_KEY`, broker tokens…); non-empty values are editable defaults
+  (`LLMIO_MODEL_LEVEL=3`, `AUTH_ENABLED=1`). Config is env-based until the planned robotsix-config
+  one-file migration.
+- **Volumes**: named volume `chat-data` → `/home/app/.data` (persistent agent state; flagged
+  `robotsix.deploy.stateful`).
+- **Claude credentials**: label `robotsix.deploy.claude-mount: "true"` — central-deploy binds the
+  server's `~/.claude` to `/home/app/.claude` (the standardized container user's home) for the
+  level-3 claude-sdk transport.
 
 ### Port mapping asymmetry
 
@@ -65,10 +63,10 @@ The Dockerfile hardcodes container port **8080** (`ENV SERVER_PORT=8080`, `EXPOS
 compose file overrides `SERVER_PORT`, so the container always listens on 8080. The host-side port
 differs:
 
-| Stack                                    | Host port            | Container port |
-| ---------------------------------------- | -------------------- | -------------- |
-| Local dev (`docker-compose.yml`)         | 8080                 | 8080           |
-| Production (`deploy/docker-compose.yml`) | `${CHAT_PORT:-8088}` | 8080           |
+| Stack                                    | Host port             | Container port |
+| ---------------------------------------- | --------------------- | -------------- |
+| Local dev (`docker-compose.yml`)         | 8080                  | 8080           |
+| Production (`deploy/docker-compose.yml`) | 8088 (gateway-routed) | 8080           |
 
 ## Config mount conventions
 
@@ -77,80 +75,46 @@ Both stacks follow the same two volume-binding patterns.
 ### Application config (`config/chat.local.yaml`)
 
 The app reads YAML config from `config/chat.local.yaml` inside the container (resolved relative to
-`WORKDIR /home/appuser`). The path is overridable via the `CHAT_CONFIG_PATH` env var.
+`WORKDIR /home/app`). The path is overridable via the `CHAT_CONFIG_PATH` env var.
 
 - **Local dev**: mounts the single file `./config/chat.local.yaml` read-only.
-- **Production**: mounts the whole `./config/` directory read-write (so config edits survive
-  container redeploys).
+- **Production (central-deploy)**: no config file is mounted — configuration is injected as
+  environment variables from the operator-filled slots in the deploy compose. (The planned
+  robotsix-config migration will replace this with one mounted `config/config.json`.)
 
 The canonical template is `config/chat.local.example.yaml` (committed). The operator copies it to
-`config/chat.local.yaml` (gitignored). For the production stack the `./config/` directory must exist
-**under `deploy/`** (i.e. `deploy/config/chat.local.yaml`) because the compose-file-relative path
-`./config` resolves to `deploy/config/`.
+`config/chat.local.yaml` (gitignored).
 
 ### Claude credentials (`~/.claude`)
 
 The `claude-sdk` transport (model level 3) authenticates via the `claude` CLI, which reads
-credentials from `~/.claude` (the Claude subscription session). Both stacks bind-mount the host's
-`~/.claude` to `/home/appuser/.claude:ro`.
+credentials from `~/.claude` (the Claude subscription session). Local dev bind-mounts the host's
+`~/.claude` to `/home/app/.claude:ro`; in production the `robotsix.deploy.claude-mount` label makes
+central-deploy bind it to `/home/app/.claude` (read-write).
 
 The operator must run `claude login` on the host before starting either stack.
 
 ### User and workdir
 
-The Dockerfile creates a non-root user `appuser` (UID 10001) with `WORKDIR /home/appuser`. All
-container-relative paths in compose files (e.g. `config/chat.local.yaml`) are relative to
-`/home/appuser`.
+The Dockerfile creates a non-root user `app` (UID 1001, the standardized robotsix container layout)
+with `WORKDIR /home/app`. All container-relative paths in compose files (e.g.
+`config/chat.local.yaml`) are relative to `/home/app`.
 
-## .env for production deploy
+## Production configuration (central-deploy)
 
-The deploy stack uses **two** `.env` files for different purposes:
+Production configuration is entered in the central-deploy dashboard: the `environment:` keys in
+`deploy/docker-compose.yml` with empty values are operator-filled secret slots (masked in the UI),
+non-empty values are editable defaults. central-deploy injects them into the container at deploy
+time — there is no `.env` file on the server and no config file mount. `AUTH_ENABLED` defaults to
+`1`; leave it on for any deployed instance.
 
-### `deploy/.env` — docker-compose variable substitution
-
-`docker compose -f deploy/docker-compose.yml up` reads `.env` from the **project directory**
-(`deploy/`). Copy the template:
-
-```bash
-cp deploy/.env.example deploy/.env
-```
-
-Then set the three variables it defines:
-
-| Variable             | Required | Default | Purpose                                                                                    |
-| -------------------- | -------- | ------- | ------------------------------------------------------------------------------------------ |
-| `IMAGE_TAG`          | yes      | (none)  | GHCR image tag — `main` (Watchtower's continuous-deploy target), `v1.2.3`, or a commit SHA |
-| `CHAT_PORT`          | no       | `8088`  | Loopback host port the chat service binds                                                  |
-| `CHAT_AUTH_PASSWORD` | **yes**  | (none)  | HTTP Basic Auth password; passed through as `AUTH_PASSWORD` inside the container           |
-
-The compose file uses `${CHAT_AUTH_PASSWORD:?err}` — `docker compose up` refuses to start if this is
-missing or empty.
-
-### Root `.env` — application runtime env vars
-
-The root `.env.example` documents the full set of application-level environment variables that
-`python-dotenv` loads at runtime (used by `Settings.load()` in
+The root `.env.example` documents the application-level environment variables that `python-dotenv`
+loads at runtime for **local** runs (used by `Settings.load()` in
 `src/robotsix_chat/config/settings.py`):
 
 - `LLMIO_MODEL_LEVEL`, `LLMIO_API_KEY` — LLM selection
 - `SERVER_HOST`, `SERVER_PORT`, `LOG_LEVEL`, `CORS_ALLOW_ORIGINS` — server
 - `AUTH_ENABLED`, `AUTH_USERNAME`, `AUTH_PASSWORD` — HTTP Basic Auth
-
-In the **deploy stack** most of these are set explicitly in the compose `environment:` block and
-override any `.env` values. Notably, `AUTH_ENABLED` is hardcoded to `1` — the production stack
-always requires HTTP Basic Auth regardless of what `.env` or the YAML config says.
-
-### Config file under deploy/
-
-The production stack mounts `./config` from the compose-file directory (i.e. `deploy/config/`).
-Create it from the canonical template:
-
-```bash
-mkdir -p deploy/config
-cp config/chat.local.example.yaml deploy/config/chat.local.yaml
-```
-
-Edit `deploy/config/chat.local.yaml` as needed.
 
 ## Long-term memory (cognee)
 
@@ -217,7 +181,7 @@ Disabled by default; no tools are added when off or when the `broker` extra is a
 
 - `docker-compose.yml` — local dev compose (builds from Dockerfile, tag `robotsix-chat:local`)
 - `deploy/docker-compose.yml` — production stack (GHCR image + Watchtower, loopback-only)
-- `Dockerfile` — multi-stage build (`python:3.14-slim`, Node.js + `claude` CLI, non-root `appuser`,
+- `Dockerfile` — multi-stage build (`python:3.14-slim`, Node.js + `claude` CLI, non-root `app`,
   `EXPOSE 8080`)
 - `.env.example` — canonical env-var reference (standard variables; deploy-only vars documented
   above)

@@ -1,38 +1,57 @@
+# central-deploy-contract-version: 1
+#
+# Production deployment via robotsix-central-deploy (the contract this file
+# follows: https://robotsix.net/central-deploy/DEPLOY_CONTRACT/). The root
+# docker-compose.yml is the local-dev stack and is ignored by the deployment
+# system. Lifecycle (restart policy, networking, gateway routing, redeploys)
+# is managed by central-deploy — no Watchtower, no restart:, no host binds.
+#
+# Configuration is currently env-based (empty value = operator-filled secret
+# slot, non-empty = editable default). The one-file robotsix-config migration
+# (config/config.json + config-target label) is planned and will replace most
+# of these environment keys.
 services:
-  chat:
-    image: ghcr.io/damien-robotsix/robotsix-chat:${IMAGE_TAG}
-    restart: unless-stopped
-    ports:
-      - "127.0.0.1:${CHAT_PORT:-8088}:8080"
-    volumes:
-      - ./config:/home/appuser/config
-      # Persistent agent data (e.g. memory) — survives container redeploys.
-      # Host ./data resolves to deploy/data; mounted read-write so the
-      # container (appuser, uid 1001) can write to it.
-      - ./data:/home/appuser/.data
-      - ~/.claude:/home/appuser/.claude:ro
-    environment:
-      CHAT_CONFIG_PATH: config/chat.local.yaml
-      LLMIO_MODEL_LEVEL: "3"
-      AUTH_ENABLED: "1"
-      AUTH_PASSWORD: ${CHAT_AUTH_PASSWORD:?err}
-      # Long-term memory (cognee). Disabled unless MEMORY_ENABLED=1 in deploy/.env
-      # with a reachable embedding endpoint + OpenRouter key. Stores live under
-      # the ./data mount (MEMORY_DATA_DIR is relative to the container WORKDIR).
-      MEMORY_ENABLED: ${MEMORY_ENABLED:-0}
-      MEMORY_DATA_DIR: .data/cognee
-      MEMORY_LLM_API_KEY: ${MEMORY_LLM_API_KEY:-}
-      MEMORY_EMBEDDING_ENDPOINT: ${MEMORY_EMBEDDING_ENDPOINT:-}
-      MEMORY_EMBEDDING_API_KEY: ${MEMORY_EMBEDDING_API_KEY:-}
+  robotsix-chat:
+    image: ghcr.io/damien-robotsix/robotsix-chat:main
     labels:
-      - "com.centurylinklabs.watchtower.enable=true"
-
-  watchtower:
-    image: containrrr/watchtower
-    restart: unless-stopped
+      # Subscription auth for the level-3 claude-sdk transport: central-deploy
+      # binds host ~/.claude -> /home/app/.claude (the standardized container
+      # user's home).
+      robotsix.deploy.claude-mount: "true"
+    ports:
+      - "8088:8080"
+    environment:
+      # LLM capability level (robotsix-llmio): 3 = claude-sdk/opus, keyless
+      # via the claude-mount above; 1-2 = OpenRouter (needs LLMIO_API_KEY).
+      LLMIO_MODEL_LEVEL: "3"
+      LLMIO_API_KEY: ""
+      # HTTP Basic auth gate for the UI and /chat.
+      AUTH_ENABLED: "1"
+      AUTH_USERNAME: admin
+      AUTH_PASSWORD: ""
+      # Long-term memory (cognee). Needs the embedding endpoint + OpenRouter
+      # key when enabled; stores live under the chat-data volume.
+      MEMORY_ENABLED: "0"
+      MEMORY_DATA_DIR: .data/cognee
+      MEMORY_LLM_API_KEY: ""
+      MEMORY_EMBEDDING_ENDPOINT: ""
+      MEMORY_EMBEDDING_API_KEY: ""
+      # Agent-comm broker integrations (mill board manager, calendar agent).
+      MILL_ENABLED: "0"
+      MILL_BROKER_TOKEN: ""
+      CALENDAR_ENABLED: "0"
+      CALENDAR_BROKER_TOKEN: ""
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     volumes:
-      - /var/run/docker.sock:/var/run/docker.sock
-    # Poll interval (seconds) for new GHCR images. Default 3600 (1h) to keep
-    # container restarts — and the brief 502 they cause behind the proxy —
-    # infrequent. Override via WATCHTOWER_POLL_INTERVAL in deploy/.env.
-    command: --interval ${WATCHTOWER_POLL_INTERVAL:-3600} --label-enable --cleanup
+      # Persistent agent state (knowledge store, cognee memory, HF cache).
+      - chat-data:/home/app/.data
+
+volumes:
+  chat-data:
+    labels:
+      robotsix.deploy.stateful: "true"
