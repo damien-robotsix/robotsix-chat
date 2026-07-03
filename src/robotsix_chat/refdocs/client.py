@@ -41,14 +41,9 @@ class RefDocsClient:
         repo not in the allowlist, HTTP/network errors, non-file path,
         or decoding problems.
         """
-        if not self._repo_allowed(repo):
-            return self._repo_denied(repo)
-        url = self._build_url(repo, path)
-        try:
-            data = await self._get_json(url)
-        except Exception as exc:
-            logger.debug("refdocs fetch failed: %s", exc)
-            return f"Failed to fetch {repo}/{path}: {exc}"
+        data = await self._fetch_json(repo, path, "fetch")
+        if isinstance(data, str):
+            return data
 
         if isinstance(data, list):
             return (
@@ -79,14 +74,9 @@ class RefDocsClient:
 
         Returns a concise error string (never raises) on any failure.
         """
-        if not self._repo_allowed(repo):
-            return self._repo_denied(repo)
-        url = self._build_url(repo, path)
-        try:
-            data = await self._get_json(url)
-        except Exception as exc:
-            logger.debug("refdocs list failed: %s", exc)
-            return f"Failed to list {repo}/{path or '/'}: {exc}"
+        data = await self._fetch_json(repo, path, "list")
+        if isinstance(data, str):
+            return data
 
         if not isinstance(data, list):
             return (
@@ -107,6 +97,20 @@ class RefDocsClient:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    async def _fetch_json(self, repo: str, path: str, action: str) -> Any:
+        """Fetch JSON from the GitHub Contents API for *repo*/*path*.
+
+        Returns the parsed JSON on success, or an error string on failure.
+        """
+        if not self._repo_allowed(repo):
+            return self._repo_denied(repo)
+        url = self._build_url(repo, path)
+        try:
+            return await self._get_json(url)
+        except Exception as exc:
+            logger.debug("refdocs %s failed: %s", action, exc)
+            return f"Failed to {action} {repo}/{path}: {exc}"
 
     def _repo_allowed(self, repo: str) -> bool:
         return repo in self._s.repos

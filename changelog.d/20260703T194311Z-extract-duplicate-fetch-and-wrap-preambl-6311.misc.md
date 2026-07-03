@@ -1,0 +1,1 @@
+Extract duplicate fetch-and-wrap preamble in refdocs/client.py

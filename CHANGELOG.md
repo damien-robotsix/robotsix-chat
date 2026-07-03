@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Extract `_fetch_json(repo, path, action)` private helper in `RefDocsClient` to deduplicate the allowlist-check + URL-build + fetch preamble shared by `read_file` and `list_files`.
 - Add `SUBSESSIONS_TRANSCRIPT_MAX_ENTRIES` env var override for
   `SubsessionsSettings.transcript_max_entries` (was previously only settable via YAML).
 - Fixed `docs/configuration.md` `llmio.model_level` default column from `4` to `3` to match the
