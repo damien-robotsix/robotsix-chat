@@ -1,0 +1,2 @@
+ci_fix: out-of-scope CI failure — hadolint DL3016 (Pin versions in npm) in Dockerfile line 65: add a
+version pin to `npm install -g @anthropic-ai/claude-code@<version>`
