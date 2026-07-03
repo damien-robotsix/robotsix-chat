@@ -1,5 +1,23 @@
 ## 0.0.0 (unreleased)
 
+- Dockerfile: change `APP_UID`/`APP_GID` ARG defaults from 1001 to 1000 to
+  align with the robotsix-standards 2026-07 revision (central-deploy overrides
+  the container user to the deploy-host operator uid:gid; the 1000 default
+  matches the common `debian` operator). **One-time volume migration required
+  for existing deployments:** before redeploying, run
+  `docker run --rm -v chat-data:/data busybox chown -R 1000:1000 /data`
+  on the deploy host to re-own the persistent `chat-data` volume contents.
+  Without this step, `.data/conversations.json` writes will fail with
+  PermissionError.
+- Dockerfile: change `APP_UID`/`APP_GID` ARG defaults from 1001 to 1000 to
+  align with the robotsix-standards 2026-07 revision (central-deploy overrides
+  the container user to the deploy-host operator uid:gid; the 1000 default
+  matches the common `debian` operator). **One-time volume migration required
+  for existing deployments:** before redeploying, run
+  `docker run --rm -v chat-data:/data busybox chown -R 1000:1000 /data`
+  on the deploy host to re-own the persistent `chat-data` volume contents.
+  Without this step, `.data/conversations.json` writes will fail with
+  PermissionError.
 - Silence bandit false positives in `scripts/check_modules_registry.py` (B404, B603, B607),
   `src/robotsix_chat/chat/server/routes.py` (B105), and `src/robotsix_chat/mill/retry_queue.py`
   (B311) with `# nosec` comments; update `.secrets.baseline` for the `.pre-commit-config.yaml` typos
