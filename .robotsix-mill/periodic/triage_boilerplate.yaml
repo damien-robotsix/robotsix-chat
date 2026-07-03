@@ -1,1 +1,36 @@
+# Triage Boilerplate — Auto-Approve Fast-Path
+#
+# Documents the standard auto-approve boilerplate used when triaging tickets from
+# deterministic (non-LLM-refined) sources.  This pattern appears in the draft → ready
+# transition for tickets created by periodic agents.
+#
+# =============================================================================
+# Standard boilerplate
+# =============================================================================
+#
+#   mechanical draft fast-path (deterministic source '<SOURCE>') — skipped refine
+#   LLM | auto-approve: APPROVE — <SOURCE> (deterministic rule: mill-internal
+#   periodic-agent proposal, no design risk)
+#
+# =============================================================================
+# Applicable deterministic sources
+# =============================================================================
+#
+#   Source              | Rationale
+#   --------------------|---------------------------------------------------------
+#   audit               | jscpd clone-pair detection — mechanical refactoring proposals
+#   test_gap            | Coverage gap analysis — deterministic fact
+#   completeness_check  | Config/env completeness scan — deterministic gap detection
+#   module_curator      | Module path validation — deterministic stale-path detection
+#   agent_check         | Agent-discovered discrepancies — deterministic findings
+#
+# =============================================================================
+# When NOT to use the fast-path
+# =============================================================================
+#
+#   - The ticket source is 'meta' (may need design judgment)
+#   - A human explicitly requested the ticket via chat (source: human)
+#   - The gap description includes subjective design choices (e.g. "consider whether to…")
+#   - The ticket was manually edited after auto-generation
+
 name: triage_boilerplate
