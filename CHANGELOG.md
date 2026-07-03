@@ -1,5 +1,9 @@
 ## 0.0.0 (unreleased)
 
+- Dockerfile: migrate from `/opt/venv` copy pattern to canonical `uv export --frozen` +
+  `uv pip install --system` pattern, installing directly into the runtime image's system Python.
+  Removes the builder-stage virtualenv indirection; build-only tooling (git, uv binary) is pruned
+  from the final image.
 - Add `hypothesis` dev dependency and property-based roundtrip tests for Pydantic config models
   (`AuthSettings`, `Settings`), catching validation edge cases in combinatorial field interactions.
 - Add Dependabot auto-merge caller workflow (`.github/workflows/dependabot-auto-merge.yml`).
