@@ -6,6 +6,7 @@ graceful-degradation contract (cognee mocked, never imported for real).
 
 from __future__ import annotations
 
+import base64
 import sys
 import types
 from typing import Any
@@ -217,15 +218,50 @@ async def test_configure_restores_langfuse_env(
 
 
 def _install_fake_litellm(monkeypatch: pytest.MonkeyPatch) -> Any:
-    """Install a stub ``litellm`` module and return it."""
+    """Install a stub ``litellm`` module (plus integration submodules) and return it."""
     fake: Any = types.ModuleType("litellm")
     fake.success_callback = []
     fake.failure_callback = []
+    fake.callbacks = []
     fake.langfuse_public_key = None
     fake.langfuse_secret_key = None
     fake.langfuse_host = None
     fake.langfuse_default_tags = None
+
+    class OpenTelemetryConfig:
+        def __init__(
+            self,
+            exporter: str = "console",
+            endpoint: str | None = None,
+            headers: str | None = None,
+        ) -> None:
+            self.exporter = exporter
+            self.endpoint = endpoint
+            self.headers = headers
+
+    class LangfuseOtelLogger:
+        def __init__(self, config: Any = None, *args: Any, **kwargs: Any) -> None:
+            self.config = config
+
+    fake_integrations = types.ModuleType("litellm.integrations")
+    fake_langfuse_pkg = types.ModuleType("litellm.integrations.langfuse")
+    fake_langfuse_otel = types.ModuleType("litellm.integrations.langfuse.langfuse_otel")
+    fake_langfuse_otel.LangfuseOtelLogger = LangfuseOtelLogger  # type: ignore[attr-defined]
+    fake_opentelemetry = types.ModuleType("litellm.integrations.opentelemetry")
+    fake_opentelemetry.OpenTelemetryConfig = OpenTelemetryConfig  # type: ignore[attr-defined]
+
     monkeypatch.setitem(sys.modules, "litellm", fake)
+    monkeypatch.setitem(sys.modules, "litellm.integrations", fake_integrations)
+    monkeypatch.setitem(sys.modules, "litellm.integrations.langfuse", fake_langfuse_pkg)
+    monkeypatch.setitem(
+        sys.modules,
+        "litellm.integrations.langfuse.langfuse_otel",
+        fake_langfuse_otel,
+    )
+    monkeypatch.setitem(
+        sys.modules, "litellm.integrations.opentelemetry", fake_opentelemetry
+    )
+    fake.LangfuseOtelLogger = LangfuseOtelLogger
     return fake
 
 
@@ -294,15 +330,64 @@ async def test_litellm_langfuse_callback_configured_with_dedicated_creds(
 ) -> None:
     """When dedicated creds are set, litellm's Langfuse callback is wired."""
     mem, _, fake_litellm, _ = cognee_memory_with_langfuse_creds
+    monkeypatch.delenv("LANGFUSE_BASE_URL", raising=False)
     monkeypatch.setenv("LANGFUSE_HOST", "https://langfuse.robotsix.net")
     await mem.setup()
 
-    assert fake_litellm.success_callback == ["langfuse_otel"]
-    assert fake_litellm.failure_callback == ["langfuse_otel"]
-    assert fake_litellm.langfuse_public_key == "pk-lf-dedicated"
-    assert fake_litellm.langfuse_secret_key == "sk-lf-dedicated"
-    assert fake_litellm.langfuse_host == "https://langfuse.robotsix.net"
+    # An explicitly-configured LangfuseOtelLogger INSTANCE is registered (the
+    # "langfuse_otel" string form would rebuild its config from the process
+    # env on first LLM call — i.e. the MAIN project's creds).
+    assert len(fake_litellm.callbacks) == 1
+    lg = fake_litellm.callbacks[0]
+    assert isinstance(lg, fake_litellm.LangfuseOtelLogger)
+    assert lg.config.exporter == "otlp_http"
+    assert (
+        lg.config.endpoint == "https://langfuse.robotsix.net/api/public/otel/v1/traces"
+    )
+    expected_auth = base64.b64encode(b"pk-lf-dedicated:sk-lf-dedicated").decode()
+    assert lg.config.headers == f"Authorization=Basic {expected_auth}"
+    # No string callbacks and no module-attr credential leakage.
+    assert fake_litellm.success_callback == []
+    assert fake_litellm.failure_callback == []
+    assert fake_litellm.langfuse_public_key is None
+    assert fake_litellm.langfuse_secret_key is None
     assert fake_litellm.langfuse_default_tags == ["component:cognee"]
+
+    # Idempotent across repeated setup() calls.
+    mem._setup_done = False
+    await mem.setup()
+    assert len(fake_litellm.callbacks) == 1
+
+
+@pytest.mark.asyncio
+async def test_litellm_langfuse_callback_prefers_base_url_env(
+    cognee_memory_with_langfuse_creds: tuple[CogneeMemory, Any, Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """LANGFUSE_BASE_URL (llmio's name) wins over LANGFUSE_HOST."""
+    mem, _, fake_litellm, _ = cognee_memory_with_langfuse_creds
+    monkeypatch.setenv("LANGFUSE_BASE_URL", "https://langfuse.robotsix.net")
+    monkeypatch.setenv("LANGFUSE_HOST", "https://wrong.example.com")
+    await mem.setup()
+
+    assert (
+        fake_litellm.callbacks[0].config.endpoint
+        == "https://langfuse.robotsix.net/api/public/otel/v1/traces"
+    )
+
+
+@pytest.mark.asyncio
+async def test_litellm_langfuse_callback_skipped_without_host(
+    cognee_memory_with_langfuse_creds: tuple[CogneeMemory, Any, Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No base-URL env -> no callback (never default to Langfuse US cloud)."""
+    mem, _, fake_litellm, _ = cognee_memory_with_langfuse_creds
+    monkeypatch.delenv("LANGFUSE_BASE_URL", raising=False)
+    monkeypatch.delenv("LANGFUSE_HOST", raising=False)
+    await mem.setup()
+
+    assert fake_litellm.callbacks == []
 
 
 @pytest.mark.asyncio
@@ -316,6 +401,7 @@ async def test_litellm_langfuse_callback_skipped_without_creds(
     await mem.setup()
 
     # litellm should remain untouched — no callback configured.
+    assert fake_litellm.callbacks == []
     assert fake_litellm.success_callback == []
     assert fake_litellm.failure_callback == []
     assert fake_litellm.langfuse_public_key is None
