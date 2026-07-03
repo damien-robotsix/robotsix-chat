@@ -6,7 +6,7 @@ be imported directly without pulling in the full Settings cascade.
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, SecretStr
 
 
 class MemoryLlmSettings(BaseModel):
@@ -57,6 +57,10 @@ class MemorySettings(BaseModel):
             payloads.
         llm: Extraction-LLM config (graph building / consolidation).
         embedding: Embedding-server config (semantic search).
+        langfuse_public_key: Dedicated Langfuse public key for the
+            ``robotsix-chat-cognee`` project (separate from the main chat's
+            Langfuse project). When absent, cognee LLM calls are not traced.
+        langfuse_secret_key: Matching secret key for the cognee project.
 
     """
 
@@ -65,8 +69,8 @@ class MemorySettings(BaseModel):
     recall_search_type: str = "GRAPH_COMPLETION"
     llm: MemoryLlmSettings = Field(default_factory=MemoryLlmSettings)
     embedding: MemoryEmbeddingSettings = Field(default_factory=MemoryEmbeddingSettings)
-    langfuse_public_key: str = ""
-    langfuse_secret_key: str = ""
+    langfuse_public_key: SecretStr = SecretStr("")
+    langfuse_secret_key: SecretStr = SecretStr("")
 
 
 class RefDocsSettings(BaseModel):

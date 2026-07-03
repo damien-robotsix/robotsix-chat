@@ -119,26 +119,7 @@ class CogneeMemory:
             }
         )
 
-        # Wire litellm's Langfuse callback with dedicated cognee credentials so
-        # its internal LLM traffic lands in the separate `robotsix-chat-cognee`
-        # project (per-standards: one Langfuse project per repo/function).
-        # Graceful no-op when creds are absent.
-        if s.langfuse_public_key and s.langfuse_secret_key:
-            import litellm  # type: ignore[import-not-found]
-
-            litellm.success_callback = ["langfuse"]
-            litellm.langfuse_public_key = s.langfuse_public_key
-            litellm.langfuse_secret_key = s.langfuse_secret_key
-            langfuse_host = os.environ.get("LANGFUSE_BASE_URL") or os.environ.get(
-                "LANGFUSE_HOST", ""
-            )
-            if langfuse_host:
-                litellm.langfuse_host = langfuse_host
-            logger.info("litellm Langfuse callback configured for cognee traffic")
-        else:
-            logger.debug(
-                "cognee Langfuse creds not set; skipping litellm Langfuse callback"
-            )
+        self._register_litellm_langfuse_callback()
 
         logger.info(
             "cognee memory configured (data_dir=%s, embed=%s@%s, llm=%s)",
@@ -147,6 +128,68 @@ class CogneeMemory:
             s.embedding.endpoint,
             s.llm.model,
         )
+
+    def _register_litellm_langfuse_callback(self) -> None:
+        """Wire litellm's ``langfuse_otel`` callback with dedicated cognee creds.
+
+        Uses the OTLP-based callback (``langfuse_otel``) rather than the SDK
+        callback (``langfuse``) because the Docker image ships no langfuse v2
+        SDK.  The OTLP path only needs the OpenTelemetry exporter already
+        available through the ``tracing`` extra.
+
+        Cognee's internal LLM traffic lands in the separate
+        ``robotsix-chat-cognee`` Langfuse project (per-standards: one
+        Langfuse project per repo/function).  Graceful no-op when dedicated
+        creds are absent.
+        """
+        s = self._settings
+        lf_public = s.langfuse_public_key.get_secret_value()
+        lf_secret = s.langfuse_secret_key.get_secret_value()
+        if not lf_public or not lf_secret:
+            logger.debug(
+                "cognee Langfuse creds not set; skipping litellm Langfuse callback"
+            )
+            return
+
+        import litellm  # type: ignore[import-not-found]
+
+        # litellm's Langfuse logger reads credentials from the environment at
+        # callback-registration time. Temporarily swap in the memory-project
+        # creds, initialise the callback, then restore the main-project creds
+        # so llmio's already-running OTel tracing is unaffected.
+        lf_base_url = os.environ.get("LANGFUSE_BASE_URL", "")
+        saved: dict[str, str | None] = {}
+        for var, val in (
+            ("LANGFUSE_PUBLIC_KEY", lf_public),
+            ("LANGFUSE_SECRET_KEY", lf_secret),
+        ):
+            saved[var] = os.environ.get(var)
+            os.environ[var] = val
+        if lf_base_url:
+            saved["LANGFUSE_BASE_URL"] = os.environ.get("LANGFUSE_BASE_URL")
+            os.environ["LANGFUSE_BASE_URL"] = lf_base_url
+
+        try:
+            # Belt-and-suspenders: set both programmatic attrs and env vars.
+            litellm.langfuse_public_key = lf_public
+            litellm.langfuse_secret_key = lf_secret
+            if lf_base_url:
+                litellm.langfuse_base_url = lf_base_url
+
+            callbacks: list[str] = (
+                list(litellm.success_callback) if litellm.success_callback else []
+            )
+            if "langfuse_otel" not in callbacks:
+                callbacks.append("langfuse_otel")
+            litellm.success_callback = callbacks
+
+            logger.info("litellm langfuse_otel callback configured for cognee traffic")
+        finally:
+            for var, old in saved.items():
+                if old is None:
+                    os.environ.pop(var, None)
+                else:
+                    os.environ[var] = old
 
     # -- read -------------------------------------------------------------
 

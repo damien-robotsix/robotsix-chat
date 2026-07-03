@@ -12,6 +12,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pydantic import SecretStr
 
 from robotsix_chat.config import (
     MemoryEmbeddingSettings,
@@ -234,8 +235,8 @@ def cognee_memory_with_langfuse_creds(
     fake_cognee = _install_fake_cognee(monkeypatch)
     fake_litellm = _install_fake_litellm(monkeypatch)
     settings = _enabled_settings(str(tmp_path / "cognee"))
-    settings.langfuse_public_key = "pk-lf-dedicated"
-    settings.langfuse_secret_key = "sk-lf-dedicated"
+    settings.langfuse_public_key = SecretStr("pk-lf-dedicated")
+    settings.langfuse_secret_key = SecretStr("sk-lf-dedicated")
     mem = CogneeMemory(settings)
     return mem, fake_cognee, fake_litellm
 
@@ -250,10 +251,10 @@ async def test_litellm_langfuse_callback_configured_with_dedicated_creds(
     monkeypatch.setenv("LANGFUSE_BASE_URL", "https://langfuse.robotsix.net")
     await mem.setup()
 
-    assert fake_litellm.success_callback == ["langfuse"]
+    assert fake_litellm.success_callback == ["langfuse_otel"]
     assert fake_litellm.langfuse_public_key == "pk-lf-dedicated"
     assert fake_litellm.langfuse_secret_key == "sk-lf-dedicated"
-    assert fake_litellm.langfuse_host == "https://langfuse.robotsix.net"
+    assert fake_litellm.langfuse_base_url == "https://langfuse.robotsix.net"
 
 
 @pytest.mark.asyncio
@@ -270,3 +271,54 @@ async def test_litellm_langfuse_callback_skipped_without_creds(
     assert fake_litellm.success_callback is None
     assert fake_litellm.langfuse_public_key is None
     assert fake_litellm.langfuse_secret_key is None
+
+
+# ---------------------------------------------------------------------------
+# LANGFUSE_* env-var hiding guard (regression)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_configure_langfuse_env_guard_regression(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """Regression: LANGFUSE_* creds hidden for cognee import, restored after.
+
+    Cognee's model validator force-selects Langfuse monitoring when
+    ``LANGFUSE_*`` env vars are present, then ``from langfuse.decorators
+    import observe`` crashes because the Docker image ships no langfuse SDK.
+    The guard in ``_configure()`` hides those vars before ``import cognee``
+    and restores them afterwards.
+
+    This test verifies both halves of the guard so future refactors trigger
+    a failing test before shipping.
+    """
+    import os
+
+    _install_fake_cognee(monkeypatch)
+
+    popped: list[str] = []
+    _real_pop = os.environ.pop
+
+    def _tracking_pop(key, *args):
+        result = _real_pop(key, *args)
+        popped.append(key)
+        return result
+
+    monkeypatch.setattr(os.environ, "pop", _tracking_pop)
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-guard-test")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-guard-test")
+
+    mem = CogneeMemory(_enabled_settings(str(tmp_path / "cognee")))
+    await mem.setup()
+
+    assert "LANGFUSE_PUBLIC_KEY" in popped, (
+        "LANGFUSE_PUBLIC_KEY must be popped before import cognee — "
+        "otherwise cognee's unconditional `from langfuse.decorators import "
+        "observe` will crash"
+    )
+    assert "LANGFUSE_SECRET_KEY" in popped, (
+        "LANGFUSE_SECRET_KEY must be popped before import cognee"
+    )
+    assert os.environ["LANGFUSE_PUBLIC_KEY"] == "pk-guard-test"
+    assert os.environ["LANGFUSE_SECRET_KEY"] == "sk-guard-test"
