@@ -1,0 +1,1 @@
+Missing `SUBSESSIONS_TRANSCRIPT_MAX_ENTRIES` env var override in `_build_subsessions_raw`

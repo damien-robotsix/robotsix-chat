@@ -1,5 +1,7 @@
 ## 0.0.0 (unreleased)
 
+- Add `SUBSESSIONS_TRANSCRIPT_MAX_ENTRIES` env var override for
+  `SubsessionsSettings.transcript_max_entries` (was previously only settable via YAML).
 - Fixed `docs/configuration.md` `llmio.model_level` default column from `4` to `3` to match the
   pydantic field default. Added CI test to catch future docs-vs-code default mismatches.
 - Cognee's litellm LLM calls (cognify + recall) are now traced in Langfuse via the OTLP-based
