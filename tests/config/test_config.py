@@ -57,6 +57,8 @@ def _wipe_env_vars(monkeypatch: pytest.MonkeyPatch) -> None:
         "MEMORY_EMBEDDING_API_KEY",
         "MEMORY_EMBEDDING_TOKENIZER",
         "MEMORY_EMBEDDING_DIMENSIONS",
+        "MEMORY_LANGFUSE_PUBLIC_KEY",
+        "MEMORY_LANGFUSE_SECRET_KEY",
         "MILL_ENABLED",
         "MILL_BROKER_HOST",
         "MILL_BROKER_PORT",

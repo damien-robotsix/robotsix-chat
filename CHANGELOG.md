@@ -2,6 +2,7 @@
 
 - Fixed `docs/configuration.md` `llmio.model_level` default column from `4` to `3` to match the
   pydantic field default. Added CI test to catch future docs-vs-code default mismatches.
+- Memory: wire litellm's Langfuse callback with dedicated cognee credentials (`MEMORY_LANGFUSE_PUBLIC_KEY` / `MEMORY_LANGFUSE_SECRET_KEY`) so internal LLM traffic lands in a separate `robotsix-chat-cognee` project. Graceful no-op when creds are absent.
 - Pin `@anthropic-ai/claude-code` npm version to `2.1.199` in Dockerfile (resolves hadolint DL3016).
 - Move persistent-data mount from `/home/app/.data` to `/data` per round-4 container standard. All
   code-level path defaults (memory data_dir, diagnostics store/proposals/effectiveness, knowledge

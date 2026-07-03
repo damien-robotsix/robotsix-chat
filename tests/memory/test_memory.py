@@ -208,3 +208,65 @@ async def test_configure_restores_langfuse_env(
     await mem.setup()
     assert os.environ["LANGFUSE_PUBLIC_KEY"] == "pk-keep"
     assert os.environ["LANGFUSE_SECRET_KEY"] == "sk-keep"  # pragma: allowlist secret
+
+
+# ---------------------------------------------------------------------------
+# litellm Langfuse callback (dedicated cognee creds)
+# ---------------------------------------------------------------------------
+
+
+def _install_fake_litellm(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Install a stub ``litellm`` module and return it."""
+    fake: Any = types.ModuleType("litellm")
+    fake.success_callback = None
+    fake.langfuse_public_key = None
+    fake.langfuse_secret_key = None
+    fake.langfuse_host = None
+    monkeypatch.setitem(sys.modules, "litellm", fake)
+    return fake
+
+
+@pytest.fixture
+def cognee_memory_with_langfuse_creds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> tuple[CogneeMemory, Any, Any]:
+    """CogneeMemory with dedicated Langfuse creds and a stubbed litellm."""
+    fake_cognee = _install_fake_cognee(monkeypatch)
+    fake_litellm = _install_fake_litellm(monkeypatch)
+    settings = _enabled_settings(str(tmp_path / "cognee"))
+    settings.langfuse_public_key = "pk-lf-dedicated"
+    settings.langfuse_secret_key = "sk-lf-dedicated"
+    mem = CogneeMemory(settings)
+    return mem, fake_cognee, fake_litellm
+
+
+@pytest.mark.asyncio
+async def test_litellm_langfuse_callback_configured_with_dedicated_creds(
+    cognee_memory_with_langfuse_creds: tuple[CogneeMemory, Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When dedicated creds are set, litellm's Langfuse callback is wired."""
+    mem, _, fake_litellm = cognee_memory_with_langfuse_creds
+    monkeypatch.setenv("LANGFUSE_BASE_URL", "https://langfuse.robotsix.net")
+    await mem.setup()
+
+    assert fake_litellm.success_callback == ["langfuse"]
+    assert fake_litellm.langfuse_public_key == "pk-lf-dedicated"
+    assert fake_litellm.langfuse_secret_key == "sk-lf-dedicated"
+    assert fake_litellm.langfuse_host == "https://langfuse.robotsix.net"
+
+
+@pytest.mark.asyncio
+async def test_litellm_langfuse_callback_skipped_without_creds(
+    cognee_memory: tuple[CogneeMemory, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When dedicated creds are absent, litellm's callback is not configured."""
+    fake_litellm = _install_fake_litellm(monkeypatch)
+    mem, _ = cognee_memory
+    await mem.setup()
+
+    # litellm should remain untouched — no callback configured.
+    assert fake_litellm.success_callback is None
+    assert fake_litellm.langfuse_public_key is None
+    assert fake_litellm.langfuse_secret_key is None

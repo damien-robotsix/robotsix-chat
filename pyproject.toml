@@ -181,6 +181,9 @@ extend_exclude = ["vulture_whitelist.py", ".local-deps", ".local_pkgs", "local-d
 # `transformers` is an optional `memory`-extra dependency consumed dynamically by
 # the cognee bge-m3 tokenizer path; it is never imported from src/, so deptry's
 # DEP002 ("defined but not used") is expected and intentional.
+# litellm is a transitive dependency of cognee (the memory extra); imported
+# for its Langfuse callback so cognee traffic lands in a separate project.
+DEP001 = ["litellm"]
 DEP002 = ["transformers"]
 # `pydantic_ai` is robotsix-llmio's agent framework: `handle.run` already returns
 # its result objects, and the agent builds a multi-turn `message_history` from

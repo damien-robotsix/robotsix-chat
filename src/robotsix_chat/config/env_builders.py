@@ -39,6 +39,9 @@ def _build_memory_raw(yaml_memory: Any) -> dict[str, Any]:
     env_set(llm_raw, "endpoint", "MEMORY_LLM_ENDPOINT")
     env_set(llm_raw, "api_key", "MEMORY_LLM_API_KEY")
 
+    env_set(memory_raw, "langfuse_public_key", "MEMORY_LANGFUSE_PUBLIC_KEY")
+    env_set(memory_raw, "langfuse_secret_key", "MEMORY_LANGFUSE_SECRET_KEY")
+
     env_set(embed_raw, "provider", "MEMORY_EMBEDDING_PROVIDER")
     env_set(embed_raw, "model", "MEMORY_EMBEDDING_MODEL")
     env_set(embed_raw, "endpoint", "MEMORY_EMBEDDING_ENDPOINT")

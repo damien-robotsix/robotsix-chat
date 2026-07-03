@@ -65,6 +65,8 @@ class MemorySettings(BaseModel):
     recall_search_type: str = "GRAPH_COMPLETION"
     llm: MemoryLlmSettings = Field(default_factory=MemoryLlmSettings)
     embedding: MemoryEmbeddingSettings = Field(default_factory=MemoryEmbeddingSettings)
+    langfuse_public_key: str = ""
+    langfuse_secret_key: str = ""
 
 
 class RefDocsSettings(BaseModel):

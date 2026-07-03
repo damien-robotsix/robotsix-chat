@@ -118,6 +118,28 @@ class CogneeMemory:
                 "huggingface_tokenizer": s.embedding.huggingface_tokenizer,
             }
         )
+
+        # Wire litellm's Langfuse callback with dedicated cognee credentials so
+        # its internal LLM traffic lands in the separate `robotsix-chat-cognee`
+        # project (per-standards: one Langfuse project per repo/function).
+        # Graceful no-op when creds are absent.
+        if s.langfuse_public_key and s.langfuse_secret_key:
+            import litellm  # type: ignore[import-not-found]
+
+            litellm.success_callback = ["langfuse"]
+            litellm.langfuse_public_key = s.langfuse_public_key
+            litellm.langfuse_secret_key = s.langfuse_secret_key
+            langfuse_host = os.environ.get("LANGFUSE_BASE_URL") or os.environ.get(
+                "LANGFUSE_HOST", ""
+            )
+            if langfuse_host:
+                litellm.langfuse_host = langfuse_host
+            logger.info("litellm Langfuse callback configured for cognee traffic")
+        else:
+            logger.debug(
+                "cognee Langfuse creds not set; skipping litellm Langfuse callback"
+            )
+
         logger.info(
             "cognee memory configured (data_dir=%s, embed=%s@%s, llm=%s)",
             data_dir,
