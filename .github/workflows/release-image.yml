@@ -14,6 +14,7 @@ on:
 
 permissions:
   contents: read
+  attestations: write
 
 concurrency:
   group: release-${{ github.ref }}
@@ -43,6 +44,6 @@ jobs:
     permissions:
       contents: read
       packages: write
-      id-token: write         # provenance / SBOM attestation signing
       attestations: write
+      id-token: write         # provenance / SBOM attestation signing
       security-events: write  # Trivy SARIF upload to Code Scanning

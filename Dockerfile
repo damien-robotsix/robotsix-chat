@@ -6,6 +6,8 @@
 # ---------------------------------------------------------------------------
 FROM python:3.14-slim@sha256:b877e50bd90de10af8d82c57a022fc2e0dc731c5320d762a27986facfc3355c1 AS builder
 
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
+
 # Bring in the uv static binary (pinned to a released version for reproducibility).
 COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /usr/local/bin/uv
 
@@ -22,7 +24,7 @@ COPY README.md ./
 # uv needs git to fetch the git-sourced dependencies declared under
 # [tool.uv.sources] (robotsix-yaml-config, robotsix-llmio).
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git \
+    && apt-get install -y --no-install-recommends git="1:2.*" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
@@ -35,6 +37,8 @@ RUN uv export --frozen --no-emit-project --no-hashes --extra claude-sdk --extra 
 # add Node.js + the claude CLI, running as a non-root user.
 # ---------------------------------------------------------------------------
 FROM python:3.14-slim@sha256:b877e50bd90de10af8d82c57a022fc2e0dc731c5320d762a27986facfc3355c1 AS runtime
+
+SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 # Bring in uv and the exported requirements for the --system install.
 COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /usr/local/bin/uv
@@ -49,7 +53,7 @@ COPY src /tmp/project/src
 # project into the system site-packages, then remove git, uv, and the
 # transient source to keep the runtime layer lean.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends git \
+    && apt-get install -y --no-install-recommends git="1:2.*" \
     && uv pip install --system -r /tmp/requirements.txt \
     && uv pip install --system --no-deps /tmp/project \
     && apt-get purge -y --auto-remove git \
@@ -59,14 +63,14 @@ RUN apt-get update \
 # Install Node.js (LTS) and the claude CLI, then prune build-only packages and
 # caches to keep the layer lean.
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends ca-certificates curl gnupg \
+    && apt-get install -y --no-install-recommends curl="8.*" gnupg="2.*" \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
         | gpg --dearmor -o /etc/apt/keyrings/nodesource.gpg \
     && echo "deb [signed-by=/etc/apt/keyrings/nodesource.gpg] https://deb.nodesource.com/node_22.x nodistro main" \
         > /etc/apt/sources.list.d/nodesource.list \
     && apt-get update \
-    && apt-get install -y --no-install-recommends nodejs \
+    && apt-get install -y --no-install-recommends nodejs="22.*" \
     && npm install -g @anthropic-ai/claude-code \
     && claude --version \
     && apt-get purge -y --auto-remove curl gnupg \

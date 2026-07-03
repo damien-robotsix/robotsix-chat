@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Dockerfile: add `SHELL` with pipefail and pin apt package versions for hadolint compliance.
 - Dockerfile: change `APP_UID`/`APP_GID` ARG defaults from 1001 to 1000 to align with the
   robotsix-standards 2026-07 revision (central-deploy overrides the container user to the
   deploy-host operator uid:gid; the 1000 default matches the common `debian` operator). **One-time
