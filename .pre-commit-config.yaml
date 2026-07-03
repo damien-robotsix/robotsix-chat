@@ -52,7 +52,7 @@ repos:
         files: ^uv\.lock$
 
   - repo: https://github.com/hadolint/hadolint
-    rev: v1.19.0
+    rev: v2.12.0
     hooks:
       - id: hadolint
 
