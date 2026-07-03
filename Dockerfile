@@ -4,7 +4,7 @@
 # Builder stage: resolve the locked dependency set and export a requirements.txt
 # for installation in the runtime stage.
 # ---------------------------------------------------------------------------
-FROM python:3.14-slim@sha256:44dd04494ee8f3b538294360e7c4b3acb87c8268e4d0a4828a6500b1eff50061 AS builder
+FROM python:3.14-slim@sha256:b877e50bd90de10af8d82c57a022fc2e0dc731c5320d762a27986facfc3355c1 AS builder
 
 # Bring in the uv static binary (pinned to a released version for reproducibility).
 COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /usr/local/bin/uv
@@ -34,7 +34,7 @@ RUN uv export --frozen --no-emit-project --no-hashes --extra claude-sdk --extra 
 # Runtime stage: install locked deps + project into the system Python, then
 # add Node.js + the claude CLI, running as a non-root user.
 # ---------------------------------------------------------------------------
-FROM python:3.14-slim@sha256:44dd04494ee8f3b538294360e7c4b3acb87c8268e4d0a4828a6500b1eff50061 AS runtime
+FROM python:3.14-slim@sha256:b877e50bd90de10af8d82c57a022fc2e0dc731c5320d762a27986facfc3355c1 AS runtime
 
 # Bring in uv and the exported requirements for the --system install.
 COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /usr/local/bin/uv
