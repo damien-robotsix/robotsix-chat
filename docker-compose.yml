@@ -19,6 +19,6 @@ services:
       - LLMIO_MODEL_LEVEL=3
       - CHAT_CONFIG_PATH=config/chat.local.yaml
     volumes:
-      - ./config/chat.local.yaml:/home/appuser/config/chat.local.yaml:ro
-      - ~/.claude:/home/appuser/.claude:ro
+      - ./config/chat.local.yaml:/home/app/config/chat.local.yaml:ro
+      - ~/.claude:/home/app/.claude:ro
     restart: unless-stopped

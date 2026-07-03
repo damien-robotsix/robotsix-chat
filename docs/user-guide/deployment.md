@@ -10,14 +10,15 @@ ______________________________________________________________________
 robotsix-chat ships as a single Docker image published to `ghcr.io/damien-robotsix/robotsix-chat`.
 There are two Compose files:
 
-| File                             | Purpose                                                  |
-| -------------------------------- | -------------------------------------------------------- |
-| `docker-compose.yml` (repo root) | Local build-and-run loop for development                 |
-| `deploy/docker-compose.yml`      | Pull-based production stack with Watchtower auto-updates |
+| File                             | Purpose                                               |
+| -------------------------------- | ----------------------------------------------------- |
+| `docker-compose.yml` (repo root) | Local build-and-run loop for development              |
+| `deploy/docker-compose.yml`      | central-deploy contract for the production deployment |
 
-The production stack binds to **loopback only** (`127.0.0.1`). A reverse proxy (nginx, Caddy, …) is
-expected in front of it — see the [reverse proxy placeholder](#6-reverse-proxy--tls) at the end of
-this guide.
+Production runs under
+[robotsix-central-deploy](https://github.com/damien-robotsix/robotsix-central-deploy): it pulls the
+published image, injects operator-filled secrets, manages restarts and networking, and routes the
+service through its gateway. See `deploy/README.md` for the onboarding walkthrough.
 
 ______________________________________________________________________
 
@@ -31,9 +32,8 @@ container. Use this for development, testing, or ad-hoc runs.
 - Docker Engine 24+ and Compose v2
 - Claude subscription: `claude login` (populates `~/.claude`)
 - **Persistent `.data` volume**: conversation history is written to `.data/conversations.json`
-  inside the container. The deploy stack mounts `./data` at `/home/appuser/.data` (read-write) so
-  chat history survives container restarts. Ensure the `deploy/data/` directory exists (or let
-  Docker create it).
+  inside the container. In production the named volume `chat-data` is mounted at `/home/app/.data`
+  (read-write) so chat history survives redeploys.
 
 ### Steps
 
@@ -77,8 +77,8 @@ Every build also produces SLSA provenance and a CycloneDX/SPDX SBOM attestation.
 
 ```bash
 # Merge to main (or push directly if permitted).  The workflow runs
-# automatically and updates the `main` tag on GHCR.  Watchtower on the
-# deploy host picks it up within 30 seconds.
+# automatically and updates the `main` tag on GHCR.  Redeploy from the
+# central-deploy dashboard to pick it up.
 ```
 
 **Semver release:**
@@ -94,57 +94,23 @@ pulls them independently.
 
 ______________________________________________________________________
 
-## 3. Deploying the production stack
+## 3. Deploying via central-deploy
 
-The `deploy/` stack pulls a pre-built image from GHCR and runs it with Watchtower for automatic
-updates.
+Production deployment is handled by the central-deploy dashboard; there is nothing to
+`docker compose up` on the server.
 
-### One-time host setup
+1. One-time: `claude login` as the server user (populates `~/.claude`, which central-deploy binds
+   into the container at `/home/app/.claude`).
+2. Onboard the repo in the dashboard — preflight parses `deploy/docker-compose.yml`
+   (`# central-deploy-contract-version: 1`).
+3. Fill the secret slots (at minimum `AUTH_PASSWORD`), acknowledge the `chat-data` stateful-volume
+   warning, confirm the Claude-mount toggle, and deploy.
 
-```bash
-# 1. Claude credentials (see Claude credentials section below)
-claude login
-
-# 2. Create the config directory and file
-mkdir -p deploy/config
-cp config/chat.local.example.yaml deploy/config/chat.local.yaml
-# Edit deploy/config/chat.local.yaml:
-#   - Set auth.enabled: true
-#   - Optionally set auth.username (default: admin)
-#   - The auth.password field can be left empty — the compose file
-#     supplies it via the AUTH_PASSWORD env var
-
-# 3. Create the .env file
-cp deploy/.env.example deploy/.env
-# Edit deploy/.env:
-#   - Set IMAGE_TAG=main (or a pinned version)
-#   - Set CHAT_PORT if you want something other than 8088
-#   - Set CHAT_AUTH_PASSWORD to a strong, random value
-```
-
-### Start and verify
+Verify from the server:
 
 ```bash
-# Start the stack
-docker compose -f deploy/docker-compose.yml up -d
-
-# Check that both services are running
-docker compose -f deploy/docker-compose.yml ps
-# Expected: chat (healthy), watchtower (running)
-
-# Health check
-curl http://127.0.0.1:${CHAT_PORT:-8088}/health
-# → {"status":"ok"}
-
-# Browser UI (requires Basic auth)
-curl -u admin:${CHAT_AUTH_PASSWORD} http://127.0.0.1:${CHAT_PORT:-8088}/
-# → HTML page
-```
-
-### Stopping
-
-```bash
-docker compose -f deploy/docker-compose.yml down
+docker ps --filter name=robotsix-chat   # healthy
+curl http://<container>:8080/health     # via the central-deploy network
 ```
 
 ______________________________________________________________________
@@ -166,9 +132,9 @@ claude login
 ls -la ~/.claude/credentials.json
 ```
 
-Both the local (`docker-compose.yml`) and deploy (`deploy/docker-compose.yml`) stacks mount
-`~/.claude` read-only at `/home/appuser/.claude`. The `claude` CLI inside the container reads the
-OAuth token from this file.
+The local stack (`docker-compose.yml`) bind-mounts `~/.claude` read-only at `/home/app/.claude`; in
+production the `robotsix.deploy.claude-mount` label makes central-deploy bind it there read-write.
+The `claude` CLI inside the container reads the OAuth token from this directory.
 
 ### Long-lived OAuth tokens
 
@@ -264,25 +230,6 @@ Key characteristics:
 
 ## 7. Updating
 
-### Watchtower (automatic)
-
-With `IMAGE_TAG=main` in `deploy/.env`, Watchtower polls GHCR every 30 seconds. When a new
-`main`-tagged image is detected, Watchtower pulls it, stops the old container, and starts a new one
-with the same configuration. No manual intervention is needed.
-
-To monitor Watchtower:
-
-```bash
-docker compose -f deploy/docker-compose.yml logs watchtower
-```
-
-### Manual update
-
-To update to a specific version:
-
-```bash
-# Edit deploy/.env and set IMAGE_TAG=v1.2.3
-docker compose -f deploy/docker-compose.yml up -d
-```
-
-Docker Compose will pull the new tag (if not already cached) and recreate the `chat` container.
+Every push to `main` publishes a fresh `ghcr.io/damien-robotsix/robotsix-chat:main` (CI-gated).
+Redeploy from the central-deploy dashboard to pull it; central-deploy recreates the container with
+the stored config and secrets.
