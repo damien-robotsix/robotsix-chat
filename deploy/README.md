@@ -21,8 +21,8 @@ directly. The root `docker-compose.yml` remains the local-dev stack.
   it via the `CHAT_CONFIG_PATH` env var (infrastructure wiring only). No application config or
   secrets live in `environment:`.
 - **Persistent state** (knowledge store, cognee memory, HF cache) lives in the named volume
-  `chat-data`, mounted at `/data` and flagged `robotsix.deploy.stateful` — it starts EMPTY
-  on first onboard; migrate data from a previous deployment first if needed.
+  `chat-data`, mounted at `/data` and flagged `robotsix.deploy.stateful` — it starts EMPTY on first
+  onboard; migrate data from a previous deployment first if needed.
 - **Claude credentials**: the `robotsix.deploy.claude-mount: "true"` label makes central-deploy bind
   the server user's `~/.claude` to `/home/app/.claude` (the standardized container user's home),
   enabling the keyless level-3 claude-sdk transport. Run `claude login` as the server user once
