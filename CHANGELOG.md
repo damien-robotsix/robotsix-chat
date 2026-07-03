@@ -1,6 +1,8 @@
 ## 0.0.0 (unreleased)
 
-- Replace hand-rolled `.github/workflows/lint-workflows.yml` with thin delegation wrapper calling `damien-robotsix/robotsix-github-workflows/.github/workflows/lint-workflows.yml` (shared reusable). Enables `run-actionlint`, `run-zizmor`, and `sarif-workflows` inputs.
+- Replace hand-rolled `.github/workflows/lint-workflows.yml` with thin delegation wrapper calling
+  `damien-robotsix/robotsix-github-workflows/.github/workflows/lint-workflows.yml` (shared
+  reusable). Enables `run-actionlint`, `run-zizmor`, and `sarif-workflows` inputs.
 - Enable triage_boilerplate periodic workflow for automated triage boilerplate response templates.
 - Extract `_fetch_json(repo, path, action)` private helper in `RefDocsClient` to deduplicate the
   allowlist-check + URL-build + fetch preamble shared by `read_file` and `list_files`.
