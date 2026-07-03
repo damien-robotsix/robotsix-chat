@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add `hypothesis` dev dependency and property-based roundtrip tests for Pydantic config models (`AuthSettings`, `Settings`), catching validation edge cases in combinatorial field interactions.
 - Add Dependabot auto-merge caller workflow (`.github/workflows/dependabot-auto-merge.yml`).
 - Reorganize test directory for `robotsix_chat.board` module: move tests from `tests/board_reader/`
   to `tests/board/` to match the per-module naming convention after the module rename (PR #367).
