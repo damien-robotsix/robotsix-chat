@@ -12,6 +12,7 @@ from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from pydantic import SecretStr
 
 from robotsix_chat.config import (
     MemoryEmbeddingSettings,
@@ -208,3 +209,166 @@ async def test_configure_restores_langfuse_env(
     await mem.setup()
     assert os.environ["LANGFUSE_PUBLIC_KEY"] == "pk-keep"
     assert os.environ["LANGFUSE_SECRET_KEY"] == "sk-keep"  # pragma: allowlist secret
+
+
+# ---------------------------------------------------------------------------
+# litellm Langfuse callback (dedicated cognee creds)
+# ---------------------------------------------------------------------------
+
+
+def _install_fake_litellm(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Install a stub ``litellm`` module and return it."""
+    fake: Any = types.ModuleType("litellm")
+    fake.success_callback = []
+    fake.failure_callback = []
+    fake.langfuse_public_key = None
+    fake.langfuse_secret_key = None
+    fake.langfuse_host = None
+    fake.langfuse_default_tags = None
+    monkeypatch.setitem(sys.modules, "litellm", fake)
+    return fake
+
+
+def _install_fake_opentelemetry(monkeypatch: pytest.MonkeyPatch) -> Any:
+    """Install stub ``opentelemetry`` modules so the OTLP import guard passes."""
+    fake_otel = types.ModuleType("opentelemetry")
+    fake_otel_exporter = types.ModuleType("opentelemetry.exporter")
+    fake_otel_exporter_otlp = types.ModuleType("opentelemetry.exporter.otlp")
+    fake_otel_exporter_otlp_proto = types.ModuleType(
+        "opentelemetry.exporter.otlp.proto"
+    )
+    fake_otel_exporter_otlp_proto_http = types.ModuleType(
+        "opentelemetry.exporter.otlp.proto.http"
+    )
+    fake_otel_exporter_otlp_proto_http_trace = types.ModuleType(
+        "opentelemetry.exporter.otlp.proto.http.trace_exporter"
+    )
+
+    class OTLPSpanExporter:
+        pass
+
+    fake_otel_exporter_otlp_proto_http_trace.OTLPSpanExporter = OTLPSpanExporter
+
+    monkeypatch.setitem(sys.modules, "opentelemetry", fake_otel)
+    monkeypatch.setitem(sys.modules, "opentelemetry.exporter", fake_otel_exporter)
+    monkeypatch.setitem(
+        sys.modules, "opentelemetry.exporter.otlp", fake_otel_exporter_otlp
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "opentelemetry.exporter.otlp.proto",
+        fake_otel_exporter_otlp_proto,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "opentelemetry.exporter.otlp.proto.http",
+        fake_otel_exporter_otlp_proto_http,
+    )
+    monkeypatch.setitem(
+        sys.modules,
+        "opentelemetry.exporter.otlp.proto.http.trace_exporter",
+        fake_otel_exporter_otlp_proto_http_trace,
+    )
+    return fake_otel_exporter_otlp_proto_http_trace
+
+
+@pytest.fixture
+def cognee_memory_with_langfuse_creds(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> tuple[CogneeMemory, Any, Any, Any]:
+    """CogneeMemory with dedicated Langfuse creds and stubbed litellm/otel."""
+    fake_cognee = _install_fake_cognee(monkeypatch)
+    fake_litellm = _install_fake_litellm(monkeypatch)
+    fake_otel = _install_fake_opentelemetry(monkeypatch)
+    settings = _enabled_settings(str(tmp_path / "cognee"))
+    settings.langfuse_public_key = SecretStr("pk-lf-dedicated")
+    settings.langfuse_secret_key = SecretStr("sk-lf-dedicated")
+    mem = CogneeMemory(settings)
+    return mem, fake_cognee, fake_litellm, fake_otel
+
+
+@pytest.mark.asyncio
+async def test_litellm_langfuse_callback_configured_with_dedicated_creds(
+    cognee_memory_with_langfuse_creds: tuple[CogneeMemory, Any, Any, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When dedicated creds are set, litellm's Langfuse callback is wired."""
+    mem, _, fake_litellm, _ = cognee_memory_with_langfuse_creds
+    monkeypatch.setenv("LANGFUSE_HOST", "https://langfuse.robotsix.net")
+    await mem.setup()
+
+    assert fake_litellm.success_callback == ["langfuse_otel"]
+    assert fake_litellm.failure_callback == ["langfuse_otel"]
+    assert fake_litellm.langfuse_public_key == "pk-lf-dedicated"
+    assert fake_litellm.langfuse_secret_key == "sk-lf-dedicated"
+    assert fake_litellm.langfuse_host == "https://langfuse.robotsix.net"
+    assert fake_litellm.langfuse_default_tags == ["component:cognee"]
+
+
+@pytest.mark.asyncio
+async def test_litellm_langfuse_callback_skipped_without_creds(
+    cognee_memory: tuple[CogneeMemory, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When dedicated creds are absent, litellm's callback is not configured."""
+    fake_litellm = _install_fake_litellm(monkeypatch)
+    mem, _ = cognee_memory
+    await mem.setup()
+
+    # litellm should remain untouched — no callback configured.
+    assert fake_litellm.success_callback == []
+    assert fake_litellm.failure_callback == []
+    assert fake_litellm.langfuse_public_key is None
+    assert fake_litellm.langfuse_secret_key is None
+    assert fake_litellm.langfuse_default_tags is None
+
+
+# ---------------------------------------------------------------------------
+# LANGFUSE_* env-var hiding guard (regression)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_configure_langfuse_env_guard_regression(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """Regression: LANGFUSE_* creds hidden for cognee import, restored after.
+
+    Cognee's model validator force-selects Langfuse monitoring when
+    ``LANGFUSE_*`` env vars are present, then ``from langfuse.decorators
+    import observe`` crashes because the Docker image ships no langfuse SDK.
+    The guard in ``_configure()`` hides those vars before ``import cognee``
+    and restores them afterwards.
+
+    This test verifies both halves of the guard so future refactors trigger
+    a failing test before shipping.
+    """
+    import os
+
+    _install_fake_cognee(monkeypatch)
+
+    popped: list[str] = []
+    _real_pop = os.environ.pop
+
+    def _tracking_pop(key: str, *args: Any) -> Any:
+        result = _real_pop(key, *args)
+        popped.append(key)
+        return result
+
+    monkeypatch.setattr(os.environ, "pop", _tracking_pop)
+    monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-guard-test")
+    monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-guard-test")
+
+    mem = CogneeMemory(_enabled_settings(str(tmp_path / "cognee")))
+    await mem.setup()
+
+    assert "LANGFUSE_PUBLIC_KEY" in popped, (
+        "LANGFUSE_PUBLIC_KEY must be popped before import cognee — "
+        "otherwise cognee's unconditional `from langfuse.decorators import "
+        "observe` will crash"
+    )
+    assert "LANGFUSE_SECRET_KEY" in popped, (
+        "LANGFUSE_SECRET_KEY must be popped before import cognee"
+    )
+    assert os.environ["LANGFUSE_PUBLIC_KEY"] == "pk-guard-test"
+    assert os.environ["LANGFUSE_SECRET_KEY"] == "sk-guard-test"
