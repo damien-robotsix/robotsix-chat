@@ -120,7 +120,7 @@ def test_load_from_json_file(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) ->
         tmp_path,
         {
             "llmio_model_level": 2,
-            "llmio_api_key": "sk-json",
+            "llmio_api_key": "sk-json",  # pragma: allowlist secret
             "server_host": "0.0.0.0",
             "server_port": 9000,
             "log_level": "DEBUG",
@@ -202,7 +202,7 @@ def test_memory_from_json_config(
         {
             "memory": {
                 "enabled": True,
-                "llm": {"api_key": "sk-or-env"},
+                "llm": {"api_key": "sk-or-env"},  # pragma: allowlist secret
                 "embedding": {"endpoint": "http://box:11434/v1", "dimensions": 768},
             },
         },

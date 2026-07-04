@@ -75,7 +75,7 @@ def _is_secret_dotted_key(dotted_key: str) -> bool:
 
 _FIELD_TO_DOTTED: dict[str, str] = {
     "llmio_model_level": "llmio.model_level",
-    "llmio_api_key": "llmio.api_key",
+    "llmio_api_key": "llmio.api_key",  # pragma: allowlist secret
     "agent_instruction": "agent.instruction",
     "server_host": "server.host",
     "server_port": "server.port",
