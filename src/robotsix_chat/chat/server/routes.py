@@ -506,9 +506,7 @@ async def summary_endpoint(request: Request) -> JSONResponse:
     for user_msg, asst_msg in turns:
         transcript_parts.append(f"User: {user_msg}")
         if asst_msg:
-            truncated = (
-                asst_msg[:2000] + "…" if len(asst_msg) > 2000 else asst_msg
-            )
+            truncated = asst_msg[:2000] + "…" if len(asst_msg) > 2000 else asst_msg
             transcript_parts.append(f"Assistant: {truncated}")
     transcript = "\n".join(transcript_parts)
 

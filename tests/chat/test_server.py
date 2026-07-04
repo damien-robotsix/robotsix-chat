@@ -370,7 +370,8 @@ async def test_summary_endpoint_passes_prompt_to_agent() -> None:
 
     async with mock_app(
         tokens=[
-            '{"purpose":"bug fix","pending_work":"","pending_questions":"","blockers":"","relevant_info":""}'
+            '{"purpose":"bug fix","pending_work":"","pending_questions":"",'
+            '"blockers":"","relevant_info":""}'
         ],
         conversation_store=store,
     ) as f:
