@@ -1,8 +1,9 @@
 """Direct-repo HTTP client — GitHub App-authenticated branch push + PR open.
 
 Talks to the GitHub API as a GitHub App installation (JWT → installation
-token) and to the mill's board API for ticket-state verification.  Degrades
-gracefully: all errors become short strings the assistant can relay.
+token) and to the mill's board API for ticket-state verification via the
+shared ``BoardHTTPClient``.  Degrades gracefully: all errors become short
+strings the assistant can relay.
 """
 
 from __future__ import annotations
@@ -11,6 +12,8 @@ import json
 import logging
 import time
 from typing import TYPE_CHECKING, Any
+
+from robotsix_board_client import BoardHTTPClient, ErrorStrategy
 
 from robotsix_chat.common.http import safe_http_request
 
@@ -141,6 +144,12 @@ class DirectRepoClient:
         """Store settings; tokens are fetched lazily."""
         self._s = settings
         self._base_url = settings.github_api_base_url.rstrip("/")
+        self._board_client = BoardHTTPClient(
+            base_url=settings.board_api_base_url,
+            token=settings.board_api_token.get_secret_value(),
+            error_strategy=ErrorStrategy.RETURN,
+            cache_ttl=30.0,
+        )
 
     # -- helpers -----------------------------------------------------------
 
@@ -212,36 +221,26 @@ class DirectRepoClient:
     async def get_ticket_state(self, ticket_id: str) -> str | None:
         """Return the ticket's state (e.g. ``"BLOCKED"``), or ``None`` on failure.
 
-        Calls the board API directly — the same endpoint the browser UI uses.
+        Delegates to ``BoardHTTPClient.get_ticket()`` for consistent auth,
+        error handling, and TTL caching across board API consumers.
         """
-        board_url = self._s.board_api_base_url.rstrip("/")
-        url = f"{board_url}/tickets/{ticket_id}"
-        headers: dict[str, str] = {"Accept": "application/json"}
-        if self._s.board_api_token.get_secret_value():
-            headers["Authorization"] = (
-                f"Bearer {self._s.board_api_token.get_secret_value()}"
-            )
-        result = await safe_http_request(
-            "GET",
-            url,
-            headers=headers,
-            timeout=self._s.timeout,
-            label="Board API (ticket state)",
-        )
-        if result.error:
+        result = await self._board_client.get_ticket(ticket_id)
+        if isinstance(result, dict) and result.get("error"):
             logger.warning(
-                "Failed to fetch ticket %s state: %s", ticket_id, result.error
+                "Failed to fetch ticket %s state: %s (HTTP %s)",
+                ticket_id,
+                result.get("detail", "unknown"),
+                result.get("status_code", "?"),
             )
             return None
         try:
-            data = json.loads(result.text or "")
-            state: str | None = data.get("state")
+            state: str | None = result.get("state")
             return state
-        except json.JSONDecodeError, TypeError:
+        except AttributeError, TypeError:
             logger.warning(
-                "Non-JSON response for ticket %s: %s",
+                "Unexpected response for ticket %s: %s",
                 ticket_id,
-                (result.text or "")[:200],
+                str(result)[:200],
             )
             return None
 

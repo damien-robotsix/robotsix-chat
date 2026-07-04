@@ -1,5 +1,9 @@
 ## 0.0.0 (unreleased)
 
+- Migrate ``DirectRepoClient.get_ticket_state()`` from hand-rolled board API HTTP calls
+  to the shared ``BoardHTTPClient`` from ``robotsix-board-agent``. The client is constructed
+  with ``ErrorStrategy.RETURN`` (never-raise) and a 30-second TTL cache, matching the
+  existing board-tools pattern. Removes ~20 lines of duplicated URL/auth/JSON logic.
 - Migrate logging from hand-written text format to structlog-based JSON logging. All existing
   `logging.getLogger(__name__).info(...)` calls continue to work unchanged; the `ProcessorFormatter`
   bridge handles stdlib loggers transparently. A new `log_json_format` setting (default `True`) lets
