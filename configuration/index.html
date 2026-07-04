@@ -1,0 +1,2052 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Browser + SSE chat server exposing an LLM agent to human users">
+      
+      
+      
+      
+        <link rel="prev" href="../getting-started/">
+      
+      
+        <link rel="next" href="../periodic-checks/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>Configuration - robotsix-chat</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#configuration" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="robotsix-chat" class="md-header__button md-logo" aria-label="robotsix-chat" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            robotsix-chat
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Configuration
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/damien-robotsix/robotsix-chat" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="robotsix-chat" class="md-nav__button md-logo" aria-label="robotsix-chat" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    robotsix-chat
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/damien-robotsix/robotsix-chat" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#config-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Config file
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#local-dev" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Local dev
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#secrets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Secrets
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Settings reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#top-level" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Top-level
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#langfuse-tracing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Langfuse (tracing)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#memory-cognee" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory (cognee)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#central-deploy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Central Deploy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mail-board-http" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mail (board HTTP)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conversation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conversation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#diagnostics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Diagnostics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reference-docs-refdocs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reference Docs (refdocs)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#knowledge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Knowledge
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#self-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Self-review
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#version-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Version Check
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#component-client" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Component Client
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subsessions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subsessions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#direct-repo-github-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Direct Repo (GitHub App)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schema
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../periodic-checks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Periodic Checks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/robotsix_chat/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    robotsix_chat
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/robotsix_chat/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    robotsix_chat.config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/robotsix_chat/server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    robotsix_chat.chat.server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/robotsix_chat/agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    robotsix_chat.llm.agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/robotsix_chat/memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    robotsix_chat.memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/robotsix_chat/mill.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    robotsix_chat.mill.client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#config-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Config file
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#local-dev" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Local dev
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#secrets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Secrets
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings-reference" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings reference
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Settings reference">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#top-level" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Top-level
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#server" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Server
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#langfuse-tracing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Langfuse (tracing)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#memory-cognee" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Memory (cognee)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#central-deploy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Central Deploy
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#mail-board-http" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Mail (board HTTP)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conversation" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conversation
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#diagnostics" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Diagnostics
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reference-docs-refdocs" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Reference Docs (refdocs)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#knowledge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Knowledge
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#self-review" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Self-review
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#version-check" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Version Check
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#component-client" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Component Client
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subsessions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subsessions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#direct-repo-github-app" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Direct Repo (GitHub App)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#schema" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Schema
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="configuration">Configuration</h1>
+<p>robotsix-chat is configured via a single JSON config file, loaded by
+<a href="https://github.com/damien-robotsix/robotsix-config"><code>robotsix-config</code></a>. There is no YAML cascade
+and no env-var overlay — the only environment variable consumed for config is the file locator.</p>
+<h2 id="config-file">Config file</h2>
+<p>The JSON file lives at <strong><code>config/config.json</code></strong> by default. Its path is set by the
+<code>ROBOTSIX_CONFIG_FILE</code> environment variable.</p>
+<p><strong>Getting started:</strong></p>
+<pre><code class="language-bash">cp config/config.example.json config/config.json
+# Edit config/config.json — fill in secrets for the features you enable.
+</code></pre>
+<ul>
+<li><code>config/config.json</code> is <strong>gitignored</strong> — credentials never land in the repo.</li>
+<li><code>config/config.example.json</code> is <strong>committed</strong> — it documents every field with its default value.</li>
+<li><code>config/config.schema.json</code> is <strong>committed and CI-checked</strong> — the CI pipeline regenerates it from
+  the <code>Settings</code> pydantic model and fails on any drift, so the schema always reflects the live code.</li>
+</ul>
+<h2 id="local-dev">Local dev</h2>
+<ul>
+<li>The app starts with <strong>defaults only</strong> when no config file exists — non-secret features (server,
+  knowledge, diagnostics) work out of the box.</li>
+<li>Create <code>config/config.json</code> and set <code>ROBOTSIX_CONFIG_FILE</code> when you need secrets (API keys, API
+  tokens) or want to override defaults.</li>
+</ul>
+<h2 id="secrets">Secrets</h2>
+<p>Fields of JSON Schema type <code>string</code> with <code>writeOnly: true</code> are treated as secrets (<code>SecretStr</code>).
+They are never logged, never serialized in diagnostics or trace output, and are redacted in stack
+traces.</p>
+<p>Secret fields include:</p>
+<ul>
+<li><code>llmio_api_key</code></li>
+<li><code>langfuse.public_key</code>, <code>langfuse.secret_key</code></li>
+<li><code>memory.llm.api_key</code>, <code>memory.embedding.api_key</code></li>
+<li><code>memory.langfuse.public_key</code>, <code>memory.langfuse.secret_key</code></li>
+<li><code>central_deploy.api_token</code></li>
+<li><code>mail.api_token</code></li>
+<li><code>direct_repo.github_app_private_key</code>, <code>direct_repo.board_api_token</code></li>
+<li><code>refdocs.github_token</code></li>
+<li><code>version_check.github_token</code></li>
+</ul>
+<h2 id="settings-reference">Settings reference</h2>
+<p>All fields and their defaults are listed in <code>config/config.example.json</code>. The sections below
+describe each group.</p>
+<hr />
+<h3 id="top-level">Top-level</h3>
+<table>
+<thead>
+<tr>
+<th>JSON key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>llmio_model_level</code></td>
+<td><code>integer</code></td>
+<td><code>3</code></td>
+<td>LLM capability level: <code>1</code> (cheapest), <code>2</code>, <code>3</code>, or <code>4</code> (best).</td>
+</tr>
+<tr>
+<td><code>llmio_api_key</code></td>
+<td><code>string</code> (secret)</td>
+<td><code>""</code></td>
+<td>OpenRouter API key. Required for levels 1–2; ignored for 3–4.</td>
+</tr>
+<tr>
+<td><code>agent_instruction</code></td>
+<td><code>string</code></td>
+<td>(long default)</td>
+<td>System instruction for the agent.</td>
+</tr>
+<tr>
+<td><code>max_images_per_message</code></td>
+<td><code>integer</code></td>
+<td><code>8</code></td>
+<td>Maximum images per chat message.</td>
+</tr>
+<tr>
+<td><code>max_image_bytes</code></td>
+<td><code>integer</code></td>
+<td><code>5242880</code></td>
+<td>Maximum image size in bytes (5 MiB).</td>
+</tr>
+<tr>
+<td><code>allowed_image_media_types</code></td>
+<td><code>array[string]</code></td>
+<td><code>["image/png","image/jpeg","image/gif","image/webp"]</code></td>
+<td>Allowed image MIME types.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="server">Server</h3>
+<table>
+<thead>
+<tr>
+<th>JSON key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>server_host</code></td>
+<td><code>string</code></td>
+<td><code>"0.0.0.0"</code></td>
+<td>Host the server binds to.</td>
+</tr>
+<tr>
+<td><code>server_port</code></td>
+<td><code>integer</code></td>
+<td><code>8000</code></td>
+<td>Port the server listens on.</td>
+</tr>
+<tr>
+<td><code>idle_timeout_minutes</code></td>
+<td><code>integer</code></td>
+<td><code>30</code></td>
+<td>Minutes of inactivity before closing the connection.</td>
+</tr>
+<tr>
+<td><code>log_level</code></td>
+<td><code>string</code></td>
+<td><code>"INFO"</code></td>
+<td>Python logging level.</td>
+</tr>
+<tr>
+<td><code>cors_allow_origins</code></td>
+<td><code>array[string]</code></td>
+<td><code>[]</code></td>
+<td>Origins allowed to call <code>/chat</code> cross-origin.</td>
+</tr>
+<tr>
+<td><code>correlation_id_header</code></td>
+<td><code>string</code></td>
+<td><code>"X-Request-ID"</code></td>
+<td>Header name for request correlation ids.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="langfuse-tracing">Langfuse (tracing)</h3>
+<table>
+<thead>
+<tr>
+<th>JSON key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>langfuse.public_key</code></td>
+<td><code>string</code> (secret)</td>
+<td><code>""</code></td>
+<td>Langfuse public key.</td>
+</tr>
+<tr>
+<td><code>langfuse.secret_key</code></td>
+<td><code>string</code> (secret)</td>
+<td><code>""</code></td>
+<td>Langfuse secret key.</td>
+</tr>
+<tr>
+<td><code>langfuse.host</code></td>
+<td><code>string</code></td>
+<td><code>"https://cloud.langfuse.com"</code></td>
+<td>Langfuse host.</td>
+</tr>
+</tbody>
+</table>
+<p>These keys trace the main chat agent. When memory is enabled, a <strong>separate</strong> Langfuse project
+(<code>memory.langfuse.*</code>) traces the cognee/LiteLLM pipeline independently — see
+<a href="#memory-cognee">Memory</a>.</p>
+<h3 id="memory-cognee">Memory (cognee)</h3>
+<p>Persistent, cross-conversation episodic memory via embedded cognee. Disabled by default.</p>
+<table>
+<thead>
+<tr>
+<th>JSON key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>memory.enabled</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Master switch. Requires cognee extras.</td>
+</tr>
+<tr>
+<td><code>memory.data_dir</code></td>
+<td><code>string</code></td>
+<td><code>"/data/cognee"</code></td>
+<td>Cognee store directory (keep on persistent volume).</td>
+</tr>
+<tr>
+<td><code>memory.recall_search_type</code></td>
+<td><code>string</code></td>
+<td><code>"GRAPH_COMPLETION"</code></td>
+<td>Cognee recall search type.</td>
+</tr>
+<tr>
+<td><code>memory.llm.provider</code></td>
+<td><code>string</code></td>
+<td><code>"custom"</code></td>
+<td>Extraction LLM provider.</td>
+</tr>
+<tr>
+<td><code>memory.llm.model</code></td>
+<td><code>string</code></td>
+<td><code>"openrouter/deepseek/deepseek-v4-flash"</code></td>
+<td>Extraction LLM model.</td>
+</tr>
+<tr>
+<td><code>memory.llm.endpoint</code></td>
+<td><code>string</code></td>
+<td><code>"https://openrouter.ai/api/v1"</code></td>
+<td>Extraction LLM endpoint.</td>
+</tr>
+<tr>
+<td><code>memory.llm.api_key</code></td>
+<td><code>string</code> (secret)</td>
+<td><code>""</code></td>
+<td>OpenRouter API key for extraction.</td>
+</tr>
+<tr>
+<td><code>memory.embedding.provider</code></td>
+<td><code>string</code></td>
+<td><code>"openai_compatible"</code></td>
+<td>Embedding provider.</td>
+</tr>
+<tr>
+<td><code>memory.embedding.model</code></td>
+<td><code>string</code></td>
+<td><code>"bge-m3"</code></td>
+<td>Embedding model name.</td>
+</tr>
+<tr>
+<td><code>memory.embedding.endpoint</code></td>
+<td><code>string</code></td>
+<td><code>""</code></td>
+<td>Embedding server URL (e.g. <code>http://host:11434/v1</code>).</td>
+</tr>
+<tr>
+<td><code>memory.embedding.dimensions</code></td>
+<td><code>integer</code></td>
+<td><code>1024</code></td>
+<td>Embedding vector dimensions.</td>
+</tr>
+<tr>
+<td><code>memory.embedding.api_key</code></td>
+<td><code>string</code> (secret)</td>
+<td><code>""</code></td>
+<td>Bearer token for the embedding server.</td>
+</tr>
+<tr>
+<td><code>memory.embedding.huggingface_tokenizer</code></td>
+<td><code>string</code></td>
+<td><code>"BAAI/bge-m3"</code></td>
+<td>HuggingFace tokenizer name.</td>
+</tr>
+<tr>
+<td><code>memory.langfuse.public_key</code></td>
+<td><code>string</code> (secret)</td>
+<td><code>""</code></td>
+<td>Langfuse public key (robotsix-chat-cognee project).</td>
+</tr>
+<tr>
+<td><code>memory.langfuse.secret_key</code></td>
+<td><code>string</code> (secret)</td>
+<td><code>""</code></td>
+<td>Langfuse secret key (robotsix-chat-cognee project).</td>
+</tr>
+<tr>
+<td><code>memory.langfuse.host</code></td>
+<td><code>string</code></td>
+<td><code>"https://cloud.langfuse.com"</code></td>
+<td>Langfuse host for cognee tracing.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="central-deploy">Central Deploy</h3>
+<p>Component-access roster and skill loading from the central-deploy management plane.</p>
+<table>
+<thead>
+<tr>
+<th>JSON key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>central_deploy.url</code></td>
+<td><code>string</code></td>
+<td><code>""</code></td>
+<td>Base URL of the central-deploy API (no trailing slash).</td>
+</tr>
+<tr>
+<td><code>central_deploy.api_token</code></td>
+<td><code>string</code> (secret)</td>
+<td><code>""</code></td>
+<td>Bearer token for the central-deploy API.</td>
+</tr>
+<tr>
+<td><code>central_deploy.roster_cache_ttl</code></td>
+<td><code>number</code></td>
+<td><code>300.0</code></td>
+<td>Seconds to cache the component roster before re-fetching.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="mail-board-http">Mail (board HTTP)</h3>
+<p>Direct HTTP access to the mill's board API for listing, reading, and creating tickets.</p>
+<table>
+<thead>
+<tr>
+<th>JSON key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>mail.enabled</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Master switch.</td>
+</tr>
+<tr>
+<td><code>mail.api_base_url</code></td>
+<td><code>string</code></td>
+<td><code>"http://127.0.0.1:8077"</code></td>
+<td>Base URL of the board HTTP API (no trailing slash).</td>
+</tr>
+<tr>
+<td><code>mail.api_token</code></td>
+<td><code>string</code> (secret)</td>
+<td><code>""</code></td>
+<td>Optional bearer token for the board API.</td>
+</tr>
+<tr>
+<td><code>mail.timeout</code></td>
+<td><code>number</code></td>
+<td><code>30.0</code></td>
+<td>Per-request HTTP timeout (seconds).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="conversation">Conversation</h3>
+<table>
+<thead>
+<tr>
+<th>JSON key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>conversation.idle_reset_seconds</code></td>
+<td><code>integer</code></td>
+<td><code>1800</code></td>
+<td>Seconds of idle before resetting the conversation store.</td>
+</tr>
+<tr>
+<td><code>conversation.max_history_turns</code></td>
+<td><code>integer</code></td>
+<td><code>50</code></td>
+<td>Maximum conversation turns to retain.</td>
+</tr>
+<tr>
+<td><code>conversation.max_conversations</code></td>
+<td><code>integer</code></td>
+<td><code>1000</code></td>
+<td>Maximum concurrent conversations.</td>
+</tr>
+<tr>
+<td><code>conversation.persist_path</code></td>
+<td><code>string</code></td>
+<td><code>"/data/conversations.json"</code></td>
+<td>Path to the conversation persistence file.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="diagnostics">Diagnostics</h3>
+<p>Failure capture and systemic fix surfacing. Enabled by default.</p>
+<table>
+<thead>
+<tr>
+<th>JSON key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>diagnostics.enabled</code></td>
+<td><code>boolean</code></td>
+<td><code>true</code></td>
+<td>Master switch.</td>
+</tr>
+<tr>
+<td><code>diagnostics.store_path</code></td>
+<td><code>string</code></td>
+<td><code>"/data/diagnostics.json"</code></td>
+<td>Diagnostic-event JSON persistence path.</td>
+</tr>
+<tr>
+<td><code>diagnostics.proposals_path</code></td>
+<td><code>string</code></td>
+<td><code>"/data/fix_proposals.json"</code></td>
+<td>Fix-proposal JSON persistence path.</td>
+</tr>
+<tr>
+<td><code>diagnostics.effectiveness_path</code></td>
+<td><code>string</code></td>
+<td><code>"/data/diagnostics_effectiveness.json"</code></td>
+<td>Effectiveness-report JSON persistence path.</td>
+</tr>
+<tr>
+<td><code>diagnostics.recurrence_threshold</code></td>
+<td><code>integer</code></td>
+<td><code>3</code></td>
+<td>Occurrences within the window to trigger a recurrence alert.</td>
+</tr>
+<tr>
+<td><code>diagnostics.recurrence_window_days</code></td>
+<td><code>integer</code></td>
+<td><code>30</code></td>
+<td>Look-back window in days for recurrence detection.</td>
+</tr>
+<tr>
+<td><code>diagnostics.observation_window_days</code></td>
+<td><code>integer</code></td>
+<td><code>30</code></td>
+<td>Days after a fix to wait before an effectiveness report.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="reference-docs-refdocs">Reference Docs (refdocs)</h3>
+<p>Read-only reference-docs tool — fetches documentation from allowlisted GitHub repos on demand.</p>
+<table>
+<thead>
+<tr>
+<th>JSON key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>refdocs.enabled</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Master switch. Requires non-empty <code>repos</code>.</td>
+</tr>
+<tr>
+<td><code>refdocs.repos</code></td>
+<td><code>array[string]</code></td>
+<td><code>[]</code></td>
+<td>Allowlist of <code>owner/name</code> GitHub repos.</td>
+</tr>
+<tr>
+<td><code>refdocs.ref</code></td>
+<td><code>string</code></td>
+<td><code>"main"</code></td>
+<td>Default git ref/branch to read from.</td>
+</tr>
+<tr>
+<td><code>refdocs.github_token</code></td>
+<td><code>string</code> (secret)</td>
+<td><code>""</code></td>
+<td>Optional PAT for private repos.</td>
+</tr>
+<tr>
+<td><code>refdocs.base_url</code></td>
+<td><code>string</code></td>
+<td><code>"https://api.github.com"</code></td>
+<td>Base URL for GitHub Enterprise.</td>
+</tr>
+<tr>
+<td><code>refdocs.timeout</code></td>
+<td><code>number</code></td>
+<td><code>30.0</code></td>
+<td>Per-request HTTP timeout (seconds).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="knowledge">Knowledge</h3>
+<p>Writable agent knowledge base — a plain JSON file on disk. Enabled by default.</p>
+<table>
+<thead>
+<tr>
+<th>JSON key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>knowledge.enabled</code></td>
+<td><code>boolean</code></td>
+<td><code>true</code></td>
+<td>Master switch.</td>
+</tr>
+<tr>
+<td><code>knowledge.path</code></td>
+<td><code>string</code></td>
+<td><code>"/data/knowledge.json"</code></td>
+<td>Path to the JSON persistence file.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="self-review">Self-review</h3>
+<p>Read-only digest of live conversation activity. Disabled by default.</p>
+<table>
+<thead>
+<tr>
+<th>JSON key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>self_review.enabled</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Master switch — enables the <code>read_recent_activity</code> tool.</td>
+</tr>
+<tr>
+<td><code>self_review.recent_activity_limit</code></td>
+<td><code>integer</code></td>
+<td><code>20</code></td>
+<td>Maximum conversations returned by the tool.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="version-check">Version Check</h3>
+<p>Self-version-check tool — compares the running version against the latest GitHub release. Disabled
+by default.</p>
+<table>
+<thead>
+<tr>
+<th>JSON key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>version_check.enabled</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Master switch.</td>
+</tr>
+<tr>
+<td><code>version_check.repo</code></td>
+<td><code>string</code></td>
+<td><code>""</code></td>
+<td>GitHub <code>owner/name</code>. Required when enabled.</td>
+</tr>
+<tr>
+<td><code>version_check.github_token</code></td>
+<td><code>string</code> (secret)</td>
+<td><code>""</code></td>
+<td>Optional PAT to avoid rate limits.</td>
+</tr>
+<tr>
+<td><code>version_check.base_url</code></td>
+<td><code>string</code></td>
+<td><code>"https://api.github.com"</code></td>
+<td>Base URL for GitHub Enterprise.</td>
+</tr>
+<tr>
+<td><code>version_check.timeout</code></td>
+<td><code>number</code></td>
+<td><code>30.0</code></td>
+<td>Per-request HTTP timeout (seconds).</td>
+</tr>
+<tr>
+<td><code>version_check.cache_ttl</code></td>
+<td><code>number</code></td>
+<td><code>300.0</code></td>
+<td>Seconds to cache the latest-release lookup.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="component-client">Component Client</h3>
+<p>HTTP client for inspecting and configuring remote component agents. Disabled by default.</p>
+<table>
+<thead>
+<tr>
+<th>JSON key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>component_client.enabled</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Master switch.</td>
+</tr>
+<tr>
+<td><code>component_client.timeout</code></td>
+<td><code>number</code></td>
+<td><code>240.0</code></td>
+<td>Per-request HTTP timeout (seconds).</td>
+</tr>
+<tr>
+<td><code>component_client.components</code></td>
+<td><code>array[object]</code></td>
+<td><code>[]</code></td>
+<td>List of component targets, each with <code>base_url</code> (string) and optional <code>label</code> (string).</td>
+</tr>
+</tbody>
+</table>
+<h3 id="subsessions">Subsessions</h3>
+<p>Background sub-agent spawning configuration.</p>
+<table>
+<thead>
+<tr>
+<th>JSON key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>subsessions.max_concurrent</code></td>
+<td><code>integer</code></td>
+<td><code>8</code></td>
+<td>Maximum concurrent subsessions.</td>
+</tr>
+<tr>
+<td><code>subsessions.max_depth</code></td>
+<td><code>integer</code></td>
+<td><code>3</code></td>
+<td>Maximum nesting depth.</td>
+</tr>
+<tr>
+<td><code>subsessions.default_model_level</code></td>
+<td><code>integer</code></td>
+<td><code>3</code></td>
+<td>Default model level for spawned subsessions.</td>
+</tr>
+<tr>
+<td><code>subsessions.min_interval_seconds</code></td>
+<td><code>number</code></td>
+<td><code>60.0</code></td>
+<td>Minimum interval between periodic runs.</td>
+</tr>
+<tr>
+<td><code>subsessions.auto_stop_no_change_runs</code></td>
+<td><code>integer</code></td>
+<td><code>5</code></td>
+<td>Consecutive NO_CHANGE runs before auto-stop.</td>
+</tr>
+<tr>
+<td><code>subsessions.store_path</code></td>
+<td><code>string</code></td>
+<td><code>"/data/subsessions.json"</code></td>
+<td>Path to the subsession persistence file.</td>
+</tr>
+<tr>
+<td><code>subsessions.transcript_max_entries</code></td>
+<td><code>integer</code></td>
+<td><code>200</code></td>
+<td>Maximum transcript entries per subsession.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="direct-repo-github-app">Direct Repo (GitHub App)</h3>
+<p>Push-branch and open-PR as the robotsix-mill GitHub App. Disabled by default.</p>
+<table>
+<thead>
+<tr>
+<th>JSON key</th>
+<th>Type</th>
+<th>Default</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>direct_repo.enabled</code></td>
+<td><code>boolean</code></td>
+<td><code>false</code></td>
+<td>Master switch.</td>
+</tr>
+<tr>
+<td><code>direct_repo.github_app_id</code></td>
+<td><code>string</code></td>
+<td><code>""</code></td>
+<td>GitHub App numeric or slug id. Required when enabled.</td>
+</tr>
+<tr>
+<td><code>direct_repo.github_app_private_key</code></td>
+<td><code>string</code> (secret)</td>
+<td><code>""</code></td>
+<td>RSA private key in PEM format.</td>
+</tr>
+<tr>
+<td><code>direct_repo.github_app_installation_id</code></td>
+<td><code>string</code></td>
+<td><code>""</code></td>
+<td>Installation id to act as.</td>
+</tr>
+<tr>
+<td><code>direct_repo.github_api_base_url</code></td>
+<td><code>string</code></td>
+<td><code>"https://api.github.com"</code></td>
+<td>Base URL for GitHub Enterprise.</td>
+</tr>
+<tr>
+<td><code>direct_repo.board_api_base_url</code></td>
+<td><code>string</code></td>
+<td><code>"http://127.0.0.1:8077"</code></td>
+<td>Board HTTP API base URL for ticket-state lookups.</td>
+</tr>
+<tr>
+<td><code>direct_repo.board_api_token</code></td>
+<td><code>string</code> (secret)</td>
+<td><code>""</code></td>
+<td>Optional bearer token for the board API.</td>
+</tr>
+<tr>
+<td><code>direct_repo.timeout</code></td>
+<td><code>number</code></td>
+<td><code>30.0</code></td>
+<td>Per-request HTTP timeout (seconds).</td>
+</tr>
+</tbody>
+</table>
+<hr />
+<h2 id="schema">Schema</h2>
+<p>The committed <a href="../config/config.schema.json"><code>config/config.schema.json</code></a> is the authoritative
+schema for the <code>Settings</code> model. It is auto-generated from the pydantic model via
+<code>Settings.model_json_schema()</code> and <strong>CI-checked</strong> to stay in sync — a CI job regenerates it from the
+model and fails the build on any drift.</p>
+<p>To regenerate locally:</p>
+<pre><code class="language-bash">python -c 'import json; from robotsix_chat.config import Settings; print(json.dumps(Settings.model_json_schema(), indent=2))' &gt; config/config.schema.json
+</code></pre>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": [], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>

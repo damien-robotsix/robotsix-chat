@@ -1,0 +1,194 @@
+# docs/modules.yaml — module manifest for the robotsix-chat repository.
+#
+# This file is maintained by the module_curator periodic workflow.  It maps
+# every importable Python namespace under ``src/robotsix_chat/`` to its
+# purpose (sourced from the module docstring) and the repo-relative file
+# paths that belong to it.
+#
+# Format:
+#   modules:
+#     - id: <dotted module name>
+#       description: <one-line summary from the module docstring>
+#       paths:
+#         - <repo-relative path>
+#
+# Non-Python resources that ship inside a package (e.g. ``ui/index.html``)
+# are listed under the owning module so the curator does not flag them as
+# unclassified orphans.
+
+modules:
+  - id: robotsix_chat
+    description: "Top-level package — browser + SSE chat server for an LLM agent."
+    paths:
+      - src/robotsix_chat/__init__.py
+      - src/robotsix_chat/py.typed
+      - tests/__init__.py
+      - tests/conftest.py
+      - tests/common/test_smoke.py
+      - docs/index.md
+      - docs/architecture.md
+      - docs/getting-started.md
+      - docs/configuration.md
+      - docs/contributing.md
+      - docs/changelog.md
+      - docs/triage-boilerplate.md
+      - docs/system_prompt_changelog.md
+      - docs/periodic-checks.md
+      - docs/user-guide/deployment.md
+      - docs/_snippets/nginx-reverse-proxy.md
+      - docs/api/robotsix_chat.md
+
+  - id: robotsix_chat.component_client
+    description: "Component agent client tools for the chat LLM — exposes build_component_tools(), a factory returning LLM tools that let the chat agent enumerate, inspect, and configure remote component agents via direct HTTP."
+    paths:
+      - src/robotsix_chat/component_client/__init__.py
+      - src/robotsix_chat/component_client/client.py
+      - tests/component_client/__init__.py
+      - tests/component_client/test_component_client.py
+
+  - id: robotsix_chat.component_access
+    description: "Generic component access via central-deploy roster — fetches the allowed-chat-components list, loads each component's skill into the agent, and returns a single generic component_request tool."
+    paths:
+      - src/robotsix_chat/component_access/__init__.py
+      - src/robotsix_chat/component_access/roster.py
+      - src/robotsix_chat/component_access/tools.py
+      - tests/component_access/__init__.py
+      - tests/component_access/test_component_access.py
+
+  - id: robotsix_chat.config
+    description: "Environment-based configuration via pydantic + python-dotenv."
+    paths:
+      - src/robotsix_chat/config/__init__.py
+      - src/robotsix_chat/config/constants.py
+      - src/robotsix_chat/config/models.py
+      - src/robotsix_chat/config/settings.py
+      - docs/api/robotsix_chat/config.md
+      - tests/config/__init__.py
+      - tests/config/test_config.py
+      - tests/config/test_system_prompt_governance.py
+      - tests/config/test_config_hypothesis.py
+
+  - id: robotsix_chat.chat
+    description: "Chat SSE server — HTTP + Server-Sent Events bridge for human-to-agent chat."
+    paths:
+      - src/robotsix_chat/chat/__init__.py
+      - src/robotsix_chat/chat/conversation.py
+      - src/robotsix_chat/chat/events.py
+      - src/robotsix_chat/chat/server/__init__.py
+      - src/robotsix_chat/chat/server/app.py
+      - src/robotsix_chat/chat/server/cli.py
+      - src/robotsix_chat/chat/server/idempotency.py
+      - src/robotsix_chat/chat/server/routes.py
+      - docs/api/robotsix_chat/server.md
+      - tests/chat/__init__.py
+      - tests/chat/test_conversation.py
+      - tests/chat/test_events.py
+      - tests/chat/test_server.py
+      - tests/chat/test_subsessions_e2e.py
+
+  - id: robotsix_chat.common
+    description: "Shared utilities — provides safe_http_request() for consistent httpx error handling across HTTP clients, and JsonStoreBase for JSON-persisted dataclass stores."
+    paths:
+      - src/robotsix_chat/common/__init__.py
+      - src/robotsix_chat/common/http.py
+      - src/robotsix_chat/common/json_store.py
+      - tests/common/__init__.py
+      - tests/common/subsession_fakes.py
+      - tests/common/test_http.py
+      - tests/common/test_json_store.py
+
+  - id: robotsix_chat.direct_repo
+    description: "Direct-repository-capability tools — push branches and open PRs as the robotsix-mill GitHub App installation for BLOCKED tickets."
+    paths:
+      - src/robotsix_chat/direct_repo/__init__.py
+      - src/robotsix_chat/direct_repo/client.py
+      - tests/direct_repo/__init__.py
+      - tests/direct_repo/test_direct_repo.py
+  - id: robotsix_chat.diagnostics
+    description: "Diagnostics tools for the agent — exposes build_diagnostics_tools() that returns tools for listing diagnostic events, checking recurring failure categories, and managing fix proposals. Returns no tools when diagnostics is disabled."
+    paths:
+      - src/robotsix_chat/diagnostics/__init__.py
+      - src/robotsix_chat/diagnostics/fixes.py
+      - src/robotsix_chat/diagnostics/store.py
+      - src/robotsix_chat/diagnostics/verification.py
+      - tests/diagnostics/__init__.py
+      - tests/diagnostics/test_fixes.py
+      - tests/diagnostics/test_verification.py
+  - id: robotsix_chat.knowledge
+    description: "Writable knowledge-base tools for the agent — exposes build_knowledge_tools(), a factory that returns five tools the agent can call to add, append, update, list, and read durable notes across sessions. Entirely local JSON storage, no embeddings."
+    paths:
+      - src/robotsix_chat/knowledge/__init__.py
+      - src/robotsix_chat/knowledge/store.py
+      - tests/knowledge/test_knowledge.py
+
+  - id: robotsix_chat.llm
+    description: "LLM-powered agent — streaming wrapper around llmio.Agent."
+    paths:
+      - src/robotsix_chat/llm/__init__.py
+      - src/robotsix_chat/llm/agent.py
+      - docs/api/robotsix_chat/agent.md
+      - tests/llm/__init__.py
+      - tests/llm/test_agent.py
+
+  - id: robotsix_chat.memory
+    description: "Long-term memory backend — Cognee-based persistent storage for cross-conversation continuity."
+    paths:
+      - src/robotsix_chat/memory/__init__.py
+      - src/robotsix_chat/memory/base.py
+      - src/robotsix_chat/memory/cognee.py
+      - docs/api/robotsix_chat/memory.md
+      - tests/memory/__init__.py
+      - tests/memory/test_memory.py
+
+  - id: robotsix_chat.mail
+    description: "Mail integration — consult robotsix-auto-mail's board manager via direct HTTP."
+    paths:
+      - src/robotsix_chat/mail/__init__.py
+      - src/robotsix_chat/mail/client.py
+      - tests/mail/__init__.py
+      - tests/mail/test_build_mail_tools.py
+
+  - id: robotsix_chat.subsessions
+    description: "Unified subsession system — background agents (task / periodic / user_chat) spawned from chat sessions, with per-subsession model levels, depth-limited nesting, inbox steering, and parent summary delivery."
+    paths:
+      - src/robotsix_chat/subsessions/__init__.py
+      - src/robotsix_chat/subsessions/models.py
+      - src/robotsix_chat/subsessions/registry.py
+      - src/robotsix_chat/subsessions/delivery.py
+      - src/robotsix_chat/subsessions/worker.py
+      - src/robotsix_chat/subsessions/tools.py
+      - tests/subsessions/__init__.py
+      - tests/subsessions/test_models.py
+      - tests/subsessions/test_registry.py
+      - tests/subsessions/test_worker.py
+      - tests/subsessions/test_tools.py
+      - tests/subsessions/test_resume.py
+      - tests/subsessions/test_delivery.py
+
+  - id: robotsix_chat.refdocs
+    description: "Read-only reference-docs tool — lets the chat agent read team repos."
+    paths:
+      - src/robotsix_chat/refdocs/__init__.py
+      - src/robotsix_chat/refdocs/client.py
+      - tests/refdocs/__init__.py
+      - tests/refdocs/test_refdocs.py
+  - id: robotsix_chat.selfreview
+    description: "Self-review tools — a read-only digest of live conversation activity. Exposes build_recent_activity_tools(), a factory that returns a single read_recent_activity tool that reads from the in-process ConversationStore."
+    paths:
+      - src/robotsix_chat/selfreview/__init__.py
+      - src/robotsix_chat/selfreview/read.py
+      - tests/selfreview/__init__.py
+      - tests/selfreview/test_read.py
+
+  - id: robotsix_chat.ui
+    description: "Browser chat UI — self-contained HTML frontend served at /."
+    paths:
+      - src/robotsix_chat/ui/index.html
+
+  - id: robotsix_chat.version_check
+    description: "Self-version-check tool for the agent — compares the running robotsix_chat.__version__ against the latest published GitHub release and warns the user when the deployment is behind."
+    paths:
+      - src/robotsix_chat/version_check/__init__.py
+      - src/robotsix_chat/version_check/client.py
+      - tests/version_check/__init__.py
+      - tests/version_check/test_version_check.py

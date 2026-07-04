@@ -1,0 +1,1162 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+        <meta name="description" content="Browser + SSE chat server exposing an LLM agent to human users">
+      
+      
+      
+      
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.6">
+    
+    
+      
+        <title>System Prompt Changelog - robotsix-chat</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.484c7ddc.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#system-prompt-changelog" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="robotsix-chat" class="md-header__button md-logo" aria-label="robotsix-chat" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            robotsix-chat
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              System Prompt Changelog
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+      <div class="md-header__source">
+        <a href="https://github.com/damien-robotsix/robotsix-chat" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+      </div>
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="robotsix-chat" class="md-nav__button md-logo" aria-label="robotsix-chat" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    robotsix-chat
+  </label>
+  
+    <div class="md-nav__source">
+      <a href="https://github.com/damien-robotsix/robotsix-chat" title="Go to repository" class="md-source" data-md-component="source">
+  <div class="md-source__icon md-icon">
+    
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 448 512"><!--! Font Awesome Free 7.1.0 by @fontawesome - https://fontawesome.com License - https://fontawesome.com/license/free (Icons: CC BY 4.0, Fonts: SIL OFL 1.1, Code: MIT License) Copyright 2025 Fonticons, Inc.--><path d="M439.6 236.1 244 40.5c-5.4-5.5-12.8-8.5-20.4-8.5s-15 3-20.4 8.4L162.5 81l51.5 51.5c27.1-9.1 52.7 16.8 43.4 43.7l49.7 49.7c34.2-11.8 61.2 31 35.5 56.7-26.5 26.5-70.2-2.9-56-37.3L240.3 199v121.9c25.3 12.5 22.3 41.8 9.1 55-6.4 6.4-15.2 10.1-24.3 10.1s-17.8-3.6-24.3-10.1c-17.6-17.6-11.1-46.9 11.2-56v-123c-20.8-8.5-24.6-30.7-18.6-45L142.6 101 8.5 235.1C3 240.6 0 247.9 0 255.5s3 15 8.5 20.4l195.6 195.7c5.4 5.4 12.7 8.4 20.4 8.4s15-3 20.4-8.4l194.7-194.7c5.4-5.4 8.4-12.8 8.4-20.4s-3-15-8.4-20.4"/></svg>
+  </div>
+  <div class="md-source__repository">
+    GitHub
+  </div>
+</a>
+    </div>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../getting-started/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Getting Started
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    User Guide
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../configuration/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Configuration
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../periodic-checks/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Periodic Checks
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user-guide/deployment/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Deployment
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    API Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/robotsix_chat/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    robotsix_chat
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/robotsix_chat/config/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    robotsix_chat.config
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/robotsix_chat/server/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    robotsix_chat.chat.server
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/robotsix_chat/agent/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    robotsix_chat.llm.agent
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/robotsix_chat/memory/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    robotsix_chat.memory
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api/robotsix_chat/mill.md" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    robotsix_chat.mill.client
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../changelog/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Changelog
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributing
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#governance-policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Governance policy
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Governance policy">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#rollback-procedure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rollback procedure
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v16-2026-07-04-generic-component-access-roster-skills" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v16 — 2026-07-04 — generic-component-access-roster-skills
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v15-2026-07-02-subsession-redesign" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v15 — 2026-07-02 — subsession-redesign
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v14-2026-06-28-20260626t130813z-autonomy-20260626t215106z-check-loop-stateful-monitor" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v14 — 2026-06-28 — 20260626T130813Z (autonomy) + 20260626T215106Z (check-loop stateful monitor)
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v13-2026-06-28-false_default_repo_claim" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v13 — 2026-06-28 — false_default_repo_claim
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v12-2026-06-28-board_rules_contradict_create_ticket" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v12 — 2026-06-28 — board_rules_contradict_create_ticket
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v11-2026-06-27-agent_guard_bypasses_governance" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v11 — 2026-06-27 — agent_guard_bypasses_governance
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v10-2026-06-25-20260625t123055z-system-prompt-contains-internal-python-i-d0a8" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v10 — 2026-06-25 — 20260625T123055Z-system-prompt-contains-internal-python-i-d0a8
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v9-2026-06-25-20260624t212653z-chat-agent-hard-block-delegate-task-for-0619" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v9 — 2026-06-25 — 20260624T212653Z-chat-agent-hard-block-delegate-task-for-0619
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v8-2026-06-24-20260624t212711z-chat-agent-stop-redundant-tool-loading-n-a0f3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v8 — 2026-06-24 — 20260624T212711Z-chat-agent-stop-redundant-tool-loading-n-a0f3
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v7-2026-06-24-20260624t212702z-chat-agent-dedup-ticket-filing-before-su-6ed5" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v7 — 2026-06-24 — 20260624T212702Z-chat-agent-dedup-ticket-filing-before-su-6ed5
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v6-2026-06-24-20260624t212708z-chat-agents-enforce-the-three-sentences-236a" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v6 — 2026-06-24 — 20260624T212708Z-chat-agents-enforce-the-three-sentences-236a
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v5-2026-06-24-20260623t210918z-gate-sub-agent-status-output-behind-a-ma-e2f0" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v5 — 2026-06-24 — 20260623T210918Z-gate-sub-agent-status-output-behind-a-ma-e2f0
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v4-2026-06-24-20260623t204239z-robotsix-chat-give-the-assistant-a-writa-ff6c" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v4 — 2026-06-24 — 20260623T204239Z-robotsix-chat-give-the-assistant-a-writa-ff6c
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#v3-2026-06-24-20260623t210933z-tighten-sub-agent-prompt-efficiency-check-5a52" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        v3 — 2026-06-24 — 20260623T210933Z-tighten-sub-agent-prompt-efficiency-check-5a52
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+  
+  
+
+
+<h1 id="system-prompt-changelog">System Prompt Changelog</h1>
+<p>Governed artifact: <code>Settings.agent_instruction</code> default literal in
+<code>src/robotsix_chat/config/settings.py</code>. Version stamp: <code>SYSTEM_PROMPT_VERSION</code> in the same module.</p>
+<hr />
+<h2 id="governance-policy">Governance policy</h2>
+<p>Every change to <code>Settings.agent_instruction</code> (the pydantic field default literal in
+<code>src/robotsix_chat/config/settings.py</code>) <strong>MUST</strong>:</p>
+<ol>
+<li><strong>Bump</strong> <code>SYSTEM_PROMPT_VERSION</code> to the next integer.</li>
+<li><strong>Add a new entry</strong> at the top of this file (reverse-chronological, newest first) with the header
+   <code>## v&lt;N&gt; — &lt;YYYY-MM-DD&gt; — &lt;ticket-id&gt;</code>.</li>
+<li><strong>Record the SHA256</strong> of the new <code>agent_instruction</code> default literal (computed as
+   <code>hashlib.sha256(default.encode()).hexdigest()</code>) in the entry.</li>
+<li><strong>Mirror</strong> the updated default literal verbatim in the <code>agent.instruction</code> row of
+   <code>docs/configuration.md</code>.</li>
+</ol>
+<p>A CI test (<code>tests/config/test_system_prompt_governance.py</code>) enforces that the latest entry's version
+matches <code>SYSTEM_PROMPT_VERSION</code> and its recorded hash matches the live default — edits that skip
+this file <strong>will fail CI</strong>.</p>
+<h3 id="rollback-procedure">Rollback procedure</h3>
+<p>Rollback is a <strong>forward-moving new version</strong> — never reuse a version number. To revert to a previous
+prompt:</p>
+<ol>
+<li>Pick the target prior version's entry in this changelog.</li>
+<li>Restore its prompt text via git, e.g.: <code>git revert &lt;commit&gt;</code> or
+   <code>git show &lt;commit&gt;:src/robotsix_chat/config/settings.py</code> (extract the <code>agent_instruction</code> block).</li>
+<li>Bump <code>SYSTEM_PROMPT_VERSION</code> to the next number.</li>
+<li>Add a new changelog entry <code>## v&lt;N&gt; — &lt;YYYY-MM-DD&gt; — &lt;ticket-id&gt;</code> with:</li>
+<li><strong>Summary</strong>: <code>rollback to v&lt;K&gt;</code></li>
+<li><strong>Rationale</strong>: why the rollback is needed and which ticket authorises it.</li>
+<li><strong>SHA256</strong>: the hash of the restored literal (must match the prior version's recorded hash).</li>
+<li>Mirror the restored literal in <code>docs/configuration.md</code>.</li>
+</ol>
+<hr />
+<h2 id="v16-2026-07-04-generic-component-access-roster-skills">v16 — 2026-07-04 — generic-component-access-roster-skills</h2>
+<p><strong>Summary:</strong> Replace the Board/mill rules and Calendar/task tools sections with a new "Component
+access" section describing the generic <code>component_request</code> tool, roster-based skill loading, and the
+requirement to obey each component skill's safety section (ask the user before calling
+confirmation-required operations). The old broker-based board and calendar tool guidance is removed;
+all component interaction now goes through the single generic tool.</p>
+<p><strong>SHA256:</strong> <code>d6067ea41ef447564913d75031059f476e86c1817e601a4d395801fbad76a161</code></p>
+<hr />
+<h2 id="v15-2026-07-02-subsession-redesign">v15 — 2026-07-02 — subsession-redesign</h2>
+<p><strong>Summary:</strong> Replace all <code>delegate_task</code> / check-loop / pending-question guidance with a new
+"Subsessions" section for the unified subsession system: when to spawn each kind (<code>task</code>,
+<code>periodic</code>, <code>user_chat</code>), model-level selection by difficulty and cost (1-2 cheap OpenRouter, 3
+default, 4 frontier reserved for hard reasoning), self-contained-instructions requirement,
+steering/inspecting/closing running subsessions (<code>message_subsession</code>, <code>list_subsessions</code>,
+<code>close_subsession</code>), <code>complete_subsession</code> discipline (self-close at verified terminal states,
+<code>NO_CHANGE</code> convention for periodic runs, ask pending user questions once), and depth-limited
+nesting. Board rules updated accordingly: subsessions now carry the full tool suite, so the old hard
+"never offload board actions" rule becomes "prefer inline; a subsession doing board work must verify
+results with <code>list_board_tickets</code> before reporting success", and the <code>verify_via_board</code> /
+<code>stop_check_loop</code> rules are dropped with the machinery. The Autonomy example now references closing
+a terminal periodic subsession.</p>
+<p><strong>Rationale:</strong> The chat system was redesigned around one unified subsession primitive (spawned
+sub-agents at chosen model levels, nested, periodic, or user-facing) replacing three separate
+systems (<code>delegate_task</code> background tasks, check loops, pending questions). The prompt must describe
+the new tool surface and encode the cost-control guidance (model levels) that previously lived in
+static <code>subagent_model</code> / <code>check_loop_model</code> config overrides.</p>
+<p><strong>SHA256:</strong> <code>06cbece9be305939cabcd498992a1cf764a2c9e5467022086986b536a496ad38</code></p>
+<h2 id="v14-2026-06-28-20260626t130813z-autonomy-20260626t215106z-check-loop-stateful-monitor">v14 — 2026-06-28 — 20260626T130813Z (autonomy) + 20260626T215106Z (check-loop stateful monitor)</h2>
+<p><strong>Summary:</strong> (a) Add an "Autonomy" section instructing the assistant to proactively perform safe,
+reversible actions without waiting for explicit human validation, while gating risky/irreversible
+actions behind human approval. Includes a concrete rule: when running inside a check loop and a
+verified terminal/completion state is reached, call <code>stop_check_loop</code> immediately instead of
+emitting repeated COMPLETED/NO_CHANGE reports. (b) Add check-loop guidance: tick sub-agents should
+call <code>stop_check_loop</code> when the monitored item reaches a terminal state (belt and suspenders with
+programmatic auto-stop detection); pending decision questions must be asked once and not repeated on
+subsequent unchanged ticks (the loop auto-pauses after detecting no change).</p>
+<p><strong>Rationale:</strong> The Autonomy section eliminates unnecessary validation friction for safe, reversible
+actions. In check loops specifically, the assistant (a) continued emitting redundant COMPLETED
+reports after a terminal state was verified instead of self-stopping, and (b) re-asked identical
+decision prompts (e.g. "resume or hold?") on every tick. The combined prompt update closes both
+gaps.</p>
+<p><strong>SHA256:</strong> <code>0b989515af6b148c7f5aec0b86e590620cca6f7df23ef5a2884e4b16fd252d3d</code></p>
+<h2 id="v13-2026-06-28-false_default_repo_claim">v13 — 2026-06-28 — false_default_repo_claim</h2>
+<p><strong>Summary:</strong> Remove the false universal claim that "new tickets default to robotsix-mill regardless
+of source" — the board manager (via <code>consult_mill</code>) may route tickets to <code>robotsix-mill</code> by default,
+but <code>create_board_ticket</code> has no such default (the agent provides <code>repo_id</code> explicitly). The
+verification rule now attributes the default correctly to the board manager rather than asserting it
+as a universal fact.</p>
+<p><strong>Rationale:</strong> The universal claim misleads the agent into thinking direct <code>create_board_ticket</code>
+calls might silently land on the wrong board, inviting unnecessary verification steps. Fixing the
+wording eliminates this confusion while keeping the verification instruction universal (both
+<code>create_board_ticket</code> and <code>consult_mill</code> paths benefit from post-creation verification).</p>
+<p><strong>SHA256:</strong> <code>ddc129c8c333f50cfc17064d815a471eeab7cf982da6206243d798dd3ad2c480</code></p>
+<h2 id="v12-2026-06-28-board_rules_contradict_create_ticket">v12 — 2026-06-28 — board_rules_contradict_create_ticket</h2>
+<p><strong>Summary:</strong> Resolve contradictory Board/mill rule for ticket creation. The old Rule 1 directed ALL
+write operations (including ticket creation) to <code>consult_mill</code>, but Rule 4 told the agent to use
+<code>create_board_ticket</code> (which calls the board reader endpoint directly). Rule 1 is now scoped to
+complex write operations (migrate, transition, triage) only; simple ticket creation uses
+<code>create_board_ticket</code>. The verification rule is also generalised from "via consult_mill" to cover
+both paths.</p>
+<p><strong>Rationale:</strong> Two rules gave conflicting directives for the same action, causing the model to guess
+which tool to use. Aligning them eliminates the contradiction.</p>
+<p><strong>SHA256:</strong> <code>81cc03108729b4e4fe46c2b191c5863a8b4ce018f5c99fda4d2927f4bd722a0c</code></p>
+<h2 id="v11-2026-06-27-agent_guard_bypasses_governance">v11 — 2026-06-27 — agent_guard_bypasses_governance</h2>
+<p><strong>Summary:</strong> Fold the runtime <code>_AGENT_GUARD</code> hardening layer (previously appended in <code>agent.py</code>)
+into the <code>agent_instruction</code> default literal so it is governed by <code>SYSTEM_PROMPT_VERSION</code>, this
+changelog, SHA256 tracking, and CI enforcement.</p>
+<p><strong>Rationale:</strong> The guard text — which tells the model it cannot run shell commands, read/edit files,
+browse the web, or access the host — was injected at runtime without any governance coverage. Any
+edit to it would change what the model receives with no version bump, no changelog entry, and no CI
+failure. Moving it into the versioned default closes this gap.</p>
+<p><strong>SHA256:</strong> <code>3aeecd5f472970cd59cd4b92a889c83e5c0608b89c99137c14f7c96fc45523c6</code></p>
+<h2 id="v10-2026-06-25-20260625t123055z-system-prompt-contains-internal-python-i-d0a8">v10 — 2026-06-25 — 20260625T123055Z-system-prompt-contains-internal-python-i-d0a8</h2>
+<p><strong>Summary:</strong> Replace calendar/task tools paragraph — remove three developer-facing identifiers
+(<code>build_calendar_tools()</code>, <code>CalendarSettings.enabled=False</code>, <code>CALENDAR_BROKER_TOKEN</code>) that don't
+belong in an LLM system prompt, replacing them with LLM-appropriate language.</p>
+<p><strong>Rationale:</strong> The prior text was copy-pasted from a development ticket without adaptation for the
+LLM audience. The new text describes the tools' purpose and behaviour in terms the model can act on
+(availability, disabling, and the instruction to briefly note unavailability rather than proposing
+alternatives).</p>
+<p><strong>SHA256:</strong> <code>1d0ec5213cf5931aff7ec8e7abe4f46f8320ac4c13bbba1ef1aa96040d3f4c37</code></p>
+<h2 id="v9-2026-06-25-20260624t212653z-chat-agent-hard-block-delegate-task-for-0619">v9 — 2026-06-25 — 20260624T212653Z-chat-agent-hard-block-delegate-task-for-0619</h2>
+<p><strong>Summary:</strong> Add enforcement note — <code>delegate_task</code> now refuses board/ticket work and directs the
+agent to use <code>consult_mill</code> instead.</p>
+<p><strong>Rationale:</strong> Previously the prompt warned that delegate-task results are never returned and a
+ticket filed that way may silently fail. The programmatic gate is now in place — <code>delegate_task</code>
+actively rejects board/ticket requests — and the prompt reflects this enforcement so the agent does
+not attempt the now-blocked path. Ticket:
+20260624T212653Z-chat-agent-hard-block-delegate-task-for-0619.</p>
+<p><strong>SHA256:</strong> <code>15cad9cc4a5854fa5c4682f0921cd534d21fb4542b89b722c28dfa44476257de</code></p>
+<h2 id="v8-2026-06-24-20260624t212711z-chat-agent-stop-redundant-tool-loading-n-a0f3">v8 — 2026-06-24 — 20260624T212711Z-chat-agent-stop-redundant-tool-loading-n-a0f3</h2>
+<p><strong>Summary:</strong> Remove the misleading "Load tools once / run a capability check" directive and replace
+it with an instruction that all tools are already available and narration of
+loading/preparing/fetching tools is forbidden.</p>
+<p><strong>Rationale:</strong> The previous directive ("Load tools once at the start of a session. Before branching
+into a complex workflow, run a single generic capability check.") actively invited dead narration
+like "I'll load the tools…" / "Let me load the task management tool first" — wasting ~150–200 output
+tokens per trace. Tools are assembled once at startup and never reloaded per-turn; the prompt now
+reflects reality and explicitly forbids the narration. Ticket:
+20260624T212711Z-chat-agent-stop-redundant-tool-loading-n-a0f3.</p>
+<p><strong>SHA256:</strong> <code>8aaf695d4004ff37872c8f183954324aacc1f6bb6d6e8a3b91033f0463d81ef2</code></p>
+<h2 id="v7-2026-06-24-20260624t212702z-chat-agent-dedup-ticket-filing-before-su-6ed5">v7 — 2026-06-24 — 20260624T212702Z-chat-agent-dedup-ticket-filing-before-su-6ed5</h2>
+<p><strong>Summary:</strong> Add dedup rule before ticket filing — the agent must check for existing open tickets
+covering the same intent before creating a new one, and act on <code>create_board_ticket</code>'s built-in
+duplicate warnings.</p>
+<p><strong>Rationale:</strong> Prevents duplicate ticket creation by enforcing a pre-flight board read and requiring
+the agent to reuse existing tickets rather than filing duplicates.</p>
+<p><strong>SHA256:</strong> <code>ae70fa569e48c2ef71d35a731a112ad0e4b490434ef2ddc8d0a19173e8a4099e</code></p>
+<h2 id="v6-2026-06-24-20260624t212708z-chat-agents-enforce-the-three-sentences-236a">v6 — 2026-06-24 — 20260624T212708Z-chat-agents-enforce-the-three-sentences-236a</h2>
+<p>Tighten conciseness rule: name prohibited output shapes explicitly.</p>
+<ul>
+<li>Extended the three-sentence bullet to explicitly gate multi-row markdown tables, timeline/audit
+  dumps, and recap lists behind an explicit user request.</li>
+<li>Added prohibition on repeating content already shown in the same conversation.</li>
+</ul>
+<p><strong>SHA256:</strong> <code>344e725c838591049557069cd1aa654422d886e13ece396b2016b9aeb4657dc7</code></p>
+<h2 id="v5-2026-06-24-20260623t210918z-gate-sub-agent-status-output-behind-a-ma-e2f0">v5 — 2026-06-24 — 20260623T210918Z-gate-sub-agent-status-output-behind-a-ma-e2f0</h2>
+<p><strong>Summary:</strong> Added a bullet to the Board/mill rules instructing the foreground agent to set
+<code>verify_via_board=True</code> when launching a check loop that monitors mill/board/thread/ticket status,
+and to never assert board status without a fresh <code>consult_mill</code> read.</p>
+<p><strong>Rationale:</strong> Prevents fabricated status reports from check-loop sub-agents by enforcing a
+board-read gate. The new bullet is defense-in-depth alongside the programmatic gate in <code>loops.py</code>.</p>
+<p><strong>SHA256:</strong> <code>2188c9422da9d5a9db8cf024095d8717b0e779391b25903c91482109ceff75ff</code></p>
+<hr />
+<h2 id="v4-2026-06-24-20260623t204239z-robotsix-chat-give-the-assistant-a-writa-ff6c">v4 — 2026-06-24 — 20260623T204239Z-robotsix-chat-give-the-assistant-a-writa-ff6c</h2>
+<p><strong>Summary:</strong> Add knowledge-base instructions — the agent now has a local, durable knowledge base
+(add/append/update/list/read_knowledge_note tools) for operational notes and lessons; it must
+consult it at the start of every session and write durable findings to it.</p>
+<p><strong>SHA256:</strong> <code>efd64ca3849a4f0872754fa86119a18511edc0c4a1816a94206e24dc618f1e8b</code></p>
+<h2 id="v3-2026-06-24-20260623t210933z-tighten-sub-agent-prompt-efficiency-check-5a52">v3 — 2026-06-24 — 20260623T210933Z-tighten-sub-agent-prompt-efficiency-check-5a52</h2>
+<p>Add sub-agent efficiency rules (cost-analysis proposals #9 and #10):</p>
+<ul>
+<li>
+<h1 id="9-check-tool-availability-before-describing-a-plan-if-a-required-tool-is-missing-state-it-in">9: Check tool availability before describing a plan; if a required tool is missing, state it in</h1>
+  one sentence and stop. Answer in three sentences or fewer unless the user explicitly asks for
+  elaboration.</li>
+<li>
+<h1 id="10-load-tools-once-at-the-start-of-a-session-before-branching-into-a-complex-workflow-run-a">10: Load tools once at the start of a session. Before branching into a complex workflow, run a</h1>
+  single generic capability check. Do not re-load the same tool descriptions across turns.</li>
+</ul>
+<p><strong>SHA256:</strong> <code>323b644912809fda2d4ed9f80cf0e01d6742f6b6c05d5ff85d440e83e65aba52</code></p>
+<h2 id="v2-2026-06-24-20260624t020652z-give-the-assistant-direct-1628">v2 — 2026-06-24 — 20260624T020652Z-give-the-assistant-direct-1628</h2>
+<p>Add board-reader tool guidance:</p>
+<ul>
+<li>New rule: use <code>list_board_tickets</code> / <code>read_board_ticket</code> for reading board state (HTTP endpoint,
+  same as user's UI); use <code>consult_mill</code> for writes. Never fabricate ticket states.</li>
+<li>Verification: after creating a ticket via <code>consult_mill</code>, verify it landed on the right board with
+  <code>list_board_tickets</code>.</li>
+</ul>
+<p><strong>SHA256:</strong> <code>33af94596b21c0f64908d3aa93eb2c8c8d1f491ed52dcab1c6287ff3c36128c5</code></p>
+<h2 id="v1-2026-06-23-20260623t204251z-robotsix-chat-governance-for-assistant-s-45f3">v1 — 2026-06-23 — 20260623T204251Z-robotsix-chat-governance-for-assistant-s-45f3</h2>
+<p><strong>Summary:</strong> Baseline — the current <code>agent_instruction</code> default literal as established by ticket
+<code>20260623T203856Z-robotsix-chat-update-the-assistant-s-own-838a</code> and recorded when this governance
+layer was introduced.</p>
+<p><strong>Rationale:</strong> Ticket …-838a appended board/mill operational guidance (delegate-vs-inline,
+board-placement verification, draft→ready auto-pickup) and calendar/task tool guidance to the
+pre-existing "You are a helpful assistant." prefix. This entry locks in that known-good state.</p>
+<p><strong>Diff:</strong> <code>git show 7b890de -- src/robotsix_chat/config/settings.py</code> (the …-838a merge commit), or
+<code>git log -p -- src/robotsix_chat/config/settings.py</code> scoped to the <code>agent_instruction</code> block.</p>
+<p><strong>SHA256:</strong> <code>09b73c46b24449484a5e2e9484137b85d73cfe210aa31eac05c81ca4f0698674</code></p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": [], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.79ae519e.min.js"></script>
+      
+    
+  </body>
+</html>
