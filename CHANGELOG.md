@@ -8,7 +8,7 @@
   calendar/task tools section), and purge stale broker references from `AGENT.md`,
   `docs/configuration.md`, `docs/modules.yaml`, `docs/user-guide/deployment.md`, and
   `docs/system_prompt_changelog.md`.
-- Replace broker-based mill, board, calendar, component-agent, and skills modules with a generic ``component_access`` mechanism that fetches the central-deploy roster (``GET /chat/components``), loads each component's skill into the agent, and exposes a single ``component_request(component_id, method, path, json_body=None)`` tool. Remove the ``broker`` extra, ``robotsix-agent-comm`` and ``robotsix-board-agent`` dependencies, ``MillSettings``, ``BoardSettings``, ``CalendarSettings``, ``ComponentAgentSettings``, and ``SkillsSettings`` config models. Add ``CentralDeploySettings`` (``url``, ``api_token``, ``roster_cache_ttl``).
+- Replace broker-based mill, board, calendar, component-agent, and skills modules with a generic `component_access` mechanism that fetches the central-deploy roster (`GET /chat/components`), loads each component's skill into the agent, and exposes a single `component_request(component_id, method, path, json_body=None)` tool. Remove the `broker` extra, `robotsix-agent-comm` and `robotsix-board-agent` dependencies, `MillSettings`, `BoardSettings`, `CalendarSettings`, `ComponentAgentSettings`, and `SkillsSettings` config models. Add `CentralDeploySettings` (`url`, `api_token`, `roster_cache_ttl`).
 - Replace hand-rolled `.github/workflows/lint-workflows.yml` with thin delegation wrapper calling
   `damien-robotsix/robotsix-github-workflows/.github/workflows/lint-workflows.yml` (shared
   reusable). Enables `run-actionlint`, `run-zizmor`, and `sarif-workflows` inputs.

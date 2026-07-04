@@ -2748,16 +2748,6 @@ wheels = [
 ]
 
 [[package]]
-name = "robotsix-board-agent"
-version = "0.1.0"
-source = { git = "https://github.com/damien-robotsix/robotsix-board-agent.git?rev=ec89dc44d8a462e1d0d2a5748fcc1819d0770d03#ec89dc44d8a462e1d0d2a5748fcc1819d0770d03" }
-dependencies = [
-    { name = "httpx" },
-    { name = "pydantic" },
-    { name = "robotsix-llmio" },
-]
-
-[[package]]
 name = "robotsix-chat"
 version = "0.1.0"
 source = { editable = "." }
@@ -2767,7 +2757,6 @@ dependencies = [
     { name = "pydantic" },
     { name = "pyjwt" },
     { name = "pyyaml" },
-    { name = "robotsix-board-agent" },
     { name = "robotsix-config" },
     { name = "robotsix-llmio" },
     { name = "starlette" },
@@ -2816,12 +2805,11 @@ requires-dist = [
     { name = "pydantic" },
     { name = "pyjwt" },
     { name = "pyyaml" },
-    { name = "robotsix-board-agent", git = "https://github.com/damien-robotsix/robotsix-board-agent.git?rev=ec89dc44d8a462e1d0d2a5748fcc1819d0770d03" },
     { name = "robotsix-config", git = "https://github.com/damien-robotsix/robotsix-config.git?rev=424f8ec" },
-    { name = "robotsix-llmio" },
-    { name = "robotsix-llmio", extras = ["claude-sdk"], marker = "extra == 'claude-sdk'" },
-    { name = "robotsix-llmio", extras = ["openrouter"], marker = "extra == 'openrouter'" },
-    { name = "robotsix-llmio", extras = ["tracing"], marker = "extra == 'tracing'" },
+    { name = "robotsix-llmio", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=73f2d555caa21de47a3732824d776e04719b3011" },
+    { name = "robotsix-llmio", extras = ["claude-sdk"], marker = "extra == 'claude-sdk'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=73f2d555caa21de47a3732824d776e04719b3011" },
+    { name = "robotsix-llmio", extras = ["openrouter"], marker = "extra == 'openrouter'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=73f2d555caa21de47a3732824d776e04719b3011" },
+    { name = "robotsix-llmio", extras = ["tracing"], marker = "extra == 'tracing'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=73f2d555caa21de47a3732824d776e04719b3011" },
     { name = "starlette" },
     { name = "transformers", marker = "extra == 'memory'" },
     { name = "uvicorn" },
