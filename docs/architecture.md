@@ -58,7 +58,7 @@ uv run robotsix-chat
   │
   ├─ 5.  create_agent_from_settings()
   │      Wires LlmioChatAgent with enabled tools:
-  │      mill, mail, calendar, memory, knowledge, refdocs,
+  │      mail, memory, knowledge, refdocs,
   │      board_reader, selfreview, version_check, component_client
   │
   ├─ 6.  _resume()
@@ -211,11 +211,6 @@ Two Docker Compose stacks:
 - **Root `docker-compose.yml`** — local development: builds from the multi-stage `Dockerfile`,
   mounts `config/chat.local.yaml` and `~/.claude` (for claudeSDK auth), binds port 8080.
 - **`deploy/docker-compose.yml`** — production: the central-deploy contract (pre-built GHCR image,
-  named volumes, env secret slots). Lifecycle, networking, and authentication are handled by
-  central-deploy and its gateway.
-
-See `docs/getting-started.md` for setup instructions.
-yml`** — production: the central-deploy contract (pre-built GHCR image,
   named volumes, env secret slots). Lifecycle, networking, and authentication are handled by
   central-deploy and its gateway.
 

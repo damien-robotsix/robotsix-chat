@@ -230,4 +230,3 @@ relative_files = true
 [tool.coverage.report]
 exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
 fail_under = 88  # set at/just below current measured coverage; raise over time; never lower
-der = 88  # set at/just below current measured coverage; raise over time; never lower
