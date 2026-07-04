@@ -15,6 +15,7 @@ dependencies = [
     "httpx",
     "pydantic",
     "pyjwt",
+    "robotsix-board-agent",
     "structlog>=24.0.0",
     "uvicorn",
     "starlette",
@@ -96,6 +97,7 @@ packages = ["src/robotsix_chat"]
 [tool.uv.sources]
 robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.git", rev = "424f8ec" }  # pragma: allowlist secret
 robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "73f2d555caa21de47a3732824d776e04719b3011" }  # pragma: allowlist secret
+robotsix-board-agent = { git = "https://github.com/damien-robotsix/robotsix-board-agent.git", rev = "6b3f443a4e2aa96c029d99dd1cb991402c60cc83" }  # pragma: allowlist secret
 # robotsix-modules: same SHA as robotsix-mill (coherent-set rule).
 robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "d7c5e59980516de6e050db02ff54aef4e15ff5c3" }  # pragma: allowlist secret
 

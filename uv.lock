@@ -2748,6 +2748,16 @@ wheels = [
 ]
 
 [[package]]
+name = "robotsix-board-agent"
+version = "0.1.0"
+source = { git = "https://github.com/damien-robotsix/robotsix-board-agent.git?rev=6b3f443a4e2aa96c029d99dd1cb991402c60cc83#6b3f443a4e2aa96c029d99dd1cb991402c60cc83" }
+dependencies = [
+    { name = "httpx" },
+    { name = "pydantic" },
+    { name = "robotsix-llmio" },
+]
+
+[[package]]
 name = "robotsix-chat"
 version = "0.2.0"
 source = { editable = "." }
@@ -2756,6 +2766,7 @@ dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
     { name = "pyjwt" },
+    { name = "robotsix-board-agent" },
     { name = "robotsix-config" },
     { name = "robotsix-llmio" },
     { name = "starlette" },
@@ -2805,6 +2816,7 @@ requires-dist = [
     { name = "httpx" },
     { name = "pydantic" },
     { name = "pyjwt" },
+    { name = "robotsix-board-agent", git = "https://github.com/damien-robotsix/robotsix-board-agent.git?rev=6b3f443a4e2aa96c029d99dd1cb991402c60cc83" },
     { name = "robotsix-config", git = "https://github.com/damien-robotsix/robotsix-config.git?rev=424f8ec" },
     { name = "robotsix-llmio", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=73f2d555caa21de47a3732824d776e04719b3011" },
     { name = "robotsix-llmio", extras = ["claude-sdk"], marker = "extra == 'claude-sdk'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=73f2d555caa21de47a3732824d776e04719b3011" },
