@@ -313,7 +313,7 @@ class TestRunServerFromConfig:
             patch("robotsix_chat.chat.server.cli._setup_observability") as mock_obs,
             patch("robotsix_chat.subsessions.SubsessionRegistry") as mock_registry_cls,
             patch("robotsix_chat.subsessions.ParentDelivery") as mock_delivery_cls,
-            patch("robotsix_chat.chat.server.cli.resume_subsessions") as _,
+            patch("robotsix_chat.subsessions.resume_subsessions") as _,
             # The lazy ``from . import run_server`` inside run_server_from_config
             # resolves through the package re-export — patch that, not cli.run_server.
             patch("robotsix_chat.chat.server.run_server") as mock_run_server,
