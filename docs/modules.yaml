@@ -233,6 +233,15 @@ modules:
     paths:
       - src/robotsix_chat/ui/index.html
 
+  - id: lifecycle
+    description: "Read-only deploy-lifecycle API tools for the agent — exposes build_lifecycle_tools() returning tools to list services, check status/health, and read config/env (secrets masked server-side), plus load_lifecycle_skill() for the component skill document."
+    paths:
+      - src/robotsix_chat/lifecycle/__init__.py
+      - src/robotsix_chat/lifecycle/client.py
+      - src/robotsix_chat/lifecycle/skill.md
+      - tests/lifecycle/__init__.py
+      - tests/lifecycle/test_lifecycle.py
+
   - id: version-check
     description: "Self-version-check tool for the agent — compares the running robotsix_chat.__version__ against the latest published GitHub release and warns the user when the deployment is behind."
     paths:

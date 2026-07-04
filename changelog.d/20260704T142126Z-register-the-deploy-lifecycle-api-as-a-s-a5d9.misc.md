@@ -1,0 +1,1 @@
+Register the deploy lifecycle API as a scoped read-only chat-agent component

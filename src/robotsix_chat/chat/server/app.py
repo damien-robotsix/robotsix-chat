@@ -30,6 +30,7 @@ from robotsix_chat.config import Settings, level_needs_api_key
 from robotsix_chat.diagnostics import build_diagnostics_tools
 from robotsix_chat.direct_repo import build_direct_repo_tools
 from robotsix_chat.knowledge import build_knowledge_tools
+from robotsix_chat.lifecycle import build_lifecycle_tools
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.mail import build_mail_tools
 from robotsix_chat.memory import build_memory
@@ -375,6 +376,14 @@ def create_agent_from_settings(
         if skill_prompt:
             instruction = f"{instruction}\n\n{skill_prompt}"
 
+    # Inject the lifecycle component skill when lifecycle is enabled.
+    if settings.lifecycle.enabled:
+        from robotsix_chat.lifecycle import load_lifecycle_skill
+
+        lifecycle_skill = load_lifecycle_skill()
+        if lifecycle_skill:
+            instruction = f"{instruction}\n\n{lifecycle_skill}"
+
     effective_level = (
         model_level if model_level is not None else settings.llmio_model_level
     )
@@ -394,6 +403,7 @@ def create_agent_from_settings(
         *build_diagnostics_tools(settings.diagnostics),
         *build_recent_activity_tools(settings.self_review, conversation_store),
         *build_version_check_tools(settings.version_check),
+        *build_lifecycle_tools(settings.lifecycle),
     ]
     if tool_wrapper is not None:
         tools = tool_wrapper(tools)

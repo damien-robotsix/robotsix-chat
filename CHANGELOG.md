@@ -1,5 +1,16 @@
 ## 0.0.0 (unreleased)
 
+- Add read-only deploy-lifecycle API integration: the agent can now list managed services,
+  check service status/health, and read configuration/environment (secrets masked server-side)
+  when `lifecycle.enabled` is set. Mutation endpoints (restart, redeploy, config/env write)
+  are deliberately excluded from the tool set.
+- Register the deploy-lifecycle API as a read-only component:
+  four new tools — ``list_lifecycle_services``,
+  ``get_lifecycle_service_status``, ``get_lifecycle_service_config``,
+  ``get_lifecycle_service_env`` — let the agent inspect the
+  central-deploy lifecycle server (service inventory, status/health,
+  config/env with secrets masked). Mutation endpoints are deliberately
+  excluded. Config key: ``lifecycle``.
 - Exclude auto-generated CHANGELOG.md from the typos spell-check pre-commit hook to
   eliminate false positives on hyphen-separated issue reference slugs.
 - Log resolved persistence paths at startup (conversation, knowledge, memory, diagnostics, subsessions) so a volume-mount mismatch is immediately visible in logs.
