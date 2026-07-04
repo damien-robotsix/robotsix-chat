@@ -29,7 +29,7 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 # Export the locked dependency set (claude-sdk for the LLM transport + tracing
-# for Langfuse observability + memory for cognee + broker for agent-comm).
+# for Langfuse observability + memory for cognee).
 RUN uv export --frozen --no-emit-project --no-hashes --extra claude-sdk --extra tracing --extra memory > requirements.txt
 
 # ---------------------------------------------------------------------------

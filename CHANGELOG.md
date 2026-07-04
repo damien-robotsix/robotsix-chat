@@ -1,5 +1,7 @@
 ## 0.0.0 (unreleased)
 
+- Removed stale `.gitmodules` file referencing the deleted `broker_src` submodule, and updated a
+  leftover Dockerfile comment that mentioned the removed broker extra.
 - Removed broker-related subsystem documentation from `docs/configuration.md` (Mill, Calendar,
   Component Agent, Skills) and updated Component Client description to reflect direct HTTP
   transport.
