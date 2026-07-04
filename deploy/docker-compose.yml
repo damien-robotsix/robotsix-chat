@@ -7,7 +7,7 @@
 # is managed by central-deploy — no Watchtower, no restart:, no host binds.
 #
 # Application config and secrets live in the mounted config file
-# (config/chat.local.yaml, injected by central-deploy via the
+# (config/config.json, injected by central-deploy via the
 # config-target label below). The environment: block carries only
 # infrastructure wiring — the config-file path pointer and anything
 # the container needs to locate/serve, not application behaviour.
@@ -21,15 +21,15 @@ services:
       # user's home).
       robotsix.deploy.claude-mount: "true"
       # Application config file — central-deploy injects the operator-managed
-      # config file at the in-container path the app reads via CHAT_CONFIG_PATH.
-      robotsix.deploy.config-target: "config/chat.local.yaml"
+      # config file at the in-container path the app reads via ROBOTSIX_CONFIG_FILE.
+      robotsix.deploy.config-target: "config/config.json"
     ports:
       - "8088:8080"
     environment:
       # Infrastructure wiring only — path to the mounted config file
       # (injected via the config-target label above). Application config
       # and secrets live in that file, not here.
-      CHAT_CONFIG_PATH: config/chat.local.yaml
+      ROBOTSIX_CONFIG_FILE: config/config.json
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health').status==200 else 1)"]
       interval: 30s

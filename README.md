@@ -40,19 +40,18 @@ API key**:
 ```bash
 uv sync --extra claude-sdk          # pulls claude-agent-sdk via robotsix-llmio
 claude login                        # one-time; also needs Node.js on PATH
-cp config/chat.local.example.yaml config/chat.local.yaml   # defaults to model_level 3
+cp config/config.example.json config/config.json   # defaults to model_level 3
 uv run robotsix-chat
 ```
 
 Open <http://127.0.0.1:8000/> in your browser and start chatting.
 
-Prefer a cheaper level (1–2, OpenRouter deepseek)? Install that extra and set the key (env vars
-override the config file; a `.env` file is picked up too):
+Prefer a cheaper level (1–2, OpenRouter deepseek)? Install that extra and set the key in your
+`config/config.json`:
 
 ```bash
 uv sync --extra openrouter
-export LLMIO_MODEL_LEVEL=1           # 1 cheapest · 2 · 3 best
-export LLMIO_API_KEY=sk-or-...
+# Edit config/config.json and set llmio_model_level to 1 and llmio_api_key
 uv run robotsix-chat
 ```
 
@@ -105,37 +104,31 @@ data: {"type": "done"}
 
 ## Configuration
 
-Settings resolve through a layered cascade that matches the rest of the robotsix stack
-(`robotsix-mill`, `robotsix-auto-mail`), built on the shared
-[`robotsix-yaml-config`](https://github.com/damien-robotsix/robotsix-yaml-config) library:
-
-```text
-pydantic field defaults  →  YAML config file  →  environment variables
-```
-
-with each later layer overriding the earlier one **field-by-field**.
+Settings are loaded from a single JSON config file via
+[`robotsix-config`](https://github.com/damien-robotsix/robotsix-config). The file path is set by the
+`ROBOTSIX_CONFIG_FILE` environment variable (the only env var consumed for config).
 
 ### Config file
 
-The YAML file lives at **`config/chat.local.yaml`** by default — copy it from the committed
-[`config/chat.local.example.yaml`](config/chat.local.example.yaml). It is git-ignored so credentials
-never land in the repo. Override the path with the `CHAT_CONFIG_PATH` environment variable.
+The JSON file lives at **`config/config.json`** by default — copy it from the committed
+[`config/config.example.json`](config/config.example.json). It is git-ignored so credentials never
+land in the repo. Override the path with the `ROBOTSIX_CONFIG_FILE` environment variable.
 
-```yaml
-llmio:                       # LLM selection, delegated to robotsix-llmio
-  model_level: 3             # 1 (cheapest) | 2 | 3 (most capable)
-  # api_key: sk-or-...       # required for levels 1-2 (OpenRouter); level 3 needs none
-
-agent:
-  # instruction: You are a helpful assistant.
-
-server:
-  # host: 127.0.0.1
-  # port: 8000
-  # log_level: INFO
-  # cors_allow_origins: []   # ["*"] = any; only when the UI is hosted elsewhere
-
+```jsonc
+{
+  "llmio_model_level": 3,
+  // "llmio_api_key": "sk-or-...",  // pragma: allowlist secret
+  "server": {
+    "host": "127.0.0.1",
+    "port": 8000
+  }
+}
 ```
+
+All fields are documented in [`config/config.example.json`](config/config.example.json) and
+[`docs/configuration.md`](docs/configuration.md). A committed
+[`config/config.schema.json`](config/config.schema.json) is CI-checked to stay in sync with the
+`Settings` model.
 
 ### Model level
 
@@ -146,15 +139,15 @@ default level → provider-model mapping:
 
 | `model_level`    | provider-model identifier               | needs API key?         |
 | ---------------- | --------------------------------------- | ---------------------- |
-| 1 (cheapest)     | `openrouter-deepseek/deepseek-v4-flash` | yes (`llmio.api_key`)  |
-| 2                | `openrouter-deepseek/deepseek-v4-pro`   | yes (`llmio.api_key`)  |
+| 1 (cheapest)     | `openrouter-deepseek/deepseek-v4-flash` | yes (`llmio_api_key`)  |
+| 2                | `openrouter-deepseek/deepseek-v4-pro`   | yes (`llmio_api_key`)  |
 | 3 (most capable) | `claudeSDK-opus`                        | no (subscription auth) |
 
 - **Level 3 / `claudeSDK`** — the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk)
   authenticates via your local `claude login` subscription, so **no API key**. Install with
   `uv sync --extra claude-sdk` and run `claude login` (needs Node.js on PATH).
-- **Levels 1–2 / `openrouter`** — install with `uv sync --extra openrouter` and set `llmio.api_key`
-  (env `LLMIO_API_KEY`).
+- **Levels 1–2 / `openrouter`** — install with `uv sync --extra openrouter` and set `llmio_api_key`
+  in your `config/config.json`.
 
 Each backend dependency is pulled **through** robotsix-llmio's own extras
 (`robotsix-llmio[claude-sdk]` / `robotsix-llmio[openrouter]`), so the stack owns those deps in one
@@ -171,18 +164,13 @@ authentication at your reverse proxy — never expose it directly to an untruste
 
 ### Environment variables
 
-Every field can also be set via an environment variable (with `.env` support); env vars override the
-config file.
+The app consumes only one environment variable for config — the file locator:
 
-| Variable             | Config key                  | Default                        | Description                                                                                                            |
-| -------------------- | --------------------------- | ------------------------------ | ---------------------------------------------------------------------------------------------------------------------- |
-| `LLMIO_MODEL_LEVEL`  | `llmio.model_level`         | `3`                            | Capability level: `1` (cheapest), `2`, or `3` (most capable).                                                          |
-| `LLMIO_API_KEY`      | `llmio.api_key`             | *(required for levels 1–2)*    | OpenRouter API key (unused by level 3 / claudeSDK).                                                                    |
-| `AGENT_INSTRUCTION`  | `agent.instruction`         | `You are a helpful assistant.` | System instruction for the agent.                                                                                      |
-| `SERVER_HOST`        | `server.host`               | `127.0.0.1`                    | Host the server binds to.                                                                                              |
-| `SERVER_PORT`        | `server.port`               | `8000`                         | Port the server listens on.                                                                                            |
-| `LOG_LEVEL`          | `server.log_level`          | `INFO`                         | Python logging level.                                                                                                  |
-| `CORS_ALLOW_ORIGINS` | `server.cors_allow_origins` | *(empty)*                      | Comma-separated origins allowed to call `/chat` cross-origin (`*` = any). Only needed when the UI is hosted elsewhere. |
+| Variable               | Config key            | Default              | Description                   |
+| ---------------------- | --------------------- | -------------------- | ----------------------------- |
+| `ROBOTSIX_CONFIG_FILE` | *(file locator only)* | `config/config.json` | Path to the JSON config file. |
+
+All other settings live in `config/config.json` — env vars are not a config channel for this app.
 
 ### Calendar & tasks (broker integration)
 
@@ -203,12 +191,15 @@ The integration is **off by default**. To enable it:
 uv sync --extra broker
 ```
 
-Then set in your `.env` (or YAML config):
+Then set in your `config/config.json`:
 
-```bash
-CALENDAR_ENABLED=true
-CALENDAR_BROKER_TOKEN=<your-agent-token>   # required when enabled
-# CALENDAR_BROKER_HOST=ai-broker.robotsix.net   # default
+```jsonc
+{
+  "calendar": {
+    "enabled": true,
+    "broker_token": "<your-agent-token>"
+  }
+}
 ```
 
 All settings are listed in the

@@ -25,14 +25,14 @@ Builds the multi-stage `Dockerfile`, tags `robotsix-chat:local`, and runs the im
 
 - **Port mapping**: `8080:8080` (host:container; container port 8080 is set by `SERVER_PORT=8080` in
   the Dockerfile).
-- **Environment**: `LLMIO_MODEL_LEVEL=3`, `CHAT_CONFIG_PATH=config/chat.local.yaml`.
+- **Environment**: `ROBOTSIX_CONFIG_FILE=config/config.json`.
 - **Volume mounts**:
-  - `./config/chat.local.yaml:/home/app/config/chat.local.yaml:ro`
+  - `./config/config.json:/home/app/config/config.json:ro`
   - `~/.claude:/home/app/.claude:ro`
 
 Prerequisites (one-time):
 
-1. `cp config/chat.local.example.yaml config/chat.local.yaml`
+1. `cp config/config.example.json config/config.json`
 2. `claude login` (populates `~/.claude` with subscription credentials)
 
 ### `deploy/docker-compose.yml` — production (central-deploy contract)
@@ -48,7 +48,7 @@ contract violations).
 - **Service**: single `robotsix-chat` service (implicitly primary).
 - **Port**: `8088:8080` — routed by the central-deploy gateway, not published on the host.
 - **Environment**: carries only infrastructure wiring — the config-file path pointer
-  (`CHAT_CONFIG_PATH: config/chat.local.yaml`). Application config and secrets live in the mounted
+  (`ROBOTSIX_CONFIG_FILE: config/config.json`). Application config and secrets live in the mounted
   config file (injected via the `robotsix.deploy.config-target` label).
 - **Volumes**: named volume `chat-data` → `/home/app/.data` (persistent agent state; flagged
   `robotsix.deploy.stateful`).
@@ -71,21 +71,21 @@ differs:
 
 Both stacks follow the same two volume-binding patterns.
 
-### Application config (`config/chat.local.yaml`)
+### Application config (`config/config.json`)
 
-The app reads YAML config from `config/chat.local.yaml` inside the container (resolved relative to
-`WORKDIR /home/app`). The path is overridable via the `CHAT_CONFIG_PATH` env var.
+The app reads JSON config from `config/config.json` inside the container (resolved relative to
+`WORKDIR /home/app`). The path is overridable via the `ROBOTSIX_CONFIG_FILE` env var.
 
-- **Local dev**: mounts the single file `./config/chat.local.yaml` read-only.
-- **Production (central-deploy)**: configuration lives in a single YAML config file
-  (`config/chat.local.yaml`) mounted by central-deploy via the `robotsix.deploy.config-target`
-  label. The operator copies `deploy/config.example.yaml` to `config/chat.local.yaml`, fills in real
-  values, and central-deploy injects it into the container. The `CHAT_CONFIG_PATH` env var (the only
+- **Local dev**: mounts the single file `./config/config.json` read-only.
+- **Production (central-deploy)**: configuration lives in a single JSON config file
+  (`config/config.json`) mounted by central-deploy via the `robotsix.deploy.config-target` label.
+  The operator copies `config/config.example.json` to `config/config.json`, fills in real values,
+  and central-deploy injects it into the container. The `ROBOTSIX_CONFIG_FILE` env var (the only
   config-related key in `environment:`) points the app at this file — no application config or
   secrets live in `environment:`.
 
-The canonical template is `config/chat.local.example.yaml` (committed). The operator copies it to
-`config/chat.local.yaml` (gitignored).
+The canonical template is `config/config.example.json` (committed). The operator copies it to
+`config/config.json` (gitignored).
 
 ### Claude credentials (`~/.claude`)
 
@@ -99,24 +99,21 @@ The operator must run `claude login` on the host before starting either stack.
 ### User and workdir
 
 The Dockerfile creates a non-root user `app` (UID 1001, the standardized robotsix container layout)
-with `WORKDIR /home/app`. All container-relative paths in compose files (e.g.
-`config/chat.local.yaml`) are relative to `/home/app`.
+with `WORKDIR /home/app`. All container-relative paths in compose files (e.g. `config/config.json`)
+are relative to `/home/app`.
 
 ## Production configuration (central-deploy)
 
-Production configuration lives in a single YAML config file (`config/chat.local.yaml`) mounted by
+Production configuration lives in a single JSON config file (`config/config.json`) mounted by
 central-deploy via the `robotsix.deploy.config-target` label. The operator fills real values (secret
 slots, tuned defaults) in that file; central-deploy injects it into the container at deploy time.
-The `CHAT_CONFIG_PATH` env var in the deploy compose points the app at this file — it is
-infrastructure wiring only, not application configuration. `AUTH_ENABLED` defaults to `true` in the
-config example; leave it on for any deployed instance.
+The `ROBOTSIX_CONFIG_FILE` env var in the deploy compose points the app at this file — it is
+infrastructure wiring only, not application configuration.
 
-The root `.env.example` documents the application-level environment variables that `python-dotenv`
-loads at runtime for **local** runs (used by `Settings.load()` in
-`src/robotsix_chat/config/settings.py`):
+The root `.env.example` documents the application-level environment variables for **local** runs
+(used by `Settings.load()` in `src/robotsix_chat/config/settings.py`):
 
-- `LLMIO_MODEL_LEVEL`, `LLMIO_API_KEY` — LLM selection
-- `SERVER_HOST`, `SERVER_PORT`, `LOG_LEVEL`, `CORS_ALLOW_ORIGINS` — server
+- `ROBOTSIX_CONFIG_FILE` — config file locator (the only env var consumed for config)
 
 ## Long-term memory (cognee)
 
@@ -146,8 +143,8 @@ is used when off or when the extra is absent — the agent then behaves exactly 
 
 Config keys: `memory.enabled`, `memory.data_dir`, `memory.recall_search_type`,
 `memory.llm.{provider,model,endpoint,api_key}`,
-`memory.embedding.{provider,model,endpoint,dimensions,api_key,huggingface_tokenizer}` — each with a
-`MEMORY_*` env override (see `.env.example`).
+`memory.embedding.{provider,model,endpoint,dimensions,api_key,huggingface_tokenizer}` — see
+`config/config.example.json` for defaults.
 
 ## Mill integration (agent-comm broker)
 
@@ -170,7 +167,7 @@ Disabled by default; no tools are added when off or when the `broker` extra is a
   unless `repo_id` is set. Broker is public TLS at `ai-broker.robotsix.net:443` (no custom CA).
 - **Config keys**:
   `mill.{enabled,broker_host,broker_port,broker_scheme,broker_token,agent_id,board_manager_id,repo_id,timeout}`
-  — each with a `MILL_*` env override.
+  — see `config/config.example.json` for defaults.
 
 ## Submodule layout
 
@@ -187,7 +184,7 @@ Disabled by default; no tools are added when off or when the `broker` extra is a
   `EXPOSE 8080`)
 - `.env.example` — canonical env-var reference (standard variables; deploy-only vars documented
   above)
-- `config/chat.local.example.yaml` — canonical YAML config template (copy to `chat.local.yaml`)
+- `config/config.example.json` — canonical JSON config template (copy to `config.json`)
 - `src/robotsix_chat/config/settings.py` — settings cascade (pydantic defaults → YAML → env,
   `Settings.load()`); includes `MemorySettings`
 - `src/robotsix_chat/memory/` — optional long-term memory: `base.py` (`ChatMemory` protocol +

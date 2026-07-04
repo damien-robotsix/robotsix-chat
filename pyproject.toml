@@ -113,6 +113,36 @@ directory = "changelog.d"
 title_format = "## [{version}] - {project_date}"
 issue_format = "[#{issue}](https://github.com/damien-robotsix/robotsix-chat/issues/{issue})"
 
+[[tool.towncrier.type]]
+directory = "feature"
+name = "Features"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "bugfix"
+name = "Bugfixes"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "doc"
+name = "Improved Documentation"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "removal"
+name = "Deprecations and Removals"
+showcontent = true
+
+[[tool.towncrier.type]]
+directory = "misc"
+name = "Misc"
+showcontent = false
+
+[[tool.towncrier.type]]
+directory = "breaking"
+name = "Breaking Changes"
+showcontent = true
+
 [tool.ruff]
 target-version = "py314"
 line-length = 88
