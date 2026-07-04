@@ -1,0 +1,24 @@
+name: CodeQL
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  schedule:
+    - cron: '30 2 * * 1'  # weekly on Monday at 02:30 UTC
+
+permissions:
+  actions: read          # CodeQL analysis
+  contents: read         # checkout the repo
+
+jobs:
+  codeql:
+    name: CodeQL analysis (shared)
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/codeql.yml@7314c9b6c2b536ca81023e8841f272b72733262e  # main
+    with:
+      languages: python
+      config-file: ./.github/codeql-config.yml
+    permissions:
+      actions: read          # CodeQL analysis
+      contents: read         # checkout the repo
+      security-events: write  # upload SARIF results

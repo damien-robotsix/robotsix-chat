@@ -48,24 +48,6 @@ jobs:
       contents: read         # checkout the repo
       security-events: write  # required by python-ci.yml's nested `tests` job for SARIF upload
 
-  codeql:
-    name: CodeQL analysis
-    runs-on: ubuntu-latest
-    permissions:
-      actions: read       # CodeQL needs to read workflow metadata
-      contents: read      # checkout the repo
-      security-events: write  # upload SARIF results
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-        with:
-          persist-credentials: false
-      - uses: github/codeql-action/init@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
-        with:
-          languages: python
-          queries: security-and-quality
-          config-file: .github/codeql-config.yml
-      - uses: github/codeql-action/analyze@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
-
   security:
     name: Security scan (shared)
     uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-security.yml@5cd8c1facb02299da618979e7a55f1953f9c075a  # main
@@ -245,7 +227,7 @@ jobs:
 
   check:
     name: All CI checks passed
-    needs: [lockfile, ci, codeql, security, deptry, pre-commit, check-sse-types, check-modules-registry, image-scan, check-config-schema]
+    needs: [lockfile, ci, security, deptry, pre-commit, check-sse-types, check-modules-registry, image-scan, check-config-schema]
     runs-on: ubuntu-latest
     steps:
       - run: echo "All CI checks passed"
