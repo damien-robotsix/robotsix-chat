@@ -318,7 +318,7 @@ async def test_summary_endpoint_empty_session_returns_empty_fields() -> None:
 
 @pytest.mark.asyncio
 async def test_summary_endpoint_unknown_session_returns_empty_fields() -> None:
-    """POST /summary for an unknown session returns all-empty fields (no lazy-create)."""
+    """POST /summary for unknown session returns all-empty fields (no lazy-create)."""
     async with mock_app() as f:
         response = await f.client.post(
             "/summary",
@@ -352,9 +352,7 @@ async def test_summary_endpoint_agent_error_returns_500() -> None:
     sid = cast(str, store.create_session("owner-a")["session_id"])
     store.record(sid, "owner-a", "Hello", "Hi there!")
 
-    async with mock_app(
-        error=ValueError("boom"), conversation_store=store
-    ) as f:
+    async with mock_app(error=ValueError("boom"), conversation_store=store) as f:
         response = await f.client.post(
             "/summary",
             json={"session_id": sid, "owner_id": "owner-a"},
@@ -371,7 +369,9 @@ async def test_summary_endpoint_passes_prompt_to_agent() -> None:
     store.record(sid, "owner-a", "Fix the bug", "I'll look into it.")
 
     async with mock_app(
-        tokens=['{"purpose":"bug fix","pending_work":"","pending_questions":"","blockers":"","relevant_info":""}'],
+        tokens=[
+            '{"purpose":"bug fix","pending_work":"","pending_questions":"","blockers":"","relevant_info":""}'
+        ],
         conversation_store=store,
     ) as f:
         await f.client.post(

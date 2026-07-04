@@ -541,9 +541,7 @@ async def summary_endpoint(request: Request) -> JSONResponse:
             reply_parts.append(token)
     except Exception:
         logger.exception("Summary generation failed")
-        return JSONResponse(
-            {"error": "summary generation failed"}, status_code=500
-        )
+        return JSONResponse({"error": "summary generation failed"}, status_code=500)
 
     reply = "".join(reply_parts).strip()
 
@@ -554,24 +552,16 @@ async def summary_endpoint(request: Request) -> JSONResponse:
         summary = json.loads(reply)
     except json.JSONDecodeError:
         # Try to extract from markdown code fences.
-        fence_match = re.search(
-            r"```(?:json)?\s*(\{.*?\})\s*```", reply, re.DOTALL
-        )
+        fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", reply, re.DOTALL)
         if fence_match:
-            try:
+            with contextlib.suppress(json.JSONDecodeError):
                 summary = json.loads(fence_match.group(1))
-            except json.JSONDecodeError:
-                pass
     if not summary:
         # Last resort: find the first JSON object containing "purpose".
-        brace_match = re.search(
-            r'\{[^{}]*"purpose"[^{}]*\}', reply, re.DOTALL
-        )
+        brace_match = re.search(r'\{[^{}]*"purpose"[^{}]*\}', reply, re.DOTALL)
         if brace_match:
-            try:
+            with contextlib.suppress(json.JSONDecodeError):
                 summary = json.loads(brace_match.group())
-            except json.JSONDecodeError:
-                pass
 
     # Ensure all expected fields exist with string values.
     _SUMMARY_FIELDS = (
