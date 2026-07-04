@@ -417,6 +417,8 @@ class CentralDeploySettings(BaseModel):
 
     """
 
+    model_config = {"extra": "forbid"}
+
     url: str = ""
     api_token: SecretStr = SecretStr("")
     roster_cache_ttl: float = 300.0

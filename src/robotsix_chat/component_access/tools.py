@@ -111,16 +111,14 @@ def build_component_access_tools(
     if not settings.url:
         return []
 
-    from .roster import build_skill_prompt, fetch_roster
+    from .roster import fetch_roster
 
     # We need a mutable container so the closure can refresh the roster
-    # and the skill prompt between calls.
-    _state: dict[str, Any] = {"entries": [], "skill_prompt": ""}
+    # between calls.
+    _state: dict[str, Any] = {"entries": []}
 
     async def _refresh() -> None:
-        entries = await fetch_roster(settings)
-        _state["entries"] = entries
-        _state["skill_prompt"] = build_skill_prompt(entries)
+        _state["entries"] = await fetch_roster(settings)
 
     async def component_request(
         component_id: str,

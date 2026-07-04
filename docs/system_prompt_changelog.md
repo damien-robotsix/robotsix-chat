@@ -47,7 +47,7 @@ requirement to obey each component skill's safety section (ask the user before c
 confirmation-required operations). The old broker-based board and calendar tool guidance is removed;
 all component interaction now goes through the single generic tool.
 
-**SHA256:** `c987639542cfecccc925b5dfa12573ae2ad0a93f1a56670c035871f74ec11d60`
+**SHA256:** `d6067ea41ef447564913d75031059f476e86c1817e601a4d395801fbad76a161`
 
 ______________________________________________________________________
 

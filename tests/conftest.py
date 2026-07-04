@@ -107,3 +107,4 @@ async def mock_app(
 
     async with http_client(app, **transport_kwargs) as client:
         yield AppFixture(agent=agent, app=app, client=client)
+

@@ -25,7 +25,7 @@ cp config/config.example.json config/config.json
 
 - The app starts with **defaults only** when no config file exists — non-secret features (server,
   knowledge, diagnostics) work out of the box.
-- Create `config/config.json` and set `ROBOTSIX_CONFIG_FILE` when you need secrets (API keys,
+- Create `config/config.json` and set `ROBOTSIX_CONFIG_FILE` when you need secrets (API keys, API
   tokens) or want to override defaults.
 
 ## Secrets
@@ -40,8 +40,8 @@ Secret fields include:
 - `langfuse.public_key`, `langfuse.secret_key`
 - `memory.llm.api_key`, `memory.embedding.api_key`
 - `memory.langfuse.public_key`, `memory.langfuse.secret_key`
+- `central_deploy.api_token`
 - `mail.api_token`
-- `board_reader.api_token`
 - `direct_repo.github_app_private_key`, `direct_repo.board_api_token`
 - `refdocs.github_token`
 - `version_check.github_token`
@@ -110,7 +110,17 @@ Persistent, cross-conversation episodic memory via embedded cognee. Disabled by 
 | `memory.langfuse.secret_key`             | `string` (secret) | `""`                                      | Langfuse secret key (robotsix-chat-cognee project). |
 | `memory.langfuse.host`                   | `string`          | `"https://cloud.langfuse.com"`            | Langfuse host for cognee tracing.                   |
 
-### Mail (board HTTP read)
+### Central Deploy
+
+Component-access roster and skill loading from the central-deploy management plane.
+
+| JSON key                         | Type              | Default | Description                                                     |
+| -------------------------------- | ----------------- | ------- | --------------------------------------------------------------- |
+| `central_deploy.url`             | `string`          | `""`    | Base URL of the central-deploy API (no trailing slash).         |
+| `central_deploy.api_token`       | `string` (secret) | `""`    | Bearer token for the central-deploy API.                        |
+| `central_deploy.roster_cache_ttl` | `number`         | `300.0` | Seconds to cache the component roster before re-fetching.       |
+
+### Mail (board HTTP)
 
 Direct HTTP access to the mill's board API for listing, reading, and creating tickets.
 
@@ -120,8 +130,6 @@ Direct HTTP access to the mill's board API for listing, reading, and creating ti
 | `mail.api_base_url` | `string`          | `"http://127.0.0.1:8077"` | Base URL of the board HTTP API (no trailing slash). |
 | `mail.api_token`    | `string` (secret) | `""`                      | Optional bearer token for the board API.            |
 | `mail.timeout`      | `number`          | `30.0`                    | Per-request HTTP timeout (seconds).                 |
-
-> **Note:** This section was previously called "Board Reader" and its YAML key was `board_reader.*`.
 
 ### Conversation
 
@@ -159,17 +167,6 @@ Read-only reference-docs tool — fetches documentation from allowlisted GitHub 
 | `refdocs.base_url`     | `string`          | `"https://api.github.com"` | Base URL for GitHub Enterprise.            |
 | `refdocs.timeout`      | `number`          | `30.0`                     | Per-request HTTP timeout (seconds).        |
 
-### Board Reader
-
-Direct HTTP access to the mill's board API. Disabled by default.
-
-| JSON key                    | Type              | Default                   | Description                                         |
-| --------------------------- | ----------------- | ------------------------- | --------------------------------------------------- |
-| `board_reader.enabled`      | `boolean`         | `false`                   | Master switch.                                      |
-| `board_reader.api_base_url` | `string`          | `"http://127.0.0.1:8077"` | Base URL of the board HTTP API (no trailing slash). |
-| `board_reader.api_token`    | `string` (secret) | `""`                      | Optional bearer token for the board API.            |
-| `board_reader.cache_ttl`    | `number`          | `60.0`                    | Seconds to cache board API responses.               |
-
 ### Knowledge
 
 Writable agent knowledge base — a plain JSON file on disk. Enabled by default.
@@ -204,11 +201,11 @@ by default.
 
 ### Component Client
 
-Direct HTTP client for sending component requests. Disabled by default.
+HTTP client for inspecting and configuring remote component agents. Disabled by default.
 
 | JSON key                      | Type            | Default | Description                                                                             |
 | ----------------------------- | --------------- | ------- | --------------------------------------------------------------------------------------- |
-| `component_client.enabled`    | `boolean`       | `false` | Master switch.                                                                          |
+| `component_client.enabled`    | `boolean`       | `false` | Master switch.                                             |
 | `component_client.timeout`    | `number`        | `240.0` | Per-request HTTP timeout (seconds).                                                     |
 | `component_client.components` | `array[object]` | `[]`    | List of component targets, each with `base_url` (string) and optional `label` (string). |
 
