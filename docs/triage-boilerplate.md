@@ -6,13 +6,14 @@ Standard boilerplate responses for scope-triage decisions during the `draft → 
 
 **Boilerplate:**
 
-```
+```text
 scope-triage EXPAND: The CHANGELOG.md update is legitimate accompanying documentation that records the change made in the ticket. Keeping the changelog in sync with the work performed is not scope creep.
 ```
 
 ### When to apply
 
-Apply this boilerplate during the `draft → ready` transition when the implement agent determines that a changelog entry is required. Common triggers:
+Apply this boilerplate during the `draft → ready` transition when the implement agent determines
+that a changelog entry is required. Common triggers:
 
 - Any user-facing change (feature, bugfix, behavior change)
 - Internal refactoring that affects public API or config surface
@@ -23,7 +24,8 @@ Apply this boilerplate during the `draft → ready` transition when the implemen
 
 Do NOT apply when:
 
-- The change is purely internal with zero user/operator impact (e.g., test-only changes, comment fixes)
+- The change is purely internal with zero user/operator impact (e.g., test-only changes, comment
+  fixes)
 - The changelog is already up-to-date from a prior ticket in the same batch
 - The change is a revert of an unreleased change (roll forward, don't double-log)
 
@@ -34,4 +36,5 @@ Do NOT apply when:
 
 ### Observed frequency
 
-Appears on most non-trivial tickets (estimated 60-70% of tickets examined). The exact phrasing above is used verbatim across multiple tickets.
+Appears on most non-trivial tickets (estimated 60-70% of tickets examined). The exact phrasing above
+is used verbatim across multiple tickets.
