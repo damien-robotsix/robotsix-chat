@@ -40,7 +40,9 @@ class TestConfigureLogging:
             lgr.propagate = False
 
     def test_json_format_uses_json_renderer(self) -> None:
-        """When ``log_json_format=True``, the formatter uses JSONRenderer."""
+        """When ``log_json_format=True``, the formatter produces JSON output."""
+        import json
+
         settings = Settings(log_json_format=True, log_level="DEBUG")
         _configure_logging(settings)
 
@@ -52,17 +54,18 @@ class TestConfigureLogging:
         formatter = handler.formatter
         assert formatter is not None
 
-        # The ProcessorFormatter's processor should be a JSONRenderer.
-        from structlog.processors import JSONRenderer
-
-        # structlog >= 25.0.0 renamed 'processor' to '_formatter'.
-        processor = getattr(formatter, "processor", None) or getattr(
-            formatter, "_formatter", None
+        # Verify by formatting a record: should be valid JSON.
+        record = logging.LogRecord(
+            "test", logging.INFO, "", 0, "hello", (), None
         )
-        assert isinstance(processor, JSONRenderer)
+        formatted = formatter.format(record)
+        data = json.loads(formatted)
+        assert data["event"] == "hello"
 
     def test_no_json_format_uses_console_renderer(self) -> None:
-        """When ``log_json_format=False``, the formatter uses ConsoleRenderer."""
+        """When ``log_json_format=False``, the output is human-readable."""
+        import json
+
         settings = Settings(log_json_format=False, log_level="INFO")
         _configure_logging(settings)
 
@@ -71,13 +74,14 @@ class TestConfigureLogging:
         assert len(root.handlers) == 1
         formatter = root.handlers[0].formatter
 
-        from structlog.dev import ConsoleRenderer
-
-        # structlog >= 25.0.0 renamed 'processor' to '_formatter'.
-        processor = getattr(formatter, "processor", None) or getattr(
-            formatter, "_formatter", None
+        # Console output contains the message and is NOT valid JSON.
+        record = logging.LogRecord(
+            "test", logging.INFO, "", 0, "hello", (), None
         )
-        assert isinstance(processor, ConsoleRenderer)
+        formatted = formatter.format(record)
+        assert "hello" in formatted
+        with pytest.raises(json.JSONDecodeError):
+            json.loads(formatted)
 
     def test_uvicorn_loggers_propagate(self) -> None:
         """Uvicorn loggers have their handlers cleared and propagate=True."""
@@ -106,11 +110,14 @@ class TestConfigureLogging:
         _configure_logging(settings)
 
         formatter = logging.getLogger().handlers[0].formatter
-        # structlog < 25.0.0: foreign_pre_chain; >= 25.0.0: processors.
-        chain = getattr(formatter, "foreign_pre_chain", None) or getattr(
-            formatter, "processors", None
+        # structlog < 25.0.0: foreign_pre_chain; >= 25.0.0: _foreign_pre_chain
+        # (or processors when neither is available).
+        chain = (
+            getattr(formatter, "foreign_pre_chain", None)
+            or getattr(formatter, "_foreign_pre_chain", None)
+            or getattr(formatter, "processors", None)
         )
-        assert isinstance(chain, list)
+        assert isinstance(chain, (list, tuple))
         assert len(chain) > 0
 
 
@@ -191,14 +198,16 @@ class TestRunServer:
 
         with (
             patch("robotsix_chat.chat.server.cli.create_app") as mock_create,
-            patch("robotsix_chat.chat.server.cli.uvicorn") as mock_uvicorn,
+            patch("uvicorn.run") as mock_uvicorn_run,
         ):
             mock_app = MagicMock()
             mock_create.return_value = mock_app
 
             run_server(agent)
 
-        mock_uvicorn.run.assert_called_once_with(mock_app, host="0.0.0.0", port=8000)
+        mock_uvicorn_run.assert_called_once_with(
+            mock_app, host="0.0.0.0", port=8000
+        )
 
     def test_calls_uvicorn_with_custom_host_and_port(self) -> None:
         """``run_server`` forwards custom ``host`` and ``port``."""
@@ -206,14 +215,16 @@ class TestRunServer:
 
         with (
             patch("robotsix_chat.chat.server.cli.create_app") as mock_create,
-            patch("robotsix_chat.chat.server.cli.uvicorn") as mock_uvicorn,
+            patch("uvicorn.run") as mock_uvicorn_run,
         ):
             mock_app = MagicMock()
             mock_create.return_value = mock_app
 
             run_server(agent, host="127.0.0.1", port=9999)
 
-        mock_uvicorn.run.assert_called_once_with(mock_app, host="127.0.0.1", port=9999)
+        mock_uvicorn_run.assert_called_once_with(
+            mock_app, host="127.0.0.1", port=9999
+        )
 
     def test_forwards_all_kwargs_to_create_app(self) -> None:
         """``run_server`` passes every kwarg through to ``create_app``."""
@@ -227,7 +238,7 @@ class TestRunServer:
 
         with (
             patch("robotsix_chat.chat.server.cli.create_app") as mock_create,
-            patch("robotsix_chat.chat.server.cli.uvicorn"),
+            patch("uvicorn.run"),
         ):
             mock_create.return_value = MagicMock()
 
