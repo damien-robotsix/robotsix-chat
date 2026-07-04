@@ -1,5 +1,13 @@
 ## 0.0.0 (unreleased)
 
+- Removed broker-related subsystem documentation from `docs/configuration.md` (Mill, Calendar,
+  Component Agent, Skills) and updated Component Client description to reflect direct HTTP
+  transport.
+- Complete the broker-removal cleanup: fix broken `_mill_cache` import in `agent.py` (deleted
+  `mill/` package), bump system prompt v15→v16 (remove `consult_mill` references, delete
+  calendar/task tools section), and purge stale broker references from `AGENT.md`,
+  `docs/configuration.md`, `docs/modules.yaml`, `docs/user-guide/deployment.md`, and
+  `docs/system_prompt_changelog.md`.
 - Replace hand-rolled `.github/workflows/lint-workflows.yml` with thin delegation wrapper calling
   `damien-robotsix/robotsix-github-workflows/.github/workflows/lint-workflows.yml` (shared
   reusable). Enables `run-actionlint`, `run-zizmor`, and `sarif-workflows` inputs.
@@ -9,6 +17,12 @@
   with ops cutover table added.
 - Document the deterministic-source auto-approve fast-path triage boilerplate in the
   `triage_boilerplate` periodic workflow marker.
+- Remove the deprecated robotsix-agent-comm broker integration: delete `broker_client.py`, the
+  `mill/`, `calendar/`, `component_agent/`, and `skills/` packages, the `broker` extra from
+  `pyproject.toml`, and all associated config models (`MillSettings`, `CalendarSettings`,
+  `ComponentAgentSettings`, `SkillsSettings`), env builders, and broker-credential validation from
+  `Settings`. The broker is deprecated fleet-wide; its role will be re-absorbed into central-deploy
+  management in a future ticket.
 - Enable triage_boilerplate periodic workflow for automated triage boilerplate response templates.
 - Extract `_fetch_json(repo, path, action)` private helper in `RefDocsClient` to deduplicate the
   allowlist-check + URL-build + fetch preamble shared by `read_file` and `list_files`.

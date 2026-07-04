@@ -21,7 +21,6 @@ from starlette.routing import Route
 
 from robotsix_chat import PROJECT_TITLE
 from robotsix_chat.board import build_board_reader_tools
-from robotsix_chat.calendar import build_calendar_tools
 from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus
 from robotsix_chat.component_client import build_component_tools
@@ -32,10 +31,8 @@ from robotsix_chat.knowledge import build_knowledge_tools
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.mail import build_mail_tools
 from robotsix_chat.memory import build_memory
-from robotsix_chat.mill import build_mill_tools
 from robotsix_chat.refdocs import build_refdocs_tools
 from robotsix_chat.selfreview import build_recent_activity_tools
-from robotsix_chat.skills import build_skill_tools
 from robotsix_chat.version_check import build_version_check_tools
 
 from .idempotency import MessageIdempotencyStore
@@ -312,7 +309,7 @@ def create_agent_from_settings(
     it is taken from ``settings.agent_instruction``.
 
     Long-term memory is attached when ``settings.memory.enabled`` is set;
-    every feature tool suite (mill, mail, calendar, board reader, …) is
+    every feature tool suite (mail, board reader, …) is
     attached according to its own settings gate — for the main agent and
     subsession agents alike.
 
@@ -343,9 +340,7 @@ def create_agent_from_settings(
         else ""
     )
     tools: list[Any] = [
-        *build_mill_tools(settings.mill),
         *build_mail_tools(settings.mail),
-        *build_calendar_tools(settings.calendar),
         *build_component_tools(settings.component_client),
         *build_refdocs_tools(settings.refdocs),
         *build_board_reader_tools(settings.board_reader),
@@ -354,11 +349,6 @@ def create_agent_from_settings(
         *build_diagnostics_tools(settings.diagnostics),
         *build_recent_activity_tools(settings.self_review, conversation_store),
         *build_version_check_tools(settings.version_check),
-        *(
-            build_skill_tools(settings.skills.manifests_dir)
-            if settings.skills.enabled
-            else []
-        ),
     ]
     if tool_wrapper is not None:
         tools = tool_wrapper(tools)

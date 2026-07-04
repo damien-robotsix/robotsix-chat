@@ -30,7 +30,7 @@ RUN apt-get update \
 
 # Export the locked dependency set (claude-sdk for the LLM transport + tracing
 # for Langfuse observability + memory for cognee + broker for agent-comm).
-RUN uv export --frozen --no-emit-project --no-hashes --extra claude-sdk --extra tracing --extra memory --extra broker > requirements.txt
+RUN uv export --frozen --no-emit-project --no-hashes --extra claude-sdk --extra tracing --extra memory > requirements.txt
 
 # ---------------------------------------------------------------------------
 # Runtime stage: install locked deps + project into the system Python, then

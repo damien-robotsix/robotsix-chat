@@ -2748,11 +2748,6 @@ wheels = [
 ]
 
 [[package]]
-name = "robotsix-agent-comm"
-version = "0.1.0"
-source = { git = "https://github.com/damien-robotsix/robotsix-agent-comm.git?rev=555e22eef1a3083d6735083f01313e67fa1187ca#555e22eef1a3083d6735083f01313e67fa1187ca" }
-
-[[package]]
 name = "robotsix-board-agent"
 version = "0.1.0"
 source = { git = "https://github.com/damien-robotsix/robotsix-board-agent.git?rev=ec89dc44d8a462e1d0d2a5748fcc1819d0770d03#ec89dc44d8a462e1d0d2a5748fcc1819d0770d03" }
@@ -2780,9 +2775,6 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
-broker = [
-    { name = "robotsix-agent-comm" },
-]
 claude-sdk = [
     { name = "robotsix-llmio", extra = ["claude-sdk"] },
 ]
@@ -2824,7 +2816,6 @@ requires-dist = [
     { name = "pydantic" },
     { name = "pyjwt" },
     { name = "pyyaml" },
-    { name = "robotsix-agent-comm", marker = "extra == 'broker'", git = "https://github.com/damien-robotsix/robotsix-agent-comm.git?rev=555e22eef1a3083d6735083f01313e67fa1187ca" },
     { name = "robotsix-board-agent", git = "https://github.com/damien-robotsix/robotsix-board-agent.git?rev=ec89dc44d8a462e1d0d2a5748fcc1819d0770d03" },
     { name = "robotsix-config", git = "https://github.com/damien-robotsix/robotsix-config.git?rev=424f8ec" },
     { name = "robotsix-llmio" },
@@ -2835,7 +2826,7 @@ requires-dist = [
     { name = "transformers", marker = "extra == 'memory'" },
     { name = "uvicorn" },
 ]
-provides-extras = ["claude-sdk", "openrouter", "tracing", "memory", "broker"]
+provides-extras = ["claude-sdk", "openrouter", "tracing", "memory"]
 
 [package.metadata.requires-dev]
 dev = [

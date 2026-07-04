@@ -140,46 +140,6 @@ class VersionCheckSettings(BaseModel):
     cache_ttl: float = 300.0
 
 
-class MillSettings(BaseModel):
-    """robotsix-mill integration over the agent-comm broker. Disabled by default.
-
-    When enabled, the chat agent gains a tool that forwards natural-language
-    requests to the mill's board manager (``board-manager-robotsix-mill``) over
-    the broker and relays its reply — so a user can have the mill track/do
-    development work from chat. Mirrors the cost-analyst → board pattern.
-
-    Attributes:
-        enabled: Master switch. Requires the ``broker`` extra (robotsix-agent-comm).
-        broker_host: Broker hostname (the shared agent-comm broker).
-        broker_port: Broker port (443 for the public TLS endpoint).
-        broker_scheme: ``https`` (TLS) or ``http``.
-        broker_token: This agent's bearer token, registered on the broker.
-            Required when enabled.
-        agent_id: This agent's id on the broker.
-        board_manager_id: Recipient agent id — the mill's NL board manager.
-        repo_id: Optional repo to scope requests to; empty lets the board manager
-            choose the target repo from the conversation.
-        timeout: Per-request timeout (seconds). The board manager is a
-            multi-turn LLM agent that legitimately takes tens of seconds — and
-            longer when its replies queue behind other mill work — so this is
-            deliberately generous. A fast pre-flight reachability check (see
-            ``BaseBrokeredClient``) fails in seconds when the broker/recipient
-            is actually unreachable, so this long timeout only governs a
-            reachable-but-slow board manager.
-
-    """
-
-    enabled: bool = False
-    broker_host: str = "ai-broker.robotsix.net"
-    broker_port: int = 443
-    broker_scheme: str = "https"
-    broker_token: SecretStr = SecretStr("")
-    agent_id: str = "robotsix-chat"
-    board_manager_id: str = "board-manager-robotsix-mill"
-    repo_id: str = ""
-    timeout: float = 600.0  # 10 min — synthesis legitimately exceeds 5 min
-
-
 class MailSettings(BaseModel):
     """Direct HTTP access to the auto-mail board server. Disabled by default.
 
@@ -277,31 +237,6 @@ class DiagnosticsSettings(BaseModel):
     observation_window_days: int = 30
 
 
-class SkillsSettings(BaseModel):
-    """Skill/capability loading from declarative YAML manifests.
-
-    When enabled, the chat agent discovers broker capabilities from
-    ``*.skill.yaml`` files under *manifests_dir* and surfaces each
-    capability as an LLM-callable tool — replacing the hardcoded
-    ``build_*_tools()`` pattern.
-
-    Each manifest declares a broker's capabilities with structured
-    parameter schemas and per-capability scoping, so the assistant gets
-    only the specific functions a broker exposes — not a generic
-    "send arbitrary message to agent" passthrough.
-
-    Attributes:
-        enabled: Master switch.  When ``False``, no skill-based tools
-            are attached (even if manifests exist).
-        manifests_dir: Directory containing ``*.skill.yaml`` files.
-            Default ``config/skills/`` relative to the working directory.
-
-    """
-
-    enabled: bool = False
-    manifests_dir: str = "config/skills"
-
-
 class DirectRepoSettings(BaseModel):
     """Direct-repo push-branch + open-PR capability as the robotsix-mill GitHub App.
 
@@ -394,81 +329,6 @@ class SelfReviewSettings(BaseModel):
 
     enabled: bool = False
     recent_activity_limit: int = 20
-
-
-class CalendarSettings(BaseModel):
-    """Calendar/tasks integration over the agent-comm broker. Disabled by default.
-
-    When enabled, the chat agent gains tools that forward natural-language
-    calendar and task requests to ``robotsix-calendar-agent`` over the broker
-    and relay its reply — so a user can query their schedule, create/update
-    events, and manage to-dos from chat. Mirrors the mill→board pattern.
-
-    Both calendar and task requests route to the same recipient
-    (``calendar_agent_id``) under the assumption that a single calendar agent
-    handles CalDAV events (``VEVENT``) and to-dos (``VTODO``). If a separate
-    tasks recipient is needed later, add a ``tasks_agent_id`` field and pass it
-    from the task tools.
-
-    Attributes:
-        enabled: Master switch. Requires the ``broker`` extra (robotsix-agent-comm).
-        broker_host: Broker hostname (the shared agent-comm broker).
-        broker_port: Broker port (443 for the public TLS endpoint).
-        broker_scheme: ``https`` (TLS) or ``http``.
-        broker_token: This agent's bearer token, registered on the broker.
-            Required when enabled.
-        agent_id: This agent's id on the broker.
-        calendar_agent_id: Recipient agent id — the calendar/tasks agent.
-        timeout: Per-request timeout (seconds); generous, the recipient is an LLM.
-        cache_ttl: How long to cache query results (seconds).  Query calls
-            (``query_calendar``, ``query_tasks``) within this window return
-            the cached result without a broker round-trip.  Manage calls
-            (``manage_calendar``, ``manage_tasks``) invalidate the cache
-            for their domain.
-
-    """
-
-    enabled: bool = False
-    broker_host: str = "ai-broker.robotsix.net"
-    broker_port: int = 443
-    broker_scheme: str = "https"
-    broker_token: SecretStr = SecretStr("")
-    agent_id: str = "robotsix-chat"
-    calendar_agent_id: str = "robotsix-calendar"
-    timeout: float = 240.0
-    cache_ttl: float = 60.0
-
-
-class ComponentAgentSettings(BaseModel):
-    """Component agent responder settings. Disabled by default.
-
-    When enabled, robotsix-chat registers itself on the agent-comm broker
-    as a discoverable component agent, serving ``monitor``, ``config-get``,
-    and ``config-set`` request kinds so external callers can inspect live
-    runtime state and mutate configuration over the existing bearer-token
-    channel — no new side channel.
-
-    Attributes:
-        enabled: Master switch. Requires the ``broker`` extra (robotsix-agent-comm).
-        broker_host: Broker hostname (the shared agent-comm broker).
-        broker_port: Broker port (443 for the public TLS endpoint).
-        broker_scheme: ``https`` (TLS) or ``http``.
-        broker_token: This agent's bearer token, registered on the broker.
-            Required when enabled.
-        agent_id: This agent's id on the broker (the responder's identity).
-            Default ``robotsix-chat-component`` — distinct from the client ids
-            used by mill/calendar.
-        timeout: Per-request timeout (seconds).
-
-    """
-
-    enabled: bool = False
-    broker_host: str = "ai-broker.robotsix.net"
-    broker_port: int = 443
-    broker_scheme: str = "https"
-    broker_token: SecretStr = SecretStr("")
-    agent_id: str = "robotsix-chat-component"
-    timeout: float = 240.0
 
 
 class ComponentTarget(BaseModel):

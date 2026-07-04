@@ -16,8 +16,6 @@ from robotsix_llmio.config import TierLevel
 from robotsix_chat.config.constants import level_needs_api_key
 from robotsix_chat.config.models import (
     BoardSettings,
-    CalendarSettings,
-    ComponentAgentSettings,
     ComponentClientSettings,
     ConversationSettings,
     DiagnosticsSettings,
@@ -26,10 +24,8 @@ from robotsix_chat.config.models import (
     LangfuseSettings,
     MailSettings,
     MemorySettings,
-    MillSettings,
     RefDocsSettings,
     SelfReviewSettings,
-    SkillsSettings,
     SubsessionsSettings,
     VersionCheckSettings,
 )
@@ -39,7 +35,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 15
+SYSTEM_PROMPT_VERSION = 16
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -136,7 +132,7 @@ class Settings(BaseModel):
         "for its own sake. Check list_subsessions before spawning to "
         "avoid duplicating running work.\n"
         "\n"
-        "Board/mill rules:\n"
+        "Board rules:\n"
         "– To READ board/ticket state, always use list_board_tickets or "
         "read_board_ticket — these call the SAME HTTP endpoint the user's "
         "browser UI consumes, so you see exactly what the user sees.  "
@@ -144,12 +140,8 @@ class Settings(BaseModel):
         "the board reader tools first. This applies inside subsessions "
         "too: a periodic subsession monitoring board/ticket status must "
         "re-read the board every run before reporting.\n"
-        "– For complex WRITE operations (migrate tickets between repos, "
-        "transition ticket state, triage that requires board-manager "
-        "intelligence), use consult_mill — the broker-based board manager "
-        "handles these. For simple ticket creation, use create_board_ticket "
-        "— it is faster, uses fewer tokens, and includes built-in duplicate "
-        "detection.\n"
+        "– Use create_board_ticket for ticket creation — it includes "
+        "built-in duplicate detection.\n"
         "– Prefer doing board work inline. If you do hand board work to a "
         "subsession, its instructions MUST require verifying the result "
         "with list_board_tickets before reporting success.\n"
@@ -159,21 +151,10 @@ class Settings(BaseModel):
         "create_board_ticket does this for you automatically and will warn "
         "if a similar ticket exists — act on that warning.\n"
         "– After creating a ticket, verify it landed on "
-        "the correct board with list_board_tickets. The board manager "
-        "(consult_mill) may route tickets to robotsix-mill by default; "
-        "if misplaced, request a migration to the correct board "
-        "(e.g. robotsix-chat) — also inline via consult_mill.\n"
+        "the correct board with list_board_tickets.\n"
         "– Never offer to manually promote a ticket from draft to ready. "
         "The draft→ready transition is automatic (auto-pickup); the system "
         "picks up tickets on its own once they leave draft.\n"
-        "\n"
-        "Calendar/task tools:\n"
-        "– query_calendar, manage_calendar, query_tasks, and manage_tasks "
-        "are available for calendar and task management through the "
-        "configured calendar agent. They may be disabled in deployments "
-        "that lack a calendar integration. Never propose building a new "
-        "calendar integration — if these tools are unavailable, briefly "
-        "note it rather than suggesting alternatives.\n"
         "\n"
         "Autonomy:\n"
         "– Proactively perform actions that are clearly safe and reversible "
@@ -217,47 +198,24 @@ class Settings(BaseModel):
     correlation_id_header: str = "X-Request-ID"
     langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
-    mill: MillSettings = Field(default_factory=MillSettings)
     mail: MailSettings = Field(default_factory=MailSettings)
-    calendar: CalendarSettings = Field(default_factory=CalendarSettings)
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)
     diagnostics: DiagnosticsSettings = Field(default_factory=DiagnosticsSettings)
     refdocs: RefDocsSettings = Field(default_factory=RefDocsSettings)
     board_reader: BoardSettings = Field(default_factory=BoardSettings)
     knowledge: KnowledgeSettings = Field(default_factory=KnowledgeSettings)
     self_review: SelfReviewSettings = Field(default_factory=SelfReviewSettings)
-    component_agent: ComponentAgentSettings = Field(
-        default_factory=ComponentAgentSettings
-    )
     version_check: VersionCheckSettings = Field(default_factory=VersionCheckSettings)
     component_client: ComponentClientSettings = Field(
         default_factory=ComponentClientSettings
     )
     subsessions: SubsessionsSettings = Field(default_factory=SubsessionsSettings)
     direct_repo: DirectRepoSettings = Field(default_factory=DirectRepoSettings)
-    skills: SkillsSettings = Field(default_factory=SkillsSettings)
     max_images_per_message: int = 8
     max_image_bytes: int = 5_242_880
     allowed_image_media_types: list[str] = Field(
         default_factory=lambda: ["image/png", "image/jpeg", "image/gif", "image/webp"]
     )
-
-    @staticmethod
-    def _require_broker_creds(subsystem: Any, name: str) -> None:
-        """Validate broker_token and broker_host for *subsystem* when enabled.
-
-        *subsystem* must have ``broker_token`` and ``broker_host`` attrs.
-        """
-        if not subsystem.broker_token.get_secret_value():
-            raise ValueError(
-                f"{name}.broker_token must be set when {name} is enabled — "
-                f"provide it via the `{name}.broker_token` config field"
-            )
-        if not subsystem.broker_host:
-            raise ValueError(
-                f"{name}.broker_host must be set when {name} is enabled — "
-                f"provide it via the config file"
-            )
 
     @staticmethod
     def _require_min(value: float | int, min_val: float | int, name: str) -> None:
@@ -318,14 +276,6 @@ class Settings(BaseModel):
             1,
             "subsessions.auto_stop_no_change_runs",
         )
-        if self.mill.enabled:
-            self._require_broker_creds(self.mill, "mill")
-        # mail has no required fields beyond `enabled` — api_base_url and
-        # api_token both have safe defaults for localhost operation.
-        if self.calendar.enabled:
-            self._require_broker_creds(self.calendar, "calendar")
-        if self.component_agent.enabled:
-            self._require_broker_creds(self.component_agent, "component_agent")
         # component_client has no required fields beyond `enabled` —
         # an empty components list just means no agents are reachable,
         # and the list_component_agents tool returns a helpful message.

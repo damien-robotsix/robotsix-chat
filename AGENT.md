@@ -146,35 +146,9 @@ Config keys: `memory.enabled`, `memory.data_dir`, `memory.recall_search_type`,
 `memory.embedding.{provider,model,endpoint,dimensions,api_key,huggingface_tokenizer}` — see
 `config/config.example.json` for defaults.
 
-## Mill integration (agent-comm broker)
-
-When `mill.enabled` is set, the chat agent gains a **tool** (`consult_mill`) that the LLM calls to
-forward a natural-language request to the robotsix-mill **board manager**
-(`board-manager-robotsix-mill`) over the shared **agent-comm broker**, and relays its reply — so a
-user can have the mill track/do development work (create/triage tickets, ask status) from chat.
-Disabled by default; no tools are added when off or when the `broker` extra is absent.
-
-- **Pattern**: mirrors `robotsix-cost-monitor`'s cost-analyst → board flow — a per-call pull/mailbox
-  `robotsix_agent_comm.sdk.agent.Agent` + `create_transport_pair("brokered", …)`, sending
-  `{"message": <NL>}` (plus optional `repo_id`) to the board manager. The blocking call is offloaded
-  with `asyncio.to_thread`; failures degrade to a message the LLM relays (never raise).
-- **Tool wiring**: `build_mill_tools(settings.mill)` returns the async `consult_mill` callable;
-  `create_agent_from_settings` passes it as `LlmioChatAgent(tools=…)` →
-  `provider.build_agent(tools=…)`. The claude-sdk transport runs a real tool loop (in-SDK MCP); the
-  final reply is still one block.
-- **Broker auth**: the agent authenticates with a bearer token (`mill.broker_token`) registered on
-  the broker under its `agent_id` (`robotsix-chat`). The board manager decides the target repo
-  unless `repo_id` is set. Broker is public TLS at `ai-broker.robotsix.net:443` (no custom CA).
-- **Config keys**:
-  `mill.{enabled,broker_host,broker_port,broker_scheme,broker_token,agent_id,board_manager_id,repo_id,timeout}`
-  — see `config/config.example.json` for defaults.
-
 ## Submodule layout
 
-- **`broker_src/`** — vendors the `robotsix-agent-comm` repository (the agent-comm broker's source
-  code). Changes to the broker itself — new routes, protocol changes, the monitoring UI — must be
-  developed in the `damien-robotsix/robotsix-agent-comm` repo and pinned here as a submodule commit
-  update. Do not develop broker features directly inside `broker_src/` within this repo.
+(This repo has no active submodules.)
 
 ## Key file map
 
@@ -189,8 +163,6 @@ Disabled by default; no tools are added when off or when the `broker` extra is a
   `Settings.load()`); includes `MemorySettings`
 - `src/robotsix_chat/memory/` — optional long-term memory: `base.py` (`ChatMemory` protocol +
   `NullMemory`), `cognee.py` (`CogneeMemory`), `__init__.py` (`build_memory()`)
-- `src/robotsix_chat/mill/` — optional mill-via-broker tool: `client.py` (`MillClient` —
-  cost-analyst pattern), `__init__.py` (`build_mill_tools()`)
 - `src/robotsix_chat/chat/server.py` — Starlette ASGI app; `GET /`, `POST /chat`, `GET /health`
 - `.github/workflows/release-image.yml` — GHCR publish workflow (triggers on `main` push, `v*` tag,
   manual dispatch)
@@ -213,12 +185,6 @@ Add a trailing version comment for readability (e.g. `# v0.2.0` or `# main`).
 Tests for module `robotsix_chat.<module>` live under `tests/<module>/`, mirroring the per-module
 source layout (e.g. `tests/chat/` for `robotsix_chat.chat`, `tests/config/` for
 `robotsix_chat.config`). Do not place tests directly in the `tests/` root.
-
-**Rule:** When testing a module that lazy-imports `robotsix_agent_comm`, both monkeypatch
-`importlib.util.find_spec` AND populate `sys.modules` with a fake module stub. Use the
-`_install_fake_agent_comm(monkeypatch)` helper from `tests/conftest.py` rather than only patching
-`find_spec` — the lazy `from robotsix_agent_comm.sdk import BrokeredRequester` import resolves at
-class-construction time through `sys.modules`, not through `find_spec`.
 
 **Rule:** When a `ChatAgent` protocol parameter is added or changed, update ALL mock classes that
 implement the protocol (`_MockAgent`, `MockAgent`, and any other test-local mocks) in the same PR.
