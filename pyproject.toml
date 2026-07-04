@@ -16,6 +16,7 @@ dependencies = [
     "pydantic",
     "pyjwt",
     "pyyaml",
+    "structlog>=24.0.0",
     "uvicorn",
     "starlette",
     # Shared robotsix-stack libraries, consumed via git (see [tool.uv.sources]):
