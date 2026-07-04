@@ -334,39 +334,3 @@ async def test_network_error_returns_diagnostic(
     result = await get_board()
 
     assert "timed out" in result
-
-
-# ---------------------------------------------------------------------------
-# No robotsix_agent_comm import in mail module
-# ---------------------------------------------------------------------------
-
-
-def test_no_broker_import_in_mail_module() -> None:
-    """The mail module must not import robotsix_agent_comm."""
-    import ast
-    import os
-
-    mail_dir = os.path.join(
-        os.path.dirname(__file__), "..", "..", "src", "robotsix_chat", "mail"
-    )
-    for fname in os.listdir(mail_dir):
-        if not fname.endswith(".py"):
-            continue
-        fpath = os.path.join(mail_dir, fname)
-        with open(fpath) as f:
-            try:
-                tree = ast.parse(f.read())
-            except SyntaxError:
-                continue
-        for node in ast.walk(tree):
-            if isinstance(node, (ast.Import, ast.ImportFrom)):
-                module = (
-                    node.module
-                    if isinstance(node, ast.ImportFrom)
-                    else (node.names[0].name if node.names else "")
-                )
-                if module and "robotsix_agent_comm" in module:
-                    pytest.fail(
-                        f"{fname} imports robotsix_agent_comm — "
-                        f"mail must not depend on the broker"
-                    )

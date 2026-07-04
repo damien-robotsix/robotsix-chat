@@ -9,6 +9,12 @@
   with ops cutover table added.
 - Document the deterministic-source auto-approve fast-path triage boilerplate in the
   `triage_boilerplate` periodic workflow marker.
+- Remove the deprecated robotsix-agent-comm broker integration: delete `broker_client.py`,
+  the `mill/`, `calendar/`, `component_agent/`, and `skills/` packages, the `broker`
+  extra from `pyproject.toml`, and all associated config models (`MillSettings`,
+  `CalendarSettings`, `ComponentAgentSettings`, `SkillsSettings`), env builders,
+  and broker-credential validation from `Settings`. The broker is deprecated fleet-wide;
+  its role will be re-absorbed into central-deploy management in a future ticket.
 - Enable triage_boilerplate periodic workflow for automated triage boilerplate response templates.
 - Extract `_fetch_json(repo, path, action)` private helper in `RefDocsClient` to deduplicate the
   allowlist-check + URL-build + fetch preamble shared by `read_file` and `list_files`.

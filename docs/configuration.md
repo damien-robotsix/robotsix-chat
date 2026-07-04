@@ -11,6 +11,7 @@ The JSON file lives at **`config/config.json`** by default. Its path is set by t
 
 **Getting started:**
 
+
 ```bash
 cp config/config.example.json config/config.json
 # Edit config/config.json — fill in secrets for the features you enable.

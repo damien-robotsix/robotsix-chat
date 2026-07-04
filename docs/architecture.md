@@ -17,29 +17,14 @@ single-page browser UI.
 │                 robotsix-chat                        │
 │  ┌─────────┐  ┌──────────┐  ┌────────────────────┐  │
 │  │  Auth   │  │  Routes  │  │  Agent + Tools     │  │
-│  │ (Basic) │  │  (SSE)   │  │  (llmio, mill,     │  │
-│  │         │  │          │  │   calendar, mail,   │  │
-│  │         │  │          │  │   memory, …)        │  │
+│  │ (Basic) │  │  (SSE)   │  │  (llmio, mail,    │  │
+│  │         │  │          │  │   memory, …)       │  │
 │  └─────────┘  └──────────┘  └─────────┬──────────┘  │
 │                                       │              │
-│                     ┌─────────────────┼──────────┐   │
-│                     │  Agent-Comm Broker          │   │
-│                     │  (robotsix-agent-comm)      │   │
-│                     └─────────┬───────────────────┘   │
-└───────────────────────────────┼───────────────────────┘
-                                │
-             ┌──────────────────┼──────────────────┐
-             ▼                  ▼                  ▼
-     ┌──────────────┐  ┌──────────────┐  ┌──────────────┐
-     │ robotsix-mill│  │robotsix-cal- │  │   robotsix-  │
-     │ (board mgr)  │  │  endar       │  │  cost-monitor│
-     └──────────────┘  └──────────────┘  └──────────────┘
+└───────────────────────────────────────┼──────────────┘
 ```
 
-The agent reaches other fleet services (mill, calendar, cost monitor) through the **agent-comm
-broker** (`robotsix-agent-comm`) — a shared message bus that routes JSON requests between agents.
-Tools like `consult_mill`, `query_calendar`, and `component_client` all use this broker. Some tools
-(`board_reader`, `knowledge`) are self-contained and operate locally.
+Some tools (`board_reader`, `knowledge`) are self-contained and operate locally.
 
 The LLM itself is driven through `robotsix-llmio`, which abstracts the provider behind a
 `model_level` (1–4). The agent never calls a provider directly. Background work runs in
@@ -77,12 +62,6 @@ uv run robotsix-chat
   │      board_reader, selfreview, version_check, component_client
   │
   ├─ 6.  _resume()
-  │      Resume persisted periodic subsessions (lifecycle hook)
-  │
-  ├─ 7.  (Optional) Start ComponentAgentResponder
-  │      Broker listener for incoming agent-to-agent messages
-  │
-  └─ 8.  run_server() → create_app() → uvicorn.run(app, host, port)
          ├─ Creates Starlette app
          ├─ Registers routes + middleware
          └─ Stores singletons in app.state
@@ -163,21 +142,13 @@ Each subpackage lives under `src/robotsix_chat/`.
 
 | Package                 | Role                                                                                                                                                   |
 | ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **`mill/`**             | `consult_mill` tool — forwards natural-language requests to the robotsix-mill board manager over the agent-comm broker. Disabled by default.           |
-| **`calendar/`**         | `query_calendar` and `manage_calendar` tools — broker-based calendar and task operations via `robotsix-calendar`.                                      |
 | **`mail/`**             | Email read/compose/send tools.                                                                                                                         |
-| **`board_reader/`**     | `list_board_tickets` and `read_board_ticket` — read-only board access via the same HTTP API the browser UI uses. Independent of the broker-based mill. |
+| **`board_reader/`**     | `list_board_tickets` and `read_board_ticket` — read-only board access via the same HTTP API the browser UI uses.                                      |
 | **`knowledge/`**        | Durable knowledge-note tools (`add`/`append`/`update`/`list`/`read`). Process-local, no external dependency.                                           |
 | **`refdocs/`**          | `read_refdocs` tool — fetches documentation from allowlisted GitHub repositories.                                                                      |
 | **`selfreview/`**       | `read_recent_activity` tool — the agent can inspect its own conversation history to stay aware of context.                                             |
 | **`version_check/`**    | Tools to check for newer package versions.                                                                                                             |
-| **`component_client/`** | Tools to send messages to other robotsix agents over the broker.                                                                                       |
-
-### Agent-to-Agent Listener
-
-| Package                | Role                                                                                                                               |
-| ---------------------- | ---------------------------------------------------------------------------------------------------------------------------------- |
-| **`component_agent/`** | Broker-based responder that listens for incoming agent-to-agent messages. Disabled by default; gated on `component_agent.enabled`. |
+| **`component_client/`** | Tools to inspect and configure remote component agents over HTTP.                                                                                      |
 
 ### Memory
 
@@ -240,6 +211,11 @@ Two Docker Compose stacks:
 - **Root `docker-compose.yml`** — local development: builds from the multi-stage `Dockerfile`,
   mounts `config/chat.local.yaml` and `~/.claude` (for claudeSDK auth), binds port 8080.
 - **`deploy/docker-compose.yml`** — production: the central-deploy contract (pre-built GHCR image,
+  named volumes, env secret slots). Lifecycle, networking, and authentication are handled by
+  central-deploy and its gateway.
+
+See `docs/getting-started.md` for setup instructions.
+yml`** — production: the central-deploy contract (pre-built GHCR image,
   named volumes, env secret slots). Lifecycle, networking, and authentication are handled by
   central-deploy and its gateway.
 

@@ -9,8 +9,7 @@ import pytest
 from pydantic import SecretStr
 
 from robotsix_chat.config import (
-    CalendarSettings,
-    ComponentAgentSettings,
+    BoardSettings,
     ComponentClientSettings,
     ComponentTarget,
     DiagnosticsSettings,
@@ -18,7 +17,6 @@ from robotsix_chat.config import (
     MemoryEmbeddingSettings,
     MemoryLlmSettings,
     MemorySettings,
-    MillSettings,
     RefDocsSettings,
     SelfReviewSettings,
     Settings,
@@ -219,35 +217,6 @@ def test_memory_from_json_config(
 
 
 # ---------------------------------------------------------------------------
-# Mill (broker integration)
-# ---------------------------------------------------------------------------
-
-
-def test_mill_disabled_by_default() -> None:
-    """Mill integration is off by default, with broker defaults present."""
-    settings = Settings()
-
-    assert settings.mill.enabled is False
-    assert settings.mill.broker_host == "ai-broker.robotsix.net"
-    assert settings.mill.broker_port == 443
-    assert settings.mill.agent_id == "robotsix-chat"
-    assert settings.mill.board_manager_id == "board-manager-robotsix-mill"
-    assert settings.mill.repo_id == ""
-
-
-def test_mill_enabled_requires_token() -> None:
-    """Enabling the mill without a broker token is rejected."""
-    with pytest.raises(ValueError, match="mill.broker_token"):
-        Settings(mill=MillSettings(enabled=True))
-
-
-def test_mill_enabled_with_token_ok() -> None:
-    """The mill constructs once a broker token is present."""
-    settings = Settings(mill=MillSettings(enabled=True, broker_token=SecretStr("tok")))
-    assert settings.mill.enabled is True
-
-
-# ---------------------------------------------------------------------------
 # Conversation settings
 # ---------------------------------------------------------------------------
 
@@ -413,37 +382,6 @@ def test_mail_enabled_ok() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Calendar
-# ---------------------------------------------------------------------------
-
-
-def test_calendar_disabled_by_default() -> None:
-    """Calendar integration is off by default, with broker defaults."""
-    settings = Settings()
-    assert settings.calendar.enabled is False
-    assert settings.calendar.broker_host == "ai-broker.robotsix.net"
-    assert settings.calendar.broker_port == 443
-    assert settings.calendar.broker_token.get_secret_value() == ""
-    assert settings.calendar.calendar_agent_id == "robotsix-calendar"
-    assert settings.calendar.timeout == 240.0
-    assert settings.calendar.cache_ttl == 60.0
-
-
-def test_calendar_enabled_requires_token() -> None:
-    """Enabling calendar without a broker token is rejected."""
-    with pytest.raises(ValueError, match="calendar.broker_token"):
-        Settings(calendar=CalendarSettings(enabled=True))
-
-
-def test_calendar_enabled_with_token_ok() -> None:
-    """Calendar constructs once a broker token is present."""
-    settings = Settings(
-        calendar=CalendarSettings(enabled=True, broker_token=SecretStr("tok"))
-    )
-    assert settings.calendar.enabled is True
-
-
-# ---------------------------------------------------------------------------
 # Board reader
 # ---------------------------------------------------------------------------
 
@@ -546,38 +484,6 @@ def test_version_check_enabled_with_repo_ok() -> None:
         version_check=VersionCheckSettings(enabled=True, repo="robotsix/robotsix-chat")
     )
     assert settings.version_check.enabled is True
-
-
-# ---------------------------------------------------------------------------
-# Component agent (broker responder)
-# ---------------------------------------------------------------------------
-
-
-def test_component_agent_disabled_by_default() -> None:
-    """Component agent responder is off by default, with broker defaults."""
-    settings = Settings()
-    assert settings.component_agent.enabled is False
-    assert settings.component_agent.broker_host == "ai-broker.robotsix.net"
-    assert settings.component_agent.broker_port == 443
-    assert settings.component_agent.broker_scheme == "https"
-    assert settings.component_agent.agent_id == "robotsix-chat-component"
-    assert settings.component_agent.timeout == 240.0
-
-
-def test_component_agent_enabled_requires_token() -> None:
-    """Enabling component agent without a broker token is rejected."""
-    with pytest.raises(ValueError, match="component_agent.broker_token"):
-        Settings(component_agent=ComponentAgentSettings(enabled=True))
-
-
-def test_component_agent_enabled_with_token_ok() -> None:
-    """Component agent constructs once a broker token is present."""
-    settings = Settings(
-        component_agent=ComponentAgentSettings(
-            enabled=True, broker_token=SecretStr("tok")
-        )
-    )
-    assert settings.component_agent.enabled is True
 
 
 # ---------------------------------------------------------------------------

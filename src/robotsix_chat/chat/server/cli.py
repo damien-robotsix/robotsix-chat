@@ -8,7 +8,6 @@ app via ``create_app`` and starts uvicorn).
 
 from __future__ import annotations
 
-import importlib.util
 import logging
 import logging.config
 import os
@@ -240,42 +239,6 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         """Resume periodic subsessions; report interrupted one-shot work."""
         resume_subsessions(env)
 
-    # -- component-agent responder (disabled by default; gated on the -----
-    # -- optional broker extra) -------------------------------------------
-    async def _start_responder() -> None:
-        """Start the component-agent responder when enabled + broker present."""
-        if not settings.component_agent.enabled:
-            return
-        try:
-            found = importlib.util.find_spec("robotsix_agent_comm")
-        except ValueError, ModuleNotFoundError:
-            found = None
-        if not found:
-            logger.info(
-                "component_agent.enabled=True but the broker extra "
-                "(robotsix-agent-comm) is not installed — responder not started."
-            )
-            return
-        from robotsix_chat.component_agent.responder import (
-            ComponentAgentResponder,
-        )
-
-        _responder = ComponentAgentResponder(
-            settings,
-            subsession_registry=subsession_registry,
-            conversation_store=conversation_store,
-            event_bus=event_bus,
-        )
-        # Stash on the function so _stop_responder can reach it.
-        _start_responder._responder = _responder  # type: ignore[attr-defined]
-        await _responder.start()
-
-    async def _stop_responder() -> None:
-        """Stop the component-agent responder if it was started."""
-        responder = getattr(_start_responder, "_responder", None)
-        if responder is not None:
-            await responder.stop()
-
     _run_server(
         agent,
         host=settings.server_host,
@@ -292,6 +255,4 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         subsession_registry=subsession_registry,
         subsession_delivery=delivery,
         on_startup=_resume,
-        on_startup_async=_start_responder,
-        on_shutdown=_stop_responder,
     )

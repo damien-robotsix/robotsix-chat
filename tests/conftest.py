@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import sys
-import types
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
@@ -20,19 +19,6 @@ from httpx import ASGITransport, AsyncClient  # noqa: E402
 from starlette.applications import Starlette  # noqa: E402
 
 from robotsix_chat.chat.server import create_app  # noqa: E402
-
-# Re-export fake agent-comm helpers from their canonical home so
-# existing test modules that import from conftest continue to work.
-from tests.common.agent_comm_fakes import (  # noqa: E402, F401
-    _FakeBrokeredAgent,
-    _FakeError,
-    _FakeMetadata,
-    _FakeProtocolError,
-    _FakeRequest,
-    _FakeResponse,
-    _install_fake_agent_comm,
-    _Reply,
-)
 
 
 class MockAgent:
@@ -121,43 +107,3 @@ async def mock_app(
 
     async with http_client(app, **transport_kwargs) as client:
         yield AppFixture(agent=agent, app=app, client=client)
-
-
-# ---------------------------------------------------------------------------
-# Import-time fake robotsix_agent_comm modules for test collection
-# ---------------------------------------------------------------------------
-# The test suite must be collectible even when the ``broker`` extra is not
-# installed.  Install minimal stand-in modules in ``sys.modules`` at
-# conftest import time so that ``from robotsix_agent_comm.protocol import
-# Metadata`` (etc.) succeeds during discovery.  Fixtures that need a richer
-# fake (e.g. *fake_broker*) replace these via ``_install_fake_agent_comm``.
-
-if "robotsix_agent_comm" not in sys.modules:
-    import importlib.machinery as _importlib_machinery
-
-    _spec = _importlib_machinery.ModuleSpec
-
-    _root = types.ModuleType("robotsix_agent_comm")
-    _sdk = types.ModuleType("robotsix_agent_comm.sdk")
-    _protocol = types.ModuleType("robotsix_agent_comm.protocol")
-    _protocol_messages = types.ModuleType("robotsix_agent_comm.protocol.messages")
-
-    _root.__spec__ = _spec("robotsix_agent_comm", None)
-    _root.__path__ = []
-    _sdk.__spec__ = _spec("robotsix_agent_comm.sdk", None)
-    _protocol.__spec__ = _spec("robotsix_agent_comm.protocol", None)
-    _protocol.__path__ = []
-    _protocol_messages.__spec__ = _spec("robotsix_agent_comm.protocol.messages", None)
-
-    _protocol.Metadata = _FakeMetadata  # type: ignore[attr-defined]
-    _protocol_messages.Request = _FakeRequest  # type: ignore[attr-defined]
-    _protocol_messages.Response = _FakeResponse  # type: ignore[attr-defined]
-    _protocol_messages.Error = _FakeError  # type: ignore[attr-defined]
-    _protocol.Error = _FakeError  # type: ignore[attr-defined]
-    _protocol.Response = _FakeResponse  # type: ignore[attr-defined]
-    _protocol.ConfigContractError = _FakeProtocolError  # type: ignore[attr-defined]
-
-    sys.modules["robotsix_agent_comm"] = _root
-    sys.modules["robotsix_agent_comm.sdk"] = _sdk
-    sys.modules["robotsix_agent_comm.protocol"] = _protocol
-    sys.modules["robotsix_agent_comm.protocol.messages"] = _protocol_messages

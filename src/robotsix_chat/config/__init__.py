@@ -10,8 +10,6 @@ from robotsix_chat.config.constants import (
 )
 from robotsix_chat.config.models import (
     BoardSettings,
-    CalendarSettings,
-    ComponentAgentSettings,
     ComponentClientSettings,
     ComponentTarget,
     ConversationSettings,
@@ -23,10 +21,8 @@ from robotsix_chat.config.models import (
     MemoryEmbeddingSettings,
     MemoryLlmSettings,
     MemorySettings,
-    MillSettings,
     RefDocsSettings,
     SelfReviewSettings,
-    SkillsSettings,
     SubsessionsSettings,
     VersionCheckSettings,
 )
@@ -37,8 +33,6 @@ from robotsix_chat.config.settings import (
 
 __all__ = [
     "BoardSettings",
-    "CalendarSettings",
-    "ComponentAgentSettings",
     "ComponentClientSettings",
     "ComponentTarget",
     "ConfigError",
@@ -51,12 +45,10 @@ __all__ = [
     "MemoryEmbeddingSettings",
     "MemoryLlmSettings",
     "MemorySettings",
-    "MillSettings",
     "RefDocsSettings",
     "SYSTEM_PROMPT_VERSION",
     "SelfReviewSettings",
     "Settings",
-    "SkillsSettings",
     "SubsessionsSettings",
     "VersionCheckSettings",
     "level_needs_api_key",

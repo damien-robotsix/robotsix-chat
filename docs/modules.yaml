@@ -46,21 +46,6 @@ modules:
       - tests/board/__init__.py
       - tests/board/test_board_reader.py
 
-  - id: robotsix_chat.broker_client
-    description: "Shared base for brokered agent-comm clients — lazy import, common __init__ pattern, and thread-offloaded consult()."
-    paths:
-      - src/robotsix_chat/broker_client.py
-      - tests/broker_client/__init__.py
-      - tests/broker_client/test_broker_client.py
-
-  - id: robotsix_chat.calendar
-    description: "Calendar/tasks integration over the agent-comm broker — exposes build_calendar_tools() for querying and managing the user's calendar and tasks in natural language."
-    paths:
-      - src/robotsix_chat/calendar/__init__.py
-      - src/robotsix_chat/calendar/client.py
-      - tests/calendar/__init__.py
-      - tests/calendar/test_calendar.py
-
   - id: robotsix_chat.component_client
     description: "Component agent client tools for the chat LLM — exposes build_component_tools(), a factory returning LLM tools that let the chat agent enumerate, inspect, and configure remote component agents over the agent-comm broker."
     paths:
@@ -107,20 +92,9 @@ modules:
       - src/robotsix_chat/common/http.py
       - src/robotsix_chat/common/json_store.py
       - tests/common/__init__.py
-      - tests/common/agent_comm_fakes.py
       - tests/common/subsession_fakes.py
       - tests/common/test_http.py
       - tests/common/test_json_store.py
-
-  - id: robotsix_chat.component_agent
-    description: "Component agent package — contains the config contract + validation module and the broker responder that registers this component as an embedded agent on the agent-comm broker, serving monitor, config-get, and config-set request kinds."
-    paths:
-      - src/robotsix_chat/component_agent/__init__.py
-      - src/robotsix_chat/component_agent/config_contract.py
-      - src/robotsix_chat/component_agent/responder.py
-      - tests/component_agent/__init__.py
-      - tests/component_agent/test_config_contract.py
-      - tests/component_agent/test_responder.py
 
   - id: robotsix_chat.direct_repo
     description: "Direct-repository-capability tools — push branches and open PRs as the robotsix-mill GitHub App installation for BLOCKED tickets."
@@ -165,17 +139,6 @@ modules:
       - tests/memory/__init__.py
       - tests/memory/test_memory.py
 
-  - id: robotsix_chat.mill
-    description: "Mill/broker integration — consult robotsix-mill's board manager via the agent-comm broker."
-    paths:
-      - src/robotsix_chat/mill/__init__.py
-      - src/robotsix_chat/mill/client.py
-      - src/robotsix_chat/mill/retry_queue.py
-      - docs/api/robotsix_chat/mill.md
-      - tests/mill/__init__.py
-      - tests/mill/test_board_write_retry.py
-      - tests/mill/test_mill.py
-
   - id: robotsix_chat.mail
     description: "Mail/broker integration — consult robotsix-auto-mail's board manager via the agent-comm broker."
     paths:
@@ -215,19 +178,6 @@ modules:
       - src/robotsix_chat/selfreview/read.py
       - tests/selfreview/__init__.py
       - tests/selfreview/test_read.py
-
-  - id: robotsix_chat.skills
-    description: "Skill/capability loading — discover, load, and surface broker capabilities from declarative YAML manifests. Replaces the hardcoded per-broker build_*_tools() pattern with a capability-scoped mechanism."
-    paths:
-      - src/robotsix_chat/skills/__init__.py
-      - src/robotsix_chat/skills/spec.py
-      - src/robotsix_chat/skills/broker_skill.py
-      - src/robotsix_chat/skills/loader.py
-      - tests/skills/__init__.py
-      - tests/skills/test_spec.py
-      - tests/skills/test_loader.py
-      - tests/skills/test_broker_skill.py
-      - tests/skills/test_init.py
 
   - id: robotsix_chat.ui
     description: "Browser chat UI — self-contained HTML frontend served at /."

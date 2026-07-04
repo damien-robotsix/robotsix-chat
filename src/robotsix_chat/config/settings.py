@@ -16,8 +16,6 @@ from robotsix_llmio.config import TierLevel
 from robotsix_chat.config.constants import level_needs_api_key
 from robotsix_chat.config.models import (
     BoardSettings,
-    CalendarSettings,
-    ComponentAgentSettings,
     ComponentClientSettings,
     ConversationSettings,
     DiagnosticsSettings,
@@ -26,10 +24,8 @@ from robotsix_chat.config.models import (
     LangfuseSettings,
     MailSettings,
     MemorySettings,
-    MillSettings,
     RefDocsSettings,
     SelfReviewSettings,
-    SkillsSettings,
     SubsessionsSettings,
     VersionCheckSettings,
 )
@@ -217,47 +213,24 @@ class Settings(BaseModel):
     correlation_id_header: str = "X-Request-ID"
     langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
-    mill: MillSettings = Field(default_factory=MillSettings)
     mail: MailSettings = Field(default_factory=MailSettings)
-    calendar: CalendarSettings = Field(default_factory=CalendarSettings)
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)
     diagnostics: DiagnosticsSettings = Field(default_factory=DiagnosticsSettings)
     refdocs: RefDocsSettings = Field(default_factory=RefDocsSettings)
     board_reader: BoardSettings = Field(default_factory=BoardSettings)
     knowledge: KnowledgeSettings = Field(default_factory=KnowledgeSettings)
     self_review: SelfReviewSettings = Field(default_factory=SelfReviewSettings)
-    component_agent: ComponentAgentSettings = Field(
-        default_factory=ComponentAgentSettings
-    )
     version_check: VersionCheckSettings = Field(default_factory=VersionCheckSettings)
     component_client: ComponentClientSettings = Field(
         default_factory=ComponentClientSettings
     )
     subsessions: SubsessionsSettings = Field(default_factory=SubsessionsSettings)
     direct_repo: DirectRepoSettings = Field(default_factory=DirectRepoSettings)
-    skills: SkillsSettings = Field(default_factory=SkillsSettings)
     max_images_per_message: int = 8
     max_image_bytes: int = 5_242_880
     allowed_image_media_types: list[str] = Field(
         default_factory=lambda: ["image/png", "image/jpeg", "image/gif", "image/webp"]
     )
-
-    @staticmethod
-    def _require_broker_creds(subsystem: Any, name: str) -> None:
-        """Validate broker_token and broker_host for *subsystem* when enabled.
-
-        *subsystem* must have ``broker_token`` and ``broker_host`` attrs.
-        """
-        if not subsystem.broker_token.get_secret_value():
-            raise ValueError(
-                f"{name}.broker_token must be set when {name} is enabled — "
-                f"provide it via the `{name}.broker_token` config field"
-            )
-        if not subsystem.broker_host:
-            raise ValueError(
-                f"{name}.broker_host must be set when {name} is enabled — "
-                f"provide it via the config file"
-            )
 
     @staticmethod
     def _require_min(value: float | int, min_val: float | int, name: str) -> None:
@@ -318,14 +291,6 @@ class Settings(BaseModel):
             1,
             "subsessions.auto_stop_no_change_runs",
         )
-        if self.mill.enabled:
-            self._require_broker_creds(self.mill, "mill")
-        # mail has no required fields beyond `enabled` — api_base_url and
-        # api_token both have safe defaults for localhost operation.
-        if self.calendar.enabled:
-            self._require_broker_creds(self.calendar, "calendar")
-        if self.component_agent.enabled:
-            self._require_broker_creds(self.component_agent, "component_agent")
         # component_client has no required fields beyond `enabled` —
         # an empty components list just means no agents are reachable,
         # and the list_component_agents tool returns a helpful message.

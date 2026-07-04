@@ -64,10 +64,6 @@ tracing = ["robotsix-llmio[tracing]"]
 # Disabled at runtime unless `memory.enabled` is set; absent extra = graceful
 # no-op (NullMemory).
 memory = ["cognee", "transformers"]
-# broker: robotsix-agent-comm — lets the chat agent talk to other robotsix
-# agents over the shared broker (e.g. consult the mill's board manager). Pure
-# stdlib, light. Absent extra = the mill tool is simply not offered.
-broker = ["robotsix-agent-comm"]
 
 [project.scripts]
 robotsix-chat = "robotsix_chat.chat.server:run_server_from_config"
@@ -103,7 +99,6 @@ packages = ["src/robotsix_chat"]
 [tool.uv.sources]
 robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.git", rev = "424f8ec" }  # pragma: allowlist secret
 robotsix-board-agent = { git = "https://github.com/damien-robotsix/robotsix-board-agent.git", rev = "ec89dc44d8a462e1d0d2a5748fcc1819d0770d03" }  # pragma: allowlist secret
-robotsix-agent-comm = { git = "https://github.com/damien-robotsix/robotsix-agent-comm.git", rev = "555e22eef1a3083d6735083f01313e67fa1187ca" }  # pragma: allowlist secret
 
 [tool.towncrier]
 package = "robotsix_chat"
@@ -168,12 +163,6 @@ exclude = ["vulture_whitelist.py", ".local-deps", "_stubs"]
 # cognee (the optional `memory` extra) ships no type information.
 [[tool.mypy.overrides]]
 module = ["cognee.*"]
-ignore_missing_imports = true
-
-# robotsix-agent-comm (the optional `broker` extra) is not installed in the
-# default dev/test env, so let mypy tolerate its absence.
-[[tool.mypy.overrides]]
-module = ["robotsix_agent_comm.*"]
 ignore_missing_imports = true
 
 # PyJWT is an optional dependency for direct_repo; tolerate its absence
@@ -241,3 +230,4 @@ relative_files = true
 [tool.coverage.report]
 exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
 fail_under = 88  # set at/just below current measured coverage; raise over time; never lower
+der = 88  # set at/just below current measured coverage; raise over time; never lower
