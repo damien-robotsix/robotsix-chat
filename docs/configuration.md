@@ -245,10 +245,9 @@ ______________________________________________________________________
 
 ## Schema
 
-The committed `config/config.schema.json` is the authoritative
-schema for the `Settings` model. It is auto-generated from the pydantic model via
-`Settings.model_json_schema()` and **CI-checked** to stay in sync — a CI job regenerates it from the
-model and fails the build on any drift.
+The committed `config/config.schema.json` is the authoritative schema for the `Settings` model. It
+is auto-generated from the pydantic model via `Settings.model_json_schema()` and **CI-checked** to
+stay in sync — a CI job regenerates it from the model and fails the build on any drift.
 
 To regenerate locally:
 
