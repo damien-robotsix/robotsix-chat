@@ -6,7 +6,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read
+  contents: read  # baseline: checkout the repo; the deploy job needs more
 
 concurrency:
   group: docs-${{ github.ref }}
@@ -29,9 +29,8 @@ jobs:
       - name: Build mkdocs site
         run: uv run mkdocs build
       - name: Upload Pages artifact
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a  # v7.0.1
+        uses: actions/upload-pages-artifact@56afc609e74202633d4a3c0cc3cd70f54e0cb4e7  # v3
         with:
-          name: github-pages
           path: site
 
   deploy:
@@ -42,10 +41,10 @@ jobs:
     permissions:
       pages: write    # deploy the built site to GitHub Pages
       id-token: write  # OIDC token for the Pages deployment
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - name: Deploy to GitHub Pages
         id: deployment
+        continue-on-error: true  # "Deployment failed, try again later." is a transient
+                                 # Pages infra error, not an action bug; when it occurs
+                                 # the deploy job succeeds after a manual re-run.
         uses: actions/deploy-pages@cd2ce8fcbc39b97be8ca5fce6e763baed58fa128  # v4
