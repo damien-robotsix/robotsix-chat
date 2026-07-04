@@ -484,9 +484,7 @@ async def summary_endpoint(request: Request) -> JSONResponse:
 
     session_id = body.get("session_id")
     if not session_id or not isinstance(session_id, str):
-        return JSONResponse(
-            {"error": "session_id is required"}, status_code=400
-        )
+        return JSONResponse({"error": "session_id is required"}, status_code=400)
 
     turns = store.history(session_id)
     if not turns:
