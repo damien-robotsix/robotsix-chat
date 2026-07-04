@@ -151,7 +151,6 @@ class CogneeMemory:
         s = self._settings
         lf_public = s.langfuse.public_key.get_secret_value()
         lf_secret = s.langfuse.secret_key.get_secret_value()
-        lf_host = s.langfuse.host
         if not lf_public or not lf_secret:
             logger.debug(
                 "cognee Langfuse creds not set; skipping litellm Langfuse callback"
