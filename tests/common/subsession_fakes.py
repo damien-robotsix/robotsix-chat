@@ -145,6 +145,8 @@ def make_settings(
     the worker only reads the attributes mirrored here, so a
     ``SimpleNamespace`` keeps periodic tests fast.
     """
+    from pydantic import SecretStr
+
     return SimpleNamespace(
         subsessions=SimpleNamespace(
             max_concurrent=max_concurrent,
@@ -153,7 +155,7 @@ def make_settings(
             min_interval_seconds=min_interval_seconds,
             auto_stop_no_change_runs=auto_stop_no_change_runs,
         ),
-        llmio_api_key=llmio_api_key,
+        llmio_api_key=SecretStr(llmio_api_key),
     )
 
 

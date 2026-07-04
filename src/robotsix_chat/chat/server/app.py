@@ -337,7 +337,11 @@ def create_agent_from_settings(
     effective_level = (
         model_level if model_level is not None else settings.llmio_model_level
     )
-    api_key = settings.llmio_api_key if level_needs_api_key(effective_level) else ""
+    api_key = (
+        settings.llmio_api_key.get_secret_value()
+        if level_needs_api_key(effective_level)
+        else ""
+    )
     tools: list[Any] = [
         *build_mill_tools(settings.mill),
         *build_mail_tools(settings.mail),

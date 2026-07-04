@@ -402,12 +402,14 @@ def test_enqueue_dedup_with_trimming(tmp_path: Path) -> None:
 def _settings(**kw: Any) -> Any:
     from types import SimpleNamespace
 
+    from pydantic import SecretStr
+
     defaults: dict[str, Any] = {
         "agent_id": "test-agent",
         "broker_host": "broker.example.com",
         "broker_port": 443,
         "broker_scheme": "https",
-        "broker_token": "test-token",
+        "broker_token": SecretStr("test-token"),
         "timeout": 60.0,
     }
     defaults.update(kw)

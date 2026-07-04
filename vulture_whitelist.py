@@ -12,9 +12,6 @@ Settings.model_post_init  # noqa: B018  # unused method (pydantic hook)
 # pydantic __context parameter — required by pydantic's model_post_init signature
 Settings.model_post_init.__context  # noqa: B018  # unused variable (pydantic param)
 
-# public API — used from tests/test_config.py
-Settings.from_env  # noqa: B018  # unused method (used from tests)
-
 # conversation.py — retained for caller compatibility; parameter accepted but
 # no longer triggers destructive history reset (docstring documents this)
 ConversationStore._idle_reset_seconds  # noqa: B018  # unused attribute (caller compat)

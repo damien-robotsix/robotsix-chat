@@ -14,18 +14,17 @@ dependencies = [
     "asgi-correlation-id",
     "httpx",
     "pydantic",
-    "python-dotenv",
     "pyjwt",
     "pyyaml",
     "uvicorn",
     "starlette",
     # Shared robotsix-stack libraries, consumed via git (see [tool.uv.sources]):
-    #   - robotsix-yaml-config: the YAML config-cascade.
+    #   - robotsix-config: the JSON config library.
     #   - robotsix-llmio: provider-agnostic LLM I/O; the chat picks a
     #     `model_level` and llmio resolves the backend. The base package is
     #     enough to import the config factory; the actual backend deps come
     #     from the per-transport extras below.
-    "robotsix-yaml-config",
+    "robotsix-config",
     "robotsix-llmio",
     "robotsix-board-agent",
 ]
@@ -102,7 +101,7 @@ packages = ["src/robotsix_chat"]
 # robotsix-board-agent's direct-URL requirement, so the two repos can't
 # disagree on the version.
 [tool.uv.sources]
-robotsix-yaml-config = { git = "https://github.com/damien-robotsix/robotsix-yaml-config.git", rev = "fbca817194ff6af20588c4c603dc3fdebadce6d0" }  # pragma: allowlist secret
+robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.git", rev = "424f8ec" }  # pragma: allowlist secret
 robotsix-board-agent = { git = "https://github.com/damien-robotsix/robotsix-board-agent.git", rev = "ec89dc44d8a462e1d0d2a5748fcc1819d0770d03" }  # pragma: allowlist secret
 robotsix-agent-comm = { git = "https://github.com/damien-robotsix/robotsix-agent-comm.git", rev = "555e22eef1a3083d6735083f01313e67fa1187ca" }  # pragma: allowlist secret
 
@@ -189,8 +188,8 @@ DEP002 = ["transformers"]
 # its result objects, and the agent builds a multi-turn `message_history` from
 # its message types. We consume it through llmio (never declare it directly), so
 # this transitive import (DEP003) is deliberate.
-# `pyyaml` ships through robotsix-yaml-config; we use it directly in the skills
-# loader and ChatConfig YAML parsing — transitive by design.
+# `pyyaml` is used directly in the skills loader for YAML skill files — no
+# longer transitive; a direct dependency.
 # `opentelemetry` is the OTLP exporter (``tracing`` extra); guarded by a
 # try/except ImportError in cognee's Langfuse callback registration.
 DEP003 = ["pydantic_ai", "pyyaml", "opentelemetry"]

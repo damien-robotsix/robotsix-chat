@@ -45,7 +45,7 @@ class CalendarClient:
             broker_host=settings.broker_host,
             broker_port=settings.broker_port,
             broker_scheme=settings.broker_scheme,
-            broker_token=settings.broker_token,
+            broker_token=settings.broker_token.get_secret_value(),
             timeout=settings.timeout,
         )
         try:

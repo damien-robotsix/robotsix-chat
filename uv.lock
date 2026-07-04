@@ -2771,11 +2771,10 @@ dependencies = [
     { name = "httpx" },
     { name = "pydantic" },
     { name = "pyjwt" },
-    { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "robotsix-board-agent" },
+    { name = "robotsix-config" },
     { name = "robotsix-llmio" },
-    { name = "robotsix-yaml-config" },
     { name = "starlette" },
     { name = "uvicorn" },
 ]
@@ -2824,15 +2823,14 @@ requires-dist = [
     { name = "httpx" },
     { name = "pydantic" },
     { name = "pyjwt" },
-    { name = "python-dotenv" },
     { name = "pyyaml" },
     { name = "robotsix-agent-comm", marker = "extra == 'broker'", git = "https://github.com/damien-robotsix/robotsix-agent-comm.git?rev=555e22eef1a3083d6735083f01313e67fa1187ca" },
     { name = "robotsix-board-agent", git = "https://github.com/damien-robotsix/robotsix-board-agent.git?rev=ec89dc44d8a462e1d0d2a5748fcc1819d0770d03" },
+    { name = "robotsix-config", git = "https://github.com/damien-robotsix/robotsix-config.git?rev=424f8ec" },
     { name = "robotsix-llmio" },
     { name = "robotsix-llmio", extras = ["claude-sdk"], marker = "extra == 'claude-sdk'" },
     { name = "robotsix-llmio", extras = ["openrouter"], marker = "extra == 'openrouter'" },
     { name = "robotsix-llmio", extras = ["tracing"], marker = "extra == 'tracing'" },
-    { name = "robotsix-yaml-config", git = "https://github.com/damien-robotsix/robotsix-yaml-config.git?rev=fbca817194ff6af20588c4c603dc3fdebadce6d0" },
     { name = "starlette" },
     { name = "transformers", marker = "extra == 'memory'" },
     { name = "uvicorn" },
@@ -2859,6 +2857,14 @@ docs = [
 ]
 
 [[package]]
+name = "robotsix-config"
+version = "0.1.0"
+source = { git = "https://github.com/damien-robotsix/robotsix-config.git?rev=424f8ec#424f8ec5140e14e9699b92d5c3755d929625b570" }
+dependencies = [
+    { name = "pydantic" },
+]
+
+[[package]]
 name = "robotsix-llmio"
 version = "0.1.0"
 source = { git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=73f2d555caa21de47a3732824d776e04719b3011#73f2d555caa21de47a3732824d776e04719b3011" }
@@ -2879,14 +2885,6 @@ tracing = [
     { name = "opentelemetry-api" },
     { name = "opentelemetry-exporter-otlp-proto-http" },
     { name = "opentelemetry-sdk" },
-]
-
-[[package]]
-name = "robotsix-yaml-config"
-version = "0.1.0"
-source = { git = "https://github.com/damien-robotsix/robotsix-yaml-config.git?rev=fbca817194ff6af20588c4c603dc3fdebadce6d0#fbca817194ff6af20588c4c603dc3fdebadce6d0" }
-dependencies = [
-    { name = "pyyaml" },
 ]
 
 [[package]]

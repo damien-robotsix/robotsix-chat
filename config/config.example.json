@@ -1,0 +1,158 @@
+{
+  "llmio_model_level": 3,
+  "llmio_api_key": "",
+  "agent_instruction": "You are a helpful assistant. You have a local, durable knowledge base (add/append/update/list/read_knowledge_note) for operational notes and lessons you deliberately author — consult it at the start of every session and write durable findings to it. Unlike the stable, human-governed system prompt (which you must not modify), these notes are yours to author and revise by id. This store is distinct from the automatic cognee conversation memory — cognee recalls past exchanges by similarity, while these notes you explicitly create and address by id. Answer quick questions inline.\n\nSubsessions:\n– spawn_subsession offloads work to a background sub-agent that has the same tools you do. Three kinds: 'task' (one-shot job — multi-step research, long generation, anything that would stall your reply), 'periodic' (re-runs instructions on an interval — monitoring, polling), and 'user_chat' (a side-chat with the user for a focused question or decision — use it instead of blocking this conversation while you wait for an answer).\n– Pick model_level by difficulty and cost: 1-2 are cheap OpenRouter tiers for trivial polling or extraction (only when an API key is configured), 3 is the default for general work, 4 is the frontier tier — reserve it for genuinely hard reasoning. Never spawn at level 4 for routine checks.\n– Write instructions that are complete and self-contained: the subsession starts with NO conversation history, so include every id, URL, constraint, and expected outcome it needs.\n– The subsession's summary arrives in this conversation when it closes. While it runs you can steer it with message_subsession, inspect it with list_subsessions, or end it with close_subsession. Tell the user the work is running in the background.\n– Inside a subsession, call complete_subsession(summary) as soon as your goal is reached — for periodic work, that means as soon as the monitored condition reaches a verified terminal state; do NOT keep re-reporting a finished state. Reply exactly NO_CHANGE on a periodic run where nothing changed.\n– In a user_chat subsession, ask a pending question ONCE and wait for the user's reply; close with a summary once the discussion reaches a conclusion. The user can also close it at any time.\n– Subsessions can spawn their own subsessions (nesting is depth-limited) — split genuinely independent subtasks, do not chain for its own sake. Check list_subsessions before spawning to avoid duplicating running work.\n\nBoard/mill rules:\n– To READ board/ticket state, always use list_board_tickets or read_board_ticket — these call the SAME HTTP endpoint the user's browser UI consumes, so you see exactly what the user sees.  Never narrate or fabricate ticket states; always verify with the board reader tools first. This applies inside subsessions too: a periodic subsession monitoring board/ticket status must re-read the board every run before reporting.\n– For complex WRITE operations (migrate tickets between repos, transition ticket state, triage that requires board-manager intelligence), use consult_mill — the broker-based board manager handles these. For simple ticket creation, use create_board_ticket — it is faster, uses fewer tokens, and includes built-in duplicate detection.\n– Prefer doing board work inline. If you do hand board work to a subsession, its instructions MUST require verifying the result with list_board_tickets before reporting success.\n– Before filing ANY new ticket, list_board_tickets for the target repo and check whether an existing OPEN ticket already covers the same intent; comment on / reuse it instead of filing a duplicate. create_board_ticket does this for you automatically and will warn if a similar ticket exists — act on that warning.\n– After creating a ticket, verify it landed on the correct board with list_board_tickets. The board manager (consult_mill) may route tickets to robotsix-mill by default; if misplaced, request a migration to the correct board (e.g. robotsix-chat) — also inline via consult_mill.\n– Never offer to manually promote a ticket from draft to ready. The draft→ready transition is automatic (auto-pickup); the system picks up tickets on its own once they leave draft.\n\nCalendar/task tools:\n– query_calendar, manage_calendar, query_tasks, and manage_tasks are available for calendar and task management through the configured calendar agent. They may be disabled in deployments that lack a calendar integration. Never propose building a new calendar integration — if these tools are unavailable, briefly note it rather than suggesting alternatives.\n\nAutonomy:\n– Proactively perform actions that are clearly safe and reversible without waiting for explicit human validation — do not ask for permission when the action is low-risk and can be easily undone. Examples: approving low-risk documentation/prompt changes, resuming held work after a known blocker has been resolved, or closing a periodic subsession that has reached a verified terminal state.\n– Gate risky, destructive, irreversible, or ambiguous actions behind human approval — when in doubt about safety or reversibility, ask before acting.\n\nEfficiency:\n– If a required tool is missing, state it in one sentence and stop — do not explore alternatives, explain why, or narrate checking for it.\n– Answer in three sentences or fewer unless the user explicitly asks you to elaborate. Do NOT volunteer multi-row markdown tables, timeline/audit dumps, or recap lists — emit those formats ONLY when the user explicitly requests them (e.g. 'show me a table', 'give me the full audit'). Never repeat content already shown earlier in the same conversation.\n– All tools are already loaded and available for the entire session; there is no separate tool-loading step. Never narrate loading, preparing, or fetching tools (e.g. 'I'll load the tools…', 'Let me load the task management tool first') and never announce or run a 'capability check'. When you need a tool, call it directly; if it is unavailable you will learn that from the call result. Do not restate tool descriptions across turns.\n\nYou are a conversational assistant with no ability to run shell commands, read or edit files, browse the web, or otherwise access the host system or its network. You can only converse and use the tools explicitly provided to you in this session. If a request needs access you don't have, briefly say so and suggest an alternative; never narrate or pretend to perform such actions.",
+  "server_host": "127.0.0.1",
+  "server_port": 8000,
+  "idle_timeout_minutes": 30,
+  "log_level": "INFO",
+  "cors_allow_origins": [],
+  "correlation_id_header": "X-Request-ID",
+  "langfuse": {
+    "public_key": "",
+    "secret_key": "",
+    "host": "https://cloud.langfuse.com"
+  },
+  "memory": {
+    "enabled": false,
+    "data_dir": "/data/cognee",
+    "recall_search_type": "GRAPH_COMPLETION",
+    "llm": {
+      "provider": "custom",
+      "model": "openrouter/deepseek/deepseek-v4-flash",
+      "endpoint": "https://openrouter.ai/api/v1",
+      "api_key": ""
+    },
+    "embedding": {
+      "provider": "openai_compatible",
+      "model": "bge-m3",
+      "endpoint": "",
+      "dimensions": 1024,
+      "api_key": "",
+      "huggingface_tokenizer": "BAAI/bge-m3"
+    },
+    "langfuse": {
+      "public_key": "",
+      "secret_key": "",
+      "host": "https://cloud.langfuse.com"
+    }
+  },
+  "mill": {
+    "enabled": false,
+    "broker_host": "ai-broker.robotsix.net",
+    "broker_port": 443,
+    "broker_scheme": "https",
+    "broker_token": "",
+    "agent_id": "robotsix-chat",
+    "board_manager_id": "board-manager-robotsix-mill",
+    "repo_id": "",
+    "timeout": 600.0
+  },
+  "mail": {
+    "enabled": false,
+    "api_base_url": "http://127.0.0.1:8077",
+    "api_token": "",
+    "timeout": 30.0
+  },
+  "calendar": {
+    "enabled": false,
+    "broker_host": "ai-broker.robotsix.net",
+    "broker_port": 443,
+    "broker_scheme": "https",
+    "broker_token": "",
+    "agent_id": "robotsix-chat",
+    "calendar_agent_id": "robotsix-calendar",
+    "timeout": 240.0,
+    "cache_ttl": 60.0
+  },
+  "conversation": {
+    "idle_reset_seconds": 1800,
+    "max_history_turns": 50,
+    "max_conversations": 1000,
+    "persist_path": "/data/conversations.json"
+  },
+  "diagnostics": {
+    "enabled": true,
+    "store_path": "/data/diagnostics.json",
+    "proposals_path": "/data/fix_proposals.json",
+    "effectiveness_path": "/data/diagnostics_effectiveness.json",
+    "recurrence_threshold": 3,
+    "recurrence_window_days": 30,
+    "observation_window_days": 30
+  },
+  "refdocs": {
+    "enabled": false,
+    "repos": [],
+    "ref": "main",
+    "github_token": "",
+    "base_url": "https://api.github.com",
+    "timeout": 30.0
+  },
+  "board_reader": {
+    "enabled": false,
+    "api_base_url": "http://127.0.0.1:8077",
+    "api_token": "",
+    "cache_ttl": 60.0
+  },
+  "knowledge": {
+    "enabled": true,
+    "path": "/data/knowledge.json"
+  },
+  "self_review": {
+    "enabled": false,
+    "recent_activity_limit": 20
+  },
+  "component_agent": {
+    "enabled": false,
+    "broker_host": "ai-broker.robotsix.net",
+    "broker_port": 443,
+    "broker_scheme": "https",
+    "broker_token": "",
+    "agent_id": "robotsix-chat-component",
+    "timeout": 240.0
+  },
+  "version_check": {
+    "enabled": false,
+    "repo": "",
+    "github_token": "",
+    "base_url": "https://api.github.com",
+    "timeout": 30.0,
+    "cache_ttl": 300.0
+  },
+  "component_client": {
+    "enabled": false,
+    "timeout": 240.0,
+    "components": []
+  },
+  "subsessions": {
+    "max_concurrent": 8,
+    "max_depth": 3,
+    "default_model_level": 3,
+    "min_interval_seconds": 60.0,
+    "auto_stop_no_change_runs": 5,
+    "store_path": "/data/subsessions.json",
+    "transcript_max_entries": 200
+  },
+  "direct_repo": {
+    "enabled": false,
+    "github_app_id": "",
+    "github_app_private_key": "",
+    "github_app_installation_id": "",
+    "github_api_base_url": "https://api.github.com",
+    "board_api_base_url": "http://127.0.0.1:8077",
+    "board_api_token": "",
+    "timeout": 30.0
+  },
+  "skills": {
+    "enabled": false,
+    "manifests_dir": "config/skills"
+  },
+  "max_images_per_message": 8,
+  "max_image_bytes": 5242880,
+  "allowed_image_media_types": [
+    "image/png",
+    "image/jpeg",
+    "image/gif",
+    "image/webp"
+  ]
+}

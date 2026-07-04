@@ -106,7 +106,7 @@ class CogneeMemory:
         cognee.config.set_llm_provider(s.llm.provider)
         cognee.config.set_llm_model(s.llm.model)
         cognee.config.set_llm_endpoint(s.llm.endpoint)
-        cognee.config.set_llm_api_key(s.llm.api_key)
+        cognee.config.set_llm_api_key(s.llm.api_key.get_secret_value())
 
         # Embeddings — remote OpenAI-compatible server (Ollama / bge-m3).
         cognee.config.set_embedding_config(
@@ -115,7 +115,7 @@ class CogneeMemory:
                 "embedding_model": s.embedding.model,
                 "embedding_endpoint": s.embedding.endpoint,
                 "embedding_dimensions": s.embedding.dimensions,
-                "embedding_api_key": s.embedding.api_key,
+                "embedding_api_key": s.embedding.api_key.get_secret_value(),
                 "huggingface_tokenizer": s.embedding.huggingface_tokenizer,
             }
         )
@@ -149,8 +149,8 @@ class CogneeMemory:
         creds are absent.
         """
         s = self._settings
-        lf_public = s.langfuse_public_key.get_secret_value()
-        lf_secret = s.langfuse_secret_key.get_secret_value()
+        lf_public = s.langfuse.public_key.get_secret_value()
+        lf_secret = s.langfuse.secret_key.get_secret_value()
         if not lf_public or not lf_secret:
             logger.debug(
                 "cognee Langfuse creds not set; skipping litellm Langfuse callback"

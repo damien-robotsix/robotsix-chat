@@ -106,7 +106,7 @@ class BaseBrokeredClient:
             broker_host=settings.broker_host,
             broker_port=settings.broker_port,
             broker_scheme=settings.broker_scheme,
-            broker_token=settings.broker_token,
+            broker_token=settings.broker_token.get_secret_value(),
             timeout=settings.timeout,
             default_reply=default_reply,
         )
@@ -129,7 +129,9 @@ class BaseBrokeredClient:
         try:
             resp = httpx.get(
                 url,
-                headers={"Authorization": f"Bearer {s.broker_token}"},
+                headers={
+                    "Authorization": (f"Bearer {s.broker_token.get_secret_value()}")
+                },
                 timeout=_PREFLIGHT_TIMEOUT_SECONDS,
             )
         except httpx.HTTPError as exc:

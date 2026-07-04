@@ -518,19 +518,15 @@ class TestDiagnosticsSettings:
         assert s.recurrence_threshold == 3
         assert s.recurrence_window_days == 30
 
-    def test_from_env(self, monkeypatch) -> None:
-        _wipe_env_vars(monkeypatch)
-        monkeypatch.setenv("DIAGNOSTICS_ENABLED", "false")
-        monkeypatch.setenv("DIAGNOSTICS_RECURRENCE_THRESHOLD", "5")
-        monkeypatch.setenv("DIAGNOSTICS_RECURRENCE_WINDOW_DAYS", "14")
-        monkeypatch.setenv("DIAGNOSTICS_STORE_PATH", "/fake/test/diag.json")
-        monkeypatch.setenv("DIAGNOSTICS_PROPOSALS_PATH", "/fake/test/prop.json")
-
-        # Drive through _build_diagnostics_raw
-        from robotsix_chat.config import _build_diagnostics_raw
-
-        raw = _build_diagnostics_raw({})
-        s = DiagnosticsSettings(**raw)
+    def test_direct_construction(self, monkeypatch) -> None:
+        """Direct construction of DiagnosticsSettings with custom values."""
+        s = DiagnosticsSettings(
+            enabled=False,
+            recurrence_threshold=5,
+            recurrence_window_days=14,
+            store_path="/fake/test/diag.json",
+            proposals_path="/fake/test/prop.json",
+        )
         assert s.enabled is False
         assert s.recurrence_threshold == 5
         assert s.recurrence_window_days == 14
@@ -538,20 +534,14 @@ class TestDiagnosticsSettings:
         assert s.proposals_path == "/fake/test/prop.json"
 
     def test_env_threshold_invalid(self, monkeypatch) -> None:
-        _wipe_env_vars(monkeypatch)
-        monkeypatch.setenv("DIAGNOSTICS_RECURRENCE_THRESHOLD", "not_a_number")
-        from robotsix_chat.config import _build_diagnostics_raw
-
-        with pytest.raises(ValueError, match="DIAGNOSTICS_RECURRENCE_THRESHOLD"):
-            _build_diagnostics_raw({})
+        """Non-integer recurrence_threshold is rejected by pydantic."""
+        with pytest.raises((TypeError, ValueError)):
+            DiagnosticsSettings(recurrence_threshold="not_a_number")  # type: ignore[arg-type]
 
     def test_env_window_invalid(self, monkeypatch) -> None:
-        _wipe_env_vars(monkeypatch)
-        monkeypatch.setenv("DIAGNOSTICS_RECURRENCE_WINDOW_DAYS", "abc")
-        from robotsix_chat.config import _build_diagnostics_raw
-
-        with pytest.raises(ValueError, match="DIAGNOSTICS_RECURRENCE_WINDOW_DAYS"):
-            _build_diagnostics_raw({})
+        """Non-integer recurrence_window_days is rejected by pydantic."""
+        with pytest.raises((TypeError, ValueError)):
+            DiagnosticsSettings(recurrence_window_days="abc")  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------

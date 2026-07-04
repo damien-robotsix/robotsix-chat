@@ -73,6 +73,7 @@ async def test_consult_sends_nl_to_board_manager(
     """Verify that consult sends a natural-language request to the board manager."""
     captured = _install_fake_agent_comm(monkeypatch, reply=_Reply({"reply": "done"}))
     client = MillClient(_settings(agent_id="robotsix-chat"))
+    monkeypatch.setattr(client, "_check_reachable", lambda: (True, ""))
     out = await client.consult("create a ticket to add X")
 
     assert out == "done"
@@ -89,6 +90,7 @@ async def test_consult_includes_repo_id_when_set(
     """Verify that repo_id is included in the payload when set."""
     captured = _install_fake_agent_comm(monkeypatch, reply=_Reply({"reply": "ok"}))
     client = MillClient(_settings(repo_id="robotsix-chat"))
+    monkeypatch.setattr(client, "_check_reachable", lambda: (True, ""))
     await client.consult("status?")
     assert captured["payload"] == {"message": "status?", "repo_id": "robotsix-chat"}
 
@@ -115,6 +117,7 @@ async def test_consult_never_raises_on_transport_error(
     """Verify that transport errors degrade to a message instead of raising."""
     _install_fake_agent_comm(monkeypatch, raise_exc=RuntimeError("broker down"))
     client = MillClient(_settings())
+    monkeypatch.setattr(client, "_check_reachable", lambda: (True, ""))
     out = await client.consult("hi")
     assert "could not be completed" in out.lower()
     assert "broker down" in out
@@ -128,6 +131,7 @@ async def test_consult_handles_board_error_reply(
     err = _FakeError({"code": "BAD_REQUEST", "message": "nope"})
     _install_fake_agent_comm(monkeypatch, reply=err)
     client = MillClient(_settings())
+    monkeypatch.setattr(client, "_check_reachable", lambda: (True, ""))
     out = await client.consult("do a thing")
     assert "nope" in out
 

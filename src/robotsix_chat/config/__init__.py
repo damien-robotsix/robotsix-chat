@@ -5,15 +5,8 @@ Re-exports every public symbol at the package top level so existing
 """
 
 from robotsix_chat.config.constants import (
-    _YAML_PATH_TO_FIELD,
-    CONFIG_PATH_ENV,
-    DEFAULT_CONFIG_PATH,
     ConfigError,
     level_needs_api_key,
-)
-from robotsix_chat.config.env_builders import (
-    _build_diagnostics_raw,
-    _build_skills_raw,
 )
 from robotsix_chat.config.models import (
     BoardSettings,
@@ -25,6 +18,7 @@ from robotsix_chat.config.models import (
     DiagnosticsSettings,
     DirectRepoSettings,
     KnowledgeSettings,
+    LangfuseSettings,
     MailSettings,
     MemoryEmbeddingSettings,
     MemoryLlmSettings,
@@ -43,17 +37,16 @@ from robotsix_chat.config.settings import (
 
 __all__ = [
     "BoardSettings",
-    "CONFIG_PATH_ENV",
     "CalendarSettings",
     "ComponentAgentSettings",
     "ComponentClientSettings",
     "ComponentTarget",
     "ConfigError",
     "ConversationSettings",
-    "DEFAULT_CONFIG_PATH",
     "DiagnosticsSettings",
     "DirectRepoSettings",
     "KnowledgeSettings",
+    "LangfuseSettings",
     "MailSettings",
     "MemoryEmbeddingSettings",
     "MemoryLlmSettings",
@@ -66,8 +59,5 @@ __all__ = [
     "SkillsSettings",
     "SubsessionsSettings",
     "VersionCheckSettings",
-    "_YAML_PATH_TO_FIELD",
-    "_build_diagnostics_raw",
-    "_build_skills_raw",
     "level_needs_api_key",
 ]

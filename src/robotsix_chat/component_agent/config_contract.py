@@ -6,11 +6,10 @@ shape), a per-key allowlist, secret redaction, and audit logging — everything
 child #4 ("Embed the agent") needs to serve ``config-get`` and ``config-set``
 request kinds over the broker.
 
-**Dotted-path convention.** Keys follow the YAML layout in
-``robotsix_chat/config/constants.py`` (``_YAML_PATH_TO_FIELD``): ``server.log_level``,
+**Dotted-path convention.** Keys follow the config layout
+in ``robotsix_chat/config/constants.py``: ``server.log_level``,
 ``mill.enabled``, ``conversation.max_history_turns``, etc.  This is the same
-convention used in ``config/chat.local.yaml`` and environment-variable
-overrides.
+convention used in ``config/config.json``.
 
 **Settable vs. read-only.** The module-level :data:`SETTABLE_KEYS` allowlist
 includes genuinely live-mutable scalars and feature ``enabled`` flags.
@@ -35,10 +34,10 @@ from collections.abc import Mapping
 from copy import deepcopy
 from typing import Any
 
-from pydantic import BaseModel, ValidationError
+from pydantic import BaseModel, SecretStr, ValidationError
 from robotsix_agent_comm.protocol import ConfigContractError
 
-from robotsix_chat.config import _YAML_PATH_TO_FIELD, Settings
+from robotsix_chat.config import Settings
 
 logger = logging.getLogger(__name__)
 
@@ -74,15 +73,37 @@ def _is_secret_dotted_key(dotted_key: str) -> bool:
 # Reverse dotted-path mapping (Settings field name → YAML dotted path)
 # ---------------------------------------------------------------------------
 
-_FIELD_TO_DOTTED: dict[str, str] = {v: k for k, v in _YAML_PATH_TO_FIELD.items()}
-
-# Fields added after the original YAML mapping was defined — give them
-# sensible dotted paths consistent with the existing convention.
-_FIELD_TO_DOTTED.setdefault("max_images_per_message", "server.max_images_per_message")
-_FIELD_TO_DOTTED.setdefault("max_image_bytes", "server.max_image_bytes")
-_FIELD_TO_DOTTED.setdefault(
-    "allowed_image_media_types", "server.allowed_image_media_types"
-)
+_FIELD_TO_DOTTED: dict[str, str] = {
+    "llmio_model_level": "llmio.model_level",
+    "llmio_api_key": "llmio.api_key",  # pragma: allowlist secret
+    "agent_instruction": "agent.instruction",
+    "server_host": "server.host",
+    "server_port": "server.port",
+    "idle_timeout_minutes": "server.idle_timeout_minutes",
+    "log_level": "server.log_level",
+    "cors_allow_origins": "server.cors_allow_origins",
+    "correlation_id_header": "server.correlation_id_header",
+    "memory": "memory",
+    "mill": "mill",
+    "mail": "mail",
+    "calendar": "calendar",
+    "conversation": "conversation",
+    "refdocs": "refdocs",
+    "board_reader": "board_reader",
+    "diagnostics": "diagnostics",
+    "version_check": "version_check",
+    "knowledge": "knowledge",
+    "self_review": "self_review",
+    "component_agent": "component_agent",
+    "component_client": "component_client",
+    "subsessions": "subsessions",
+    "direct_repo": "direct_repo",
+    "skills": "skills",
+    "langfuse": "langfuse",
+    "max_images_per_message": "server.max_images_per_message",
+    "max_image_bytes": "server.max_image_bytes",
+    "allowed_image_media_types": "server.allowed_image_media_types",
+}
 
 
 # ---------------------------------------------------------------------------
@@ -231,7 +252,9 @@ def _walk_model_fields(
     for field_name in type(model).model_fields:
         value = getattr(model, field_name)
         dotted = f"{prefix}.{field_name}" if prefix else field_name
-        if isinstance(value, BaseModel):
+        if isinstance(value, SecretStr):
+            result[dotted] = _REDACTED_SENTINEL
+        elif isinstance(value, BaseModel):
             result.update(_walk_model_fields(value, dotted))
         elif _is_secret_dotted_key(dotted):
             result[dotted] = _REDACTED_SENTINEL
@@ -256,7 +279,9 @@ def get_config_snapshot(settings: Settings) -> dict[str, Any]:
     for field_name in type(settings).model_fields:
         value = getattr(settings, field_name)
         dotted = _FIELD_TO_DOTTED.get(field_name, field_name)
-        if isinstance(value, BaseModel):
+        if isinstance(value, SecretStr):
+            result[dotted] = _REDACTED_SENTINEL
+        elif isinstance(value, BaseModel):
             result.update(_walk_model_fields(value, dotted))
         elif _is_secret_dotted_key(dotted):
             result[dotted] = _REDACTED_SENTINEL

@@ -10,7 +10,11 @@ from robotsix_chat.config import Settings
 
 @given(st.builds(Settings))
 def test_settings_roundtrip(settings: Settings) -> None:
-    """Full Settings roundtrip via dict serialization."""
-    dumped = settings.model_dump()
+    """Full Settings roundtrip via JSON-mode serialization.
+
+    Uses ``model_dump(mode="json")`` + ``model_validate(...)`` to handle
+    ``SecretStr`` serialization correctly.
+    """
+    dumped = settings.model_dump(mode="json")
     restored = Settings.model_validate(dumped)
-    assert restored.model_dump() == dumped
+    assert restored.model_dump(mode="json") == dumped

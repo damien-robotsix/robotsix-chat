@@ -9,9 +9,7 @@ __pycache__/
 .env
 
 # Real local configuration (may contain credentials: API keys, passwords)
-config/chat.local.yaml
-config/*.local.yaml
-!config/*.local.example.yaml
+config/config.json
 
 # Build artifacts
 dist/

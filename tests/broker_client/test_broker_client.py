@@ -39,12 +39,14 @@ def _settings(**kw: Any) -> Any:
     """Return a mock settings object with broker-related attributes."""
     from types import SimpleNamespace
 
+    from pydantic import SecretStr
+
     defaults: dict[str, Any] = {
         "agent_id": "test-agent",
         "broker_host": "broker.example.com",
         "broker_port": 443,
         "broker_scheme": "https",
-        "broker_token": "test-token",
+        "broker_token": SecretStr("test-token"),
         "timeout": 60.0,
     }
     defaults.update(kw)
@@ -61,12 +63,14 @@ def test_init_constructs_brokered_requester_with_correct_args(
 ) -> None:
     """BrokeredRequester receives all settings fields and constructor args."""
     captured = _install_fake_agent_comm(monkeypatch)
+    from pydantic import SecretStr
+
     s = _settings(
         agent_id="chat-agent",
         broker_host="host.example.com",
         broker_port=8443,
         broker_scheme="http",
-        broker_token="secret-token",
+        broker_token=SecretStr("secret-token"),
         timeout=120.0,
     )
     BaseBrokeredClient(

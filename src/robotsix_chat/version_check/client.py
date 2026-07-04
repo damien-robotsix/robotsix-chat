@@ -125,8 +125,10 @@ class VersionCheckClient:
         headers: dict[str, str] = {
             "Accept": "application/vnd.github+json",
         }
-        if self._s.github_token:
-            headers["Authorization"] = f"Bearer {self._s.github_token}"
+        if self._s.github_token.get_secret_value():
+            headers["Authorization"] = (
+                f"Bearer {self._s.github_token.get_secret_value()}"
+            )
 
         url = f"{self._base_url}/repos/{self._s.repo}/releases/latest"
         result = await safe_http_request(
