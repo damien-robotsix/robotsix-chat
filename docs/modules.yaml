@@ -123,6 +123,7 @@ modules:
       - tests/chat/__init__.py
       - tests/chat/test_conversation.py
       - tests/chat/test_events.py
+      - tests/chat/test_idempotency.py
       - tests/chat/test_server.py
       - tests/chat/test_subsessions_e2e.py
 
