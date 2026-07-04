@@ -241,6 +241,24 @@ Push-branch and open-PR as the robotsix-mill GitHub App. Disabled by default.
 | `direct_repo.board_api_token`            | `string` (secret) | `""`                       | Optional bearer token for the board API.              |
 | `direct_repo.timeout`                    | `number`          | `30.0`                     | Per-request HTTP timeout (seconds).                   |
 
+### Repo Study
+
+Temporary local repo snapshots the agent can fetch (GitHub tarball — no `git` binary) and study with
+read-only list/read/search tools. Workspaces expire after `ttl_minutes` and can be dropped early.
+Authentication reuses the `direct_repo` GitHub App credentials when configured (the App's
+installation scope defines the reachable private repos); public repos need no auth. Disabled by
+default.
+
+| JSON key                         | Type      | Default              | Description                                    |
+| -------------------------------- | --------- | -------------------- | ---------------------------------------------- |
+| `repo_study.enabled`             | `boolean` | `false`              | Master switch.                                 |
+| `repo_study.data_dir`            | `string`  | `"/data/repo_study"` | Workspace directory (persistent volume).       |
+| `repo_study.ttl_minutes`         | `integer` | `240`                | Workspace lifetime before the automatic sweep. |
+| `repo_study.max_archive_bytes`   | `integer` | `67108864`           | Tarball download cap (64 MiB).                 |
+| `repo_study.max_extracted_bytes` | `integer` | `268435456`          | Total uncompressed cap (256 MiB).              |
+| `repo_study.max_read_bytes`      | `integer` | `204800`             | Per-read file byte cap.                        |
+| `repo_study.timeout`             | `number`  | `60.0`               | Download HTTP timeout (seconds).               |
+
 ______________________________________________________________________
 
 ## Schema

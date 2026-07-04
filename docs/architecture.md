@@ -145,6 +145,7 @@ Each subpackage lives under `src/robotsix_chat/`.
 | **`mail/`**             | Email read/compose/send tools.                                                                               |
 | **`knowledge/`**        | Durable knowledge-note tools (`add`/`append`/`update`/`list`/`read`). Process-local, no external dependency. |
 | **`refdocs/`**          | `read_refdocs` tool — fetches documentation from allowlisted GitHub repositories.                            |
+| **`repo_study/`**       | Temporary local repo snapshots (GitHub tarball, no git) the agent can list/read/search; TTL cleanup.         |
 | **`selfreview/`**       | `read_recent_activity` tool — the agent can inspect its own conversation history to stay aware of context.   |
 | **`version_check/`**    | Tools to check for newer package versions.                                                                   |
 | **`component_client/`** | Tools to inspect and configure remote component agents over HTTP.                                            |

@@ -34,6 +34,7 @@ from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.mail import build_mail_tools
 from robotsix_chat.memory import build_memory
 from robotsix_chat.refdocs import build_refdocs_tools
+from robotsix_chat.repo_study import build_repo_study_tools
 from robotsix_chat.selfreview import build_recent_activity_tools
 from robotsix_chat.version_check import build_version_check_tools
 
@@ -387,6 +388,7 @@ def create_agent_from_settings(
         *build_mail_tools(settings.mail),
         *build_component_tools(settings.component_client),
         *build_refdocs_tools(settings.refdocs),
+        *build_repo_study_tools(settings.repo_study, settings.direct_repo),
         *build_direct_repo_tools(settings.direct_repo),
         *build_knowledge_tools(settings.knowledge),
         *build_diagnostics_tools(settings.diagnostics),

@@ -250,6 +250,46 @@ class DirectRepoSettings(BaseModel):
     timeout: float = 30.0
 
 
+class RepoStudySettings(BaseModel):
+    """Temporary local repo workspaces the agent can fetch and study.
+
+    When enabled, the chat agent gains read-only tools to download a GitHub
+    repository snapshot (tarball — no ``git`` binary involved), extract it
+    into a temporary workspace under *data_dir*, and study it locally
+    (list / read / regex-search files) before dropping it.  Workspaces are
+    transient: they are deleted on demand (``drop_repo_workspace``) and
+    swept automatically once older than *ttl_minutes*.
+
+    Authentication reuses the ``direct_repo`` GitHub App credentials when
+    they are configured (the app's installation scope defines the private
+    repos the agent may fetch); without them only public repositories are
+    reachable.  No new credential fields are introduced.
+
+    Attributes:
+        enabled: Master switch.  When ``False``, no repo-study tools are
+            offered.
+        data_dir: Directory holding the temporary workspaces.  Default
+            ``/data/repo_study`` (on the persistent volume, so a redeploy
+            mid-study does not lose the workspace; the TTL sweep still
+            bounds growth).
+        ttl_minutes: Age after which a workspace is deleted by the sweep
+            that runs on every repo-study tool call.
+        max_archive_bytes: Maximum size of the downloaded tarball.
+        max_extracted_bytes: Maximum total uncompressed size of a workspace.
+        max_read_bytes: Maximum bytes returned by a single file read.
+        timeout: Per-request HTTP timeout in seconds for the download.
+
+    """
+
+    enabled: bool = False
+    data_dir: str = "/data/repo_study"
+    ttl_minutes: int = 240
+    max_archive_bytes: int = 67_108_864
+    max_extracted_bytes: int = 268_435_456
+    max_read_bytes: int = 204_800
+    timeout: float = 60.0
+
+
 class KnowledgeSettings(BaseModel):
     """Local, writable knowledge base for agent-authored operational notes.
 
