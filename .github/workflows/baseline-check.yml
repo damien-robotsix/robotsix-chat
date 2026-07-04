@@ -1,0 +1,25 @@
+name: Baseline Check
+
+# Repo-baseline conformance gate (robotsix-standards): AGENT.md/README
+# standards links, MIT LICENSE, dependabot ecosystem coverage, towncrier
+# wiring, and docs/modules.yaml drift (via robotsix-modules).
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: baseline-check-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  baseline:
+    name: Baseline (shared)
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/baseline-check.yml@44f210c7429969be62eb8cc4f53bfbd3b744da16  # main
+    with:
+      has-docker: true
+      has-board: true
+      python-version: "3.14"

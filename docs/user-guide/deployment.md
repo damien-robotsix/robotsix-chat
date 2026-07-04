@@ -1,7 +1,6 @@
 # Deployment
 
-End-to-end guide: build locally, publish to GHCR, deploy the pull-based Docker Compose stack, and
-reach the loopback service.
+End-to-end guide: build locally, publish to GHCR, and deploy through central-deploy.
 
 ______________________________________________________________________
 
@@ -17,8 +16,9 @@ There are two Compose files:
 
 Production runs under
 [robotsix-central-deploy](https://github.com/damien-robotsix/robotsix-central-deploy): it pulls the
-published image, injects operator-filled secrets, manages restarts and networking, and routes the
-service through its gateway. See `deploy/README.md` for the onboarding walkthrough.
+published image, writes the operator-managed config into the `chat-config` volume, manages restarts
+and networking, and routes the service through its gateway. See `deploy/README.md` for the
+onboarding walkthrough.
 
 ______________________________________________________________________
 
@@ -38,19 +38,19 @@ container. Use this for development, testing, or ad-hoc runs.
 ### Steps
 
 ```bash
-# 1. Create a local config file
-cp config/chat.local.example.yaml config/chat.local.yaml
+# 1. Create a local config file (config standard: one JSON file)
+cp config/config.json config/config.local.json
+# Edit config.local.json: server_host "0.0.0.0", server_port 8080, plus any credentials.
 
-
-# 3. Build and start
+# 2. Build and start
 docker compose up --build
 
 # The chat server is now reachable at http://127.0.0.1:8080
 ```
 
-The compose file mounts `config/chat.local.yaml` and `~/.claude` read-only into the container. No
-`.env` file is needed — the compose file sets `LLMIO_MODEL_LEVEL=3` (Claude SDK / Opus, keyless) and
-`CHAT_CONFIG_PATH=config/chat.local.yaml` directly.
+The compose file mounts `config/config.local.json` (at the container's
+`/home/app/config/config.json`) and `~/.claude` read-only. The only environment variable is the
+config-file locator `ROBOTSIX_CONFIG_FILE` — all settings live in the config file.
 
 To stop: `docker compose down`.
 
@@ -58,37 +58,24 @@ ______________________________________________________________________
 
 ## 2. Publishing to GHCR
 
-The [release-image workflow](/.github/workflows/release-image.yml) builds and pushes the image to
-`ghcr.io/damien-robotsix/robotsix-chat`. It triggers on:
+The [release-image workflow](/.github/workflows/release-image.yml) calls the fleet's shared
+`docker-release.yml` to build and push the image to `ghcr.io/damien-robotsix/robotsix-chat`. It
+triggers on:
 
-| Trigger                       | Tags pushed                        |
-| ----------------------------- | ---------------------------------- |
-| Push to `main`                | `main`, `sha-<short>`              |
-| Push of a `v*` tag (`v1.2.3`) | `1.2.3`, `1.2`, `1`, `sha-<short>` |
-| Manual (`workflow_dispatch`)  | same as branch/tag                 |
+| Trigger                       | Tags pushed            |
+| ----------------------------- | ---------------------- |
+| Push to `main`                | `main`, `sha-<short>`  |
+| Push of a `v*` tag (`v1.2.3`) | `1.2.3`, `sha-<short>` |
+| Manual (`workflow_dispatch`)  | same as branch/tag     |
 
-Every build also produces SLSA provenance and a CycloneDX/SPDX SBOM attestation.
+Every build also produces provenance and SBOM attestations, and a Trivy publish gate blocks on
+fixable CRITICAL findings. There is no `latest` tag.
 
-### How to publish
+`v*` tags are cut by the shared **auto-release** workflow (weekly + on demand) from the
+`changelog.d/` fragments — versions are not tagged by hand.
 
-**Continuous deploy (moving `main` tag):**
-
-```bash
-# Merge to main (or push directly if permitted).  The workflow runs
-# automatically and updates the `main` tag on GHCR.  Redeploy from the
-# central-deploy dashboard to pick it up.
-```
-
-**Semver release:**
-
-```bash
-git tag v1.2.3
-git push origin v1.2.3
-# The workflow pushes tags: 1.2.3, 1.2, 1, sha-<short>
-```
-
-There is no CI-to-deploy automation — the release workflow only publishes images. The deploy host
-pulls them independently.
+There is no CI-to-deploy automation — the release workflow only publishes images. central-deploy
+pulls them when the operator triggers an update.
 
 ______________________________________________________________________
 
@@ -97,12 +84,15 @@ ______________________________________________________________________
 Production deployment is handled by the central-deploy dashboard; there is nothing to
 `docker compose up` on the server.
 
-1. One-time: `claude login` as the server user (populates `~/.claude`, which central-deploy binds
-   into the container at `/home/app/.claude`).
-2. Onboard the repo in the dashboard — preflight parses `deploy/docker-compose.yml`
-   (`# central-deploy-contract-version: 1`).
-3. Fill any secret slots you need (memory keys), acknowledge the `chat-data` stateful-volume
-   warning, confirm the Claude-mount toggle, and deploy.
+1. Onboard the repo in the dashboard — preflight parses `deploy/docker-compose.yml`
+   (`# central-deploy-contract-version: 1`) plus the config template (`config/config.json` +
+   `config/config.schema.json`) and renders a typed config form.
+2. Fill the config form (secrets are masked), acknowledge that `chat-data` starts empty, confirm the
+   Claude-mount toggle, and deploy. Set `server_host` to `0.0.0.0` and `server_port` to `8080` so
+   the container serves the published port.
+3. Authenticate Claude through central-deploy's **dashboard login flow**, which runs `claude login`
+   into the managed `claude-auth` volume (mounted at `/home/app/.claude`). No host `~/.claude` is
+   involved.
 
 Verify from the server:
 
@@ -115,44 +105,14 @@ ______________________________________________________________________
 
 ## 4. Claude credentials
 
-The chat server uses `model_level=3` (Claude SDK / Opus), which authenticates via the `claude` CLI's
-OAuth token — no API key needed.
+The chat server defaults to `model_level=3` (Claude SDK / Opus; level 4 = frontier), which
+authenticates via the `claude` CLI's OAuth token — no API key needed.
 
-### Provisioning on the host
-
-```bash
-# Device-flow login
-claude login
-# → Opens a browser.  Log in with your Anthropic account.
-# → After authorisation, ~/.claude/credentials.json is created.
-
-# Verify
-ls -la ~/.claude/credentials.json
-```
-
-The local stack (`docker-compose.yml`) bind-mounts `~/.claude` read-only at `/home/app/.claude`; in
-production the `robotsix.deploy.claude-mount` label makes central-deploy bind it there read-write.
-The `claude` CLI inside the container reads the OAuth token from this directory.
-
-### Long-lived OAuth tokens
-
-The `claude login` device flow creates a long-lived OAuth refresh token. If the token expires or is
-revoked:
-
-```bash
-claude login   # re-authorise
-docker compose -f deploy/docker-compose.yml restart chat
-```
-
-### Using CLAUDE_CODE_OAUTH_TOKEN (alternative)
-
-If you prefer to pass the token as an environment variable rather than mounting `~/.claude`:
-
-1. Remove (or comment out) the `~/.claude` volume mount in the compose file.
-2. Add `CLAUDE_CODE_OAUTH_TOKEN` to the `environment` block.
-3. Set the token value in `deploy/.env` or directly in the compose file.
-
-This is an operator decision — the default stack uses the volume mount for simplicity.
+- **Local dev**: `claude login` on your machine; the root compose bind-mounts `~/.claude` read-only
+  at `/home/app/.claude`.
+- **Production**: authenticate via central-deploy's dashboard login flow into the managed
+  `claude-auth` named volume. If the token expires or is revoked, re-run the dashboard login flow
+  and restart the component from the dashboard.
 
 ______________________________________________________________________
 
@@ -164,31 +124,22 @@ operator's session on every proxied HTTP/WS request. Deployed any other way (own
 exposed port), authentication is the operator's responsibility — put auth at the proxy; never expose
 the server directly to an untrusted network.
 
-### Agent instruction
-
-The system prompt (agent instruction) sent to the LLM on every chat turn:
-
-| Setting     | YAML path           | Env var             | Default |
-| ----------- | ------------------- | ------------------- | ------- |
-| Instruction | `agent.instruction` | `AGENT_INSTRUCTION` | (none)  |
-
 ______________________________________________________________________
 
 ## 6. Reverse proxy / TLS
 
 > [!NOTE] Provisioning a reverse proxy, a public domain, and TLS certificates is a **manual operator
-> step** — no domain, vhost, or certificate configuration is committed to this repo.
+> step** — no domain, vhost, or certificate configuration is committed to this repo. Under
+> central-deploy this is already handled by the gateway.
 
-The chat server listens on loopback only (`127.0.0.1:${CHAT_PORT}`). To serve it on a public domain,
-place a reverse proxy in front of it.
+If you run the server outside central-deploy, bind it to loopback (`server_host` in the config file)
+and place a reverse proxy in front of it. The proxy must supply the authentication layer — the
+server has none of its own.
 
 ### Example nginx snippet
 
 See the [example nginx reverse proxy snippet](../_snippets/nginx-reverse-proxy.md) for a complete
 configuration.
-
-The chat server applies its own HTTP Basic auth — the reverse proxy does **not** need to add a
-second auth layer.
 
 For Caddy, Traefik, or other proxies, follow the same pattern: terminate TLS at the proxy and
 forward to the loopback port.

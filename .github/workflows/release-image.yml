@@ -2,10 +2,10 @@ name: Release image
 
 # Publishes the container image to GHCR via the fleet's shared reusable
 # workflow (docker standard: no hand-rolled build/push). The shared workflow
-# handles metadata/tags (main, sha-<short>, latest, X.Y.Z), SBOM + provenance
-# attestation, and a Trivy publish gate (fixable CRITICAL findings block).
-# See deploy/README.md for how the server consumes the `main` tag via
-# Watchtower.
+# handles metadata/tags (main, sha-<short>, X.Y.Z — no `latest`), SBOM +
+# provenance attestation, and a Trivy publish gate (fixable CRITICAL findings
+# block). central-deploy pulls the `main` tag on operator-triggered updates
+# (see deploy/README.md).
 on:
   push:
     branches: ['main']
@@ -41,7 +41,7 @@ jobs:
   publish:
     name: Build, scan, and publish image
     needs: verify
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/docker-release.yml@5cd8c1facb02299da618979e7a55f1953f9c075a  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/docker-release.yml@44f210c7429969be62eb8cc4f53bfbd3b744da16  # main
     permissions:
       contents: read          # checkout the repo
       packages: write         # push image to GHCR

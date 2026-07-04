@@ -12,7 +12,13 @@ concrete provider), then serves it over Server-Sent Events:
 - `GET /health` — liveness probe.
 
 The UI and the API are served from the **same origin** by default, so the browser talks to `/chat`
-with no CORS configuration. When you host the UI separately, set `CORS_ALLOW_ORIGINS`.
+with no CORS configuration. When you host the UI separately, set `cors_allow_origins` in the config
+file.
+
+robotsix-chat is a **deployable component** (see the
+[robotsix stack standards](https://github.com/damien-robotsix/robotsix-standards)): it ships as a
+container image and deploys through central-deploy. Full documentation:
+<https://damien-robotsix.github.io/robotsix-chat/>.
 
 > This package was split out of
 > [`robotsix-agent-comm`](https://github.com/damien-robotsix/robotsix-agent-comm): the chat server
@@ -40,19 +46,19 @@ API key**:
 ```bash
 uv sync --extra claude-sdk          # pulls claude-agent-sdk via robotsix-llmio
 claude login                        # one-time; also needs Node.js on PATH
-cp config/config.example.json config/config.json   # defaults to model_level 3
-uv run robotsix-chat
+uv run robotsix-chat                # reads the committed config/config.json defaults (model_level 3)
 ```
 
 Open <http://127.0.0.1:8000/> in your browser and start chatting.
 
-Prefer a cheaper level (1–2, OpenRouter deepseek)? Install that extra and set the key in your
-`config/config.json`:
+Prefer a cheaper level (1–2, OpenRouter deepseek)? Install that extra, copy the defaults template to
+a gitignored local file, and set the key there (never in the committed template):
 
 ```bash
 uv sync --extra openrouter
-# Edit config/config.json and set llmio_model_level to 1 and llmio_api_key
-uv run robotsix-chat
+cp config/config.json config/config.local.json
+# Edit config/config.local.json: set llmio_model_level to 1 and llmio_api_key
+ROBOTSIX_CONFIG_FILE=config/config.local.json uv run robotsix-chat
 ```
 
 ### Run without an API key (echo agent)
@@ -110,9 +116,11 @@ Settings are loaded from a single JSON config file via
 
 ### Config file
 
-The JSON file lives at **`config/config.json`** by default — copy it from the committed
-[`config/config.example.json`](config/config.example.json). It is git-ignored so credentials never
-land in the repo. Override the path with the `ROBOTSIX_CONFIG_FILE` environment variable.
+The committed [`config/config.json`](config/config.json) is the **defaults template** (config
+standard): it documents every field with its default value, and central-deploy merges operator edits
+into it at deploy time. It must never contain real credentials. For local runs that need
+credentials, copy it to the git-ignored `config/config.local.json` and point `ROBOTSIX_CONFIG_FILE`
+at that file.
 
 ```jsonc
 {
@@ -125,7 +133,7 @@ land in the repo. Override the path with the `ROBOTSIX_CONFIG_FILE` environment 
 }
 ```
 
-All fields are documented in [`config/config.example.json`](config/config.example.json) and
+All fields are documented in [`config/config.json`](config/config.json) and
 [`docs/configuration.md`](docs/configuration.md). A committed
 [`config/config.schema.json`](config/config.schema.json) is CI-checked to stay in sync with the
 `Settings` model.
@@ -133,17 +141,18 @@ All fields are documented in [`config/config.example.json`](config/config.exampl
 ### Model level
 
 The LLM is configured the [`robotsix-llmio`](https://github.com/damien-robotsix/robotsix-llmio) way
-— you pick a capability **level** (1–3) and llmio resolves the provider + model for it (via
+— you pick a capability **level** (1–4) and llmio resolves the provider + model for it (via
 `robotsix_llmio.config.create_model`). robotsix-chat never names a concrete provider or model. The
 default level → provider-model mapping:
 
-| `model_level`    | provider-model identifier               | needs API key?         |
-| ---------------- | --------------------------------------- | ---------------------- |
-| 1 (cheapest)     | `openrouter-deepseek/deepseek-v4-flash` | yes (`llmio_api_key`)  |
-| 2                | `openrouter-deepseek/deepseek-v4-pro`   | yes (`llmio_api_key`)  |
-| 3 (most capable) | `claudeSDK-opus`                        | no (subscription auth) |
+| `model_level` | provider-model identifier               | needs API key?         |
+| ------------- | --------------------------------------- | ---------------------- |
+| 1 (cheapest)  | `openrouter-deepseek/deepseek-v4-flash` | yes (`llmio_api_key`)  |
+| 2             | `openrouter-deepseek/deepseek-v4-pro`   | yes (`llmio_api_key`)  |
+| 3 (default)   | `claudeSDK-opus`                        | no (subscription auth) |
+| 4 (frontier)  | `claudeSDK-claude-fable-5`              | no (subscription auth) |
 
-- **Level 3 / `claudeSDK`** — the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk)
+- **Levels 3–4 / `claudeSDK`** — the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk)
   authenticates via your local `claude login` subscription, so **no API key**. Install with
   `uv sync --extra claude-sdk` and run `claude login` (needs Node.js on PATH).
 - **Levels 1–2 / `openrouter`** — install with `uv sync --extra openrouter` and set `llmio_api_key`
@@ -171,40 +180,6 @@ The app consumes only one environment variable for config — the file locator:
 | `ROBOTSIX_CONFIG_FILE` | *(file locator only)* | `config/config.json` | Path to the JSON config file. |
 
 All other settings live in `config/config.json` — env vars are not a config channel for this app.
-
-### Calendar & tasks (broker integration)
-
-The assistant can read your calendar (events, availability/free-busy) and manage your personal tasks
-via the [`robotsix-calendar-agent`](https://github.com/damien-robotsix/robotsix-calendar-agent)
-broker. When enabled, the agent gains four tools:
-
-| Tool              | What it does                                           |
-| ----------------- | ------------------------------------------------------ |
-| `query_calendar`  | Read your schedule, upcoming events, and availability. |
-| `manage_calendar` | Create, update, or cancel calendar events.             |
-| `query_tasks`     | List your to-dos.                                      |
-| `manage_tasks`    | Create, update, complete, or delete tasks.             |
-
-The integration is **off by default**. To enable it:
-
-```bash
-uv sync --extra broker
-```
-
-Then set in your `config/config.json`:
-
-```jsonc
-{
-  "calendar": {
-    "enabled": true,
-    "broker_token": "<your-agent-token>"
-  }
-}
-```
-
-All settings are listed in the
-[Calendar (broker integration)](docs/configuration.md#calendar-broker-integration) section of
-`docs/configuration.md`.
 
 ## Application factory
 
