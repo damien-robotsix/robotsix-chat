@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Remove dead `_idle_reset_seconds` attribute from `ConversationStore` (parameter retained for caller compatibility).
 - Add unit tests for `MessageIdempotencyStore` (LRU eviction, multi-session isolation)
 - Add `_serialize()` / `_deserialize()` hook methods to `JsonStoreBase`, allowing subclasses like `EffectivenessStore` to provide custom serialisation without duplicating the atomic-write persistence pattern.
 - Register the deploy-lifecycle API as a read-only component:

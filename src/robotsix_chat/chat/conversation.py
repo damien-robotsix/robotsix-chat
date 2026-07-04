@@ -328,7 +328,6 @@ class ConversationStore:
         *wall_clock* provides wall-clock timestamps for ``last_active`` metadata;
         defaults to ``time.time`` so tests can inject deterministic values.
         """
-        self._idle_reset_seconds = idle_reset_seconds
         self._max_history_turns = max_history_turns
         self._max_conversations = max_conversations
         self._wall_clock = wall_clock
