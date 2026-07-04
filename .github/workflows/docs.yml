@@ -19,6 +19,9 @@ jobs:
     # "workflow"), so its nested deploy job requests `pages: write` +
     # `id-token: write`. The caller must grant them or GitHub rejects the
     # reusable-workflow call with a startup_failure.
+    # The github-pages environment is restricted to the main branch;
+    # skip the entire job on PR events to avoid deploy failures.
+    if: github.event_name != 'pull_request'
     permissions:
       contents: read  # checkout the repo
       pages: write    # deploy the built site to GitHub Pages
