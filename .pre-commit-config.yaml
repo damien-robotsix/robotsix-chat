@@ -78,6 +78,15 @@ repos:
         language: system
         pass_filenames: false
 
+  - repo: local
+    hooks:
+      - id: check-sse-event-types
+        name: SSE event-type audit
+        entry: python scripts/check_sse_event_types.py
+        language: system
+        pass_filenames: false
+        files: ^(src/robotsix_chat/chat/events\.py|src/robotsix_chat/ui/index\.html|tests/.*\.py)$
+
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: v0.22.1
     hooks:

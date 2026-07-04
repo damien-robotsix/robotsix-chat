@@ -33,6 +33,7 @@
   now idempotent — duplicate spawn/resume races cannot launch a second
   worker.  `complete_subsession` fails loudly (error returned to the
   agent) when the subsession is no longer active.
+- Add `check-sse-event-types` pre-commit hook for local SSE event-type drift detection before CI (mill: Add SSE event-type checker to pre-commit hooks for earlier drift detection (20260704T141855Z-add-sse-event-type-checker-to-pre-commit-9ea6))
 - Exclude auto-generated CHANGELOG.md from the typos spell-check pre-commit hook to
   eliminate false positives on hyphen-separated issue reference slugs.
 - Log resolved persistence paths at startup (conversation, knowledge, memory, diagnostics, subsessions) so a volume-mount mismatch is immediately visible in logs.
