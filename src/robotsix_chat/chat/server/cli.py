@@ -265,6 +265,16 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         """Resume periodic subsessions; report interrupted one-shot work."""
         resume_subsessions(env)
 
+    logger.info(
+        "Resolved persistence paths: conversation=%s, knowledge=%s, "
+        "memory_data=%s, diagnostics=%s, subsessions=%s",
+        settings.conversation.persist_path,
+        settings.knowledge.path,
+        settings.memory.data_dir,
+        settings.diagnostics.store_path,
+        settings.subsessions.store_path,
+    )
+
     _run_server(
         agent,
         host=settings.server_host,
