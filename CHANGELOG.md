@@ -1,5 +1,7 @@
 ## 0.0.0 (unreleased)
 
+- Exclude auto-generated CHANGELOG.md from the typos spell-check pre-commit hook to
+  eliminate false positives on hyphen-separated issue reference slugs.
 - Migrate logging from hand-written text format to structlog-based JSON logging. All existing
   `logging.getLogger(__name__).info(...)` calls continue to work unchanged; the `ProcessorFormatter`
   bridge handles stdlib loggers transparently. A new `log_json_format` setting (default `True`) lets
