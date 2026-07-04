@@ -32,6 +32,12 @@ services:
       robotsix.deploy.config-target: "/home/app/config/config.json"
     ports:
       - "8088:8080"
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health').status==200 else 1)"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 15s
     environment:
       # Infrastructure wiring only — where the app finds the mounted config
       # file (written by central-deploy via the config-target label above).
@@ -52,4 +58,4 @@ volumes:
   config:
     labels:
       robotsix.deploy.stateful: "true"
-      robotsix.deploy.config-target: "config/config.json"
+      robotsix.deploy.config-target: "/home/app/config/config.json"
