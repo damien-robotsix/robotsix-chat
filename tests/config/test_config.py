@@ -51,7 +51,7 @@ def test_defaults() -> None:
 
     assert settings.llmio_model_level == 3
     assert settings.llmio_api_key.get_secret_value() == ""
-    assert settings.server_host == "127.0.0.1"
+    assert settings.server_host == "0.0.0.0"
     assert settings.server_port == 8000
     assert settings.log_level == "INFO"
     assert settings.agent_instruction.startswith("You are a helpful assistant.")

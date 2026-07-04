@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 def run_server(
     agent: ChatAgent,
     *,
-    host: str = "127.0.0.1",
+    host: str = "0.0.0.0",  # noqa: S104  # nosec B104
     port: int = 8000,
     serve_ui: bool = True,
     idle_timeout_minutes: int = 30,

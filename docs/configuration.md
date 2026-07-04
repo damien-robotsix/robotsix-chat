@@ -71,7 +71,7 @@ ______________________________________________________________________
 
 | JSON key                | Type            | Default          | Description                                          |
 | ----------------------- | --------------- | ---------------- | ---------------------------------------------------- |
-| `server_host`           | `string`        | `"127.0.0.1"`    | Host the server binds to.                            |
+| `server_host`           | `string`        | `"0.0.0.0"`      | Host the server binds to.                            |
 | `server_port`           | `integer`       | `8000`           | Port the server listens on.                          |
 | `idle_timeout_minutes`  | `integer`       | `30`             | Minutes of inactivity before closing the connection. |
 | `log_level`             | `string`        | `"INFO"`         | Python logging level.                                |

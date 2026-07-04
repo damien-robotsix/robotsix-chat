@@ -181,7 +181,7 @@ class Settings(BaseModel):
         "briefly say so and suggest an alternative; never narrate or pretend to "
         "perform such actions."
     )
-    server_host: str = "127.0.0.1"
+    server_host: str = "0.0.0.0"  # noqa: S104  # nosec B104
     server_port: int = 8000
     idle_timeout_minutes: int = 30
     log_level: str = "INFO"
