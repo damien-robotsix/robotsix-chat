@@ -52,6 +52,8 @@ modules:
       - src/robotsix_chat/component_access/__init__.py
       - src/robotsix_chat/component_access/roster.py
       - src/robotsix_chat/component_access/tools.py
+      - tests/component_access/__init__.py
+      - tests/component_access/test_component_access.py
 
   - id: robotsix_chat.config
     description: "Environment-based configuration via pydantic + python-dotenv."
