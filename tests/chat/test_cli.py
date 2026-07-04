@@ -16,7 +16,6 @@ from robotsix_chat.chat.server.cli import (
 )
 from robotsix_chat.config import Settings
 
-
 # ---------------------------------------------------------------------------
 # _configure_logging
 # ---------------------------------------------------------------------------
@@ -92,7 +91,8 @@ class TestConfigureLogging:
 
     def test_foreign_pre_chain_includes_shared_processors(self) -> None:
         """The formatter's ``foreign_pre_chain`` includes merge_contextvars
-        so stdlib-logger calls (e.g. from libraries) also get structured."""
+        so stdlib-logger calls (e.g. from libraries) also get structured.
+        """
         settings = Settings()
         _configure_logging(settings)
 
@@ -121,9 +121,7 @@ class TestSetupObservability:
                 "robotsix_llmio.core.tracing": MagicMock(
                     setup_langfuse_tracing=mock_setup_langfuse
                 ),
-                "robotsix_llmio.logging": MagicMock(
-                    setup_logging=mock_setup_logging
-                ),
+                "robotsix_llmio.logging": MagicMock(setup_logging=mock_setup_logging),
             },
         ):
             _setup_observability()
@@ -140,14 +138,18 @@ class TestSetupObservability:
             # Must not raise.
             _setup_observability()
 
-    def test_importerror_fallback_logs_debug(self, caplog: pytest.LogCaptureFixture) -> None:
+    def test_importerror_fallback_logs_debug(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
         """When imports fail, a debug-level message is logged."""
-        with patch(
-            "builtins.__import__",
-            side_effect=ImportError("no tracing extras"),
+        with (
+            patch(
+                "builtins.__import__",
+                side_effect=ImportError("no tracing extras"),
+            ),
+            caplog.at_level(logging.DEBUG),
         ):
-            with caplog.at_level(logging.DEBUG):
-                _setup_observability()
+            _setup_observability()
 
         assert any(
             "tracing extras not installed" in record.message
@@ -176,9 +178,7 @@ class TestRunServer:
 
             run_server(agent)
 
-        mock_uvicorn.run.assert_called_once_with(
-            mock_app, host="0.0.0.0", port=8000
-        )
+        mock_uvicorn.run.assert_called_once_with(mock_app, host="0.0.0.0", port=8000)
 
     def test_calls_uvicorn_with_custom_host_and_port(self) -> None:
         """``run_server`` forwards custom ``host`` and ``port``."""
@@ -193,9 +193,7 @@ class TestRunServer:
 
             run_server(agent, host="127.0.0.1", port=9999)
 
-        mock_uvicorn.run.assert_called_once_with(
-            mock_app, host="127.0.0.1", port=9999
-        )
+        mock_uvicorn.run.assert_called_once_with(mock_app, host="127.0.0.1", port=9999)
 
     def test_forwards_all_kwargs_to_create_app(self) -> None:
         """``run_server`` passes every kwarg through to ``create_app``."""
@@ -285,18 +283,14 @@ class TestRunServerFromConfig:
                     log_level="WARNING",
                 ),
             ),
-            patch("robotsix_chat.chat.server.cli._configure_logging") as mock_cfg_logging,
+            patch(
+                "robotsix_chat.chat.server.cli._configure_logging"
+            ) as mock_cfg_logging,
             patch("robotsix_chat.chat.server.cli._export_langfuse_env") as mock_export,
             patch("robotsix_chat.chat.server.cli._setup_observability") as mock_obs,
-            patch(
-                "robotsix_chat.subsessions.SubsessionRegistry"
-            ) as mock_registry_cls,
-            patch(
-                "robotsix_chat.subsessions.ParentDelivery"
-            ) as mock_delivery_cls,
-            patch(
-                "robotsix_chat.subsessions.resume_subsessions"
-            ) as mock_resume,
+            patch("robotsix_chat.subsessions.SubsessionRegistry") as mock_registry_cls,
+            patch("robotsix_chat.subsessions.ParentDelivery") as mock_delivery_cls,
+            patch("robotsix_chat.subsessions.resume_subsessions") as _,
             # The lazy ``from . import run_server`` inside run_server_from_config
             # resolves through the package re-export — patch that, not cli.run_server.
             patch("robotsix_chat.chat.server.run_server") as mock_run_server,
