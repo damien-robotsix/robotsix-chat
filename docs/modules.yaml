@@ -117,7 +117,14 @@ modules:
       - src/robotsix_chat/chat/server/app.py
       - src/robotsix_chat/chat/server/cli.py
       - src/robotsix_chat/chat/server/idempotency.py
-      - src/robotsix_chat/chat/server/routes.py
+      - src/robotsix_chat/chat/server/routes/__init__.py
+      - src/robotsix_chat/chat/server/routes/_shared.py
+      - src/robotsix_chat/chat/server/routes/chat.py
+      - src/robotsix_chat/chat/server/routes/constants.py
+      - src/robotsix_chat/chat/server/routes/errors.py
+      - src/robotsix_chat/chat/server/routes/events.py
+      - src/robotsix_chat/chat/server/routes/sessions.py
+      - src/robotsix_chat/chat/server/routes/subsessions.py
       - docs/api/robotsix_chat/server.md
       - tests/chat/test_conversation.py
       - tests/chat/test_events.py
