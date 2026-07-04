@@ -9,7 +9,6 @@ import pytest
 from pydantic import SecretStr
 
 from robotsix_chat.config import (
-    BoardSettings,
     ComponentClientSettings,
     ComponentTarget,
     DiagnosticsSettings,
