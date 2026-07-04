@@ -31,6 +31,7 @@ modules:
       - docs/configuration.md
       - docs/contributing.md
       - docs/changelog.md
+      - docs/triage-boilerplate.md
       - docs/system_prompt_changelog.md
       - docs/periodic-checks.md
       - docs/user-guide/deployment.md
