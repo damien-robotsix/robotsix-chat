@@ -49,6 +49,17 @@ prompt:
 
 ______________________________________________________________________
 
+## v17 — 2026-07-04 — default-prompt-promises-component-reques-cc62
+
+**Summary:** Remove the "Component access" section from the default `agent_instruction`. It is now
+conditionally injected by `create_agent_from_settings()` only when `central_deploy.url` is
+configured, so the prompt no longer promises a `component_request` tool in the default out-of-box
+deployment where no central-deploy roster is wired.
+
+**SHA256:** `4441f09054aa34ad286b9f1e577d0704b3516d038968850b58183264bf190042`
+
+______________________________________________________________________
+
 ## v16 — 2026-07-04 — generic-component-access-roster-skills
 
 **Summary:** Replace the Board/mill rules and Calendar/task tools sections with a new "Component

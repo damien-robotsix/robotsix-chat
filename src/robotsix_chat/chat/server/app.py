@@ -366,8 +366,22 @@ def create_agent_from_settings(
     if instruction is None:
         instruction = settings.agent_instruction
 
-    # Inject component skill prompts from the central-deploy roster.
+    # Inject component-access instruction and skill prompts from the
+    # central-deploy roster — only when a roster URL is configured.
     if settings.central_deploy.url:
+        instruction = (
+            f"{instruction}\n\n"
+            "Component access:\n"
+            "– You have one generic tool for calling external components: "
+            "component_request(component_id, method, path, json_body=None). "
+            "Each component declares its own API surface as a skill — read "
+            "the skill descriptions below for allowed operations.\n"
+            "– Obey each component skill's safety section. When a skill marks "
+            "an operation as requiring confirmation, ask the user in "
+            "conversation before calling it.\n"
+            "– If the roster is unavailable or a component returns an error, "
+            "report the error clearly — do not retry in a loop."
+        )
         from robotsix_chat.component_access.roster import (
             build_skill_prompt,
             fetch_roster_sync,
