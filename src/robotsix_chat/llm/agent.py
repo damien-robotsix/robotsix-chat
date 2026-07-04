@@ -89,7 +89,7 @@ def _trace_session(session_id: str | None) -> Iterator[None]:
         yield
 
 
-# Header for the recalled-memory block injected into the system prompt.
+# Header for the recalled-memory block prepended to the current user turn.
 _MEMORY_PROMPT_HEADER = (
     "# Relevant memory from earlier conversations\n"
     "Use this background only if it helps; ignore it otherwise.\n"
@@ -165,12 +165,19 @@ class LlmioChatAgent:
         Non-transient errors and exhausted retries are raised — the chat server
         turns that into an SSE ``error`` frame.
         """
-        # Recall relevant memory and fold it into the system prompt. recall()
-        # never raises (it degrades to "" on any backend failure).
+        # Recall relevant memory and prepend it to the current user turn.
+        # recall() never raises (it degrades to "" on any backend failure).
+        # The block must NOT go into the system prompt: recall text changes
+        # with every message, and the system prompt is the head of the
+        # provider's cacheable prefix — mutating it there invalidates the
+        # prompt cache for the whole request on every turn. Prepending to the
+        # newest user turn keeps the instruction, tools, and replayed
+        # transcript byte-stable and cache-servable.
         recalled = await self._memory.recall(message)
         system_prompt = self._instruction
+        llm_message = message
         if recalled:
-            system_prompt = f"{system_prompt}\n\n{_MEMORY_PROMPT_HEADER}{recalled}"
+            llm_message = f"{_MEMORY_PROMPT_HEADER}{recalled}\n\n{message}"
 
         # Forward the key only when one is configured; keyless levels
         # (claudeSDK) must not receive an api_key (the provider rejects it).
@@ -217,15 +224,15 @@ class LlmioChatAgent:
                             from pydantic_ai.messages import BinaryContent
 
                             user_prompt: list[str | BinaryContent] = []
-                            if message:
-                                user_prompt.append(message)
+                            if llm_message:
+                                user_prompt.append(llm_message)
                             for mt, data in images:
                                 user_prompt.append(
                                     BinaryContent(data=data, media_type=mt)
                                 )
                             prompt: object = user_prompt
                         else:
-                            prompt = message
+                            prompt = llm_message
                         result = await handle.run(
                             prompt, message_history=message_history
                         )
