@@ -1,12 +1,9 @@
 name: Lint workflows
 
-# Standalone guard, kept SEPARATE from ci.yml on purpose. A job that `uses:` a
-# SARIF-uploading reusable workflow (python-ci.yml) must grant
-# `security-events: write`, or GitHub rejects the WHOLE workflow file with a
-# 0-second `startup_failure` (no job logs) — so a check living inside ci.yml
-# could never run to catch it. This file has no such caller job, so it always
-# runs. Mirrors robotsix-mill's scripts/validate_workflow_permissions.py
-# (see robotsix-mill#1728).
+# Thin wrapper delegating to the shared reusable lint-workflows.yml
+# from robotsix-github-workflows.  Kept SEPARATE from ci.yml so the
+# workflow-permissions check can run even when ci.yml itself would be
+# rejected by GitHub (0-second startup_failure).
 
 on:
   push:
@@ -17,103 +14,9 @@ permissions:
   contents: read
 
 jobs:
-  workflow-permissions:
-    runs-on: ubuntu-latest
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
-        with:
-          python-version: "3.14"
-      - run: pip install "pyyaml>=6"
-      - name: Validate workflow permissions
-        run: |
-          python - <<'PY'
-          import pathlib, sys, yaml
-          wfdir = pathlib.Path(".github/workflows")
-          known = {"python-ci.yml"}  # only python-ci.yml uploads SARIF
-
-          def load(p):
-              try:
-                  d = yaml.safe_load(p.read_text())
-              except yaml.YAMLError as e:
-                  print("::error::cannot parse %s: %s" % (p, e))
-                  return {}
-              return d if isinstance(d, dict) else {}
-
-          def grants(pm):
-              if pm == "write-all":
-                  return True
-              return isinstance(pm, dict) and pm.get("security-events") == "write"
-
-          def basename(u):
-              if ".github/workflows/" not in u:
-                  return ""
-              return u.split("@", 1)[0].rsplit("/", 1)[-1]
-
-          required = set(known)
-          for wf in wfdir.glob("*.y*ml"):
-              for job in (load(wf).get("jobs") or {}).values():
-                  if isinstance(job, dict) and grants(job.get("permissions")):
-                      required.add(wf.name)
-
-          problems = []
-          for wf in sorted(wfdir.glob("*.y*ml")):
-              data = load(wf)
-              top = data.get("permissions")
-              for name, job in (data.get("jobs") or {}).items():
-                  if not isinstance(job, dict) or not isinstance(job.get("uses"), str):
-                      continue
-                  if basename(job["uses"]) not in required:
-                      continue
-                  eff = job["permissions"] if "permissions" in job else top
-                  if not grants(eff):
-                      problems.append(
-                          "%s: job '%s' calls %s without security-events: write"
-                          % (wf, name, basename(job["uses"]))
-                      )
-
-          if problems:
-              sys.stderr.write(
-                  "Caller jobs missing security-events: write "
-                  "(0-second startup_failure risk):\n"
-              )
-              for p in problems:
-                  sys.stderr.write("  - %s\n" % p)
-              sys.exit(1)
-          print("workflow permissions OK")
-          PY
-
-  actionlint:
-    runs-on: ubuntu-latest
-    permissions:
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-        with:
-          persist-credentials: false
-      - name: Run actionlint
-        uses: reviewdog/action-actionlint@6fb7acc99f4a1008869fa8a0f09cfca740837d9d  # v1.72.0
-        with:
-          reporter: github-pr-review
-          level: error
-
-  zizmor:
-    runs-on: ubuntu-latest
-    permissions:
-      security-events: write
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@38f3f104447c67c051c4a08e39b64a148898af3a  # v4
-      - name: Run zizmor
-        run: uvx zizmor --format sarif . > results.sarif
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-      - uses: github/codeql-action/upload-sarif@8aad20d150bbac5944a9f9d289da16a4b0d87c1e  # v4.36.2
-        if: always()
-        with:
-          sarif_file: results.sarif
-          category: zizmor
+  lint-workflows:
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/lint-workflows.yml@293d6295e4200fc0ee4a6ded19dc2f098c652869  # main
+    with:
+      run-actionlint: true
+      run-zizmor: true
+      sarif-workflows: "python-ci.yml scan-container.yml"

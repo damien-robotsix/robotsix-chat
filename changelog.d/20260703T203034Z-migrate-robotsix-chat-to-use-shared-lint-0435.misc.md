@@ -1,0 +1,1 @@
+Migrate robotsix-chat to use shared lint-workflows.yml from robotsix-github-workflows
