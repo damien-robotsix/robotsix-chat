@@ -144,6 +144,14 @@ modules:
       - src/robotsix_chat/direct_repo/client.py
       - tests/direct_repo/__init__.py
       - tests/direct_repo/test_direct_repo.py
+  - id: repo-study
+    description: "Repo-study tools — temporary local repo snapshots (GitHub tarball, no git binary) the agent can list, read, and regex-search before they expire; auth reuses the direct_repo GitHub App credentials."
+    paths:
+      - src/robotsix_chat/repo_study/__init__.py
+      - src/robotsix_chat/repo_study/workspace.py
+      - tests/repo_study/__init__.py
+      - tests/repo_study/test_repo_study.py
+
   - id: diagnostics
     description: "Diagnostics tools for the agent — exposes build_diagnostics_tools() that returns tools for listing diagnostic events, checking recurring failure categories, and managing fix proposals. Returns no tools when diagnostics is disabled."
     paths:
