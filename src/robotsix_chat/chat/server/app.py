@@ -14,10 +14,12 @@ from importlib import resources
 from typing import TYPE_CHECKING, Any
 
 from asgi_correlation_id import CorrelationIdMiddleware
+from asgi_correlation_id.context import correlation_id
 from starlette.applications import Starlette
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.routing import Route
+from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from robotsix_chat import PROJECT_TITLE
 from robotsix_chat.chat.conversation import ConversationStore
@@ -67,6 +69,34 @@ if TYPE_CHECKING:
     )
 
 logger = logging.getLogger(__name__)
+
+
+# ---------------------------------------------------------------------------
+# Structlog context middleware — binds correlation_id into structlog's
+# contextvars so merge_contextvars picks it up for every log line.
+# ---------------------------------------------------------------------------
+
+
+class StructlogContextMiddleware:
+    """ASGI middleware that binds correlation_id into structlog contextvars.
+
+    Must be placed after ``CorrelationIdMiddleware`` in the middleware
+    stack so the correlation ID is already populated when this middleware
+    runs.
+    """
+
+    def __init__(self, app: Any) -> None:
+        """Store the downstream ASGI application."""
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        """Clear contextvars, bind the current correlation_id, then delegate."""
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        clear_contextvars()
+        bind_contextvars(correlation_id=correlation_id.get())
+        await self.app(scope, receive, send)
 
 
 # ---------------------------------------------------------------------------
@@ -242,7 +272,8 @@ def create_app(
     # carries a request id. Authentication is centralized at the
     # central-deploy gateway — the app adds no auth layer of its own.
     middleware = [
-        Middleware(CorrelationIdMiddleware, header_name=correlation_id_header)
+        Middleware(CorrelationIdMiddleware, header_name=correlation_id_header),
+        Middleware(StructlogContextMiddleware),
     ]
     if cors_allow_origins:
         middleware.append(

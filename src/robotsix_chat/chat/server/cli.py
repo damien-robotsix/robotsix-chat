@@ -9,7 +9,6 @@ app via ``create_app`` and starts uvicorn).
 from __future__ import annotations
 
 import logging
-import logging.config
 import os
 from collections.abc import Callable
 from pathlib import Path
@@ -110,6 +109,62 @@ def _export_langfuse_env(settings: Settings) -> None:
         os.environ.setdefault("LANGFUSE_HOST", settings.langfuse.host)
 
 
+def _configure_logging(settings: Settings) -> None:
+    """Wire Python stdlib logging through structlog.
+
+    Uses ``structlog.stdlib.ProcessorFormatter`` as a bridge so existing
+    ``logging.getLogger(__name__).info(...)`` calls continue to work while
+    all output flows through the configured processor chain.  JSON output
+    is used when *settings.log_json_format* is ``True`` (the default);
+    human-readable console output when ``False``.
+
+    Uvicorn's loggers are cleared and set to propagate so access logs
+    flow through the same structured pipeline.
+    """
+    import structlog
+
+    shared_processors: list[Any] = [
+        structlog.contextvars.merge_contextvars,
+        structlog.stdlib.add_log_level,
+        structlog.stdlib.add_logger_name,
+        structlog.processors.TimeStamper(fmt="iso"),
+        structlog.processors.StackInfoRenderer(),
+        structlog.processors.format_exc_info,
+    ]
+
+    structlog.configure(
+        processors=shared_processors
+        + [structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
+        logger_factory=structlog.stdlib.LoggerFactory(),
+        wrapper_class=structlog.stdlib.BoundLogger,
+        cache_logger_on_first_use=True,
+    )
+
+    if settings.log_json_format:
+        renderer: Any = structlog.processors.JSONRenderer()
+    else:
+        renderer = structlog.dev.ConsoleRenderer()
+
+    formatter = structlog.stdlib.ProcessorFormatter(
+        processor=renderer,
+        foreign_pre_chain=shared_processors,
+    )
+
+    handler = logging.StreamHandler()
+    handler.setFormatter(formatter)
+
+    root_logger = logging.getLogger()
+    root_logger.handlers.clear()
+    root_logger.addHandler(handler)
+    root_logger.setLevel(settings.log_level.upper())
+
+    # Let Uvicorn loggers propagate through the same pipeline.
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        uvicorn_logger = logging.getLogger(name)
+        uvicorn_logger.handlers.clear()
+        uvicorn_logger.propagate = True
+
+
 def run_server_from_config(agent: ChatAgent | None = None) -> None:
     """Start the chat SSE server using ``Settings.load()`` for configuration.
 
@@ -125,36 +180,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     from . import run_server as _run_server
 
     settings = Settings.load()
-    logging.config.dictConfig(
-        {
-            "version": 1,
-            "disable_existing_loggers": False,
-            "filters": {
-                "correlation_id": {
-                    "()": "asgi_correlation_id.CorrelationIdFilter",
-                }
-            },
-            "formatters": {
-                "default": {
-                    "format": (
-                        "%(asctime)s %(levelname)-8s "
-                        "[%(correlation_id)s] %(name)s %(message)s"
-                    ),
-                },
-            },
-            "handlers": {
-                "default": {
-                    "class": "logging.StreamHandler",
-                    "formatter": "default",
-                    "filters": ["correlation_id"],
-                },
-            },
-            "root": {
-                "level": settings.log_level.upper(),
-                "handlers": ["default"],
-            },
-        }
-    )
+    _configure_logging(settings)
 
     # -- tracing / observability (graceful no-op when deps or creds absent) --
     _export_langfuse_env(settings)

@@ -68,6 +68,9 @@ class Settings(BaseModel):
         subsessions: Unified subsession system (background/periodic/user-chat
             sub-agents) — see :class:`SubsessionsSettings`.
         log_level: Python logging level name.
+        log_json_format: When ``True`` (default), log lines are emitted as
+            structured JSON via structlog.  Set to ``False`` for human-readable
+            console output during local development.
         cors_allow_origins: Origins allowed to call /chat cross-origin
             (empty = none; ``["*"]`` = any). Only needed when the browser
             UI is hosted on a different origin than the server.
@@ -181,6 +184,7 @@ class Settings(BaseModel):
     server_port: int = 8000
     idle_timeout_minutes: int = 30
     log_level: str = "INFO"
+    log_json_format: bool = True
     cors_allow_origins: list[str] = Field(default_factory=list)
     correlation_id_header: str = "X-Request-ID"
     langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)

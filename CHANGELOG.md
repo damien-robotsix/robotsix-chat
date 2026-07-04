@@ -1,5 +1,11 @@
 ## 0.0.0 (unreleased)
 
+- Migrate logging from hand-written text format to structlog-based JSON
+  logging.  All existing `logging.getLogger(__name__).info(...)` calls
+  continue to work unchanged; the `ProcessorFormatter` bridge handles
+  stdlib loggers transparently.  A new `log_json_format` setting (default
+  `True`) lets operators switch back to human-readable console output for
+  local development.
 - Removed stale `.gitmodules` file referencing the deleted `broker_src` submodule, and updated a
   leftover Dockerfile comment that mentioned the removed broker extra.
 - Removed broker-related subsystem documentation from `docs/configuration.md` (Mill, Calendar,
