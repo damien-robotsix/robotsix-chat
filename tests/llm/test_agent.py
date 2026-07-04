@@ -24,7 +24,11 @@ class _RecordingMemory:
         return self._recall
 
     async def remember(
-        self, user_message: str, assistant_message: str, *, session_id: str | None = None
+        self,
+        user_message: str,
+        assistant_message: str,
+        *,
+        session_id: str | None = None,
     ) -> None:
         self.remembered.append((user_message, assistant_message, session_id))
 

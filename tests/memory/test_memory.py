@@ -226,8 +226,9 @@ async def test_session_id_forwarded_to_cognee_add_and_cognify(
 async def test_interleaved_conversations_scoped_independently(
     cognee_memory: tuple[CogneeMemory, Any],
 ) -> None:
-    """Two concurrent conversations: guidance written in one must not appear
-    in the recall of the other.
+    """Two concurrent conversations are scoped independently.
+
+    Guidance written in one must not appear in the recall of the other.
 
     Regression: the query-rewrite LLM was resolving 'this session' against
     guidance contaminated by other concurrent windows because session-level

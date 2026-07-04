@@ -28,7 +28,11 @@ class ChatMemory(Protocol):
         ...
 
     async def remember(
-        self, user_message: str, assistant_message: str, *, session_id: str | None = None
+        self,
+        user_message: str,
+        assistant_message: str,
+        *,
+        session_id: str | None = None,
     ) -> None:
         """Persist a completed exchange into long-term memory.
 
@@ -54,7 +58,11 @@ class NullMemory:
         return ""
 
     async def remember(
-        self, user_message: str, assistant_message: str, *, session_id: str | None = None
+        self,
+        user_message: str,
+        assistant_message: str,
+        *,
+        session_id: str | None = None,
     ) -> None:
         """Discard the exchange (no memory backend)."""
         return None

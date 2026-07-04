@@ -266,7 +266,11 @@ class CogneeMemory:
     # -- write ------------------------------------------------------------
 
     async def remember(
-        self, user_message: str, assistant_message: str, *, session_id: str | None = None
+        self,
+        user_message: str,
+        assistant_message: str,
+        *,
+        session_id: str | None = None,
     ) -> None:
         """Persist one exchange into long-term memory (consolidates the graph).
 
