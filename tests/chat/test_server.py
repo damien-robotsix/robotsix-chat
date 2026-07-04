@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import base64
 import json
+import os
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
@@ -20,7 +21,8 @@ from robotsix_chat.chat.server import (
     create_agent_from_settings,
     run_server_from_config,
 )
-from robotsix_chat.config import Settings
+from robotsix_chat.chat.server.cli import _export_langfuse_env
+from robotsix_chat.config import LangfuseSettings, Settings
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.subsessions import (
     SubsessionInfo,
@@ -1952,3 +1954,44 @@ class TestMessageIdempotency:
 
         # The second call's agent.history must include the first message's reply.
         assert f2.agent.history == [("msg1", "first reply")]
+
+
+class TestExportLangfuseEnv:
+    """Env export for the main-agent Langfuse exporter."""
+
+    _VARS = (
+        "LANGFUSE_PUBLIC_KEY",
+        "LANGFUSE_SECRET_KEY",
+        "LANGFUSE_HOST",
+        "LANGFUSE_BASE_URL",
+    )
+
+    def test_exports_base_url_and_host(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Both host names are exported: llmio reads LANGFUSE_BASE_URL."""
+        for var in self._VARS:
+            monkeypatch.delenv(var, raising=False)
+        sk = "sk-lf-test"  # pragma: allowlist secret
+        settings = Settings(
+            langfuse=LangfuseSettings(
+                public_key=SecretStr("pk-lf-test"),
+                secret_key=SecretStr(sk),
+                host="https://langfuse.example.com",
+            )
+        )
+
+        _export_langfuse_env(settings)
+
+        assert os.environ["LANGFUSE_PUBLIC_KEY"] == "pk-lf-test"
+        assert os.environ["LANGFUSE_SECRET_KEY"] == sk
+        assert os.environ["LANGFUSE_HOST"] == "https://langfuse.example.com"
+        assert os.environ["LANGFUSE_BASE_URL"] == "https://langfuse.example.com"
+
+    def test_noop_without_public_key(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Absent credentials leave the environment untouched."""
+        for var in self._VARS:
+            monkeypatch.delenv(var, raising=False)
+
+        _export_langfuse_env(Settings())
+
+        for var in self._VARS:
+            assert var not in os.environ

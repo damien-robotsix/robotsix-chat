@@ -106,6 +106,10 @@ def _export_langfuse_env(settings: Settings) -> None:
             "LANGFUSE_SECRET_KEY",
             settings.langfuse.secret_key.get_secret_value(),
         )
+        # llmio's setup_langfuse_tracing reads LANGFUSE_BASE_URL and falls back
+        # to Langfuse Cloud US when it is absent; LANGFUSE_HOST is the langfuse
+        # SDK / cognee name. Export both so every consumer sees the same host.
+        os.environ.setdefault("LANGFUSE_BASE_URL", settings.langfuse.host)
         os.environ.setdefault("LANGFUSE_HOST", settings.langfuse.host)
 
 
