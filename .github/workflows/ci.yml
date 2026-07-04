@@ -211,9 +211,39 @@ jobs:
           sarif_file: trivy-ci-results.sarif
           category: trivy-ci
 
+  check-config-schema:
+    name: Config schema sync
+    runs-on: ubuntu-latest
+    needs: []
+    permissions:
+      contents: read  # checkout the repo
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
+        with:
+          python-version: "3.14"
+      - name: Install
+        run: uv sync --frozen
+      - name: Verify config/config.schema.json in sync
+        run: |
+          python - <<'EOF'
+          import json, sys
+          from robotsix_chat.config import Settings
+          live = Settings.model_json_schema()
+          committed = json.loads(open("config/config.schema.json").read())
+          if live != committed:
+              print("ERROR: config/config.schema.json is out of sync.")
+              print("Regenerate:")
+              print("  python -c 'import json; from robotsix_chat.config import Settings; "
+                    "print(json.dumps(Settings.model_json_schema(), indent=2))' > config/config.schema.json")
+              sys.exit(1)
+          EOF
+
   check:
     name: All CI checks passed
-    needs: [lockfile, ci, codeql, security, deptry, pre-commit, check-sse-types, check-modules-registry, image-scan]
+    needs: [lockfile, ci, codeql, security, deptry, pre-commit, check-sse-types, check-modules-registry, image-scan, check-config-schema]
     runs-on: ubuntu-latest
     steps:
       - run: echo "All CI checks passed"

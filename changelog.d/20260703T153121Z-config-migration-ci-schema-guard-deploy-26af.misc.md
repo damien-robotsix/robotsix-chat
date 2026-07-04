@@ -1,0 +1,1 @@
+Config migration: CI schema guard, deploy compose labels, docs, ops cutover note

@@ -3,6 +3,11 @@
 - Replace hand-rolled `.github/workflows/lint-workflows.yml` with thin delegation wrapper calling
   `damien-robotsix/robotsix-github-workflows/.github/workflows/lint-workflows.yml` (shared
   reusable). Enables `run-actionlint`, `run-zizmor`, and `sarif-workflows` inputs.
+- CI schema guard ensures `config/config.schema.json` stays in sync with the
+  Settings model. Deploy compose updated to JSON config (`config/config.json`,
+  `ROBOTSIX_CONFIG_FILE`). Documentation rewritten for single-JSON-file config
+  (no env-var overlay). Breaking-change towncrier fragment with ops cutover
+  table added.
 - Enable triage_boilerplate periodic workflow for automated triage boilerplate response templates.
 - Extract `_fetch_json(repo, path, action)` private helper in `RefDocsClient` to deduplicate the
   allowlist-check + URL-build + fetch preamble shared by `read_file` and `list_files`.
