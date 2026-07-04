@@ -55,13 +55,13 @@ over HTTP.
 
 **Known design choices with security implications:**
 
-1. **No built-in auth.** The server binds to `0.0.0.0` by default (all interfaces). Exposing it on
-   a public interface is a conscious operator decision. If you do this, put the server behind a
+1. **No built-in auth.** The server binds to `0.0.0.0` by default (all interfaces). Exposing it on a
+   public interface is a conscious operator decision. If you do this, put the server behind a
    reverse proxy that handles authentication.
-1. **No tool exposure over HTTP.** Agent tools are registered in Python code only — the `/chat`
+2. **No tool exposure over HTTP.** Agent tools are registered in Python code only — the `/chat`
    endpoint streams LLM tokens and never accepts or executes arbitrary tool definitions from
    clients.
-1. **CORS is opt-in.** The `CORS_ALLOW_ORIGINS` environment variable must be explicitly set to
+3. **CORS is opt-in.** The `CORS_ALLOW_ORIGINS` environment variable must be explicitly set to
    enable cross-origin requests. By default the UI and API share the same origin.
 
 ## Dependency scanning
