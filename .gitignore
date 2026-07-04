@@ -35,7 +35,6 @@ deploy/data/
 cogney-key.secrets
 
 # Runtime artifacts — persistent data written during test runs / local dev
-.data/board_write_queue.json
 
 # Vendored deps installed into the tree during sandboxed builds/tests
 # (e.g. pip/uv install --target local-deps). Generated, never committed —

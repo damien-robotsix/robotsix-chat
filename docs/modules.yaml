@@ -38,14 +38,6 @@ modules:
       - docs/_snippets/nginx-reverse-proxy.md
       - docs/api/robotsix_chat.md
 
-  - id: robotsix_chat.board
-    description: "Direct HTTP access to the mill's board API via the shared BoardHTTPClient — exposes build_board_reader_tools() that let the assistant list, read, and create tickets from the same HTTP endpoint the user's browser UI consumes."
-    paths:
-      - src/robotsix_chat/board/__init__.py
-      - src/robotsix_chat/board/dedup.py
-      - tests/board/__init__.py
-      - tests/board/test_board_reader.py
-
   - id: robotsix_chat.component_client
     description: "Component agent client tools for the chat LLM — exposes build_component_tools(), a factory returning LLM tools that let the chat agent enumerate, inspect, and configure remote component agents via direct HTTP."
     paths:
@@ -53,6 +45,15 @@ modules:
       - src/robotsix_chat/component_client/client.py
       - tests/component_client/__init__.py
       - tests/component_client/test_component_client.py
+
+  - id: robotsix_chat.component_access
+    description: "Generic component access via central-deploy roster — fetches the allowed-chat-components list, loads each component's skill into the agent, and returns a single generic component_request tool."
+    paths:
+      - src/robotsix_chat/component_access/__init__.py
+      - src/robotsix_chat/component_access/roster.py
+      - src/robotsix_chat/component_access/tools.py
+      - tests/component_access/__init__.py
+      - tests/component_access/test_component_access.py
 
   - id: robotsix_chat.config
     description: "Environment-based configuration via pydantic + python-dotenv."

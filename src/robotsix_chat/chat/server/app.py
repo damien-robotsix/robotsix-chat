@@ -20,9 +20,9 @@ from starlette.middleware.cors import CORSMiddleware
 from starlette.routing import Route
 
 from robotsix_chat import PROJECT_TITLE
-from robotsix_chat.board import build_board_reader_tools
 from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus
+from robotsix_chat.component_access import build_component_access_tools
 from robotsix_chat.component_client import build_component_tools
 from robotsix_chat.config import Settings, level_needs_api_key
 from robotsix_chat.diagnostics import build_diagnostics_tools
@@ -331,6 +331,18 @@ def create_agent_from_settings(
     if instruction is None:
         instruction = settings.agent_instruction
 
+    # Inject component skill prompts from the central-deploy roster.
+    if settings.central_deploy.url:
+        from robotsix_chat.component_access.roster import (
+            build_skill_prompt,
+            fetch_roster_sync,
+        )
+
+        roster = fetch_roster_sync(settings.central_deploy)
+        skill_prompt = build_skill_prompt(roster)
+        if skill_prompt:
+            instruction = f"{instruction}\n\n{skill_prompt}"
+
     effective_level = (
         model_level if model_level is not None else settings.llmio_model_level
     )
@@ -340,10 +352,10 @@ def create_agent_from_settings(
         else ""
     )
     tools: list[Any] = [
+        *build_component_access_tools(settings.central_deploy),
         *build_mail_tools(settings.mail),
         *build_component_tools(settings.component_client),
         *build_refdocs_tools(settings.refdocs),
-        *build_board_reader_tools(settings.board_reader),
         *build_direct_repo_tools(settings.direct_repo),
         *build_knowledge_tools(settings.knowledge),
         *build_diagnostics_tools(settings.diagnostics),

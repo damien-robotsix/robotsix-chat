@@ -216,6 +216,11 @@ def test_memory_from_json_config(
 
 
 # ---------------------------------------------------------------------------
+# Mill (broker integration)
+# ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
 # Conversation settings
 # ---------------------------------------------------------------------------
 
@@ -381,20 +386,6 @@ def test_mail_enabled_ok() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Board reader
-# ---------------------------------------------------------------------------
-
-
-def test_board_reader_disabled_by_default() -> None:
-    """Board reader is off by default, with sensible defaults present."""
-    settings = Settings()
-    assert settings.board_reader.enabled is False
-    assert settings.board_reader.api_base_url == "http://127.0.0.1:8077"
-    assert settings.board_reader.api_token.get_secret_value() == ""
-    assert settings.board_reader.cache_ttl == 60.0
-
-
-# ---------------------------------------------------------------------------
 # Direct repo
 # ---------------------------------------------------------------------------
 
@@ -483,6 +474,11 @@ def test_version_check_enabled_with_repo_ok() -> None:
         version_check=VersionCheckSettings(enabled=True, repo="robotsix/robotsix-chat")
     )
     assert settings.version_check.enabled is True
+
+
+# ---------------------------------------------------------------------------
+# Component agent (broker responder)
+# ---------------------------------------------------------------------------
 
 
 # ---------------------------------------------------------------------------

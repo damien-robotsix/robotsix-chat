@@ -166,38 +166,6 @@ class MailSettings(BaseModel):
     model_config = {"extra": "forbid"}
 
 
-class BoardSettings(BaseModel):
-    """Direct HTTP access to the mill's board API via the shared BoardHTTPClient.
-
-    Lets the assistant list, read, and create tickets from the same HTTP
-    endpoint the user's browser UI consumes, giving read/write parity with
-    the user — no broker indirection, no NL reinterpretation.
-
-    Uses ``robotsix_board_client.BoardHTTPClient`` with
-    ``ErrorStrategy.RETURN`` so that errors are returned as structured dicts
-    rather than raised as exceptions.
-
-    The board API is served by the mill's management-plane FastAPI app
-    (typically on the same host at port 8077).  When *api_token* is set, it
-    is sent as a ``Bearer`` token; on localhost deployments auth is often
-    disabled (empty token = no ``Authorization`` header sent).
-
-    Attributes:
-        enabled: Master switch.  Independent of ``mill.enabled`` — the
-            board reader works over HTTP even when the broker is offline.
-        api_base_url: Base URL of the board HTTP API (no trailing slash).
-        api_token: Optional bearer token; empty means no auth header.
-        cache_ttl: Seconds to cache board list and ticket lookups
-            (monotonic clock). Failed fetches are never cached.
-
-    """
-
-    enabled: bool = False
-    api_base_url: str = "http://127.0.0.1:8077"
-    api_token: SecretStr = SecretStr("")
-    cache_ttl: float = 60.0
-
-
 class DiagnosticsSettings(BaseModel):
     """Diagnostics capture and systemic fix surfacing.
 
@@ -429,3 +397,28 @@ class ConversationSettings(BaseModel):
     max_history_turns: int = 50
     max_conversations: int = 1000
     persist_path: str = "/data/conversations.json"
+
+
+class CentralDeploySettings(BaseModel):
+    """Central-deploy roster and component-access settings.
+
+    Provides the base URL and bearer token for the central-deploy
+    management-plane API.  At session start the agent fetches the
+    ``GET /chat/components`` roster (a list of component agents the chat
+    is allowed to call), caches it with a short TTL, and loads each
+    component's declared skill into the agent.
+
+    Attributes:
+        url: Base URL of the central-deploy API (no trailing slash).
+        api_token: Bearer token for authenticating to the central-deploy
+            API.  Required when any component access is expected.
+        roster_cache_ttl: Seconds to cache the roster before re-fetching.
+            Default 300 (5 min).
+
+    """
+
+    model_config = {"extra": "forbid"}
+
+    url: str = ""
+    api_token: SecretStr = SecretStr("")
+    roster_cache_ttl: float = 300.0

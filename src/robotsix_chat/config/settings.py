@@ -15,7 +15,7 @@ from robotsix_llmio.config import TierLevel
 
 from robotsix_chat.config.constants import level_needs_api_key
 from robotsix_chat.config.models import (
-    BoardSettings,
+    CentralDeploySettings,
     ComponentClientSettings,
     ConversationSettings,
     DiagnosticsSettings,
@@ -132,29 +132,16 @@ class Settings(BaseModel):
         "for its own sake. Check list_subsessions before spawning to "
         "avoid duplicating running work.\n"
         "\n"
-        "Board rules:\n"
-        "– To READ board/ticket state, always use list_board_tickets or "
-        "read_board_ticket — these call the SAME HTTP endpoint the user's "
-        "browser UI consumes, so you see exactly what the user sees.  "
-        "Never narrate or fabricate ticket states; always verify with "
-        "the board reader tools first. This applies inside subsessions "
-        "too: a periodic subsession monitoring board/ticket status must "
-        "re-read the board every run before reporting.\n"
-        "– Use create_board_ticket for ticket creation — it includes "
-        "built-in duplicate detection.\n"
-        "– Prefer doing board work inline. If you do hand board work to a "
-        "subsession, its instructions MUST require verifying the result "
-        "with list_board_tickets before reporting success.\n"
-        "– Before filing ANY new ticket, list_board_tickets for the target "
-        "repo and check whether an existing OPEN ticket already covers the "
-        "same intent; comment on / reuse it instead of filing a duplicate. "
-        "create_board_ticket does this for you automatically and will warn "
-        "if a similar ticket exists — act on that warning.\n"
-        "– After creating a ticket, verify it landed on "
-        "the correct board with list_board_tickets.\n"
-        "– Never offer to manually promote a ticket from draft to ready. "
-        "The draft→ready transition is automatic (auto-pickup); the system "
-        "picks up tickets on its own once they leave draft.\n"
+        "Component access:\n"
+        "– You have one generic tool for calling external components: "
+        "component_request(component_id, method, path, json_body=None). "
+        "Each component declares its own API surface as a skill — read "
+        "the skill descriptions below for allowed operations.\n"
+        "– Obey each component skill's safety section. When a skill marks "
+        "an operation as requiring confirmation, ask the user in "
+        "conversation before calling it.\n"
+        "– If the roster is unavailable or a component returns an error, "
+        "report the error clearly — do not retry in a loop.\n"
         "\n"
         "Autonomy:\n"
         "– Proactively perform actions that are clearly safe and reversible "
@@ -198,11 +185,11 @@ class Settings(BaseModel):
     correlation_id_header: str = "X-Request-ID"
     langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)
     memory: MemorySettings = Field(default_factory=MemorySettings)
+    central_deploy: CentralDeploySettings = Field(default_factory=CentralDeploySettings)
     mail: MailSettings = Field(default_factory=MailSettings)
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)
     diagnostics: DiagnosticsSettings = Field(default_factory=DiagnosticsSettings)
     refdocs: RefDocsSettings = Field(default_factory=RefDocsSettings)
-    board_reader: BoardSettings = Field(default_factory=BoardSettings)
     knowledge: KnowledgeSettings = Field(default_factory=KnowledgeSettings)
     self_review: SelfReviewSettings = Field(default_factory=SelfReviewSettings)
     version_check: VersionCheckSettings = Field(default_factory=VersionCheckSettings)

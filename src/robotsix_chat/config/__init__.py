@@ -9,7 +9,7 @@ from robotsix_chat.config.constants import (
     level_needs_api_key,
 )
 from robotsix_chat.config.models import (
-    BoardSettings,
+    CentralDeploySettings,
     ComponentClientSettings,
     ComponentTarget,
     ConversationSettings,
@@ -32,7 +32,7 @@ from robotsix_chat.config.settings import (
 )
 
 __all__ = [
-    "BoardSettings",
+    "CentralDeploySettings",
     "ComponentClientSettings",
     "ComponentTarget",
     "ConfigError",
