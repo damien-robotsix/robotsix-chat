@@ -1,1 +1,0 @@
-`docs/configuration.md` shows `llmio.model_level` default as `4` but code default is `3`

@@ -1,1 +1,0 @@
-Adopt towncrier for changelog automation with CI-enforced newsfragments

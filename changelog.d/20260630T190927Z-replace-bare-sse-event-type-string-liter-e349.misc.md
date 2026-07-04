@@ -1,1 +1,0 @@
-Replace bare SSE event-type string literals with imported constants in test files

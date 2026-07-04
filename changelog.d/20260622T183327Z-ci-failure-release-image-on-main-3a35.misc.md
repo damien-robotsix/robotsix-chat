@@ -1,1 +1,0 @@
-Fix verify-ci.js module resolution in github-script steps (Release/Release image workflows)

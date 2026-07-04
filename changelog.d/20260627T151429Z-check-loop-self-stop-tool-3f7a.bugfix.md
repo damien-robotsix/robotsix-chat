@@ -1,4 +1,0 @@
-Check loops can now self-stop: the worker injects a loop-scoped `stop_check_loop` tool into each
-tick sub-agent, so a check that detects a terminal/condition-met state halts its own loop instead of
-re-reporting the same terminal status every interval until a human stops it. Restart-safe (rebuilt
-on resume) and recursion-safe (stop-only, no loop creation).

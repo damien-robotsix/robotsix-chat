@@ -1,1 +1,0 @@
-Preserve chat history across idle timeout and Docker restart (50-message cap)

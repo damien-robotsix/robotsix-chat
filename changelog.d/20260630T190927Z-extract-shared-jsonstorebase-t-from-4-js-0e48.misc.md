@@ -1,1 +1,0 @@
-Extract shared JsonStoreBase[T] from 4 JSON-persistence store classes

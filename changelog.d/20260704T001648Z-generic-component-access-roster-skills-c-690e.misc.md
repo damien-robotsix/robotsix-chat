@@ -1,1 +1,0 @@
-generic component access: roster + skills + component_request tool; remove ALL broker features

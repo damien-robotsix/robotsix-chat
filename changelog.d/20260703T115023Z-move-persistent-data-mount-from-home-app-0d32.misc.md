@@ -1,1 +1,0 @@
-Move persistent-data mount from /home/app/.data to /data

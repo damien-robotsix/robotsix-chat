@@ -1,1 +1,0 @@
-Enable FURB (Refurb) ruleset in Ruff configuration

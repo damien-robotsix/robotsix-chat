@@ -1,1 +1,0 @@
-Add a side panel showing spawned sub-agent / background-task details

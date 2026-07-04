@@ -1,6 +1,0 @@
-Added a `delegate_task` tool that lets the foreground chat agent offload long-running work to a
-same-tier background sub-agent. The tool returns a task id immediately so the foreground reply is
-never blocked. Task lifecycle is tracked in the shared `TaskRegistry` and completion/failure frames
-are pushed through the injected `DeliveryChannel` (currently a no-op placeholder until the concrete
-SSE adapter lands). Sub-agents are built without the delegation tool, preventing infinite recursion.
-The `agent_instruction` now includes delegate-vs-inline guidance.

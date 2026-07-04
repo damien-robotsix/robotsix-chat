@@ -1,1 +1,0 @@
-Implement Pending Questions panel (frontend + agent tool) above chat input

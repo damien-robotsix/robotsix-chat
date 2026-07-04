@@ -1,1 +1,0 @@
-Replace pip-audit pre-commit hook with uv audit

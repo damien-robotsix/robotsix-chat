@@ -1,1 +1,0 @@
-Make the background task pane larger / resizable for readability

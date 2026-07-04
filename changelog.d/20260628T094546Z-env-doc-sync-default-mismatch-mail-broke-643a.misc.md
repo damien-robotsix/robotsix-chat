@@ -1,2 +1,0 @@
-env doc sync: default-mismatch — MAIL_BROKER_HOST, MAIL_BROKER_SCHEME, MAIL_AGENT_ID,
-MAIL_BOARD_MANAGER_ID

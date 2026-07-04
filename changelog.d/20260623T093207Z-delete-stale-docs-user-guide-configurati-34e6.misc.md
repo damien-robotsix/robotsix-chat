@@ -1,1 +1,0 @@
-Delete stale docs/user-guide/configuration.md

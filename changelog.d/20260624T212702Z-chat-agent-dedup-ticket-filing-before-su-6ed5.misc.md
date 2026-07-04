@@ -1,2 +1,0 @@
-Dedup ticket filing: check for an existing open ticket with the same intent before
-create_board_ticket POSTs

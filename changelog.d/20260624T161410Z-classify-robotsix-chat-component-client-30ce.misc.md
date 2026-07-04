@@ -1,1 +1,0 @@
-Classify robotsix_chat.component_client: add as a new module in docs/modules.yaml

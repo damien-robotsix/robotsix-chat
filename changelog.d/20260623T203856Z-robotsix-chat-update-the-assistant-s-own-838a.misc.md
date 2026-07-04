@@ -1,2 +1,0 @@
-robotsix-chat: update the assistant's own system prompt to encode operational learnings about the
-mill/board workflow

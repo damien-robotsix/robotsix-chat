@@ -1,2 +1,0 @@
-chat: enforce tool-call-first for board/ticket narratives — block hallucinated board state in the
-claude_sdk agent

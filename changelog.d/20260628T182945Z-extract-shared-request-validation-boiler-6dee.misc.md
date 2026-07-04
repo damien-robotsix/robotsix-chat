@@ -1,1 +1,0 @@
-Extract shared request-validation boilerplate from route handlers in chat/server/routes.py

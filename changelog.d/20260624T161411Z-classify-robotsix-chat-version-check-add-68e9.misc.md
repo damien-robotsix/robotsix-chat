@@ -1,1 +1,0 @@
-Classify robotsix_chat.version_check: add as a new module in docs/modules.yaml

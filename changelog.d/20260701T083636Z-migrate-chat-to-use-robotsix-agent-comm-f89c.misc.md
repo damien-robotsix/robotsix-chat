@@ -1,1 +1,0 @@
-Migrate chat to use robotsix_agent_comm.protocol.ConfigContractError

@@ -1,1 +1,0 @@
-Add an architecture / overview document to docs/

@@ -1,1 +1,0 @@
-Add spell-checking with `crate-ci/typos` in pre-commit, config, and Makefile

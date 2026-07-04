@@ -1,1 +1,0 @@
-Sync stale calendar_agent_id default in .env.example and config/chat.local.example.yaml

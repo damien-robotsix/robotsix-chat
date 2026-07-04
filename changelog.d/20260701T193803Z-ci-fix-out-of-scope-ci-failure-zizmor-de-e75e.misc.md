@@ -1,2 +1,0 @@
-ci_fix: out-of-scope CI failure — zizmor/dependabot-cooldown in .github/dependabot.yml — add
-cooldown configuration to the Dependabot update entries.

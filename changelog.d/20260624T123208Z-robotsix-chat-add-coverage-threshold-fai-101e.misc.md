@@ -1,1 +1,0 @@
-robotsix-chat: add coverage threshold (fail_under) to pyproject.toml

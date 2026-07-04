@@ -1,2 +1,0 @@
-Gate monitor check-loop status output behind a mandatory board-read (consult_mill) call to prevent
-fabricated status reports

@@ -1,5 +1,0 @@
-Route background sub-agents (delegate_task and check-loop workers) to a cheaper Claude model while
-staying on the Claude SDK subscription. The new `llmio.subagent_model` setting (default `"sonnet"`)
-controls which model the background sub-agents use — `"sonnet"`, `"haiku"`, or `null` (match
-foreground). Override is only applied when the foreground is on the keyless `claudeSDK` provider
-(level 3); OpenRouter levels are untouched. The foreground/interactive agent is unchanged.

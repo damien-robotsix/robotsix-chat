@@ -1,5 +1,0 @@
-ci_fix: out-of-scope CI failure — pre-commit (bandit + detect-secrets) in
-scripts/check_modules_registry.py (add # nosec comments for bandit),
-src/robotsix_chat/chat/server/routes.py (add # nosec for B105),
-src/robotsix_chat/mill/retry_queue.py (add # nosec for B311), .secrets.baseline (update
-detect-secrets baseline for .pre-commit-config.yaml SHA)

@@ -1,1 +1,0 @@
-Move tests/test_version_check.py into a mirroring tests/version_check/ subdirectory

@@ -1,1 +1,0 @@
-Remove stale pip-audit references from pyproject.toml, CONTRIBUTING.md, and SECURITY.md

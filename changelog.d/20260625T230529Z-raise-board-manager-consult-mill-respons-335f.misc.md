@@ -1,1 +1,0 @@
-Raise board-manager (consult_mill) response timeout default from 5 to 10 minutes

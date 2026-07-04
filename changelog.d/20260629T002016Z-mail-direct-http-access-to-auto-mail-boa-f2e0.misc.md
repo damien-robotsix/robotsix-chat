@@ -1,1 +1,0 @@
-Mail: direct HTTP access to auto-mail board server

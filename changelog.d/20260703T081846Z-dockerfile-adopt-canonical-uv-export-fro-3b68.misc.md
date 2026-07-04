@@ -1,1 +1,0 @@
-Dockerfile: adopt canonical uv export --frozen + uv pip install --system pattern

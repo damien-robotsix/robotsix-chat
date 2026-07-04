@@ -1,1 +1,0 @@
-Deliver completed background delegate_task results into the initiating agent's conversation history

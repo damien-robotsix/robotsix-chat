@@ -1,3 +1,0 @@
-Rename the `robotsix-llmio[openrouter-deepseek]` dependency extra to `[openrouter]` following
-llmio#269, which consolidated `openrouter_deepseek` into `robotsix_llmio.openrouter`. Dependencies
-are unchanged.

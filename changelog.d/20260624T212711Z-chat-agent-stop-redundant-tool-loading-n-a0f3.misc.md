@@ -1,1 +1,0 @@
-chat agent: rewrite system-prompt Efficiency directive to stop tool-loading narration

@@ -1,1 +1,0 @@
-Reorganize module robotsix_chat.board: align test directory from tests/board_reader/ to tests/board/

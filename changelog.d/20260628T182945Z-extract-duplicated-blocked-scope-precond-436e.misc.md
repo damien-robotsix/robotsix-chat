@@ -1,1 +1,0 @@
-Extract duplicated BLOCKED+scope preconditions in direct_repo/__init__.py
