@@ -6,6 +6,8 @@ real network.
 
 from __future__ import annotations
 
+import time
+
 import httpx
 import pytest
 import respx
@@ -50,7 +52,9 @@ def test_cache_valid_none_is_false() -> None:
 def test_cache_valid_expired() -> None:
     """Expired cache reports false."""
     _wipe_cache()
-    _roster._cache = (0.0, [])  # very old timestamp
+    # time.monotonic() starts near 0 at boot, so an absolute 0.0 can read
+    # as "fresh" on a newly booted CI runner — anchor relative to now.
+    _roster._cache = (time.monotonic() - 301.0, [])  # just past the 300s TTL
     assert _cache_valid(300.0) is False
 
 
