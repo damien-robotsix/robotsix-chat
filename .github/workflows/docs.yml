@@ -6,7 +6,7 @@ on:
   pull_request:
 
 permissions:
-  contents: read  # baseline: checkout the repo; job overrides for gh-pages push
+  contents: read  # baseline: checkout the repo; the deploy job needs more
 
 concurrency:
   group: docs-${{ github.ref }}
@@ -15,9 +15,12 @@ concurrency:
 jobs:
   docs:
     name: Build and deploy docs
-    # python-docs.yml's nested job pushes the built site to gh-pages, so it
-    # requests `contents: write`. The caller must grant it or GitHub rejects
-    # the reusable-workflow call with a startup_failure.
+    # python-docs.yml deploys via the GitHub Pages actions (build_type
+    # "workflow"), so its nested deploy job requests `pages: write` +
+    # `id-token: write`. The caller must grant them or GitHub rejects the
+    # reusable-workflow call with a startup_failure.
     permissions:
-      contents: write  # push built site to gh-pages
+      contents: read  # checkout the repo
+      pages: write    # deploy the built site to GitHub Pages
+      id-token: write  # OIDC token for the Pages deployment
     uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-docs.yml@44f210c7429969be62eb8cc4f53bfbd3b744da16  # main
