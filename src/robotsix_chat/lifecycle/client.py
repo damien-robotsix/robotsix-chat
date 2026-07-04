@@ -20,6 +20,7 @@ class LifecycleClient:
     """Read-only HTTP client for the deploy-lifecycle API."""
 
     def __init__(self, settings: LifecycleSettings) -> None:
+        """Initialise with lifecycle settings."""
         self._s = settings
         self._base_url = settings.base_url.rstrip("/")
 

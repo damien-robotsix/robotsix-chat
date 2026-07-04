@@ -21,7 +21,7 @@ def _settings(**kw: Any) -> LifecycleSettings:
     base: dict[str, Any] = {
         "enabled": True,
         "base_url": "http://lifecycle:9000",
-        "api_key": "test-api-key",
+        "api_key": "test-api-key",  # pragma: allowlist secret
     }
     base.update(kw)
     return LifecycleSettings(**base)
