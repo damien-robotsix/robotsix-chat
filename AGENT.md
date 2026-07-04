@@ -78,9 +78,9 @@ The app reads JSON config from `config/config.json` inside the container (resolv
 
 - **Local dev**: mounts the single file `./config/config.json` read-only.
 - **Production (central-deploy)**: configuration lives in a single JSON config file
-  (`config/config.json`) mounted by central-deploy via the `robotsix.deploy.config-target`
-  label. The operator copies `config/config.example.json` to `config/config.json`, fills in real
-  values, and central-deploy injects it into the container. The `ROBOTSIX_CONFIG_FILE` env var (the only
+  (`config/config.json`) mounted by central-deploy via the `robotsix.deploy.config-target` label.
+  The operator copies `config/config.example.json` to `config/config.json`, fills in real values,
+  and central-deploy injects it into the container. The `ROBOTSIX_CONFIG_FILE` env var (the only
   config-related key in `environment:`) points the app at this file — no application config or
   secrets live in `environment:`.
 
@@ -99,8 +99,8 @@ The operator must run `claude login` on the host before starting either stack.
 ### User and workdir
 
 The Dockerfile creates a non-root user `app` (UID 1001, the standardized robotsix container layout)
-with `WORKDIR /home/app`. All container-relative paths in compose files (e.g.
-`config/config.json`) are relative to `/home/app`.
+with `WORKDIR /home/app`. All container-relative paths in compose files (e.g. `config/config.json`)
+are relative to `/home/app`.
 
 ## Production configuration (central-deploy)
 
@@ -143,8 +143,8 @@ is used when off or when the extra is absent — the agent then behaves exactly 
 
 Config keys: `memory.enabled`, `memory.data_dir`, `memory.recall_search_type`,
 `memory.llm.{provider,model,endpoint,api_key}`,
-`memory.embedding.{provider,model,endpoint,dimensions,api_key,huggingface_tokenizer}`
-— see `config/config.example.json` for defaults.
+`memory.embedding.{provider,model,endpoint,dimensions,api_key,huggingface_tokenizer}` — see
+`config/config.example.json` for defaults.
 
 ## Mill integration (agent-comm broker)
 

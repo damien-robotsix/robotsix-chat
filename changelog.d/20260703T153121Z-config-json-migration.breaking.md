@@ -13,7 +13,7 @@ into `/home/app/config/config.json` on the deploy host BEFORE restarting:
 | LLMIO_API_KEY                   | llmio_api_key                  | from env store                        |
 | MEMORY_ENABLED                  | memory.enabled                 | true                                  |
 | MEMORY_LLM_API_KEY              | memory.llm.api_key             | OpenRouter key                        |
-| MEMORY_EMBEDDING_ENDPOINT       | memory.embedding.endpoint      | https://embed.robotsix.net/v1         |
+| MEMORY_EMBEDDING_ENDPOINT       | memory.embedding.endpoint      | <https://embed.robotsix.net/v1>       |
 | MEMORY_EMBEDDING_API_KEY        | memory.embedding.api_key       | bearer token                          |
 | LANGFUSE_PUBLIC_KEY             | langfuse.public_key            | main project key                      |
 | LANGFUSE_SECRET_KEY             | langfuse.secret_key            | main project secret                   |

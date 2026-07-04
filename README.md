@@ -117,7 +117,7 @@ land in the repo. Override the path with the `ROBOTSIX_CONFIG_FILE` environment 
 ```jsonc
 {
   "llmio_model_level": 3,
-  // "llmio_api_key": "sk-or-...",
+  // "llmio_api_key": "sk-or-...",  // pragma: allowlist secret
   "server": {
     "host": "127.0.0.1",
     "port": 8000
@@ -137,11 +137,11 @@ The LLM is configured the [`robotsix-llmio`](https://github.com/damien-robotsix/
 `robotsix_llmio.config.create_model`). robotsix-chat never names a concrete provider or model. The
 default level → provider-model mapping:
 
-| `model_level`    | provider-model identifier               | needs API key?            |
-| ---------------- | --------------------------------------- | ------------------------- |
-| 1 (cheapest)     | `openrouter-deepseek/deepseek-v4-flash` | yes (`llmio_api_key`)     |
-| 2                | `openrouter-deepseek/deepseek-v4-pro`   | yes (`llmio_api_key`)     |
-| 3 (most capable) | `claudeSDK-opus`                        | no (subscription auth)    |
+| `model_level`    | provider-model identifier               | needs API key?         |
+| ---------------- | --------------------------------------- | ---------------------- |
+| 1 (cheapest)     | `openrouter-deepseek/deepseek-v4-flash` | yes (`llmio_api_key`)  |
+| 2                | `openrouter-deepseek/deepseek-v4-pro`   | yes (`llmio_api_key`)  |
+| 3 (most capable) | `claudeSDK-opus`                        | no (subscription auth) |
 
 - **Level 3 / `claudeSDK`** — the [Claude Agent SDK](https://code.claude.com/docs/en/agent-sdk)
   authenticates via your local `claude login` subscription, so **no API key**. Install with
@@ -166,9 +166,9 @@ authentication at your reverse proxy — never expose it directly to an untruste
 
 The app consumes only one environment variable for config — the file locator:
 
-| Variable                | Config key            | Default              | Description                       |
-| ----------------------- | --------------------- | -------------------- | --------------------------------- |
-| `ROBOTSIX_CONFIG_FILE`  | *(file locator only)* | `config/config.json` | Path to the JSON config file.     |
+| Variable               | Config key            | Default              | Description                   |
+| ---------------------- | --------------------- | -------------------- | ----------------------------- |
+| `ROBOTSIX_CONFIG_FILE` | *(file locator only)* | `config/config.json` | Path to the JSON config file. |
 
 All other settings live in `config/config.json` — env vars are not a config channel for this app.
 

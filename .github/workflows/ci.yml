@@ -231,7 +231,7 @@ jobs:
         run: uv sync --frozen
       - name: Verify config/config.schema.json in sync
         run: |
-          python - <<'EOF'
+          uv run python - <<'EOF'
           import json, sys
           from robotsix_chat.config import Settings
           live = Settings.model_json_schema()
