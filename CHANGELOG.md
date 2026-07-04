@@ -7,8 +7,8 @@
   compose updated to JSON config (`config/config.json`, `ROBOTSIX_CONFIG_FILE`). Documentation
   rewritten for single-JSON-file config (no env-var overlay). Breaking-change towncrier fragment
   with ops cutover table added.
-- Document the deterministic-source auto-approve fast-path triage boilerplate
-  in the ``triage_boilerplate`` periodic workflow marker.
+- Document the deterministic-source auto-approve fast-path triage boilerplate in the
+  `triage_boilerplate` periodic workflow marker.
 - Enable triage_boilerplate periodic workflow for automated triage boilerplate response templates.
 - Extract `_fetch_json(repo, path, action)` private helper in `RefDocsClient` to deduplicate the
   allowlist-check + URL-build + fetch preamble shared by `read_file` and `list_files`.
