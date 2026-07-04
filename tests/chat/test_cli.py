@@ -90,8 +90,9 @@ class TestConfigureLogging:
             assert lgr.propagate is True
 
     def test_foreign_pre_chain_includes_shared_processors(self) -> None:
-        """The formatter's ``foreign_pre_chain`` includes merge_contextvars
-        so stdlib-logger calls (e.g. from libraries) also get structured.
+        """The formatter's ``foreign_pre_chain`` includes merge_contextvars.
+
+        So stdlib-logger calls (e.g. from libraries) also get structured.
         """
         settings = Settings()
         _configure_logging(settings)
