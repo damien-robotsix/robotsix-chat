@@ -2131,8 +2131,7 @@ class TestExportLangfuseEnv:
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_persists_on_client_disconnect() -> None:
-    """The reply is persisted to conversation history even when the
-    client disconnects mid-stream."""
+    """Persist the reply to conversation history even when the client disconnects."""
     from starlette.requests import Request
     from starlette.responses import StreamingResponse
 
