@@ -114,11 +114,11 @@ Persistent, cross-conversation episodic memory via embedded cognee. Disabled by 
 
 Component-access roster and skill loading from the central-deploy management plane.
 
-| JSON key                         | Type              | Default | Description                                                     |
-| -------------------------------- | ----------------- | ------- | --------------------------------------------------------------- |
-| `central_deploy.url`             | `string`          | `""`    | Base URL of the central-deploy API (no trailing slash).         |
-| `central_deploy.api_token`       | `string` (secret) | `""`    | Bearer token for the central-deploy API.                        |
-| `central_deploy.roster_cache_ttl` | `number`         | `300.0` | Seconds to cache the component roster before re-fetching.       |
+| JSON key                          | Type              | Default | Description                                               |
+| --------------------------------- | ----------------- | ------- | --------------------------------------------------------- |
+| `central_deploy.url`              | `string`          | `""`    | Base URL of the central-deploy API (no trailing slash).   |
+| `central_deploy.api_token`        | `string` (secret) | `""`    | Bearer token for the central-deploy API.                  |
+| `central_deploy.roster_cache_ttl` | `number`          | `300.0` | Seconds to cache the component roster before re-fetching. |
 
 ### Mail (board HTTP)
 
@@ -205,7 +205,7 @@ HTTP client for inspecting and configuring remote component agents. Disabled by 
 
 | JSON key                      | Type            | Default | Description                                                                             |
 | ----------------------------- | --------------- | ------- | --------------------------------------------------------------------------------------- |
-| `component_client.enabled`    | `boolean`       | `false` | Master switch.                                             |
+| `component_client.enabled`    | `boolean`       | `false` | Master switch.                                                                          |
 | `component_client.timeout`    | `number`        | `240.0` | Per-request HTTP timeout (seconds).                                                     |
 | `component_client.components` | `array[object]` | `[]`    | List of component targets, each with `base_url` (string) and optional `label` (string). |
 
