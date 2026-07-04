@@ -163,29 +163,47 @@ async def _agent_with_memory(
 
 
 @pytest.mark.asyncio
-async def test_recalled_memory_injected_into_system_prompt() -> None:
-    """Recalled memory is appended to the system prompt for that call."""
+async def test_recalled_memory_prepended_to_user_turn() -> None:
+    """Recalled memory goes into the current user turn, not the system prompt."""
     provider, _, _, _ = await _agent_with_memory(
-        output="ok", recall="Damien prefers Python."
+        output="ok", recall="Damien prefers Python.", message="hi"
     )
 
+    handle = provider.build_agent.return_value
+    sent = handle.run_calls[0]["message"]
+    assert sent.startswith("# Relevant memory")
+    assert "Damien prefers Python." in sent
+    assert sent.endswith("hi")  # the user's text closes the turn
+
+    # The system prompt stays byte-stable (the head of the provider's
+    # cacheable prefix must never carry per-message recall text).
     system_prompt = provider.build_agent.call_args.kwargs["system_prompt"]
-    assert system_prompt.startswith("Be helpful.")
-    assert "Damien prefers Python." in system_prompt
+    assert system_prompt == "Be helpful."
 
 
 @pytest.mark.asyncio
 async def test_no_recall_adds_no_memory_block() -> None:
-    """Keep the system prompt clean when recall is empty.
+    """With no recalled memory the message and system prompt are untouched."""
+    provider, _, _, _ = await _agent_with_memory(output="ok", message="hi")
 
-    With no recalled memory, the system prompt is just the instruction
-    with no memory block.
-    """
-    provider, _, _, _ = await _agent_with_memory(output="ok")
-
+    handle = provider.build_agent.return_value
+    assert handle.run_calls[0]["message"] == "hi"
     system_prompt = provider.build_agent.call_args.kwargs["system_prompt"]
     assert system_prompt.startswith("Be helpful.")
     assert "# Relevant memory" not in system_prompt  # no recall block
+
+
+@pytest.mark.asyncio
+async def test_system_prompt_identical_with_and_without_recall() -> None:
+    """Recall never alters the system prompt (prompt-cache stability)."""
+    provider_plain, _, _, _ = await _agent_with_memory(output="ok")
+    provider_recall, _, _, _ = await _agent_with_memory(
+        output="ok", recall="Damien prefers Python."
+    )
+
+    plain = provider_plain.build_agent.call_args.kwargs["system_prompt"]
+    with_recall = provider_recall.build_agent.call_args.kwargs["system_prompt"]
+    assert plain == with_recall
 
 
 @pytest.mark.asyncio
