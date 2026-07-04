@@ -260,6 +260,134 @@ async def test_history_read_is_non_mutating() -> None:
 
 
 # ---------------------------------------------------------------------------
+# Summary endpoint — POST /summary
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_summary_endpoint_returns_fields_for_valid_session() -> None:
+    """POST /summary with a session that has turns returns the five summary fields."""
+    store = ConversationStore()
+    sid = cast(str, store.create_session("owner-a")["session_id"])
+    store.record(sid, "owner-a", "Hello", "Hi there!")
+
+    json_tokens = [
+        '{"purpose": "Greeting", "pending_work": "", ',
+        '"pending_questions": "", "blockers": "", ',
+        '"relevant_info": ""}',
+    ]
+    async with mock_app(tokens=json_tokens, conversation_store=store) as f:
+        response = await f.client.post(
+            "/summary",
+            json={"session_id": sid, "owner_id": "owner-a"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data == {
+        "purpose": "Greeting",
+        "pending_work": "",
+        "pending_questions": "",
+        "blockers": "",
+        "relevant_info": "",
+    }
+
+
+@pytest.mark.asyncio
+async def test_summary_endpoint_empty_session_returns_empty_fields() -> None:
+    """POST /summary for a session with no turns returns all-empty fields."""
+    store = ConversationStore()
+    sid = cast(str, store.create_session("owner-a")["session_id"])
+
+    async with mock_app(conversation_store=store) as f:
+        response = await f.client.post(
+            "/summary",
+            json={"session_id": sid, "owner_id": "owner-a"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data == {
+        "purpose": "",
+        "pending_work": "",
+        "pending_questions": "",
+        "blockers": "",
+        "relevant_info": "",
+    }
+
+
+@pytest.mark.asyncio
+async def test_summary_endpoint_unknown_session_returns_empty_fields() -> None:
+    """POST /summary for unknown session returns all-empty fields (no lazy-create)."""
+    async with mock_app() as f:
+        response = await f.client.post(
+            "/summary",
+            json={"session_id": "nonexistent", "owner_id": "owner-a"},
+        )
+
+    assert response.status_code == 200
+    data = response.json()
+    assert data == {
+        "purpose": "",
+        "pending_work": "",
+        "pending_questions": "",
+        "blockers": "",
+        "relevant_info": "",
+    }
+
+
+@pytest.mark.asyncio
+async def test_summary_endpoint_missing_session_id_returns_400() -> None:
+    """POST /summary without session_id returns 400."""
+    async with mock_app() as f:
+        response = await f.client.post("/summary", json={"owner_id": "o"})
+
+    assert response.status_code == 400
+
+
+@pytest.mark.asyncio
+async def test_summary_endpoint_agent_error_returns_500() -> None:
+    """POST /summary returns 500 when the agent raises an exception."""
+    store = ConversationStore()
+    sid = cast(str, store.create_session("owner-a")["session_id"])
+    store.record(sid, "owner-a", "Hello", "Hi there!")
+
+    async with mock_app(error=ValueError("boom"), conversation_store=store) as f:
+        response = await f.client.post(
+            "/summary",
+            json={"session_id": sid, "owner_id": "owner-a"},
+        )
+
+    assert response.status_code == 500
+
+
+@pytest.mark.asyncio
+async def test_summary_endpoint_passes_prompt_to_agent() -> None:
+    """POST /summary sends a summarization prompt containing the conversation."""
+    store = ConversationStore()
+    sid = cast(str, store.create_session("owner-a")["session_id"])
+    store.record(sid, "owner-a", "Fix the bug", "I'll look into it.")
+
+    async with mock_app(
+        tokens=[
+            '{"purpose":"bug fix","pending_work":"","pending_questions":"",'
+            '"blockers":"","relevant_info":""}'
+        ],
+        conversation_store=store,
+    ) as f:
+        await f.client.post(
+            "/summary",
+            json={"session_id": sid, "owner_id": "owner-a"},
+        )
+
+    assert f.agent.call_count == 1
+    assert f.agent.called_with is not None
+    assert "Fix the bug" in f.agent.called_with
+    assert "I'll look into it" in f.agent.called_with
+    assert "purpose" in f.agent.called_with
+
+
+# ---------------------------------------------------------------------------
 # Sessions endpoints — GET /sessions
 # ---------------------------------------------------------------------------
 

@@ -397,6 +397,50 @@
     font-style: italic;
   }
 
+  /* Conversation summary banner */
+  .summary-banner {
+    align-self: stretch;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-left: 3px solid #3b82f6;
+    border-radius: 8px;
+    padding: 0.6rem 0.9rem;
+    margin-bottom: 0.25rem;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: #cbd5e1;
+  }
+  .summary-banner .summary-header {
+    display: flex; align-items: center; gap: 0.4rem;
+    cursor: pointer; user-select: none;
+    font-weight: 600; font-size: 0.8rem; color: #94a3b8;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .summary-banner .summary-toggle {
+    font-size: 0.7rem; transition: transform 0.15s;
+  }
+  .summary-banner.collapsed .summary-toggle {
+    transform: rotate(-90deg);
+  }
+  .summary-banner .summary-body {
+    margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.4rem;
+  }
+  .summary-banner.collapsed .summary-body {
+    display: none;
+  }
+  .summary-banner .summary-section {
+    display: flex; gap: 0.4rem;
+  }
+  .summary-banner .summary-label {
+    font-weight: 600; color: #94a3b8; white-space: nowrap;
+  }
+  .summary-banner .summary-value {
+    color: #e2e8f0;
+  }
+  .summary-banner .summary-loading {
+    color: #64748b; font-style: italic;
+  }
+
   /* ------------------------------------------------------------------ */
   /* Composer row                                                        */
   /* ------------------------------------------------------------------ */
@@ -1642,12 +1686,14 @@
 
   // ---- Message bubbles -------------------------------------------------
   function clearChatBubbles() {
-    // Remove all bubble elements, typing indicator, and inline notices
-    // from the chat container so no messages bleed across sessions.
+    // Remove all bubble elements, typing indicator, summary banner,
+    // and inline notices from the chat container so no messages bleed
+    // across sessions.
     var children = chatEl.querySelectorAll(".bubble, #typing-indicator");
     for (var i = 0; i < children.length; i++) {
       children[i].remove();
     }
+    clearSummary();
     currentAssistantBubble = null;
     typingIndicatorEl = null;
     // Also clear queued messages — they belong to the old session.
@@ -1729,6 +1775,117 @@
       currentAssistantBubble.textContent = "(empty response)";
     }
     currentAssistantBubble = null;
+  }
+
+  // ---- Conversation summary --------------------------------------------
+  var summaryBannerEl = null;
+  var summaryFetchController = null;  // AbortController for in-flight fetch
+
+  function clearSummary() {
+    if (summaryBannerEl) {
+      summaryBannerEl.remove();
+      summaryBannerEl = null;
+    }
+    if (summaryFetchController) {
+      summaryFetchController.abort();
+      summaryFetchController = null;
+    }
+  }
+
+  function refreshSummary() {
+    if (!activeSessionId) return;
+    // Abort any in-flight summary fetch for this session.
+    if (summaryFetchController) {
+      summaryFetchController.abort();
+      summaryFetchController = null;
+    }
+    // Don't fetch if there are no bubbles (empty session).
+    var bubbles = chatEl.querySelectorAll(".bubble.user, .bubble.assistant");
+    if (bubbles.length === 0) {
+      clearSummary();
+      return;
+    }
+
+    // Show loading state on existing banner or create a new one.
+    if (!summaryBannerEl) {
+      summaryBannerEl = document.createElement("div");
+      summaryBannerEl.className = "summary-banner";
+      chatEl.insertBefore(summaryBannerEl, chatEl.firstChild);
+    }
+    var body = summaryBannerEl.querySelector(".summary-body");
+    if (!body) {
+      var header = document.createElement("div");
+      header.className = "summary-header";
+      header.textContent = "▾ Summary";
+      header.addEventListener("click", function () {
+        summaryBannerEl.classList.toggle("collapsed");
+      });
+      summaryBannerEl.appendChild(header);
+      body = document.createElement("div");
+      body.className = "summary-body";
+      summaryBannerEl.appendChild(body);
+    }
+    body.innerHTML = "<span class=\"summary-loading\">Updating…</span>";
+
+    var ctrl = new AbortController();
+    summaryFetchController = ctrl;
+
+    var url = apiBase() + "/summary";
+    fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ session_id: activeSessionId, owner_id: clientId }),
+      signal: ctrl.signal
+    }).then(function (response) {
+      summaryFetchController = null;
+      if (!response.ok) return;
+      return response.json();
+    }).then(function (data) {
+      if (!data || !summaryBannerEl) return;
+      renderSummary(data);
+    }).catch(function (err) {
+      summaryFetchController = null;
+      if (err && err.name === "AbortError") return;
+      // Silently ignore — summary is best-effort.
+    });
+  }
+
+  function renderSummary(data) {
+    if (!summaryBannerEl) return;
+    var body = summaryBannerEl.querySelector(".summary-body");
+    if (!body) return;
+
+    var sections = [
+      { key: "purpose", label: "Purpose" },
+      { key: "pending_work", label: "Pending work" },
+      { key: "pending_questions", label: "Pending questions" },
+      { key: "blockers", label: "Blockers" },
+      { key: "relevant_info", label: "Relevant info" }
+    ];
+
+    var html = "";
+    var hasContent = false;
+    for (var i = 0; i < sections.length; i++) {
+      var s = sections[i];
+      var value = data[s.key];
+      if (value && typeof value === "string" && value.trim()) {
+        html += "<div class=\"summary-section\">" +
+                "<span class=\"summary-label\">" + s.label + ":</span>" +
+                "<span class=\"summary-value\">" + escapeHtml(value.trim()) + "</span>" +
+                "</div>";
+        hasContent = true;
+      }
+    }
+    if (!hasContent) {
+      html = "<span class=\"summary-loading\">No summary available yet.</span>";
+    }
+    body.innerHTML = html;
+  }
+
+  function escapeHtml(text) {
+    var div = document.createElement("div");
+    div.textContent = text;
+    return div.innerHTML;
   }
 
   // ---- SSE stream parser -----------------------------------------------
@@ -1905,6 +2062,8 @@
         }
       }
       scrollToBottom();
+      // Refresh the conversation summary once history is loaded.
+      refreshSummary();
     }).catch(function () {
       // Silently ignore network errors — empty chat is fine.
     });
@@ -2026,6 +2185,8 @@
           setConnectionStatus(true);
           state = "idle";
           updateSendBusy();
+          // Refresh the conversation summary after each turn.
+          refreshSummary();
           // Automatically dispatch the next queued message (FIFO).
           drainQueue();
         } else if (frame.type === "error") {
