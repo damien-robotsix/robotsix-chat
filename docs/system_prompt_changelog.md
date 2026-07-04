@@ -39,19 +39,17 @@ prompt:
 
 ______________________________________________________________________
 
-## v16 — 2026-07-03 — remove-broker-integration
+## v16 — 2026-07-04 — generic-component-access-roster-skills
 
-**Summary:** Remove all references to the deprecated broker-based `consult_mill` tool and the
-calendar/task tools (which communicated exclusively via the agent-comm broker). The "Board/mill
-rules" section is simplified to "Board rules" — `create_board_ticket` is now the sole write path,
-and the post-creation migration/verification paragraph that depends on `consult_mill` is removed.
-The entire "Calendar/task tools" section is deleted because those tools no longer exist.
+**Summary:** Replace the Board/mill rules and Calendar/task tools sections with a new "Component
+access" section describing the generic `component_request` tool, roster-based skill loading, and the
+requirement to obey each component skill's safety section (ask the user before calling
+confirmation-required operations). The old broker-based board and calendar tool guidance is removed;
+all component interaction now goes through the single generic tool.
 
-**Rationale:** The `robotsix-agent-comm` broker is deprecated fleet-wide; its client packages
-(`mill/`, `calendar/`, `component_agent/`, `skills/`) and all broker-based tools have been deleted.
-Cleaning up the system prompt prevents the LLM from attempting to call tools that no longer exist.
+**SHA256:** `c987639542cfecccc925b5dfa12573ae2ad0a93f1a56670c035871f74ec11d60`
 
-**SHA256:** `3de5e87c6b6a84ca3fb485c3bae1880c823f923bb7cc8670de50fa9c023036a2`
+______________________________________________________________________
 
 ## v15 — 2026-07-02 — subsession-redesign
 
