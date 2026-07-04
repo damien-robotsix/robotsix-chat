@@ -1742,7 +1742,6 @@ async def test_subsessions_close_terminal_is_idempotent() -> None:
 @pytest.mark.asyncio
 async def test_subsessions_close_cancels_worker_and_delivers_summary() -> None:
     """Closing a live subsession cancels its worker and delivers a summary."""
-    import asyncio
     from contextlib import suppress
 
     from tests.common.subsession_fakes import FakeAgent, build_env, wait_until
