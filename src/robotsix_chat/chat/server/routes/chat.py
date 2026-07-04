@@ -345,9 +345,10 @@ async def chat_endpoint(
                     break
         except asyncio.CancelledError:
             logger.debug("SSE stream cancelled (client disconnect)")
-            raise
         finally:
-            producer.cancel()
+            # Let the producer finish on disconnect so the reply is
+            # persisted to conversation history even when the client
+            # disconnects mid-stream.
             with contextlib.suppress(BaseException):
                 await producer
 

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import os
@@ -2123,3 +2124,72 @@ class TestExportLangfuseEnv:
 
         for var in self._VARS:
             assert var not in os.environ
+
+
+# ---------------------------------------------------------------------------
+# Chat endpoint — client disconnect resilience
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_chat_endpoint_persists_on_client_disconnect() -> None:
+    """The reply is persisted to conversation history even when the
+    client disconnects mid-stream."""
+    from starlette.requests import Request
+    from starlette.responses import StreamingResponse
+
+    from robotsix_chat.chat.server.routes import chat_endpoint
+
+    async with mock_app(tokens=["Hello", " ", "world!"]) as f:
+        session_id = "test-disconnect-persist"
+        owner_id = "owner-disconnect"
+
+        body = json.dumps(
+            {"message": "hello", "session_id": session_id, "owner_id": owner_id}
+        ).encode()
+
+        body_sent = False
+
+        async def receive() -> dict[str, object]:
+            nonlocal body_sent
+            if not body_sent:
+                body_sent = True
+                return {
+                    "type": "http.request",
+                    "body": body,
+                    "more_body": False,
+                }
+            return {"type": "http.disconnect"}
+
+        scope: dict[str, object] = {
+            "type": "http",
+            "http_version": "1.1",
+            "method": "POST",
+            "scheme": "http",
+            "server": ("testserver", 80),
+            "client": ("testclient", 50000),
+            "path": "/chat",
+            "query_string": b"",
+            "headers": [
+                (b"content-type", b"application/json"),
+            ],
+            "app": f.app,
+        }
+
+        request = Request(scope, receive)
+        response = await chat_endpoint(request)
+        assert isinstance(response, StreamingResponse)
+
+        body_iter = response.body_iterator
+        # Consume the heartbeat to confirm the stream started.
+        chunk = await asyncio.wait_for(body_iter.__anext__(), timeout=2.0)
+        assert chunk == b": keepalive\n\n"
+
+        # Simulate client disconnect.
+        await body_iter.aclose()
+        await asyncio.sleep(0)
+
+        # The turn must be persisted despite the disconnect.
+        turns = f.app.state.conversation_store.history(session_id)
+        assert len(turns) == 1
+        assert turns[0] == ("hello", "Hello world!")

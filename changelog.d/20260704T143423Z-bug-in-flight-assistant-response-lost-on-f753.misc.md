@@ -1,0 +1,1 @@
+Bug: in-flight assistant response lost on page reload or conversation switch
