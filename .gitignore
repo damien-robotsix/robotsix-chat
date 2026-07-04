@@ -8,8 +8,13 @@ __pycache__/
 # Environment secrets
 .env
 
-# Real local configuration (may contain credentials: API keys, passwords)
-config/config.json
+# Real local configuration (may contain credentials: API keys, passwords).
+# The committed config/config.json is the defaults template (config standard);
+# point ROBOTSIX_CONFIG_FILE at this gitignored file for local runs with
+# real credentials.
+config/config.local.json
+# Pre-standard local config files (YAML era) — never commit
+config/chat.local.yaml
 
 # Build artifacts
 dist/
@@ -29,6 +34,8 @@ site/
 
 # Persistent deploy-time agent data (bind-mounted into the container)
 deploy/data/
+# Local runtime agent data (never committed — runtime state, not source)
+.data/
 
 # Secret material (API keys etc.) — never commit
 *.secrets

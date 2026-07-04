@@ -14,29 +14,31 @@ directly. The root `docker-compose.yml` remains the local-dev stack.
 - Lifecycle is managed by central-deploy: restart policy, networking, gateway routing
   (`deploy.robotsix.net/<component>/*` → container port 8080), and redeploys from the dashboard. No
   Watchtower.
-- **Configuration** lives in a single YAML config file mounted by central-deploy.
-  `deploy/config.example.yaml` is the committed template — the operator copies it to
-  `config/chat.local.yaml`, fills in real values (secret slots, tune defaults), and central-deploy
-  injects it into the container via the `robotsix.deploy.config-target` label. The container reads
-  it via the `CHAT_CONFIG_PATH` env var (infrastructure wiring only). No application config or
-  secrets live in `environment:`.
+- **Configuration** follows the
+  [config standard](https://damien-robotsix.github.io/robotsix-standards/config-standard/): one JSON
+  file. The committed defaults template is `config/config.json` and its typed schema
+  `config/config.schema.json`; central-deploy renders the schema as typed inputs in the dashboard,
+  merges operator edits into the template, and writes the resulting `config.json` into the
+  `chat-config` volume (mounted at `/home/app/config`) before the container starts — that is what
+  the `robotsix.deploy.config-target` label declares. The container locates the file via the
+  `ROBOTSIX_CONFIG_FILE` env var (infrastructure wiring only). No application config or secrets live
+  in `environment:`.
 - **Persistent state** (knowledge store, cognee memory, HF cache) lives in the named volume
-  `chat-data`, mounted at `/data` and flagged `robotsix.deploy.stateful` — it starts EMPTY on first
-  onboard; migrate data from a previous deployment first if needed.
-- **Claude credentials**: the `robotsix.deploy.claude-mount: "true"` label makes central-deploy bind
-  the server user's `~/.claude` to `/home/app/.claude` (the standardized container user's home),
-  enabling the keyless level-3 claude-sdk transport. Run `claude login` as the server user once
-  beforehand.
+  `chat-data`, mounted at `/data` — it starts EMPTY on first onboard; migrate data from a previous
+  deployment first if needed.
+- **Claude credentials**: the `robotsix.deploy.claude-mount: "true"` label makes central-deploy
+  mount its managed `claude-auth` named volume at `/home/app/.claude`, enabling the keyless
+  level-3/4 claude-sdk transport. Authenticate once through central-deploy's dashboard login flow
+  (which runs `claude login` into that volume) — no host `~/.claude` is involved.
 
 ## Onboarding
 
 1. In the central-deploy dashboard, start onboarding and point it at this repository. Preflight
-   parses `deploy/docker-compose.yml`.
-2. Fill the config file: copy `deploy/config.example.yaml` to `config/chat.local.yaml` and fill in
-   the secret slots (at minimum `auth.password`). central-deploy injects this file into the
-   container at the path declared by the `robotsix.deploy.config-target` label.
-3. Acknowledge the `chat-data` stateful-volume warning (empty on first deploy) and confirm the
-   Claude-mount toggle.
+   parses `deploy/docker-compose.yml` plus `config/config.schema.json` and `config/config.json`.
+2. Fill the typed config form (secrets are masked `SecretStr` fields). central-deploy writes the
+   merged config into the `chat-config` volume at the path declared by the
+   `robotsix.deploy.config-target` label.
+3. Acknowledge that `chat-data` starts empty on first deploy and confirm the Claude-mount toggle.
 4. Deploy.
 
 ## Migrating from the old Watchtower stack

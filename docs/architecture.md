@@ -40,8 +40,8 @@ The CLI entry point (`robotsix-chat`) executes `run_server_from_config()`:
 ```bash
 uv run robotsix-chat
   │
-  ├─ 1.  Settings.load()
-  │      pydantic defaults → config/chat.local.yaml → env vars
+  ├─ 1.  load_config(Settings)
+  │      the one JSON config file (ROBOTSIX_CONFIG_FILE) over pydantic defaults
   │
   ├─ 2.  logging.config.dictConfig()
   │      correlation-ID-aware structured logging
@@ -135,20 +135,19 @@ Each subpackage lives under `src/robotsix_chat/`.
 | **`chat/`**        | Starlette app factory, route handlers, entry point. Conversation store (`conversation.py`) and SSE event bus (`events.py`).                                                                                                                                       |
 | **`subsessions/`** | Unified subsession system — models, registry (state + inbox + persistence), worker turn loop, parent summary delivery, and the depth-aware agent tools (`spawn_subsession`, `message_subsession`, `close_subsession`, `list_subsessions`, `complete_subsession`). |
 | **`llm/`**         | `LlmioChatAgent` — satisfies the `ChatAgent` protocol. Wraps `robotsix-llmio`'s `create_model(level)`, producing single-block (non-streamed) replies for claudeSDK transports.                                                                                    |
-| **`config/`**      | Pydantic `Settings` model (all configuration in one place). Cascade: field defaults → YAML (`config/chat.local.yaml`) → environment variables. ~30 settings spanning LLM, server, memory, and all tool gates.                                                     |
+| **`config/`**      | Pydantic `Settings` model (all configuration in one place), loaded from the one JSON config file via `robotsix-config` — no env overlay, no CLI merge. ~30 settings spanning LLM, server, memory, and all tool gates.                                             |
 | **`ui/`**          | Single-file browser chat UI (`index.html`). No build step, no framework — served directly by `GET /`.                                                                                                                                                             |
 
 ### Optional Tools (gated by `settings.<tool>.enabled`)
 
-| Package                 | Role                                                                                                             |
-| ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
-| **`mail/`**             | Email read/compose/send tools.                                                                                   |
-| **`board_reader/`**     | `list_board_tickets` and `read_board_ticket` — read-only board access via the same HTTP API the browser UI uses. |
-| **`knowledge/`**        | Durable knowledge-note tools (`add`/`append`/`update`/`list`/`read`). Process-local, no external dependency.     |
-| **`refdocs/`**          | `read_refdocs` tool — fetches documentation from allowlisted GitHub repositories.                                |
-| **`selfreview/`**       | `read_recent_activity` tool — the agent can inspect its own conversation history to stay aware of context.       |
-| **`version_check/`**    | Tools to check for newer package versions.                                                                       |
-| **`component_client/`** | Tools to inspect and configure remote component agents over HTTP.                                                |
+| Package                 | Role                                                                                                         |
+| ----------------------- | ------------------------------------------------------------------------------------------------------------ |
+| **`mail/`**             | Email read/compose/send tools.                                                                               |
+| **`knowledge/`**        | Durable knowledge-note tools (`add`/`append`/`update`/`list`/`read`). Process-local, no external dependency. |
+| **`refdocs/`**          | `read_refdocs` tool — fetches documentation from allowlisted GitHub repositories.                            |
+| **`selfreview/`**       | `read_recent_activity` tool — the agent can inspect its own conversation history to stay aware of context.   |
+| **`version_check/`**    | Tools to check for newer package versions.                                                                   |
+| **`component_client/`** | Tools to inspect and configure remote component agents over HTTP.                                            |
 
 ### Memory
 
@@ -158,19 +157,19 @@ Each subpackage lives under `src/robotsix_chat/`.
 
 ______________________________________________________________________
 
-## Configuration Cascade
+## Configuration
 
-All configuration flows through `Settings.load()`:
+All configuration flows through `robotsix_config.load_config(Settings)` — the
+[config standard](https://damien-robotsix.github.io/robotsix-standards/config-standard/):
 
 ```text
-pydantic field defaults  →  YAML (config/chat.local.yaml)  →  environment variables
+pydantic field defaults  ←filled by←  the one JSON config file
 ```
 
-- **Defaults**: sensible values in the pydantic model (e.g. `SERVER_PORT=8080`).
-- **YAML**: `config/chat.local.yaml` is the primary operator-facing config file. A canonical
-  template lives at `config/chat.local.example.yaml`.
-- **Environment**: every setting has a corresponding env var (e.g. `SERVER_PORT`,
-  `LLMIO_MODEL_LEVEL`). Env vars override YAML, which overrides defaults.
+- **Defaults**: sensible values in the pydantic model, mirrored by the committed template
+  `config/config.json`.
+- **The file**: located by the `ROBOTSIX_CONFIG_FILE` env var (default `config/config.json`) — the
+  only source of values. No env-var overlay, no CLI merge.
 
 The LLM provider is selected indirectly: `model_level` (1–4) is passed to `robotsix-llmio`, which
 resolves it to a concrete provider (levels 3–4 → claudeSDK, levels 1–2 → OpenRouter DeepSeek). Level
@@ -209,9 +208,9 @@ ______________________________________________________________________
 Two Docker Compose stacks:
 
 - **Root `docker-compose.yml`** — local development: builds from the multi-stage `Dockerfile`,
-  mounts `config/chat.local.yaml` and `~/.claude` (for claudeSDK auth), binds port 8080.
+  mounts `config/config.local.json` and `~/.claude` (for claudeSDK auth), binds port 8080.
 - **`deploy/docker-compose.yml`** — production: the central-deploy contract (pre-built GHCR image,
-  named volumes, env secret slots). Lifecycle, networking, and authentication are handled by
-  central-deploy and its gateway.
+  named volumes, config written by central-deploy into the `chat-config` volume). Lifecycle,
+  networking, and authentication are handled by central-deploy and its gateway.
 
 See `docs/getting-started.md` for setup instructions.

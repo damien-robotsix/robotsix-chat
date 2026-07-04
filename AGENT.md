@@ -1,9 +1,14 @@
 # robotsix-chat — agent-oriented reference
 
+This repo follows the
+[robotsix stack standards](https://github.com/damien-robotsix/robotsix-standards); read those first
+— this file carries only repo-specific knowledge.
+
 ## Repo overview
 
-robotsix-chat is a **browser + SSE chat server for an LLM agent**. It drives an LLM through
-`robotsix-llmio` (pick a `model_level`, never a concrete provider) and serves it over HTTP:
+robotsix-chat is a **deployable component** (per the standards' distribution tiers): a browser + SSE
+chat server for an LLM agent. It drives an LLM through `robotsix-llmio` (pick a `model_level`, never
+a concrete provider) and serves it over HTTP:
 
 - `GET /` — self-contained browser chat UI (single HTML file, no build step)
 - `POST /chat` — accepts `{"message": "..."}`, returns the agent reply as SSE (`text/event-stream`)
@@ -13,107 +18,55 @@ robotsix-chat is a **browser + SSE chat server for an LLM agent**. It drives an 
 Key stack: **Python ≥3.14**, **Starlette** (ASGI), `robotsix-llmio`, `pydantic`, `uvicorn`.
 Entrypoint: `robotsix-chat` (console script installed by the package).
 
+## Configuration (config standard)
+
+One JSON file, loaded by `robotsix_config.load_config` into the pydantic `Settings` model
+(`src/robotsix_chat/config/settings.py`). No env overlay, no CLI merge — the file is the only source
+of values; model field defaults fill the gaps.
+
+- `config/config.json` — **committed defaults template** (what central-deploy merges operator edits
+  into). Never put real credentials in it.
+- `config/config.schema.json` — committed typed JSON Schema, generated from `Settings`; the CI
+  `check-config-schema` job fails when it drifts from the model.
+- `ROBOTSIX_CONFIG_FILE` — the one env var, and it only *locates* the file. For local runs with real
+  credentials, copy the template to the gitignored `config/config.local.json` and point
+  `ROBOTSIX_CONFIG_FILE` at it.
+- The server binds `server_host:server_port` from the config file (template default
+  `127.0.0.1:8000`; containers need `0.0.0.0:8080` in their mounted config).
+
 ## Deploy stack structure
 
-The repo has two compose files serving different lifecycles. Both share the same container port
-(8080) and the same credential/convention patterns.
+Two compose files with different jobs (component standard):
 
 ### Root `docker-compose.yml` — local dev
 
-Builds the multi-stage `Dockerfile`, tags `robotsix-chat:local`, and runs the image with
-`restart: unless-stopped`.
-
-- **Port mapping**: `8080:8080` (host:container; container port 8080 is set by `SERVER_PORT=8080` in
-  the Dockerfile).
-- **Environment**: `ROBOTSIX_CONFIG_FILE=config/config.json`.
-- **Volume mounts**:
-  - `./config/config.json:/home/app/config/config.json:ro`
-  - `~/.claude:/home/app/.claude:ro`
-
-Prerequisites (one-time):
-
-1. `cp config/config.example.json config/config.json`
-2. `claude login` (populates `~/.claude` with subscription credentials)
+Builds the multi-stage `Dockerfile`, tags `robotsix-chat:local`. Mounts `./config/config.local.json`
+read-only at `/home/app/config/config.json` and the host `~/.claude` at `/home/app/.claude` (run
+`claude login` once beforehand).
 
 ### `deploy/docker-compose.yml` — production (central-deploy contract)
 
-The production deployment is managed by
-[robotsix-central-deploy](https://github.com/damien-robotsix/robotsix-central-deploy); this file is
-the contract it consumes (first line: `# central-deploy-contract-version: 1`). central-deploy pulls
-the pre-built `ghcr.io/damien-robotsix/robotsix-chat:main` image, injects environment secrets filled
-by the operator in the dashboard, applies its own restart policy/networking/gateway routing, and
-redeploys on demand — there is no Watchtower sidecar and no `restart:`/host-bind entries (both are
-contract violations).
+Consumed by [robotsix-central-deploy](https://github.com/damien-robotsix/robotsix-central-deploy)
+(first line: `# central-deploy-contract-version: 1`); central-deploy pulls
+`ghcr.io/damien-robotsix/robotsix-chat:main`, applies its own lifecycle (restart, networking,
+gateway routing), and redeploys on operator demand — no Watchtower, no `restart:`, no host binds.
 
 - **Service**: single `robotsix-chat` service (implicitly primary).
-- **Port**: `8088:8080` — routed by the central-deploy gateway, not published on the host.
-- **Environment**: carries only infrastructure wiring — the config-file path pointer
-  (`ROBOTSIX_CONFIG_FILE: config/config.json`). Application config and secrets live in the mounted
-  config file (injected via the `robotsix.deploy.config-target` label).
-- **Volumes**: named volume `chat-data` → `/home/app/.data` (persistent agent state; flagged
-  `robotsix.deploy.stateful`).
-- **Claude credentials**: label `robotsix.deploy.claude-mount: "true"` — central-deploy binds the
-  server's `~/.claude` to `/home/app/.claude` (the standardized container user's home) for the
-  level-3 claude-sdk transport.
+- **Port**: `8088:8080` — the primary port is gateway-routed (`deploy.robotsix.net/<component>/*`).
+- **Config**: label `robotsix.deploy.config-target: "/home/app/config/config.json"` + the
+  `chat-config` volume mounted at `/home/app/config`; central-deploy writes the merged config there
+  before every start. `ROBOTSIX_CONFIG_FILE` in `environment:` is wiring only.
+- **State**: named volume `chat-data` → `/data` (knowledge store, cognee memory, HF cache); starts
+  empty on first onboard.
+- **Claude credentials**: label `robotsix.deploy.claude-mount: "true"` — central-deploy mounts its
+  managed `claude-auth` named volume at `/home/app/.claude` (levels 3-4 claude-sdk transport).
+  Authenticate via central-deploy's dashboard login flow, never by preparing host files.
 
-### Port mapping asymmetry
+### Container layout
 
-The Dockerfile hardcodes container port **8080** (`ENV SERVER_PORT=8080`, `EXPOSE 8080`). Neither
-compose file overrides `SERVER_PORT`, so the container always listens on 8080. The host-side port
-differs:
-
-| Stack                                    | Host port             | Container port |
-| ---------------------------------------- | --------------------- | -------------- |
-| Local dev (`docker-compose.yml`)         | 8080                  | 8080           |
-| Production (`deploy/docker-compose.yml`) | 8088 (gateway-routed) | 8080           |
-
-## Config mount conventions
-
-Both stacks follow the same two volume-binding patterns.
-
-### Application config (`config/config.json`)
-
-The app reads JSON config from `config/config.json` inside the container (resolved relative to
-`WORKDIR /home/app`). The path is overridable via the `ROBOTSIX_CONFIG_FILE` env var.
-
-- **Local dev**: mounts the single file `./config/config.json` read-only.
-- **Production (central-deploy)**: configuration lives in a single JSON config file
-  (`config/config.json`) mounted by central-deploy via the `robotsix.deploy.config-target` label.
-  The operator copies `config/config.example.json` to `config/config.json`, fills in real values,
-  and central-deploy injects it into the container. The `ROBOTSIX_CONFIG_FILE` env var (the only
-  config-related key in `environment:`) points the app at this file — no application config or
-  secrets live in `environment:`.
-
-The canonical template is `config/config.example.json` (committed). The operator copies it to
-`config/config.json` (gitignored).
-
-### Claude credentials (`~/.claude`)
-
-The `claude-sdk` transport (model level 3) authenticates via the `claude` CLI, which reads
-credentials from `~/.claude` (the Claude subscription session). Local dev bind-mounts the host's
-`~/.claude` to `/home/app/.claude:ro`; in production the `robotsix.deploy.claude-mount` label makes
-central-deploy bind it to `/home/app/.claude` (read-write).
-
-The operator must run `claude login` on the host before starting either stack.
-
-### User and workdir
-
-The Dockerfile creates a non-root user `app` (UID 1001, the standardized robotsix container layout)
-with `WORKDIR /home/app`. All container-relative paths in compose files (e.g. `config/config.json`)
-are relative to `/home/app`.
-
-## Production configuration (central-deploy)
-
-Production configuration lives in a single JSON config file (`config/config.json`) mounted by
-central-deploy via the `robotsix.deploy.config-target` label. The operator fills real values (secret
-slots, tuned defaults) in that file; central-deploy injects it into the container at deploy time.
-The `ROBOTSIX_CONFIG_FILE` env var in the deploy compose points the app at this file — it is
-infrastructure wiring only, not application configuration.
-
-The root `.env.example` documents the application-level environment variables for **local** runs
-(used by `Settings.load()` in `src/robotsix_chat/config/settings.py`):
-
-- `ROBOTSIX_CONFIG_FILE` — config file locator (the only env var consumed for config)
+Standardized robotsix layout (docker standard): non-root user `app`, uid/gid **1000**,
+`WORKDIR /home/app`; the container listens on **8080** (from the mounted config), `EXPOSE 8080`,
+stdlib-only `HEALTHCHECK` on `/health`, exec-form `ENTRYPOINT ["robotsix-chat"]` (no entrypoint.sh).
 
 ## Long-term memory (cognee)
 
@@ -131,41 +84,35 @@ is used when off or when the extra is absent — the agent then behaves exactly 
   - *Embeddings* — a remote **OpenAI-compatible** server (self-hosted Ollama / `bge-m3`, 1024-dim);
     provider must be `openai_compatible`, needs `memory.embedding.endpoint` (e.g.
     `http://host:11434/v1`). Embeddings are **not** run on the chat host.
-- **Storage**: cognee's stores live under `memory.data_dir` (default `.data/cognee`) — keep it on
-  the persistent `.data` bind mount so memory survives redeploys.
+- **Storage**: cognee's stores live under `memory.data_dir` (default `/data/cognee`) — keep it on
+  the persistent `/data` volume so memory survives redeploys.
+- **Tracing**: cognee traffic uses its **own** Langfuse project (`robotsix-chat-cognee`) with
+  dedicated `memory.langfuse.*` credential fields — never the main `langfuse.*` credentials
+  (component standard: one Langfuse project per LLM-generating function).
 - **Safety**: `recall`/`remember` never raise into the chat path (errors are logged; the reply
   proceeds without memory).
 - **Resilience caveat**: memory depends on the embedding server being reachable; while it's down,
   recall/consolidation silently no-op.
-- **Image note**: the extra pulls a large dep tree (litellm, lancedb, transformers, …) — it is
-  intentionally *not* baked into the production image until memory is enabled there (which also
-  needs the embedding endpoint reachable from the host).
 
 Config keys: `memory.enabled`, `memory.data_dir`, `memory.recall_search_type`,
 `memory.llm.{provider,model,endpoint,api_key}`,
 `memory.embedding.{provider,model,endpoint,dimensions,api_key,huggingface_tokenizer}` — see
-`config/config.example.json` for defaults.
-
-## Submodule layout
-
-(This repo has no active submodules.)
+`config/config.json` for defaults.
 
 ## Key file map
 
 - `docker-compose.yml` — local dev compose (builds from Dockerfile, tag `robotsix-chat:local`)
-- `deploy/docker-compose.yml` — production stack (GHCR image + Watchtower, loopback-only)
+- `deploy/docker-compose.yml` — production deploy contract (central-deploy; GHCR image)
 - `Dockerfile` — multi-stage build (`python:3.14-slim`, Node.js + `claude` CLI, non-root `app`,
   `EXPOSE 8080`)
-- `.env.example` — canonical env-var reference (standard variables; deploy-only vars documented
-  above)
-- `config/config.example.json` — canonical JSON config template (copy to `config.json`)
-- `src/robotsix_chat/config/settings.py` — settings cascade (pydantic defaults → YAML → env,
-  `Settings.load()`); includes `MemorySettings`
+- `config/config.json` — committed JSON config defaults template
+- `config/config.schema.json` — committed typed schema (CI-checked against `Settings`)
+- `src/robotsix_chat/config/settings.py` — `Settings` (pydantic) + `robotsix_config.load_config`
 - `src/robotsix_chat/memory/` — optional long-term memory: `base.py` (`ChatMemory` protocol +
   `NullMemory`), `cognee.py` (`CogneeMemory`), `__init__.py` (`build_memory()`)
-- `src/robotsix_chat/chat/server.py` — Starlette ASGI app; `GET /`, `POST /chat`, `GET /health`
-- `.github/workflows/release-image.yml` — GHCR publish workflow (triggers on `main` push, `v*` tag,
-  manual dispatch)
+- `src/robotsix_chat/chat/server/` — Starlette ASGI app (`app.py`, `routes.py`, `cli.py`); `GET /`,
+  `POST /chat`, `GET /health`
+- `.github/workflows/release-image.yml` — GHCR publish caller (shared `docker-release.yml`)
 
 ## CI workflow conventions
 
@@ -180,6 +127,16 @@ component in the `uses:` value) must use the full 40-character commit SHA of the
 current HEAD on its default branch. Never use mutable refs (`@main`, `@master`, `@v1`, `@latest`).
 Add a trailing version comment for readability (e.g. `# v0.2.0` or `# main`).
 
+**Rule:** The `image-scan` job in `ci.yml` is deliberately hand-rolled (not the shared
+`docker-pr-scan.yml`): the shared workflow uses the GHA layer cache, which was measured at 45-55 min
+per run on this multi-GB image vs ~4 min cold. Do not switch back without timing both paths (docker
+standard, "CI-time image scan").
+
+**Rule:** The dependency CVE audit runs in the `lockfile` job (with the curated
+`--ignore-until-fixed` list), and `run-audit: false` is passed to the shared `python-ci.yml`. The
+shared audit step has no ignore mechanism, so enabling both hard-blocks CI on CVEs that have no
+released fix.
+
 ## Testing conventions
 
 Tests for module `robotsix_chat.<module>` live under `tests/<module>/`, mirroring the per-module
@@ -190,11 +147,6 @@ source layout (e.g. `tests/chat/` for `robotsix_chat.chat`, `tests/config/` for
 implement the protocol (`_MockAgent`, `MockAgent`, and any other test-local mocks) in the same PR.
 Run `mypy` on the full test suite to verify protocol conformance — a mock that lacks a keyword
 argument silently passes structural subtyping at runtime but fails static `mypy --strict` checks.
-
-**Rule:** When adding a new env-var override in a `_build_*_raw()` function, add both a
-`_wipe_env_vars` entry AND a test that sets the env var (via `monkeypatch.setenv`) and asserts the
-resulting field value. Follow the `BOARD_READER_CACHE_TTL` / `test_board_reader_from_env` sibling
-pattern.
 
 ## Task tracking
 
@@ -207,6 +159,3 @@ Persistent, human-readable task tracking lives under `tasks/` at the repo root:
 At the start of every conversation, read `tasks/TASKS.md` to pick up any pending work from prior
 conversations. When work is done, archive the task by moving its section from `TASKS.md` into
 `ARCHIVE.md`. The format is structured Markdown — a person can inspect or edit the files by hand.
-
-This repo follows the
-[robotsix stack standards](https://github.com/damien-robotsix/robotsix-standards).

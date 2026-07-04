@@ -15,7 +15,6 @@ dependencies = [
     "httpx",
     "pydantic",
     "pyjwt",
-    "pyyaml",
     "structlog>=24.0.0",
     "uvicorn",
     "starlette",
@@ -80,6 +79,7 @@ dev = [
     "pytest-cov",
     "pytest-xdist[psutil]",
     "respx",
+    "robotsix-modules",
     "ruff",
     "towncrier",
 ]
@@ -93,12 +93,11 @@ packages = ["src/robotsix_chat"]
 
 # First-party git sources are pinned to commit SHAs (repo baseline); the
 # fleet pin-bump workflow advances them through reviewed PRs.
-# robotsix-llmio deliberately has no entry here: its SHA pin is inherited from
-# robotsix-board-agent's direct-URL requirement, so the two repos can't
-# disagree on the version.
 [tool.uv.sources]
 robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.git", rev = "424f8ec" }  # pragma: allowlist secret
 robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "73f2d555caa21de47a3732824d776e04719b3011" }  # pragma: allowlist secret
+# robotsix-modules: same SHA as robotsix-mill (coherent-set rule).
+robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "d7c5e59980516de6e050db02ff54aef4e15ff5c3" }  # pragma: allowlist secret
 
 [tool.towncrier]
 package = "robotsix_chat"
@@ -177,11 +176,6 @@ ignore_missing_imports = true
 module = ["asgi_correlation_id", "asgi_correlation_id.*"]
 ignore_missing_imports = true
 
-# PyYAML ships no type stubs.
-[[tool.mypy.overrides]]
-module = ["yaml"]
-ignore_missing_imports = true
-
 [tool.deptry]
 # `robotsix_chat` is this project's own package (built from src/robotsix_chat);
 # deptry otherwise misreads the intra-package absolute imports as a transitive
@@ -204,17 +198,21 @@ DEP002 = ["transformers"]
 # its result objects, and the agent builds a multi-turn `message_history` from
 # its message types. We consume it through llmio (never declare it directly), so
 # this transitive import (DEP003) is deliberate.
-# `pyyaml` is used directly in the skills loader for YAML skill files — no
-# longer transitive; a direct dependency.
 # `opentelemetry` is the OTLP exporter (``tracing`` extra); guarded by a
 # try/except ImportError in cognee's Langfuse callback registration.
-DEP003 = ["pydantic_ai", "pyyaml", "opentelemetry"]
+DEP003 = ["pydantic_ai", "opentelemetry"]
 
 [tool.bandit]
 exclude_dirs = ["tests", ".local_pkgs"]
 
 [tool.pytest.ini_options]
-strict = true
+# Default run is offline and credential-free (robotsix-standards python page):
+# network/credential tests carry the `live` marker and run only via
+# `pytest -m live`.
+addopts = ["-m", "not live", "--strict-markers", "--strict-config"]
+markers = [
+    "live: needs network access or real credentials; excluded from the default run",
+]
 testpaths = ["tests"]
 filterwarnings = ["error"]
 
@@ -226,4 +224,7 @@ relative_files = true
 
 [tool.coverage.report]
 exclude_lines = ["pragma: no cover", "if TYPE_CHECKING:"]
-fail_under = 88  # set at/just below current measured coverage; raise over time; never lower
+# One fleet-wide floor (robotsix-standards python page): 80, enforced by the
+# shared python-ci.yml workflow; this local value keeps `uv run pytest` honest.
+# No per-repo threshold, no ratchet — the floor moves only fleet-wide.
+fail_under = 80

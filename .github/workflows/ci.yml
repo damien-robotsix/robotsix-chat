@@ -32,14 +32,18 @@ jobs:
 
   ci:
     name: Python CI (shared)
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-ci.yml@5cd8c1facb02299da618979e7a55f1953f9c075a  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-ci.yml@44f210c7429969be62eb8cc4f53bfbd3b744da16  # main
     with:
       python-version: "3.14"
       cov-package: "robotsix_chat"
       install-extras: ""
-      # Keep in sync with [tool.coverage.report] fail_under in pyproject.toml
-      # (the fleet floor is 80; never lower).
-      coverage-threshold: "88"
+      # coverage-threshold deliberately omitted: the fleet-wide floor (80)
+      # lives in the shared workflow — no per-repo threshold (repo baseline).
+      # The CVE audit runs in the `lockfile` job instead, which carries the
+      # curated --ignore-until-fixed list for unfixable advisories; the
+      # shared audit step has no ignore mechanism, so running both would
+      # hard-block CI on CVEs with no released fix.
+      run-audit: false
     # python-ci.yml's nested `tests` job uploads SARIF, so it requests
     # `security-events: write`. A caller job MUST grant at least that or
     # GitHub rejects the reusable-workflow call with a startup_failure
@@ -50,7 +54,7 @@ jobs:
 
   security:
     name: Security scan (shared)
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-security.yml@5cd8c1facb02299da618979e7a55f1953f9c075a  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-security.yml@44f210c7429969be62eb8cc4f53bfbd3b744da16  # main
     with:
       install-extras: ""
       trufflehog-pr-diff: true
@@ -60,33 +64,12 @@ jobs:
 
   changelog:
     name: Changelog fragment check
-    runs-on: ubuntu-latest
-    if: github.event_name == 'pull_request' && !contains(github.event.pull_request.labels.*.name, 'skip-changelog')
+    # Shared reusable gate (repo baseline); the skip-changelog label
+    # exemption is handled inside the reusable workflow.
+    if: github.event_name == 'pull_request'
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/changelog-check.yml@44f210c7429969be62eb8cc4f53bfbd3b744da16  # main
     permissions:
       contents: read  # checkout the repo with full history
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-        with:
-          persist-credentials: false
-          fetch-depth: 0
-      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
-      - name: Check for newsfragment
-        env:
-          BASE_REF: ${{ github.base_ref }}
-        run: uv run --with towncrier towncrier check --compare-with "origin/${BASE_REF}"
-
-  deptry:
-    name: Dependency hygiene (deptry)
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read  # checkout the repo
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-        with:
-          persist-credentials: false
-      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
-      - name: Run deptry
-        run: uv run --with deptry deptry .
 
   pre-commit:
     name: Pre-commit hooks
@@ -116,23 +99,9 @@ jobs:
       - name: Run SSE event-type check
         run: python scripts/check_sse_event_types.py
 
-  check-modules-registry:
-    name: Modules registry audit
-    # Repo-baseline standard: every file registered in docs/modules.yaml;
-    # drift (unregistered/stale/duplicate paths) fails CI.
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read  # checkout the repo
-    steps:
-      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
-        with:
-          persist-credentials: false
-      - uses: actions/setup-python@ece7cb06caefa5fff74198d8649806c4678c61a1  # v6.3.0
-        with:
-          python-version: "3.14"
-      - run: pip install "pyyaml>=6"
-      - name: Check modules.yaml against the tracked tree
-        run: python scripts/check_modules_registry.py
+  # docs/modules.yaml drift is gated by the shared baseline-check workflow
+  # (has-board: true → robotsix-modules validate / check-registration /
+  # validate-paths) — see .github/workflows/baseline-check.yml.
 
   image-scan:
     name: Container image scan (Trivy)
@@ -227,7 +196,7 @@ jobs:
 
   check:
     name: All CI checks passed
-    needs: [lockfile, ci, security, deptry, pre-commit, check-sse-types, check-modules-registry, image-scan, check-config-schema]
+    needs: [lockfile, ci, security, pre-commit, check-sse-types, image-scan, check-config-schema]
     runs-on: ubuntu-latest
     steps:
       - run: echo "All CI checks passed"

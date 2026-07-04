@@ -5,42 +5,45 @@
 # docker-compose.yml is the local-dev stack and is ignored by the deployment
 # system. Lifecycle (restart policy, networking, gateway routing, redeploys)
 # is managed by central-deploy — no Watchtower, no restart:, no host binds.
+# The image HEALTHCHECK is the canonical health probe; no compose-level
+# override is declared.
 #
-# Application config and secrets live in the mounted config file
-# (config/config.json, injected by central-deploy via the
+# Application config and secrets live in the mounted config file:
+# central-deploy merges operator edits into the committed template
+# (config/config.json, typed by config/config.schema.json) and writes the
+# result into the chat-config volume before the container starts (the
 # config-target label below). The environment: block carries only
-# infrastructure wiring — the config-file path pointer and anything
-# the container needs to locate/serve, not application behaviour.
+# infrastructure wiring — the config-file path pointer, never application
+# behaviour.
 services:
   robotsix-chat:
     image: ghcr.io/damien-robotsix/robotsix-chat:main
     labels:
       # Subscription auth for the claude-sdk transports (levels 3-4):
-      # central-deploy
-      # binds host ~/.claude -> /home/app/.claude (the standardized container
-      # user's home).
+      # central-deploy mounts its managed `claude-auth` named volume at
+      # /home/app/.claude (injected at deploy time — not listed under
+      # volumes:). Authentication happens through central-deploy's
+      # dashboard login flow; no host ~/.claude is involved.
       robotsix.deploy.claude-mount: "true"
-      # Application config file — central-deploy injects the operator-managed
-      # config file at the in-container path the app reads via ROBOTSIX_CONFIG_FILE.
-      robotsix.deploy.config-target: "config/config.json"
+      # Full in-container path of the config file (contract §5/§8): its
+      # dirname must match the chat-config mount below; central-deploy
+      # resolves the volume from it and writes config.json there on every
+      # config save.
+      robotsix.deploy.config-target: "/home/app/config/config.json"
     ports:
       - "8088:8080"
     environment:
-      # Infrastructure wiring only — path to the mounted config file
-      # (injected via the config-target label above). Application config
-      # and secrets live in that file, not here.
-      ROBOTSIX_CONFIG_FILE: config/config.json
-    healthcheck:
-      test: ["CMD", "python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health').status==200 else 1)"]
-      interval: 30s
-      timeout: 5s
-      retries: 3
-      start_period: 15s
+      # Infrastructure wiring only — where the app finds the mounted config
+      # file (written by central-deploy via the config-target label above).
+      ROBOTSIX_CONFIG_FILE: /home/app/config/config.json
     volumes:
+      # Operator-managed runtime config, written by central-deploy.
+      - chat-config:/home/app/config
       # Persistent agent state (knowledge store, cognee memory, HF cache).
       - chat-data:/data
 
 volumes:
+  chat-config:
   chat-data:
     labels:
       robotsix.deploy.stateful: "true"

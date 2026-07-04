@@ -9,24 +9,27 @@ and no env-var overlay — the only environment variable consumed for config is 
 The JSON file lives at **`config/config.json`** by default. Its path is set by the
 `ROBOTSIX_CONFIG_FILE` environment variable.
 
-**Getting started:**
+**Getting started (when you need credentials):**
 
 ```bash
-cp config/config.example.json config/config.json
-# Edit config/config.json — fill in secrets for the features you enable.
+cp config/config.json config/config.local.json
+# Edit config/config.local.json — fill in secrets for the features you enable.
+ROBOTSIX_CONFIG_FILE=config/config.local.json uv run robotsix-chat
 ```
 
-- `config/config.json` is **gitignored** — credentials never land in the repo.
-- `config/config.example.json` is **committed** — it documents every field with its default value.
+- `config/config.json` is **committed** — the defaults template (config standard): it documents
+  every field with its default value, and central-deploy merges operator edits into it at deploy
+  time. Never put real credentials in it.
+- `config/config.local.json` is **gitignored** — the place for local credentials.
 - `config/config.schema.json` is **committed and CI-checked** — the CI pipeline regenerates it from
   the `Settings` pydantic model and fails on any drift, so the schema always reflects the live code.
 
 ## Local dev
 
-- The app starts with **defaults only** when no config file exists — non-secret features (server,
-  knowledge, diagnostics) work out of the box.
-- Create `config/config.json` and set `ROBOTSIX_CONFIG_FILE` when you need secrets (API keys, API
-  tokens) or want to override defaults.
+- The app starts with the committed defaults (`config/config.json`) out of the box — non-secret
+  features (server, knowledge, diagnostics) just work.
+- Copy it to `config/config.local.json` and set `ROBOTSIX_CONFIG_FILE` when you need secrets (API
+  keys, API tokens) or want to override defaults.
 
 ## Secrets
 
@@ -48,8 +51,8 @@ Secret fields include:
 
 ## Settings reference
 
-All fields and their defaults are listed in `config/config.example.json`. The sections below
-describe each group.
+All fields and their defaults are listed in `config/config.json`. The sections below describe each
+group.
 
 ______________________________________________________________________
 
@@ -242,7 +245,7 @@ ______________________________________________________________________
 
 ## Schema
 
-The committed [`config/config.schema.json`](../config/config.schema.json) is the authoritative
+The committed `config/config.schema.json` is the authoritative
 schema for the `Settings` model. It is auto-generated from the pydantic model via
 `Settings.model_json_schema()` and **CI-checked** to stay in sync — a CI job regenerates it from the
 model and fails the build on any drift.

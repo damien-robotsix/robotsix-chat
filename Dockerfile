@@ -1,8 +1,9 @@
 # syntax=docker/dockerfile:1
 
 # ---------------------------------------------------------------------------
-# Builder stage: resolve the locked dependency set and export a requirements.txt
-# for installation in the runtime stage.
+# Builder stage: install the locked dependency set + the project into the
+# system interpreter (/usr/local), exactly what the runtime stage copies.
+# Standard robotsix Dockerfile pattern — see robotsix-standards, docker page.
 # ---------------------------------------------------------------------------
 FROM python:3.14-slim@sha256:b877e50bd90de10af8d82c57a022fc2e0dc731c5320d762a27986facfc3355c1 AS builder
 
@@ -16,52 +17,42 @@ ENV UV_LINK_MODE=copy \
 
 WORKDIR /app
 
-# Copy only what is needed to resolve and build the project.
-COPY pyproject.toml uv.lock ./
-COPY src ./src
-COPY README.md ./
-
 # uv needs git to fetch the git-sourced dependencies declared under
-# [tool.uv.sources] (robotsix-yaml-config, robotsix-llmio).
+# [tool.uv.sources] (robotsix-config, robotsix-llmio).
 RUN apt-get update \
     && apt-get install -y --no-install-recommends git="1:2.*" \
     && apt-get clean \
     && rm -rf /var/lib/apt/lists/*
 
-# Export the locked dependency set (claude-sdk for the LLM transport + tracing
-# for Langfuse observability + memory for cognee).
-RUN uv export --frozen --no-emit-project --no-hashes --extra claude-sdk --extra tracing --extra memory > requirements.txt
+COPY pyproject.toml uv.lock README.md ./
+COPY src ./src
+
+# Install into the system interpreter (/usr/local) — NOT `uv sync`, which
+# builds a project venv the runtime COPY would miss. Extras: claude-sdk for
+# the LLM transport, tracing for Langfuse observability, memory for cognee.
+# --no-hashes: the git-sourced first-party deps cannot carry hashes.
+RUN uv export --frozen --no-emit-project --no-hashes \
+        --extra claude-sdk --extra tracing --extra memory \
+        -o /tmp/requirements.txt \
+    && uv pip install --system --no-cache -r /tmp/requirements.txt \
+    && uv pip install --system --no-cache --no-deps . \
+    && rm -f /tmp/requirements.txt
 
 # ---------------------------------------------------------------------------
-# Runtime stage: install locked deps + project into the system Python, then
-# add Node.js + the claude CLI, running as a non-root user.
+# Runtime stage: copy the installed site-packages and console script from the
+# builder — no uv, no git, no compilers. Node.js + the claude CLI are the one
+# genuine runtime system dependency (claude-sdk transport spawns the CLI).
 # ---------------------------------------------------------------------------
 FROM python:3.14-slim@sha256:b877e50bd90de10af8d82c57a022fc2e0dc731c5320d762a27986facfc3355c1 AS runtime
 
 SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
-# Bring in uv and the exported requirements for the --system install.
-COPY --from=ghcr.io/astral-sh/uv:0.11.21 /uv /usr/local/bin/uv
-COPY --from=builder /app/requirements.txt /tmp/requirements.txt
+COPY --from=builder /usr/local/lib/python3.14/site-packages/ /usr/local/lib/python3.14/site-packages/
+COPY --from=builder /usr/local/bin/robotsix-chat /usr/local/bin/robotsix-chat
 
-# Copy project source (needed for the --no-deps self-install; removed after).
-COPY pyproject.toml uv.lock README.md /tmp/project/
-COPY src /tmp/project/src
-
-# Install git temporarily so uv can fetch the git-sourced dependencies
-# (robotsix-yaml-config, robotsix-llmio), install the locked deps and the
-# project into the system site-packages, then remove git, uv, and the
-# transient source to keep the runtime layer lean.
-RUN apt-get update \
-    && apt-get install -y --no-install-recommends git="1:2.*" \
-    && uv pip install --system -r /tmp/requirements.txt \
-    && uv pip install --system --no-deps /tmp/project \
-    && apt-get purge -y --auto-remove git \
-    && apt-get clean \
-    && rm -rf /var/lib/apt/lists/* /tmp/requirements.txt /tmp/project /usr/local/bin/uv
-
-# Install Node.js (LTS) and the claude CLI, then prune build-only packages and
-# caches to keep the layer lean.
+# Install Node.js (LTS) and the claude CLI — required at runtime: the
+# claude-sdk subscription transport spawns the `claude` CLI as a subprocess.
+# Build-only packages and caches are pruned in the same layer.
 RUN apt-get update \
     && apt-get install -y --no-install-recommends curl="8.*" gnupg="2.*" \
     && mkdir -p /etc/apt/keyrings \
@@ -83,11 +74,11 @@ RUN apt-get update \
         /usr/bin/npm /usr/bin/npx /usr/bin/corepack
 
 # Standardized robotsix container layout (see robotsix-standards, docker
-# page): non-root user `app`, uid/gid 1000 (robotsix-standards default,
-# 2026-07 revision), home /home/app. Central-deploy overrides the container
-# user to the deploy-host operator uid:gid at container-create time; the
-# 1000 default matches the common `debian` operator uid. Build args allow
-# other hosts to override.
+# page): non-root user `app`, uid/gid 1000, home /home/app. Central-deploy
+# sets the container user to the deployment uid at container-create time;
+# $HOME is read-only at runtime — all writes go to the mounted volumes
+# (/home/app/config, /data, /home/app/.claude). Build args allow other
+# hosts to override for local builds.
 ARG APP_UID=1000
 ARG APP_GID=1000
 RUN groupadd --gid ${APP_GID} app \
@@ -95,12 +86,9 @@ RUN groupadd --gid ${APP_GID} app \
 WORKDIR /home/app
 USER app
 
-# Bind to all interfaces on 8080 inside the container.
-ENV SERVER_HOST=0.0.0.0 \
-    SERVER_PORT=8080 \
-    # Cache the HuggingFace tokenizer (bge-m3) on the persistent .data mount so
-    # the cognee `memory` extra doesn't re-download it on every redeploy.
-    HF_HOME=/data/huggingface
+# Cache the HuggingFace tokenizer (bge-m3) on the persistent /data mount so
+# the cognee `memory` extra doesn't re-download it on every redeploy.
+ENV HF_HOME=/data/huggingface
 EXPOSE 8080
 
 # Probe the in-container /health route using only the Python stdlib.

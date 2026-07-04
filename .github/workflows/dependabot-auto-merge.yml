@@ -19,4 +19,4 @@ jobs:
     permissions:
       contents: write       # merge commits require pushing to the PR branch
       pull-requests: write  # auto-merge approval and merge
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/dependabot-auto-merge.yml@9ea2955d11f3d595a7a812feff99ae0eea8240c1  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/dependabot-auto-merge.yml@44f210c7429969be62eb8cc4f53bfbd3b744da16  # main

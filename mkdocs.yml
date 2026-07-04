@@ -27,6 +27,5 @@ nav:
       - robotsix_chat.chat.server: api/robotsix_chat/server.md
       - robotsix_chat.llm.agent: api/robotsix_chat/agent.md
       - robotsix_chat.memory: api/robotsix_chat/memory.md
-      - robotsix_chat.mill.client: api/robotsix_chat/mill.md
   - Changelog: changelog.md
   - Contributing: contributing.md
