@@ -41,9 +41,15 @@ services:
       - chat-config:/home/app/config
       # Persistent agent state (knowledge store, cognee memory, HF cache).
       - chat-data:/data
+      # Persistent application config — survives image updates.
+      - config:/home/app/config
 
 volumes:
   chat-config:
   chat-data:
     labels:
       robotsix.deploy.stateful: "true"
+  config:
+    labels:
+      robotsix.deploy.stateful: "true"
+      robotsix.deploy.config-target: "config/config.json"

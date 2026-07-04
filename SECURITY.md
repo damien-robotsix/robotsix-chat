@@ -55,7 +55,7 @@ over HTTP.
 
 **Known design choices with security implications:**
 
-1. **No built-in auth.** The server binds to `127.0.0.1` by default (localhost-only). Exposing it on
+1. **No built-in auth.** The server binds to `0.0.0.0` by default (all interfaces). Exposing it on
    a public interface is a conscious operator decision. If you do this, put the server behind a
    reverse proxy that handles authentication.
 2. **No tool exposure over HTTP.** Agent tools are registered in Python code only — the `/chat`
