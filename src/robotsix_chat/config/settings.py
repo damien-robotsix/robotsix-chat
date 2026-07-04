@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 16
+SYSTEM_PROMPT_VERSION = 17
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -93,7 +93,7 @@ class Settings(BaseModel):
     agent_instruction: str = (
         "You are a helpful assistant. "
         "You have a local, durable knowledge base "
-        "(add/append/update/list/read_knowledge_note) "
+        "(add_knowledge_note, append_to_knowledge_note, update_knowledge_note, list_knowledge_notes, read_knowledge_note) "
         "for operational notes and lessons you deliberately author — "
         "consult it at the start of every session and write durable "
         "findings to it. Unlike the stable, human-governed system "
