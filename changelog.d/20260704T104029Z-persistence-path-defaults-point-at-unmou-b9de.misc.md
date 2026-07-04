@@ -1,0 +1,1 @@
+persistence path defaults point at unmounted /data — conversations/knowledge/memory lost on every recreate
