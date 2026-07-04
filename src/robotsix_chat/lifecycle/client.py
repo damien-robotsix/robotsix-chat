@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import json
 import logging
-from typing import Any
 
 from robotsix_chat.common.http import safe_http_request
 from robotsix_chat.config import LifecycleSettings
