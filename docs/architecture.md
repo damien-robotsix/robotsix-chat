@@ -119,6 +119,7 @@ On `"done"` the client knows the reply is complete and can re-enable the input.
 | `GET`  | `/subsessions/{id}`         | One subsession's snapshot + transcript                 |
 | `POST` | `/subsessions/{id}/message` | Send a user message to a running subsession            |
 | `POST` | `/subsessions/{id}/close`   | Close a subsession (summary still delivered)           |
+| `POST` | `/summary`                  | Generate/refresh structured conversation summary       |
 | `GET`  | `/sessions?owner_id=…`      | List all sessions for an owner                         |
 | `POST` | `/sessions`                 | Create a new empty session                             |
 
