@@ -55,9 +55,7 @@ class TestConfigureLogging:
         assert formatter is not None
 
         # Verify by formatting a record: should be valid JSON.
-        record = logging.LogRecord(
-            "test", logging.INFO, "", 0, "hello", (), None
-        )
+        record = logging.LogRecord("test", logging.INFO, "", 0, "hello", (), None)
         formatted = formatter.format(record)
         data = json.loads(formatted)
         assert data["event"] == "hello"
@@ -75,9 +73,7 @@ class TestConfigureLogging:
         formatter = root.handlers[0].formatter
 
         # Console output contains the message and is NOT valid JSON.
-        record = logging.LogRecord(
-            "test", logging.INFO, "", 0, "hello", (), None
-        )
+        record = logging.LogRecord("test", logging.INFO, "", 0, "hello", (), None)
         formatted = formatter.format(record)
         assert "hello" in formatted
         with pytest.raises(json.JSONDecodeError):
@@ -205,9 +201,7 @@ class TestRunServer:
 
             run_server(agent)
 
-        mock_uvicorn_run.assert_called_once_with(
-            mock_app, host="0.0.0.0", port=8000
-        )
+        mock_uvicorn_run.assert_called_once_with(mock_app, host="0.0.0.0", port=8000)
 
     def test_calls_uvicorn_with_custom_host_and_port(self) -> None:
         """``run_server`` forwards custom ``host`` and ``port``."""
@@ -222,9 +216,7 @@ class TestRunServer:
 
             run_server(agent, host="127.0.0.1", port=9999)
 
-        mock_uvicorn_run.assert_called_once_with(
-            mock_app, host="127.0.0.1", port=9999
-        )
+        mock_uvicorn_run.assert_called_once_with(mock_app, host="127.0.0.1", port=9999)
 
     def test_forwards_all_kwargs_to_create_app(self) -> None:
         """``run_server`` passes every kwarg through to ``create_app``."""
