@@ -13,6 +13,7 @@
 - Thread conversation `session_id` through memory `recall`/`remember` into cognee's session-memory API so session guidance (goals, rules, preferences) is scoped per-window instead of shared process-global.
 - Add unit tests for `MessageIdempotencyStore` (LRU eviction, multi-session isolation)
 - Add `_serialize()` / `_deserialize()` hook methods to `JsonStoreBase`, allowing subclasses like `EffectivenessStore` to provide custom serialisation without duplicating the atomic-write persistence pattern.
+- Inline the Docs workflow (build + deploy) to add `environment: github-pages` on the deploy job, fixing a recurrent "Deployment failed, try again later." error from the `python-docs.yml` reusable workflow.
 - Register the deploy-lifecycle API as a read-only component:
   four new tools — ``list_lifecycle_services``,
   ``get_lifecycle_service_status``, ``get_lifecycle_service_config``,
