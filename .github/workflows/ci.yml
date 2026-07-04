@@ -214,7 +214,6 @@ jobs:
   check-config-schema:
     name: Config schema sync
     runs-on: ubuntu-latest
-    needs: []
     permissions:
       contents: read  # checkout the repo
     steps:
