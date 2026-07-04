@@ -173,7 +173,7 @@ class LlmioChatAgent:
         # prompt cache for the whole request on every turn. Prepending to the
         # newest user turn keeps the instruction, tools, and replayed
         # transcript byte-stable and cache-servable.
-        recalled = await self._memory.recall(message)
+        recalled = await self._memory.recall(message, session_id=session_id)
         system_prompt = self._instruction
         llm_message = message
         if recalled:
@@ -254,14 +254,18 @@ class LlmioChatAgent:
             # Persist the exchange in the background so memory consolidation never
             # blocks the reply. The task is tracked to avoid premature GC.
             if text:
-                self._schedule_remember(message, text)
+                self._schedule_remember(message, text, session_id)
                 yield text
             return
 
-    def _schedule_remember(self, message: str, reply: str) -> None:
+    def _schedule_remember(
+        self, message: str, reply: str, session_id: str | None
+    ) -> None:
         """Fire-and-forget the memory write for a completed exchange."""
         try:
-            task = asyncio.create_task(self._memory.remember(message, reply))
+            task = asyncio.create_task(
+                self._memory.remember(message, reply, session_id=session_id)
+            )
         except RuntimeError:
             # No running loop (shouldn't happen in the ASGI path) — skip silently.
             return

@@ -192,6 +192,98 @@ async def test_cognee_remember_never_raises(
     await mem.remember("hello", "hi")  # must not raise
 
 
+# ---------------------------------------------------------------------------
+# Session scoping — regression: concurrent windows must not share guidance
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_session_id_forwarded_to_cognee_search(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """session_id passed to recall() is forwarded to cognee.search()."""
+    mem, fake = cognee_memory
+    await mem.recall("query", session_id="sess-42")
+    fake.search.assert_awaited_once()
+    kwargs = fake.search.call_args.kwargs
+    assert kwargs["session_id"] == "sess-42"
+
+
+@pytest.mark.asyncio
+async def test_session_id_forwarded_to_cognee_add_and_cognify(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """session_id passed to remember() is forwarded to cognee.add() + cognify()."""
+    mem, fake = cognee_memory
+    await mem.remember("hello", "hi", session_id="sess-99")
+    fake.add.assert_awaited_once()
+    assert fake.add.call_args.kwargs["session_id"] == "sess-99"
+    fake.cognify.assert_awaited_once()
+    assert fake.cognify.call_args.kwargs["session_id"] == "sess-99"
+
+
+@pytest.mark.asyncio
+async def test_interleaved_conversations_scoped_independently(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """Two concurrent conversations: guidance written in one must not appear
+    in the recall of the other.
+
+    Regression: the query-rewrite LLM was resolving 'this session' against
+    guidance contaminated by other concurrent windows because session-level
+    memory was process-global.
+    """
+    mem, fake = cognee_memory
+
+    # Simulate two interleaved conversations.
+    await mem.remember(
+        "make ticket X prioritized",
+        "ticket X is now prioritized.",
+        session_id="window-A",
+    )
+    await mem.remember(
+        "monitor tickets Y, Z",
+        "watching tickets Y, Z.",
+        session_id="window-B",
+    )
+
+    # Verify each add was scoped to its own session.
+    assert fake.add.call_count == 2
+    assert fake.add.call_args_list[0].kwargs["session_id"] == "window-A"
+    assert fake.add.call_args_list[1].kwargs["session_id"] == "window-B"
+
+    # Recall from window-A: must only search window-A's session.
+    fake.search.reset_mock()
+    fake.search.return_value = ["ticket X prioritized"]
+    recalled_a = await mem.recall("this session", session_id="window-A")
+    assert fake.search.call_args.kwargs["session_id"] == "window-A"
+    assert "ticket X prioritized" in recalled_a
+
+    # Recall from window-B: must only search window-B's session.
+    fake.search.reset_mock()
+    fake.search.return_value = ["tickets Y, Z monitored"]
+    recalled_b = await mem.recall("this session", session_id="window-B")
+    assert fake.search.call_args.kwargs["session_id"] == "window-B"
+    assert "tickets Y, Z monitored" in recalled_b
+
+
+@pytest.mark.asyncio
+async def test_null_session_id_still_works(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """When no session_id is given (legacy path), cognee still works."""
+    mem, fake = cognee_memory
+    await mem.recall("query")
+    kwargs = fake.search.call_args.kwargs
+    assert kwargs["session_id"] is None
+
+    fake.add.reset_mock()
+    fake.cognify.reset_mock()
+    await mem.remember("u", "a")
+    assert fake.add.call_args.kwargs["session_id"] is None
+    assert fake.cognify.call_args.kwargs["session_id"] is None
+
+
 @pytest.mark.asyncio
 async def test_configure_restores_langfuse_env(
     cognee_memory: tuple[CogneeMemory, Any],

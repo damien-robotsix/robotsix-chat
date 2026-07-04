@@ -15,16 +15,18 @@ class _RecordingMemory:
 
     def __init__(self, recall: str = "") -> None:
         self._recall = recall
-        self.remembered: list[tuple[str, str]] = []
+        self.remembered: list[tuple[str, str, str | None]] = []
 
     async def setup(self) -> None:
         return None
 
-    async def recall(self, query: str) -> str:
+    async def recall(self, query: str, *, session_id: str | None = None) -> str:
         return self._recall
 
-    async def remember(self, user_message: str, assistant_message: str) -> None:
-        self.remembered.append((user_message, assistant_message))
+    async def remember(
+        self, user_message: str, assistant_message: str, *, session_id: str | None = None
+    ) -> None:
+        self.remembered.append((user_message, assistant_message, session_id))
 
 
 def _patched_create_model(output: str = "hi there") -> tuple[MagicMock, MagicMock]:
@@ -215,7 +217,7 @@ async def test_exchange_persisted_in_background() -> None:
     # Let the fire-and-forget write task run.
     await asyncio.sleep(0)
 
-    assert memory.remembered == [("the question", "the reply")]
+    assert memory.remembered == [("the question", "the reply", None)]
 
 
 @pytest.mark.asyncio
@@ -226,6 +228,20 @@ async def test_empty_reply_not_persisted() -> None:
 
     assert chunks == []
     assert memory.remembered == []
+
+
+@pytest.mark.asyncio
+async def test_session_id_forwarded_to_memory() -> None:
+    """session_id from agent.stream is threaded to both recall and remember."""
+    create_model, _ = _patched_create_model("ok")
+    memory = _RecordingMemory(recall="some recall")
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.", memory=memory)
+        _ = [c async for c in agent.stream("hi", session_id="sess-abc")]
+
+    await asyncio.sleep(0)
+    assert memory.remembered == [("hi", "ok", "sess-abc")]
 
 
 # ---------------------------------------------------------------------------
