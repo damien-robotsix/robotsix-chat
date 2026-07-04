@@ -30,6 +30,7 @@ from .models import (
     SubsessionKind,
     SubsessionLevelError,
 )
+from .registry import SubsessionRegistry
 from .worker import CloseState, SubsessionContext, SubsessionEnv, spawn_subsession
 
 logger = logging.getLogger(__name__)
@@ -55,7 +56,9 @@ def build_subsession_tools(
     if ctx.depth < cfg.max_depth:
         tools.extend(_build_spawn_and_control_tools(env, ctx))
     if close_state is not None and ctx.subsession_id is not None:
-        tools.append(_build_complete_tool(close_state, ctx.subsession_id))
+        tools.append(
+            _build_complete_tool(close_state, ctx.subsession_id, env.registry)
+        )
     return tools
 
 
@@ -233,7 +236,9 @@ def _build_spawn_and_control_tools(
     ]
 
 
-def _build_complete_tool(close_state: CloseState, sub_id: str) -> Any:
+def _build_complete_tool(
+    close_state: CloseState, sub_id: str, registry: SubsessionRegistry
+) -> Any:
     """Build the self-close tool bound to *close_state*."""
 
     async def complete_subsession(summary: str) -> str:
@@ -247,6 +252,12 @@ def _build_complete_tool(close_state: CloseState, sub_id: str) -> Any:
         thing your parent conversation is guaranteed to see. The
         subsession ends after your current reply.
         """
+        info = registry.get(sub_id)
+        if info is None or not info.is_active:
+            return (
+                f"Error: subsession {sub_id} is no longer active — its tree "
+                "record may have been lost. Cannot complete."
+            )
         close_state.requested = True
         close_state.summary = summary
         return (

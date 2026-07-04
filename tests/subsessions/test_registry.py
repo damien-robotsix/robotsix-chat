@@ -496,3 +496,110 @@ def test_restore_registers_new_entry_without_publishing() -> None:
     assert registry.get("restored-1") is info
     assert registry.list_for_owner("sess-9") == [info]
     assert sink.frames == []
+
+
+# ---------------------------------------------------------------------------
+# idempotent create
+# ---------------------------------------------------------------------------
+
+
+def test_create_with_existing_sub_id_returns_original() -> None:
+    """``create`` with a sub_id that is already registered returns the
+    existing record without overwriting or publishing a second frame."""
+    sink = RecordingSink()
+    registry = SubsessionRegistry(event_sink=sink, store_path=None)
+
+    first = _create(registry, sub_id="dup-1", title="first")
+    first_publish_count = len(sink.frames)
+
+    second = _create(registry, sub_id="dup-1", title="second", prompt="different")
+
+    # Returns the SAME object, not a new record.
+    assert second is first
+    assert second.title == "first"
+    # No additional frame published.
+    assert len(sink.frames) == first_publish_count
+
+
+# ---------------------------------------------------------------------------
+# claim_run
+# ---------------------------------------------------------------------------
+
+
+def test_claim_run_returns_true_for_new_run() -> None:
+    """``claim_run`` returns True the first time a run number is claimed."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+
+    assert registry.claim_run(info.id, 1) is True
+    assert 1 in info.completed_runs
+
+
+def test_claim_run_returns_false_for_duplicate() -> None:
+    """``claim_run`` returns False when the run number was already claimed."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+
+    assert registry.claim_run(info.id, 1) is True
+    assert registry.claim_run(info.id, 1) is False
+
+
+def test_claim_run_returns_false_for_terminal_subsession() -> None:
+    """``claim_run`` returns False for a subsession that is no longer active."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+    registry.mark_closed(info.id, summary="done", reason="completed")
+
+    assert registry.claim_run(info.id, 1) is False
+
+
+def test_claim_run_returns_false_for_unknown_id() -> None:
+    """``claim_run`` returns False for an unknown subsession id."""
+    registry = SubsessionRegistry(store_path=None)
+
+    assert registry.claim_run("ghost", 1) is False
+
+
+# ---------------------------------------------------------------------------
+# reap_orphans
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reap_orphans_cancels_tasks_without_tree_membership() -> None:
+    """``reap_orphans`` cancels workers whose subsession is not in any
+    owner's tree."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, owner="sess-A", kind=SubsessionKind.PERIODIC)
+
+    # Attach a fake task.
+    task: asyncio.Task[None] = asyncio.create_task(asyncio.sleep(30))
+    registry.attach_task(info.id, task)
+
+    # Remove from the owner's tree.
+    registry._by_owner["sess-A"].discard(info.id)
+
+    reaped = registry.reap_orphans()
+    assert reaped >= 1
+
+    with contextlib.suppress(asyncio.CancelledError):
+        await task
+    assert task.cancelled()
+
+
+@pytest.mark.asyncio
+async def test_reap_orphans_skips_tasks_with_tree_membership() -> None:
+    """``reap_orphans`` does not cancel workers whose subsession is still
+    in a conversation tree."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, owner="sess-A", kind=SubsessionKind.PERIODIC)
+
+    task: asyncio.Task[None] = asyncio.create_task(asyncio.sleep(30))
+    registry.attach_task(info.id, task)
+
+    reaped = registry.reap_orphans()
+    assert reaped == 0
+
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        await task

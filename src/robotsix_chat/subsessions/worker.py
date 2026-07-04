@@ -131,7 +131,18 @@ def spawn_subsession(
     Raises :class:`SubsessionCapacityError`, :class:`SubsessionDepthError`,
     :class:`SubsessionLevelError`, or :class:`SubsessionIntervalError` on
     invalid requests — the tool layer maps these to polite refusals.
+
+    Idempotent: when *sub_id* is given and already registered (e.g. a
+    duplicate resume), the existing worker is left alone and the id is
+    returned immediately — no second worker is launched.
     """
+    # Idempotency guard: if the subsession already exists (duplicate
+    # spawn / resume race), return the existing id without launching
+    # a second worker.  Must precede validation so a duplicate resume
+    # never fails on capacity / depth / level checks.
+    if sub_id is not None and env.registry.get(sub_id) is not None:
+        return sub_id
+
     cfg = env.settings.subsessions
     if env.registry.count_active() >= cfg.max_concurrent:
         raise SubsessionCapacityError(
@@ -353,8 +364,43 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
         pending: list[InboxMessage] = []
 
         while True:
+            # -- verify the subsession is still alive --------------------
+            info = registry.get(sub_id)
+            if info is None or not info.is_active:
+                logger.warning(
+                    "Subsession %s is no longer active — worker exiting.", sub_id
+                )
+                return
+
             registry.set_status(sub_id, SubsessionStatus.RUNNING)
             if info.kind is SubsessionKind.PERIODIC:
+                # -- run guard: prevent duplicate execution of run N -----
+                next_run = info.runs + 1
+                if not registry.claim_run(sub_id, next_run):
+                    logger.warning(
+                        "Run %d of subsession %s was already executed; "
+                        "skipping duplicate.",
+                        next_run,
+                        sub_id,
+                    )
+                    # Advance the run counter so we don't loop forever
+                    # on the same run number.
+                    registry.set_status(
+                        sub_id,
+                        SubsessionStatus.SLEEPING,
+                        runs=next_run,
+                        next_run_at=(
+                            registry.now() + (info.interval_seconds or 60.0)
+                        ),
+                        last_result=info.last_result,
+                    )
+                    # Sleep until the next tick (or a steering message).
+                    woke = await registry.wait_for_inbox(
+                        sub_id, timeout=info.interval_seconds
+                    )
+                    pending = registry.drain_inbox(sub_id) if woke else []
+                    continue
+
                 steering = [] if first_turn else pending
                 turn_input = _build_periodic_input(info, previous_result, steering)
             elif first_turn:
@@ -377,6 +423,15 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                 )
                 if closed is not None:
                     await env.delivery.deliver_summary(closed, summary, "completed")
+                else:
+                    # Parent link is gone — the close failed.  Append a
+                    # transcript message so the agent learns the truth.
+                    registry.append_transcript(
+                        sub_id,
+                        "system",
+                        "complete_subsession failed: this subsession is no "
+                        "longer active (its tree record may have been lost).",
+                    )
                 return
 
             # -- kind-specific continuation --------------------------------
@@ -397,6 +452,8 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
             if result is None:
                 return
             pending, previous_result, consecutive_no_change = result
+            # Reap any orphaned timers on each scheduler tick.
+            env.registry.reap_orphans()
 
     except asyncio.CancelledError:
         # External close already set the terminal state and (if wanted)
@@ -466,6 +523,14 @@ def _entry_opt_str(entry: dict[str, object], key: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _rebuild_completed_runs(entry: dict[str, object]) -> set[int]:
+    """Reconstruct the ``completed_runs`` set from a persisted entry."""
+    raw = entry.get("completed_runs")
+    if isinstance(raw, list):
+        return {int(v) for v in raw if isinstance(v, (int, float))}
+    return set()
+
+
 class _CommonEntryKwargs(TypedDict):
     """Typed dict for the common fields extracted from a persisted entry."""
 
@@ -515,6 +580,11 @@ def _resume_entry(env: SubsessionEnv, entry: dict[str, object]) -> None:
             max_runs=remaining,
             sub_id=sub_id,
         )
+        # Preserve the completed_runs guard from the persisted entry so
+        # already-executed runs are not re-run after a restart.
+        info = env.registry.get(sub_id)
+        if info is not None:
+            info.completed_runs = _rebuild_completed_runs(entry)
         return
 
     # task / user_chat: mark interrupted and report to the main session.
@@ -572,6 +642,7 @@ def _restore_entry(
             summary=_entry_opt_str(entry, "summary"),
             close_reason=_entry_opt_str(entry, "close_reason"),
             error=_entry_opt_str(entry, "error"),
+            completed_runs=_rebuild_completed_runs(entry),
         )
     except ValueError:
         logger.warning("Skipping malformed persisted subsession %r", sub_id)

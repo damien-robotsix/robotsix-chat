@@ -111,8 +111,13 @@ class SubsessionRegistry:
         """Register a new subsession and publish ``subsession_started``.
 
         *sub_id* lets the resume path re-register a persisted subsession
-        under its original id.  Returns the created record.
+        under its original id.  Idempotent: when *sub_id* is given and
+        already registered the existing record is returned unchanged and
+        no frame is published — the caller must not launch a duplicate
+        worker.
         """
+        if sub_id is not None and sub_id in self._subs:
+            return self._subs[sub_id]
         now = self._clock()
         info = SubsessionInfo(
             id=sub_id or self._id_factory(),
@@ -454,6 +459,66 @@ class SubsessionRegistry:
     def count_active(self) -> int:
         """Return the number of active subsessions process-wide."""
         return sum(1 for info in self._subs.values() if info.is_active)
+
+    def claim_run(self, sub_id: str, run_n: int) -> bool:
+        """Atomically claim a periodic run number.
+
+        Returns ``True`` when *run_n* was claimed (not previously
+        executed); ``False`` when it was already completed — the caller
+        must skip the agent turn.
+        """
+        info = self._subs.get(sub_id)
+        if info is None or not info.is_active:
+            return False
+        if run_n in info.completed_runs:
+            return False
+        info.completed_runs.add(run_n)
+        self._persist()
+        return True
+
+    def reap_orphans(self) -> int:
+        """Cancel any timer whose subsession id is not in a conversation tree.
+
+        An orphaned subsession has a live worker task but no tree
+        membership — the record was removed while the timer survived.
+        Returns the number of timers cancelled.
+        """
+        orphaned: list[str] = []
+        for sub_id, task in list(self._running.items()):
+            if task.done():
+                continue
+            found = any(
+                sub_id in owner_ids for owner_ids in self._by_owner.values()
+            )
+            if not found:
+                orphaned.append(sub_id)
+
+        for sub_id in orphaned:
+            task = self._running.get(sub_id)
+            if task is not None and not task.done():
+                task.cancel()
+            logger.warning(
+                "Reaped orphaned subsession timer %s — tree record was lost.",
+                sub_id,
+            )
+            # Publish a failed frame so the UI learns the subsession is gone.
+            info = self._subs.get(sub_id)
+            if info is not None and info.owner_session_id:
+                self._publish(
+                    info.owner_session_id,
+                    subsession_failed_frame(
+                        sub_id,
+                        kind=info.kind.value,
+                        title=info.title,
+                        error="orphaned_timer_reaped",
+                        summary=(
+                            "This subsession's tree record was lost; its "
+                            "timer has been cancelled."
+                        ),
+                        parent_id=info.parent_id,
+                    ),
+                )
+        return len(orphaned)
 
     # ------------------------------------------------------------------
     # persistence
