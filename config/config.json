@@ -120,6 +120,12 @@
     "max_read_bytes": 204800,
     "timeout": 60.0
   },
+  "lifecycle": {
+    "enabled": false,
+    "base_url": "",
+    "api_key": "",
+    "timeout": 30.0
+  },
   "max_images_per_message": 8,
   "max_image_bytes": 5242880,
   "allowed_image_media_types": [

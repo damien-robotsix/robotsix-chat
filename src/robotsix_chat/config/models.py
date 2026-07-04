@@ -439,6 +439,31 @@ class ConversationSettings(BaseModel):
     persist_path: str = "/data/conversations.json"
 
 
+class LifecycleSettings(BaseModel):
+    """Read-only deploy-lifecycle API access for the agent.
+
+    When enabled, the chat agent gains read-only tools to inspect the
+    central-deploy lifecycle server: list services, check service status
+    and health, and read configuration and environment (with secrets
+    already masked as ``***`` server-side by ``_mask_secrets``).
+
+    Attributes:
+        enabled: Master switch.  When ``False``, no lifecycle tools are
+            offered.
+        base_url: Base URL of the deploy-lifecycle API server (no trailing
+            slash).
+        api_key: API key sent as the ``X-API-Key`` header.  Injected
+            server-side from ``ROBOTSIX_LIFECYCLE_API_KEY``.
+        timeout: Per-request HTTP timeout in seconds.
+
+    """
+
+    enabled: bool = False
+    base_url: str = ""
+    api_key: SecretStr = SecretStr("")
+    timeout: float = 30.0
+
+
 class CentralDeploySettings(BaseModel):
     """Central-deploy roster and component-access settings.
 

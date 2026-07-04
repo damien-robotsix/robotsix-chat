@@ -1,5 +1,12 @@
 ## 0.0.0 (unreleased)
 
+- Register the deploy-lifecycle API as a read-only component:
+  four new tools — ``list_lifecycle_services``,
+  ``get_lifecycle_service_status``, ``get_lifecycle_service_config``,
+  ``get_lifecycle_service_env`` — let the agent inspect the
+  central-deploy lifecycle server (service inventory, status/health,
+  config/env with secrets masked). Mutation endpoints are deliberately
+  excluded. Config key: ``lifecycle``.
 - Exclude auto-generated CHANGELOG.md from the typos spell-check pre-commit hook to
   eliminate false positives on hyphen-separated issue reference slugs.
 - Log resolved persistence paths at startup (conversation, knowledge, memory, diagnostics, subsessions) so a volume-mount mismatch is immediately visible in logs.
