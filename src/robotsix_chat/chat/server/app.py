@@ -58,6 +58,7 @@ from .routes import (
     subsessions_list_endpoint,
     subsessions_message_endpoint,
     subsessions_transcript_endpoint,
+    summary_endpoint,
     ui_endpoint,
 )
 
@@ -237,6 +238,7 @@ def create_app(
         Route("/chat", chat_endpoint, methods=["POST"]),
         Route("/events", events_endpoint, methods=["GET"]),
         Route("/history", history_endpoint, methods=["GET"]),
+        Route("/summary", summary_endpoint, methods=["POST"]),
         Route("/sessions", sessions_list_endpoint, methods=["GET"]),
         Route("/sessions", sessions_create_endpoint, methods=["POST"]),
         Route(

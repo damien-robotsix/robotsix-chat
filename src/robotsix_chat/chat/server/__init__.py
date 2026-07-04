@@ -42,6 +42,7 @@ from .routes import (
     subsessions_list_endpoint,
     subsessions_message_endpoint,
     subsessions_transcript_endpoint,
+    summary_endpoint,
     ui_endpoint,
 )
 
@@ -78,5 +79,6 @@ __all__ = [
     "subsessions_list_endpoint",
     "subsessions_message_endpoint",
     "subsessions_transcript_endpoint",
+    "summary_endpoint",
     "ui_endpoint",
 ]

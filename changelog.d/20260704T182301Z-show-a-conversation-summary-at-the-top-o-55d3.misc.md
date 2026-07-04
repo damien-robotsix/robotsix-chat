@@ -1,0 +1,1 @@
+Show a conversation summary at the top of session windows

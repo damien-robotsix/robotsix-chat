@@ -7,6 +7,7 @@
   central-deploy lifecycle server (service inventory, status/health,
   config/env with secrets masked). Mutation endpoints are deliberately
   excluded. Config key: ``lifecycle``.
+- Added a conversation summary banner at the top of the chat window. The summary is regenerated after each assistant turn and shows the session purpose, pending work, pending questions, blockers, and relevant info at a glance. The banner is collapsible and gracefully hides empty sections.)
 - Exclude auto-generated CHANGELOG.md from the typos spell-check pre-commit hook to
   eliminate false positives on hyphen-separated issue reference slugs.
 - Log resolved persistence paths at startup (conversation, knowledge, memory, diagnostics, subsessions) so a volume-mount mismatch is immediately visible in logs.
