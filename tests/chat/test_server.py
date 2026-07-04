@@ -1902,7 +1902,6 @@ class TestMessageIdempotency:
     async def test_same_message_id_concurrent(self) -> None:
         """Concurrent POSTs with same message_id → one agent call, both get reply."""
         async with mock_app(tokens=["Hello", " ", "world!"]) as f:
-            import asyncio
 
             async def post() -> Any:
                 return await f.client.post(
