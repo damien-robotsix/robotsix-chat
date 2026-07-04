@@ -1,9 +1,5 @@
 ## 0.0.0 (unreleased)
 
-- Add read-only deploy-lifecycle API integration: the agent can now list managed services,
-  check service status/health, and read configuration/environment (secrets masked server-side)
-  when `lifecycle.enabled` is set. Mutation endpoints (restart, redeploy, config/env write)
-  are deliberately excluded from the tool set.
 - Register the deploy-lifecycle API as a read-only component:
   four new tools — ``list_lifecycle_services``,
   ``get_lifecycle_service_status``, ``get_lifecycle_service_config``,
