@@ -51,7 +51,7 @@ The entire "Calendar/task tools" section is deleted because those tools no longe
 (`mill/`, `calendar/`, `component_agent/`, `skills/`) and all broker-based tools have been deleted.
 Cleaning up the system prompt prevents the LLM from attempting to call tools that no longer exist.
 
-**SHA256:** `53bd67e19fe4ce44a21894f87774d8dadfd95952d383764f3287ff7637cb1c7e`
+**SHA256:** `3de5e87c6b6a84ca3fb485c3bae1880c823f923bb7cc8670de50fa9c023036a2`
 
 ## v15 — 2026-07-02 — subsession-redesign
 

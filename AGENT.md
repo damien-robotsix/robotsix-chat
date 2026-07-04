@@ -146,7 +146,6 @@ Config keys: `memory.enabled`, `memory.data_dir`, `memory.recall_search_type`,
 `memory.embedding.{provider,model,endpoint,dimensions,api_key,huggingface_tokenizer}` — see
 `config/config.example.json` for defaults.
 
-
 ## Submodule layout
 
 (This repo has no active submodules.)

@@ -140,15 +140,15 @@ Each subpackage lives under `src/robotsix_chat/`.
 
 ### Optional Tools (gated by `settings.<tool>.enabled`)
 
-| Package                 | Role                                                                                                                                                   |
-| ----------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| **`mail/`**             | Email read/compose/send tools.                                                                                                                         |
-| **`board_reader/`**     | `list_board_tickets` and `read_board_ticket` — read-only board access via the same HTTP API the browser UI uses.                                      |
-| **`knowledge/`**        | Durable knowledge-note tools (`add`/`append`/`update`/`list`/`read`). Process-local, no external dependency.                                           |
-| **`refdocs/`**          | `read_refdocs` tool — fetches documentation from allowlisted GitHub repositories.                                                                      |
-| **`selfreview/`**       | `read_recent_activity` tool — the agent can inspect its own conversation history to stay aware of context.                                             |
-| **`version_check/`**    | Tools to check for newer package versions.                                                                                                             |
-| **`component_client/`** | Tools to inspect and configure remote component agents over HTTP.                                                                                      |
+| Package                 | Role                                                                                                             |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| **`mail/`**             | Email read/compose/send tools.                                                                                   |
+| **`board_reader/`**     | `list_board_tickets` and `read_board_ticket` — read-only board access via the same HTTP API the browser UI uses. |
+| **`knowledge/`**        | Durable knowledge-note tools (`add`/`append`/`update`/`list`/`read`). Process-local, no external dependency.     |
+| **`refdocs/`**          | `read_refdocs` tool — fetches documentation from allowlisted GitHub repositories.                                |
+| **`selfreview/`**       | `read_recent_activity` tool — the agent can inspect its own conversation history to stay aware of context.       |
+| **`version_check/`**    | Tools to check for newer package versions.                                                                       |
+| **`component_client/`** | Tools to inspect and configure remote component agents over HTTP.                                                |
 
 ### Memory
 
