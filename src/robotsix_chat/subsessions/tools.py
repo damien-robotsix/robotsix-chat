@@ -70,6 +70,31 @@ def _scope_ids(env: SubsessionEnv, ctx: SubsessionContext) -> set[str]:
     return {info.id for info in env.registry.list_descendants(ctx.subsession_id)}
 
 
+def _resolve_subsession_id(
+    env: SubsessionEnv, ctx: SubsessionContext, candidate: str
+) -> str | None:
+    """Resolve *candidate* to a full subsession id in scope.
+
+    Tries exact match first, then prefix match (so the agent can pass
+    the 8-char truncated id that ``list_subsessions`` displays).  Returns
+    ``None`` when there is no match or the prefix is ambiguous.
+    """
+    scope = _scope_ids(env, ctx)
+    if candidate in scope:
+        return candidate
+    matches = [sid for sid in scope if sid.startswith(candidate)]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        logger.warning(
+            "Ambiguous subsession prefix %r matches %d ids: %s",
+            candidate,
+            len(matches),
+            ", ".join(matches),
+        )
+    return None
+
+
 def _build_spawn_and_control_tools(
     env: SubsessionEnv, ctx: SubsessionContext
 ) -> list[Any]:
@@ -152,9 +177,10 @@ def _build_spawn_and_control_tools(
         subsessions started from this conversation (or their
         descendants) can be messaged.
         """
-        if subsession_id not in _scope_ids(env, ctx):
+        resolved = _resolve_subsession_id(env, ctx, subsession_id)
+        if resolved is None:
             return f"No subsession {subsession_id!r} in this conversation's tree."
-        if env.registry.enqueue_message(subsession_id, "parent", text):
+        if env.registry.enqueue_message(resolved, "parent", text):
             return (
                 f"Message queued for subsession {subsession_id} — it will "
                 "be seen when its current step finishes."
@@ -169,10 +195,11 @@ def _build_spawn_and_control_tools(
         conversation. Prefer letting a subsession finish on its own —
         use this when its work is no longer needed or it is stuck.
         """
-        if subsession_id not in _scope_ids(env, ctx):
+        resolved = _resolve_subsession_id(env, ctx, subsession_id)
+        if resolved is None:
             return f"No subsession {subsession_id!r} in this conversation's tree."
         closed = env.registry.cancel_and_close(
-            subsession_id,
+            resolved,
             reason=reason or "closed by parent",
             closed_by="parent",
         )

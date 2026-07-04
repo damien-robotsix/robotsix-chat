@@ -296,6 +296,20 @@ async def test_message_tool_reports_inactive_subsession() -> None:
     assert result == f"Subsession {info.id} is no longer active."
 
 
+@pytest.mark.asyncio
+async def test_message_tool_accepts_prefix_id() -> None:
+    """Messaging by the 8-char prefix (as ``list_subsessions`` displays) works."""
+    env = build_env()
+    info = _register(env, title="my sub")
+    message = _by_name(build_subsession_tools(env, ctx=_ctx()), "message_subsession")
+
+    result = await message(info.id[:8], "steering via prefix")
+
+    assert f"Message queued for subsession {info.id[:8]}" in result
+    queued = env.registry.drain_inbox(info.id)
+    assert [(m.role, m.text) for m in queued] == [("parent", "steering via prefix")]
+
+
 # ---------------------------------------------------------------------------
 # close tool
 # ---------------------------------------------------------------------------
@@ -339,6 +353,46 @@ async def test_close_tool_already_closed_reports_it() -> None:
     result = await close(info.id)
 
     assert result == f"Subsession {info.id} is already closed."
+
+
+@pytest.mark.asyncio
+async def test_close_tool_accepts_prefix_id() -> None:
+    """Closing by the 8-char prefix (as ``list_subsessions`` displays) works."""
+    env = build_env()
+    info = _register(env)
+    close = _by_name(build_subsession_tools(env, ctx=_ctx()), "close_subsession")
+
+    result = await close(info.id[:8], "done via prefix")
+
+    assert result.startswith(f"Closed subsession {info.id[:8]}.")
+    assert info.status is SubsessionStatus.CLOSED
+
+
+@pytest.mark.asyncio
+async def test_message_tool_rejects_ambiguous_prefix() -> None:
+    """A prefix matching multiple owned subsessions is rejected."""
+    env = build_env()
+    # Two subsessions whose first 8 chars are the same.
+    shared_prefix = "b1a2c3d4"
+    _register(env, sub_id=shared_prefix + "e5f6g7h8", title="first")
+    _register(env, sub_id=shared_prefix + "i9j0k1l2", title="second")
+    message = _by_name(build_subsession_tools(env, ctx=_ctx()), "message_subsession")
+
+    result = await message(shared_prefix, "ambiguous")
+
+    assert "No subsession" in result or "in this conversation" in result
+
+
+@pytest.mark.asyncio
+async def test_message_tool_rejects_unknown_prefix() -> None:
+    """A prefix that matches nothing is rejected."""
+    env = build_env()
+    _register(env)
+    message = _by_name(build_subsession_tools(env, ctx=_ctx()), "message_subsession")
+
+    result = await message("deadbeef", "nope")
+
+    assert "No subsession" in result
 
 
 # ---------------------------------------------------------------------------
