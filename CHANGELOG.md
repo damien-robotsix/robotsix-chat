@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Add unit tests for `MessageIdempotencyStore` (LRU eviction, multi-session isolation)
+- Add `_serialize()` / `_deserialize()` hook methods to `JsonStoreBase`, allowing subclasses like `EffectivenessStore` to provide custom serialisation without duplicating the atomic-write persistence pattern.
 - Register the deploy-lifecycle API as a read-only component:
   four new tools — ``list_lifecycle_services``,
   ``get_lifecycle_service_status``, ``get_lifecycle_service_config``,
