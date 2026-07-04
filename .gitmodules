@@ -1,3 +1,0 @@
-[submodule "broker_src"]
-	path = broker_src
-	url = https://github.com/damien-robotsix/robotsix-agent-comm.git
