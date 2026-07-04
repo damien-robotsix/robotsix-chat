@@ -55,7 +55,11 @@ class TestConfigureLogging:
         # The ProcessorFormatter's processor should be a JSONRenderer.
         from structlog.processors import JSONRenderer
 
-        assert isinstance(formatter.processor, JSONRenderer)
+        # structlog >= 25.0.0 renamed 'processor' to '_formatter'.
+        processor = getattr(formatter, "processor", None) or getattr(
+            formatter, "_formatter", None
+        )
+        assert isinstance(processor, JSONRenderer)
 
     def test_no_json_format_uses_console_renderer(self) -> None:
         """When ``log_json_format=False``, the formatter uses ConsoleRenderer."""
@@ -69,7 +73,11 @@ class TestConfigureLogging:
 
         from structlog.dev import ConsoleRenderer
 
-        assert isinstance(formatter.processor, ConsoleRenderer)
+        # structlog >= 25.0.0 renamed 'processor' to '_formatter'.
+        processor = getattr(formatter, "processor", None) or getattr(
+            formatter, "_formatter", None
+        )
+        assert isinstance(processor, ConsoleRenderer)
 
     def test_uvicorn_loggers_propagate(self) -> None:
         """Uvicorn loggers have their handlers cleared and propagate=True."""
@@ -98,9 +106,12 @@ class TestConfigureLogging:
         _configure_logging(settings)
 
         formatter = logging.getLogger().handlers[0].formatter
-        # foreign_pre_chain should be a non-empty list of processors.
-        assert isinstance(formatter.foreign_pre_chain, list)
-        assert len(formatter.foreign_pre_chain) > 0
+        # structlog < 25.0.0: foreign_pre_chain; >= 25.0.0: processors.
+        chain = getattr(formatter, "foreign_pre_chain", None) or getattr(
+            formatter, "processors", None
+        )
+        assert isinstance(chain, list)
+        assert len(chain) > 0
 
 
 # ---------------------------------------------------------------------------
@@ -132,9 +143,14 @@ class TestSetupObservability:
 
     def test_importerror_fallback_does_not_raise(self) -> None:
         """When the tracing imports fail, the function returns without error."""
-        with patch(
-            "builtins.__import__",
-            side_effect=ImportError("no tracing extras"),
+        # Set the target modules to None in sys.modules so the `from … import`
+        # statements raise ModuleNotFoundError (a subclass of ImportError).
+        with patch.dict(
+            "sys.modules",
+            {
+                "robotsix_llmio.core.tracing": None,
+                "robotsix_llmio.logging": None,
+            },
         ):
             # Must not raise.
             _setup_observability()
@@ -144,9 +160,12 @@ class TestSetupObservability:
     ) -> None:
         """When imports fail, a debug-level message is logged."""
         with (
-            patch(
-                "builtins.__import__",
-                side_effect=ImportError("no tracing extras"),
+            patch.dict(
+                "sys.modules",
+                {
+                    "robotsix_llmio.core.tracing": None,
+                    "robotsix_llmio.logging": None,
+                },
             ),
             caplog.at_level(logging.DEBUG),
         ):
@@ -291,7 +310,7 @@ class TestRunServerFromConfig:
             patch("robotsix_chat.chat.server.cli._setup_observability") as mock_obs,
             patch("robotsix_chat.subsessions.SubsessionRegistry") as mock_registry_cls,
             patch("robotsix_chat.subsessions.ParentDelivery") as mock_delivery_cls,
-            patch("robotsix_chat.subsessions.resume_subsessions") as _,
+            patch("robotsix_chat.chat.server.cli.resume_subsessions") as _,
             # The lazy ``from . import run_server`` inside run_server_from_config
             # resolves through the package re-export — patch that, not cli.run_server.
             patch("robotsix_chat.chat.server.run_server") as mock_run_server,
@@ -343,7 +362,7 @@ class TestRunServerFromConfig:
             patch("robotsix_chat.chat.server.cli._setup_observability"),
             patch("robotsix_chat.subsessions.SubsessionRegistry") as mock_registry_cls,
             patch("robotsix_chat.subsessions.ParentDelivery") as mock_delivery_cls,
-            patch("robotsix_chat.subsessions.resume_subsessions"),
+            patch("robotsix_chat.chat.server.cli.resume_subsessions"),
             patch(
                 "robotsix_chat.chat.server.cli.create_agent_from_settings"
             ) as mock_create_agent,
@@ -383,7 +402,7 @@ class TestRunServerFromConfig:
                 return_value=MagicMock(),
             ),
             patch(
-                "robotsix_chat.subsessions.resume_subsessions",
+                "robotsix_chat.chat.server.cli.resume_subsessions",
                 side_effect=lambda env: resume_calls.append(env),
             ),
             patch("robotsix_chat.chat.server.run_server") as mock_run_server,
