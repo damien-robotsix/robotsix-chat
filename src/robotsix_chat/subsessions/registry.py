@@ -107,6 +107,7 @@ class SubsessionRegistry:
         include_previous_result: bool = False,
         max_runs: int | None = None,
         sub_id: str | None = None,
+        completed_runs: set[int] | None = None,
     ) -> SubsessionInfo:
         """Register a new subsession and publish ``subsession_started``.
 
@@ -115,6 +116,10 @@ class SubsessionRegistry:
         already registered the existing record is returned unchanged and
         no frame is published — the caller must not launch a duplicate
         worker.
+
+        *completed_runs* seeds the run guard for periodic subsessions
+        resumed after a restart, so already-executed run numbers are
+        persisted atomically from the first write.
         """
         if sub_id is not None and sub_id in self._subs:
             return self._subs[sub_id]
@@ -134,6 +139,7 @@ class SubsessionRegistry:
             interval_seconds=interval_seconds,
             include_previous_result=include_previous_result,
             max_runs=max_runs,
+            completed_runs=completed_runs or set(),
         )
         self._subs[info.id] = info
         self._inboxes[info.id] = deque()
@@ -179,7 +185,7 @@ class SubsessionRegistry:
         an external close and the worker's own bookkeeping).
         """
         info = self._subs.get(sub_id)
-        if info is None or not info.is_active and status in ACTIVE_STATUSES:
+        if info is None or (not info.is_active and status in ACTIVE_STATUSES):
             return
         info.status = status
         info.last_activity_at = self._clock()
@@ -501,22 +507,20 @@ class SubsessionRegistry:
                 "Reaped orphaned subsession timer %s — tree record was lost.",
                 sub_id,
             )
-            # Publish a failed frame so the UI learns the subsession is gone.
+            # Transition to FAILED so the subsession no longer counts
+            # against the concurrency cap and shows as terminal in the
+            # UI.  _close_and_publish handles the frame, status mutation
+            # and persistence atomically.
             info = self._subs.get(sub_id)
-            if info is not None and info.owner_session_id:
-                self._publish(
-                    info.owner_session_id,
-                    subsession_failed_frame(
-                        sub_id,
-                        kind=info.kind.value,
-                        title=info.title,
-                        error="orphaned_timer_reaped",
-                        summary=(
-                            "This subsession's tree record was lost; its "
-                            "timer has been cancelled."
-                        ),
-                        parent_id=info.parent_id,
+            if info is not None:
+                self._close_and_publish(
+                    info,
+                    status=SubsessionStatus.FAILED,
+                    summary=(
+                        "This subsession's tree record was lost; its "
+                        "timer has been cancelled."
                     ),
+                    error="orphaned_timer_reaped",
                 )
         return len(orphaned)
 

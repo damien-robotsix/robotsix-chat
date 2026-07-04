@@ -585,6 +585,10 @@ async def test_reap_orphans_cancels_tasks_without_tree_membership() -> None:
     with contextlib.suppress(asyncio.CancelledError):
         await task
     assert task.cancelled()
+    # The subsession must be terminal (FAILED) so it no longer consumes
+    # a concurrency slot.
+    assert info.status is SubsessionStatus.FAILED
+    assert info.error == "orphaned_timer_reaped"
 
 
 @pytest.mark.asyncio

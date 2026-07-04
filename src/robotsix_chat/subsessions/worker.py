@@ -125,6 +125,7 @@ def spawn_subsession(
     include_previous_result: bool = False,
     max_runs: int | None = None,
     sub_id: str | None = None,
+    completed_runs: set[int] | None = None,
 ) -> str:
     """Validate, register, and launch a subsession worker; return its id.
 
@@ -173,6 +174,7 @@ def spawn_subsession(
         include_previous_result=include_previous_result,
         max_runs=max_runs,
         sub_id=sub_id,
+        completed_runs=completed_runs,
     )
     task = asyncio.create_task(_subsession_worker(env, info.id))
     env.registry.attach_task(info.id, task)
@@ -579,12 +581,8 @@ def _resume_entry(env: SubsessionEnv, entry: dict[str, object]) -> None:
             **_entry_to_common_kwargs(entry),
             max_runs=remaining,
             sub_id=sub_id,
+            completed_runs=_rebuild_completed_runs(entry),
         )
-        # Preserve the completed_runs guard from the persisted entry so
-        # already-executed runs are not re-run after a restart.
-        info = env.registry.get(sub_id)
-        if info is not None:
-            info.completed_runs = _rebuild_completed_runs(entry)
         return
 
     # task / user_chat: mark interrupted and report to the main session.

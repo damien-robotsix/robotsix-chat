@@ -633,6 +633,12 @@ async def test_reaper_cancels_orphaned_timer() -> None:
         await asyncio.wait_for(task, 2.0)
     assert task.cancelled() or task.done()
 
+    # The subsession must be terminal so it no longer counts as active.
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.FAILED
+    assert info.error == "orphaned_timer_reaped"
+
 
 # ---------------------------------------------------------------------------
 # complete_subsession failure when parent link is gone
