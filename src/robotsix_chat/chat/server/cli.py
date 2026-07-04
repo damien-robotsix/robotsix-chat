@@ -20,6 +20,7 @@ from robotsix_chat.config import Settings
 from robotsix_chat.llm import LlmioChatAgent
 
 from .app import create_agent_from_settings, create_app
+from .idempotency import MessageIdempotencyStore
 from .routes import ChatAgent, RunSerializer
 
 logger = logging.getLogger(__name__)
@@ -42,6 +43,7 @@ def run_server(
     run_serializer: RunSerializer | None = None,
     subsession_registry: Any = None,
     subsession_delivery: Any = None,
+    msg_id_store: MessageIdempotencyStore | None = None,
     on_startup: Callable[[], None] | None = None,
     on_startup_async: Callable[[], Any] | None = None,
     on_shutdown: Callable[[], Any] | None = None,
@@ -67,6 +69,7 @@ def run_server(
         run_serializer=run_serializer,
         subsession_registry=subsession_registry,
         subsession_delivery=subsession_delivery,
+        msg_id_store=msg_id_store,
         on_startup=on_startup,
         on_startup_async=on_startup_async,
         on_shutdown=on_shutdown,
