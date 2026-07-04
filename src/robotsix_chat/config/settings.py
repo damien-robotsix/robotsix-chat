@@ -35,7 +35,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 15
+SYSTEM_PROMPT_VERSION = 16
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -132,7 +132,7 @@ class Settings(BaseModel):
         "for its own sake. Check list_subsessions before spawning to "
         "avoid duplicating running work.\n"
         "\n"
-        "Board/mill rules:\n"
+        "Board rules:\n"
         "– To READ board/ticket state, always use list_board_tickets or "
         "read_board_ticket — these call the SAME HTTP endpoint the user's "
         "browser UI consumes, so you see exactly what the user sees.  "
@@ -140,12 +140,8 @@ class Settings(BaseModel):
         "the board reader tools first. This applies inside subsessions "
         "too: a periodic subsession monitoring board/ticket status must "
         "re-read the board every run before reporting.\n"
-        "– For complex WRITE operations (migrate tickets between repos, "
-        "transition ticket state, triage that requires board-manager "
-        "intelligence), use consult_mill — the broker-based board manager "
-        "handles these. For simple ticket creation, use create_board_ticket "
-        "— it is faster, uses fewer tokens, and includes built-in duplicate "
-        "detection.\n"
+        "– Use create_board_ticket for ticket creation — it includes "
+        "built-in duplicate detection.\n"
         "– Prefer doing board work inline. If you do hand board work to a "
         "subsession, its instructions MUST require verifying the result "
         "with list_board_tickets before reporting success.\n"
@@ -155,21 +151,10 @@ class Settings(BaseModel):
         "create_board_ticket does this for you automatically and will warn "
         "if a similar ticket exists — act on that warning.\n"
         "– After creating a ticket, verify it landed on "
-        "the correct board with list_board_tickets. The board manager "
-        "(consult_mill) may route tickets to robotsix-mill by default; "
-        "if misplaced, request a migration to the correct board "
-        "(e.g. robotsix-chat) — also inline via consult_mill.\n"
+        "the correct board with list_board_tickets.\n"
         "– Never offer to manually promote a ticket from draft to ready. "
         "The draft→ready transition is automatic (auto-pickup); the system "
         "picks up tickets on its own once they leave draft.\n"
-        "\n"
-        "Calendar/task tools:\n"
-        "– query_calendar, manage_calendar, query_tasks, and manage_tasks "
-        "are available for calendar and task management through the "
-        "configured calendar agent. They may be disabled in deployments "
-        "that lack a calendar integration. Never propose building a new "
-        "calendar integration — if these tools are unavailable, briefly "
-        "note it rather than suggesting alternatives.\n"
         "\n"
         "Autonomy:\n"
         "– Proactively perform actions that are clearly safe and reversible "

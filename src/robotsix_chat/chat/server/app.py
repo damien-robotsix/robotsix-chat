@@ -309,7 +309,7 @@ def create_agent_from_settings(
     it is taken from ``settings.agent_instruction``.
 
     Long-term memory is attached when ``settings.memory.enabled`` is set;
-    every feature tool suite (mill, mail, calendar, board reader, …) is
+    every feature tool suite (mail, board reader, …) is
     attached according to its own settings gate — for the main agent and
     subsession agents alike.
 

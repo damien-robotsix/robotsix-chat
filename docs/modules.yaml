@@ -47,7 +47,7 @@ modules:
       - tests/board/test_board_reader.py
 
   - id: robotsix_chat.component_client
-    description: "Component agent client tools for the chat LLM — exposes build_component_tools(), a factory returning LLM tools that let the chat agent enumerate, inspect, and configure remote component agents over the agent-comm broker."
+    description: "Component agent client tools for the chat LLM — exposes build_component_tools(), a factory returning LLM tools that let the chat agent enumerate, inspect, and configure remote component agents via direct HTTP."
     paths:
       - src/robotsix_chat/component_client/__init__.py
       - src/robotsix_chat/component_client/client.py
@@ -140,7 +140,7 @@ modules:
       - tests/memory/test_memory.py
 
   - id: robotsix_chat.mail
-    description: "Mail/broker integration — consult robotsix-auto-mail's board manager via the agent-comm broker."
+    description: "Mail integration — consult robotsix-auto-mail's board manager via direct HTTP."
     paths:
       - src/robotsix_chat/mail/__init__.py
       - src/robotsix_chat/mail/client.py

@@ -101,7 +101,7 @@ Production deployment is handled by the central-deploy dashboard; there is nothi
    into the container at `/home/app/.claude`).
 2. Onboard the repo in the dashboard — preflight parses `deploy/docker-compose.yml`
    (`# central-deploy-contract-version: 1`).
-3. Fill any secret slots you need (memory/broker keys), acknowledge the `chat-data` stateful-volume
+3. Fill any secret slots you need (memory keys), acknowledge the `chat-data` stateful-volume
    warning, confirm the Claude-mount toggle, and deploy.
 
 Verify from the server:

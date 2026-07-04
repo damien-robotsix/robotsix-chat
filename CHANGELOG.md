@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Complete the broker-removal cleanup: fix broken `_mill_cache` import in `agent.py` (deleted `mill/` package), bump system prompt v15→v16 (remove `consult_mill` references, delete calendar/task tools section), and purge stale broker references from `AGENT.md`, `docs/configuration.md`, `docs/modules.yaml`, `docs/user-guide/deployment.md`, and `docs/system_prompt_changelog.md`.
 - Replace hand-rolled `.github/workflows/lint-workflows.yml` with thin delegation wrapper calling
   `damien-robotsix/robotsix-github-workflows/.github/workflows/lint-workflows.yml` (shared
   reusable). Enables `run-actionlint`, `run-zizmor`, and `sarif-workflows` inputs.

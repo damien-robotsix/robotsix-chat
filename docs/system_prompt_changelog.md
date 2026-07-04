@@ -39,6 +39,20 @@ prompt:
 
 ______________________________________________________________________
 
+## v16 — 2026-07-03 — remove-broker-integration
+
+**Summary:** Remove all references to the deprecated broker-based `consult_mill` tool and the
+calendar/task tools (which communicated exclusively via the agent-comm broker). The "Board/mill
+rules" section is simplified to "Board rules" — `create_board_ticket` is now the sole write path,
+and the post-creation migration/verification paragraph that depends on `consult_mill` is removed.
+The entire "Calendar/task tools" section is deleted because those tools no longer exist.
+
+**Rationale:** The `robotsix-agent-comm` broker is deprecated fleet-wide; its client packages
+(`mill/`, `calendar/`, `component_agent/`, `skills/`) and all broker-based tools have been deleted.
+Cleaning up the system prompt prevents the LLM from attempting to call tools that no longer exist.
+
+**SHA256:** `53bd67e19fe4ce44a21894f87774d8dadfd95952d383764f3287ff7637cb1c7e`
+
 ## v15 — 2026-07-02 — subsession-redesign
 
 **Summary:** Replace all `delegate_task` / check-loop / pending-question guidance with a new
