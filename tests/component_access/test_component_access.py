@@ -464,7 +464,7 @@ async def test_component_request_error_only_roster() -> None:
 
 @pytest.mark.asyncio
 async def test_component_request_error_entry() -> None:
-    """When the only entry is an error entry, the roster-unavailable message is shown."""
+    """When the only entry is an error entry, roster-unavailable message is shown."""
     roster = [{"id": "_error", "base_url": "", "skill": "", "_error": "Roster down"}]
     result = await _component_request_impl(roster, "_error", "GET", "/tickets")
     assert "empty or unavailable" in result.lower()
