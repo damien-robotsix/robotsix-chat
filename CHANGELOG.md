@@ -4,6 +4,9 @@
   run that needs follow-up polling must reuse its own schedule rather than
   creating new periodic pollers.
 - Mill component calls now automatically retry on transient errors (empty responses, network failures, 5xx for idempotent methods) with exponential backoff (~1s, ~2s). A lightweight health probe runs before the first attempt to distinguish genuinely-down components from transient hiccups. Non-idempotent writes (POST/PATCH) are never retried on any HTTP response to avoid silent duplication.
+- Pin the conversation summary banner above the scrollable chat area so it stays
+  visible regardless of conversation length. The summary now lives in a non-scrolling
+  flex child (`#summary-container`) above `#chat`; only the message list scrolls.
 - Component roster robustness: empty rosters are no longer cached for the full TTL; the last non-empty roster is preserved as a stale fallback. When the roster is unavailable, `component_request` returns an explicit "empty or unavailable" error instead of the misleading "unknown component_id".
 - Pin `robotsix-config` git dependency to full 40-character commit SHA (`424f8ec5140e14e9699b92d5c3755d929625b570`), consistent with the other first-party git dependencies.
 - Add `step-security/harden-runner` egress monitoring as the first step in all CI jobs that execute external actions directly (`lockfile`, `pre-commit`, `check-sse-types`, `image-scan`, `check-config-schema`), starting in `egress-policy: audit` mode for runtime supply-chain visibility.
