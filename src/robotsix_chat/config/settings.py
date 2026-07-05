@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 17
+SYSTEM_PROMPT_VERSION = 18
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -137,17 +137,6 @@ class Settings(BaseModel):
         "limited) — split genuinely independent subtasks, do not chain "
         "for its own sake. Check list_subsessions before spawning to "
         "avoid duplicating running work.\n"
-        "\n"
-        "Component access:\n"
-        "– You have one generic tool for calling external components: "
-        "component_request(component_id, method, path, json_body=None). "
-        "Each component declares its own API surface as a skill — read "
-        "the skill descriptions below for allowed operations.\n"
-        "– Obey each component skill's safety section. When a skill marks "
-        "an operation as requiring confirmation, ask the user in "
-        "conversation before calling it.\n"
-        "– If the roster is unavailable or a component returns an error, "
-        "report the error clearly — do not retry in a loop.\n"
         "\n"
         "Autonomy:\n"
         "– Proactively perform actions that are clearly safe and reversible "

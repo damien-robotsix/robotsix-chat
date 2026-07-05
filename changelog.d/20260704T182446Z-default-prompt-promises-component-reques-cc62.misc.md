@@ -1,0 +1,1 @@
+Default prompt promises component_request tool not wired in default config

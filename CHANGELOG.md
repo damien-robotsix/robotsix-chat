@@ -3,6 +3,7 @@
 - Remove dead re-export layer `src/robotsix_chat/chat/__init__.py` (14 symbols in `__all__`); all consumers import directly from submodule paths (`chat.server`, `chat.events`, `chat.conversation`).
 - Refactor `_subsession_worker` main loop: extract `_run_task_turn`, `_run_user_chat_turn`, and `_run_periodic_turn` helper functions so the loop body reads as a clean kind-dispatch table.
 - Fix knowledge tool name shorthands in `agent_instruction` prompt and `KnowledgeSettings` docstring to match actual tool names (`append` → `append_to_knowledge_note`, `list_knowledge_note` → `list_knowledge_notes`).
+- Default `agent_instruction` no longer includes the "Component access:" section; it is now conditionally injected by `create_agent_from_settings()` only when a `central_deploy.url` roster is configured, so the prompt no longer promises a `component_request` tool in the default out-of-box deployment.)
 - Remove dead `_idle_reset_seconds` attribute from `ConversationStore` (parameter retained for caller compatibility).
 - Thread conversation `session_id` through memory `recall`/`remember` into cognee's session-memory API so session guidance (goals, rules, preferences) is scoped per-window instead of shared process-global.
 - Add unit tests for `MessageIdempotencyStore` (LRU eviction, multi-session isolation)
