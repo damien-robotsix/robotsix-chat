@@ -337,7 +337,7 @@ class TestRunServerFromConfig:
         # Verify run_server was called with the resolved values.
         mock_run_server.assert_called_once()
         kwargs = mock_run_server.call_args.kwargs
-        assert kwargs["agent"] is agent
+        assert mock_run_server.call_args.args[0] is agent
         assert kwargs["host"] == "10.0.0.1"
         assert kwargs["port"] == 9090
         assert kwargs["idle_timeout_minutes"] == 15
