@@ -49,7 +49,7 @@ prompt:
 
 ______________________________________________________________________
 
-## v17 — 2026-07-04 — default-prompt-promises-component-reques-cc62
+## v17 — 2026-07-04 — default-prompt-promises-component-request-cc62
 
 **Summary:** Remove the "Component access" section from the default `agent_instruction`. It is now
 conditionally injected by `create_agent_from_settings()` only when `central_deploy.url` is
