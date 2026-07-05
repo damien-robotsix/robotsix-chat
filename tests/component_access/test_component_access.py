@@ -720,7 +720,11 @@ async def test_component_request_basic_auth_from_env(
             "id": "langfuse",
             "base_url": "http://lf:3000",
             "skill": "...",
-            "auth": {"type": "basic", "username_env": "LF_PK", "password_env": "LF_SK"},
+            "auth": {
+                "type": "basic",
+                "username_env": "LF_PK",
+                "password_env": "LF_SK",
+            },  # pragma: allowlist secret
         }
     ]
     route = respx_mock.get("http://lf:3000/api/public/traces").mock(
@@ -776,7 +780,11 @@ async def test_component_request_basic_auth_missing_env(
             "id": "langfuse",
             "base_url": "http://lf:3000",
             "skill": "...",
-            "auth": {"type": "basic", "username_env": "LF_PK", "password_env": "LF_SK"},
+            "auth": {
+                "type": "basic",
+                "username_env": "LF_PK",
+                "password_env": "LF_SK",
+            },  # pragma: allowlist secret
         }
     ]
     result = await _component_request_impl(roster, "langfuse", "GET", "/x")
