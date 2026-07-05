@@ -58,14 +58,15 @@ ______________________________________________________________________
 
 ### Top-level
 
-| JSON key                    | Type              | Default                                               | Description                                                    |
-| --------------------------- | ----------------- | ----------------------------------------------------- | -------------------------------------------------------------- |
-| `llmio_model_level`         | `integer`         | `3`                                                   | LLM capability level: `1` (cheapest), `2`, `3`, or `4` (best). |
-| `llmio_api_key`             | `string` (secret) | `""`                                                  | OpenRouter API key. Required for levels 1–2; ignored for 3–4.  |
-| `agent_instruction`         | `string`          | (long default)                                        | System instruction for the agent.                              |
-| `max_images_per_message`    | `integer`         | `8`                                                   | Maximum images per chat message.                               |
-| `max_image_bytes`           | `integer`         | `5242880`                                             | Maximum image size in bytes (5 MiB).                           |
-| `allowed_image_media_types` | `array[string]`   | `["image/png","image/jpeg","image/gif","image/webp"]` | Allowed image MIME types.                                      |
+| JSON key                    | Type              | Default                                               | Description                                                                                      |
+| --------------------------- | ----------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `llmio_model_level`         | `integer`         | `3`                                                   | LLM capability level: `1` (cheapest), `2`, `3`, or `4` (best).                                   |
+| `llmio_api_key`             | `string` (secret) | `""`                                                  | OpenRouter API key. Required for levels 1–2; ignored for 3–4.                                    |
+| `summary_model_level`       | `integer`         | `1`                                                   | LLM capability level used to regenerate `POST /summary`'s structured extraction after each turn. |
+| `agent_instruction`         | `string`          | (long default)                                        | System instruction for the agent.                                                                |
+| `max_images_per_message`    | `integer`         | `8`                                                   | Maximum images per chat message.                                                                 |
+| `max_image_bytes`           | `integer`         | `5242880`                                             | Maximum image size in bytes (5 MiB).                                                             |
+| `allowed_image_media_types` | `array[string]`   | `["image/png","image/jpeg","image/gif","image/webp"]` | Allowed image MIME types.                                                                        |
 
 ### Server
 

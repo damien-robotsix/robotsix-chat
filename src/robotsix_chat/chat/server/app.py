@@ -156,6 +156,7 @@ async def _make_lifespan(
 def create_app(
     agent: ChatAgent,
     *,
+    summary_agent: ChatAgent | None = None,
     serve_ui: bool = True,
     idle_timeout_minutes: int = 30,
     max_images_per_message: int = 8,
@@ -181,6 +182,11 @@ def create_app(
 
     Args:
         agent: Object whose ``stream(message)`` yields response tokens.
+        summary_agent: Agent used by ``POST /summary`` to generate the
+            structured conversation summary. ``None`` (default) reuses
+            *agent* — pass a separate, cheaper agent (see
+            ``settings.summary_model_level``) to avoid running the
+            (often pricier) main agent on every turn just for extraction.
         serve_ui: When ``True`` (default), serve the bundled browser chat
             UI at ``GET /`` so the UI and ``/chat`` share one origin.
         idle_timeout_minutes: Minutes of no user activity before the UI
@@ -303,6 +309,7 @@ def create_app(
         ),
     )
     app.state.agent = agent
+    app.state.summary_agent = summary_agent if summary_agent is not None else agent
     app.state.conversation_store = conversation_store or ConversationStore()
     app.state.idle_timeout_minutes = idle_timeout_minutes
     app.state.max_images_per_message = max_images_per_message

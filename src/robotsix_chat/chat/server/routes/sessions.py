@@ -222,7 +222,7 @@ async def summary_endpoint(request: Request) -> JSONResponse:
     every call — callers should invoke it after each assistant turn to
     keep the display current.
     """
-    agent: ChatAgent = request.app.state.agent
+    agent: ChatAgent = request.app.state.summary_agent
     store: ConversationStore = request.app.state.conversation_store
 
     body = await _parse_json_body(request)
