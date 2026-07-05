@@ -21,6 +21,7 @@
   config/env with secrets masked). Mutation endpoints are deliberately
   excluded. Config key: ``lifecycle``.
 - Added a conversation summary banner at the top of the chat window. The summary is regenerated after each assistant turn and shows the session purpose, pending work, pending questions, blockers, and relevant info at a glance. The banner is collapsible and gracefully hides empty sections.)
+- `message_subsession` and `close_subsession` now accept truncated (8-char prefix) subsession IDs as displayed by `list_subsessions`, fixing "No subsession in this conversation's tree" errors when the agent passes IDs shown in the listing. (mill: message_subsession/close_subsession fail with 'not in this conversation's tree' for a subsession that list_subsessions reports (20260704T144024Z-message-subsession-close-subsession-fail-9671))
 - Exclude auto-generated CHANGELOG.md from the typos spell-check pre-commit hook to
   eliminate false positives on hyphen-separated issue reference slugs.
 - Log resolved persistence paths at startup (conversation, knowledge, memory, diagnostics, subsessions) so a volume-mount mismatch is immediately visible in logs.

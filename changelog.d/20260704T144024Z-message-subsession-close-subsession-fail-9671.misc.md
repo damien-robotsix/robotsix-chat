@@ -1,0 +1,2 @@
+message_subsession/close_subsession fail with 'not in this conversation's tree' for a subsession
+that list_subsessions reports
