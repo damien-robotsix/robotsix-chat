@@ -203,7 +203,7 @@ async def test_fetch_roster_empty_list_no_fallback_returns_empty(
 async def test_fetch_roster_with_token(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """Bearer token is sent in the Authorization header."""
+    """The API token is sent as X-API-Key (central-deploy's accepted scheme)."""
     _wipe_cache()
     entries = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
     route = respx_mock.get("http://deploy:8080/chat/components").mock(
@@ -218,7 +218,8 @@ async def test_fetch_roster_with_token(
     result = await fetch_roster(settings)
     assert result == entries
     assert route.called
-    assert route.calls[0].request.headers["Authorization"] == "Bearer tk-secret"
+    assert route.calls[0].request.headers["X-API-Key"] == "tk-secret"
+    assert "Authorization" not in route.calls[0].request.headers
 
 
 @pytest.mark.asyncio
