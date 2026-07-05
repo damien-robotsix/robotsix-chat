@@ -56,9 +56,7 @@ def build_subsession_tools(
     if ctx.depth < cfg.max_depth:
         tools.extend(_build_spawn_and_control_tools(env, ctx))
     if close_state is not None and ctx.subsession_id is not None:
-        tools.append(
-            _build_complete_tool(close_state, ctx.subsession_id, env.registry)
-        )
+        tools.append(_build_complete_tool(close_state, ctx.subsession_id, env.registry))
     return tools
 
 

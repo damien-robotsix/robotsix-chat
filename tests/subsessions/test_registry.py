@@ -504,8 +504,11 @@ def test_restore_registers_new_entry_without_publishing() -> None:
 
 
 def test_create_with_existing_sub_id_returns_original() -> None:
-    """``create`` with a sub_id that is already registered returns the
-    existing record without overwriting or publishing a second frame."""
+    """``create`` with an existing sub_id returns the original record.
+
+    The existing record is returned without overwriting or publishing a
+    second frame.
+    """
     sink = RecordingSink()
     registry = SubsessionRegistry(event_sink=sink, store_path=None)
 
@@ -567,8 +570,11 @@ def test_claim_run_returns_false_for_unknown_id() -> None:
 
 @pytest.mark.asyncio
 async def test_reap_orphans_cancels_tasks_without_tree_membership() -> None:
-    """``reap_orphans`` cancels workers whose subsession is not in any
-    owner's tree."""
+    """``reap_orphans`` cancels workers not in any owner's tree.
+
+    Workers whose subsession has no tree membership are cancelled and
+    marked as FAILED.
+    """
     registry = SubsessionRegistry(store_path=None)
     info = _create(registry, owner="sess-A", kind=SubsessionKind.PERIODIC)
 
@@ -593,8 +599,11 @@ async def test_reap_orphans_cancels_tasks_without_tree_membership() -> None:
 
 @pytest.mark.asyncio
 async def test_reap_orphans_skips_tasks_with_tree_membership() -> None:
-    """``reap_orphans`` does not cancel workers whose subsession is still
-    in a conversation tree."""
+    """``reap_orphans`` skips workers that are still in a tree.
+
+    Workers whose subsession is still in a conversation tree are not
+    cancelled.
+    """
     registry = SubsessionRegistry(store_path=None)
     info = _create(registry, owner="sess-A", kind=SubsessionKind.PERIODIC)
 

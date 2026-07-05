@@ -516,8 +516,11 @@ async def test_spawn_with_duplicate_sub_id_is_idempotent() -> None:
 
 @pytest.mark.asyncio
 async def test_run_guard_records_executed_runs() -> None:
-    """After a periodic run completes, the run number is persisted in
-    completed_runs and claim_run returns False for the same run."""
+    """Records completed runs in ``completed_runs``.
+
+    After a periodic run completes, the run number is persisted and
+    ``claim_run`` returns ``False`` for the same run.
+    """
     agent = FakeAgent(["report 1", "report 2"])
     env = build_env(agent=agent)
 

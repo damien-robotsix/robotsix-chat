@@ -391,9 +391,7 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                         sub_id,
                         SubsessionStatus.SLEEPING,
                         runs=next_run,
-                        next_run_at=(
-                            registry.now() + (info.interval_seconds or 60.0)
-                        ),
+                        next_run_at=(registry.now() + (info.interval_seconds or 60.0)),
                         last_result=info.last_result,
                     )
                     # Sleep until the next tick (or a steering message).

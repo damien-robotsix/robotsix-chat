@@ -493,16 +493,14 @@ class SubsessionRegistry:
         for sub_id, task in list(self._running.items()):
             if task.done():
                 continue
-            found = any(
-                sub_id in owner_ids for owner_ids in self._by_owner.values()
-            )
+            found = any(sub_id in owner_ids for owner_ids in self._by_owner.values())
             if not found:
                 orphaned.append(sub_id)
 
         for sub_id in orphaned:
-            task = self._running.get(sub_id)
-            if task is not None and not task.done():
-                task.cancel()
+            orphan_task = self._running.get(sub_id)
+            if orphan_task is not None and not orphan_task.done():
+                orphan_task.cancel()
             logger.warning(
                 "Reaped orphaned subsession timer %s — tree record was lost.",
                 sub_id,
