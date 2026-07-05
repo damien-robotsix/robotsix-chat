@@ -4,6 +4,7 @@
   run that needs follow-up polling must reuse its own schedule rather than
   creating new periodic pollers.
 - Mill component calls now automatically retry on transient errors (empty responses, network failures, 5xx for idempotent methods) with exponential backoff (~1s, ~2s). A lightweight health probe runs before the first attempt to distinguish genuinely-down components from transient hiccups. Non-idempotent writes (POST/PATCH) are never retried on any HTTP response to avoid silent duplication.
+- Prevent the summary container from consuming vertical space when empty (no summary banner present).
 - Pin the conversation summary banner above the scrollable chat area so it stays
   visible regardless of conversation length. The summary now lives in a non-scrolling
   flex child (`#summary-container`) above `#chat`; only the message list scrolls.
