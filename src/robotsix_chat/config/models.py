@@ -295,7 +295,10 @@ class KnowledgeSettings(BaseModel):
 
     A deliberate, explicit, agent-curated store of durable lessons and findings
     — plain local JSON, no embeddings, no external service, always-on.  The
-    agent writes notes via five tools (``add_knowledge_note, append_to_knowledge_note, update_knowledge_note, list_knowledge_notes, read_knowledge_note``)
+    agent writes notes via five tools
+    (``add_knowledge_note``, ``append_to_knowledge_note``,
+    ``update_knowledge_note``, ``list_knowledge_notes``,
+    ``read_knowledge_note``)
     and can re-read and revise them by id across sessions.
 
     This store is **complementary to**, not a duplicate of, the optional cognee

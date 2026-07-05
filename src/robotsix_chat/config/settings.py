@@ -93,7 +93,8 @@ class Settings(BaseModel):
     agent_instruction: str = (
         "You are a helpful assistant. "
         "You have a local, durable knowledge base "
-        "(add_knowledge_note, append_to_knowledge_note, update_knowledge_note, list_knowledge_notes, read_knowledge_note) "
+        "(add_knowledge_note, append_to_knowledge_note, "
+        "update_knowledge_note, list_knowledge_notes, read_knowledge_note) "
         "for operational notes and lessons you deliberately author — "
         "consult it at the start of every session and write durable "
         "findings to it. Unlike the stable, human-governed system "
