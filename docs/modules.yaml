@@ -111,7 +111,6 @@ modules:
   - id: chat
     description: "Chat SSE server — HTTP + Server-Sent Events bridge for human-to-agent chat."
     paths:
-      - src/robotsix_chat/chat/__init__.py
       - src/robotsix_chat/chat/conversation.py
       - src/robotsix_chat/chat/events.py
       - src/robotsix_chat/chat/server/__init__.py
@@ -120,7 +119,6 @@ modules:
       - src/robotsix_chat/chat/server/idempotency.py
       - src/robotsix_chat/chat/server/routes.py
       - docs/api/robotsix_chat/server.md
-      - tests/chat/__init__.py
       - tests/chat/test_conversation.py
       - tests/chat/test_events.py
       - tests/chat/test_idempotency.py
