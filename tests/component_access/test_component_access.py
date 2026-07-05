@@ -167,7 +167,6 @@ async def test_fetch_roster_empty_list_not_cached(
     settings = _settings(url="http://deploy:8080", roster_cache_ttl=300.0)
     result = await fetch_roster(settings)
     assert result == entries
-    cached_ts = _roster._cache[0] if _roster._cache else 0.0
 
     # Second: the upstream returns an empty list.
     respx_mock.get("http://deploy:8080/chat/components").mock(
@@ -175,11 +174,13 @@ async def test_fetch_roster_empty_list_not_cached(
     )
     # Expire the cache so we actually fetch.
     _roster._cache = (time.monotonic() - 301.0, entries)
+    cache_before = _roster._cache  # snapshot before empty fetch
     result = await fetch_roster(settings)
     # Should fall back to the last non-empty cache, not the empty list.
     assert result == entries
-    # Cache should NOT have been updated with the empty list.
-    assert _roster._cache is None or _roster._cache[0] == cached_ts
+    # Cache must not have been updated (identity check) — the empty-path
+    # deliberately leaves _cache alone so it isn't poisoned by [].
+    assert _roster._cache is cache_before
 
 
 @pytest.mark.asyncio
