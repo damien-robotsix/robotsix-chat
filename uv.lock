@@ -2806,10 +2806,10 @@ requires-dist = [
     { name = "pydantic" },
     { name = "pyjwt" },
     { name = "robotsix-config", git = "https://github.com/damien-robotsix/robotsix-config.git?rev=424f8ec5140e14e9699b92d5c3755d929625b570" },
-    { name = "robotsix-llmio", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=73f2d555caa21de47a3732824d776e04719b3011" },
-    { name = "robotsix-llmio", extras = ["claude-sdk"], marker = "extra == 'claude-sdk'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=73f2d555caa21de47a3732824d776e04719b3011" },
-    { name = "robotsix-llmio", extras = ["openrouter"], marker = "extra == 'openrouter'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=73f2d555caa21de47a3732824d776e04719b3011" },
-    { name = "robotsix-llmio", extras = ["tracing"], marker = "extra == 'tracing'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=73f2d555caa21de47a3732824d776e04719b3011" },
+    { name = "robotsix-llmio", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=519c3763518b1d2ca0f94a85654100e413d77d77" },
+    { name = "robotsix-llmio", extras = ["claude-sdk"], marker = "extra == 'claude-sdk'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=519c3763518b1d2ca0f94a85654100e413d77d77" },
+    { name = "robotsix-llmio", extras = ["openrouter"], marker = "extra == 'openrouter'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=519c3763518b1d2ca0f94a85654100e413d77d77" },
+    { name = "robotsix-llmio", extras = ["tracing"], marker = "extra == 'tracing'", git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=519c3763518b1d2ca0f94a85654100e413d77d77" },
     { name = "starlette" },
     { name = "structlog", specifier = ">=24.0.0" },
     { name = "transformers", marker = "extra == 'memory'" },
@@ -2848,9 +2848,10 @@ dependencies = [
 [[package]]
 name = "robotsix-llmio"
 version = "0.1.0"
-source = { git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=73f2d555caa21de47a3732824d776e04719b3011#73f2d555caa21de47a3732824d776e04719b3011" }
+source = { git = "https://github.com/damien-robotsix/robotsix-llmio.git?rev=519c3763518b1d2ca0f94a85654100e413d77d77#519c3763518b1d2ca0f94a85654100e413d77d77" }
 dependencies = [
     { name = "httpx" },
+    { name = "pydantic" },
     { name = "pydantic-ai-slim" },
     { name = "starlette" },
 ]
@@ -2860,6 +2861,7 @@ claude-sdk = [
     { name = "claude-agent-sdk" },
 ]
 openrouter = [
+    { name = "openai" },
     { name = "pydantic-ai-slim", extra = ["openrouter"] },
 ]
 tracing = [

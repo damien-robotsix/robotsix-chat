@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -416,6 +416,136 @@ async def test_retries_exhausted_on_persistent_transient() -> None:
 
     assert provider.build_agent.call_count == _MAX_RUN_ATTEMPTS
     assert handle.close.call_count == _MAX_RUN_ATTEMPTS
+
+
+# ---------------------------------------------------------------------------
+# Usage-exhausted tier fallback
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_usage_exhausted_falls_back_to_another_tier() -> None:
+    """ClaudeSDKUsageExhaustedError at level 4 falls back to level 3 (opus).
+
+    Falls back for the SAME turn instead of surfacing the raw error text.
+    """
+    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+
+    level4_handle = MagicMock()
+
+    async def exhausted(_message: str, *, message_history: object = None) -> None:
+        raise ClaudeSDKUsageExhaustedError("You're out of usage credits")
+
+    level4_handle.run = exhausted
+    level4_handle.close = MagicMock()
+    level4_provider = MagicMock()
+    level4_provider.build_agent.return_value = level4_handle
+
+    level3_handle = MagicMock()
+
+    async def recovered(_message: str, *, message_history: object = None) -> MagicMock:
+        result = MagicMock()
+        result.output = "opus reply"
+        return result
+
+    level3_handle.run = recovered
+    level3_handle.close = MagicMock()
+    level3_provider = MagicMock()
+    level3_provider.build_agent.return_value = level3_handle
+
+    # acall_with_tier_fallback retries its starting level (4) once — it has
+    # no way to know this level was already just attempted outside it — and
+    # that retry fails identically before falling back to level 3.
+    create_model_patch = MagicMock(
+        side_effect=[level4_provider, level4_provider, level3_provider]
+    )
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
+        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
+        chunks = [c async for c in agent.stream("hi")]
+
+    assert chunks == ["opus reply"]
+    assert create_model_patch.call_args_list == [
+        call(level=4),
+        call(level=4),
+        call(level=3),
+    ]
+    assert level4_handle.close.call_count == 2
+    level3_handle.close.assert_called_once()
+    # The fallback attempt reuses the exact same prompt/instruction — the
+    # user should get a real answer, not have to re-ask.
+    assert level3_provider.build_agent.call_args.kwargs["system_prompt"].startswith(
+        "Be helpful."
+    )
+
+
+@pytest.mark.asyncio
+async def test_usage_exhausted_fallback_also_failing_raises() -> None:
+    """If the fallback tier ALSO fails, the failure propagates.
+
+    Scoped to one promotion — does not keep cascading through every
+    remaining tier.
+    """
+    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+
+    level4_handle = MagicMock()
+
+    async def exhausted(_message: str, *, message_history: object = None) -> None:
+        raise ClaudeSDKUsageExhaustedError("You're out of usage credits")
+
+    level4_handle.run = exhausted
+    level4_handle.close = MagicMock()
+    level4_provider = MagicMock()
+    level4_provider.build_agent.return_value = level4_handle
+
+    level3_handle = MagicMock()
+
+    async def also_boom(_message: str, *, message_history: object = None) -> None:
+        raise RuntimeError("opus is also down")
+
+    level3_handle.run = also_boom
+    level3_handle.close = MagicMock()
+    level3_provider = MagicMock()
+    level3_provider.build_agent.return_value = level3_handle
+
+    create_model_patch = MagicMock(
+        side_effect=[level4_provider, level4_provider, level3_provider]
+    )
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
+        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
+        with pytest.raises(RuntimeError, match="opus is also down"):
+            _ = [c async for c in agent.stream("hi")]
+
+    assert create_model_patch.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_non_usage_exhausted_error_not_affected_by_fallback() -> None:
+    """A plain non-transient error at the primary level still raises.
+
+    Raises immediately — the fallback path is never entered for it.
+    """
+    handle = MagicMock()
+
+    async def boom(_message: str, *, message_history: object = None) -> None:
+        raise RuntimeError("unrelated failure")
+
+    handle.run = boom
+    handle.close = MagicMock()
+    provider = MagicMock()
+    provider.build_agent.return_value = handle
+    create_model_patch = MagicMock(return_value=provider)
+
+    with (
+        patch("robotsix_chat.llm.agent.create_model", create_model_patch),
+        patch("robotsix_chat.llm.agent.is_openrouter_transient", return_value=False),
+    ):
+        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
+        with pytest.raises(RuntimeError, match="unrelated failure"):
+            _ = [c async for c in agent.stream("hi")]
+
+    assert create_model_patch.call_count == 1
 
 
 @pytest.mark.asyncio
