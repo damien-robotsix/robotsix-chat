@@ -234,7 +234,9 @@ async def _run_turn(
     return "".join(parts)
 
 
-async def _run_task_turn(env: SubsessionEnv, sub_id: str, reply: str) -> list[InboxMessage]:
+async def _run_task_turn(
+    env: SubsessionEnv, sub_id: str, reply: str
+) -> list[InboxMessage]:
     """Handle TASK post-turn: drain inbox; return pending messages or close.
 
     Returns a non-empty list if steering messages arrived mid-turn
@@ -252,9 +254,7 @@ async def _run_task_turn(env: SubsessionEnv, sub_id: str, reply: str) -> list[In
     return []
 
 
-async def _run_user_chat_turn(
-    env: SubsessionEnv, sub_id: str
-) -> list[InboxMessage]:
+async def _run_user_chat_turn(env: SubsessionEnv, sub_id: str) -> list[InboxMessage]:
     """Handle USER_CHAT post-turn: wait for inbox, drain, return pending."""
     env.registry.set_status(sub_id, SubsessionStatus.WAITING)
     await env.registry.wait_for_inbox(sub_id, timeout=None)
@@ -315,9 +315,7 @@ async def _run_periodic_turn(
 
     no_change_cap = env.settings.subsessions.auto_stop_no_change_runs
     if consecutive_no_change >= no_change_cap:
-        summary = (
-            f"Auto-stopped after {no_change_cap} consecutive no-change runs."
-        )
+        summary = f"Auto-stopped after {no_change_cap} consecutive no-change runs."
         closed = registry.mark_closed(
             sub_id,
             summary=summary,
@@ -325,9 +323,7 @@ async def _run_periodic_turn(
             closed_by="system",
         )
         if closed is not None:
-            await env.delivery.deliver_summary(
-                closed, summary, "no_change_auto_stop"
-            )
+            await env.delivery.deliver_summary(closed, summary, "no_change_auto_stop")
         return None
 
     # Sleep until the next tick, waking early on a steering message.
