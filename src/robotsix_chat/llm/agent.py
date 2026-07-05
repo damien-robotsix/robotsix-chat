@@ -29,7 +29,10 @@ import logging
 from collections.abc import AsyncIterator, Callable, Iterator
 from typing import Any
 
+from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
 from robotsix_llmio.config import create_model
+from robotsix_llmio.config.tier import TierConfig, TierLevel, TierLevelConfig
+from robotsix_llmio.core.tier_fallback import acall_with_tier_fallback
 from robotsix_llmio.openrouter import is_openrouter_transient
 
 from robotsix_chat.memory import ChatMemory, NullMemory
@@ -162,8 +165,10 @@ class LlmioChatAgent:
 
         Transient upstream errors (OpenRouter provider failures, 5xx, network
         blips) are retried up to :data:`_MAX_RUN_ATTEMPTS` before surfacing.
-        Non-transient errors and exhausted retries are raised — the chat server
-        turns that into an SSE ``error`` frame.
+        A claudeSDK tier reporting exhausted usage credits is not retried at
+        the same tier — see :meth:`_run_with_usage_fallback`. Non-transient
+        errors and exhausted retries are raised — the chat server turns that
+        into an SSE ``error`` frame.
         """
         # Recall relevant memory and prepend it to the current user turn.
         # recall() never raises (it degrades to "" on any backend failure).
@@ -195,6 +200,28 @@ class LlmioChatAgent:
             effective_tools.extend(self._request_tools_factory(client_id))
         tools_arg = effective_tools or None
 
+        # Build the user-prompt once: plain str (no images) or a multimodal
+        # list (text + BinaryContent parts). NOTE: the default model_level 3
+        # routes to robotsix_llmio's claude_sdk model, whose internal
+        # _content_to_text() flattens non-text content to str(...) — images
+        # are silently dropped on that path. To have the assistant actually
+        # *see* images, configure a vision-capable OpenRouter model at level
+        # 1 or 2. Full level-3 image support requires an external change to
+        # robotsix_llmio's claude_sdk model to map image parts into the
+        # Claude SDK request format.
+        if images:
+            from pydantic_ai.messages import BinaryContent
+
+            user_prompt: list[str | BinaryContent] = []
+            if llm_message:
+                user_prompt.append(llm_message)
+            for mt, data in images:
+                user_prompt.append(BinaryContent(data=data, media_type=mt))
+            prompt: object = user_prompt
+        else:
+            prompt = llm_message
+
+        result: Any = None
         for attempt in range(1, _MAX_RUN_ATTEMPTS + 1):
             # Build a fresh handle per attempt so each try starts from a
             # clean state (the handle is always closed in the finally block
@@ -208,36 +235,22 @@ class LlmioChatAgent:
             try:
                 try:
                     with _trace_session(session_id):
-                        # Build the user-prompt: plain str (no images) or a
-                        # multimodal list (text + BinaryContent parts).
-                        # NOTE: the default model_level 3 routes to
-                        # robotsix_llmio's claude_sdk model, whose internal
-                        # _content_to_text() flattens non-text content to
-                        # str(...) — images are silently dropped on that
-                        # path.  To have the assistant actually *see* images,
-                        # configure a vision-capable OpenRouter model at
-                        # level 1 or 2.  Full level-3 image support requires
-                        # an external change to robotsix_llmio's claude_sdk
-                        # model to map image parts into the Claude SDK
-                        # request format.
-                        if images:
-                            from pydantic_ai.messages import BinaryContent
-
-                            user_prompt: list[str | BinaryContent] = []
-                            if llm_message:
-                                user_prompt.append(llm_message)
-                            for mt, data in images:
-                                user_prompt.append(
-                                    BinaryContent(data=data, media_type=mt)
-                                )
-                            prompt: object = user_prompt
-                        else:
-                            prompt = llm_message
                         result = await handle.run(
                             prompt, message_history=message_history
                         )
                 finally:
                     handle.close()
+            except ClaudeSDKUsageExhaustedError as exc:
+                logger.warning(
+                    "model_level %d usage credits exhausted (%s) — "
+                    "falling back to another tier for this turn",
+                    self._model_level,
+                    exc,
+                )
+                result = await self._run_with_usage_fallback(
+                    prompt, message_history, tools_arg, session_id
+                )
+                break
             except Exception as exc:
                 if attempt == _MAX_RUN_ATTEMPTS or not is_openrouter_transient(exc):
                     raise
@@ -249,14 +262,84 @@ class LlmioChatAgent:
                 )
                 await asyncio.sleep(_RETRY_BACKOFFS[attempt - 1])
                 continue
+            break
 
-            text = result.output
-            # Persist the exchange in the background so memory consolidation never
-            # blocks the reply. The task is tracked to avoid premature GC.
-            if text:
-                self._schedule_remember(message, text, session_id)
-                yield text
-            return
+        # The loop above always either raises or breaks with `result` set.
+        text = result.output
+        # Persist the exchange in the background so memory consolidation never
+        # blocks the reply. The task is tracked to avoid premature GC.
+        if text:
+            self._schedule_remember(message, text, session_id)
+            yield text
+
+    async def _run_with_usage_fallback(
+        self,
+        prompt: object,
+        message_history: list[Any] | None,
+        tools_arg: list[Any] | None,
+        session_id: str | None,
+    ) -> Any:
+        """Retry the same turn at a different tier after a usage-exhaustion.
+
+        Triggered by
+        :class:`~robotsix_llmio.claude_sdk.ClaudeSDKUsageExhaustedError` at
+        ``self._model_level``. Reuses robotsix-llmio's tier-escalation
+        machinery
+        (:func:`~robotsix_llmio.core.tier_fallback.acall_with_tier_fallback` —
+        higher-then-lower, revisit-avoiding, depth-bounded) rather than
+        hand-rolling a fallback chain, so it is entered ONLY once this
+        specific cause has already been identified — any other failure
+        during the primary attempt still raises immediately as before.
+
+        Scoped to one promotion (``max_fallback_depth=1``): the only known
+        need today is claudeSDK level 4 (fable) -> level 3 (opus), both
+        keyless, so this never needs to forward an OpenRouter key for a
+        lower tier this agent was not otherwise configured with one for.
+
+        Note: ``acall_with_tier_fallback`` always retries its *starting*
+        level once before escalating (it has no way to know this level was
+        already just attempted). That first retry is expected to fail
+        identically (the credits are still exhausted) and fail fast — a
+        harmless, cheap redundant call, not a bug — before the loop falls
+        back to the next tier.
+        """
+        tier_config = TierConfig()
+        level_by_model = {
+            getattr(tier_config, level.value).model: int(
+                level.value.removeprefix("level")
+            )
+            for level in TierLevel
+        }
+
+        def _fn_factory(tlc: TierLevelConfig) -> Callable[[], Any]:
+            level = level_by_model[tlc.model]
+
+            async def _call() -> Any:
+                fallback_provider = create_model(level=level)
+                fallback_handle = fallback_provider.build_agent(
+                    level=level,
+                    system_prompt=self._instruction,
+                    tools=tools_arg,
+                    builtin_tools=False,
+                )
+                try:
+                    with _trace_session(session_id):
+                        return await fallback_handle.run(
+                            prompt, message_history=message_history
+                        )
+                finally:
+                    fallback_handle.close()
+
+            return _call
+
+        return await acall_with_tier_fallback(
+            _fn_factory,
+            tier_config=tier_config,
+            level=TierLevel(f"level{self._model_level}"),
+            fallback_enabled=True,
+            max_fallback_depth=1,
+            what="chat turn (usage-exhausted fallback)",
+        )
 
     def _schedule_remember(
         self, message: str, reply: str, session_id: str | None
