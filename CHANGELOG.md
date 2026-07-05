@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Add `step-security/harden-runner` egress monitoring as the first step in all CI jobs that execute external actions directly (`lockfile`, `pre-commit`, `check-sse-types`, `image-scan`, `check-config-schema`), starting in `egress-policy: audit` mode for runtime supply-chain visibility.
+- Consolidate `direct_repo` and `repo_study` modules under a shared `repo/` parent namespace (`src/robotsix_chat/repo/{direct,study}/`).
 - Remove dead re-export layer `src/robotsix_chat/chat/__init__.py` (14 symbols in `__all__`); all consumers import directly from submodule paths (`chat.server`, `chat.events`, `chat.conversation`).
 - Refactor `_subsession_worker` main loop: extract `_run_task_turn`, `_run_user_chat_turn`, and `_run_periodic_turn` helper functions so the loop body reads as a clean kind-dispatch table.
 - Fix knowledge tool name shorthands in `agent_instruction` prompt and `KnowledgeSettings` docstring to match actual tool names (`append` → `append_to_knowledge_note`, `list_knowledge_note` → `list_knowledge_notes`).

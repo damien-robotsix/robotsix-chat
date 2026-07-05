@@ -16,8 +16,8 @@ import pytest
 import respx
 
 from robotsix_chat.config import DirectRepoSettings
-from robotsix_chat.direct_repo import build_direct_repo_tools
-from robotsix_chat.direct_repo.client import DirectRepoClient
+from robotsix_chat.repo.direct import build_direct_repo_tools
+from robotsix_chat.repo.direct.client import DirectRepoClient
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -38,7 +38,7 @@ def _settings(**kw: Any) -> DirectRepoSettings:
 
 def _prepopulate_installation_token(settings: DirectRepoSettings) -> str:
     """Set the installation token cache so JWT creation is skipped in tests."""
-    from robotsix_chat.direct_repo.client import (
+    from robotsix_chat.repo.direct.client import (
         _INSTALLATION_TOKEN_CACHE as _cache,
     )
 
@@ -50,18 +50,18 @@ def _prepopulate_installation_token(settings: DirectRepoSettings) -> str:
 @pytest.fixture(autouse=True)
 def _clear_token_cache(monkeypatch: pytest.MonkeyPatch) -> None:
     """Clear caches and mock JWT creation before each test."""
-    from robotsix_chat.direct_repo.client import (
+    from robotsix_chat.repo.direct.client import (
         _INSTALLATION_TOKEN_CACHE as _cache,
     )
 
     _cache.clear()
-    from robotsix_chat.direct_repo.client import (
+    from robotsix_chat.repo.direct.client import (
         _GITHUB_APP_JWT_CACHE as _jwt_cache,
     )
 
     _jwt_cache.clear()
     # Mock _make_jwt globally for all tests so we never try to import jwt
-    from robotsix_chat.direct_repo import client as _client_mod
+    from robotsix_chat.repo.direct import client as _client_mod
 
     monkeypatch.setattr(_client_mod, "_make_jwt", lambda app_id, key: "fake-jwt-token")
 
