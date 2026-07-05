@@ -232,8 +232,12 @@ class CogneeMemory:
 
     # -- read -------------------------------------------------------------
 
-    async def recall(self, query: str) -> str:
-        """Return memory relevant to *query* (``""`` on any failure)."""
+    async def recall(self, query: str, *, session_id: str | None = None) -> str:
+        """Return memory relevant to *query* (``""`` on any failure).
+
+        *session_id* scopes the recall to one conversation, isolating
+        session-level guidance across concurrent windows.
+        """
         if not query.strip():
             return ""
         try:
@@ -246,7 +250,11 @@ class CogneeMemory:
                 self._settings.recall_search_type,
                 SearchType.GRAPH_COMPLETION,
             )
-            results = await cognee.search(query_type=search_type, query_text=query)
+            results = await cognee.search(
+                query_type=search_type,
+                query_text=query,
+                session_id=session_id,
+            )
             return _format_results(results)
         except Exception as exc:
             # Best-effort: a recall failure (incl. the expected "empty store"
@@ -257,16 +265,26 @@ class CogneeMemory:
 
     # -- write ------------------------------------------------------------
 
-    async def remember(self, user_message: str, assistant_message: str) -> None:
-        """Persist one exchange into long-term memory (consolidates the graph)."""
+    async def remember(
+        self,
+        user_message: str,
+        assistant_message: str,
+        *,
+        session_id: str | None = None,
+    ) -> None:
+        """Persist one exchange into long-term memory (consolidates the graph).
+
+        *session_id* scopes the write to one conversation, isolating
+        session-level guidance across concurrent windows.
+        """
         try:
             await self.setup()
             import cognee
 
             text = f"User: {user_message}\nAssistant: {assistant_message}"
             async with self._write_lock:
-                await cognee.add(text)
-                await cognee.cognify()
+                await cognee.add(text, session_id=session_id)
+                await cognee.cognify(session_id=session_id)
         except Exception:
             logger.exception("memory write failed; exchange not persisted")
 
