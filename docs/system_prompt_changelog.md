@@ -7,12 +7,12 @@ ______________________________________________________________________
 
 ## v19 — 2026-07-05 — subsession-prefer-level-2-for-general-work
 
-**Summary:** Reword the subsession `model_level` guidance in the default `agent_instruction`.
-Level 3 (keyless Claude Opus) was described as "the default for general work" while levels 1-2
-were pigeonholed to "trivial polling/extraction", so the agent nearly always spawned level-3
-subsessions even for tasks a cheap OpenRouter tier could handle. Now level 2 is the default
-choice for general work, level 3 is reserved for reasoning level 2 struggles with, and the text
-tells the agent to retry at level 3 if a level 1-2 spawn errors for a missing API key.
+**Summary:** Reword the subsession `model_level` guidance in the default `agent_instruction`. Level
+3 (keyless Claude Opus) was described as "the default for general work" while levels 1-2 were
+pigeonholed to "trivial polling/extraction", so the agent nearly always spawned level-3 subsessions
+even for tasks a cheap OpenRouter tier could handle. Now level 2 is the default choice for general
+work, level 3 is reserved for reasoning level 2 struggles with, and the text tells the agent to
+retry at level 3 if a level 1-2 spawn errors for a missing API key.
 
 **SHA256:** `0387f250d8092d248e1e29b7736966c09aa1c3e6a32df4d7c6bb42024a07e939`
 
