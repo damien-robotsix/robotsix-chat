@@ -8,14 +8,30 @@ import os
 from pathlib import Path
 from typing import Any, cast
 from unittest.mock import MagicMock, patch
+
 import pytest
 from pydantic import SecretStr
+
 from robotsix_chat.chat.conversation import ConversationStore
-from robotsix_chat.chat.server import SSE_CONTENT_TYPE, SSE_DONE_TYPE, SSE_ERROR_TYPE, SSE_TOKEN_TYPE, create_agent_from_settings, create_app, run_server_from_config
+from robotsix_chat.chat.server import (
+    SSE_CONTENT_TYPE,
+    SSE_DONE_TYPE,
+    SSE_ERROR_TYPE,
+    SSE_TOKEN_TYPE,
+    create_agent_from_settings,
+    create_app,
+    run_server_from_config,
+)
 from robotsix_chat.chat.server.cli import _export_langfuse_env
 from robotsix_chat.config import LangfuseSettings, Settings
 from robotsix_chat.llm import LlmioChatAgent
-from robotsix_chat.subsessions import SubsessionInfo, SubsessionKind, SubsessionRegistry, SubsessionStatus, spawn_subsession
+from robotsix_chat.subsessions import (
+    SubsessionInfo,
+    SubsessionKind,
+    SubsessionRegistry,
+    SubsessionStatus,
+    spawn_subsession,
+)
 from tests.conftest import AppFixture, MockAgent, http_client
 
 
@@ -424,11 +440,6 @@ async def test_sessions_close_cleans_orphaned_subsessions(mock_app: AppFixture) 
     assert info.status is SubsessionStatus.CLOSED
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'tokens': ["reply A"]}],
-    indirect=True,
-)
 async def test_chat_two_sessions_independent_history() -> None:
     """Two sessions under the same owner keep independent conversation histories."""
     store = ConversationStore()
@@ -1099,6 +1110,7 @@ async def test_subsessions_close_terminal_is_idempotent(mock_app: AppFixture) ->
 async def test_subsessions_close_cancels_worker_and_delivers_summary(mock_app: AppFixture) -> None:
     """Closing a live subsession cancels its worker and delivers a summary."""
     from contextlib import suppress
+
     from tests.common.subsession_fakes import FakeAgent, build_env, wait_until
     gate = asyncio.Event()
     agent = FakeAgent(['never'], gate=gate)
@@ -1192,8 +1204,6 @@ class TestMessageIdempotency:
     )
     async def test_same_message_id_concurrent(self, mock_app: AppFixture) -> None:
         """Concurrent POSTs with same message_id → one agent call, both get reply."""
-
-
         async def post() -> Any:
             return await mock_app.client.post('/chat', json={'message': 'hi', 'message_id': 'abc-123', 'session_id': 's1', 'owner_id': 'o1'})
         r1, r2 = await asyncio.gather(post(), post())
@@ -1205,10 +1215,10 @@ class TestMessageIdempotency:
         assert mock_app.agent.call_count == 1
         frames1 = _parse_sse(r1)
         frames2 = _parse_sse(r2)
-        assert any((f['type'] == SSE_DONE_TYPE for f in frames1))
-        assert any((f['type'] == SSE_DONE_TYPE for f in frames2))
-        reply1 = ''.join((str(f['content']) for f in frames1 if f['type'] == SSE_TOKEN_TYPE))
-        reply2 = ''.join((str(f['content']) for f in frames2 if f['type'] == SSE_TOKEN_TYPE))
+        assert any(f['type'] == SSE_DONE_TYPE for f in frames1)
+        assert any(f['type'] == SSE_DONE_TYPE for f in frames2)
+        reply1 = ''.join(str(f['content']) for f in frames1 if f['type'] == SSE_TOKEN_TYPE)
+        reply2 = ''.join(str(f['content']) for f in frames2 if f['type'] == SSE_TOKEN_TYPE)
         assert reply1 == reply2 == 'Hello world!'
 
     @pytest.mark.asyncio
@@ -1224,8 +1234,8 @@ class TestMessageIdempotency:
         assert mock_app.agent.call_count == 1
         frames1 = _parse_sse(r1)
         frames2 = _parse_sse(r2)
-        assert any((f['type'] == SSE_DONE_TYPE for f in frames1))
-        assert any((f['type'] == SSE_DONE_TYPE for f in frames2))
+        assert any(f['type'] == SSE_DONE_TYPE for f in frames1)
+        assert any(f['type'] == SSE_DONE_TYPE for f in frames2)
         token_frames2 = [f for f in frames2 if f['type'] == SSE_TOKEN_TYPE]
         assert len(token_frames2) == 1
         assert token_frames2[0]['content'] == 'Hello world!'
@@ -1254,8 +1264,8 @@ class TestMessageIdempotency:
         assert response.status_code == 200
         assert mock_app.agent.call_count == 1
         frames = _parse_sse(response)
-        assert any((f['type'] == SSE_DONE_TYPE for f in frames))
-        assert any((f['type'] == SSE_TOKEN_TYPE for f in frames))
+        assert any(f['type'] == SSE_DONE_TYPE for f in frames)
+        assert any(f['type'] == SSE_TOKEN_TYPE for f in frames)
 
     @pytest.mark.asyncio
     async def test_retry_after_stream_error_reruns(self) -> None:
@@ -1266,8 +1276,8 @@ class TestMessageIdempotency:
         async with http_client(app1) as client:
             r1 = await client.post('/chat', json={'message': 'hi', 'message_id': 'abc', 'session_id': 's5', 'owner_id': 'o5'})
         frames1 = _parse_sse(r1)
-        assert any((f['type'] == SSE_ERROR_TYPE for f in frames1))
-        assert not any((f['type'] == SSE_DONE_TYPE for f in frames1))
+        assert any(f['type'] == SSE_ERROR_TYPE for f in frames1)
+        assert not any(f['type'] == SSE_DONE_TYPE for f in frames1)
         # Second app instance with a non-erroring agent.
         agent2 = MockAgent(tokens=["ok"])
         app2 = create_app(agent2)
@@ -1275,7 +1285,7 @@ class TestMessageIdempotency:
             r2 = await client.post('/chat', json={'message': 'hi', 'message_id': 'abc', 'session_id': 's5', 'owner_id': 'o5'})
         assert agent2.call_count == 1
         frames2 = _parse_sse(r2)
-        assert any((f['type'] == SSE_DONE_TYPE for f in frames2))
+        assert any(f['type'] == SSE_DONE_TYPE for f in frames2)
 
     @pytest.mark.asyncio
     async def test_history_read_under_lock(self) -> None:
@@ -1294,6 +1304,7 @@ class TestMessageIdempotency:
 
 class TestExportLangfuseEnv:
     """Env export for the main-agent Langfuse exporter."""
+
     _VARS = ('LANGFUSE_PUBLIC_KEY', 'LANGFUSE_SECRET_KEY', 'LANGFUSE_HOST', 'LANGFUSE_BASE_URL')
 
     def test_exports_base_url_and_host(self, monkeypatch: pytest.MonkeyPatch) -> None:

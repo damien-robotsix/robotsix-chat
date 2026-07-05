@@ -16,6 +16,7 @@ if str(_local_pkgs) not in sys.path and _local_pkgs.is_dir():
     sys.path.insert(0, str(_local_pkgs))
 
 import pytest  # noqa: E402
+import pytest_asyncio  # noqa: E402
 from httpx import ASGITransport, AsyncClient  # noqa: E402
 from starlette.applications import Starlette  # noqa: E402
 
@@ -87,7 +88,7 @@ def app(agent: MockAgent) -> Starlette:
     return create_app(agent)
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def async_client(app: Starlette) -> AsyncIterator[AsyncClient]:
     """An ``httpx.AsyncClient`` wired to *app* via ``ASGITransport``."""
     async with AsyncClient(
@@ -96,7 +97,7 @@ async def async_client(app: Starlette) -> AsyncIterator[AsyncClient]:
         yield client
 
 
-@pytest.fixture
+@pytest_asyncio.fixture
 async def mock_app(request: pytest.FixtureRequest) -> AsyncIterator[AppFixture]:
     """Build an :class:`AppFixture` with a customisable agent and app.
 
