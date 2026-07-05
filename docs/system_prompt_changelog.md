@@ -49,8 +49,10 @@ Every change to `Settings.agent_instruction` (the pydantic field default literal
    `## v<N> — <YYYY-MM-DD> — <ticket-id>`.
 3. **Record the SHA256** of the new `agent_instruction` default literal (computed as
    `hashlib.sha256(default.encode()).hexdigest()`) in the entry.
-4. **Mirror** the updated default literal verbatim in the `agent.instruction` row of
-   `docs/configuration.md`.
+4. The `agent.instruction` row of `docs/configuration.md` uses the placeholder
+   `(long default)` in the Default column — the full multi-paragraph instruction
+   literal is impractical to embed verbatim in a Markdown table cell.  Do not
+   attempt to inline the literal; the placeholder is sufficient.
 
 A CI test (`tests/config/test_system_prompt_governance.py`) enforces that the latest entry's version
 matches `SYSTEM_PROMPT_VERSION` and its recorded hash matches the live default — edits that skip
@@ -69,7 +71,8 @@ prompt:
    - **Summary**: `rollback to v<K>`
    - **Rationale**: why the rollback is needed and which ticket authorises it.
    - **SHA256**: the hash of the restored literal (must match the prior version's recorded hash).
-5. Mirror the restored literal in `docs/configuration.md`.
+5. The `agent.instruction` row of `docs/configuration.md` uses the
+   placeholder `(long default)` — no change needed there for a rollback.
 
 ______________________________________________________________________
 
