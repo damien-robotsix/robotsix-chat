@@ -589,7 +589,7 @@ async def test_reap_orphans_cancels_tasks_without_tree_membership() -> None:
     assert reaped >= 1
 
     with contextlib.suppress(asyncio.CancelledError):
-        await task
+        _ = await task
     assert task.cancelled()
     # The subsession must be terminal (FAILED) so it no longer consumes
     # a concurrency slot.
@@ -615,4 +615,4 @@ async def test_reap_orphans_skips_tasks_with_tree_membership() -> None:
 
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
-        await task
+        _ = await task
