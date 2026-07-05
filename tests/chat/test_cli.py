@@ -365,7 +365,7 @@ class TestRunServerFromConfig:
             patch("robotsix_chat.chat.server.cli._setup_observability"),
             patch("robotsix_chat.subsessions.SubsessionRegistry") as mock_registry_cls,
             patch("robotsix_chat.subsessions.ParentDelivery") as mock_delivery_cls,
-            patch("robotsix_chat.chat.server.cli.resume_subsessions"),
+            patch("robotsix_chat.subsessions.resume_subsessions") as _,
             patch(
                 "robotsix_chat.chat.server.cli.create_agent_from_settings"
             ) as mock_create_agent,
@@ -382,7 +382,7 @@ class TestRunServerFromConfig:
         mock_create_agent.assert_called_once()
         # The agent passed to run_server should be the one we created.
         mock_run_server.assert_called_once()
-        assert mock_run_server.call_args.kwargs["agent"] is mock_agent
+        assert mock_run_server.call_args.args[0] is mock_agent
 
     def test_on_startup_resume_calls_resume_subsessions(self) -> None:
         """The ``on_startup`` callback resumes persisted subsessions."""
@@ -405,7 +405,7 @@ class TestRunServerFromConfig:
                 return_value=MagicMock(),
             ),
             patch(
-                "robotsix_chat.chat.server.cli.resume_subsessions",
+                "robotsix_chat.subsessions.resume_subsessions",
                 side_effect=lambda env: resume_calls.append(env),
             ),
             patch("robotsix_chat.chat.server.run_server") as mock_run_server,
