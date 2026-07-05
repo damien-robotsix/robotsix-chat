@@ -17,9 +17,9 @@ from .constants import (
     SSE_CONTENT_TYPE,
     SSE_DONE_TYPE,
     SSE_ERROR_TYPE,
+    SSE_HEARTBEAT_FRAME,
     SSE_HEARTBEAT_INTERVAL,
     SSE_TOKEN_TYPE,
-    _SSE_HEARTBEAT_FRAME,
 )
 from .errors import (
     not_found_handler,
@@ -55,7 +55,7 @@ __all__ = [
     "SSE_ERROR_TYPE",
     "SSE_HEARTBEAT_INTERVAL",
     "SSE_TOKEN_TYPE",
-    "_SSE_HEARTBEAT_FRAME",
+    "SSE_HEARTBEAT_FRAME",
     "_cleanup_session",
     "_get_session_id",
     "_get_subsession_registry",

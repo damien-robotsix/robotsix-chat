@@ -7,7 +7,7 @@ from typing import TYPE_CHECKING
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
-from ._shared import _parse_json_body, _get_session_id
+from ._shared import _get_session_id, _parse_json_body
 
 if TYPE_CHECKING:
     from robotsix_chat.subsessions import (

@@ -19,9 +19,9 @@ from .constants import (
     SSE_CONTENT_TYPE,
     SSE_DONE_TYPE,
     SSE_ERROR_TYPE,
+    SSE_HEARTBEAT_FRAME,
     SSE_HEARTBEAT_INTERVAL,
     SSE_TOKEN_TYPE,
-    _SSE_HEARTBEAT_FRAME,
 )
 
 logger = logging.getLogger(__name__)
@@ -58,7 +58,6 @@ class ChatAgent(Protocol):
         *images* is an optional list of ``(media_type, raw_bytes)`` pairs
         representing attached images (e.g. ``[("image/png", b"...")]``).
         """
-        ...
 
 
 # ---------------------------------------------------------------------------
@@ -327,14 +326,14 @@ async def chat_endpoint(
 
         producer = asyncio.create_task(_produce())
         try:
-            yield _SSE_HEARTBEAT_FRAME  # first byte immediately
+            yield SSE_HEARTBEAT_FRAME  # first byte immediately
             while True:
                 try:
                     kind, payload = await asyncio.wait_for(
                         queue.get(), SSE_HEARTBEAT_INTERVAL
                     )
                 except TimeoutError:
-                    yield _SSE_HEARTBEAT_FRAME
+                    yield SSE_HEARTBEAT_FRAME
                     continue
                 if kind == SSE_TOKEN_TYPE:
                     yield _sse_frame({"type": SSE_TOKEN_TYPE, "content": payload})

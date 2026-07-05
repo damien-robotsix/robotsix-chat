@@ -17,10 +17,10 @@ from .cli import (
     run_server_from_config,
 )
 from .routes import (
-    _SSE_HEARTBEAT_FRAME,
     SSE_CONTENT_TYPE,
     SSE_DONE_TYPE,
     SSE_ERROR_TYPE,
+    SSE_HEARTBEAT_FRAME,
     SSE_HEARTBEAT_INTERVAL,
     SSE_TOKEN_TYPE,
     ChatAgent,
@@ -59,7 +59,7 @@ __all__ = [
     "_parse_and_validate_images",
     "_sse_frame",
     "_setup_observability",
-    "_SSE_HEARTBEAT_FRAME",
+    "SSE_HEARTBEAT_FRAME",
     "chat_endpoint",
     "create_agent_from_settings",
     "create_app",

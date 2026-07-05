@@ -1,7 +1,7 @@
 """SSE wire-format constants — single source of truth for tests and consumers."""
 
 SSE_CONTENT_TYPE = "text/event-stream"
-SSE_TOKEN_TYPE = "token"  # nosec B105 — SSE event type name, not a credential
+SSE_TOKEN_TYPE = "token"  # noqa: S105 — SSE event type name, not a credential
 SSE_DONE_TYPE = "done"
 SSE_ERROR_TYPE = "error"
 
@@ -12,4 +12,4 @@ SSE_ERROR_TYPE = "error"
 # on this interval so the data channel never goes quiet. Comments carry no
 # ``data:`` line, so clients ignore them.
 SSE_HEARTBEAT_INTERVAL = 5.0
-_SSE_HEARTBEAT_FRAME = b": keepalive\n\n"
+SSE_HEARTBEAT_FRAME = b": keepalive\n\n"

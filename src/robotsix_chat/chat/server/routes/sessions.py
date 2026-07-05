@@ -13,7 +13,7 @@ from starlette.responses import JSONResponse
 
 from robotsix_chat.chat.conversation import ConversationStore
 
-from ._shared import _parse_json_body, _get_session_id
+from ._shared import _get_session_id, _parse_json_body
 from .chat import ChatAgent
 
 logger = logging.getLogger(__name__)
