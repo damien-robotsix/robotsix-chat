@@ -1,0 +1,1 @@
+Ensure changelog fragments created by pipeline always end with trailing newline

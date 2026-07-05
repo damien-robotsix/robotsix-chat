@@ -1,0 +1,2 @@
+Add \_serialize/\_deserialize hooks to JsonStoreBase to eliminate tmp+replace duplication in
+EffectivenessStore

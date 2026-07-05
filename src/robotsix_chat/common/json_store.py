@@ -69,6 +69,28 @@ class JsonStoreBase[T]:
         self._items: dict[str, T] = {}
 
     # ------------------------------------------------------------------
+    # serialisation / deserialisation hooks
+    # ------------------------------------------------------------------
+
+    def _serialize(self) -> bytes:
+        """Serialize all items to bytes. Default: flat JSON list."""
+        entries = [self._to_dict(item) for item in self._items.values()]
+        return json.dumps(entries, indent=2).encode("utf-8")
+
+    def _deserialize(self, data: bytes) -> None:
+        """Deserialize bytes into self._items. Default: flat JSON list."""
+        raw = json.loads(data)
+        if not isinstance(raw, list):
+            return
+        for item in raw:
+            if not isinstance(item, dict):
+                continue
+            obj = self._from_dict(item)
+            key = self._item_key(obj)
+            if key:
+                self._items[key] = obj
+
+    # ------------------------------------------------------------------
     # persistence
     # ------------------------------------------------------------------
 
@@ -80,10 +102,9 @@ class JsonStoreBase[T]:
             logger.warning("Could not create parent dir for %s", self._path)
             return
 
-        entries = [self._to_dict(item) for item in self._items.values()]
         tmp_path = self._path.with_suffix(self._path.suffix + ".tmp")
         try:
-            tmp_path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
+            tmp_path.write_bytes(self._serialize())
             tmp_path.replace(self._path)
         except OSError:
             logger.exception("Failed to persist %s to %s", self._store_name, self._path)
@@ -93,7 +114,8 @@ class JsonStoreBase[T]:
         if not self._path.exists():
             return
         try:
-            raw = json.loads(self._path.read_text(encoding="utf-8"))
+            data = self._path.read_bytes()
+            self._deserialize(data)
         except json.JSONDecodeError, OSError:
             logger.warning(
                 "Could not read %s file %s; starting empty",
@@ -101,14 +123,3 @@ class JsonStoreBase[T]:
                 self._path,
             )
             return
-
-        if not isinstance(raw, list):
-            return
-
-        for item in raw:
-            if not isinstance(item, dict):
-                continue
-            obj = self._from_dict(item)
-            key = self._item_key(obj)
-            if key:
-                self._items[key] = obj

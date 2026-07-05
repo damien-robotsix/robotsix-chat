@@ -1,0 +1,1 @@
+Memory: scope cognee session guidance per conversation to stop cross-session contamination

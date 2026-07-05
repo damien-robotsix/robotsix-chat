@@ -11,7 +11,11 @@ module.exports = async ({github, context, core}) => {
       ref: context.sha,
       per_page: 100,
     });
-    others = runs.filter((r) => !isSelf(r));
+    // Deploy jobs (e.g. GitHub Pages) can fail for infrastructure reasons
+    // outside the codebase (repo settings, environment config).  Exclude them
+    // from the CI gate so they don't block releases.
+    const isDeploy = (r) => (r.name || '').endsWith(' / Deploy');
+    others = runs.filter((r) => !isSelf(r) && !isDeploy(r));
     const pending = others.filter((r) => r.status !== 'completed');
     if (others.length > 0 && pending.length === 0) break;
     if (Date.now() - start > deadlineMs) {

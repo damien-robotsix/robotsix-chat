@@ -28,14 +28,14 @@ from robotsix_chat.component_access import build_component_access_tools
 from robotsix_chat.component_client import build_component_tools
 from robotsix_chat.config import Settings, level_needs_api_key
 from robotsix_chat.diagnostics import build_diagnostics_tools
-from robotsix_chat.direct_repo import build_direct_repo_tools
 from robotsix_chat.knowledge import build_knowledge_tools
 from robotsix_chat.lifecycle import build_lifecycle_tools
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.mail import build_mail_tools
 from robotsix_chat.memory import build_memory
 from robotsix_chat.refdocs import build_refdocs_tools
-from robotsix_chat.repo_study import build_repo_study_tools
+from robotsix_chat.repo.direct import build_direct_repo_tools
+from robotsix_chat.repo.study import build_repo_study_tools
 from robotsix_chat.selfreview import build_recent_activity_tools
 from robotsix_chat.version_check import build_version_check_tools
 
@@ -366,8 +366,22 @@ def create_agent_from_settings(
     if instruction is None:
         instruction = settings.agent_instruction
 
-    # Inject component skill prompts from the central-deploy roster.
+    # Inject component-access instruction and skill prompts from the
+    # central-deploy roster — only when a roster URL is configured.
     if settings.central_deploy.url:
+        instruction = (
+            f"{instruction}\n\n"
+            "Component access:\n"
+            "– You have one generic tool for calling external components: "
+            "component_request(component_id, method, path, json_body=None). "
+            "Each component declares its own API surface as a skill — read "
+            "the skill descriptions below for allowed operations.\n"
+            "– Obey each component skill's safety section. When a skill marks "
+            "an operation as requiring confirmation, ask the user in "
+            "conversation before calling it.\n"
+            "– If the roster is unavailable or a component returns an error, "
+            "report the error clearly — do not retry in a loop."
+        )
         from robotsix_chat.component_access.roster import (
             build_skill_prompt,
             fetch_roster_sync,

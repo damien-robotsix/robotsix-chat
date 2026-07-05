@@ -69,7 +69,7 @@ class WorkspaceManager:
         """GitHub API headers, with an App installation token when configured.
 
         Reuses the ``direct_repo`` GitHub App credentials (JWT → installation
-        token, cached in :mod:`robotsix_chat.direct_repo.client`).  Falls back
+        token, cached in :mod:`robotsix_chat.repo.direct.client`).  Falls back
         to unauthenticated headers — public repos only — when the App is not
         configured or the token exchange fails.
         """
@@ -83,7 +83,7 @@ class WorkspaceManager:
             and dr.github_app_private_key.get_secret_value()
             and dr.github_app_installation_id
         ):
-            from robotsix_chat.direct_repo.client import _get_installation_token
+            from robotsix_chat.repo.direct.client import _get_installation_token
 
             try:
                 token = await _get_installation_token(dr)

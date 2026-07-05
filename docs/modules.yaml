@@ -111,7 +111,6 @@ modules:
   - id: chat
     description: "Chat SSE server — HTTP + Server-Sent Events bridge for human-to-agent chat."
     paths:
-      - src/robotsix_chat/chat/__init__.py
       - src/robotsix_chat/chat/conversation.py
       - src/robotsix_chat/chat/events.py
       - src/robotsix_chat/chat/server/__init__.py
@@ -120,9 +119,9 @@ modules:
       - src/robotsix_chat/chat/server/idempotency.py
       - src/robotsix_chat/chat/server/routes.py
       - docs/api/robotsix_chat/server.md
-      - tests/chat/__init__.py
       - tests/chat/test_conversation.py
       - tests/chat/test_events.py
+      - tests/chat/test_idempotency.py
       - tests/chat/test_server.py
       - tests/chat/test_subsessions_e2e.py
 
@@ -140,17 +139,18 @@ modules:
   - id: direct-repo
     description: "Direct-repository-capability tools — push branches and open PRs as the robotsix-mill GitHub App installation for BLOCKED tickets."
     paths:
-      - src/robotsix_chat/direct_repo/__init__.py
-      - src/robotsix_chat/direct_repo/client.py
-      - tests/direct_repo/__init__.py
-      - tests/direct_repo/test_direct_repo.py
+      - src/robotsix_chat/repo/__init__.py
+      - src/robotsix_chat/repo/direct/__init__.py
+      - src/robotsix_chat/repo/direct/client.py
+      - tests/repo/direct/__init__.py
+      - tests/repo/direct/test_direct_repo.py
   - id: repo-study
     description: "Repo-study tools — temporary local repo snapshots (GitHub tarball, no git binary) the agent can list, read, and regex-search before they expire; auth reuses the direct_repo GitHub App credentials."
     paths:
-      - src/robotsix_chat/repo_study/__init__.py
-      - src/robotsix_chat/repo_study/workspace.py
-      - tests/repo_study/__init__.py
-      - tests/repo_study/test_repo_study.py
+      - src/robotsix_chat/repo/study/__init__.py
+      - src/robotsix_chat/repo/study/workspace.py
+      - tests/repo/study/__init__.py
+      - tests/repo/study/test_repo_study.py
 
   - id: diagnostics
     description: "Diagnostics tools for the agent — exposes build_diagnostics_tools() that returns tools for listing diagnostic events, checking recurring failure categories, and managing fix proposals. Returns no tools when diagnostics is disabled."

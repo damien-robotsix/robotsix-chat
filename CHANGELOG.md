@@ -1,5 +1,18 @@
 ## 0.0.0 (unreleased)
 
+- Component roster robustness: empty rosters are no longer cached for the full TTL; the last non-empty roster is preserved as a stale fallback. When the roster is unavailable, `component_request` returns an explicit "empty or unavailable" error instead of the misleading "unknown component_id".
+- Pin `robotsix-config` git dependency to full 40-character commit SHA (`424f8ec5140e14e9699b92d5c3755d929625b570`), consistent with the other first-party git dependencies.
+- Add `step-security/harden-runner` egress monitoring as the first step in all CI jobs that execute external actions directly (`lockfile`, `pre-commit`, `check-sse-types`, `image-scan`, `check-config-schema`), starting in `egress-policy: audit` mode for runtime supply-chain visibility.
+- Consolidate `direct_repo` and `repo_study` modules under a shared `repo/` parent namespace (`src/robotsix_chat/repo/{direct,study}/`).
+- Ensure changelog fragments (`changelog.d/*.md`) pushed via `push_direct_repo_branch` always end with a trailing newline, preventing `end-of-file-fixer` pre-commit failures on generated PRs.
+- Remove dead re-export layer `src/robotsix_chat/chat/__init__.py` (14 symbols in `__all__`); all consumers import directly from submodule paths (`chat.server`, `chat.events`, `chat.conversation`).
+- Refactor `_subsession_worker` main loop: extract `_run_task_turn`, `_run_user_chat_turn`, and `_run_periodic_turn` helper functions so the loop body reads as a clean kind-dispatch table.
+- Fix knowledge tool name shorthands in `agent_instruction` prompt and `KnowledgeSettings` docstring to match actual tool names (`append` → `append_to_knowledge_note`, `list_knowledge_note` → `list_knowledge_notes`).
+- Default `agent_instruction` no longer includes the "Component access:" section; it is now conditionally injected by `create_agent_from_settings()` only when a `central_deploy.url` roster is configured, so the prompt no longer promises a `component_request` tool in the default out-of-box deployment.)
+- Remove dead `_idle_reset_seconds` attribute from `ConversationStore` (parameter retained for caller compatibility).
+- Thread conversation `session_id` through memory `recall`/`remember` into cognee's session-memory API so session guidance (goals, rules, preferences) is scoped per-window instead of shared process-global.
+- Add unit tests for `MessageIdempotencyStore` (LRU eviction, multi-session isolation)
+- Add `_serialize()` / `_deserialize()` hook methods to `JsonStoreBase`, allowing subclasses like `EffectivenessStore` to provide custom serialisation without duplicating the atomic-write persistence pattern.
 - Register the deploy-lifecycle API as a read-only component:
   four new tools — ``list_lifecycle_services``,
   ``get_lifecycle_service_status``, ``get_lifecycle_service_config``,
