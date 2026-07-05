@@ -61,6 +61,12 @@ class Settings(BaseModel):
         llmio_api_key: Provider API key, forwarded to llmio when the chosen
             level's provider needs one (e.g. ``openrouter``); unused
             by keyless providers like ``claudeSDK``.
+        summary_model_level: Capability level used to generate the
+            structured conversation summary (``POST /summary``, regenerated
+            after every assistant turn). Defaults to the cheapest tier since
+            it is a bounded extraction task, not open-ended reasoning —
+            reusing the main agent's (often much pricier) level here would
+            burn a full-capability call on every single turn.
         agent_instruction: System instruction handed to the LLM agent.
             Includes guidance on spawning subsessions for background work.
         server_host: Host address the chat SSE server binds to.
@@ -90,6 +96,7 @@ class Settings(BaseModel):
 
     llmio_model_level: int = 3
     llmio_api_key: SecretStr = SecretStr("")
+    summary_model_level: int = 1
     agent_instruction: str = (
         "You are a helpful assistant. "
         "You have a local, durable knowledge base "
@@ -230,6 +237,15 @@ class Settings(BaseModel):
                 "it via the `llmio.api_key` field of your config file "
                 "(or use model_level 3, which is keyless)"
             )
+        if self.summary_model_level not in _VALID_MODEL_LEVELS:
+            raise ValueError(
+                f"summary_model_level must be one of {sorted(_VALID_MODEL_LEVELS)}, "
+                f"got {self.summary_model_level!r}"
+            )
+        # Unlike llmio_model_level, a missing key here is not fatal at config
+        # load — create_agent_from_settings falls back to a keyless level
+        # (see cli.py) so the default (level 1) never breaks a deployment
+        # that has not configured an OpenRouter key.
         if self.memory.enabled:
             if not self.memory.llm.api_key.get_secret_value():
                 raise ValueError(

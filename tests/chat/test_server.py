@@ -20,6 +20,7 @@ from robotsix_chat.chat.server import (
     SSE_ERROR_TYPE,
     SSE_TOKEN_TYPE,
     create_agent_from_settings,
+    create_app,
     run_server_from_config,
 )
 from robotsix_chat.chat.server.cli import _export_langfuse_env
@@ -32,7 +33,7 @@ from robotsix_chat.subsessions import (
     SubsessionStatus,
     spawn_subsession,
 )
-from tests.conftest import mock_app
+from tests.conftest import MockAgent, http_client, mock_app
 
 
 def _register_subsession(
@@ -386,6 +387,34 @@ async def test_summary_endpoint_passes_prompt_to_agent() -> None:
     assert "Fix the bug" in f.agent.called_with
     assert "I'll look into it" in f.agent.called_with
     assert "purpose" in f.agent.called_with
+
+
+@pytest.mark.asyncio
+async def test_summary_endpoint_uses_dedicated_summary_agent() -> None:
+    """POST /summary calls the dedicated summary_agent, not the main agent."""
+    store = ConversationStore()
+    sid = cast(str, store.create_session("owner-a")["session_id"])
+    store.record(sid, "owner-a", "Hello", "Hi there!")
+
+    main_agent = MockAgent(tokens=["should not be called"])
+    summary_agent = MockAgent(
+        tokens=[
+            '{"purpose":"Greeting","pending_work":"","pending_questions":"",'
+            '"blockers":"","relevant_info":""}'
+        ]
+    )
+    app = create_app(main_agent, summary_agent=summary_agent, conversation_store=store)
+
+    async with http_client(app) as client:
+        response = await client.post(
+            "/summary",
+            json={"session_id": sid, "owner_id": "owner-a"},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["purpose"] == "Greeting"
+    assert summary_agent.call_count == 1
+    assert main_agent.call_count == 0
 
 
 # ---------------------------------------------------------------------------
@@ -1237,6 +1266,8 @@ async def test_run_server_from_config_creates_agent_from_settings(
         assert isinstance(subsession_delivery, ParentDelivery)
         on_startup = call_args[1].pop("on_startup")
         assert callable(on_startup)
+        summary_agent = call_args[1].pop("summary_agent")
+        assert isinstance(summary_agent, LlmioChatAgent)
         assert call_args[1] == {
             "host": "127.0.0.1",
             "port": 8080,

@@ -17,6 +17,7 @@ from typing import Any
 from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus
 from robotsix_chat.config import Settings
+from robotsix_chat.config.constants import level_needs_api_key
 from robotsix_chat.llm import LlmioChatAgent
 
 from .app import create_agent_from_settings, create_app
@@ -28,6 +29,7 @@ logger = logging.getLogger(__name__)
 def run_server(
     agent: ChatAgent,
     *,
+    summary_agent: ChatAgent | None = None,
     host: str = "0.0.0.0",  # noqa: S104  # nosec B104
     port: int = 8000,
     serve_ui: bool = True,
@@ -55,6 +57,7 @@ def run_server(
 
     app = create_app(
         agent,
+        summary_agent=summary_agent,
         serve_ui=serve_ui,
         idle_timeout_minutes=idle_timeout_minutes,
         max_images_per_message=max_images_per_message,
@@ -264,6 +267,29 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             subsession_env=env,
         )
 
+    # Cheap dedicated agent for POST /summary (bounded extraction, not
+    # open-ended reasoning) — avoids running the main agent's often-pricier
+    # level on every single turn just to regenerate the summary. Unlike
+    # llmio_model_level, a missing key for this level is not fatal: fall
+    # back to the keyless tier (3) so a deployment without an OpenRouter
+    # key still starts.
+    summary_model_level = settings.summary_model_level
+    if (
+        level_needs_api_key(summary_model_level)
+        and not settings.llmio_api_key.get_secret_value()
+    ):
+        logger.warning(
+            "summary_model_level=%d needs an OpenRouter API key which is not "
+            "configured — falling back to level 3 for POST /summary",
+            summary_model_level,
+        )
+        summary_model_level = 3
+    summary_agent = create_agent_from_settings(
+        settings=settings,
+        conversation_store=conversation_store,
+        model_level=summary_model_level,
+    )
+
     # -- resume persisted subsessions after redeploy -----------------------
     def _resume() -> None:
         """Resume periodic subsessions; report interrupted one-shot work."""
@@ -281,6 +307,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
 
     _run_server(
         agent,
+        summary_agent=summary_agent,
         host=settings.server_host,
         port=settings.server_port,
         idle_timeout_minutes=settings.idle_timeout_minutes,
