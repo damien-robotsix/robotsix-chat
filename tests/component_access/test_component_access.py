@@ -36,6 +36,7 @@ def _settings(**kw: object) -> CentralDeploySettings:
 def _wipe_cache() -> None:
     """Reset the module-level roster cache between tests."""
     _roster._cache = None
+    _roster._last_non_empty_cache = None
 
 
 # ---------------------------------------------------------------------------
@@ -149,6 +150,52 @@ async def test_fetch_roster_non_list_response(
     settings = _settings(url="http://deploy:8080", roster_cache_ttl=300.0)
     result = await fetch_roster(settings)
     assert result == []
+
+
+@pytest.mark.asyncio
+async def test_fetch_roster_empty_list_not_cached(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Empty roster is not cached — next call re-fetches."""
+    _wipe_cache()
+
+    # First: prime a non-empty cache so we have a known state.
+    entries = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(200, json=entries)
+    )
+    settings = _settings(url="http://deploy:8080", roster_cache_ttl=300.0)
+    result = await fetch_roster(settings)
+    assert result == entries
+    cached_ts = _roster._cache[0] if _roster._cache else 0.0
+
+    # Second: the upstream returns an empty list.
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    # Expire the cache so we actually fetch.
+    _roster._cache = (time.monotonic() - 301.0, entries)
+    result = await fetch_roster(settings)
+    # Should fall back to the last non-empty cache, not the empty list.
+    assert result == entries
+    # Cache should NOT have been updated with the empty list.
+    assert _roster._cache is None or _roster._cache[0] == cached_ts
+
+
+@pytest.mark.asyncio
+async def test_fetch_roster_empty_list_no_fallback_returns_empty(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Empty roster with no prior non-empty cache returns []."""
+    _wipe_cache()
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    settings = _settings(url="http://deploy:8080", roster_cache_ttl=300.0)
+    result = await fetch_roster(settings)
+    assert result == []
+    # Cache must not have been set.
+    assert _roster._cache is None
 
 
 @pytest.mark.asyncio
@@ -275,6 +322,44 @@ def test_fetch_roster_sync_non_list_response(
     assert result == []
 
 
+def test_fetch_roster_sync_empty_list_not_cached(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Sync empty roster is not cached — next call re-fetches."""
+    _wipe_cache()
+
+    # Prime a non-empty cache.
+    entries = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(200, json=entries)
+    )
+    settings = _settings(url="http://deploy:8080", roster_cache_ttl=300.0)
+    result = fetch_roster_sync(settings)
+    assert result == entries
+
+    # Now return empty, with expired cache.
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    _roster._cache = (time.monotonic() - 301.0, entries)
+    result = fetch_roster_sync(settings)
+    assert result == entries  # stale fallback
+
+
+def test_fetch_roster_sync_empty_no_fallback_returns_empty(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Sync empty roster with no prior cache returns []."""
+    _wipe_cache()
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    settings = _settings(url="http://deploy:8080", roster_cache_ttl=300.0)
+    result = fetch_roster_sync(settings)
+    assert result == []
+    assert _roster._cache is None
+
+
 # ---------------------------------------------------------------------------
 # build_skill_prompt
 # ---------------------------------------------------------------------------
@@ -357,11 +442,31 @@ async def test_component_request_unknown_id() -> None:
 
 
 @pytest.mark.asyncio
+async def test_component_request_empty_roster() -> None:
+    """Empty roster returns an explicit unavailable message, not unknown id."""
+    result = await _component_request_impl([], "mill", "GET", "/tickets")
+    assert "empty or unavailable" in result.lower()
+    assert "unknown component_id" not in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_component_request_error_only_roster() -> None:
+    """Roster with only error entries returns unavailable message."""
+    roster = [
+        {"id": "_error", "base_url": "", "skill": "", "_error": "Roster down"},
+        {"id": "_error", "base_url": "", "skill": "", "_error": "Also down"},
+    ]
+    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
+    assert "empty or unavailable" in result.lower()
+    assert "unknown component_id" not in result.lower()
+
+
+@pytest.mark.asyncio
 async def test_component_request_error_entry() -> None:
-    """When the only entry is an error entry, the error is surfaced."""
+    """When the only entry is an error entry, the roster-unavailable message is shown."""
     roster = [{"id": "_error", "base_url": "", "skill": "", "_error": "Roster down"}]
     result = await _component_request_impl(roster, "_error", "GET", "/tickets")
-    assert "roster unavailable" in result.lower()
+    assert "empty or unavailable" in result.lower()
 
 
 @pytest.mark.asyncio
