@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Component roster robustness: empty rosters are no longer cached for the full TTL; the last non-empty roster is preserved as a stale fallback. When the roster is unavailable, `component_request` returns an explicit "empty or unavailable" error instead of the misleading "unknown component_id".
 - Add `step-security/harden-runner` egress monitoring as the first step in all CI jobs that execute external actions directly (`lockfile`, `pre-commit`, `check-sse-types`, `image-scan`, `check-config-schema`), starting in `egress-policy: audit` mode for runtime supply-chain visibility.
 - Consolidate `direct_repo` and `repo_study` modules under a shared `repo/` parent namespace (`src/robotsix_chat/repo/{direct,study}/`).
 - Ensure changelog fragments (`changelog.d/*.md`) pushed via `push_direct_repo_branch` always end with a trailing newline, preventing `end-of-file-fixer` pre-commit failures on generated PRs.

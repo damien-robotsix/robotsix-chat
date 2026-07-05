@@ -35,6 +35,16 @@ async def _component_request_impl(
     body as a string.
     """
     # Resolve the component from the roster.
+    # If the roster is empty or contains only error sentinels, surface a
+    # specific message — this is usually a transient upstream blip, not a
+    # registration problem.
+    non_error = [e for e in roster_entries if not e.get("_error")]
+    if not non_error:
+        return (
+            "Error: component roster is currently empty or unavailable — "
+            "this is likely transient; retry shortly."
+        )
+
     entry: dict[str, Any] | None = None
     for e in roster_entries:
         if e.get("id") == component_id:
@@ -42,7 +52,7 @@ async def _component_request_impl(
             break
 
     if entry is None:
-        known = [e.get("id", "?") for e in roster_entries if not e.get("_error")]
+        known = [e.get("id", "?") for e in non_error]
         return (
             f"Error: unknown component_id '{component_id}'. "
             f"Known components: {', '.join(known) if known else '(none)'}"
