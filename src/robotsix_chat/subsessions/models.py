@@ -120,6 +120,9 @@ class SubsessionInfo:
     runs: int = 0
     max_runs: int | None = None
     last_result: str | None = None
+    # run guard (persisted) — tracks which run numbers have been executed
+    # so a duplicate worker cannot re-execute runs that already completed.
+    completed_runs: set[int] = field(default_factory=set)
     # terminal fields:
     summary: str | None = None
     close_reason: str | None = None
@@ -153,6 +156,7 @@ class SubsessionInfo:
             "summary": self.summary,
             "close_reason": self.close_reason,
             "error": self.error,
+            "completed_runs": sorted(self.completed_runs),
         }
         if with_transcript:
             data["transcript"] = [entry.as_dict() for entry in self.transcript]

@@ -25,6 +25,14 @@
 - Split `routes.py` (850 lines) into a `routes/` package with focused modules:
   `constants.py`, `_shared.py`, `chat.py`, `events.py`, `sessions.py`,
   `subsessions.py`, `errors.py` — each holding a single responsibility.
+- Fix two lifecycle bugs in the periodic subsession scheduler: first-run
+  duplicate execution (now guarded by a persisted `completed_runs` set
+  checked atomically via `claim_run`) and zombie subsessions where the
+  tree record is lost but the timer survives (added `reap_orphans` reaper
+  and post-wakeup liveness checks).  `spawn_subsession` and `create` are
+  now idempotent — duplicate spawn/resume races cannot launch a second
+  worker.  `complete_subsession` fails loudly (error returned to the
+  agent) when the subsession is no longer active.
 - Exclude auto-generated CHANGELOG.md from the typos spell-check pre-commit hook to
   eliminate false positives on hyphen-separated issue reference slugs.
 - Log resolved persistence paths at startup (conversation, knowledge, memory, diagnostics, subsessions) so a volume-mount mismatch is immediately visible in logs.

@@ -445,6 +445,7 @@ async def test_list_subsessions_empty_message() -> None:
 async def test_complete_subsession_sets_close_state() -> None:
     """``complete_subsession`` flips the shared close state with the summary."""
     env = build_env()
+    _register(env, sub_id="sub-1", kind=SubsessionKind.TASK)
     close_state = CloseState()
     tools = build_subsession_tools(
         env, ctx=_ctx(subsession_id="sub-1", depth=1), close_state=close_state
