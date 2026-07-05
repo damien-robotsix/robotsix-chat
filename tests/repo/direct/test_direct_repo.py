@@ -561,6 +561,7 @@ async def test_push_branch_ensures_changelog_fragment_trailing_newline(
 
     # Capture the blob POST to inspect the content
     blob_calls: list[dict[str, Any]] = []
+
     async def _capture_blob(request: httpx.Request) -> httpx.Response:
         blob_calls.append(json.loads(request.content.decode()))
         return httpx.Response(200, text=json.dumps({"sha": "blob-sha"}))
@@ -618,7 +619,7 @@ async def test_push_branch_ensures_changelog_fragment_trailing_newline(
 async def test_push_branch_preserves_existing_trailing_newline_in_changelog(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """changelog.d/*.md files that already end with \\n are not double-terminated."""
+    r"""changelog.d/*.md files that already end with \n are not double-terminated."""
     settings = _settings()
     _prepopulate_installation_token(settings)
 
@@ -641,6 +642,7 @@ async def test_push_branch_preserves_existing_trailing_newline_in_changelog(
     )
 
     blob_calls: list[dict[str, Any]] = []
+
     async def _capture_blob(request: httpx.Request) -> httpx.Response:
         blob_calls.append(json.loads(request.content.decode()))
         return httpx.Response(200, text=json.dumps({"sha": "blob-sha"}))
@@ -715,6 +717,7 @@ async def test_push_branch_ignores_non_md_files_in_changelog_dir(
     )
 
     blob_calls: list[dict[str, Any]] = []
+
     async def _capture_blob(request: httpx.Request) -> httpx.Response:
         blob_calls.append(json.loads(request.content.decode()))
         return httpx.Response(200, text=json.dumps({"sha": "blob-sha"}))
