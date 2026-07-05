@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Remove dead re-export layer `src/robotsix_chat/chat/__init__.py` (14 symbols in `__all__`); all consumers import directly from submodule paths (`chat.server`, `chat.events`, `chat.conversation`).
 - Remove dead `_idle_reset_seconds` attribute from `ConversationStore` (parameter retained for caller compatibility).
 - Thread conversation `session_id` through memory `recall`/`remember` into cognee's session-memory API so session guidance (goals, rules, preferences) is scoped per-window instead of shared process-global.
 - Add unit tests for `MessageIdempotencyStore` (LRU eviction, multi-session isolation)
