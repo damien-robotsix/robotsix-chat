@@ -234,6 +234,108 @@ async def _run_turn(
     return "".join(parts)
 
 
+async def _run_task_turn(env: SubsessionEnv, sub_id: str, reply: str) -> list[InboxMessage]:
+    """Handle TASK post-turn: drain inbox; return pending messages or close.
+
+    Returns a non-empty list if steering messages arrived mid-turn
+    (the worker should continue), or an empty list after closing the
+    subsession (the worker should stop).
+    """
+    pending = env.registry.drain_inbox(sub_id)
+    if pending:
+        return pending  # a steering message arrived mid-turn
+    closed = env.registry.mark_closed(
+        sub_id, summary=reply, reason="completed", closed_by="agent"
+    )
+    if closed is not None:
+        await env.delivery.deliver_summary(closed, reply, "completed")
+    return []
+
+
+async def _run_user_chat_turn(
+    env: SubsessionEnv, sub_id: str
+) -> list[InboxMessage]:
+    """Handle USER_CHAT post-turn: wait for inbox, drain, return pending."""
+    env.registry.set_status(sub_id, SubsessionStatus.WAITING)
+    await env.registry.wait_for_inbox(sub_id, timeout=None)
+    return env.registry.drain_inbox(sub_id)
+
+
+async def _run_periodic_turn(
+    env: SubsessionEnv,
+    info: SubsessionInfo,
+    sub_id: str,
+    reply: str,
+    previous_result: str | None,
+    consecutive_no_change: int,
+) -> tuple[list[InboxMessage], str, int] | None:
+    """Handle PERIODIC post-turn: update status, deliver, check limits, sleep.
+
+    Returns ``None`` when the worker should stop (max_runs / auto_stop
+    triggered), or ``(pending, previous_result, consecutive_no_change)``
+    to continue.
+    """
+    registry = env.registry
+    suppressed = _is_no_change(reply)
+    consecutive_no_change = 0 if not suppressed else consecutive_no_change + 1
+    runs = info.runs + 1
+    if info.interval_seconds is None:  # pragma: no cover - spawn validates
+        raise RuntimeError("periodic subsession without an interval")
+    registry.set_status(
+        sub_id,
+        SubsessionStatus.SLEEPING,
+        runs=runs,
+        next_run_at=registry.now() + info.interval_seconds,
+        last_result=reply,
+    )
+    if not suppressed:
+        if env.event_sink is not None:
+            env.event_sink.publish(
+                info.owner_session_id,
+                subsession_result_frame(
+                    sub_id,
+                    info.kind.value,
+                    info.title,
+                    runs,
+                    reply,
+                    info.parent_id,
+                ),
+            )
+        await env.delivery.deliver_result(info, runs, reply)
+    previous_result = reply
+
+    if info.max_runs is not None and runs >= info.max_runs:
+        summary = f"Reached the {info.max_runs}-run limit. Last: {reply}"
+        closed = registry.mark_closed(
+            sub_id, summary=summary, reason="max_runs", closed_by="system"
+        )
+        if closed is not None:
+            await env.delivery.deliver_summary(closed, summary, "max_runs")
+        return None
+
+    no_change_cap = env.settings.subsessions.auto_stop_no_change_runs
+    if consecutive_no_change >= no_change_cap:
+        summary = (
+            f"Auto-stopped after {no_change_cap} consecutive no-change runs."
+        )
+        closed = registry.mark_closed(
+            sub_id,
+            summary=summary,
+            reason="no_change_auto_stop",
+            closed_by="system",
+        )
+        if closed is not None:
+            await env.delivery.deliver_summary(
+                closed, summary, "no_change_auto_stop"
+            )
+        return None
+
+    # Sleep until the next tick, waking early on a steering message.
+    woke = await registry.wait_for_inbox(sub_id, timeout=info.interval_seconds)
+    pending = registry.drain_inbox(sub_id) if woke else []
+    return pending, previous_result, consecutive_no_change
+
+
 async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
     """Drive one subsession to a terminal state (see module docstring)."""
     registry = env.registry
@@ -283,79 +385,22 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
 
             # -- kind-specific continuation --------------------------------
             if info.kind is SubsessionKind.TASK:
-                pending = registry.drain_inbox(sub_id)
+                pending = await _run_task_turn(env, sub_id, reply)
                 if pending:
-                    continue  # a steering message arrived mid-turn
-                closed = registry.mark_closed(
-                    sub_id, summary=reply, reason="completed", closed_by="agent"
-                )
-                if closed is not None:
-                    await env.delivery.deliver_summary(closed, reply, "completed")
+                    continue
                 return
 
             if info.kind is SubsessionKind.USER_CHAT:
-                registry.set_status(sub_id, SubsessionStatus.WAITING)
-                await registry.wait_for_inbox(sub_id, timeout=None)
-                pending = registry.drain_inbox(sub_id)
+                pending = await _run_user_chat_turn(env, sub_id)
                 continue
 
             # -- PERIODIC ---------------------------------------------------
-            suppressed = _is_no_change(reply)
-            consecutive_no_change = 0 if not suppressed else consecutive_no_change + 1
-            runs = info.runs + 1
-            if info.interval_seconds is None:  # pragma: no cover - spawn validates
-                raise RuntimeError("periodic subsession without an interval")
-            registry.set_status(
-                sub_id,
-                SubsessionStatus.SLEEPING,
-                runs=runs,
-                next_run_at=registry.now() + info.interval_seconds,
-                last_result=reply,
+            result = await _run_periodic_turn(
+                env, info, sub_id, reply, previous_result, consecutive_no_change
             )
-            if not suppressed:
-                if env.event_sink is not None:
-                    env.event_sink.publish(
-                        info.owner_session_id,
-                        subsession_result_frame(
-                            sub_id,
-                            info.kind.value,
-                            info.title,
-                            runs,
-                            reply,
-                            info.parent_id,
-                        ),
-                    )
-                await env.delivery.deliver_result(info, runs, reply)
-            previous_result = reply
-
-            if info.max_runs is not None and runs >= info.max_runs:
-                summary = f"Reached the {info.max_runs}-run limit. Last: {reply}"
-                closed = registry.mark_closed(
-                    sub_id, summary=summary, reason="max_runs", closed_by="system"
-                )
-                if closed is not None:
-                    await env.delivery.deliver_summary(closed, summary, "max_runs")
+            if result is None:
                 return
-            no_change_cap = env.settings.subsessions.auto_stop_no_change_runs
-            if consecutive_no_change >= no_change_cap:
-                summary = (
-                    f"Auto-stopped after {no_change_cap} consecutive no-change runs."
-                )
-                closed = registry.mark_closed(
-                    sub_id,
-                    summary=summary,
-                    reason="no_change_auto_stop",
-                    closed_by="system",
-                )
-                if closed is not None:
-                    await env.delivery.deliver_summary(
-                        closed, summary, "no_change_auto_stop"
-                    )
-                return
-
-            # Sleep until the next tick, waking early on a steering message.
-            woke = await registry.wait_for_inbox(sub_id, timeout=info.interval_seconds)
-            pending = registry.drain_inbox(sub_id) if woke else []
+            pending, previous_result, consecutive_no_change = result
 
     except asyncio.CancelledError:
         # External close already set the terminal state and (if wanted)
