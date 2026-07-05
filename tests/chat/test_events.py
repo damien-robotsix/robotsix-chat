@@ -26,7 +26,7 @@ from robotsix_chat.chat.events import (
     subsession_updated_frame,
 )
 from robotsix_chat.chat.server import SSE_CONTENT_TYPE, events_endpoint
-from tests.conftest import mock_app
+from tests.conftest import AppFixture
 
 # ---------------------------------------------------------------------------
 # Frame-builder helpers — unit tests
@@ -291,105 +291,100 @@ def _parse_data_line(line: str) -> dict[str, object]:
 
 
 @pytest.mark.asyncio
-async def test_events_endpoint_missing_client_id() -> None:
+async def test_events_endpoint_missing_client_id(mock_app: AppFixture) -> None:
     """``GET /events`` without a ``session_id`` query param returns 400."""
-    async with mock_app() as f:
-        response = await f.client.get("/events")
+    response = await mock_app.client.get("/events")
 
     assert response.status_code == 400
     assert response.json() == {"error": "session_id query parameter is required"}
 
 
 @pytest.mark.asyncio
-async def test_events_endpoint_empty_client_id() -> None:
+async def test_events_endpoint_empty_client_id(mock_app: AppFixture) -> None:
     """``GET /events?session_id=`` (empty value) returns 400."""
-    async with mock_app() as f:
-        response = await f.client.get("/events", params={"session_id": ""})
+    response = await mock_app.client.get("/events", params={"session_id": ""})
 
     assert response.status_code == 400
     assert response.json() == {"error": "session_id query parameter is required"}
 
 
 @pytest.mark.asyncio
-async def test_events_endpoint_opens_with_heartbeat() -> None:
+async def test_events_endpoint_opens_with_heartbeat(mock_app: AppFixture) -> None:
     """The persistent stream opens with a ``: keepalive`` heartbeat comment."""
-    async with mock_app() as f:
-        request = _make_request("c1", f.app)
-        response = await events_endpoint(request)
+    request = _make_request("c1", mock_app.app)
+    response = await events_endpoint(request)
 
-        assert isinstance(response, StreamingResponse)
-        assert response.media_type == SSE_CONTENT_TYPE
-        assert response.headers["Content-Type"] == SSE_CONTENT_TYPE
+    assert isinstance(response, StreamingResponse)
+    assert response.media_type == SSE_CONTENT_TYPE
+    assert response.headers["Content-Type"] == SSE_CONTENT_TYPE
 
-        body_iter: AsyncGenerator[bytes] = response.body_iterator  # type: ignore[assignment]
-        try:
-            chunk = await asyncio.wait_for(body_iter.__anext__(), timeout=2.0)
-            assert chunk == b": keepalive\n\n"
-            # Verify subscriber was registered
-            assert "c1" in f.app.state.event_bus._subscribers
-        finally:
-            await body_iter.aclose()
+    body_iter: AsyncGenerator[bytes] = response.body_iterator  # type: ignore[assignment]
+    try:
+        chunk = await asyncio.wait_for(body_iter.__anext__(), timeout=2.0)
+        assert chunk == b": keepalive\n\n"
+        # Verify subscriber was registered
+        assert "c1" in mock_app.app.state.event_bus._subscribers
+    finally:
+        await body_iter.aclose()
 
 
 @pytest.mark.asyncio
-async def test_events_endpoint_receives_pushed_frame() -> None:
+async def test_events_endpoint_receives_pushed_frame(mock_app: AppFixture) -> None:
     """A frame published via EventBus is delivered over the SSE stream."""
-    async with mock_app() as f:
-        request = _make_request("c1", f.app)
-        response = await events_endpoint(request)
-        assert isinstance(response, StreamingResponse)
+    request = _make_request("c1", mock_app.app)
+    response = await events_endpoint(request)
+    assert isinstance(response, StreamingResponse)
 
-        body_iter: AsyncGenerator[bytes] = response.body_iterator  # type: ignore[assignment]
-        try:
-            # Consume the heartbeat
-            chunk = await asyncio.wait_for(body_iter.__anext__(), timeout=2.0)
-            assert chunk == b": keepalive\n\n"
-
-            # Publish a frame
-            f.app.state.event_bus.publish(
-                "c1",
-                subsession_message_frame("sub-1", "assistant", "hi", 1.0),
-            )
-
-            # Read the data frame
-            chunk = await asyncio.wait_for(body_iter.__anext__(), timeout=2.0)
-            text = chunk.decode()
-            lines = text.rstrip("\n").split("\n")
-            # SSE frame: one "data:" line followed by an empty line
-            data_lines = [ln for ln in lines if ln.startswith("data: ")]
-            assert len(data_lines) == 1
-            parsed = _parse_data_line(data_lines[0])
-            assert parsed == {
-                "type": SSE_SUBSESSION_MESSAGE_TYPE,
-                "subsession_id": "sub-1",
-                "role": "assistant",
-                "text": "hi",
-                "timestamp": 1.0,
-            }
-        finally:
-            await body_iter.aclose()
-
-
-@pytest.mark.asyncio
-async def test_events_endpoint_unsubscribes_on_disconnect() -> None:
-    """Closing the SSE connection removes the subscriber from the EventBus."""
-    async with mock_app() as f:
-        request = _make_request("c1", f.app)
-        response = await events_endpoint(request)
-        assert isinstance(response, StreamingResponse)
-
-        body_iter: AsyncGenerator[bytes] = response.body_iterator  # type: ignore[assignment]
-        # Consume the heartbeat so we know subscription happened
+    body_iter: AsyncGenerator[bytes] = response.body_iterator  # type: ignore[assignment]
+    try:
+        # Consume the heartbeat
         chunk = await asyncio.wait_for(body_iter.__anext__(), timeout=2.0)
         assert chunk == b": keepalive\n\n"
 
-        # Verify subscriber is registered
-        assert "c1" in f.app.state.event_bus._subscribers
-        assert len(f.app.state.event_bus._subscribers["c1"]) == 1
+        # Publish a frame
+        mock_app.app.state.event_bus.publish(
+            "c1",
+            subsession_message_frame("sub-1", "assistant", "hi", 1.0),
+        )
 
-        # Simulate disconnect by closing the body iterator
+        # Read the data frame
+        chunk = await asyncio.wait_for(body_iter.__anext__(), timeout=2.0)
+        text = chunk.decode()
+        lines = text.rstrip("\n").split("\n")
+        # SSE frame: one "data:" line followed by an empty line
+        data_lines = [ln for ln in lines if ln.startswith("data: ")]
+        assert len(data_lines) == 1
+        parsed = _parse_data_line(data_lines[0])
+        assert parsed == {
+            "type": SSE_SUBSESSION_MESSAGE_TYPE,
+            "subsession_id": "sub-1",
+            "role": "assistant",
+            "text": "hi",
+            "timestamp": 1.0,
+        }
+    finally:
         await body_iter.aclose()
-        await asyncio.sleep(0)  # let the finally block run
+
+
+@pytest.mark.asyncio
+async def test_events_endpoint_unsubscribes_on_disconnect(mock_app: AppFixture) -> None:
+    """Closing the SSE connection removes the subscriber from the EventBus."""
+    request = _make_request("c1", mock_app.app)
+    response = await events_endpoint(request)
+    assert isinstance(response, StreamingResponse)
+
+    body_iter: AsyncGenerator[bytes] = response.body_iterator  # type: ignore[assignment]
+    # Consume the heartbeat so we know subscription happened
+    chunk = await asyncio.wait_for(body_iter.__anext__(), timeout=2.0)
+    assert chunk == b": keepalive\n\n"
+
+    # Verify subscriber is registered
+    assert "c1" in mock_app.app.state.event_bus._subscribers
+    assert len(mock_app.app.state.event_bus._subscribers["c1"]) == 1
+
+    # Simulate disconnect by closing the body iterator
+    await body_iter.aclose()
+    await asyncio.sleep(0)  # let the finally block run
 
     # After cleanup, the subscriber set is gone
-    assert "c1" not in f.app.state.event_bus._subscribers
+    assert "c1" not in mock_app.app.state.event_bus._subscribers

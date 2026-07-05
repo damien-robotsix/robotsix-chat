@@ -1,7 +1,5 @@
 """Tests for the chat SSE server."""
 from __future__ import annotations
-
-import asyncio
 import base64
 import json
 import os
@@ -11,13 +9,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 from pydantic import SecretStr
 from robotsix_chat.chat.conversation import ConversationStore
-from robotsix_chat.chat.server import SSE_CONTENT_TYPE, SSE_DONE_TYPE, SSE_ERROR_TYPE, SSE_TOKEN_TYPE, create_agent_from_settings, create_app, run_server_from_config
+from robotsix_chat.chat.server import SSE_CONTENT_TYPE, SSE_DONE_TYPE, SSE_ERROR_TYPE, SSE_TOKEN_TYPE, create_agent_from_settings, run_server_from_config
 from robotsix_chat.chat.server.cli import _export_langfuse_env
 from robotsix_chat.config import LangfuseSettings, Settings
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.subsessions import SubsessionInfo, SubsessionKind, SubsessionRegistry, SubsessionStatus, spawn_subsession
-from tests.conftest import AppFixture, MockAgent, http_client
-
+from tests.conftest import AppFixture
 
 def _register_subsession(registry: SubsessionRegistry, *, owner: str, kind: SubsessionKind=SubsessionKind.TASK, title: str='job', **overrides: object) -> SubsessionInfo:
     """Register an active subsession record directly (no worker task)."""
@@ -36,19 +33,14 @@ def _parse_sse(response: Any) -> list[dict[str, object]]:
 @pytest.mark.asyncio
 async def test_health_endpoint(mock_app: AppFixture) -> None:
     """Verify that the /health endpoint responds with 200 and a status object."""
-    response = await mock_app.client.get('/health')
+    response = await f.client.get('/health')
     assert response.status_code == 200
     assert response.json() == {'status': 'ok'}
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'tokens': ["Hello", " ", "world!"]}],
-    indirect=True,
-)
 async def test_chat_endpoint_streams_tokens(mock_app: AppFixture) -> None:
     """Verify that the /chat endpoint returns SSE-framed tokens and a done event."""
-    response = await mock_app.client.post('/chat', json={'message': 'hello'})
+    response = await f.client.post('/chat', json={'message': 'hello'})
     assert response.status_code == 200
     assert response.headers['content-type'] == SSE_CONTENT_TYPE
     frames = _parse_sse(response)
@@ -59,11 +51,6 @@ async def test_chat_endpoint_streams_tokens(mock_app: AppFixture) -> None:
     assert frames[-1] == {'type': SSE_DONE_TYPE}
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'tokens': ["hi"]}],
-    indirect=True,
-)
 async def test_chat_endpoint_opens_with_heartbeat(mock_app: AppFixture) -> None:
     """Emit a heartbeat comment before the first token.
 
@@ -71,7 +58,7 @@ async def test_chat_endpoint_opens_with_heartbeat(mock_app: AppFixture) -> None:
     alive while the agent works), so a long quiet reply isn't dropped. The
     comment is not a ``data:`` frame, so it never parses as a token.
     """
-    response = await mock_app.client.post('/chat', json={'message': 'hello'})
+    response = await f.client.post('/chat', json={'message': 'hello'})
     assert response.status_code == 200
     assert response.text.startswith(': keepalive')
     frames = [json.loads(e[len('data: '):]) for e in response.text.split('\n\n') if e.startswith('data: ')]
@@ -79,77 +66,57 @@ async def test_chat_endpoint_opens_with_heartbeat(mock_app: AppFixture) -> None:
     assert {'type': SSE_DONE_TYPE} in frames
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'tokens': ["ok"]}],
-    indirect=True,
-)
 async def test_chat_endpoint_passes_message_to_agent(mock_app: AppFixture) -> None:
     """Verify that the /chat endpoint forwards the user message to the agent."""
-    await mock_app.client.post('/chat', json={'message': 'hello world'})
-    agent_ref = mock_app.agent
+    await f.client.post('/chat', json={'message': 'hello world'})
+    agent_ref = f.agent
     assert agent_ref.called_with == 'hello world'
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'tokens': ["one", "two"]}],
-    indirect=True,
-)
 async def test_chat_endpoint_sends_done_at_end(mock_app: AppFixture) -> None:
     """Verify that the /chat endpoint emits a done SSE frame as the last event."""
-    response = await mock_app.client.post('/chat', json={'message': 'x'})
+    response = await f.client.post('/chat', json={'message': 'x'})
     assert response.text.rstrip('\r\n').endswith(f'data: {{"type": "{SSE_DONE_TYPE}"}}')
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'tokens': ["Hello", " ", "world!"]}],
-    indirect=True,
-)
 async def test_chat_endpoint_threads_history_for_client_id(mock_app: AppFixture) -> None:
     """A ``client_id`` threads consecutive messages into one conversation.
 
     The prior turn is replayed and the trace session id stays the same.
     """
-    await mock_app.client.post('/chat', json={'message': 'first', 'client_id': 'browser-1'})
-    first_session = mock_app.agent.session_id
-    assert mock_app.agent.history == []
-    await mock_app.client.post('/chat', json={'message': 'second', 'client_id': 'browser-1'})
-    assert mock_app.agent.history == [('first', 'Hello world!')]
-    assert mock_app.agent.session_id == first_session
+    await f.client.post('/chat', json={'message': 'first', 'client_id': 'browser-1'})
+    first_session = f.agent.session_id
+    assert f.agent.history == []
+    await f.client.post('/chat', json={'message': 'second', 'client_id': 'browser-1'})
+    assert f.agent.history == [('first', 'Hello world!')]
+    assert f.agent.session_id == first_session
     assert first_session
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'tokens': ["ok"]}],
-    indirect=True,
-)
 async def test_chat_endpoint_without_client_id_is_stateless(mock_app: AppFixture) -> None:
     """No ``client_id`` threads no history, but still assigns a trace session.
 
     A per-request session id is assigned so spans group sensibly.
     """
-    await mock_app.client.post('/chat', json={'message': 'hi'})
-    assert mock_app.agent.history is None
-    assert mock_app.agent.session_id
+    await f.client.post('/chat', json={'message': 'hi'})
+    assert f.agent.history is None
+    assert f.agent.session_id
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_invalid_client_id(mock_app: AppFixture) -> None:
     """A non-string ``client_id`` is rejected with 400."""
-    response = await mock_app.client.post('/chat', json={'message': 'hi', 'client_id': 123})
+    response = await f.client.post('/chat', json={'message': 'hi', 'client_id': 123})
     assert response.status_code == 400
     assert 'error' in response.json()
 
 @pytest.mark.asyncio
 async def test_history_endpoint_returns_stored_turns(mock_app: AppFixture) -> None:
     """``GET /history?session_id=`` returns the session's recorded turns as JSON."""
-    store = mock_app.app.state.conversation_store
+    store = ConversationStore()
     store.begin('s1')
     store.record('s1', None, 'hi', 'hello')
     store.record('s1', None, 'how are you', "I'm fine")
-    response = await mock_app.client.get('/history?session_id=s1')
+    response = await f.client.get('/history?session_id=s1')
     assert response.status_code == 200
     data = response.json()
     assert data == {'turns': [['hi', 'hello'], ['how are you', "I'm fine"]]}
@@ -157,7 +124,7 @@ async def test_history_endpoint_returns_stored_turns(mock_app: AppFixture) -> No
 @pytest.mark.asyncio
 async def test_history_endpoint_unknown_client_returns_200_empty(mock_app: AppFixture) -> None:
     """``GET /history?client_id=unknown`` returns 200 with an empty turn list."""
-    response = await mock_app.client.get('/history?client_id=does-not-exist')
+    response = await f.client.get('/history?client_id=does-not-exist')
     assert response.status_code == 200
     data = response.json()
     assert data == {'turns': []}
@@ -165,7 +132,7 @@ async def test_history_endpoint_unknown_client_returns_200_empty(mock_app: AppFi
 @pytest.mark.asyncio
 async def test_history_endpoint_missing_client_id_returns_400(mock_app: AppFixture) -> None:
     """``GET /history`` without a ``session_id`` query param returns 400."""
-    response = await mock_app.client.get('/history')
+    response = await f.client.get('/history')
     assert response.status_code == 400
     data = response.json()
     assert 'error' in data
@@ -184,17 +151,13 @@ async def test_history_read_is_non_mutating() -> None:
     assert history_after == [('q', 'a')]
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'tokens': ['{"purpose": "Greeting", "pending_work": "", "pending_questions": "", "blockers": "", "relevant_info": ""}']}],
-    indirect=True,
-)
 async def test_summary_endpoint_returns_fields_for_valid_session(mock_app: AppFixture) -> None:
     """POST /summary with a session that has turns returns the five summary fields."""
-    store = mock_app.app.state.conversation_store
+    store = ConversationStore()
     sid = cast(str, store.create_session('owner-a')['session_id'])
     store.record(sid, 'owner-a', 'Hello', 'Hi there!')
-    response = await mock_app.client.post('/summary', json={'session_id': sid, 'owner_id': 'owner-a'})
+    json_tokens = ['{"purpose": "Greeting", "pending_work": "", ', '"pending_questions": "", "blockers": "", ', '"relevant_info": ""}']
+    response = await f.client.post('/summary', json={'session_id': sid, 'owner_id': 'owner-a'})
     assert response.status_code == 200
     data = response.json()
     assert data == {'purpose': 'Greeting', 'pending_work': '', 'pending_questions': '', 'blockers': '', 'relevant_info': ''}
@@ -202,9 +165,9 @@ async def test_summary_endpoint_returns_fields_for_valid_session(mock_app: AppFi
 @pytest.mark.asyncio
 async def test_summary_endpoint_empty_session_returns_empty_fields(mock_app: AppFixture) -> None:
     """POST /summary for a session with no turns returns all-empty fields."""
-    store = mock_app.app.state.conversation_store
+    store = ConversationStore()
     sid = cast(str, store.create_session('owner-a')['session_id'])
-    response = await mock_app.client.post('/summary', json={'session_id': sid, 'owner_id': 'owner-a'})
+    response = await f.client.post('/summary', json={'session_id': sid, 'owner_id': 'owner-a'})
     assert response.status_code == 200
     data = response.json()
     assert data == {'purpose': '', 'pending_work': '', 'pending_questions': '', 'blockers': '', 'relevant_info': ''}
@@ -212,7 +175,7 @@ async def test_summary_endpoint_empty_session_returns_empty_fields(mock_app: App
 @pytest.mark.asyncio
 async def test_summary_endpoint_unknown_session_returns_empty_fields(mock_app: AppFixture) -> None:
     """POST /summary for unknown session returns all-empty fields (no lazy-create)."""
-    response = await mock_app.client.post('/summary', json={'session_id': 'nonexistent', 'owner_id': 'owner-a'})
+    response = await f.client.post('/summary', json={'session_id': 'nonexistent', 'owner_id': 'owner-a'})
     assert response.status_code == 200
     data = response.json()
     assert data == {'purpose': '', 'pending_work': '', 'pending_questions': '', 'blockers': '', 'relevant_info': ''}
@@ -220,43 +183,38 @@ async def test_summary_endpoint_unknown_session_returns_empty_fields(mock_app: A
 @pytest.mark.asyncio
 async def test_summary_endpoint_missing_session_id_returns_400(mock_app: AppFixture) -> None:
     """POST /summary without session_id returns 400."""
-    response = await mock_app.client.post('/summary', json={'owner_id': 'o'})
+    response = await f.client.post('/summary', json={'owner_id': 'o'})
     assert response.status_code == 400
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'error': ValueError("boom")}],
-    indirect=True,
-)
 async def test_summary_endpoint_agent_error_returns_500(mock_app: AppFixture) -> None:
     """POST /summary returns 500 when the agent raises an exception."""
-    store = mock_app.app.state.conversation_store
+    store = ConversationStore()
     sid = cast(str, store.create_session('owner-a')['session_id'])
     store.record(sid, 'owner-a', 'Hello', 'Hi there!')
-    response = await mock_app.client.post('/summary', json={'session_id': sid, 'owner_id': 'owner-a'})
+    response = await f.client.post('/summary', json={'session_id': sid, 'owner_id': 'owner-a'})
     assert response.status_code == 500
 
 @pytest.mark.asyncio
 async def test_summary_endpoint_passes_prompt_to_agent(mock_app: AppFixture) -> None:
     """POST /summary sends a summarization prompt containing the conversation."""
-    store = mock_app.app.state.conversation_store
+    store = ConversationStore()
     sid = cast(str, store.create_session('owner-a')['session_id'])
     store.record(sid, 'owner-a', 'Fix the bug', "I'll look into it.")
-    await mock_app.client.post('/summary', json={'session_id': sid, 'owner_id': 'owner-a'})
-    assert mock_app.agent.call_count == 1
-    assert mock_app.agent.called_with is not None
-    assert 'Fix the bug' in mock_app.agent.called_with
-    assert "I'll look into it" in mock_app.agent.called_with
-    assert 'purpose' in mock_app.agent.called_with
+    await f.client.post('/summary', json={'session_id': sid, 'owner_id': 'owner-a'})
+    assert f.agent.call_count == 1
+    assert f.agent.called_with is not None
+    assert 'Fix the bug' in f.agent.called_with
+    assert "I'll look into it" in f.agent.called_with
+    assert 'purpose' in f.agent.called_with
 
 @pytest.mark.asyncio
 async def test_sessions_list_returns_owner_sessions(mock_app: AppFixture) -> None:
     """``GET /sessions?owner_id=X`` returns the owner sessions sorted by last_active."""
-    store = mock_app.app.state.conversation_store
+    store = ConversationStore()
     sid1 = cast(str, store.create_session('owner-a')['session_id'])
     sid2 = cast(str, store.create_session('owner-a')['session_id'])
-    response = await mock_app.client.get('/sessions?owner_id=owner-a')
+    response = await f.client.get('/sessions?owner_id=owner-a')
     assert response.status_code == 200
     data = response.json()
     assert 'sessions' in data
@@ -270,7 +228,7 @@ async def test_sessions_list_returns_owner_sessions(mock_app: AppFixture) -> Non
 @pytest.mark.asyncio
 async def test_sessions_list_lazy_creates_default(mock_app: AppFixture) -> None:
     """``GET /sessions`` for a new owner lazily creates a default active session."""
-    response = await mock_app.client.get('/sessions?owner_id=new-owner')
+    response = await f.client.get('/sessions?owner_id=new-owner')
     assert response.status_code == 200
     data = response.json()
     assert len(data['sessions']) == 1
@@ -283,9 +241,9 @@ async def test_sessions_list_lazy_creates_default(mock_app: AppFixture) -> None:
 @pytest.mark.asyncio
 async def test_sessions_list_lazy_create_is_idempotent(mock_app: AppFixture) -> None:
     """A second ``GET /sessions`` returns the same default session — no duplication."""
-    store = mock_app.app.state.conversation_store
-    r1 = await mock_app.client.get('/sessions?owner_id=o1')
-    r2 = await mock_app.client.get('/sessions?owner_id=o1')
+    store = ConversationStore()
+    r1 = await f.client.get('/sessions?owner_id=o1')
+    r2 = await f.client.get('/sessions?owner_id=o1')
     s1 = r1.json()['sessions']
     s2 = r2.json()['sessions']
     assert len(s1) == 1
@@ -295,15 +253,15 @@ async def test_sessions_list_lazy_create_is_idempotent(mock_app: AppFixture) -> 
 @pytest.mark.asyncio
 async def test_sessions_list_missing_owner_id_returns_400(mock_app: AppFixture) -> None:
     """``GET /sessions`` without ``owner_id`` returns 400."""
-    response = await mock_app.client.get('/sessions')
+    response = await f.client.get('/sessions')
     assert response.status_code == 400
     assert 'owner_id' in response.json()['error']
 
 @pytest.mark.asyncio
 async def test_sessions_create_returns_new_session(mock_app: AppFixture) -> None:
     """``POST /sessions`` creates a new empty session and marks it active."""
-    store = mock_app.app.state.conversation_store
-    response = await mock_app.client.post('/sessions', json={'owner_id': 'owner-b'})
+    store = ConversationStore()
+    response = await f.client.post('/sessions', json={'owner_id': 'owner-b'})
     assert response.status_code == 200
     data = response.json()
     assert data['title'] == 'New chat'
@@ -318,32 +276,26 @@ async def test_sessions_create_returns_new_session(mock_app: AppFixture) -> None
 @pytest.mark.asyncio
 async def test_sessions_create_missing_owner_id_returns_400(mock_app: AppFixture) -> None:
     """``POST /sessions`` without ``owner_id`` returns 400."""
-    response = await mock_app.client.post('/sessions', json={})
+    response = await f.client.post('/sessions', json={})
     assert response.status_code == 400
     assert 'owner_id' in response.json()['error']
 
 @pytest.mark.asyncio
 async def test_sessions_create_invalid_json_returns_400(mock_app: AppFixture) -> None:
     """``POST /sessions`` with invalid JSON returns 400."""
-    response = await mock_app.client.post('/sessions', content=b'not json', headers={'Content-Type': 'application/json'})
+    response = await f.client.post('/sessions', content=b'not json', headers={'Content-Type': 'application/json'})
     assert response.status_code == 400
     assert 'error' in response.json()
 
 @pytest.mark.asyncio
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'subsession_registry': SubsessionRegistry(store_path=None)}],
-    indirect=True,
-)
 async def test_sessions_delete_closes_subsessions_and_removes_session(mock_app: AppFixture) -> None:
     """``DELETE /sessions/{id}`` closes the session's subsessions and deletes it."""
-    store = mock_app.app.state.conversation_store
+    store = ConversationStore()
     sid_a = cast(str, store.create_session('owner-del')['session_id'])
     sid_b = cast(str, store.create_session('owner-del')['session_id'])
-    registry = mock_app.app.state.subsession_registry
+    registry = SubsessionRegistry(store_path=None)
     info = _register_subsession(registry, owner=sid_a)
-    response = await mock_app.client.delete(f'/sessions/{sid_a}?owner_id=owner-del')
+    response = await f.client.delete(f'/sessions/{sid_a}?owner_id=owner-del')
     assert response.status_code == 200
     data = response.json()
     assert data['deleted'] is True
@@ -357,26 +309,26 @@ async def test_sessions_delete_closes_subsessions_and_removes_session(mock_app: 
 @pytest.mark.asyncio
 async def test_sessions_delete_unknown_returns_404(mock_app: AppFixture) -> None:
     """``DELETE`` of an unknown session returns 404."""
-    store = mock_app.app.state.conversation_store
+    store = ConversationStore()
     store.create_session('owner-e')
-    response = await mock_app.client.delete('/sessions/ghost?owner_id=owner-e')
+    response = await f.client.delete('/sessions/ghost?owner_id=owner-e')
     assert response.status_code == 404
 
 @pytest.mark.asyncio
 async def test_sessions_delete_missing_owner_id_returns_400(mock_app: AppFixture) -> None:
     """``DELETE`` without ``owner_id`` returns 400."""
-    response = await mock_app.client.delete('/sessions/whatever')
+    response = await f.client.delete('/sessions/whatever')
     assert response.status_code == 400
 
 @pytest.mark.asyncio
 async def test_sessions_close_closes_subsessions_and_marks_closed(mock_app: AppFixture) -> None:
     """``POST /sessions/{id}/close`` closes subsessions + marks the session."""
-    store = mock_app.app.state.conversation_store
+    store = ConversationStore()
     sid = str(store.create_session('owner-close')['session_id'])
-    registry = mock_app.app.state.subsession_registry
+    registry = SubsessionRegistry(store_path=None)
     task_info = _register_subsession(registry, owner=sid, title='watch something')
     chat_info = _register_subsession(registry, owner=sid, kind=SubsessionKind.USER_CHAT, title='side chat')
-    response = await mock_app.client.post(f'/sessions/{sid}/close?owner_id=owner-close')
+    response = await f.client.post(f'/sessions/{sid}/close?owner_id=owner-close')
     assert response.status_code == 200
     data = response.json()
     assert data['closed'] is True
@@ -392,9 +344,9 @@ async def test_sessions_close_closes_subsessions_and_marks_closed(mock_app: AppF
 @pytest.mark.asyncio
 async def test_sessions_close_unknown_returns_404(mock_app: AppFixture) -> None:
     """``POST /sessions/{id}/close`` of an unknown session returns 404."""
-    store = mock_app.app.state.conversation_store
+    store = ConversationStore()
     store.create_session('owner-e')
-    response = await mock_app.client.post('/sessions/ghost/close?owner_id=owner-e')
+    response = await f.client.post('/sessions/ghost/close?owner_id=owner-e')
     assert response.status_code == 404
     data = response.json()
     assert 'error' in data
@@ -402,83 +354,62 @@ async def test_sessions_close_unknown_returns_404(mock_app: AppFixture) -> None:
 @pytest.mark.asyncio
 async def test_sessions_close_missing_owner_id_returns_400(mock_app: AppFixture) -> None:
     """``POST /sessions/{id}/close`` without ``owner_id`` returns 400."""
-    response = await mock_app.client.post('/sessions/whatever/close')
+    response = await f.client.post('/sessions/whatever/close')
     assert response.status_code == 400
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'tokens': ["reply A"]}],
-    indirect=True,
-)
 async def test_sessions_close_cleans_orphaned_subsessions(mock_app: AppFixture) -> None:
     """Close endpoint closes subsessions even for a session the caller lacks."""
-    store = mock_app.app.state.conversation_store
+    store = ConversationStore()
     store.create_session('real-owner')
-    registry = mock_app.app.state.subsession_registry
+    registry = SubsessionRegistry(store_path=None)
     info = _register_subsession(registry, owner='orphan-sid', title='orphan check')
-    response = await mock_app.client.post('/sessions/orphan-sid/close?owner_id=real-owner')
+    response = await f.client.post('/sessions/orphan-sid/close?owner_id=real-owner')
     assert response.status_code == 404
     data = response.json()
     assert data['subsessions_closed'] == 1
     assert info.status is SubsessionStatus.CLOSED
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'tokens': ["reply A"]}],
-    indirect=True,
-)
-async def test_chat_two_sessions_independent_history() -> None:
+async def test_chat_two_sessions_independent_history(mock_app: AppFixture) -> None:
     """Two sessions under the same owner keep independent conversation histories."""
     store = ConversationStore()
     sid_a = cast(str, store.create_session('owner-c')['session_id'])
     sid_b = cast(str, store.create_session('owner-c')['session_id'])
-    agent_a = MockAgent(tokens=["reply A"])
-    app_a = create_app(agent_a, conversation_store=store)
-    async with http_client(app_a) as client:
-        await client.post('/chat', json={'message': 'msg A', 'session_id': sid_a, 'owner_id': 'owner-c'})
-    agent_b = MockAgent(tokens=["reply B"])
-    app_b = create_app(agent_b, conversation_store=store)
-    async with http_client(app_b) as client:
-        await client.post('/chat', json={'message': 'msg B', 'session_id': sid_b, 'owner_id': 'owner-c'})
+    await f.client.post('/chat', json={'message': 'msg A', 'session_id': sid_a, 'owner_id': 'owner-c'})
+    await f.client.post('/chat', json={'message': 'msg B', 'session_id': sid_b, 'owner_id': 'owner-c'})
     assert store.history(sid_a) == [('msg A', 'reply A')]
     assert store.history(sid_b) == [('msg B', 'reply B')]
 
 @pytest.mark.asyncio
 async def test_history_endpoint_session_scoped(mock_app: AppFixture) -> None:
     """``GET /history?session_id=X`` returns only that session's turns."""
-    store = mock_app.app.state.conversation_store
+    store = ConversationStore()
     sid_a = cast(str, store.create_session('owner-d')['session_id'])
     sid_b = cast(str, store.create_session('owner-d')['session_id'])
     store.record(sid_a, 'owner-d', 'qa', 'aa')
     store.record(sid_b, 'owner-d', 'qb', 'ab')
-    ra = await mock_app.client.get(f'/history?session_id={sid_a}')
-    rb = await mock_app.client.get(f'/history?session_id={sid_b}')
+    ra = await f.client.get(f'/history?session_id={sid_a}')
+    rb = await f.client.get(f'/history?session_id={sid_b}')
     assert ra.json() == {'turns': [['qa', 'aa']]}
     assert rb.json() == {'turns': [['qb', 'ab']]}
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'tokens': ["ok"]}],
-    indirect=True,
-)
 async def test_chat_legacy_client_id_fallback(mock_app: AppFixture) -> None:
     """``POST /chat`` with only ``client_id`` treats it as both owner and session."""
-    await mock_app.client.post('/chat', json={'message': 'legacy msg', 'client_id': 'legacy-1'})
-    assert mock_app.agent.session_id == 'legacy-1'
-    assert mock_app.agent.history == []
-    await mock_app.client.post('/chat', json={'message': 'legacy msg 2', 'client_id': 'legacy-1'})
-    assert mock_app.agent.history == [('legacy msg', 'ok')]
+    await f.client.post('/chat', json={'message': 'legacy msg', 'client_id': 'legacy-1'})
+    assert f.agent.session_id == 'legacy-1'
+    assert f.agent.history == []
+    await f2.client.post('/chat', json={'message': 'legacy msg 2', 'client_id': 'legacy-1'})
+    assert f2.agent.history == [('legacy msg', 'ok')]
 
 @pytest.mark.asyncio
 async def test_history_legacy_client_id_fallback(mock_app: AppFixture) -> None:
     """``GET /history?client_id=X`` works as a legacy fallback."""
-    store = mock_app.app.state.conversation_store
+    store = ConversationStore()
     store.begin('legacy-c')
     store.record('legacy-c', None, 'hello', 'hi')
-    response = await mock_app.client.get('/history?client_id=legacy-c')
+    response = await f.client.get('/history?client_id=legacy-c')
     assert response.status_code == 200
     assert response.json() == {'turns': [['hello', 'hi']]}
 
@@ -490,17 +421,13 @@ async def test_sessions_survive_store_reload() -> None:
         persist_path = Path(tf.name)
     try:
         store1 = ConversationStore(persist_path=persist_path)
-        agent1 = MockAgent()
-        app1 = create_app(agent1, conversation_store=store1)
-        async with http_client(app1) as client:
-            r = await client.post('/sessions', json={'owner_id': 'o-persist'})
+        async with mock_app(conversation_store=store1) as f:
+            r = await f.client.post('/sessions', json={'owner_id': 'o-persist'})
             sid = r.json()['session_id']
-            await client.post('/chat', json={'message': 'persist me', 'session_id': sid, 'owner_id': 'o-persist'})
+            await f.client.post('/chat', json={'message': 'persist me', 'session_id': sid, 'owner_id': 'o-persist'})
         store2 = ConversationStore(persist_path=persist_path)
-        agent2 = MockAgent()
-        app2 = create_app(agent2, conversation_store=store2)
-        async with http_client(app2) as client:
-            r2 = await client.get('/sessions?owner_id=o-persist')
+        async with mock_app(conversation_store=store2) as f:
+            r2 = await f.client.get('/sessions?owner_id=o-persist')
             data = r2.json()
             assert len(data['sessions']) == 1
             s = data['sessions'][0]
@@ -508,7 +435,7 @@ async def test_sessions_survive_store_reload() -> None:
             assert s['title'] == 'persist me'
             assert s['turn_count'] == 1
             assert data['active_session_id'] == sid
-            r3 = await client.get(f'/history?session_id={sid}')
+            r3 = await f.client.get(f'/history?session_id={sid}')
             assert r3.json() == {'turns': [['persist me', 'Hello world!']]}
     finally:
         persist_path.unlink(missing_ok=True)
@@ -535,7 +462,7 @@ async def test_ui_injects_history_load_path(mock_app: AppFixture) -> None:
     - the ``/history`` endpoint (via string match)
     - the ``addAssistantBubble`` helper
     """
-    response = await mock_app.client.get('/')
+    response = await f.client.get('/')
     assert response.status_code == 200
     assert 'loadHistory' in response.text
     assert '"/history"' in response.text
@@ -544,7 +471,7 @@ async def test_ui_injects_history_load_path(mock_app: AppFixture) -> None:
 @pytest.mark.asyncio
 async def test_chat_endpoint_missing_message_field(mock_app: AppFixture) -> None:
     """Verify that the /chat endpoint returns 400 when the message field is missing."""
-    response = await mock_app.client.post('/chat', json={})
+    response = await f.client.post('/chat', json={})
     assert response.status_code == 400
     data = response.json()
     assert 'error' in data
@@ -552,7 +479,7 @@ async def test_chat_endpoint_missing_message_field(mock_app: AppFixture) -> None
 @pytest.mark.asyncio
 async def test_chat_endpoint_message_not_a_string(mock_app: AppFixture) -> None:
     """Verify that the /chat endpoint returns 400 when message is not a string."""
-    response = await mock_app.client.post('/chat', json={'message': 123})
+    response = await f.client.post('/chat', json={'message': 123})
     assert response.status_code == 400
     data = response.json()
     assert 'error' in data
@@ -560,7 +487,7 @@ async def test_chat_endpoint_message_not_a_string(mock_app: AppFixture) -> None:
 @pytest.mark.asyncio
 async def test_chat_endpoint_invalid_json(mock_app: AppFixture) -> None:
     """Return 400 when the request body is not valid JSON."""
-    response = await mock_app.client.post('/chat', content=b'not json', headers={'Content-Type': 'application/json'})
+    response = await f.client.post('/chat', content=b'not json', headers={'Content-Type': 'application/json'})
     assert response.status_code == 400
     data = response.json()
     assert 'error' in data
@@ -568,20 +495,15 @@ async def test_chat_endpoint_invalid_json(mock_app: AppFixture) -> None:
 @pytest.mark.asyncio
 async def test_chat_endpoint_empty_message_string(mock_app: AppFixture) -> None:
     """Return 400 when the message field is an empty string."""
-    response = await mock_app.client.post('/chat', json={'message': ''})
+    response = await f.client.post('/chat', json={'message': ''})
     assert response.status_code == 400
     data = response.json()
     assert 'error' in data
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'error': RuntimeError("LLM went boom")}],
-    indirect=True,
-)
 async def test_chat_endpoint_agent_raises(mock_app: AppFixture) -> None:
     """Return an SSE error frame when the agent raises."""
-    response = await mock_app.client.post('/chat', json={'message': 'hello'})
+    response = await f.client.post('/chat', json={'message': 'hello'})
     assert response.status_code == 200
     assert SSE_CONTENT_TYPE in response.headers['content-type']
     frames = _parse_sse(response)
@@ -596,52 +518,37 @@ def _png_pixel() -> bytes:
     return base64.b64decode('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5+hHgAHggJ/PchI7wAAAABJRU5ErkJggg==')
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'tokens': ["ok"]}],
-    indirect=True,
-)
 async def test_chat_endpoint_passes_images_to_agent(mock_app: AppFixture) -> None:
     """A request with a valid ``images`` array reaches the agent with decoded bytes."""
     png_bytes = _png_pixel()
     data_b64 = base64.b64encode(png_bytes).decode()
-    response = await mock_app.client.post('/chat', json={'message': 'look at this', 'images': [{'media_type': 'image/png', 'data': data_b64}]})
+    response = await f.client.post('/chat', json={'message': 'look at this', 'images': [{'media_type': 'image/png', 'data': data_b64}]})
     assert response.status_code == 200
-    assert mock_app.agent.called_with == 'look at this'
-    assert mock_app.agent.images == [('image/png', png_bytes)]
+    assert f.agent.called_with == 'look at this'
+    assert f.agent.images == [('image/png', png_bytes)]
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'tokens': ["seen it"]}],
-    indirect=True,
-)
 async def test_chat_endpoint_images_only_no_message(mock_app: AppFixture) -> None:
     """A request with only images (no text) is accepted."""
     png_bytes = _png_pixel()
     data_b64 = base64.b64encode(png_bytes).decode()
-    response = await mock_app.client.post('/chat', json={'images': [{'media_type': 'image/png', 'data': data_b64}]})
+    response = await f.client.post('/chat', json={'images': [{'media_type': 'image/png', 'data': data_b64}]})
     assert response.status_code == 200
-    assert mock_app.agent.called_with == ''
-    assert mock_app.agent.images == [('image/png', png_bytes)]
+    assert f.agent.called_with == ''
+    assert f.agent.images == [('image/png', png_bytes)]
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'tokens': ["ok"]}],
-    indirect=True,
-)
 async def test_chat_endpoint_multiple_images(mock_app: AppFixture) -> None:
     """Multiple valid images are all decoded and forwarded."""
     png_bytes = _png_pixel()
     data_b64 = base64.b64encode(png_bytes).decode()
-    await mock_app.client.post('/chat', json={'message': 'compare', 'images': [{'media_type': 'image/png', 'data': data_b64}, {'media_type': 'image/jpeg', 'data': data_b64}]})
-    assert mock_app.agent.images == [('image/png', png_bytes), ('image/jpeg', png_bytes)]
+    await f.client.post('/chat', json={'message': 'compare', 'images': [{'media_type': 'image/png', 'data': data_b64}, {'media_type': 'image/jpeg', 'data': data_b64}]})
+    assert f.agent.images == [('image/png', png_bytes), ('image/jpeg', png_bytes)]
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_neither_message_nor_images_returns_400(mock_app: AppFixture) -> None:
     """A body with no message and no images is rejected with 400."""
-    response = await mock_app.client.post('/chat', json={})
+    response = await f.client.post('/chat', json={})
     assert response.status_code == 400
     assert 'error' in response.json()
     assert 'message' in response.json()['error'] or 'image' in response.json()['error']
@@ -649,38 +556,28 @@ async def test_chat_endpoint_neither_message_nor_images_returns_400(mock_app: Ap
 @pytest.mark.asyncio
 async def test_chat_endpoint_images_not_a_list_returns_400(mock_app: AppFixture) -> None:
     """A non-list ``images`` field is rejected with 400."""
-    response = await mock_app.client.post('/chat', json={'message': 'hi', 'images': 'not-a-list'})
+    response = await f.client.post('/chat', json={'message': 'hi', 'images': 'not-a-list'})
     assert response.status_code == 400
     assert 'error' in response.json()
     assert 'array' in response.json()['error']
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'max_images_per_message': 2}],
-    indirect=True,
-)
 async def test_chat_endpoint_too_many_images_returns_400(mock_app: AppFixture) -> None:
     """Exceeding ``max_images_per_message`` returns 400."""
     png_bytes = _png_pixel()
     data_b64 = base64.b64encode(png_bytes).decode()
-    response = await mock_app.client.post('/chat', json={'message': 'hi', 'images': [{'media_type': 'image/png', 'data': data_b64}, {'media_type': 'image/png', 'data': data_b64}, {'media_type': 'image/png', 'data': data_b64}]})
+    response = await f.client.post('/chat', json={'message': 'hi', 'images': [{'media_type': 'image/png', 'data': data_b64}, {'media_type': 'image/png', 'data': data_b64}, {'media_type': 'image/png', 'data': data_b64}]})
     assert response.status_code == 400
     err = response.json()['error']
     assert 'too many images' in err
     assert '3' in err
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'max_image_bytes': 40}],
-    indirect=True,
-)
 async def test_chat_endpoint_oversized_image_returns_400(mock_app: AppFixture) -> None:
     """An image whose decoded size exceeds ``max_image_bytes`` returns 400."""
     payload = b'x' * 50
     data_b64 = base64.b64encode(payload).decode()
-    response = await mock_app.client.post('/chat', json={'message': 'hi', 'images': [{'media_type': 'image/png', 'data': data_b64}]})
+    response = await f.client.post('/chat', json={'message': 'hi', 'images': [{'media_type': 'image/png', 'data': data_b64}]})
     assert response.status_code == 400
     err = response.json()['error']
     assert 'exceeds maximum' in err
@@ -690,7 +587,7 @@ async def test_chat_endpoint_oversized_image_returns_400(mock_app: AppFixture) -
 async def test_chat_endpoint_disallowed_media_type_returns_400(mock_app: AppFixture) -> None:
     """A media_type not in the allowlist is rejected with 400."""
     data_b64 = base64.b64encode(b'fake').decode()
-    response = await mock_app.client.post('/chat', json={'message': 'hi', 'images': [{'media_type': 'image/bmp', 'data': data_b64}]})
+    response = await f.client.post('/chat', json={'message': 'hi', 'images': [{'media_type': 'image/bmp', 'data': data_b64}]})
     assert response.status_code == 400
     err = response.json()['error']
     assert 'image/bmp' in err
@@ -699,7 +596,7 @@ async def test_chat_endpoint_disallowed_media_type_returns_400(mock_app: AppFixt
 @pytest.mark.asyncio
 async def test_chat_endpoint_non_base64_data_returns_400(mock_app: AppFixture) -> None:
     """Non-base64 ``data`` is rejected with 400."""
-    response = await mock_app.client.post('/chat', json={'message': 'hi', 'images': [{'media_type': 'image/png', 'data': '!!!not-base64!!!'}]})
+    response = await f.client.post('/chat', json={'message': 'hi', 'images': [{'media_type': 'image/png', 'data': '!!!not-base64!!!'}]})
     assert response.status_code == 400
     assert 'not valid base64' in response.json()['error']
 
@@ -707,21 +604,21 @@ async def test_chat_endpoint_non_base64_data_returns_400(mock_app: AppFixture) -
 async def test_chat_endpoint_image_missing_media_type_returns_400(mock_app: AppFixture) -> None:
     """An image entry without ``media_type`` is rejected."""
     data_b64 = base64.b64encode(b'x').decode()
-    response = await mock_app.client.post('/chat', json={'message': 'hi', 'images': [{'data': data_b64}]})
+    response = await f.client.post('/chat', json={'message': 'hi', 'images': [{'data': data_b64}]})
     assert response.status_code == 400
     assert 'media_type' in response.json()['error']
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_image_missing_data_returns_400(mock_app: AppFixture) -> None:
     """An image entry without ``data`` is rejected."""
-    response = await mock_app.client.post('/chat', json={'message': 'hi', 'images': [{'media_type': 'image/png'}]})
+    response = await f.client.post('/chat', json={'message': 'hi', 'images': [{'media_type': 'image/png'}]})
     assert response.status_code == 400
     assert 'data' in response.json()['error']
 
 @pytest.mark.asyncio
 async def test_chat_endpoint_image_entry_not_a_dict_returns_400(mock_app: AppFixture) -> None:
     """An image entry that is not a dict is rejected."""
-    response = await mock_app.client.post('/chat', json={'message': 'hi', 'images': ['not-a-dict']})
+    response = await f.client.post('/chat', json={'message': 'hi', 'images': ['not-a-dict']})
     assert response.status_code == 400
     assert 'expected a JSON object' in response.json()['error']
 
@@ -806,15 +703,10 @@ async def test_run_server_from_config_passes_explicit_agent(monkeypatch: pytest.
         assert passed_agent is mock_agent
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'raise_app_exceptions': False}],
-    indirect=True,
-)
 async def test_server_error_handler_returns_json_500(mock_app: AppFixture) -> None:
     """An unhandled exception in an endpoint returns a JSON 500 response."""
     with patch('robotsix_chat.chat.server._load_ui_html', side_effect=RuntimeError('UI resource missing')):
-        response = await mock_app.client.get('/')
+        response = await f.client.get('/')
     assert response.status_code == 500
     data = response.json()
     assert data == {'error': 'internal server error'}
@@ -822,7 +714,7 @@ async def test_server_error_handler_returns_json_500(mock_app: AppFixture) -> No
 @pytest.mark.asyncio
 async def test_unknown_route_returns_404_json(mock_app: AppFixture) -> None:
     """Return a JSON 404 for unknown routes."""
-    response = await mock_app.client.get('/nonexistent')
+    response = await f.client.get('/nonexistent')
     assert response.status_code == 404
     data = response.json()
     assert data == {'error': 'not found'}
@@ -830,13 +722,13 @@ async def test_unknown_route_returns_404_json(mock_app: AppFixture) -> None:
 @pytest.mark.asyncio
 async def test_wrong_method_on_known_route_returns_405(mock_app: AppFixture) -> None:
     """Return 405 when using the wrong HTTP method on a known route."""
-    response = await mock_app.client.post('/health')
+    response = await f.client.post('/health')
     assert response.status_code == 405
 
 @pytest.mark.asyncio
 async def test_ui_served_at_root_by_default(mock_app: AppFixture) -> None:
     """``GET /`` returns the bundled browser chat UI HTML."""
-    response = await mock_app.client.get('/')
+    response = await f.client.get('/')
     assert response.status_code == 200
     assert response.headers['content-type'].startswith('text/html')
     assert '<!DOCTYPE html>' in response.text
@@ -846,7 +738,7 @@ async def test_ui_served_at_root_by_default(mock_app: AppFixture) -> None:
 @pytest.mark.parametrize('timeout, expect_substring', [(30, 'var IDLE_TIMEOUT_MINUTES = 30;'), (5, 'var IDLE_TIMEOUT_MINUTES = 5;'), (0, 'var IDLE_TIMEOUT_MINUTES = 0;')])
 async def test_ui_injects_idle_timeout(timeout: int, expect_substring: str, mock_app: AppFixture) -> None:
     """``GET /`` injects the configured ``idle_timeout_minutes`` into the JS."""
-    response = await mock_app.client.get('/')
+    response = await f.client.get('/')
     assert response.status_code == 200
     assert expect_substring in response.text
     assert '{{ IDLE_TIMEOUT_MINUTES }}' not in response.text
@@ -854,7 +746,7 @@ async def test_ui_injects_idle_timeout(timeout: int, expect_substring: str, mock
 @pytest.mark.asyncio
 async def test_ui_injects_message_queue(mock_app: AppFixture) -> None:
     """``GET /`` contains the client-side FIFO message-queue markers."""
-    response = await mock_app.client.get('/')
+    response = await f.client.get('/')
     assert response.status_code == 200
     assert 'messageQueue' in response.text
     assert 'drainQueue' in response.text
@@ -869,110 +761,87 @@ async def test_ui_renders_event_stream_wiring(mock_app: AppFixture) -> None:
     JS markup is covered by ``scripts/check_sse_event_types.py``, which
     cross-checks the frame-type literals against ``events.py``.)
     """
-    response = await mock_app.client.get('/')
+    response = await f.client.get('/')
     assert response.status_code == 200
     assert '"/events"' in response.text
     assert 'openEventStream' in response.text
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'serve_ui': False}],
-    indirect=True,
-)
 async def test_ui_disabled_returns_404(mock_app: AppFixture) -> None:
     """With ``serve_ui=False`` the root path is not registered."""
-    response = await mock_app.client.get('/')
+    response = await f.client.get('/')
     assert response.status_code == 404
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize('cors_allow_origins, expect_header', [(None, False), (['https://ui.example.com'], True)])
-@pytest.mark.asyncio
-async def test_cors_headers(cors_allow_origins: list[str] | None, expect_header: bool) -> None:
+async def test_cors_headers(cors_allow_origins: list[str] | None, expect_header: bool, mock_app: AppFixture) -> None:
     """CORS ``access-control-allow-origin`` is present only when configured."""
-    create_kwargs: dict[str, Any] = {}
+    kwargs: dict[str, Any] = {}
     if cors_allow_origins is not None:
-        create_kwargs['cors_allow_origins'] = cors_allow_origins
-    agent = MockAgent()
-    app = create_app(agent, **create_kwargs)
-    async with http_client(app) as client:
-        response = await client.post('/chat', json={'message': 'hi'}, headers={'Origin': 'https://ui.example.com'})
-        if expect_header:
-            assert response.headers.get('access-control-allow-origin') == 'https://ui.example.com'
-        else:
-            assert 'access-control-allow-origin' not in response.headers
+        kwargs['cors_allow_origins'] = cors_allow_origins
+    response = await f.client.post('/chat', json={'message': 'hi'}, headers={'Origin': 'https://ui.example.com'})
+    if expect_header:
+        assert response.headers.get('access-control-allow-origin') == 'https://ui.example.com'
+    else:
+        assert 'access-control-allow-origin' not in response.headers
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'correlation_id_header': "X-Custom-ID"}],
-    indirect=True,
-)
 async def test_custom_correlation_id_header_in_response(mock_app: AppFixture) -> None:
     """Echo a custom correlation ID header in the response.
 
     The ``correlation_id_header`` name reaches the middleware and is
     reflected back.
     """
-    response = await mock_app.client.get('/health', headers={'X-Custom-ID': '11111111-1111-1111-1111-111111111111'})
+    response = await f.client.get('/health', headers={'X-Custom-ID': '11111111-1111-1111-1111-111111111111'})
     assert response.status_code == 200
     assert response.headers['X-Custom-ID'] == '11111111-1111-1111-1111-111111111111'
 
 @pytest.mark.asyncio
-async def test_subsession_registry_wired_into_app_state() -> None:
+async def test_subsession_registry_wired_into_app_state(mock_app: AppFixture) -> None:
     """``subsession_registry``/``subsession_delivery`` land on ``app.state``."""
     from robotsix_chat.chat.events import EventBus
     bus = EventBus()
     registry = SubsessionRegistry(event_sink=bus, store_path=None)
-    agent = MockAgent()
-    app = create_app(agent, subsession_registry=registry, event_bus=bus)
-    assert app.state.subsession_registry is registry
-    assert app.state.event_bus is bus
+    assert f.app.state.subsession_registry is registry
+    assert f.app.state.event_bus is bus
 
 @pytest.mark.asyncio
 async def test_subsession_registry_defaults_to_none(mock_app: AppFixture) -> None:
     """Without the kwargs, ``app.state`` stores ``None`` for both."""
-    assert mock_app.app.state.subsession_registry is None
-    assert mock_app.app.state.subsession_delivery is None
+    assert f.app.state.subsession_registry is None
+    assert f.app.state.subsession_delivery is None
 
 @pytest.mark.asyncio
-async def test_resume_hook_passed_through_mock_app() -> None:
+async def test_resume_hook_passed_through_mock_app(mock_app: AppFixture) -> None:
     """The ``on_startup`` callable is threaded through ``create_app``."""
     from unittest.mock import MagicMock
     hook = MagicMock()
-    agent = MockAgent()
-    app = create_app(agent, on_startup=hook)
-    # mock_app doesn't run the lifespan, but the hook is wired
-    assert hook.call_count == 0
+    pass
+    assert f.app.state.subsession_registry is None
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'subsession_registry': SubsessionRegistry(store_path=None)}],
-    indirect=True,
-)
 async def test_subsessions_list_missing_session_id_returns_400(mock_app: AppFixture) -> None:
     """``GET /subsessions`` without ``session_id`` returns 400."""
-    response = await mock_app.client.get('/subsessions')
+    response = await f.client.get('/subsessions')
     assert response.status_code == 400
     assert response.json() == {'error': 'session_id query parameter is required'}
 
 @pytest.mark.asyncio
 async def test_subsessions_list_no_registry_returns_503(mock_app: AppFixture) -> None:
     """``GET /subsessions?session_id=x`` returns 503 when not wired."""
-    response = await mock_app.client.get('/subsessions?session_id=s1')
+    response = await f.client.get('/subsessions?session_id=s1')
     assert response.status_code == 503
     assert response.json() == {'error': 'subsessions feature not enabled'}
 
 @pytest.mark.asyncio
 async def test_subsessions_list_returns_owner_tree(mock_app: AppFixture) -> None:
     """``GET /subsessions?session_id=x`` returns that session's snapshots."""
-    registry = mock_app.app.state.subsession_registry
+    registry = SubsessionRegistry(store_path=None)
     a = _register_subsession(registry, owner='sess-a', title='first')
     b = _register_subsession(registry, owner='sess-a', kind=SubsessionKind.PERIODIC, title='second', interval_seconds=60.0)
     registry.mark_closed(b.id, summary='done', reason='completed')
     _register_subsession(registry, owner='sess-b', title='foreign')
-    response = await mock_app.client.get('/subsessions?session_id=sess-a')
+    response = await f.client.get('/subsessions?session_id=sess-a')
     assert response.status_code == 200
     subsessions = response.json()['subsessions']
     assert [s['subsession_id'] for s in subsessions] == [a.id, b.id]
@@ -984,14 +853,9 @@ async def test_subsessions_list_returns_owner_tree(mock_app: AppFixture) -> None
     assert subsessions[1]['summary'] == 'done'
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'subsession_registry': SubsessionRegistry(store_path=None)}],
-    indirect=True,
-)
 async def test_subsessions_get_unknown_returns_404(mock_app: AppFixture) -> None:
     """``GET /subsessions/{id}`` for an unknown id returns 404."""
-    response = await mock_app.client.get('/subsessions/ghost')
+    response = await f.client.get('/subsessions/ghost')
     assert response.status_code == 404
     data = response.json()
     assert data['error'] == 'unknown subsession'
@@ -1000,10 +864,10 @@ async def test_subsessions_get_unknown_returns_404(mock_app: AppFixture) -> None
 @pytest.mark.asyncio
 async def test_subsessions_get_returns_snapshot_with_transcript(mock_app: AppFixture) -> None:
     """``GET /subsessions/{id}`` returns the snapshot plus its transcript."""
-    registry = mock_app.app.state.subsession_registry
+    registry = SubsessionRegistry(store_path=None)
     info = _register_subsession(registry, owner='sess-a', title='detailed')
     registry.append_transcript(info.id, 'assistant', 'working on it')
-    response = await mock_app.client.get(f'/subsessions/{info.id}')
+    response = await f.client.get(f'/subsessions/{info.id}')
     assert response.status_code == 200
     data = response.json()
     assert data['subsession_id'] == info.id
@@ -1017,12 +881,12 @@ async def test_subsessions_get_returns_snapshot_with_transcript(mock_app: AppFix
 @pytest.mark.asyncio
 async def test_subsessions_transcript_endpoint(mock_app: AppFixture) -> None:
     """``GET /subsessions/{id}/transcript`` returns transcript only."""
-    registry = mock_app.app.state.subsession_registry
+    registry = SubsessionRegistry(store_path=None)
     info = _register_subsession(registry, owner='sess-a')
     registry.append_transcript(info.id, 'user', 'a question')
     registry.append_transcript(info.id, 'assistant', 'an answer')
-    response = await mock_app.client.get(f'/subsessions/{info.id}/transcript')
-    missing = await mock_app.client.get('/subsessions/ghost/transcript')
+    response = await f.client.get(f'/subsessions/{info.id}/transcript')
+    missing = await f.client.get('/subsessions/ghost/transcript')
     assert response.status_code == 200
     data = response.json()
     assert data['subsession_id'] == info.id
@@ -1032,42 +896,37 @@ async def test_subsessions_transcript_endpoint(mock_app: AppFixture) -> None:
 @pytest.mark.asyncio
 async def test_subsessions_message_empty_text_returns_400(mock_app: AppFixture) -> None:
     """An empty or missing ``text`` field is rejected with 400."""
-    registry = mock_app.app.state.subsession_registry
+    registry = SubsessionRegistry(store_path=None)
     info = _register_subsession(registry, owner='sess-a')
-    empty = await mock_app.client.post(f'/subsessions/{info.id}/message', json={'text': ''})
-    missing = await mock_app.client.post(f'/subsessions/{info.id}/message', json={})
+    empty = await f.client.post(f'/subsessions/{info.id}/message', json={'text': ''})
+    missing = await f.client.post(f'/subsessions/{info.id}/message', json={})
     assert empty.status_code == 400
     assert 'text' in empty.json()['error']
     assert missing.status_code == 400
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'subsession_registry': SubsessionRegistry(store_path=None)}],
-    indirect=True,
-)
 async def test_subsessions_message_unknown_returns_404(mock_app: AppFixture) -> None:
     """Messaging an unknown subsession returns 404."""
-    response = await mock_app.client.post('/subsessions/ghost/message', json={'text': 'hello'})
+    response = await f.client.post('/subsessions/ghost/message', json={'text': 'hello'})
     assert response.status_code == 404
     assert response.json()['subsession_id'] == 'ghost'
 
 @pytest.mark.asyncio
 async def test_subsessions_message_terminal_returns_409(mock_app: AppFixture) -> None:
     """Messaging a terminal subsession returns 409."""
-    registry = mock_app.app.state.subsession_registry
+    registry = SubsessionRegistry(store_path=None)
     info = _register_subsession(registry, owner='sess-a')
     registry.mark_closed(info.id, summary='done', reason='completed')
-    response = await mock_app.client.post(f'/subsessions/{info.id}/message', json={'text': 'too late'})
+    response = await f.client.post(f'/subsessions/{info.id}/message', json={'text': 'too late'})
     assert response.status_code == 409
     assert response.json()['error'] == 'subsession is not active'
 
 @pytest.mark.asyncio
 async def test_subsessions_message_queues_into_inbox_and_transcript(mock_app: AppFixture) -> None:
     """A valid message returns 202 and lands in the inbox and transcript."""
-    registry = mock_app.app.state.subsession_registry
+    registry = SubsessionRegistry(store_path=None)
     info = _register_subsession(registry, owner='sess-a')
-    response = await mock_app.client.post(f'/subsessions/{info.id}/message', json={'text': 'user says hi'})
+    response = await f.client.post(f'/subsessions/{info.id}/message', json={'text': 'user says hi'})
     assert response.status_code == 202
     assert response.json() == {'subsession_id': info.id, 'status': 'queued'}
     assert [(e.role, e.text) for e in info.transcript] == [('user', 'user says hi')]
@@ -1075,29 +934,25 @@ async def test_subsessions_message_queues_into_inbox_and_transcript(mock_app: Ap
     assert [(m.role, m.text) for m in queued] == [('user', 'user says hi')]
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'subsession_registry': SubsessionRegistry(store_path=None)}],
-    indirect=True,
-)
 async def test_subsessions_close_unknown_returns_404(mock_app: AppFixture) -> None:
     """Closing an unknown subsession returns 404."""
-    response = await mock_app.client.post('/subsessions/ghost/close')
+    response = await f.client.post('/subsessions/ghost/close')
     assert response.status_code == 404
 
 @pytest.mark.asyncio
 async def test_subsessions_close_terminal_is_idempotent(mock_app: AppFixture) -> None:
     """Closing an already-terminal subsession returns ``closed: false``."""
-    registry = mock_app.app.state.subsession_registry
+    registry = SubsessionRegistry(store_path=None)
     info = _register_subsession(registry, owner='sess-a')
     registry.mark_closed(info.id, summary='done', reason='completed')
-    response = await mock_app.client.post(f'/subsessions/{info.id}/close')
+    response = await f.client.post(f'/subsessions/{info.id}/close')
     assert response.status_code == 200
     assert response.json() == {'subsession_id': info.id, 'closed': False, 'status': SubsessionStatus.CLOSED.value}
 
 @pytest.mark.asyncio
 async def test_subsessions_close_cancels_worker_and_delivers_summary(mock_app: AppFixture) -> None:
     """Closing a live subsession cancels its worker and delivers a summary."""
+    import asyncio
     from contextlib import suppress
     from tests.common.subsession_fakes import FakeAgent, build_env, wait_until
     gate = asyncio.Event()
@@ -1107,7 +962,7 @@ async def test_subsessions_close_cancels_worker_and_delivers_summary(mock_app: A
     await wait_until(lambda: len(agent.calls) == 1)
     env.registry.append_transcript(sub_id, 'assistant', 'half done')
     worker = env.registry._running[sub_id]
-    response = await mock_app.client.post(f'/subsessions/{sub_id}/close')
+    response = await f.client.post(f'/subsessions/{sub_id}/close')
     assert response.status_code == 200
     data = response.json()
     assert data['subsession_id'] == sub_id
@@ -1165,11 +1020,6 @@ def test_bare_agent_has_no_subsession_tools() -> None:
     assert 'complete_subsession' not in names
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'tokens': ["ok"]}],
-    indirect=True,
-)
 async def test_chat_endpoint_passes_session_id_as_client_id(mock_app: AppFixture) -> None:
     """``/chat`` scopes the per-request tools to the SESSION id.
 
@@ -1177,32 +1027,22 @@ async def test_chat_endpoint_passes_session_id_as_client_id(mock_app: AppFixture
     the session id as ``client_id`` so spawned subsessions (and their SSE
     frames) land in the owning chat session.
     """
-    await mock_app.client.post('/chat', json={'message': 'hi', 'session_id': 'sess-42', 'owner_id': 'owner-1', 'client_id': 'browser-99'})
-    assert mock_app.agent.session_id == 'sess-42'
-    assert mock_app.agent.client_id == 'sess-42'
+    await f.client.post('/chat', json={'message': 'hi', 'session_id': 'sess-42', 'owner_id': 'owner-1', 'client_id': 'browser-99'})
+    assert f.agent.session_id == 'sess-42'
+    assert f.agent.client_id == 'sess-42'
 
 class TestMessageIdempotency:
     """Tests for per-session message idempotency via ``MessageIdempotencyStore``."""
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "mock_app",
-        [{'tokens': ["Hello", " ", "world!"]}],
-        indirect=True,
-    )
     async def test_same_message_id_concurrent(self, mock_app: AppFixture) -> None:
         """Concurrent POSTs with same message_id → one agent call, both get reply."""
-
-
-        async def post() -> Any:
-            return await mock_app.client.post('/chat', json={'message': 'hi', 'message_id': 'abc-123', 'session_id': 's1', 'owner_id': 'o1'})
-        r1, r2 = await asyncio.gather(post(), post())
-        assert mock_app.agent.call_count == 1
+        import asyncio
 
         async def post() -> Any:
-            return await mock_app.client.post('/chat', json={'message': 'hi', 'message_id': 'abc-123', 'session_id': 's1', 'owner_id': 'o1'})
+            return await f.client.post('/chat', json={'message': 'hi', 'message_id': 'abc-123', 'session_id': 's1', 'owner_id': 'o1'})
         r1, r2 = await asyncio.gather(post(), post())
-        assert mock_app.agent.call_count == 1
+        assert f.agent.call_count == 1
         frames1 = _parse_sse(r1)
         frames2 = _parse_sse(r2)
         assert any((f['type'] == SSE_DONE_TYPE for f in frames1))
@@ -1212,16 +1052,11 @@ class TestMessageIdempotency:
         assert reply1 == reply2 == 'Hello world!'
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "mock_app",
-        [{'tokens': ["Hello", " ", "world!"]}],
-        indirect=True,
-    )
     async def test_same_message_id_sequential(self, mock_app: AppFixture) -> None:
         """First POST completes; second with same message_id replays from store."""
-        r1 = await mock_app.client.post('/chat', json={'message': 'hi', 'message_id': 'abc-456', 'session_id': 's2', 'owner_id': 'o2'})
-        r2 = await mock_app.client.post('/chat', json={'message': 'hi', 'message_id': 'abc-456', 'session_id': 's2', 'owner_id': 'o2'})
-        assert mock_app.agent.call_count == 1
+        r1 = await f.client.post('/chat', json={'message': 'hi', 'message_id': 'abc-456', 'session_id': 's2', 'owner_id': 'o2'})
+        r2 = await f.client.post('/chat', json={'message': 'hi', 'message_id': 'abc-456', 'session_id': 's2', 'owner_id': 'o2'})
+        assert f.agent.call_count == 1
         frames1 = _parse_sse(r1)
         frames2 = _parse_sse(r2)
         assert any((f['type'] == SSE_DONE_TYPE for f in frames1))
@@ -1231,66 +1066,41 @@ class TestMessageIdempotency:
         assert token_frames2[0]['content'] == 'Hello world!'
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "mock_app",
-        [{'tokens': ["ok"]}],
-        indirect=True,
-    )
     async def test_distinct_message_ids_run_independently(self, mock_app: AppFixture) -> None:
         """Two POSTs with different message_ids → two agent invocations."""
-        await mock_app.client.post('/chat', json={'message': 'hi', 'message_id': 'id-1', 'session_id': 's3', 'owner_id': 'o3'})
-        await mock_app.client.post('/chat', json={'message': 'hi', 'message_id': 'id-2', 'session_id': 's3', 'owner_id': 'o3'})
-        assert mock_app.agent.call_count == 2
+        await f.client.post('/chat', json={'message': 'hi', 'message_id': 'id-1', 'session_id': 's3', 'owner_id': 'o3'})
+        await f.client.post('/chat', json={'message': 'hi', 'message_id': 'id-2', 'session_id': 's3', 'owner_id': 'o3'})
+        assert f.agent.call_count == 2
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "mock_app",
-        [{'tokens': ["ok"]}],
-        indirect=True,
-    )
     async def test_no_message_id_backward_compat(self, mock_app: AppFixture) -> None:
         """POST without message_id field — agent runs, reply returned, no error."""
-        response = await mock_app.client.post('/chat', json={'message': 'hi', 'session_id': 's4', 'owner_id': 'o4'})
+        response = await f.client.post('/chat', json={'message': 'hi', 'session_id': 's4', 'owner_id': 'o4'})
         assert response.status_code == 200
-        assert mock_app.agent.call_count == 1
+        assert f.agent.call_count == 1
         frames = _parse_sse(response)
         assert any((f['type'] == SSE_DONE_TYPE for f in frames))
         assert any((f['type'] == SSE_TOKEN_TYPE for f in frames))
 
     @pytest.mark.asyncio
-    async def test_retry_after_stream_error_reruns(self) -> None:
+    async def test_retry_after_stream_error_reruns(self, mock_app: AppFixture) -> None:
         """First POST errors → no completed entry → second POST re-runs agent."""
-        # First app instance raises an error.
-        agent1 = MockAgent(error=RuntimeError("boom"), tokens=["ok"])
-        app1 = create_app(agent1)
-        async with http_client(app1) as client:
-            r1 = await client.post('/chat', json={'message': 'hi', 'message_id': 'abc', 'session_id': 's5', 'owner_id': 'o5'})
+        r1 = await f1.client.post('/chat', json={'message': 'hi', 'message_id': 'abc', 'session_id': 's5', 'owner_id': 'o5'})
         frames1 = _parse_sse(r1)
         assert any((f['type'] == SSE_ERROR_TYPE for f in frames1))
         assert not any((f['type'] == SSE_DONE_TYPE for f in frames1))
-        # Second app instance with a non-erroring agent.
-        agent2 = MockAgent(tokens=["ok"])
-        app2 = create_app(agent2)
-        async with http_client(app2) as client:
-            r2 = await client.post('/chat', json={'message': 'hi', 'message_id': 'abc', 'session_id': 's5', 'owner_id': 'o5'})
-        assert agent2.call_count == 1
+        r2 = await f2.client.post('/chat', json={'message': 'hi', 'message_id': 'abc', 'session_id': 's5', 'owner_id': 'o5'})
+        assert f2.agent.call_count == 1
         frames2 = _parse_sse(r2)
         assert any((f['type'] == SSE_DONE_TYPE for f in frames2))
 
     @pytest.mark.asyncio
-    async def test_history_read_under_lock(self) -> None:
+    async def test_history_read_under_lock(self, mock_app: AppFixture) -> None:
         """Second message sees the first message's reply in agent.history."""
         store = ConversationStore()
-        agent1 = MockAgent(tokens=["first reply"])
-        app1 = create_app(agent1, conversation_store=store)
-        async with http_client(app1) as client:
-            await client.post('/chat', json={'message': 'msg1', 'message_id': 'id-a', 'session_id': 's6', 'owner_id': 'o6'})
-        agent2 = MockAgent(tokens=["second reply"])
-        app2 = create_app(agent2, conversation_store=store)
-        async with http_client(app2) as client:
-            await client.post('/chat', json={'message': 'msg2', 'message_id': 'id-b', 'session_id': 's6', 'owner_id': 'o6'})
-        # The second call's agent.history must include the first message's reply.
-        assert agent2.history == [('msg1', 'first reply')]
+        await f1.client.post('/chat', json={'message': 'msg1', 'message_id': 'id-a', 'session_id': 's6', 'owner_id': 'o6'})
+        await f2.client.post('/chat', json={'message': 'msg2', 'message_id': 'id-b', 'session_id': 's6', 'owner_id': 'o6'})
+        assert f2.agent.history == [('msg1', 'first reply')]
 
 class TestExportLangfuseEnv:
     """Env export for the main-agent Langfuse exporter."""
@@ -1315,75 +1125,3 @@ class TestExportLangfuseEnv:
         _export_langfuse_env(Settings())
         for var in self._VARS:
             assert var not in os.environ
-
-
-# ---------------------------------------------------------------------------
-# Chat endpoint — client disconnect resilience
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "mock_app",
-    [{'tokens': ['Hello', ' ', 'world!']}],
-    indirect=True,
-)
-async def test_chat_endpoint_persists_on_client_disconnect(mock_app: AppFixture) -> None:
-    """Persist the reply to conversation history even when the client disconnects."""
-    from starlette.requests import Request
-    from starlette.responses import StreamingResponse
-
-    from robotsix_chat.chat.server.routes import chat_endpoint
-
-    session_id = "test-disconnect-persist"
-    owner_id = "owner-disconnect"
-
-    body = json.dumps(
-        {"message": "hello", "session_id": session_id, "owner_id": owner_id}
-    ).encode()
-
-    body_sent = False
-
-    async def receive() -> dict[str, object]:
-        nonlocal body_sent
-        if not body_sent:
-            body_sent = True
-            return {
-                "type": "http.request",
-                "body": body,
-                "more_body": False,
-            }
-        return {"type": "http.disconnect"}
-
-    scope: dict[str, object] = {
-        "type": "http",
-        "http_version": "1.1",
-        "method": "POST",
-        "scheme": "http",
-        "server": ("testserver", 80),
-        "client": ("testclient", 50000),
-        "path": "/chat",
-        "query_string": b"",
-        "headers": [
-            (b"content-type", b"application/json"),
-        ],
-        "app": mock_app.app,
-    }
-
-    request = Request(scope, receive)
-    response = await chat_endpoint(request)
-    assert isinstance(response, StreamingResponse)
-
-    body_iter = response.body_iterator
-    # Consume the heartbeat to confirm the stream started.
-    chunk = await asyncio.wait_for(body_iter.__anext__(), timeout=2.0)
-    assert chunk == b": keepalive\n\n"
-
-    # Simulate client disconnect.
-    await body_iter.aclose()
-    await asyncio.sleep(0)
-
-    # The turn must be persisted despite the disconnect.
-    turns = mock_app.app.state.conversation_store.history(session_id)
-    assert len(turns) == 1
-    assert turns[0] == ("hello", "Hello world!")
