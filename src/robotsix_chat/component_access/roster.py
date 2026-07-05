@@ -71,7 +71,10 @@ async def fetch_roster(
     token = settings.api_token.get_secret_value()
     headers: dict[str, str] = {}
     if token:
-        headers["Authorization"] = f"Bearer {token}"
+        # central-deploy's verify_auth accepts X-API-Key (or Basic) — NOT
+        # Bearer. A Bearer header only ever "worked" while the deploy server
+        # ran with auth disabled (exposed 2026-07-05 when an api_key was set).
+        headers["X-API-Key"] = token
 
     roster_url = f"{settings.url.rstrip('/')}/chat/components"
     try:
@@ -125,7 +128,10 @@ def fetch_roster_sync(settings: CentralDeploySettings) -> list[dict[str, Any]]:
     token = settings.api_token.get_secret_value()
     headers: dict[str, str] = {}
     if token:
-        headers["Authorization"] = f"Bearer {token}"
+        # central-deploy's verify_auth accepts X-API-Key (or Basic) — NOT
+        # Bearer. A Bearer header only ever "worked" while the deploy server
+        # ran with auth disabled (exposed 2026-07-05 when an api_key was set).
+        headers["X-API-Key"] = token
 
     roster_url = f"{settings.url.rstrip('/')}/chat/components"
     try:
