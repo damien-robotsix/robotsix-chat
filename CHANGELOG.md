@@ -40,6 +40,7 @@
   worker.  `complete_subsession` fails loudly (error returned to the
   agent) when the subsession is no longer active.
 - Fix: in-flight assistant response is persisted to conversation history even when the client disconnects mid-stream (page reload, conversation switch). The SSE stream now lets the background producer task complete independently of the client connection.
+- Add `msg_id_store` parameter to `run_server()` so custom `MessageIdempotencyStore` instances can be wired through the standard entry point, consistent with the other five state-object injection parameters.
 - Exclude auto-generated CHANGELOG.md from the typos spell-check pre-commit hook to
   eliminate false positives on hyphen-separated issue reference slugs.
 - Log resolved persistence paths at startup (conversation, knowledge, memory, diagnostics, subsessions) so a volume-mount mismatch is immediately visible in logs.
