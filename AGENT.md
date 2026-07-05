@@ -110,8 +110,9 @@ Config keys: `memory.enabled`, `memory.data_dir`, `memory.recall_search_type`,
 - `src/robotsix_chat/config/settings.py` — `Settings` (pydantic) + `robotsix_config.load_config`
 - `src/robotsix_chat/memory/` — optional long-term memory: `base.py` (`ChatMemory` protocol +
   `NullMemory`), `cognee.py` (`CogneeMemory`), `__init__.py` (`build_memory()`)
-- `src/robotsix_chat/chat/server/` — Starlette ASGI app (`app.py`, `routes.py`, `cli.py`); `GET /`,
-  `POST /chat`, `GET /health`
+- `src/robotsix_chat/chat/server/` — Starlette ASGI app (`app.py`, `cli.py`) and `routes/` package
+  (`__init__.py`, `chat.py`, `sessions.py`, `subsessions.py`, `events.py`, `errors.py`,
+  `constants.py`, `_shared.py`); `GET /`, `POST /chat`, `GET /health`
 - `.github/workflows/release-image.yml` — GHCR publish caller (shared `docker-release.yml`)
 
 ## CI workflow conventions
