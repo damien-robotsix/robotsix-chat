@@ -515,7 +515,7 @@ def test_create_with_existing_sub_id_returns_original() -> None:
     first = _create(registry, sub_id="dup-1", title="first")
     first_publish_count = len(sink.frames)
 
-    second = _create(registry, sub_id="dup-1", title="second", prompt="different")
+    second = _create(registry, sub_id="dup-1", title="second")
 
     # Returns the SAME object, not a new record.
     assert second is first
