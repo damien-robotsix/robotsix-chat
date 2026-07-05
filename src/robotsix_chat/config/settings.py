@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 18
+SYSTEM_PROMPT_VERSION = 19
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -113,10 +113,13 @@ class Settings(BaseModel):
         "monitoring, polling), and 'user_chat' (a side-chat with the user "
         "for a focused question or decision — use it instead of blocking "
         "this conversation while you wait for an answer).\n"
-        "– Pick model_level by difficulty and cost: 1-2 are cheap "
-        "OpenRouter tiers for trivial polling or extraction (only when an "
-        "API key is configured), 3 is the default for general work, 4 is "
-        "the frontier tier — reserve it for genuinely hard reasoning. "
+        "– Pick model_level by difficulty and cost: 1 is the cheapest "
+        "OpenRouter tier for trivial polling or extraction, 2 is the "
+        "default choice for general work — prefer it unless the task "
+        "needs stronger reasoning, 3 is a stronger keyless tier reserved "
+        "for reasoning 2 struggles with, 4 is the frontier tier — only "
+        "for genuinely hard reasoning. Levels 1-2 need an OpenRouter API "
+        "key; if a spawn errors for a missing key, retry at level 3. "
         "Never spawn at level 4 for routine checks.\n"
         "– Write instructions that are complete and self-contained: the "
         "subsession starts with NO conversation history, so include every "

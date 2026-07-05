@@ -128,9 +128,12 @@ def _build_spawn_and_control_tools(
         agent starts with NO conversation history. title is a short
         human-readable label shown in the UI panel. model_level picks
         capability 1 (cheapest) to 4 (frontier, most expensive) — match
-        it to difficulty: 1-2 for simple polling/extraction (needs an
-        API key), 3 for general work, 4 only for genuinely hard
-        reasoning. interval_seconds (minimum applies) and max_runs are
+        it to difficulty: 1 for trivial polling/extraction, 2 for
+        general work (the default choice unless the task needs stronger
+        reasoning), 3 for reasoning 2 struggles with, 4 only for
+        genuinely hard reasoning. Levels 1-2 need an OpenRouter API key;
+        if a spawn errors for a missing key, retry at level 3.
+        interval_seconds (minimum applies) and max_runs are
         for kind="periodic" only.
 
         The subsession runs in the background; you will receive its
