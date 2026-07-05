@@ -64,6 +64,7 @@ def test_snapshot_round_trips_every_field() -> None:
         "summary": None,
         "close_reason": None,
         "error": None,
+        "completed_runs": [],
     }
 
 
