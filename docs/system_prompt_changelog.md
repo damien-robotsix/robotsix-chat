@@ -5,6 +5,16 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v17 — 2026-07-04 — knowledge-tool-names-in-system-prompt
+
+**Summary:** Update the knowledge-base tool names in the agent system prompt from shorthand
+(`add/append/update/list/read_knowledge_note`) to the actual tool names
+(`add_knowledge_note, append_to_knowledge_note, update_knowledge_note, list_knowledge_notes, read_knowledge_note`).
+
+**SHA256:** `efb12c78d114b5ea64d3bb79c4522b74c6e1c82a4203abe79c69e4d56ceca041`
+
+______________________________________________________________________
+
 ## Governance policy
 
 Every change to `Settings.agent_instruction` (the pydantic field default literal in
