@@ -529,6 +529,246 @@ async def test_push_branch_uses_ticket_id_in_commit(
 
 
 # ---------------------------------------------------------------------------
+# Changelog fragment trailing newline normalization
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_push_branch_ensures_changelog_fragment_trailing_newline(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """changelog.d/*.md files without trailing newline get one appended."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-cl").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-cl", "state": "blocked"})
+        )
+    )
+    respx_mock.get("https://api.github.com/installation/repositories").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text=json.dumps({"default_branch": "main"}))
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/ref/heads/main").mock(
+        return_value=httpx.Response(200, text=json.dumps({"object": {"sha": "abc123"}}))
+    )
+
+    # Capture the blob POST to inspect the content
+    blob_calls: list[dict[str, Any]] = []
+    async def _capture_blob(request: httpx.Request) -> httpx.Response:
+        blob_calls.append(json.loads(request.content.decode()))
+        return httpx.Response(200, text=json.dumps({"sha": "blob-sha"}))
+
+    respx_mock.post("https://api.github.com/repos/org/repo/git/blobs").mock(
+        side_effect=_capture_blob
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/commits/abc123").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"sha": "commit-sha", "tree": {"sha": "tree-sha"}}),
+        )
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/trees").mock(
+        return_value=httpx.Response(200, text=json.dumps({"sha": "tree-sha"}))
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/commits").mock(
+        return_value=httpx.Response(200, text=json.dumps({"sha": "commit-sha"}))
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/refs").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"ref": "refs/heads/fix/t-cl"}),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    push_fn = [t for t in tools if t.__name__ == "push_direct_repo_branch"][0]
+
+    await push_fn(
+        ticket_id="t-cl",
+        repo_full_name="org/repo",
+        branch_name="fix/t-cl",
+        files_json=json.dumps(
+            [
+                {
+                    "path": "changelog.d/t-cl.misc.md",
+                    "content": "Fixed a thing",  # no trailing newline
+                },
+                {
+                    "path": "src/foo.py",
+                    "content": "print(1)",  # not a changelog fragment
+                },
+            ]
+        ),
+    )
+
+    assert len(blob_calls) == 2
+    blob_by_path = {c["path"]: c["content"] for c in blob_calls}
+    assert blob_by_path["changelog.d/t-cl.misc.md"] == "Fixed a thing\n"
+    assert blob_by_path["src/foo.py"] == "print(1)"  # unchanged
+
+
+@pytest.mark.asyncio
+async def test_push_branch_preserves_existing_trailing_newline_in_changelog(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """changelog.d/*.md files that already end with \\n are not double-terminated."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-cl2").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-cl2", "state": "blocked"})
+        )
+    )
+    respx_mock.get("https://api.github.com/installation/repositories").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text=json.dumps({"default_branch": "main"}))
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/ref/heads/main").mock(
+        return_value=httpx.Response(200, text=json.dumps({"object": {"sha": "abc123"}}))
+    )
+
+    blob_calls: list[dict[str, Any]] = []
+    async def _capture_blob(request: httpx.Request) -> httpx.Response:
+        blob_calls.append(json.loads(request.content.decode()))
+        return httpx.Response(200, text=json.dumps({"sha": "blob-sha"}))
+
+    respx_mock.post("https://api.github.com/repos/org/repo/git/blobs").mock(
+        side_effect=_capture_blob
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/commits/abc123").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"sha": "commit-sha", "tree": {"sha": "tree-sha"}}),
+        )
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/trees").mock(
+        return_value=httpx.Response(200, text=json.dumps({"sha": "tree-sha"}))
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/commits").mock(
+        return_value=httpx.Response(200, text=json.dumps({"sha": "commit-sha"}))
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/refs").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"ref": "refs/heads/fix/t-cl2"}),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    push_fn = [t for t in tools if t.__name__ == "push_direct_repo_branch"][0]
+
+    await push_fn(
+        ticket_id="t-cl2",
+        repo_full_name="org/repo",
+        branch_name="fix/t-cl2",
+        files_json=json.dumps(
+            [
+                {
+                    "path": "changelog.d/t-cl2.feature.md",
+                    "content": "Added a feature\n",  # already has trailing newline
+                },
+            ]
+        ),
+    )
+
+    assert len(blob_calls) == 1
+    assert blob_calls[0]["content"] == "Added a feature\n"
+
+
+@pytest.mark.asyncio
+async def test_push_branch_ignores_non_md_files_in_changelog_dir(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Only .md files in changelog.d/ get newline normalization."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-cl3").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-cl3", "state": "blocked"})
+        )
+    )
+    respx_mock.get("https://api.github.com/installation/repositories").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text=json.dumps({"default_branch": "main"}))
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/ref/heads/main").mock(
+        return_value=httpx.Response(200, text=json.dumps({"object": {"sha": "abc123"}}))
+    )
+
+    blob_calls: list[dict[str, Any]] = []
+    async def _capture_blob(request: httpx.Request) -> httpx.Response:
+        blob_calls.append(json.loads(request.content.decode()))
+        return httpx.Response(200, text=json.dumps({"sha": "blob-sha"}))
+
+    respx_mock.post("https://api.github.com/repos/org/repo/git/blobs").mock(
+        side_effect=_capture_blob
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/git/commits/abc123").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"sha": "commit-sha", "tree": {"sha": "tree-sha"}}),
+        )
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/trees").mock(
+        return_value=httpx.Response(200, text=json.dumps({"sha": "tree-sha"}))
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/commits").mock(
+        return_value=httpx.Response(200, text=json.dumps({"sha": "commit-sha"}))
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/refs").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"ref": "refs/heads/fix/t-cl3"}),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    push_fn = [t for t in tools if t.__name__ == "push_direct_repo_branch"][0]
+
+    await push_fn(
+        ticket_id="t-cl3",
+        repo_full_name="org/repo",
+        branch_name="fix/t-cl3",
+        files_json=json.dumps(
+            [
+                {
+                    "path": "changelog.d/README.txt",
+                    "content": "Instructions",  # not .md — no normalization
+                },
+                {
+                    "path": "docs/changelog.md",
+                    "content": "Not in changelog.d/",  # wrong dir — no normalization
+                },
+            ]
+        ),
+    )
+
+    assert len(blob_calls) == 2
+    blob_by_path = {c["path"]: c["content"] for c in blob_calls}
+    assert blob_by_path["changelog.d/README.txt"] == "Instructions"
+    assert blob_by_path["docs/changelog.md"] == "Not in changelog.d/"
+
+
+# ---------------------------------------------------------------------------
 # Dynamic scope resolution — coverage of the client method
 # ---------------------------------------------------------------------------
 
