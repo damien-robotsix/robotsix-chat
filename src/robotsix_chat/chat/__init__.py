@@ -1,0 +1,1 @@
+"""Chat sub-package — conversation, events, and the SSE server sub-package."""
