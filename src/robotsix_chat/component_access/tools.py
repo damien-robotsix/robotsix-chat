@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -78,15 +79,48 @@ async def _component_request_impl(
     if json_body is not None:
         headers["Content-Type"] = "application/json"
 
+    # Apply the roster entry's auth metadata: the roster carries env-var
+    # NAMES (never secret values); the credentials themselves live in this
+    # process's environment, provisioned via the deploy EnvStore.
+    auth: tuple[str, str] | None = None
+    auth_meta = entry.get("auth") or {}
+    auth_type = auth_meta.get("type", "")
+    if auth_type == "basic":
+        username = os.environ.get(auth_meta.get("username_env", ""), "")
+        password = os.environ.get(auth_meta.get("password_env", ""), "")
+        if not (username and password):
+            return (
+                f"Error: component '{component_id}' requires Basic auth via "
+                f"env vars {auth_meta.get('username_env')!r}/"
+                f"{auth_meta.get('password_env')!r}, which are not set in the "
+                "agent environment. Provision them via the deploy EnvStore "
+                "and redeploy robotsix-chat."
+            )
+        auth = (username, password)
+    elif auth_type == "header":
+        header_name = auth_meta.get("header_name", "")
+        token = os.environ.get(auth_meta.get("token_env", ""), "")
+        if not (header_name and token):
+            return (
+                f"Error: component '{component_id}' requires a "
+                f"{header_name or '?'} header via env var "
+                f"{auth_meta.get('token_env')!r}, which is not set in the "
+                "agent environment. Provision it via the deploy EnvStore "
+                "and redeploy robotsix-chat."
+            )
+        headers[header_name] = token
+
+    auth_arg: Any = auth if auth is not None else httpx.USE_CLIENT_DEFAULT
+
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
             if method_upper == "GET":
-                resp = await client.get(url, headers=headers)
+                resp = await client.get(url, headers=headers, auth=auth_arg)
             elif method_upper == "DELETE":
-                resp = await client.delete(url, headers=headers)
+                resp = await client.delete(url, headers=headers, auth=auth_arg)
             else:
                 resp = await client.request(
-                    method_upper, url, headers=headers, json=json_body
+                    method_upper, url, headers=headers, json=json_body, auth=auth_arg
                 )
     except Exception as exc:
         return f"Error calling {component_id} {method_upper} {path}: {exc}"
