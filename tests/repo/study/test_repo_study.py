@@ -13,8 +13,8 @@ import respx
 from httpx import Response
 
 from robotsix_chat.config import DirectRepoSettings, RepoStudySettings
-from robotsix_chat.repo_study import build_repo_study_tools
-from robotsix_chat.repo_study.workspace import (
+from robotsix_chat.repo.study import build_repo_study_tools
+from robotsix_chat.repo.study.workspace import (
     WorkspaceError,
     WorkspaceManager,
     _workspace_id,
@@ -151,7 +151,7 @@ async def test_fetch_sends_app_token_when_configured(
     async def fake_token(_settings: DirectRepoSettings) -> str:
         return "installation-token"
 
-    import robotsix_chat.direct_repo.client as dr_client
+    import robotsix_chat.repo.direct.client as dr_client
 
     monkeypatch.setattr(dr_client, "_get_installation_token", fake_token)
     manager = WorkspaceManager(
@@ -180,7 +180,7 @@ async def test_fetch_falls_back_unauthenticated_on_token_failure(
     async def failing_token(_settings: DirectRepoSettings) -> str:
         raise RuntimeError("no token for you")
 
-    import robotsix_chat.direct_repo.client as dr_client
+    import robotsix_chat.repo.direct.client as dr_client
 
     monkeypatch.setattr(dr_client, "_get_installation_token", failing_token)
     manager = WorkspaceManager(

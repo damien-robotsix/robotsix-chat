@@ -28,14 +28,14 @@ from robotsix_chat.component_access import build_component_access_tools
 from robotsix_chat.component_client import build_component_tools
 from robotsix_chat.config import Settings, level_needs_api_key
 from robotsix_chat.diagnostics import build_diagnostics_tools
-from robotsix_chat.direct_repo import build_direct_repo_tools
 from robotsix_chat.knowledge import build_knowledge_tools
 from robotsix_chat.lifecycle import build_lifecycle_tools
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.mail import build_mail_tools
 from robotsix_chat.memory import build_memory
 from robotsix_chat.refdocs import build_refdocs_tools
-from robotsix_chat.repo_study import build_repo_study_tools
+from robotsix_chat.repo.direct import build_direct_repo_tools
+from robotsix_chat.repo.study import build_repo_study_tools
 from robotsix_chat.selfreview import build_recent_activity_tools
 from robotsix_chat.version_check import build_version_check_tools
 
