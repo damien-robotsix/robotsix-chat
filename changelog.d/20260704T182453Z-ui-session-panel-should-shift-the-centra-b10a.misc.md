@@ -1,0 +1,1 @@
+UI: session panel should shift the central conversation instead of overlapping it
