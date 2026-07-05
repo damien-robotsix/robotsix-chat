@@ -117,6 +117,15 @@ def build_direct_repo_tools(
         if error := await _assert_blocked_and_scoped(client, ticket_id, repo_full_name):
             return error
 
+        # --- ensure changelog fragments end with a newline ---
+        for f in files:
+            if (
+                f.get("path", "").startswith("changelog.d/")
+                and f["path"].endswith(".md")
+                and not f.get("content", "").endswith("\n")
+            ):
+                f["content"] = f["content"] + "\n"
+
         # --- push the branch ---
         msg = commit_message or f"fix: address blocked ticket {ticket_id}"
         return await client.push_branch(
