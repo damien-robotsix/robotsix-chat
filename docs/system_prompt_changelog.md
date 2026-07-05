@@ -5,6 +5,17 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v18 — 2026-07-04 — default-prompt-promises-component-request-cc62
+
+**Summary:** Remove the "Component access" section from the default `agent_instruction`. It is now
+conditionally injected by `create_agent_from_settings()` only when `central_deploy.url` is
+configured, so the prompt no longer promises a `component_request` tool in the default out-of-box
+deployment where no central-deploy roster is wired.
+
+**SHA256:** `91f785fc2ff229ecc5c5bfd39c75b3aaaa5b070cf0b0a9a7f31066ac1787e3f2`
+
+______________________________________________________________________
+
 ## v17 — 2026-07-04 — knowledge-tool-names-in-system-prompt
 
 **Summary:** Update the knowledge-base tool names in the agent system prompt from shorthand
@@ -46,17 +57,6 @@ prompt:
    - **Rationale**: why the rollback is needed and which ticket authorises it.
    - **SHA256**: the hash of the restored literal (must match the prior version's recorded hash).
 5. Mirror the restored literal in `docs/configuration.md`.
-
-______________________________________________________________________
-
-## v17 — 2026-07-04 — default-prompt-promises-component-request-cc62
-
-**Summary:** Remove the "Component access" section from the default `agent_instruction`. It is now
-conditionally injected by `create_agent_from_settings()` only when `central_deploy.url` is
-configured, so the prompt no longer promises a `component_request` tool in the default out-of-box
-deployment where no central-deploy roster is wired.
-
-**SHA256:** `4441f09054aa34ad286b9f1e577d0704b3516d038968850b58183264bf190042`
 
 ______________________________________________________________________
 
