@@ -28,7 +28,7 @@ def _settings(**kw: Any) -> DirectRepoSettings:
     base: dict[str, Any] = {
         "enabled": True,
         "github_app_id": "12345",
-        "github_app_private_key": "fake-key",
+        "github_app_private_key": "fake-key",  # pragma: allowlist secret
         "github_app_installation_id": "67890",
         "board_api_base_url": "http://127.0.0.1:8077",
     }
