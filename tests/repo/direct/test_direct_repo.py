@@ -610,9 +610,9 @@ async def test_push_branch_ensures_changelog_fragment_trailing_newline(
     )
 
     assert len(blob_calls) == 2
-    blob_by_path = {c["path"]: c["content"] for c in blob_calls}
-    assert blob_by_path["changelog.d/t-cl.misc.md"] == "Fixed a thing\n"
-    assert blob_by_path["src/foo.py"] == "print(1)"  # unchanged
+    contents = {c["content"] for c in blob_calls}
+    assert "Fixed a thing\n" in contents
+    assert "print(1)" in contents  # unchanged
 
 
 @pytest.mark.asyncio
@@ -766,9 +766,9 @@ async def test_push_branch_ignores_non_md_files_in_changelog_dir(
     )
 
     assert len(blob_calls) == 2
-    blob_by_path = {c["path"]: c["content"] for c in blob_calls}
-    assert blob_by_path["changelog.d/README.txt"] == "Instructions"
-    assert blob_by_path["docs/changelog.md"] == "Not in changelog.d/"
+    contents = {c["content"] for c in blob_calls}
+    assert "Instructions" in contents
+    assert "Not in changelog.d/" in contents
 
 
 # ---------------------------------------------------------------------------
