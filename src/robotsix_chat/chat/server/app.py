@@ -16,6 +16,7 @@ from typing import TYPE_CHECKING, Any
 from asgi_correlation_id import CorrelationIdMiddleware
 from asgi_correlation_id.context import correlation_id
 from starlette.applications import Starlette
+from starlette.exceptions import HTTPException
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
 from starlette.routing import Route
@@ -47,6 +48,7 @@ from .routes import (
     events_endpoint,
     health_endpoint,
     history_endpoint,
+    http_exception_handler,
     not_found_handler,
     server_error_handler,
     sessions_close_endpoint,
@@ -299,6 +301,7 @@ def create_app(
         routes=routes,
         middleware=middleware,
         exception_handlers={
+            HTTPException: http_exception_handler,
             404: not_found_handler,
             500: server_error_handler,
         },

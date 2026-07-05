@@ -483,7 +483,7 @@ async def test_sessions_list_missing_owner_id_returns_400() -> None:
         response = await f.client.get("/sessions")
 
     assert response.status_code == 400
-    assert "owner_id" in response.json()["error"]
+    assert "owner_id" in response.json()["detail"]
 
 
 # ---------------------------------------------------------------------------
