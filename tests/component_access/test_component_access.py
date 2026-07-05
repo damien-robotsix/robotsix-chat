@@ -700,3 +700,123 @@ async def test_tool_refreshes_roster_on_call(
     tool = tools[0]
     result = await tool("mill", "GET", "/tickets")
     assert "HTTP 200" in result
+
+
+# ---------------------------------------------------------------------------
+# Roster auth metadata (virtual components: langfuse basic, deploy header)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_component_request_basic_auth_from_env(
+    respx_mock: respx.MockRouter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 'basic' auth entry resolves env vars and sends Basic credentials."""
+    monkeypatch.setenv("LF_PK", "pk-user")
+    monkeypatch.setenv("LF_SK", "sk-pass")
+    roster = [
+        {
+            "id": "langfuse",
+            "base_url": "http://lf:3000",
+            "skill": "...",
+            "auth": {"type": "basic", "username_env": "LF_PK", "password_env": "LF_SK"},
+        }
+    ]
+    route = respx_mock.get("http://lf:3000/api/public/traces").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    result = await _component_request_impl(
+        roster, "langfuse", "GET", "/api/public/traces"
+    )
+    assert "HTTP 200" in result
+    sent = route.calls.last.request
+    import base64 as _b64
+
+    expected = _b64.b64encode(b"pk-user:sk-pass").decode()
+    assert sent.headers["Authorization"] == f"Basic {expected}"
+
+
+@pytest.mark.asyncio
+async def test_component_request_header_auth_from_env(
+    respx_mock: respx.MockRouter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 'header' auth entry resolves the token env var into the header."""
+    monkeypatch.setenv("DEPLOY_KEY", "tok-123")
+    roster = [
+        {
+            "id": "deploy",
+            "base_url": "http://cd:8100",
+            "skill": "...",
+            "auth": {
+                "type": "header",
+                "header_name": "X-API-Key",
+                "token_env": "DEPLOY_KEY",
+            },
+        }
+    ]
+    route = respx_mock.get("http://cd:8100/services").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    result = await _component_request_impl(roster, "deploy", "GET", "/services")
+    assert "HTTP 200" in result
+    assert route.calls.last.request.headers["X-API-Key"] == "tok-123"
+
+
+@pytest.mark.asyncio
+async def test_component_request_basic_auth_missing_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing Basic-auth env vars yield a provisioning error, no request."""
+    monkeypatch.delenv("LF_PK", raising=False)
+    monkeypatch.delenv("LF_SK", raising=False)
+    roster = [
+        {
+            "id": "langfuse",
+            "base_url": "http://lf:3000",
+            "skill": "...",
+            "auth": {"type": "basic", "username_env": "LF_PK", "password_env": "LF_SK"},
+        }
+    ]
+    result = await _component_request_impl(roster, "langfuse", "GET", "/x")
+    assert "Error" in result
+    assert "LF_PK" in result
+    assert "EnvStore" in result
+
+
+@pytest.mark.asyncio
+async def test_component_request_header_auth_missing_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing header-auth token env yields a provisioning error, no request."""
+    monkeypatch.delenv("DEPLOY_KEY", raising=False)
+    roster = [
+        {
+            "id": "deploy",
+            "base_url": "http://cd:8100",
+            "skill": "...",
+            "auth": {
+                "type": "header",
+                "header_name": "X-API-Key",
+                "token_env": "DEPLOY_KEY",
+            },
+        }
+    ]
+    result = await _component_request_impl(roster, "deploy", "GET", "/services")
+    assert "Error" in result
+    assert "DEPLOY_KEY" in result
+
+
+@pytest.mark.asyncio
+async def test_component_request_no_auth_unchanged(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Entries without auth metadata behave exactly as before."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    route = respx_mock.get("http://m:8080/tickets").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
+    assert "HTTP 200" in result
+    assert "Authorization" not in route.calls.last.request.headers
