@@ -139,7 +139,6 @@ Direct HTTP access to the mill's board API for listing, reading, and creating ti
 
 | JSON key                          | Type      | Default                      | Description                                              |
 | --------------------------------- | --------- | ---------------------------- | -------------------------------------------------------- |
-| `conversation.idle_reset_seconds` | `integer` | `1800`                       | Seconds of idle before resetting the conversation store. |
 | `conversation.max_history_turns`  | `integer` | `50`                         | Maximum conversation turns to retain.                    |
 | `conversation.max_conversations`  | `integer` | `1000`                       | Maximum concurrent conversations.                        |
 | `conversation.persist_path`       | `string`  | `"/data/conversations.json"` | Path to the conversation persistence file.               |

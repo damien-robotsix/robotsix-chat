@@ -212,7 +212,6 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
 
     persist_path_str = settings.conversation.persist_path
     conversation_store = ConversationStore(
-        idle_reset_seconds=settings.conversation.idle_reset_seconds,
         max_history_turns=settings.conversation.max_history_turns,
         max_conversations=settings.conversation.max_conversations,
         persist_path=Path(persist_path_str) if persist_path_str else None,

@@ -812,11 +812,11 @@ async def test_sessions_survive_store_reload() -> None:
 
 
 def test_idle_does_not_wipe_history() -> None:
-    """Advancing past idle_reset_seconds does NOT clear session history."""
+    """Advancing time does NOT clear session history."""
     from tests.chat.test_conversation import _FakeWallClock, _store
 
     clock = _FakeWallClock()
-    store = _store(wall_clock=clock, idle_reset_seconds=10.0)
+    store = _store(wall_clock=clock)
     sid = cast(str, store.create_session("owner-x")["session_id"])
     store.record(sid, "owner-x", "hello", "hi")
 

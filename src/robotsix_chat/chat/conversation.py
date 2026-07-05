@@ -7,10 +7,8 @@ conversations are now addressable by ``session_id`` and grouped under an
 named sessions; the store maintains per-session turn history and per-owner
 metadata (title, last-active timestamp, turn count, active session).
 
-Sessions are **persistent**: history is never wiped on idle timeout.  The
-``idle_reset_seconds`` parameter is retained for caller compatibility but
-no longer triggers a destructive reset — sessions survive idle/restart
-indefinitely.
+Sessions are **persistent**: history is never wiped on idle timeout —
+sessions survive idle/restart indefinitely.
 
 The store is process-local and unsynchronised: it is sized for the single-worker
 ``uvicorn.run`` the server uses. Running multiple workers would split an owner's
@@ -314,7 +312,6 @@ class ConversationStore:
     def __init__(
         self,
         *,
-        idle_reset_seconds: float = 1800.0,
         max_history_turns: int = 50,
         max_conversations: int = 1000,
         session_factory: Callable[[], str] | None = None,
@@ -322,9 +319,6 @@ class ConversationStore:
         wall_clock: Callable[[], float] = time.time,
     ) -> None:
         """Configure store bounds, session factory, and optional persistence.
-
-        *idle_reset_seconds* is retained for caller compatibility but no longer
-        triggers destructive history reset — sessions are persistent.
 
         *wall_clock* provides wall-clock timestamps for ``last_active`` metadata;
         defaults to ``time.time`` so tests can inject deterministic values.

@@ -229,7 +229,6 @@ def test_conversation_defaults() -> None:
     """Conversation continuity defaults to a 30-minute idle reset."""
     settings = Settings()
 
-    assert settings.conversation.idle_reset_seconds == 1800
     assert settings.conversation.max_history_turns == 50
     assert settings.conversation.max_conversations == 1000
 
