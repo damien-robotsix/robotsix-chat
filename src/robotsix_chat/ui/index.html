@@ -345,6 +345,16 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Summary container — pinned above the scrollable chat area           */
+  /* ------------------------------------------------------------------ */
+  #summary-container {
+    flex-shrink: 0;
+  }
+  #summary-container:not(:empty) {
+    padding: 0.5rem 1rem 0 1rem;
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Chat area                                                           */
   /* ------------------------------------------------------------------ */
   #chat {
@@ -400,15 +410,14 @@
     font-style: italic;
   }
 
-  /* Conversation summary banner */
+  /* Conversation summary banner — pinned above the scrollable chat */
   .summary-banner {
-    align-self: stretch;
+    flex-shrink: 0;
     background: #1e293b;
     border: 1px solid #334155;
     border-left: 3px solid #3b82f6;
     border-radius: 8px;
-    padding: 0.6rem 0.9rem;
-    margin-bottom: 0.25rem;
+    padding: 0.6rem 1rem;
     font-size: 0.85rem;
     line-height: 1.5;
     color: #cbd5e1;
@@ -640,6 +649,7 @@
 <!-- ================================================================= -->
 <!-- Chat messages                                                      -->
 <!-- ================================================================= -->
+<div id="summary-container"></div>
 <div id="chat" aria-live="polite"></div>
 
 <!-- ================================================================= -->
@@ -669,6 +679,7 @@
 
   // ---- DOM refs --------------------------------------------------------
   const chatEl       = document.getElementById("chat");
+  const summaryContainerEl = document.getElementById("summary-container");
   const msgInput     = document.getElementById("msg-input");
   const sendBtn      = document.getElementById("send-btn");
   const errorBanner  = document.getElementById("error-banner");
@@ -1842,7 +1853,7 @@
     if (!summaryBannerEl) {
       summaryBannerEl = document.createElement("div");
       summaryBannerEl.className = "summary-banner";
-      chatEl.insertBefore(summaryBannerEl, chatEl.firstChild);
+      summaryContainerEl.appendChild(summaryBannerEl);
     }
     var body = summaryBannerEl.querySelector(".summary-body");
     if (!body) {
