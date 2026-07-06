@@ -1,1 +1,0 @@
-Pin robotsix-config git dependency to full 40-char SHA in pyproject.toml
