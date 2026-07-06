@@ -440,14 +440,8 @@
   .summary-banner.collapsed .summary-body {
     display: none;
   }
-  .summary-banner .summary-section {
-    display: flex; gap: 0.4rem;
-  }
-  .summary-banner .summary-label {
-    font-weight: 600; color: #94a3b8; white-space: nowrap;
-  }
-  .summary-banner .summary-value {
-    color: #e2e8f0;
+  .summary-banner .summary-text {
+    color: #e2e8f0; white-space: pre-wrap;
   }
   .summary-banner .summary-loading {
     color: #64748b; font-style: italic;
@@ -1898,31 +1892,13 @@
     var body = summaryBannerEl.querySelector(".summary-body");
     if (!body) return;
 
-    var sections = [
-      { key: "purpose", label: "Purpose" },
-      { key: "pending_work", label: "Pending work" },
-      { key: "pending_questions", label: "Pending questions" },
-      { key: "blockers", label: "Blockers" },
-      { key: "relevant_info", label: "Relevant info" }
-    ];
-
-    var html = "";
-    var hasContent = false;
-    for (var i = 0; i < sections.length; i++) {
-      var s = sections[i];
-      var value = data[s.key];
-      if (value && typeof value === "string" && value.trim()) {
-        html += "<div class=\"summary-section\">" +
-                "<span class=\"summary-label\">" + s.label + ":</span>" +
-                "<span class=\"summary-value\">" + escapeHtml(value.trim()) + "</span>" +
-                "</div>";
-        hasContent = true;
-      }
+    var value = data.summary;
+    if (value && typeof value === "string" && value.trim()) {
+      body.innerHTML = "<div class=\"summary-text\">" +
+              escapeHtml(value.trim()) + "</div>";
+    } else {
+      body.innerHTML = "<span class=\"summary-loading\">No summary available yet.</span>";
     }
-    if (!hasContent) {
-      html = "<span class=\"summary-loading\">No summary available yet.</span>";
-    }
-    body.innerHTML = html;
   }
 
   function escapeHtml(text) {
