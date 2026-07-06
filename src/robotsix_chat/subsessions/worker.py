@@ -365,7 +365,16 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
         depth=info.depth,
     )
     try:
-        agent = env.agent_factory(env.settings, info.model_level, ctx, close_state)
+        # env.agent_factory (-> create_agent_from_settings) calls
+        # fetch_roster_sync, which does asyncio.run(...) internally — safe
+        # only when no event loop is running. _subsession_worker runs as a
+        # task on the server's already-running loop, so calling the factory
+        # directly here raises "asyncio.run() cannot be called from a
+        # running event loop" for every subsession spawn. Offload to a
+        # thread, which has no running loop of its own.
+        agent = await asyncio.to_thread(
+            env.agent_factory, env.settings, info.model_level, ctx, close_state
+        )
         history: list[tuple[str, str]] = []
         previous_result: str | None = None
         consecutive_no_change = 0
