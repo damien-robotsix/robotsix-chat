@@ -267,37 +267,27 @@ async def test_history_read_is_non_mutating() -> None:
 
 
 @pytest.mark.asyncio
-async def test_summary_endpoint_returns_fields_for_valid_session() -> None:
-    """POST /summary with a session that has turns returns the five summary fields."""
+async def test_summary_endpoint_returns_free_text_for_valid_session() -> None:
+    """POST /summary with a session that has turns returns the plain-text reply."""
     store = ConversationStore()
     sid = cast(str, store.create_session("owner-a")["session_id"])
     store.record(sid, "owner-a", "Hello", "Hi there!")
 
-    json_tokens = [
-        '{"purpose": "Greeting", "pending_work": "", ',
-        '"pending_questions": "", "blockers": "", ',
-        '"relevant_info": ""}',
-    ]
-    async with mock_app(tokens=json_tokens, conversation_store=store) as f:
+    async with mock_app(
+        tokens=["Just a friendly ", "greeting so far."], conversation_store=store
+    ) as f:
         response = await f.client.post(
             "/summary",
             json={"session_id": sid, "owner_id": "owner-a"},
         )
 
     assert response.status_code == 200
-    data = response.json()
-    assert data == {
-        "purpose": "Greeting",
-        "pending_work": "",
-        "pending_questions": "",
-        "blockers": "",
-        "relevant_info": "",
-    }
+    assert response.json() == {"summary": "Just a friendly greeting so far."}
 
 
 @pytest.mark.asyncio
-async def test_summary_endpoint_empty_session_returns_empty_fields() -> None:
-    """POST /summary for a session with no turns returns all-empty fields."""
+async def test_summary_endpoint_empty_session_returns_empty_summary() -> None:
+    """POST /summary for a session with no turns returns an empty summary."""
     store = ConversationStore()
     sid = cast(str, store.create_session("owner-a")["session_id"])
 
@@ -308,19 +298,12 @@ async def test_summary_endpoint_empty_session_returns_empty_fields() -> None:
         )
 
     assert response.status_code == 200
-    data = response.json()
-    assert data == {
-        "purpose": "",
-        "pending_work": "",
-        "pending_questions": "",
-        "blockers": "",
-        "relevant_info": "",
-    }
+    assert response.json() == {"summary": ""}
 
 
 @pytest.mark.asyncio
-async def test_summary_endpoint_unknown_session_returns_empty_fields() -> None:
-    """POST /summary for unknown session returns all-empty fields (no lazy-create)."""
+async def test_summary_endpoint_unknown_session_returns_empty_summary() -> None:
+    """POST /summary for unknown session returns an empty summary (no lazy-create)."""
     async with mock_app() as f:
         response = await f.client.post(
             "/summary",
@@ -328,14 +311,7 @@ async def test_summary_endpoint_unknown_session_returns_empty_fields() -> None:
         )
 
     assert response.status_code == 200
-    data = response.json()
-    assert data == {
-        "purpose": "",
-        "pending_work": "",
-        "pending_questions": "",
-        "blockers": "",
-        "relevant_info": "",
-    }
+    assert response.json() == {"summary": ""}
 
 
 @pytest.mark.asyncio
@@ -371,10 +347,7 @@ async def test_summary_endpoint_passes_prompt_to_agent() -> None:
     store.record(sid, "owner-a", "Fix the bug", "I'll look into it.")
 
     async with mock_app(
-        tokens=[
-            '{"purpose":"bug fix","pending_work":"","pending_questions":"",'
-            '"blockers":"","relevant_info":""}'
-        ],
+        tokens=["Working on a bug fix."],
         conversation_store=store,
     ) as f:
         await f.client.post(
@@ -386,7 +359,7 @@ async def test_summary_endpoint_passes_prompt_to_agent() -> None:
     assert f.agent.called_with is not None
     assert "Fix the bug" in f.agent.called_with
     assert "I'll look into it" in f.agent.called_with
-    assert "purpose" in f.agent.called_with
+    assert "Summary:" in f.agent.called_with
 
 
 @pytest.mark.asyncio
@@ -397,12 +370,7 @@ async def test_summary_endpoint_uses_dedicated_summary_agent() -> None:
     store.record(sid, "owner-a", "Hello", "Hi there!")
 
     main_agent = MockAgent(tokens=["should not be called"])
-    summary_agent = MockAgent(
-        tokens=[
-            '{"purpose":"Greeting","pending_work":"","pending_questions":"",'
-            '"blockers":"","relevant_info":""}'
-        ]
-    )
+    summary_agent = MockAgent(tokens=["Just a friendly greeting so far."])
     app = create_app(main_agent, summary_agent=summary_agent, conversation_store=store)
 
     async with http_client(app) as client:
@@ -412,7 +380,7 @@ async def test_summary_endpoint_uses_dedicated_summary_agent() -> None:
         )
 
     assert response.status_code == 200
-    assert response.json()["purpose"] == "Greeting"
+    assert response.json()["summary"] == "Just a friendly greeting so far."
     assert summary_agent.call_count == 1
     assert main_agent.call_count == 0
 

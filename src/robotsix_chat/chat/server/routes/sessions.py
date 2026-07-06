@@ -2,10 +2,7 @@
 
 from __future__ import annotations
 
-import contextlib
-import json
 import logging
-import re
 from typing import TYPE_CHECKING
 
 from starlette.exceptions import HTTPException
@@ -215,12 +212,17 @@ async def sessions_close_endpoint(request: Request) -> JSONResponse:
 
 
 async def summary_endpoint(request: Request) -> JSONResponse:
-    """Generate a structured conversation summary.
+    """Generate a quick, free-form conversation summary.
 
-    ``POST /summary`` with JSON body ``{"session_id": "..."}`` returns a
-    JSON object with string fields ``purpose``, ``pending_work``,
-    ``pending_questions``, ``blockers``, and ``relevant_info``.  Each
-    field is an empty string when nothing relevant was found.
+    ``POST /summary`` with JSON body ``{"session_id": "..."}`` returns
+    ``{"summary": "..."}`` — a short plain-text summary, empty when there
+    is no history yet.
+
+    Deliberately unconstrained: an earlier version forced a fixed 5-field
+    JSON schema, which made the cheap summary-tier model (reasoning
+    nominally disabled) ramble at length trying to satisfy the schema and
+    frequently run past its token budget before producing valid JSON —
+    slow and often empty. Plain prose has no schema to fail.
 
     The summary is regenerated from the full server-side history on
     every call — callers should invoke it after each assistant turn to
@@ -239,15 +241,7 @@ async def summary_endpoint(request: Request) -> JSONResponse:
 
     turns = store.history(session_id)
     if not turns:
-        return JSONResponse(
-            {
-                "purpose": "",
-                "pending_work": "",
-                "pending_questions": "",
-                "blockers": "",
-                "relevant_info": "",
-            }
-        )
+        return JSONResponse({"summary": ""})
 
     # Build a compact transcript.  Long assistant replies are truncated
     # to keep the prompt within reasonable bounds.
@@ -260,22 +254,13 @@ async def summary_endpoint(request: Request) -> JSONResponse:
     transcript = "\n".join(transcript_parts)
 
     _SUMMARY_PROMPT = (
-        "Summarize the following conversation between a user and an AI "
-        "assistant.  Return ONLY a single JSON object (no markdown fences, "
-        "no other text) with exactly these five string fields:\n\n"
-        '- "purpose": what the session is about / the goal of the current '
-        "work.  Empty string if unclear.\n"
-        '- "pending_work": what is currently in progress or still to be '
-        "done.  Empty string if none.\n"
-        '- "pending_questions": any question the assistant is waiting on '
-        "the user to answer.  Empty string if none.\n"
-        '- "blockers": anything blocking the current task.  Empty string '
-        "if none.\n"
-        '- "relevant_info": any other relevant information (links, ticket '
-        "ids, background jobs running, etc.).  Empty string if none.\n\n"
-        "Conversation:\n"
+        "Write a brief, plain-text summary of the conversation below — "
+        "what it's about, what's currently in progress, and anything "
+        "blocking or worth remembering. A few sentences of prose. No "
+        "headers, no bullet points, no JSON, no markdown fences — just "
+        "plain text.\n\nConversation:\n"
     )
-    prompt = f"{_SUMMARY_PROMPT}{transcript}\n\nJSON summary:"
+    prompt = f"{_SUMMARY_PROMPT}{transcript}\n\nSummary:"
 
     reply_parts: list[str] = []
     try:
@@ -290,37 +275,4 @@ async def summary_endpoint(request: Request) -> JSONResponse:
         logger.exception("Summary generation failed")
         return JSONResponse({"error": "summary generation failed"}, status_code=500)
 
-    reply = "".join(reply_parts).strip()
-
-    # Parse JSON from the reply.  The agent may wrap it in markdown fences
-    # or add explanatory text — try several extraction strategies.
-    summary: dict[str, object] = {}
-    try:
-        summary = json.loads(reply)
-    except json.JSONDecodeError:
-        # Try to extract from markdown code fences.
-        fence_match = re.search(r"```(?:json)?\s*(\{.*?\})\s*```", reply, re.DOTALL)
-        if fence_match:
-            with contextlib.suppress(json.JSONDecodeError):
-                summary = json.loads(fence_match.group(1))
-    if not summary:
-        # Last resort: find the first JSON object containing "purpose".
-        brace_match = re.search(r'\{[^{}]*"purpose"[^{}]*\}', reply, re.DOTALL)
-        if brace_match:
-            with contextlib.suppress(json.JSONDecodeError):
-                summary = json.loads(brace_match.group())
-
-    # Ensure all expected fields exist with string values.
-    _SUMMARY_FIELDS = (
-        "purpose",
-        "pending_work",
-        "pending_questions",
-        "blockers",
-        "relevant_info",
-    )
-    result: dict[str, str] = {}
-    for field in _SUMMARY_FIELDS:
-        value = summary.get(field, "")
-        result[field] = str(value) if value else ""
-
-    return JSONResponse(result)
+    return JSONResponse({"summary": "".join(reply_parts).strip()})
