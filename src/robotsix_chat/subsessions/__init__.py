@@ -16,6 +16,7 @@ from .models import (
     SubsessionIntervalError,
     SubsessionKind,
     SubsessionLevelError,
+    SubsessionPeriodicSpawnError,
     SubsessionStatus,
     TranscriptEntry,
 )
@@ -42,6 +43,7 @@ __all__ = [
     "SubsessionIntervalError",
     "SubsessionKind",
     "SubsessionLevelError",
+    "SubsessionPeriodicSpawnError",
     "SubsessionRegistry",
     "SubsessionStatus",
     "TranscriptEntry",

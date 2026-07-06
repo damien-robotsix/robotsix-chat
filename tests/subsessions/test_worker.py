@@ -14,6 +14,7 @@ from robotsix_chat.subsessions import (
     SubsessionIntervalError,
     SubsessionKind,
     SubsessionLevelError,
+    SubsessionPeriodicSpawnError,
     SubsessionStatus,
     spawn_subsession,
 )
@@ -461,6 +462,71 @@ def test_spawn_level_errors() -> None:
         _spawn(env, model_level=1)  # level 1 needs an API key
 
     assert env.registry.list_for_owner(OWNER) == []
+
+
+@pytest.mark.asyncio
+async def test_periodic_parent_cannot_spawn_periodic_child() -> None:
+    """A periodic subsession cannot spawn another periodic subsession."""
+    env = build_env()
+    # Register a periodic parent.
+    parent = env.registry.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="parent periodic",
+        prompt="monitor",
+        model_level=3,
+        interval_seconds=10.0,
+    )
+
+    with pytest.raises(SubsessionPeriodicSpawnError, match="periodic"):
+        _spawn(
+            env,
+            kind=SubsessionKind.PERIODIC,
+            parent_id=parent.id,
+            depth=2,
+            interval_seconds=5.0,
+        )
+
+    # Non-periodic children (e.g. task) are still allowed.
+    task_id = _spawn(
+        env,
+        kind=SubsessionKind.TASK,
+        parent_id=parent.id,
+        depth=2,
+    )
+    assert task_id
+    # Clean up the spawned worker.
+    env.registry.cancel_and_close(task_id, reason="teardown", closed_by="system")
+
+
+@pytest.mark.asyncio
+async def test_non_periodic_parent_can_spawn_periodic_child() -> None:
+    """A task or user_chat parent can still spawn periodic children."""
+    env = build_env()
+    parent = env.registry.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="parent task",
+        prompt="work",
+        model_level=3,
+    )
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        parent_id=parent.id,
+        depth=2,
+        interval_seconds=10.0,
+    )
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.kind is SubsessionKind.PERIODIC
+    # Clean up the spawned worker.
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
 
 
 # ---------------------------------------------------------------------------
