@@ -69,13 +69,8 @@
       "type": "object"
     },
     "ConversationSettings": {
-      "description": "Multi-session conversation continuity for the browser chat.\n\nThe server groups conversations by a per-browser ``owner_id`` and addresses\nindividual sessions by ``session_id``. Each owner can have multiple named\nsessions with independent turn histories. History is **never** wiped on\nidle \u2014 sessions are persistent when ``persist_path`` is configured.\n\nAttributes:\n    idle_reset_seconds: Retained for compatibility; no longer triggers\n        destructive history reset (sessions are explicit and persistent).\n    max_history_turns: Most recent user/assistant turns kept per\n        session and replayed to the agent (bounds prompt size).\n    max_conversations: Maximum number of distinct sessions tracked at once\n        (LRU-evicted); bounds the in-memory store.\n    persist_path: Path to the JSON persistence file. Default\n        ``/data/conversations.json``. Set to an empty string to disable.",
+      "description": "Multi-session conversation continuity for the browser chat.\n\nThe server groups conversations by a per-browser ``owner_id`` and addresses\nindividual sessions by ``session_id``. Each owner can have multiple named\nsessions with independent turn histories. History is **never** wiped on\nidle \u2014 sessions are persistent when ``persist_path`` is configured.\n\nAttributes:\n    max_history_turns: Most recent user/assistant turns kept per\n        session and replayed to the agent (bounds prompt size).\n    max_conversations: Maximum number of distinct sessions tracked at once\n        (LRU-evicted); bounds the in-memory store.\n    persist_path: Path to the JSON persistence file. Default\n        ``/data/conversations.json``. Set to an empty string to disable.",
       "properties": {
-        "idle_reset_seconds": {
-          "default": 1800,
-          "title": "Idle Reset Seconds",
-          "type": "integer"
-        },
         "max_history_turns": {
           "default": 50,
           "title": "Max History Turns",

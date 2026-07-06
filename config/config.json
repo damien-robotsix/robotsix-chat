@@ -49,7 +49,6 @@
     "timeout": 30.0
   },
   "conversation": {
-    "idle_reset_seconds": 1800,
     "max_history_turns": 50,
     "max_conversations": 1000,
     "persist_path": "/data/conversations.json"
