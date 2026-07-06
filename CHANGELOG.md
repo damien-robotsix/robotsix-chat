@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Thickened the border around subsession rows in the subsession panel from 1px to 2px for better visual distinction.
 - Prevent periodic subsessions from spawning periodic children; a periodic
   run that needs follow-up polling must reuse its own schedule rather than
   creating new periodic pollers.
