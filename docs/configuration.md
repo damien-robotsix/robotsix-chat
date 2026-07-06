@@ -137,11 +137,11 @@ Direct HTTP access to the mill's board API for listing, reading, and creating ti
 
 ### Conversation
 
-| JSON key                          | Type      | Default                      | Description                                              |
-| --------------------------------- | --------- | ---------------------------- | -------------------------------------------------------- |
-| `conversation.max_history_turns`  | `integer` | `50`                         | Maximum conversation turns to retain.                    |
-| `conversation.max_conversations`  | `integer` | `1000`                       | Maximum concurrent conversations.                        |
-| `conversation.persist_path`       | `string`  | `"/data/conversations.json"` | Path to the conversation persistence file.               |
+| JSON key                         | Type      | Default                      | Description                                |
+| -------------------------------- | --------- | ---------------------------- | ------------------------------------------ |
+| `conversation.max_history_turns` | `integer` | `50`                         | Maximum conversation turns to retain.      |
+| `conversation.max_conversations` | `integer` | `1000`                       | Maximum concurrent conversations.          |
+| `conversation.persist_path`      | `string`  | `"/data/conversations.json"` | Path to the conversation persistence file. |
 
 ### Diagnostics
 
