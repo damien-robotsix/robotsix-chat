@@ -33,7 +33,7 @@ from robotsix_chat.knowledge import build_knowledge_tools
 from robotsix_chat.lifecycle import build_lifecycle_tools
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.mail import build_mail_tools
-from robotsix_chat.memory import build_memory
+from robotsix_chat.memory import NullMemory, build_memory
 from robotsix_chat.refdocs import build_refdocs_tools
 from robotsix_chat.repo.direct import build_direct_repo_tools
 from robotsix_chat.repo.study import build_repo_study_tools
@@ -340,6 +340,7 @@ def create_agent_from_settings(
     subsession_ctx: SubsessionContext | None = None,
     subsession_close_state: CloseState | None = None,
     tool_wrapper: Callable[[list[Any]], list[Any]] | None = None,
+    bare: bool = False,
 ) -> LlmioChatAgent:
     """Build an :class:`LlmioChatAgent` wired from *settings*.
 
@@ -357,6 +358,15 @@ def create_agent_from_settings(
     every feature tool suite (mail, board reader, …) is
     attached according to its own settings gate — for the main agent and
     subsession agents alike.
+
+    *bare* (default ``False``) skips all of that: no component-access/
+    roster/lifecycle instruction augmentation, no feature tools, no
+    subsession wiring, and memory is a no-op ``NullMemory`` instead of
+    ``build_memory(settings.memory)``. Use it for a single bounded
+    text-transformation call (e.g. the ``POST /summary`` agent) that has
+    no business paying for cross-session memory recall or agentic tool
+    access — ``ChatMemory.recall()`` alone was observed taking 90+
+    seconds in production, dwarfing the actual (cheap-tier) model call.
 
     Subsession wiring (*subsession_env*):
 
@@ -378,7 +388,7 @@ def create_agent_from_settings(
 
     # Inject component-access instruction and skill prompts from the
     # central-deploy roster — only when a roster URL is configured.
-    if settings.central_deploy.url:
+    if not bare and settings.central_deploy.url:
         instruction = (
             f"{instruction}\n\n"
             "Component access:\n"
@@ -403,7 +413,7 @@ def create_agent_from_settings(
             instruction = f"{instruction}\n\n{skill_prompt}"
 
     # Inject the lifecycle component skill when lifecycle is enabled.
-    if settings.lifecycle.enabled:
+    if not bare and settings.lifecycle.enabled:
         from robotsix_chat.lifecycle import load_lifecycle_skill
 
         lifecycle_skill = load_lifecycle_skill()
@@ -418,24 +428,28 @@ def create_agent_from_settings(
         if level_needs_api_key(effective_level)
         else ""
     )
-    tools: list[Any] = [
-        *build_component_access_tools(settings.central_deploy),
-        *build_mail_tools(settings.mail),
-        *build_component_tools(settings.component_client),
-        *build_refdocs_tools(settings.refdocs),
-        *build_repo_study_tools(settings.repo_study, settings.direct_repo),
-        *build_direct_repo_tools(settings.direct_repo),
-        *build_knowledge_tools(settings.knowledge),
-        *build_diagnostics_tools(settings.diagnostics),
-        *build_recent_activity_tools(settings.self_review, conversation_store),
-        *build_version_check_tools(settings.version_check),
-        *build_lifecycle_tools(settings.lifecycle),
-    ]
+    tools: list[Any] = (
+        []
+        if bare
+        else [
+            *build_component_access_tools(settings.central_deploy),
+            *build_mail_tools(settings.mail),
+            *build_component_tools(settings.component_client),
+            *build_refdocs_tools(settings.refdocs),
+            *build_repo_study_tools(settings.repo_study, settings.direct_repo),
+            *build_direct_repo_tools(settings.direct_repo),
+            *build_knowledge_tools(settings.knowledge),
+            *build_diagnostics_tools(settings.diagnostics),
+            *build_recent_activity_tools(settings.self_review, conversation_store),
+            *build_version_check_tools(settings.version_check),
+            *build_lifecycle_tools(settings.lifecycle),
+        ]
+    )
     if tool_wrapper is not None:
         tools = tool_wrapper(tools)
 
     request_tools_factory: Callable[[str], list[Any]] | None = None
-    if subsession_env is not None:
+    if not bare and subsession_env is not None:
         from robotsix_chat.subsessions import (
             SubsessionContext as _Ctx,
         )
@@ -474,7 +488,7 @@ def create_agent_from_settings(
         model_level=effective_level,
         instruction=instruction,
         api_key=api_key,
-        memory=build_memory(settings.memory),
+        memory=NullMemory() if bare else build_memory(settings.memory),
         tools=tools,
         request_tools_factory=request_tools_factory,
     )

@@ -271,7 +271,11 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # level on every single turn just to regenerate the summary. Unlike
     # llmio_model_level, a missing key for this level is not fatal: fall
     # back to the keyless tier (3) so a deployment without an OpenRouter
-    # key still starts.
+    # key still starts. bare=True: the summary is a single bounded
+    # text-transformation call over an explicit transcript — it has no
+    # business paying for cross-session memory recall or agentic tool
+    # access (ChatMemory.recall() alone was observed taking 90+ seconds in
+    # production, dwarfing the actual model call).
     summary_model_level = settings.summary_model_level
     if (
         level_needs_api_key(summary_model_level)
@@ -287,6 +291,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         settings=settings,
         conversation_store=conversation_store,
         model_level=summary_model_level,
+        bare=True,
     )
 
     # -- resume persisted subsessions after redeploy -----------------------

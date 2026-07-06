@@ -26,6 +26,7 @@ from robotsix_chat.chat.server import (
 from robotsix_chat.chat.server.cli import _export_langfuse_env
 from robotsix_chat.config import LangfuseSettings, Settings
 from robotsix_chat.llm import LlmioChatAgent
+from robotsix_chat.memory import NullMemory
 from robotsix_chat.subsessions import (
     SubsessionInfo,
     SubsessionKind,
@@ -1157,6 +1158,24 @@ def test_create_agent_from_settings_instruction_from_config() -> None:
     agent = create_agent_from_settings(settings=settings)
 
     assert agent._instruction == "You are terse."
+
+
+def test_create_agent_from_settings_bare_skips_memory_and_tools() -> None:
+    """``bare=True`` yields a NullMemory, tool-less agent with a bare instruction.
+
+    Regression test: the summary agent (built with ``bare=True``) must never
+    pay for cross-session memory recall or agentic tool access — a
+    production incident showed ``ChatMemory.recall()`` alone taking 90+
+    seconds, dwarfing the actual (cheap-tier) model call for a single
+    bounded text-transformation task.
+    """
+    settings = Settings(agent_instruction="Be terse.")
+
+    agent = create_agent_from_settings(settings=settings, bare=True)
+
+    assert isinstance(agent._memory, NullMemory)
+    assert agent._tools == []
+    assert agent._instruction == "Be terse."
 
 
 @pytest.mark.asyncio
