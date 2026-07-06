@@ -22,6 +22,7 @@ from .constants import (
     SSE_TOKEN_TYPE,
 )
 from .errors import (
+    http_exception_handler,
     not_found_handler,
     server_error_handler,
 )
@@ -67,6 +68,7 @@ __all__ = [
     "events_endpoint",
     "health_endpoint",
     "history_endpoint",
+    "http_exception_handler",
     "not_found_handler",
     "server_error_handler",
     "sessions_close_endpoint",

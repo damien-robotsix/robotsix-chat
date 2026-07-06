@@ -8,6 +8,7 @@ import logging
 import re
 from typing import TYPE_CHECKING
 
+from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -32,6 +33,21 @@ def _cleanup_session(session_id: str, request: Request) -> int:
     if registry is None:
         return 0
     return registry.close_all_for_owner(session_id, reason="session closed")
+
+
+def _require_owner_id(request: Request) -> str:
+    """Extract and validate the ``owner_id`` query parameter.
+
+    Returns the owner id, or raises an ``HTTPException(400)``
+    when missing.
+    """
+    owner_id = request.query_params.get("owner_id")
+    if not owner_id:
+        raise HTTPException(
+            status_code=400,
+            detail="owner_id query parameter is required",
+        )
+    return owner_id
 
 
 async def history_endpoint(request: Request) -> JSONResponse:
@@ -69,11 +85,7 @@ async def sessions_list_endpoint(request: Request) -> JSONResponse:
     default empty session is lazily created and returned (so the list is
     never empty).
     """
-    owner_id = request.query_params.get("owner_id")
-    if not owner_id:
-        return JSONResponse(
-            {"error": "owner_id query parameter is required"}, status_code=400
-        )
+    owner_id = _require_owner_id(request)
 
     store: ConversationStore = request.app.state.conversation_store
     sessions, active_id = store.list_sessions(owner_id)
@@ -123,11 +135,7 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
     can still be cleaned up).
     """
     session_id = request.path_params["session_id"]
-    owner_id = request.query_params.get("owner_id")
-    if not owner_id:
-        return JSONResponse(
-            {"error": "owner_id query parameter is required"}, status_code=400
-        )
+    owner_id = _require_owner_id(request)
 
     # 1. Close the session's subsessions.
     subsessions_closed = _cleanup_session(session_id, request)
@@ -178,11 +186,7 @@ async def sessions_close_endpoint(request: Request) -> JSONResponse:
     its conversation history remains available.
     """
     session_id = request.path_params["session_id"]
-    owner_id = request.query_params.get("owner_id")
-    if not owner_id:
-        return JSONResponse(
-            {"error": "owner_id query parameter is required"}, status_code=400
-        )
+    owner_id = _require_owner_id(request)
 
     # 1. Close the session's subsessions.
     subsessions_closed = _cleanup_session(session_id, request)
