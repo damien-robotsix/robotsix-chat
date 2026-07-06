@@ -2208,3 +2208,145 @@ async def test_chat_endpoint_persists_on_client_disconnect() -> None:
         turns = f.app.state.conversation_store.history(session_id)
         assert len(turns) == 1
         assert turns[0] == ("hello", "Hello world!")
+
+
+# ---------------------------------------------------------------------------
+# Message coalescing — rapid-fire messages batched into a single agent run
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_coalescer_concatenates_rapid_messages() -> None:
+    """Two rapid messages in the same session are concatenated into one agent run."""
+    async with mock_app(tokens=["ok"], message_coalesce_seconds=0.0) as f:
+        session_id = "s1"
+        owner_id = "o1"
+
+        # Send two messages simultaneously (fire-and-forget, let both land
+        # before the coalescer's debounce fires).
+        t1 = asyncio.create_task(
+            f.client.post(
+                "/chat",
+                json={
+                    "message": "msg1",
+                    "session_id": session_id,
+                    "owner_id": owner_id,
+                },
+            )
+        )
+        t2 = asyncio.create_task(
+            f.client.post(
+                "/chat",
+                json={
+                    "message": "msg2",
+                    "session_id": session_id,
+                    "owner_id": owner_id,
+                },
+            )
+        )
+        responses = await asyncio.gather(t1, t2)
+
+        # Both responses are successful SSE streams.
+        for r in responses:
+            assert r.status_code == 200
+            assert r.headers["content-type"] == SSE_CONTENT_TYPE
+
+        # The agent should have been called exactly once.
+        assert f.agent.call_count == 1
+
+        # The concatenated message should contain both messages in order.
+        assert "msg1" in f.agent.called_with
+        assert "msg2" in f.agent.called_with
+        assert f.agent.called_with.index("msg1") < f.agent.called_with.index("msg2")
+
+        # The separator should be present between the two messages.
+        assert f.app.state.message_coalescer.MESSAGE_SEPARATOR in f.agent.called_with
+
+        # Only one turn should be recorded in conversation history.
+        turns = f.app.state.conversation_store.history(session_id)
+        assert len(turns) == 1
+
+
+@pytest.mark.asyncio
+async def test_coalescer_single_message_passes_unchanged() -> None:
+    """A single message with no racing partner is processed normally."""
+    async with mock_app(tokens=["ok"], message_coalesce_seconds=0.0) as f:
+        session_id = "s-solo"
+        owner_id = "o-solo"
+
+        r = await f.client.post(
+            "/chat",
+            json={
+                "message": "just one message",
+                "session_id": session_id,
+                "owner_id": owner_id,
+            },
+        )
+        assert r.status_code == 200
+        assert f.agent.call_count == 1
+        assert f.agent.called_with == "just one message"
+
+        # No separator in a single-message batch.
+        sep = f.app.state.message_coalescer.MESSAGE_SEPARATOR
+        assert sep not in f.agent.called_with
+
+
+@pytest.mark.asyncio
+async def test_coalescer_separate_sessions_processed_independently() -> None:
+    """Messages for different sessions are not batched together."""
+    async with mock_app(tokens=["ok"], message_coalesce_seconds=0.0) as f:
+        t1 = asyncio.create_task(
+            f.client.post(
+                "/chat",
+                json={
+                    "message": "session-a",
+                    "session_id": "sa",
+                    "owner_id": "oa",
+                },
+            )
+        )
+        t2 = asyncio.create_task(
+            f.client.post(
+                "/chat",
+                json={
+                    "message": "session-b",
+                    "session_id": "sb",
+                    "owner_id": "ob",
+                },
+            )
+        )
+        await asyncio.gather(t1, t2)
+
+        # Each session triggers its own agent run.
+        assert f.agent.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_coalescer_second_batch_after_first_completes() -> None:
+    """Messages arriving after the first batch completes start a new batch."""
+    async with mock_app(tokens=["ok"], message_coalesce_seconds=0.0) as f:
+        session_id = "s-batch"
+        owner_id = "o-batch"
+
+        # First batch.
+        await f.client.post(
+            "/chat",
+            json={
+                "message": "batch1-msg1",
+                "session_id": session_id,
+                "owner_id": owner_id,
+            },
+        )
+        assert f.agent.call_count == 1
+
+        # After the first batch completes, a new message starts a fresh batch.
+        await f.client.post(
+            "/chat",
+            json={
+                "message": "batch2-msg1",
+                "session_id": session_id,
+                "owner_id": owner_id,
+            },
+        )
+        assert f.agent.call_count == 2
+        assert f.agent.called_with == "batch2-msg1"
