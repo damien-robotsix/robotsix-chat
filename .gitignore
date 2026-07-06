@@ -66,3 +66,6 @@ src/bin/
 
 # Pre-commit tool binaries accidentally committed during local testing
 actionlint
+
+# Core dumps — binary artifacts, can contain sensitive memory
+core
