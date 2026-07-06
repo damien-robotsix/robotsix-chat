@@ -1,0 +1,1 @@
+Eliminate duplicated fetch_roster/fetch_roster_sync in component_access/roster.py
