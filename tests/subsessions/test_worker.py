@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import threading
+from typing import Any
 
 import pytest
 
@@ -18,7 +20,11 @@ from robotsix_chat.subsessions import (
     SubsessionStatus,
     spawn_subsession,
 )
-from robotsix_chat.subsessions.worker import SubsessionContext, SubsessionEnv
+from robotsix_chat.subsessions.worker import (
+    CloseState,
+    SubsessionContext,
+    SubsessionEnv,
+)
 from tests.common.subsession_fakes import (
     CapturingAgentFactory,
     FakeAgent,
@@ -97,6 +103,40 @@ async def test_task_single_turn_completes_and_delivers() -> None:
     assert label.startswith(f"[Subsession {sub_id[:8]} (task)")
     assert "completed" in label
     assert reply == "result 42"
+
+
+@pytest.mark.asyncio
+async def test_agent_factory_runs_off_the_event_loop_thread() -> None:
+    """agent_factory must never be invoked on the event loop's own thread.
+
+    Regression test for a production incident: create_agent_from_settings
+    calls fetch_roster_sync, which does asyncio.run(...) internally — legal
+    only when the calling thread has no running event loop. _subsession_worker
+    itself runs as a task on the server's already-running loop, so calling
+    agent_factory directly there reproduced exactly that crash ("asyncio.run()
+    cannot be called from a running event loop") for every subsession spawn.
+    The worker must dispatch the call to a separate thread.
+    """
+    event_loop_thread = threading.current_thread()
+
+    def factory(
+        settings: Any,
+        model_level: int,
+        ctx: SubsessionContext,
+        close_state: CloseState,
+    ) -> FakeAgent:
+        assert threading.current_thread() is not event_loop_thread
+        return FakeAgent(["ok"])
+
+    env = build_env(agent_factory=factory)
+
+    sub_id = _spawn(env, prompt="hello")
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.summary == "ok"
 
 
 @pytest.mark.asyncio
