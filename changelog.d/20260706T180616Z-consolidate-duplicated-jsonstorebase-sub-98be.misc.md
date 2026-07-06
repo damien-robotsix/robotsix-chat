@@ -1,1 +1,2 @@
-Consolidate duplicated JsonStoreBase subclass boilerplate across diagnostic/knowledge/fix-proposal stores
+Consolidate duplicated JsonStoreBase subclass boilerplate across diagnostic/knowledge/fix-proposal
+stores
