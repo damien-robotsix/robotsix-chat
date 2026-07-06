@@ -65,7 +65,6 @@ class Session:
     turns: list[Turn] = field(default_factory=list)
     turn_count: int = 0
     closed: bool = False
-    compacted_summary: str | None = None
 
 
 @dataclass
