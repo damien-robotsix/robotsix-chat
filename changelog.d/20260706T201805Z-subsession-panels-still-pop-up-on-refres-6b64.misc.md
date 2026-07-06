@@ -1,0 +1,1 @@
+Subsession panels still pop up on refresh

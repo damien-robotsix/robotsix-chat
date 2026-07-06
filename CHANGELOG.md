@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Thickened the border around subsession rows in the subsession panel from 1px to 2px for better visual distinction.
+- Persist subsession panel open/closed state in localStorage so it survives page refreshes instead of always resetting to closed.
 - Prevent periodic subsessions from spawning periodic children; a periodic
   run that needs follow-up polling must reuse its own schedule rather than
   creating new periodic pollers.
