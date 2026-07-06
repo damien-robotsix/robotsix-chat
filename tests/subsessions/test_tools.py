@@ -186,6 +186,23 @@ async def test_spawn_tool_keyless_level_refusal() -> None:
 
 
 @pytest.mark.asyncio
+async def test_spawn_tool_periodic_parent_periodic_child_refusal() -> None:
+    """A periodic subsession spawning a periodic child is refused politely."""
+    env = build_env()
+    # Register a periodic parent and build tools from its context.
+    parent = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=10.0)
+    tools = build_subsession_tools(env, ctx=_ctx(subsession_id=parent.id, depth=1))
+    spawn = _by_name(tools, "spawn_subsession")
+
+    result = await spawn(
+        "periodic", "child periodic", "do monitoring", interval_seconds=5.0
+    )
+
+    assert result.startswith("Could not start the subsession:")
+    assert "periodic" in result
+
+
+@pytest.mark.asyncio
 async def test_spawn_tool_refused_for_closed_session() -> None:
     """A closed chat session cannot spawn new subsessions."""
     store = ConversationStore()

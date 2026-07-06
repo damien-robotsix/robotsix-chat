@@ -37,6 +37,7 @@ from .models import (
     SubsessionIntervalError,
     SubsessionKind,
     SubsessionLevelError,
+    SubsessionPeriodicSpawnError,
     SubsessionStatus,
     TranscriptEntry,
 )
@@ -154,6 +155,12 @@ def spawn_subsession(
             f"maximum subsession nesting depth is {cfg.max_depth}"
         )
     _validate_model_level(env.settings, model_level)
+    if kind is SubsessionKind.PERIODIC and parent_id is not None:
+        parent = env.registry.get(parent_id)
+        if parent is not None and parent.kind is SubsessionKind.PERIODIC:
+            raise SubsessionPeriodicSpawnError(
+                "periodic subsessions cannot spawn periodic children"
+            )
     if kind is SubsessionKind.PERIODIC:
         if interval_seconds is None or interval_seconds < cfg.min_interval_seconds:
             raise SubsessionIntervalError(

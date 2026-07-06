@@ -76,6 +76,10 @@ class SubsessionLevelError(ValueError):
     """Raised when the requested model level is invalid or unusable."""
 
 
+class SubsessionPeriodicSpawnError(RuntimeError):
+    """Raised when a periodic subsession attempts to spawn a periodic child."""
+
+
 @dataclass
 class TranscriptEntry:
     """One rendered line of a subsession's conversation transcript."""

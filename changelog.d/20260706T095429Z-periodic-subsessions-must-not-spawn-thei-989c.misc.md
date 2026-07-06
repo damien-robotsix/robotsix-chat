@@ -1,0 +1,1 @@
+Periodic subsessions must not spawn their own periodic child subsessions
