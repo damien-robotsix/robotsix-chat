@@ -480,10 +480,16 @@ class GithubSettings(BaseModel):
         enabled: Master switch.  When ``False``, the github skill is not
             injected and the agent will not know about this component
             (unless it is also present in the central-deploy roster).
+        token: Optional PAT for GitHub API access.
+        api_base_url: Overridable base URL for GitHub Enterprise.
+        timeout: Per-request HTTP timeout in seconds.
 
     """
 
     enabled: bool = False
+    token: SecretStr = SecretStr("")
+    api_base_url: str = "https://api.github.com"
+    timeout: float = 30.0
 
 
 class CentralDeploySettings(BaseModel):

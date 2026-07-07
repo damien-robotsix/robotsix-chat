@@ -184,12 +184,29 @@
       "type": "object"
     },
     "GithubSettings": {
-      "description": "GitHub repository-administration component skill for the agent.\n\nWhen enabled, the github component skill is injected into the agent's\nsystem prompt so it knows how to use the ``component_request`` tool to\nreach the github component.  The component itself is roster-based\n(registered in central-deploy) \u2014 this setting only controls whether\nthe skill documentation is injected locally.\n\nThe GitHub token and all write operations are server-side only, never\nexposed in the chat container environment or the roster payload.\n\nAttributes:\n    enabled: Master switch.  When ``False``, the github skill is not\n        injected and the agent will not know about this component\n        (unless it is also present in the central-deploy roster).",
+      "description": "GitHub repository-administration component skill for the agent.\n\nWhen enabled, the github component skill is injected into the agent's\nsystem prompt so it knows how to use the ``component_request`` tool to\nreach the github component.  The component itself is roster-based\n(registered in central-deploy) \u2014 this setting only controls whether\nthe skill documentation is injected locally.\n\nThe GitHub token and all write operations are server-side only, never\nexposed in the chat container environment or the roster payload.\n\nAttributes:\n    enabled: Master switch.  When ``False``, the github skill is not\n        injected and the agent will not know about this component\n        (unless it is also present in the central-deploy roster).\n    token: Optional PAT for GitHub API access.\n    api_base_url: Overridable base URL for GitHub Enterprise.\n    timeout: Per-request HTTP timeout in seconds.",
       "properties": {
         "enabled": {
           "default": false,
           "title": "Enabled",
           "type": "boolean"
+        },
+        "token": {
+          "default": "",
+          "title": "Token",
+          "type": "string",
+          "writeOnly": true,
+          "format": "password"
+        },
+        "api_base_url": {
+          "default": "https://api.github.com",
+          "title": "Api Base Url",
+          "type": "string"
+        },
+        "timeout": {
+          "default": 30.0,
+          "title": "Timeout",
+          "type": "number"
         }
       },
       "title": "GithubSettings",
