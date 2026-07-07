@@ -5,6 +5,17 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v20 — 2026-07-07 — self-upgrade-capability-via-tickets
+
+**Summary:** Add a bullet to the Autonomy section documenting that the agent upgrades its own
+capabilities by filing tickets on the robotsix-chat repo: new tools, components, and permissions
+are granted through the standard ticket workflow, and after merge+deploy the agent self-restarts
+via the deploy component to pick up newly registered capabilities.
+
+**SHA256:** `(pending — regenerate after edit)`
+
+______________________________________________________________________
+
 ## v19 — 2026-07-05 — subsession-prefer-level-2-for-general-work
 
 **Summary:** Reword the subsession `model_level` guidance in the default `agent_instruction`. Level

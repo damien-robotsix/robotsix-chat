@@ -441,7 +441,7 @@ def create_agent_from_settings(
         if lifecycle_skill:
             instruction = f"{instruction}\n\n{lifecycle_skill}"
 
-    # Inject the GitHub component skill when GitHub tools are enabled.
+    # Inject the github component skill when github is enabled.
     if not bare and settings.github.enabled:
         from robotsix_chat.github import load_github_skill
 
