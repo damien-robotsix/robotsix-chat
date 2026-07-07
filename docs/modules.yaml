@@ -254,15 +254,6 @@ modules:
       - tests/lifecycle/__init__.py
       - tests/lifecycle/test_lifecycle.py
 
-  - id: github
-    description: "GitHub repository-administration component skill for the agent — exposes load_github_skill() returning the component skill document describing how to use component_request(component_id='github', ...) to create repos, set metadata, and register with the mill board."
-    paths:
-      - src/robotsix_chat/github/__init__.py
-      - src/robotsix_chat/github/client.py
-      - src/robotsix_chat/github/skill.md
-      - tests/github/__init__.py
-      - tests/github/test_github.py
-
   - id: version-check
     description: "Self-version-check tool for the agent — compares the running robotsix_chat.__version__ against the latest published GitHub release and warns the user when the deployment is behind."
     paths:
