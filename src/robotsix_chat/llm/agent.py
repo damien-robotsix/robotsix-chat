@@ -195,6 +195,34 @@ class LlmioChatAgent:
 
         return _on_activity
 
+    def _publish_synthetic_activity(
+        self,
+        session_id: str | None,
+        kind: str,
+        *,
+        tool_name: str | None = None,
+        detail: str = "",
+        is_error: bool = False,
+    ) -> None:
+        """Publish an activity frame for a preliminary step outside the SDK run.
+
+        E.g. memory recall — so the UI shows something during phases the
+        Claude SDK's own activity events don't cover — otherwise the typing
+        indicator sits blank for as long as that step takes, which can be
+        the majority of the wall-clock time for a turn (memory recall alone
+        has been observed taking 90+ seconds).
+
+        A no-op when there is nowhere to publish to (no sink, no session).
+        """
+        if self._event_sink is None or not session_id:
+            return
+        self._event_sink.publish(
+            session_id,
+            activity_frame(
+                kind, 0, tool_name=tool_name, detail=detail, is_error=is_error
+            ),
+        )
+
     async def stream(
         self,
         message: str,
@@ -233,7 +261,19 @@ class LlmioChatAgent:
         # prompt cache for the whole request on every turn. Prepending to the
         # newest user turn keeps the instruction, tools, and replayed
         # transcript byte-stable and cache-servable.
+        self._publish_synthetic_activity(
+            session_id, "tool_call", tool_name="recall_memory"
+        )
         recalled = await self._memory.recall(message, session_id=session_id)
+        self._publish_synthetic_activity(
+            session_id,
+            "tool_result",
+            detail=(
+                f"found {len(recalled)} chars of prior context"
+                if recalled
+                else "no relevant memory found"
+            ),
+        )
         system_prompt = self._instruction
         llm_message = message
         if recalled:
