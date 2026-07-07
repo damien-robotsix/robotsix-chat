@@ -133,6 +133,7 @@ modules:
       - tests/chat/server/__init__.py
       - tests/chat/server/test_server.py
       - tests/chat/server/test_idempotency.py
+      - tests/chat/server/test_message_coalescer_gc.py
       - tests/chat/server/routes/__init__.py
       - tests/chat/server/routes/test_shared.py
 
