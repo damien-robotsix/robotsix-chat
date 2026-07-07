@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Added "Out-of-Scope CI Failure" boilerplate to `docs/triage-boilerplate.md` for use in scope-triage decisions during `draft → ready` transitions.
+- Remove unused `# noqa: E402` comment from `src/robotsix_chat/chat/server/__init__.py` to satisfy RUF100 (unused noqa directive).
 - `SubsessionsSettings.default_model_level` changed from `3` to `2` to match the system prompt guidance that level 2 "is the default choice for general work."
 - Derive `chat.server.__all__` from `routes.__all__` instead of duplicating
   the endpoint-name list across two `__init__.py` files.  When a new route
