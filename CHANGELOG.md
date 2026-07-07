@@ -1,6 +1,11 @@
 ## 0.0.0 (unreleased)
 
 - `SubsessionsSettings.default_model_level` changed from `3` to `2` to match the system prompt guidance that level 2 "is the default choice for general work."
+- Derive `chat.server.__all__` from `routes.__all__` instead of duplicating
+  the endpoint-name list across two `__init__.py` files.  When a new route
+  endpoint module is added, the public API of the server package
+  automatically picks it up (provided the symbol is imported), avoiding
+  silent `__all__` drift.
 - Consolidated duplicated `_get`/`_post`/`_patch` HTTP methods in `GitHubClient`
   into a single `_request(method, path, body=None)` private method, eliminating
   ~35 lines of copy-paste duplication.
