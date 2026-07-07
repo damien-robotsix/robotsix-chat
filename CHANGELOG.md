@@ -12,6 +12,12 @@
   endpoint module is added, the public API of the server package
   automatically picks it up (provided the symbol is imported), avoiding
   silent `__all__` drift.
+- Expand ruff ruleset with `ARG`, `N`, `RUF`, and `T` to catch unused
+  function/method arguments, naming convention violations, ambiguous unicode
+  characters, unsorted `__all__`, unused `# noqa` directives, and stray
+  `print()`/`pdb` calls before they reach CI.  Per-file-ignores suppress
+  known-safe patterns (test fixtures, intentional en-dash bullets in prompt
+  strings, `NullMemory` protocol stubs).
 - Consolidated duplicated `_get`/`_post`/`_patch` HTTP methods in `GitHubClient`
   into a single `_request(method, path, body=None)` private method, eliminating
   ~35 lines of copy-paste duplication.

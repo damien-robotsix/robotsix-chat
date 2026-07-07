@@ -144,7 +144,7 @@ async def test_fetch_sends_app_token_when_configured(
     """Configured GitHub App creds put an installation token on the request."""
     direct_repo = DirectRepoSettings(
         github_app_id="42",
-        github_app_private_key="fake-pem",  # noqa: S106 — test sentinel  # pragma: allowlist secret
+        github_app_private_key="fake-pem",
         github_app_installation_id="7",
     )
 
@@ -173,7 +173,7 @@ async def test_fetch_falls_back_unauthenticated_on_token_failure(
     """A failed token exchange falls back to an unauthenticated fetch."""
     direct_repo = DirectRepoSettings(
         github_app_id="42",
-        github_app_private_key="fake-pem",  # noqa: S106 — test sentinel  # pragma: allowlist secret
+        github_app_private_key="fake-pem",
         github_app_installation_id="7",
     )
 
