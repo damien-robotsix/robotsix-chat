@@ -1,0 +1,1 @@
+Consolidate duplicated _get/_post/_patch methods in github/client.py
