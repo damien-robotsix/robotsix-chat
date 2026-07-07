@@ -465,14 +465,6 @@ def create_agent_from_settings(
         if lifecycle_skill:
             instruction = f"{instruction}\n\n{lifecycle_skill}"
 
-    # Inject the github component skill when github is enabled.
-    if not bare and settings.github.enabled:
-        from robotsix_chat.github import load_github_skill
-
-        github_skill = load_github_skill()
-        if github_skill:
-            instruction = f"{instruction}\n\n{github_skill}"
-
     effective_level = (
         model_level if model_level is not None else settings.llmio_model_level
     )
@@ -485,9 +477,7 @@ def create_agent_from_settings(
         []
         if bare
         else [
-            *build_component_access_tools(
-                settings.central_deploy, github_settings=settings.github
-            ),
+            *build_component_access_tools(settings.central_deploy),
             *build_mail_tools(settings.mail),
             *build_component_tools(settings.component_client),
             *build_refdocs_tools(settings.refdocs),

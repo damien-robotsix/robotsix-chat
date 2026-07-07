@@ -125,12 +125,6 @@
     "api_key": "",
     "timeout": 30.0
   },
-  "github": {
-    "enabled": false,
-    "token": "",
-    "api_base_url": "https://api.github.com",
-    "timeout": 30.0
-  },
   "max_images_per_message": 8,
   "max_image_bytes": 5242880,
   "allowed_image_media_types": [

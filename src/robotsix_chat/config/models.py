@@ -464,34 +464,6 @@ class LifecycleSettings(BaseModel):
     timeout: float = 30.0
 
 
-class GithubSettings(BaseModel):
-    """GitHub repository-administration component skill for the agent.
-
-    When enabled, the github component skill is injected into the agent's
-    system prompt so it knows how to use the ``component_request`` tool to
-    reach the github component.  The component itself is roster-based
-    (registered in central-deploy) — this setting only controls whether
-    the skill documentation is injected locally.
-
-    The GitHub token and all write operations are server-side only, never
-    exposed in the chat container environment or the roster payload.
-
-    Attributes:
-        enabled: Master switch.  When ``False``, the github skill is not
-            injected and the agent will not know about this component
-            (unless it is also present in the central-deploy roster).
-        token: Optional PAT for GitHub API access.
-        api_base_url: Overridable base URL for GitHub Enterprise.
-        timeout: Per-request HTTP timeout in seconds.
-
-    """
-
-    enabled: bool = False
-    token: SecretStr = SecretStr("")
-    api_base_url: str = "https://api.github.com"
-    timeout: float = 30.0
-
-
 class CentralDeploySettings(BaseModel):
     """Central-deploy roster and component-access settings.
 
