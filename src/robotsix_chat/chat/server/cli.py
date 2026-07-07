@@ -27,7 +27,7 @@ logger = logging.getLogger(__name__)
 
 
 # Keyword parameters shared with create_app() are tracked in
-# robotsix_chat.chat.server.app._SHARED_PARAMS — keep the two
+# robotsix_chat.chat.server.app.SHARED_PARAMS — keep the two
 # signatures in sync or the test suite will catch the drift.
 def run_server(
     agent: ChatAgent,

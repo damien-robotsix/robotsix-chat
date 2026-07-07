@@ -159,7 +159,7 @@ async def _make_lifespan(
 # Shared keyword parameters between create_app() and run_server().
 # When adding a new parameter that both functions should accept, include
 # its name here — the test suite enforces parity via inspect.signature.
-_SHARED_PARAMS: frozenset[str] = frozenset(
+SHARED_PARAMS: frozenset[str] = frozenset(
     {
         "summary_agent",
         "serve_ui",

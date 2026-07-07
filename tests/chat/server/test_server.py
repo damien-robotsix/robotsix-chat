@@ -2360,7 +2360,7 @@ def test_create_app_and_run_server_shared_params() -> None:
     from inspect import signature
 
     from robotsix_chat.chat.server.app import (
-        _SHARED_PARAMS,
+        SHARED_PARAMS,
     )
     from robotsix_chat.chat.server.app import (
         create_app as _create_app,
@@ -2370,14 +2370,14 @@ def test_create_app_and_run_server_shared_params() -> None:
     ca_sig = signature(_create_app)
     rs_sig = signature(_run_server)
 
-    for name in _SHARED_PARAMS:
+    for name in SHARED_PARAMS:
         assert name in ca_sig.parameters, (
             f"Missing in create_app: '{name}' — add it to the signature "
-            f"or remove it from _SHARED_PARAMS"
+            f"or remove it from SHARED_PARAMS"
         )
         assert name in rs_sig.parameters, (
             f"Missing in run_server: '{name}' — add it to the signature "
-            f"or remove it from _SHARED_PARAMS"
+            f"or remove it from SHARED_PARAMS"
         )
 
         ca_default = ca_sig.parameters[name].default
