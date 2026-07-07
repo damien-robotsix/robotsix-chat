@@ -14,11 +14,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import datetime
-from pathlib import Path
-from typing import Any
 
 from robotsix_chat.common.json_store import JsonStoreBase
 
@@ -49,38 +45,7 @@ class KnowledgeStore(JsonStoreBase[KnowledgeEntry]):
     """
 
     _store_name = "knowledge store"
-
-    def __init__(
-        self,
-        path: str | Path = "/data/knowledge.json",
-        *,
-        clock: Callable[[], datetime] | None = None,
-    ) -> None:
-        """Create a store persisting to *path*."""
-        super().__init__(path, clock=clock)
-
-    # ------------------------------------------------------------------
-    # serialisation hooks
-    # ------------------------------------------------------------------
-
-    def _to_dict(self, item: KnowledgeEntry) -> dict[str, object]:
-        return {
-            "id": item.id,
-            "topic": item.topic,
-            "content": item.content,
-            "created_at": item.created_at,
-            "updated_at": item.updated_at,
-        }
-
-    @classmethod
-    def _from_dict(cls, d: dict[str, Any]) -> KnowledgeEntry:
-        return KnowledgeEntry(
-            id=d.get("id", ""),
-            topic=d.get("topic", ""),
-            content=d.get("content", ""),
-            created_at=d.get("created_at", ""),
-            updated_at=d.get("updated_at", ""),
-        )
+    _default_path = "/data/knowledge.json"
 
     # ------------------------------------------------------------------
     # public API

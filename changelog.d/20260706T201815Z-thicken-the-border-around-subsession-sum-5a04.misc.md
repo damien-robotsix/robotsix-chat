@@ -1,0 +1,1 @@
+Thicken the border around subsession summary for readability

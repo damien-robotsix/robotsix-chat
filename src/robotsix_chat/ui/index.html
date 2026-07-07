@@ -129,7 +129,7 @@
   .subs-row {
     padding: 0.5rem 0.6rem; margin-bottom: 0.4rem;
     border-radius: 6px; font-size: 0.82rem;
-    border: 1px solid var(--composer-border);
+    border: 2px solid var(--composer-border);
     background: var(--assistant-bubble-bg);
     word-break: break-word;
   }
@@ -913,6 +913,7 @@
 
   // ---- Session management (localStorage-backed) -----------------------
   var ACTIVE_SESSION_KEY = "{{ PROJECT_TITLE }}-active-session-id";
+  var SUBS_PANEL_KEY = "{{ PROJECT_TITLE }}-subsessions-panel-visible";
   var activeSessionId = null;
   var sessionsList = [];        // cached session list from server
 
@@ -924,6 +925,19 @@
   function setActiveSessionId(sid) {
     activeSessionId = sid;
     try { localStorage.setItem(ACTIVE_SESSION_KEY, sid); } catch (_) {}
+  }
+
+  function getSubsPanelVisible() {
+    try { return localStorage.getItem(SUBS_PANEL_KEY) === "true"; }
+    catch (_) { return false; }
+  }
+
+  function setSubsPanelVisible(visible) {
+    try { localStorage.setItem(SUBS_PANEL_KEY, visible ? "true" : "false"); } catch (_) {}
+  }
+
+  function restoreSubsPanelState() {
+    if (getSubsPanelVisible()) { openSubsessionsPanel(); }
   }
 
   // ---- Session API helpers --------------------------------------------
@@ -1705,6 +1719,7 @@
   function openSubsessionsPanel() {
     if (!subsPanel.classList.contains("visible")) {
       subsPanel.classList.add("visible");
+      setSubsPanelVisible(true);
       positionResizeHandle();
     }
   }
@@ -2539,6 +2554,7 @@
     e.stopPropagation();
     var opening = !subsPanel.classList.contains("visible");
     subsPanel.classList.toggle("visible");
+    setSubsPanelVisible(subsPanel.classList.contains("visible"));
     if (opening) {
       positionResizeHandle();
       document.documentElement.style.setProperty('--subsessions-width', subsPanel.getBoundingClientRect().width + 'px');
@@ -2550,6 +2566,7 @@
   subsDismiss.addEventListener("click", function (e) {
     e.stopPropagation();
     subsPanel.classList.remove("visible");
+    setSubsPanelVisible(false);
     hideResizeHandle();
   });
 
@@ -2567,6 +2584,7 @@
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && subsPanel.classList.contains("visible")) {
       subsPanel.classList.remove("visible");
+      setSubsPanelVisible(false);
       hideResizeHandle();
     }
   });
@@ -2656,6 +2674,7 @@
     renderSessionList(data);
     loadHistory();
     fetchSubsessions();
+    restoreSubsPanelState();
     openEventStream();
     resetIdleTimer();
   }).catch(function () {
@@ -2669,6 +2688,7 @@
     }
     loadHistory();
     fetchSubsessions();
+    restoreSubsPanelState();
     openEventStream();
     resetIdleTimer();
   });
