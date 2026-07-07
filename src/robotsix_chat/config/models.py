@@ -464,6 +464,33 @@ class LifecycleSettings(BaseModel):
     timeout: float = 30.0
 
 
+class GitHubSettings(BaseModel):
+    """GitHub repository management tools for the agent.
+
+    When enabled, the chat agent gains tools to create and manage GitHub
+    repositories: create a new repo (confirmation-gated), update repo
+    settings (description, visibility), and read repo details.  All
+    operations authenticate via a scoped personal access token provisioned
+    through the deploy EnvStore — the token never appears in the chat
+    container's environment directly.
+
+    Attributes:
+        enabled: Master switch.  When ``False``, no GitHub tools are
+            offered.
+        api_base_url: Base URL for the GitHub API (default
+            ``https://api.github.com``).  Override for GitHub Enterprise.
+        token: GitHub personal access token with repo-admin scope.
+            Provisioned via the deploy EnvStore.
+        timeout: Per-request HTTP timeout in seconds.
+
+    """
+
+    enabled: bool = False
+    api_base_url: str = "https://api.github.com"
+    token: SecretStr = SecretStr("")
+    timeout: float = 30.0
+
+
 class CentralDeploySettings(BaseModel):
     """Central-deploy roster and component-access settings.
 

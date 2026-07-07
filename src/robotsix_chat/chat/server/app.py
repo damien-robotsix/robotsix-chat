@@ -29,6 +29,7 @@ from robotsix_chat.component_access import build_component_access_tools
 from robotsix_chat.component_client import build_component_tools
 from robotsix_chat.config import Settings, level_needs_api_key
 from robotsix_chat.diagnostics import build_diagnostics_tools
+from robotsix_chat.github import build_github_tools
 from robotsix_chat.knowledge import build_knowledge_tools
 from robotsix_chat.lifecycle import build_lifecycle_tools
 from robotsix_chat.llm import LlmioChatAgent
@@ -440,6 +441,14 @@ def create_agent_from_settings(
         if lifecycle_skill:
             instruction = f"{instruction}\n\n{lifecycle_skill}"
 
+    # Inject the GitHub component skill when GitHub tools are enabled.
+    if not bare and settings.github.enabled:
+        from robotsix_chat.github import load_github_skill
+
+        github_skill = load_github_skill()
+        if github_skill:
+            instruction = f"{instruction}\n\n{github_skill}"
+
     effective_level = (
         model_level if model_level is not None else settings.llmio_model_level
     )
@@ -463,6 +472,7 @@ def create_agent_from_settings(
             *build_recent_activity_tools(settings.self_review, conversation_store),
             *build_version_check_tools(settings.version_check),
             *build_lifecycle_tools(settings.lifecycle),
+            *build_github_tools(settings.github),
         ]
     )
     if tool_wrapper is not None:

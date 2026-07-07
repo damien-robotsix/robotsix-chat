@@ -20,6 +20,7 @@ from robotsix_chat.config.models import (
     ConversationSettings,
     DiagnosticsSettings,
     DirectRepoSettings,
+    GitHubSettings,
     KnowledgeSettings,
     LangfuseSettings,
     LifecycleSettings,
@@ -206,6 +207,7 @@ class Settings(BaseModel):
     direct_repo: DirectRepoSettings = Field(default_factory=DirectRepoSettings)
     repo_study: RepoStudySettings = Field(default_factory=RepoStudySettings)
     lifecycle: LifecycleSettings = Field(default_factory=LifecycleSettings)
+    github: GitHubSettings = Field(default_factory=GitHubSettings)
     max_images_per_message: int = 8
     max_image_bytes: int = 5_242_880
     allowed_image_media_types: list[str] = Field(
