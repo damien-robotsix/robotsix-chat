@@ -460,7 +460,9 @@ def create_agent_from_settings(
         []
         if bare
         else [
-            *build_component_access_tools(settings.central_deploy),
+            *build_component_access_tools(
+                settings.central_deploy, github_settings=settings.github
+            ),
             *build_mail_tools(settings.mail),
             *build_component_tools(settings.component_client),
             *build_refdocs_tools(settings.refdocs),

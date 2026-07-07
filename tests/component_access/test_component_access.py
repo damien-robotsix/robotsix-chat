@@ -24,7 +24,7 @@ from robotsix_chat.component_access.tools import (
     _component_request_impl,
     build_component_access_tools,
 )
-from robotsix_chat.config import CentralDeploySettings
+from robotsix_chat.config import CentralDeploySettings, GithubSettings
 
 
 def _settings(**kw: object) -> CentralDeploySettings:
@@ -970,3 +970,229 @@ async def test_patch_is_non_idempotent_no_retry_on_any_response(
     )
     assert "HTTP 503" in result
     assert route.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# GitHub component local interception (build_component_access_tools +
+# _handle_github_request_locally)
+# ---------------------------------------------------------------------------
+
+
+def _gh_settings(**kw: object) -> GithubSettings:
+    from robotsix_chat.config import GithubSettings
+
+    base: dict[str, object] = {
+        "enabled": True,
+        "api_base_url": "https://api.github.com",
+    }
+    base.update(kw)
+    return GithubSettings(**base)  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_github_intercept_chat_skill() -> None:
+    """GET /chat-skill on github returns the local skill.md."""
+    tools = build_component_access_tools(
+        _settings(url="http://deploy:8080"),
+        github_settings=_gh_settings(),
+    )
+    result = await tools[0]("github", "GET", "/chat-skill")
+    assert "HTTP 200" in result
+    assert "component_request" in result
+    assert "github" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_github_intercept_root() -> None:
+    """GET / on github returns component info."""
+    tools = build_component_access_tools(
+        _settings(url="http://deploy:8080"),
+        github_settings=_gh_settings(),
+    )
+    result = await tools[0]("github", "GET", "/")
+    assert "HTTP 200" in result
+    assert "github-repo-admin" in result
+    assert "/chat-skill" in result
+    assert "POST /repos" in result
+
+
+@pytest.mark.asyncio
+async def test_github_intercept_create_repo(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """POST /repos on github delegates to GitHubClient.create_repo."""
+    # Mock the GitHub API call that GitHubClient will make.
+    respx_mock.post("https://api.github.com/user/repos").mock(
+        return_value=httpx.Response(
+            201,
+            json={"name": "test-repo", "html_url": "https://github.com/u/test-repo"},
+        )
+    )
+    tools = build_component_access_tools(
+        _settings(url="http://deploy:8080"),
+        github_settings=_gh_settings(),
+    )
+    result = await tools[0](
+        "github",
+        "POST",
+        "/repos",
+        {"name": "test-repo", "description": "a test", "private": False},
+    )
+    assert "HTTP 200" in result
+    assert "test-repo" in result
+
+
+@pytest.mark.asyncio
+async def test_github_intercept_create_repo_missing_name() -> None:
+    """POST /repos without 'name' returns an error."""
+    tools = build_component_access_tools(
+        _settings(url="http://deploy:8080"),
+        github_settings=_gh_settings(),
+    )
+    result = await tools[0]("github", "POST", "/repos", {"description": "no name"})
+    assert "Error" in result
+    assert "name" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_github_intercept_create_repo_no_body() -> None:
+    """POST /repos without json_body returns an error."""
+    tools = build_component_access_tools(
+        _settings(url="http://deploy:8080"),
+        github_settings=_gh_settings(),
+    )
+    result = await tools[0]("github", "POST", "/repos")
+    assert "Error" in result
+    assert "json_body" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_github_intercept_get_repo(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """GET /repos/{owner}/{repo} delegates to GitHubClient.get_repo."""
+    respx_mock.get("https://api.github.com/repos/u/r").mock(
+        return_value=httpx.Response(200, json={"name": "r", "owner": {"login": "u"}})
+    )
+    tools = build_component_access_tools(
+        _settings(url="http://deploy:8080"),
+        github_settings=_gh_settings(),
+    )
+    result = await tools[0]("github", "GET", "/repos/u/r")
+    assert "HTTP 200" in result
+    assert "u" in result
+
+
+@pytest.mark.asyncio
+async def test_github_intercept_update_repo(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """PATCH /repos/{owner}/{repo} delegates to GitHubClient.update_repo."""
+    respx_mock.patch("https://api.github.com/repos/u/r").mock(
+        return_value=httpx.Response(200, json={"name": "r", "description": "updated"})
+    )
+    tools = build_component_access_tools(
+        _settings(url="http://deploy:8080"),
+        github_settings=_gh_settings(),
+    )
+    result = await tools[0](
+        "github",
+        "PATCH",
+        "/repos/u/r",
+        {"description": "updated", "private": False},
+    )
+    assert "HTTP 200" in result
+    assert "updated" in result
+
+
+@pytest.mark.asyncio
+async def test_github_intercept_mill_registration() -> None:
+    """POST /repos/{owner}/{repo}/mill returns a queued acknowledgement."""
+    tools = build_component_access_tools(
+        _settings(url="http://deploy:8080"),
+        github_settings=_gh_settings(),
+    )
+    result = await tools[0]("github", "POST", "/repos/u/r/mill")
+    assert "HTTP 200" in result
+    assert "queued" in result.lower()
+    assert "u/r" in result
+
+
+@pytest.mark.asyncio
+async def test_github_intercept_unknown_path() -> None:
+    """Unknown path on github returns an error."""
+    tools = build_component_access_tools(
+        _settings(url="http://deploy:8080"),
+        github_settings=_gh_settings(),
+    )
+    result = await tools[0]("github", "GET", "/unknown")
+    assert "Error" in result
+    assert "unknown github component path" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_github_intercept_unsupported_method_on_repo_path() -> None:
+    """POST on /repos/{owner}/{repo} (not a defined operation) returns error."""
+    tools = build_component_access_tools(
+        _settings(url="http://deploy:8080"),
+        github_settings=_gh_settings(),
+    )
+    result = await tools[0]("github", "POST", "/repos/u/r")
+    assert "Error" in result
+    assert "not supported" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_github_intercept_unsupported_method_on_mill() -> None:
+    """GET on /repos/{owner}/{repo}/mill returns error."""
+    tools = build_component_access_tools(
+        _settings(url="http://deploy:8080"),
+        github_settings=_gh_settings(),
+    )
+    result = await tools[0]("github", "GET", "/repos/u/r/mill")
+    assert "Error" in result
+    assert "not supported" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_github_not_intercepted_when_disabled(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When github is not enabled, requests fall through to the roster path."""
+    _wipe_cache()
+    roster_entries = [{"id": "github", "base_url": "http://gh:8080", "skill": "..."}]
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(200, json=roster_entries)
+    )
+    respx_mock.get("http://gh:8080/chat-skill").mock(
+        return_value=httpx.Response(200, text="external skill")
+    )
+
+    tools = build_component_access_tools(
+        _settings(url="http://deploy:8080"),
+        github_settings=_gh_settings(enabled=False),
+    )
+    result = await tools[0]("github", "GET", "/chat-skill")
+    # Falls through to roster-based path and calls the external URL.
+    assert "HTTP 200" in result
+    assert "external skill" in result
+
+
+@pytest.mark.asyncio
+async def test_github_not_intercepted_when_settings_none(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When github_settings is None, requests fall through to roster."""
+    _wipe_cache()
+    roster_entries = [{"id": "github", "base_url": "http://gh:8080", "skill": "..."}]
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(200, json=roster_entries)
+    )
+    respx_mock.get("http://gh:8080/chat-skill").mock(
+        return_value=httpx.Response(200, text="external skill")
+    )
+
+    tools = build_component_access_tools(_settings(url="http://deploy:8080"))
+    result = await tools[0]("github", "GET", "/chat-skill")
+    assert "HTTP 200" in result
+    assert "external skill" in result
