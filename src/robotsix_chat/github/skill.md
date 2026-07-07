@@ -10,11 +10,11 @@ Access this component through the generic `component_request` tool:
 
 ## Allowed operations
 
-| Operation               | Method | Path                     | Description                                          |
-| ----------------------- | ------ | ------------------------ | ---------------------------------------------------- |
-| Create repository       | `POST` | `/repos`                 | Create a new GitHub repository.                      |
-| Set repo metadata       | `PATCH`| `/repos/{owner}/{repo}`  | Update description, visibility, topics, homepage.    |
-| Register with mill      | `POST` | `/repos/{owner}/{repo}/mill` | Register the repo on the mill board.            |
+| Operation          | Method  | Path                         | Description                                       |
+| ------------------ | ------- | ---------------------------- | ------------------------------------------------- |
+| Create repository  | `POST`  | `/repos`                     | Create a new GitHub repository.                   |
+| Set repo metadata  | `PATCH` | `/repos/{owner}/{repo}`      | Update description, visibility, topics, homepage. |
+| Register with mill | `POST`  | `/repos/{owner}/{repo}/mill` | Register the repo on the mill board.              |
 
 ### POST /repos — create repository
 
@@ -58,8 +58,8 @@ through the standard deploy lifecycle.
 ## Safety
 
 🛑 **Confirmation gate:** Every write or create operation on this component (`POST`, `PATCH`)
-requires explicit in-conversation user confirmation before calling. Read the proposed operation
-back to the user and wait for their approval — never proceed without it.
+requires explicit in-conversation user confirmation before calling. Read the proposed operation back
+to the user and wait for their approval — never proceed without it.
 
 - The GitHub token is server-side only: it never appears in the chat container environment, the
   roster payload, or any tool response.
