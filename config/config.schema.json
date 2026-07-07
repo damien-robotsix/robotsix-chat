@@ -193,10 +193,10 @@
         },
         "token": {
           "default": "",
+          "format": "password",
           "title": "Token",
           "type": "string",
-          "writeOnly": true,
-          "format": "password"
+          "writeOnly": true
         },
         "api_base_url": {
           "default": "https://api.github.com",
@@ -528,7 +528,7 @@
           "type": "integer"
         },
         "default_model_level": {
-          "default": 3,
+          "default": 2,
           "title": "Default Model Level",
           "type": "integer"
         },

@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- `SubsessionsSettings.default_model_level` changed from `3` to `2` to match the system prompt guidance that level 2 "is the default choice for general work."
 - Consolidated duplicated `_get`/`_post`/`_patch` HTTP methods in `GitHubClient`
   into a single `_request(method, path, body=None)` private method, eliminating
   ~35 lines of copy-paste duplication.
