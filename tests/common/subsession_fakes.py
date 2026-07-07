@@ -134,7 +134,7 @@ def make_settings(
     *,
     max_concurrent: int = 8,
     max_depth: int = 3,
-    default_model_level: int = 3,
+    default_model_level: int = 2,
     min_interval_seconds: float = 0.01,
     auto_stop_no_change_runs: int = 3,
     llmio_api_key: str = "",
