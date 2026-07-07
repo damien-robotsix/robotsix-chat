@@ -344,14 +344,3 @@ class EventBus:
         """
         for queue in self._subscribers.get(session_id, ()):
             queue.put_nowait(frame)
-
-    def subscriber_count(self, session_id: str | None = None) -> int:
-        """Return the number of subscribed queues (read-only).
-
-        With no argument returns the total count across all sessions.  With a
-        *session_id* returns that session's count (0 if unknown).  Does not
-        mutate ``_subscribers``.
-        """
-        if session_id is None:
-            return sum(len(qs) for qs in self._subscribers.values())
-        return len(self._subscribers.get(session_id, ()))
