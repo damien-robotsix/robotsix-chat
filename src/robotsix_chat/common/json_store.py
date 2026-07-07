@@ -1,15 +1,18 @@
 """Generic base class for JSON-persisted dataclass stores.
 
 Provides atomic-write persistence and tolerant load behaviour shared
-by the diagnostic, knowledge, and fix-proposal stores.  Subclasses
-define ``_to_dict`` and ``_from_dict`` serialisation hooks and inherit
-the constructor, ``_persist``, and ``_load``.
+by the diagnostic, knowledge, and fix-proposal stores.  Default
+``_to_dict`` / ``_from_dict`` implementations use ``dataclasses.fields()``
+to auto-generate serialisation for any dataclass type so subclasses
+typically only need to set ``_default_path`` and ``_store_name``.
 """
 
 from __future__ import annotations
 
+import dataclasses
 import json
 import logging
+import typing
 from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
@@ -21,41 +24,54 @@ logger = logging.getLogger(__name__)
 class JsonStoreBase[T]:
     """Generic base for JSON-persisted dataclass stores.
 
-    Subclasses define ``_to_dict`` and ``_from_dict`` serialisation
-    hooks and inherit the atomic-write persistence and tolerant load
-    behaviour.
+    Default ``_to_dict`` / ``_from_dict`` implementations use
+    ``dataclasses.fields()`` to serialise any dataclass type.  Subclasses
+    typically only need to declare ``_default_path`` and ``_store_name``.
     """
 
     # Override in subclasses for descriptive log messages.
     _store_name: str = "store"
 
+    # Override in subclasses to set the default persistence path.
+    _default_path: str = "/data/store.json"
+
     def __init__(
         self,
-        path: str | Path,
+        path: str | Path | None = None,
         *,
         clock: Callable[[], datetime] | None = None,
     ) -> None:
-        """Create a store persisting to *path*.
+        """Create a store persisting to *path* (defaults to ``_default_path``).
 
         *clock* overrides the timestamp source so tests can pin time.
         """
-        self._path = Path(path)
+        self._path = Path(path if path is not None else self._default_path)
         self._clock: Callable[[], datetime] = clock or (lambda: datetime.now(UTC))
         self._init_storage()
         self._load()
 
     # ------------------------------------------------------------------
-    # hooks — subclasses MUST override these
+    # hooks — subclasses may override for non-dataclass types
     # ------------------------------------------------------------------
 
     def _to_dict(self, item: T) -> dict[str, object]:
-        """Convert *item* to a JSON-serialisable dict."""
-        raise NotImplementedError
+        """Convert *item* to a JSON-serialisable dict via dataclass fields."""
+        return {
+            f.name: getattr(item, f.name)
+            for f in dataclasses.fields(item)  # type: ignore[arg-type]
+        }
 
     @classmethod
     def _from_dict(cls, d: dict[str, Any]) -> T:
-        """Construct an item from a deserialised dict."""
-        raise NotImplementedError
+        """Construct an item from a deserialised dict via dataclass fields."""
+        item_type = typing.get_args(
+            cls.__orig_bases__[0]  # type: ignore[attr-defined]
+        )[0]
+        kwargs: dict[str, Any] = {}
+        for f in dataclasses.fields(item_type):
+            default = f.default if f.default is not dataclasses.MISSING else ""
+            kwargs[f.name] = d.get(f.name, default)
+        return item_type(**kwargs)  # type: ignore[no-any-return]
 
     def _item_key(self, item: T) -> str:
         """Return the storage key for *item* (default: ``item.id``)."""

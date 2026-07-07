@@ -18,8 +18,7 @@ import uuid
 from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING
 
 from robotsix_chat.common.json_store import JsonStoreBase
 
@@ -94,42 +93,7 @@ class FixProposalStore(JsonStoreBase[FixProposal]):
     """
 
     _store_name = "fix proposals"
-
-    def __init__(
-        self,
-        path: str | Path = "/data/fix_proposals.json",
-        *,
-        clock: Callable[[], datetime] | None = None,
-    ) -> None:
-        """Create a proposal store persisting to *path*."""
-        super().__init__(path, clock=clock)
-
-    # ------------------------------------------------------------------
-    # serialisation hooks
-    # ------------------------------------------------------------------
-
-    def _to_dict(self, item: FixProposal) -> dict[str, object]:
-        return {
-            "id": item.id,
-            "category": item.category,
-            "description": item.description,
-            "suggested_fix": item.suggested_fix,
-            "status": item.status,
-            "created_at": item.created_at,
-            "applied_at": item.applied_at,
-        }
-
-    @classmethod
-    def _from_dict(cls, d: dict[str, Any]) -> FixProposal:
-        return FixProposal(
-            id=d.get("id", ""),
-            category=d.get("category", ""),
-            description=d.get("description", ""),
-            suggested_fix=d.get("suggested_fix", ""),
-            status=d.get("status", "proposed"),
-            created_at=d.get("created_at", ""),
-            applied_at=d.get("applied_at"),
-        )
+    _default_path = "/data/fix_proposals.json"
 
     # ------------------------------------------------------------------
     # public API
