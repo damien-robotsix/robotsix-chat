@@ -9,6 +9,7 @@ from ._shared import (
 )
 from .chat import (
     ChatAgent,
+    MessageCoalescer,
     RunSerializer,
     _parse_and_validate_images,
     chat_endpoint,
@@ -50,6 +51,7 @@ from .subsessions import (
 
 __all__ = [
     "ChatAgent",
+    "MessageCoalescer",
     "RunSerializer",
     "SSE_CONTENT_TYPE",
     "SSE_DONE_TYPE",

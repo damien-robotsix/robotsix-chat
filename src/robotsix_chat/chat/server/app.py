@@ -43,6 +43,7 @@ from robotsix_chat.version_check import build_version_check_tools
 from .idempotency import MessageIdempotencyStore
 from .routes import (
     ChatAgent,
+    MessageCoalescer,
     RunSerializer,
     chat_endpoint,
     events_endpoint,
@@ -170,6 +171,8 @@ def create_app(
     event_bus: EventBus | None = None,
     run_serializer: RunSerializer | None = None,
     msg_id_store: MessageIdempotencyStore | None = None,
+    message_coalescer: MessageCoalescer | None = None,
+    message_coalesce_seconds: float = 0.3,
     subsession_registry: SubsessionRegistry | None = None,
     subsession_delivery: ParentDelivery | None = None,
     on_startup: Callable[[], None] | None = None,
@@ -221,6 +224,13 @@ def create_app(
         msg_id_store: Per-session message idempotency store that ensures
             duplicate messages return the cached reply.  When ``None``
             (default), a fresh :class:`MessageIdempotencyStore` is created.
+        message_coalescer: Per-session message coalescer that batches
+            rapid-fire user messages into a single agent run.  When
+            ``None`` (default), a fresh :class:`MessageCoalescer` is
+            created with *message_coalesce_seconds*.
+        message_coalesce_seconds: Debounce window (seconds) that the
+            coalescer waits before draining the pending-message batch.
+            Default ``0.3``.
         subsession_registry: Shared
             :class:`~robotsix_chat.subsessions.SubsessionRegistry` for the
             unified subsession system.  Leave ``None`` when subsessions are
@@ -325,6 +335,9 @@ def create_app(
     app.state.event_bus = event_bus or EventBus()
     app.state.run_serializer = run_serializer or RunSerializer()
     app.state.msg_id_store = msg_id_store or MessageIdempotencyStore()
+    app.state.message_coalescer = message_coalescer or MessageCoalescer(
+        debounce_seconds=message_coalesce_seconds
+    )
     app.state.subsession_registry = subsession_registry  # may be None
     app.state.subsession_delivery = subsession_delivery  # may be None
     return app
