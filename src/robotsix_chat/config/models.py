@@ -464,30 +464,31 @@ class LifecycleSettings(BaseModel):
     timeout: float = 30.0
 
 
-class GitHubSettings(BaseModel):
-    """GitHub repository management tools for the agent.
+class GithubSettings(BaseModel):
+    """GitHub repository-administration component skill for the agent.
 
-    When enabled, the chat agent gains tools to create and manage GitHub
-    repositories: create a new repo (confirmation-gated), update repo
-    settings (description, visibility), and read repo details.  All
-    operations authenticate via a scoped personal access token provisioned
-    through the deploy EnvStore — the token never appears in the chat
-    container's environment directly.
+    When enabled, the github component skill is injected into the agent's
+    system prompt so it knows how to use the ``component_request`` tool to
+    reach the github component.  The component itself is roster-based
+    (registered in central-deploy) — this setting only controls whether
+    the skill documentation is injected locally.
+
+    The GitHub token and all write operations are server-side only, never
+    exposed in the chat container environment or the roster payload.
 
     Attributes:
-        enabled: Master switch.  When ``False``, no GitHub tools are
-            offered.
-        api_base_url: Base URL for the GitHub API (default
-            ``https://api.github.com``).  Override for GitHub Enterprise.
-        token: GitHub personal access token with repo-admin scope.
-            Provisioned via the deploy EnvStore.
+        enabled: Master switch.  When ``False``, the github skill is not
+            injected and the agent will not know about this component
+            (unless it is also present in the central-deploy roster).
+        token: Optional PAT for GitHub API access.
+        api_base_url: Overridable base URL for GitHub Enterprise.
         timeout: Per-request HTTP timeout in seconds.
 
     """
 
     enabled: bool = False
-    api_base_url: str = "https://api.github.com"
     token: SecretStr = SecretStr("")
+    api_base_url: str = "https://api.github.com"
     timeout: float = 30.0
 
 

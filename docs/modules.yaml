@@ -254,7 +254,7 @@ modules:
       - tests/lifecycle/test_lifecycle.py
 
   - id: github
-    description: "GitHub repository management tools for the agent — exposes build_github_tools() returning tools to create, update, and read GitHub repositories (repo creation is confirmation-gated), plus load_github_skill() for the component skill document."
+    description: "GitHub repository-administration component skill for the agent — exposes load_github_skill() returning the component skill document describing how to use component_request(component_id='github', ...) to create repos, set metadata, and register with the mill board."
     paths:
       - src/robotsix_chat/github/__init__.py
       - src/robotsix_chat/github/client.py

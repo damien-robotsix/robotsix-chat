@@ -1,1 +1,1 @@
-"""Tests for the GitHub repository management integration."""
+"""Tests for the github component skill loader."""

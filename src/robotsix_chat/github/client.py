@@ -11,7 +11,7 @@ import json
 import logging
 
 from robotsix_chat.common.http import safe_http_request
-from robotsix_chat.config import GitHubSettings
+from robotsix_chat.config import GithubSettings
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +19,7 @@ logger = logging.getLogger(__name__)
 class GitHubClient:
     """HTTP client for the GitHub REST API (repo management subset)."""
 
-    def __init__(self, settings: GitHubSettings) -> None:
+    def __init__(self, settings: GithubSettings) -> None:
         """Initialise with GitHub settings."""
         self._s = settings
         self._base_url = settings.api_base_url.rstrip("/")

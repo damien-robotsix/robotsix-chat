@@ -1,33 +1,68 @@
-# github skill
+# github-repo-admin skill
 
-The GitHub component provides repository management through the GitHub REST API. All operations
-authenticate via a scoped personal access token provisioned through the deploy EnvStore — the token
-never appears in this container's environment.
+The github component provides **scoped repository administration** on GitHub: create new
+repositories, set repository metadata (description, visibility), and register new repos with the
+mill board. A server-side GitHub token with `repo-admin` scope powers these operations — the token
+is never exposed in the chat container's environment or the roster payload.
+
+Access this component through the generic `component_request` tool:
+`component_request(component_id="github", method=..., path=..., json_body=...)`
 
 ## Allowed operations
 
-| Tool                 | GitHub API                    | Description                            |
-| -------------------- | ----------------------------- | -------------------------------------- |
-| `create_github_repo` | `POST /user/repos`            | Create a new repository.               |
-| `update_github_repo` | `PATCH /repos/{owner}/{repo}` | Update repo settings (description, …). |
-| `get_github_repo`    | `GET /repos/{owner}/{repo}`   | Read repository details.               |
+| Operation          | Method  | Path                         | Description                                       |
+| ------------------ | ------- | ---------------------------- | ------------------------------------------------- |
+| Create repository  | `POST`  | `/repos`                     | Create a new GitHub repository.                   |
+| Set repo metadata  | `PATCH` | `/repos/{owner}/{repo}`      | Update description, visibility, topics, homepage. |
+| Register with mill | `POST`  | `/repos/{owner}/{repo}/mill` | Register the repo on the mill board.              |
 
-## Confirmation gate
+### POST /repos — create repository
 
-`create_github_repo` is **confirmation-gated**: the tool requires `confirmed=True`. Call it first
-with `confirmed=False` to preview what would be created, then ask the user for approval. Only call
-it with `confirmed=True` after the user explicitly agrees. Never pre-confirm on the user's behalf,
-even when the request seems unambiguous — the gate exists so the user can review the repo name,
-visibility, and description before anything is created.
+```json
+{
+  "name": "repo-name",
+  "description": "optional description",
+  "private": false,
+  "topics": ["robotsix"],
+  "homepage": ""
+}
+```
+
+Returns the created repository's full metadata including `html_url` and `clone_url`.
+
+### PATCH /repos/{owner}/{repo} — set repo metadata
+
+```json
+{
+  "description": "updated description",
+  "private": false,
+  "topics": ["robotsix", "chat"],
+  "homepage": ""
+}
+```
+
+All fields are optional — only the fields present in the body are updated.
+
+### POST /repos/{owner}/{repo}/mill — register with mill
+
+```json
+{
+  "board": "robotsix",
+  "component_name": "robotsix-chat-mobile"
+}
+```
+
+Registers the repository on the mill board so it appears in the component roster and can be managed
+through the standard deploy lifecycle.
 
 ## Safety
 
-- `create_github_repo` is the only destructive operation — it creates real repositories that persist
-  and may incur billing.
-- `update_github_repo` is low-risk (changes settings, not content) and does not require
-  confirmation.
-- `get_github_repo` is read-only and safe to call freely.
-- The token has repo-admin scope — protect it. Never echo the token, its prefix, or any
-  Authorization header value in conversation.
-- Repositories are created under the authenticated user's account (not an org). For org repos the
-  user must create them manually or configure a different token.
+🛑 **Confirmation gate:** Every write or create operation on this component (`POST`, `PATCH`)
+requires explicit in-conversation user confirmation before calling. Read the proposed operation back
+to the user and wait for their approval — never proceed without it.
+
+- The GitHub token is server-side only: it never appears in the chat container environment, the
+  roster payload, or any tool response.
+- Repository creation is scoped to a single GitHub organization or user account configured
+  server-side — the agent cannot create repos under arbitrary owners.
+- Mill registration is also server-side authenticated; the mill API token is never exposed.
