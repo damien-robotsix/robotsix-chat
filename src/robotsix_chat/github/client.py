@@ -38,7 +38,7 @@ class GitHubClient:
         }
         if description:
             body["description"] = description
-        return await self._post("/user/repos", body)
+        return await self._request("POST", "/user/repos", body)
 
     async def update_repo(
         self,
@@ -63,11 +63,11 @@ class GitHubClient:
             body["has_wiki"] = has_wiki
         if not body:
             return "Error: at least one field to update must be provided"
-        return await self._patch(f"/repos/{owner}/{repo}", body)
+        return await self._request("PATCH", f"/repos/{owner}/{repo}", body)
 
     async def get_repo(self, owner: str, repo: str) -> str:
         """``GET /repos/{owner}/{repo}`` — read repository details."""
-        return await self._get(f"/repos/{owner}/{repo}")
+        return await self._request("GET", f"/repos/{owner}/{repo}")
 
     # -- internals --------------------------------------------------------
 
@@ -78,45 +78,15 @@ class GitHubClient:
             headers["Authorization"] = f"Bearer {token}"
         return headers
 
-    async def _get(self, path: str) -> str:
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        body: dict[str, object] | None = None,
+    ) -> str:
         url = f"{self._base_url}{path}"
         result = await safe_http_request(
-            "GET",
-            url,
-            headers=self._headers(),
-            timeout=self._s.timeout,
-            label="GitHub API",
-        )
-        if result.error:
-            return result.error
-        try:
-            parsed = json.loads(str(result.text))
-            return json.dumps(parsed, indent=2)
-        except Exception:
-            return str(result.text)
-
-    async def _post(self, path: str, body: dict[str, object]) -> str:
-        url = f"{self._base_url}{path}"
-        result = await safe_http_request(
-            "POST",
-            url,
-            headers=self._headers(),
-            timeout=self._s.timeout,
-            json_body=body,
-            label="GitHub API",
-        )
-        if result.error:
-            return result.error
-        try:
-            parsed = json.loads(str(result.text))
-            return json.dumps(parsed, indent=2)
-        except Exception:
-            return str(result.text)
-
-    async def _patch(self, path: str, body: dict[str, object]) -> str:
-        url = f"{self._base_url}{path}"
-        result = await safe_http_request(
-            "PATCH",
+            method,
             url,
             headers=self._headers(),
             timeout=self._s.timeout,
