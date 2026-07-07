@@ -1,1 +1,5 @@
-The main chat agent now publishes live tool-call, tool-result, and thinking activity from the claudeSDK backend as `activity` frames on the existing `GET /events` SSE channel (see `robotsix_llmio`'s new `activity_events()` context manager). The chat UI surfaces this as a caption inside the typing indicator (e.g. "🔧 search(...)") instead of only three static dots while a turn is in flight.
+The main chat agent now publishes live tool-call, tool-result, and thinking activity from the
+claudeSDK backend as `activity` frames on the existing `GET /events` SSE channel (see
+`robotsix_llmio`'s new `activity_events()` context manager). The chat UI surfaces this as a caption
+inside the typing indicator (e.g. "🔧 search(...)") instead of only three static dots while a turn is
+in flight.
