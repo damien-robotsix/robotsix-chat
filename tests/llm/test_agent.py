@@ -314,11 +314,13 @@ async def test_event_sink_receives_activity_frame() -> None:
         )
         _ = [c async for c in agent.stream("hi", session_id="sess-abc")]
 
+    from robotsix_chat.chat.events import SSE_ACTIVITY_TYPE
+
     assert sink.published == [
         (
             "sess-abc",
             {
-                "type": "activity",
+                "type": SSE_ACTIVITY_TYPE,
                 "kind": "tool_call",
                 "turn": 1,
                 "tool_name": "search",
