@@ -55,6 +55,8 @@
     padding: 0.5rem 1rem;
     background: var(--header-bg); color: var(--header-fg);
     flex-shrink: 0;
+    position: sticky; top: 0; z-index: 30;
+    transition: margin-left 0.3s ease, margin-right 0.3s ease;
   }
   #header .title {
     font-weight: 700; font-size: 1.05rem; flex: 1;
@@ -592,6 +594,12 @@
       margin-left: var(--sessions-width);
     }
     #subsessions-panel.visible ~ #content-wrap {
+      margin-right: var(--subsessions-width);
+    }
+    body:has(#sessions-panel.visible) #header {
+      margin-left: var(--sessions-width);
+    }
+    body:has(#subsessions-panel.visible) #header {
       margin-right: var(--subsessions-width);
     }
   }
