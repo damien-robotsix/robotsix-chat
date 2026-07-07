@@ -316,7 +316,33 @@ async def test_event_sink_receives_activity_frame() -> None:
 
     from robotsix_chat.chat.events import SSE_ACTIVITY_TYPE
 
+    # The synthetic recall_memory tool_call/tool_result frames (published
+    # around memory.recall(), see test_recall_activity_frames_* below) bracket
+    # the claudeSDK run's own event — recall() is a no-op with the default
+    # NullMemory, so its result frame reports no context found.
     assert sink.published == [
+        (
+            "sess-abc",
+            {
+                "type": SSE_ACTIVITY_TYPE,
+                "kind": "tool_call",
+                "turn": 0,
+                "tool_name": "recall_memory",
+                "detail": "",
+                "is_error": False,
+            },
+        ),
+        (
+            "sess-abc",
+            {
+                "type": SSE_ACTIVITY_TYPE,
+                "kind": "tool_result",
+                "turn": 0,
+                "tool_name": None,
+                "detail": "no relevant memory found",
+                "is_error": False,
+            },
+        ),
         (
             "sess-abc",
             {
@@ -327,7 +353,7 @@ async def test_event_sink_receives_activity_frame() -> None:
                 "detail": "{}",
                 "is_error": False,
             },
-        )
+        ),
     ]
 
 
@@ -363,6 +389,83 @@ async def test_event_sink_configured_but_no_session_id_is_silent() -> None:
         _ = [c async for c in agent.stream("hi")]  # no session_id
 
     assert sink.published == []
+
+
+# ---------------------------------------------------------------------------
+# Synthetic activity frames around memory.recall()
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_recall_activity_frames_no_context_found() -> None:
+    """recall() returning "" publishes a tool_call/tool_result pair around it."""
+    create_model, _ = _patched_create_model("hi there")
+    sink = _RecordingEventSink()
+    memory = _RecordingMemory(recall="")
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(
+            model_level=3, instruction="Be helpful.", event_sink=sink, memory=memory
+        )
+        _ = [c async for c in agent.stream("hi", session_id="sess-abc")]
+
+    from robotsix_chat.chat.events import SSE_ACTIVITY_TYPE
+
+    assert sink.published == [
+        (
+            "sess-abc",
+            {
+                "type": SSE_ACTIVITY_TYPE,
+                "kind": "tool_call",
+                "turn": 0,
+                "tool_name": "recall_memory",
+                "detail": "",
+                "is_error": False,
+            },
+        ),
+        (
+            "sess-abc",
+            {
+                "type": SSE_ACTIVITY_TYPE,
+                "kind": "tool_result",
+                "turn": 0,
+                "tool_name": None,
+                "detail": "no relevant memory found",
+                "is_error": False,
+            },
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_recall_activity_frames_context_found() -> None:
+    """A non-empty recall() reports how much context was found."""
+    create_model, _ = _patched_create_model("hi there")
+    sink = _RecordingEventSink()
+    memory = _RecordingMemory(recall="prior fact")
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(
+            model_level=3, instruction="Be helpful.", event_sink=sink, memory=memory
+        )
+        _ = [c async for c in agent.stream("hi", session_id="sess-abc")]
+
+    result_frame = sink.published[1]
+    assert result_frame[1]["kind"] == "tool_result"
+    assert result_frame[1]["detail"] == "found 10 chars of prior context"
+
+
+@pytest.mark.asyncio
+async def test_recall_activity_frames_no_event_sink_is_silent() -> None:
+    """Without an event_sink, recall() runs normally and nothing is published."""
+    create_model, _ = _patched_create_model("hi there")
+    memory = _RecordingMemory(recall="prior fact")
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.", memory=memory)
+        chunks = [c async for c in agent.stream("hi", session_id="sess-abc")]
+
+    assert chunks == ["hi there"]
 
 
 # ---------------------------------------------------------------------------
