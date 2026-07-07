@@ -409,20 +409,14 @@ async def _handle_github_request_locally(
             if patch_visibility_raw is not None:
                 patch_visibility = str(patch_visibility_raw)
             elif patch_private_raw is not None:
-                patch_visibility = (
-                    "private" if bool(patch_private_raw) else "public"
-                )
+                patch_visibility = "private" if bool(patch_private_raw) else "public"
             patch_has_issues_raw = json_body.get("has_issues")
             patch_has_issues: bool | None = (
-                bool(patch_has_issues_raw)
-                if patch_has_issues_raw is not None
-                else None
+                bool(patch_has_issues_raw) if patch_has_issues_raw is not None else None
             )
             patch_has_wiki_raw = json_body.get("has_wiki")
             patch_has_wiki: bool | None = (
-                bool(patch_has_wiki_raw)
-                if patch_has_wiki_raw is not None
-                else None
+                bool(patch_has_wiki_raw) if patch_has_wiki_raw is not None else None
             )
             result = await client.update_repo(
                 owner,
