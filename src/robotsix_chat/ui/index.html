@@ -113,6 +113,14 @@
     opacity: 0.7;
   }
   .subs-header .dismiss:hover { opacity: 1; }
+  .subs-header-actions { display: flex; align-items: center; gap: 0.5rem; }
+  .subs-header .toggle-terminal {
+    background: none; border: 1px solid var(--header-fg);
+    color: var(--header-fg); font-size: 0.72rem; font-weight: 400;
+    cursor: pointer; line-height: 1; padding: 0.2rem 0.45rem;
+    border-radius: 0.8rem; opacity: 0.75; white-space: nowrap;
+  }
+  .subs-header .toggle-terminal:hover { opacity: 1; }
 
   #subsessions-list { flex: 1; overflow-y: auto; padding: 0.5rem; }
 
@@ -628,7 +636,13 @@
 <!-- ================================================================= -->
 <div id="subsessions-resize-handle"></div>
 <div id="subsessions-panel">
-  <div class="subs-header">Subsessions<button class="dismiss" title="Close panel" aria-label="Close subsessions panel">&times;</button></div>
+  <div class="subs-header">
+    Subsessions
+    <div class="subs-header-actions">
+      <button id="subs-toggle-terminal" class="toggle-terminal" style="display:none" title="Show closed/failed subsessions" aria-label="Toggle closed/failed subsessions"></button>
+      <button class="dismiss" title="Close panel" aria-label="Close subsessions panel">&times;</button>
+    </div>
+  </div>
   <div id="subsessions-list"></div>
 </div>
 
@@ -1125,6 +1139,10 @@
   // recomputed per render by subsDisplayOrder().
   var subsById = {};
   var subsOrder = [];
+  // Closed/failed/interrupted subsessions are hidden by default (they pile
+  // up over time and crowd out the running ones); toggled via the panel's
+  // "Show closed" button.
+  var showTerminalSubs = false;
 
   var SUBS_SNAPSHOT_FIELDS = [
     "subsession_id", "kind", "owner_session_id", "parent_id", "depth",
@@ -1265,17 +1283,41 @@
   function renderSubsessionsList() {
     subsList.innerHTML = "";
     var order = subsDisplayOrder();
-    if (order.length === 0) {
+    var terminalCount = 0;
+    var visible = [];
+    for (var i = 0; i < order.length; i++) {
+      if (isSubsTerminal(order[i])) terminalCount++;
+      if (showTerminalSubs || !isSubsTerminal(order[i])) visible.push(order[i]);
+    }
+    updateSubsToggleTerminalButton(terminalCount);
+    if (visible.length === 0) {
       var empty = document.createElement("div");
       empty.className = "subs-empty";
-      empty.textContent = "No subsessions yet — the assistant spawns " +
-                          "background work here.";
+      empty.textContent = order.length === 0
+        ? "No subsessions yet — the assistant spawns background work here."
+        : "No running subsessions — " + terminalCount + " closed/failed " +
+          "hidden (use the button above to show them).";
       subsList.appendChild(empty);
       return;
     }
-    for (var i = 0; i < order.length; i++) {
-      subsList.appendChild(renderSubsessionRow(order[i]));
+    for (var j = 0; j < visible.length; j++) {
+      subsList.appendChild(renderSubsessionRow(visible[j]));
     }
+  }
+
+  // Shows/labels the "Show closed (N)" toggle button; hidden entirely when
+  // there are no terminal (closed/failed/interrupted) subsessions to hide.
+  function updateSubsToggleTerminalButton(terminalCount) {
+    var btn = document.getElementById("subs-toggle-terminal");
+    if (!btn) return;
+    if (terminalCount === 0) {
+      btn.style.display = "none";
+      return;
+    }
+    btn.style.display = "";
+    btn.textContent = showTerminalSubs
+      ? "Hide closed (" + terminalCount + ")"
+      : "Show closed (" + terminalCount + ")";
   }
 
   function renderSubsessionRow(sub) {
@@ -2053,6 +2095,12 @@
         } else if (frame.type === "activity") {
           // Live claudeSDK tool/thinking activity for the in-flight turn.
           handleActivityFrame(frame);
+        } else if (frame.type === "agent_message") {
+          // A background-triggered agent reply (e.g. reacting to a
+          // subsession closing) — not a live /chat response, so it arrives
+          // here instead of as a token/done frame. Render it as a normal
+          // assistant bubble.
+          if (frame.text) addAssistantBubble(frame.text);
         }
         // ignore unknown types gracefully
       },
@@ -2503,6 +2551,13 @@
     e.stopPropagation();
     subsPanel.classList.remove("visible");
     hideResizeHandle();
+  });
+
+  var subsToggleTerminal = document.getElementById("subs-toggle-terminal");
+  subsToggleTerminal.addEventListener("click", function (e) {
+    e.stopPropagation();
+    showTerminalSubs = !showTerminalSubs;
+    renderSubsessionsList();
   });
 
   subsPanel.addEventListener("click", function (e) {

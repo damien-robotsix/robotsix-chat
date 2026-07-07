@@ -30,6 +30,10 @@ SSE_SUBSESSION_FAILED_TYPE = "subsession_failed"
 # streamed during an in-flight /chat turn — see ``activity_frame``.
 SSE_ACTIVITY_TYPE = "activity"
 
+# A background-triggered agent reply (not a live /chat request) pushed to a
+# connected browser as soon as it's ready — see ``agent_message_frame``.
+SSE_AGENT_MESSAGE_TYPE = "agent_message"
+
 # ---------------------------------------------------------------------------
 # EventSink — structural Protocol for dependency injection
 # ---------------------------------------------------------------------------
@@ -270,6 +274,26 @@ def activity_frame(
         "detail": detail,
         "is_error": is_error,
     }
+
+
+def agent_message_frame(text: str, timestamp: float) -> dict[str, object]:
+    """Build an ``agent_message`` frame for a background-triggered reply.
+
+    Published when the agent reacts to something that happened outside a
+    live ``POST /chat`` request (e.g. a subsession concluding) — there is no
+    open request/response to carry the reply, so it is pushed over the
+    persistent ``/events`` channel instead, and the browser appends it as a
+    normal assistant chat bubble.
+
+    Returns a dict with shape::
+
+        {
+            "type": "agent_message",
+            "text": <str>,
+            "timestamp": <float>,
+        }
+    """
+    return {"type": SSE_AGENT_MESSAGE_TYPE, "text": text, "timestamp": timestamp}
 
 
 # ---------------------------------------------------------------------------

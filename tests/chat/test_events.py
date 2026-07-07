@@ -12,6 +12,7 @@ from starlette.responses import StreamingResponse
 
 from robotsix_chat.chat.events import (
     SSE_ACTIVITY_TYPE,
+    SSE_AGENT_MESSAGE_TYPE,
     SSE_SUBSESSION_CLOSED_TYPE,
     SSE_SUBSESSION_FAILED_TYPE,
     SSE_SUBSESSION_MESSAGE_TYPE,
@@ -20,6 +21,7 @@ from robotsix_chat.chat.events import (
     SSE_SUBSESSION_UPDATED_TYPE,
     EventBus,
     activity_frame,
+    agent_message_frame,
     subsession_closed_frame,
     subsession_failed_frame,
     subsession_message_frame,
@@ -195,6 +197,16 @@ def test_activity_frame_defaults() -> None:
         "tool_name": None,
         "detail": "",
         "is_error": False,
+    }
+
+
+def test_agent_message_frame_shape() -> None:
+    """``agent_message_frame`` returns the documented JSON shape."""
+    frame = agent_message_frame("hello there", 12345.0)
+    assert frame == {
+        "type": SSE_AGENT_MESSAGE_TYPE,
+        "text": "hello there",
+        "timestamp": 12345.0,
     }
 
 

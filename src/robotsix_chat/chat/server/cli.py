@@ -231,6 +231,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         conversation_store=conversation_store,
         registry=subsession_registry,
         run_serializer=run_serializer,
+        event_sink=event_bus,
     )
 
     # Subsession agent factory: same full tool suite as the main agent,
@@ -267,6 +268,11 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             subsession_env=env,
             event_sink=event_bus,
         )
+    # Wire the main agent into ParentDelivery now that both exist (see
+    # ParentDelivery.set_agent for why this can't happen at construction
+    # time) — main-chat-parent subsession outcomes then get a real reaction
+    # turn instead of a passive history record.
+    delivery.set_agent(agent)
 
     # Cheap dedicated agent for POST /summary (bounded extraction, not
     # open-ended reasoning) — avoids running the main agent's often-pricier
