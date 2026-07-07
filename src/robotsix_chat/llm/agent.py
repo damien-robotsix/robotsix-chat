@@ -29,12 +29,17 @@ import logging
 from collections.abc import AsyncIterator, Callable, Iterator
 from typing import Any
 
-from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+from robotsix_llmio.claude_sdk import (
+    ClaudeSDKActivityEvent,
+    ClaudeSDKUsageExhaustedError,
+    activity_events,
+)
 from robotsix_llmio.config import create_model
 from robotsix_llmio.config.tier import TierConfig, TierLevel, TierLevelConfig
 from robotsix_llmio.core.tier_fallback import acall_with_tier_fallback
 from robotsix_llmio.openrouter import is_openrouter_transient
 
+from robotsix_chat.chat.events import EventSink, activity_frame
 from robotsix_chat.memory import ChatMemory, NullMemory
 
 logger = logging.getLogger(__name__)
@@ -92,6 +97,18 @@ def _trace_session(session_id: str | None) -> Iterator[None]:
         yield
 
 
+def _activity_context(
+    on_event: Callable[[ClaudeSDKActivityEvent], None] | None,
+) -> contextlib.AbstractContextManager[None]:
+    """``activity_events(on_event)``, or a no-op when *on_event* is ``None``.
+
+    ``None`` means no sink was configured, or no session to scope frames to.
+    """
+    if on_event is None:
+        return contextlib.nullcontext()
+    return activity_events(on_event)
+
+
 # Header for the recalled-memory block prepended to the current user turn.
 _MEMORY_PROMPT_HEADER = (
     "# Relevant memory from earlier conversations\n"
@@ -119,6 +136,7 @@ class LlmioChatAgent:
         memory: ChatMemory | None = None,
         tools: list[Any] | None = None,
         request_tools_factory: Callable[[str], list[Any]] | None = None,
+        event_sink: EventSink | None = None,
     ) -> None:
         """Store the agent configuration for later ``stream`` calls.
 
@@ -127,6 +145,15 @@ class LlmioChatAgent:
         subsession tools whose closures capture that session id).  It keeps
         the module dependency acyclic: those tools are built fresh per
         request inside ``stream``, not baked into the shared agent.
+
+        *event_sink*, when given, receives an ``activity`` frame (see
+        :func:`robotsix_chat.chat.events.activity_frame`) for every tool
+        call, tool result, thinking block, or intermediate assistant text
+        the claudeSDK backend streams during a turn — live feedback on what
+        the agent is doing while the final reply is still pending. A
+        non-claudeSDK level (e.g. an OpenRouter tier) simply never triggers
+        it: ``robotsix_llmio.claude_sdk.activity_events()`` is a no-op unless
+        the resolved transport is the Claude Agent SDK.
         """
         self._model_level = model_level
         self._instruction = instruction
@@ -137,8 +164,36 @@ class LlmioChatAgent:
         # returned as one block.
         self._tools = list(tools) if tools is not None else None
         self._request_tools_factory = request_tools_factory
+        self._event_sink = event_sink
         # Hold references to in-flight background writes so they aren't GC'd.
         self._write_tasks: set[asyncio.Task[None]] = set()
+
+    def _activity_callback(
+        self, session_id: str | None
+    ) -> Callable[[ClaudeSDKActivityEvent], None] | None:
+        """Build the ``on_event`` callback for :func:`activity_events`.
+
+        Bound to *session_id*. Returns ``None`` when there is nowhere to
+        publish to (no sink configured, or no session to scope the frame to)
+        so the caller can skip wrapping the run in a no-op context.
+        """
+        if self._event_sink is None or not session_id:
+            return None
+        sink = self._event_sink
+
+        def _on_activity(event: ClaudeSDKActivityEvent) -> None:
+            sink.publish(
+                session_id,
+                activity_frame(
+                    event.kind,
+                    event.turn,
+                    tool_name=event.tool_name,
+                    detail=event.detail,
+                    is_error=event.is_error,
+                ),
+            )
+
+        return _on_activity
 
     async def stream(
         self,
@@ -221,6 +276,7 @@ class LlmioChatAgent:
         else:
             prompt = llm_message
 
+        on_activity = self._activity_callback(session_id)
         result: Any = None
         for attempt in range(1, _MAX_RUN_ATTEMPTS + 1):
             # Build a fresh handle per attempt so each try starts from a
@@ -234,7 +290,7 @@ class LlmioChatAgent:
             )
             try:
                 try:
-                    with _trace_session(session_id):
+                    with _trace_session(session_id), _activity_context(on_activity):
                         result = await handle.run(
                             prompt, message_history=message_history
                         )
@@ -311,6 +367,8 @@ class LlmioChatAgent:
             for level in TierLevel
         }
 
+        on_activity = self._activity_callback(session_id)
+
         def _fn_factory(tlc: TierLevelConfig) -> Callable[[], Any]:
             level = level_by_model[tlc.model]
 
@@ -323,7 +381,10 @@ class LlmioChatAgent:
                     builtin_tools=False,
                 )
                 try:
-                    with _trace_session(session_id):
+                    with (
+                        _trace_session(session_id),
+                        _activity_context(on_activity),
+                    ):
                         return await fallback_handle.run(
                             prompt, message_history=message_history
                         )

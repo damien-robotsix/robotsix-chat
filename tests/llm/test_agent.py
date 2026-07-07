@@ -249,6 +249,123 @@ async def test_session_id_forwarded_to_memory() -> None:
 
 
 # ---------------------------------------------------------------------------
+# event_sink — live claudeSDK activity forwarding
+# ---------------------------------------------------------------------------
+
+
+class _RecordingEventSink:
+    """An EventSink stub that records every published (session_id, frame)."""
+
+    def __init__(self) -> None:
+        self.published: list[tuple[str, dict[str, object]]] = []
+
+    def publish(self, session_id: str, frame: dict[str, object]) -> None:
+        self.published.append((session_id, frame))
+
+
+def _patched_create_model_with_activity(
+    output: str = "hi there",
+) -> tuple[MagicMock, MagicMock]:
+    """Like _patched_create_model, but ``run`` fires one activity event.
+
+    It fires via the ambient ``activity_events()`` contextvar while it
+    "runs" — simulating what robotsix-llmio's ``_stream_query`` does
+    internally.
+    """
+    from robotsix_llmio.claude_sdk import ClaudeSDKActivityEvent
+    from robotsix_llmio.claude_sdk._stream import _current_on_event
+
+    handle = MagicMock()
+
+    async def fake_run(message: str, *, message_history: object = None) -> MagicMock:
+        on_event = _current_on_event.get()
+        if on_event is not None:
+            on_event(
+                ClaudeSDKActivityEvent(
+                    kind="tool_call", turn=1, tool_name="search", detail="{}"
+                )
+            )
+        result = MagicMock()
+        result.output = output
+        return result
+
+    handle.run = fake_run
+    handle.close = MagicMock()
+
+    provider = MagicMock()
+    provider.build_agent.return_value = handle
+
+    create_model = MagicMock(return_value=provider)
+    return create_model, handle
+
+
+@pytest.mark.asyncio
+async def test_event_sink_receives_activity_frame() -> None:
+    """A configured event_sink gets an ``activity`` frame published.
+
+    Scoped to the turn's session_id, for an event the claudeSDK run fires.
+    """
+    create_model, _ = _patched_create_model_with_activity()
+    sink = _RecordingEventSink()
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(
+            model_level=3, instruction="Be helpful.", event_sink=sink
+        )
+        _ = [c async for c in agent.stream("hi", session_id="sess-abc")]
+
+    from robotsix_chat.chat.events import SSE_ACTIVITY_TYPE
+
+    assert sink.published == [
+        (
+            "sess-abc",
+            {
+                "type": SSE_ACTIVITY_TYPE,
+                "kind": "tool_call",
+                "turn": 1,
+                "tool_name": "search",
+                "detail": "{}",
+                "is_error": False,
+            },
+        )
+    ]
+
+
+@pytest.mark.asyncio
+async def test_no_event_sink_configured_is_silent() -> None:
+    """Without an event_sink, a stream() call behaves exactly as before.
+
+    No callback is installed, and nothing raises.
+    """
+    create_model, _ = _patched_create_model_with_activity()
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        chunks = [c async for c in agent.stream("hi", session_id="sess-abc")]
+
+    assert chunks == ["hi there"]
+
+
+@pytest.mark.asyncio
+async def test_event_sink_configured_but_no_session_id_is_silent() -> None:
+    """event_sink is configured, but stream() is called without a session_id.
+
+    A stateless single query has nowhere to scope the frame, so no callback
+    is installed and nothing is published.
+    """
+    create_model, _ = _patched_create_model_with_activity()
+    sink = _RecordingEventSink()
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(
+            model_level=3, instruction="Be helpful.", event_sink=sink
+        )
+        _ = [c async for c in agent.stream("hi")]  # no session_id
+
+    assert sink.published == []
+
+
+# ---------------------------------------------------------------------------
 # Conversation history & trace session
 # ---------------------------------------------------------------------------
 

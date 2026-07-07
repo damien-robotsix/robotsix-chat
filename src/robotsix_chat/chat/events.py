@@ -26,6 +26,14 @@ SSE_SUBSESSION_RESULT_TYPE = "subsession_result"
 SSE_SUBSESSION_CLOSED_TYPE = "subsession_closed"
 SSE_SUBSESSION_FAILED_TYPE = "subsession_failed"
 
+# Live claudeSDK activity (tool calls/results, thinking, intermediate text)
+# streamed during an in-flight /chat turn — see ``activity_frame``.
+SSE_ACTIVITY_TYPE = "activity"
+
+# A background-triggered agent reply (not a live /chat request) pushed to a
+# connected browser as soon as it's ready — see ``agent_message_frame``.
+SSE_AGENT_MESSAGE_TYPE = "agent_message"
+
 # ---------------------------------------------------------------------------
 # EventSink — structural Protocol for dependency injection
 # ---------------------------------------------------------------------------
@@ -230,6 +238,62 @@ def subsession_failed_frame(
         "parent_id": parent_id,
         "status": "failed",
     }
+
+
+def activity_frame(
+    kind: str,
+    turn: int,
+    *,
+    tool_name: str | None = None,
+    detail: str = "",
+    is_error: bool = False,
+) -> dict[str, object]:
+    """Build an ``activity`` frame from a live claudeSDK activity event.
+
+    Mirrors ``robotsix_llmio.claude_sdk.ClaudeSDKActivityEvent`` — one tool
+    call, tool result, thinking block, or intermediate assistant text
+    streamed during an in-flight turn. *kind* is one of ``"tool_call"``,
+    ``"tool_result"``, ``"thinking"``, ``"text"``.
+
+    Returns a dict with shape::
+
+        {
+            "type": "activity",
+            "kind": <str>,
+            "turn": <int>,
+            "tool_name": <str | None>,
+            "detail": <str>,
+            "is_error": <bool>,
+        }
+    """
+    return {
+        "type": SSE_ACTIVITY_TYPE,
+        "kind": kind,
+        "turn": turn,
+        "tool_name": tool_name,
+        "detail": detail,
+        "is_error": is_error,
+    }
+
+
+def agent_message_frame(text: str, timestamp: float) -> dict[str, object]:
+    """Build an ``agent_message`` frame for a background-triggered reply.
+
+    Published when the agent reacts to something that happened outside a
+    live ``POST /chat`` request (e.g. a subsession concluding) — there is no
+    open request/response to carry the reply, so it is pushed over the
+    persistent ``/events`` channel instead, and the browser appends it as a
+    normal assistant chat bubble.
+
+    Returns a dict with shape::
+
+        {
+            "type": "agent_message",
+            "text": <str>,
+            "timestamp": <float>,
+        }
+    """
+    return {"type": SSE_AGENT_MESSAGE_TYPE, "text": text, "timestamp": timestamp}
 
 
 # ---------------------------------------------------------------------------
