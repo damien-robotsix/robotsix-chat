@@ -3,6 +3,9 @@
 - Consolidated duplicated `_get`/`_post`/`_patch` HTTP methods in `GitHubClient`
   into a single `_request(method, path, body=None)` private method, eliminating
   ~35 lines of copy-paste duplication.
+- Added ``_SHARED_PARAMS`` constant and a sync-guard test to verify
+  ``create_app()`` and ``run_server()`` share the same keyword parameters,
+  preventing silent drift between the two signatures.
 - When the central-deploy `github` virtual component backend is unavailable or misconfigured (returning another component's skill doc, bare 303 redirects), `component_request(component_id="github", ...)` calls are now intercepted and handled locally using `GitHubClient`. The local handler serves the correct skill document at `/chat-skill`, returns a proper component root at `/`, and delegates repo operations to the GitHub REST API.
 - Fix top toolbar buttons being hidden behind the subsessions/sessions side panels.
   The header now uses `position: sticky` with `z-index: 30` so toolbar buttons

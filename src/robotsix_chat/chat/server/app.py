@@ -156,6 +156,31 @@ async def _make_lifespan(
                 logger.exception("Shutdown hook failed")
 
 
+# Shared keyword parameters between create_app() and run_server().
+# When adding a new parameter that both functions should accept, include
+# its name here — the test suite enforces parity via inspect.signature.
+_SHARED_PARAMS: frozenset[str] = frozenset(
+    {
+        "summary_agent",
+        "serve_ui",
+        "idle_timeout_minutes",
+        "max_images_per_message",
+        "max_image_bytes",
+        "allowed_image_media_types",
+        "cors_allow_origins",
+        "correlation_id_header",
+        "conversation_store",
+        "event_bus",
+        "run_serializer",
+        "subsession_registry",
+        "subsession_delivery",
+        "on_startup",
+        "on_startup_async",
+        "on_shutdown",
+    }
+)
+
+
 def create_app(
     agent: ChatAgent,
     *,
