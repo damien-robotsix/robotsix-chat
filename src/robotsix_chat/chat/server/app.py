@@ -24,7 +24,7 @@ from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from robotsix_chat import PROJECT_TITLE
 from robotsix_chat.chat.conversation import ConversationStore
-from robotsix_chat.chat.events import EventBus
+from robotsix_chat.chat.events import EventBus, EventSink
 from robotsix_chat.component_access import build_component_access_tools
 from robotsix_chat.component_client import build_component_tools
 from robotsix_chat.config import Settings, level_needs_api_key
@@ -341,6 +341,7 @@ def create_agent_from_settings(
     subsession_close_state: CloseState | None = None,
     tool_wrapper: Callable[[list[Any]], list[Any]] | None = None,
     bare: bool = False,
+    event_sink: EventSink | None = None,
 ) -> LlmioChatAgent:
     """Build an :class:`LlmioChatAgent` wired from *settings*.
 
@@ -380,6 +381,12 @@ def create_agent_from_settings(
       tools (including ``complete_subsession``) are baked in statically;
       identity is fixed at construction.
     * ``None`` (default) — no subsession tools (bare agent, e.g. tests).
+
+    *event_sink* is forwarded to :class:`~robotsix_chat.llm.LlmioChatAgent`
+    so a claudeSDK turn's live tool/thinking activity is published as
+    ``activity`` frames on the ``GET /events`` channel. Pass the same
+    :class:`~robotsix_chat.chat.events.EventBus` given to ``create_app`` —
+    typically only for the main chat agent, not the bare ``/summary`` agent.
     """
     if settings is None:
         settings = Settings.load()
@@ -491,4 +498,5 @@ def create_agent_from_settings(
         memory=NullMemory() if bare else build_memory(settings.memory),
         tools=tools,
         request_tools_factory=request_tools_factory,
+        event_sink=event_sink,
     )

@@ -555,6 +555,11 @@
   #typing-indicator .dot:nth-child(1) { animation-delay: -0.32s; }
   #typing-indicator .dot:nth-child(2) { animation-delay: -0.16s; }
   #typing-indicator .dot:nth-child(3) { animation-delay: 0s; }
+  #typing-indicator .activity-label {
+    font-size: 0.8rem; color: #94a3b8; margin-left: 0.4rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 60vw;
+  }
 
   @keyframes pulse {
     0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
@@ -1697,6 +1702,9 @@
       dot.className = "dot";
       typingIndicatorEl.appendChild(dot);
     }
+    var label = document.createElement("span");
+    label.className = "activity-label";
+    typingIndicatorEl.appendChild(label);
     chatEl.appendChild(typingIndicatorEl);
     scrollToBottom();
   }
@@ -1705,6 +1713,31 @@
     if (!typingIndicatorEl) return;
     typingIndicatorEl.remove();
     typingIndicatorEl = null;
+  }
+
+  // Live "what's it doing" caption inside the typing indicator, fed by
+  // "activity" frames on the /events channel (see handleActivityFrame).
+  // A no-op when no turn is in flight (typingIndicatorEl is null) — activity
+  // frames only arrive during one, but a frame arriving just after the
+  // indicator was hidden (race with the "done" frame) must not resurrect it.
+  function updateActivityLabel(text) {
+    if (!typingIndicatorEl) return;
+    var label = typingIndicatorEl.querySelector(".activity-label");
+    if (label) label.textContent = text;
+  }
+
+  function handleActivityFrame(frame) {
+    var text;
+    if (frame.kind === "tool_call") {
+      text = "🔧 " + (frame.tool_name || "tool") + "(" + (frame.detail || "") + ")";
+    } else if (frame.kind === "tool_result") {
+      text = frame.is_error ? "⚠️ tool error — " + frame.detail : "✓ " + frame.detail;
+    } else if (frame.kind === "thinking") {
+      text = "💭 thinking…";
+    } else {
+      return;  // "text" kind: the real reply arrives via the normal token frame
+    }
+    updateActivityLabel(text);
   }
 
   // ---- Send button busy state ------------------------------------------
@@ -2017,6 +2050,9 @@
           if (frame.parent_id === null || frame.parent_id === undefined) {
             addNotificationBubble(frame);
           }
+        } else if (frame.type === "activity") {
+          // Live claudeSDK tool/thinking activity for the in-flight turn.
+          handleActivityFrame(frame);
         }
         // ignore unknown types gracefully
       },

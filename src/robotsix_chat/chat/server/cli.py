@@ -16,6 +16,7 @@ from typing import Any
 
 from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus
+from robotsix_chat.chat.restart_notice import notify_restart
 from robotsix_chat.config import Settings
 from robotsix_chat.config.constants import level_needs_api_key
 from robotsix_chat.llm import LlmioChatAgent
@@ -264,6 +265,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             settings=settings,
             conversation_store=conversation_store,
             subsession_env=env,
+            event_sink=event_bus,
         )
 
     # Cheap dedicated agent for POST /summary (bounded extraction, not
@@ -296,8 +298,20 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
 
     # -- resume persisted subsessions after redeploy -----------------------
     def _resume() -> None:
-        """Resume periodic subsessions; report interrupted one-shot work."""
+        """Resume periodic subsessions; report interrupted one-shot work.
+
+        Also proactively pings recently-active sessions so the agent
+        notices the restart itself instead of only reacting to it the next
+        time a user happens to send a message (see ``restart_notice``).
+        """
         resume_subsessions(env)
+        notify_restart(
+            agent,
+            conversation_store,
+            run_serializer,
+            active_within_seconds=settings.conversation.restart_notice_window_minutes
+            * 60,
+        )
 
     logger.info(
         "Resolved persistence paths: conversation=%s, knowledge=%s, "

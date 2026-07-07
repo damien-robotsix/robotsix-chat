@@ -26,6 +26,10 @@ SSE_SUBSESSION_RESULT_TYPE = "subsession_result"
 SSE_SUBSESSION_CLOSED_TYPE = "subsession_closed"
 SSE_SUBSESSION_FAILED_TYPE = "subsession_failed"
 
+# Live claudeSDK activity (tool calls/results, thinking, intermediate text)
+# streamed during an in-flight /chat turn — see ``activity_frame``.
+SSE_ACTIVITY_TYPE = "activity"
+
 # ---------------------------------------------------------------------------
 # EventSink — structural Protocol for dependency injection
 # ---------------------------------------------------------------------------
@@ -229,6 +233,42 @@ def subsession_failed_frame(
         "summary": summary,
         "parent_id": parent_id,
         "status": "failed",
+    }
+
+
+def activity_frame(
+    kind: str,
+    turn: int,
+    *,
+    tool_name: str | None = None,
+    detail: str = "",
+    is_error: bool = False,
+) -> dict[str, object]:
+    """Build an ``activity`` frame from a live claudeSDK activity event.
+
+    Mirrors ``robotsix_llmio.claude_sdk.ClaudeSDKActivityEvent`` — one tool
+    call, tool result, thinking block, or intermediate assistant text
+    streamed during an in-flight turn. *kind* is one of ``"tool_call"``,
+    ``"tool_result"``, ``"thinking"``, ``"text"``.
+
+    Returns a dict with shape::
+
+        {
+            "type": "activity",
+            "kind": <str>,
+            "turn": <int>,
+            "tool_name": <str | None>,
+            "detail": <str>,
+            "is_error": <bool>,
+        }
+    """
+    return {
+        "type": SSE_ACTIVITY_TYPE,
+        "kind": kind,
+        "turn": turn,
+        "tool_name": tool_name,
+        "detail": detail,
+        "is_error": is_error,
     }
 
 
