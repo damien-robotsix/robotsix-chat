@@ -62,7 +62,8 @@ async def safe_http_request(
     client modules is consolidated here so error formatting is consistent.
 
     Args:
-        method: HTTP method (``"GET"`` or ``"POST"``).
+        method: HTTP method (``"GET"``, ``"POST"``, ``"PUT"``, ``"PATCH"``,
+            ``"DELETE"``).
         url: Full URL to request.
         headers: Optional request headers.
         timeout: Seconds before the request times out.
@@ -80,20 +81,22 @@ async def safe_http_request(
         :class:`HttpResult` — inspect ``.error`` to decide success/failure.
 
     """
+    method_upper = method.upper()
     try:
         async with httpx.AsyncClient(
             timeout=timeout, follow_redirects=follow_redirects
         ) as client:
-            if method.upper() == "POST":
+            kwargs: dict[str, Any] = {"headers": headers}
+            if params is not None:
+                kwargs["params"] = params
+            if method_upper in ("POST", "PUT", "PATCH"):
                 if content is not None:
-                    response = await client.post(url, headers=headers, content=content)
-                else:
-                    response = await client.post(url, headers=headers, json=json_body)
+                    kwargs["content"] = content
+                elif json_body is not None:
+                    kwargs["json"] = json_body
+                response = await client.request(method_upper, url, **kwargs)
             else:
-                kwargs: dict[str, Any] = {"headers": headers}
-                if params is not None:
-                    kwargs["params"] = params
-                response = await client.get(url, **kwargs)
+                response = await client.request(method_upper, url, **kwargs)
             if not follow_redirects and 300 <= response.status_code < 400:
                 # Caller opted out of redirect-following and got a redirect
                 # response — treat as success so they can inspect the status.
@@ -120,7 +123,7 @@ async def safe_http_request(
         logger.warning("%s returned %d for %s", label, status, url)
         return HttpResult(
             status_code=status,
-            error=f"{label} error {status} for {method.upper()} {url}: {body}",
+            error=f"{label} error {status} for {method_upper} {url}: {body}",
         )
     except httpx.TimeoutException:
         logger.warning("%s timed out for %s", label, url)

@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add `github` virtual component: agent can create GitHub repositories (confirmation-gated), update repo settings, and read repo details.  Token provisioned via `GitHubSettings.token` (`SecretStr`) — never exposed to the chat container.
 - Thickened the border around subsession rows in the subsession panel from 1px to 2px for better visual distinction.
 - Persist subsession panel open/closed state in localStorage so it survives page refreshes instead of always resetting to closed.
 - Rapid-fire user messages for the same session are now coalesced into a single agent run. A configurable debounce window (default 0.3 s) batches pending messages together, concatenating them with a separator and passing them to the agent as combined context. This avoids redundant runs and disjointed handling when messages arrive in quick succession.
