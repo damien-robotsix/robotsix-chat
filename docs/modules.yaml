@@ -257,6 +257,7 @@ modules:
     description: "GitHub repository-administration component skill for the agent — exposes load_github_skill() returning the component skill document describing how to use component_request(component_id='github', ...) to create repos, set metadata, and register with the mill board."
     paths:
       - src/robotsix_chat/github/__init__.py
+      - src/robotsix_chat/github/client.py
       - src/robotsix_chat/github/skill.md
       - tests/github/__init__.py
       - tests/github/test_github.py
