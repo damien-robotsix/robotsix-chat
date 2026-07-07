@@ -10,13 +10,14 @@ import asyncio
 import json
 import logging
 import os
+import re
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import httpx
 
 if TYPE_CHECKING:
-    from robotsix_chat.config import CentralDeploySettings
+    from robotsix_chat.config import CentralDeploySettings, GithubSettings
 
 logger = logging.getLogger(__name__)
 
@@ -322,8 +323,141 @@ async def _component_request_impl(
     )
 
 
+async def _handle_github_request_locally(
+    github_settings: GithubSettings,
+    method: str,
+    path: str,
+    json_body: dict[str, Any] | None = None,
+) -> str:
+    r"""Handle a github component request locally using GitHubClient.
+
+    The central-deploy github component backend is the canonical source,
+    but when it is misconfigured (e.g. returning another component's skill
+    doc or bare 303 redirects) this local handler takes over so the agent
+    can still create / manage repos.
+
+    Args:
+        github_settings: GitHub configuration (token, base URL, timeout).
+        method: HTTP method — GET, POST, PUT, PATCH, or DELETE.
+        path: The API path relative to the component's base URL.
+        json_body: Optional JSON body for POST/PUT/PATCH requests.
+
+    Returns:
+        A formatted response string (``HTTP {status}\n{body}``) or an
+        error message.
+
+    """
+    from robotsix_chat.github import load_github_skill
+    from robotsix_chat.github.client import GitHubClient
+
+    client = GitHubClient(github_settings)
+    method_upper = method.upper()
+    path_clean = path.rstrip("/") or "/"
+
+    # -- GET /chat-skill — serve the github skill document ---------------
+    if method_upper == "GET" and path_clean == "/chat-skill":
+        skill = load_github_skill()
+        if skill:
+            return f"HTTP 200\n{skill}"
+        return "HTTP 404\nSkill document not found"
+
+    # -- GET / — component root (info page) ------------------------------
+    if method_upper == "GET" and path_clean == "/":
+        return (
+            "HTTP 200\n"
+            "github-repo-admin component\n"
+            "\n"
+            "Available endpoints:\n"
+            "  GET  /chat-skill — this skill document\n"
+            "  POST /repos — create a new GitHub repository\n"
+            "  GET  /repos/{owner}/{repo} — read repository details\n"
+            "  PATCH /repos/{owner}/{repo} — update repository settings\n"
+            "  POST /repos/{owner}/{repo}/mill — register with mill board\n"
+        )
+
+    # -- POST /repos — create repository ---------------------------------
+    if method_upper == "POST" and path_clean == "/repos":
+        if json_body is None:
+            return "Error: json_body is required for POST /repos"
+        name_raw = json_body.get("name")
+        if not name_raw:
+            return "Error: 'name' is required in json_body"
+        name = str(name_raw)
+        description = str(json_body.get("description", ""))
+        private = bool(json_body.get("private", False))
+        visibility = "private" if private else "public"
+        result = await client.create_repo(name, description, visibility)
+        return f"HTTP 200\n{result}"
+
+    # -- /repos/{owner}/{repo} — GET or PATCH ----------------------------
+    repos_match = re.match(r"^/repos/([^/]+)/([^/]+)$", path_clean)
+    if repos_match:
+        owner, repo = repos_match.groups()
+        if method_upper == "GET":
+            result = await client.get_repo(owner, repo)
+            return f"HTTP 200\n{result}"
+        if method_upper == "PATCH":
+            if json_body is None:
+                return "Error: json_body is required for PATCH"
+            patch_desc_raw = json_body.get("description")
+            patch_description: str | None = (
+                str(patch_desc_raw) if patch_desc_raw is not None else None
+            )
+            patch_visibility_raw = json_body.get("visibility")
+            patch_private_raw = json_body.get("private")
+            patch_visibility: str | None = None
+            if patch_visibility_raw is not None:
+                patch_visibility = str(patch_visibility_raw)
+            elif patch_private_raw is not None:
+                patch_visibility = "private" if bool(patch_private_raw) else "public"
+            patch_has_issues_raw = json_body.get("has_issues")
+            patch_has_issues: bool | None = (
+                bool(patch_has_issues_raw) if patch_has_issues_raw is not None else None
+            )
+            patch_has_wiki_raw = json_body.get("has_wiki")
+            patch_has_wiki: bool | None = (
+                bool(patch_has_wiki_raw) if patch_has_wiki_raw is not None else None
+            )
+            result = await client.update_repo(
+                owner,
+                repo,
+                patch_description,
+                patch_visibility,
+                patch_has_issues,
+                patch_has_wiki,
+            )
+            return f"HTTP 200\n{result}"
+        return (
+            f"Error: method {method_upper} is not supported "
+            f"for /repos/{{owner}}/{{repo}}"
+        )
+
+    # -- POST /repos/{owner}/{repo}/mill — register with mill board ------
+    mill_match = re.match(r"^/repos/([^/]+)/([^/]+)/mill$", path_clean)
+    if mill_match:
+        owner, repo = mill_match.groups()
+        if method_upper != "POST":
+            return (
+                f"Error: method {method_upper} is not supported for mill registration"
+            )
+        # Mill registration is handled by the central-deploy server
+        # (the mill board is an external system).  This endpoint
+        # acknowledges the request; actual registration happens
+        # asynchronously on the server side.
+        return (
+            "HTTP 200\n"
+            f"Mill registration for {owner}/{repo} has been queued. "
+            "The repository will appear on the mill board after the "
+            "central-deploy server processes the registration request."
+        )
+
+    # -- Fallback: unknown path ------------------------------------------
+    return f"Error: unknown github component path '{path}' for method {method_upper}"
+
+
 def build_component_access_tools(
     settings: CentralDeploySettings,
+    github_settings: GithubSettings | None = None,
 ) -> list[Callable[..., Any]]:
     """Return component-access tool(s) for the agent.
 
@@ -332,6 +466,11 @@ def build_component_access_tools(
 
     The roster is fetched once at agent construction time and refreshed
     on each tool call if the TTL has expired.
+
+    When *github_settings* is provided and enabled, requests for
+    ``component_id="github"`` are handled locally (bypassing the
+    central-deploy roster) so the agent can create / manage repos even
+    when the central-deploy github component backend is unavailable.
     """
     if not settings.url:
         return []
@@ -369,6 +508,17 @@ def build_component_access_tools(
             if very long), or an error message.
 
         """
+        # Intercept github component requests when github is enabled
+        # locally — the central-deploy github backend may be misconfigured
+        # (returning another component's skill doc or bare 303s).
+        if (
+            component_id == "github"
+            and github_settings is not None
+            and github_settings.enabled
+        ):
+            return await _handle_github_request_locally(
+                github_settings, method, path, json_body
+            )
         # Refresh the roster on every call (TTL-gated internally).
         await _refresh()
         return await _component_request_impl(

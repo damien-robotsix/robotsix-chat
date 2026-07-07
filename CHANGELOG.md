@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- When the central-deploy `github` virtual component backend is unavailable or misconfigured (returning another component's skill doc, bare 303 redirects), `component_request(component_id="github", ...)` calls are now intercepted and handled locally using `GitHubClient`. The local handler serves the correct skill document at `/chat-skill`, returns a proper component root at `/`, and delegates repo operations to the GitHub REST API.
 - Add `github` virtual component: agent can create GitHub repositories (confirmation-gated), update repo settings, and read repo details.  Token provisioned via `GitHubSettings.token` (`SecretStr`) — never exposed to the chat container.
 - Removed three unused public symbols: `ConversationStore.compact_session`, `ConversationStore.get_compacted_summary`, and `EventBus.subscriber_count` (dead code with no callers)
 - Mirror source directory structure under `tests/chat/`: moved `test_server.py` and `test_idempotency.py` into new `tests/chat/server/`, moved `test_shared.py` into new `tests/chat/server/routes/`.
