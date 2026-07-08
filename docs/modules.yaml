@@ -196,7 +196,7 @@ modules:
       - src/robotsix_chat/memory/__init__.py
       - src/robotsix_chat/memory/base.py
       - src/robotsix_chat/memory/cognee.py
-      - docs/api/robotsix_chat/memory.md
+      - docs/memory/api.md
       - tests/memory/__init__.py
       - tests/memory/test_memory.py
 
