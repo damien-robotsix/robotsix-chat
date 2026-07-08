@@ -1,0 +1,1 @@
+Extract repeated serializer-persist guard into ConversationStore helper method
