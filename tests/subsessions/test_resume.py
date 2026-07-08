@@ -15,6 +15,10 @@ from robotsix_chat.subsessions import (
     SubsessionStatus,
     resume_subsessions,
 )
+from robotsix_chat.subsessions.worker import (
+    _build_ancestor_context,
+    _entry_last_assistant_text,
+)
 from tests.common.subsession_fakes import FakeAgent, build_env, make_settings
 
 OWNER = "sess-main"
@@ -245,3 +249,284 @@ def test_resume_skips_malformed_entries(tmp_path: Path) -> None:
     assert restored is not None
     assert restored.status is SubsessionStatus.CLOSED
     assert isinstance(restored, SubsessionInfo)
+
+
+# ---------------------------------------------------------------------------
+# _build_ancestor_context
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def reg() -> SubsessionRegistry:
+    """Provide a fresh in-memory registry for ancestor-context tests."""
+    return SubsessionRegistry(store_path=None)
+
+
+def test_build_ancestor_context_empty_chain(reg: SubsessionRegistry) -> None:
+    """Return empty when parent_id points to non-existent or root."""
+    result = _build_ancestor_context(reg, "nonexistent")
+    assert result == ""
+
+
+def test_build_ancestor_context_single_ancestor(reg: SubsessionRegistry) -> None:
+    """Include one ancestor entry."""
+    parent = reg.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="root task",
+        prompt="Monitor the build pipeline status",
+        model_level=3,
+    )
+    result = _build_ancestor_context(reg, parent.id)
+    assert "# Ancestor context (inherited from the subsession tree above you)" in result
+    assert "## root task" in result
+    assert "Monitor the build pipeline status" in result
+
+
+def test_build_ancestor_context_chain_of_two(reg: SubsessionRegistry) -> None:
+    """Order ancestors root-first, not leaf-first."""
+    root = reg.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="root",
+        prompt="Root prompt",
+        model_level=3,
+    )
+    child = reg.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id=OWNER,
+        parent_id=root.id,
+        depth=2,
+        title="child",
+        prompt="Child prompt",
+        model_level=3,
+    )
+    result = _build_ancestor_context(reg, child.id)
+    root_idx = result.index("## root")
+    child_idx = result.index("## child")
+    assert root_idx < child_idx
+    assert "Root prompt" in result
+    assert "Child prompt" in result
+
+
+def test_build_ancestor_context_respects_budget(reg: SubsessionRegistry) -> None:
+    """Drop entries exceeding the character budget."""
+    parent = reg.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="long title " + "x" * 200,
+        prompt="p" * 2000,
+        model_level=3,
+    )
+    result = _build_ancestor_context(reg, parent.id)
+    assert "p" * 300 in result
+    assert "p" * 301 not in result
+
+
+def test_build_ancestor_context_all_exceed_budget(reg: SubsessionRegistry) -> None:
+    """Return empty when the first ancestor already exceeds budget."""
+    parent = reg.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="x" * 2000,
+        prompt="y" * 2000,
+        model_level=3,
+    )
+    result = _build_ancestor_context(reg, parent.id)
+    assert result == ""
+
+
+def test_build_ancestor_context_three_generation(reg: SubsessionRegistry) -> None:
+    """Include three generations when all fit within budget."""
+    root = reg.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="grandparent",
+        prompt="Grandparent instructions",
+        model_level=3,
+    )
+    mid = reg.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id=OWNER,
+        parent_id=root.id,
+        depth=2,
+        title="parent",
+        prompt="Parent instructions",
+        model_level=3,
+    )
+    leaf = reg.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id=OWNER,
+        parent_id=mid.id,
+        depth=3,
+        title="child",
+        prompt="Child instructions",
+        model_level=3,
+    )
+    result = _build_ancestor_context(reg, leaf.id)
+    assert "## grandparent" in result
+    assert "## parent" in result
+    assert "## child" in result
+    assert result.index("## grandparent") < result.index("## parent") < result.index(
+        "## child"
+    )
+
+
+# ---------------------------------------------------------------------------
+# _entry_last_assistant_text
+# ---------------------------------------------------------------------------
+
+
+def test_last_assistant_text_uses_last_result_when_present() -> None:
+    """When entry has last_result, it takes priority."""
+    entry = {
+        "last_result": "periodic reply",
+        "transcript": [{"role": "assistant", "text": "ignored"}],
+    }
+    assert _entry_last_assistant_text(entry) == "periodic reply"
+
+
+def test_last_assistant_text_falls_back_to_transcript() -> None:
+    """Without last_result, the last assistant transcript entry is used."""
+    entry = {
+        "transcript": [
+            {"role": "user", "text": "hello", "timestamp": 1.0},
+            {"role": "assistant", "text": "hi there", "timestamp": 2.0},
+            {"role": "user", "text": "tell me more", "timestamp": 3.0},
+            {"role": "assistant", "text": "sure, here is the answer", "timestamp": 4.0},
+        ]
+    }
+    assert _entry_last_assistant_text(entry) == "sure, here is the answer"
+
+
+def test_last_assistant_text_empty_transcript() -> None:
+    """When there are no assistant entries, returns empty string."""
+    entry = {
+        "transcript": [
+            {"role": "user", "text": "hello", "timestamp": 1.0},
+        ]
+    }
+    assert _entry_last_assistant_text(entry) == ""
+
+
+def test_last_assistant_text_no_transcript_key() -> None:
+    """When transcript key is missing entirely, returns empty string."""
+    entry: dict[str, object] = {}
+    assert _entry_last_assistant_text(entry) == ""
+
+
+def test_last_assistant_text_non_list_transcript() -> None:
+    """When transcript is not a list, returns empty string."""
+    entry = {"transcript": "not a list"}
+    assert _entry_last_assistant_text(entry) == ""
+
+
+# ---------------------------------------------------------------------------
+# user_chat resume with transcript
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resume_user_chat_uses_transcript_for_restart_note(
+    tmp_path: Path,
+) -> None:
+    """Use transcript to provide restart note when last_result is unset.
+
+    A user_chat entry's transcript provides the last assistant text for
+    the restart note, even when last_result is None (which is the normal
+    case — user_chat never writes last_result).
+    """
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    user_chat = registry1.create(
+        kind=SubsessionKind.USER_CHAT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="decision chat",
+        prompt="Ask the user about the deployment strategy",
+        model_level=3,
+    )
+    # Simulate what a real user_chat does: set_status WAITING with no
+    # last_result, and append assistant replies to the transcript.
+    registry1.set_status(user_chat.id, SubsessionStatus.WAITING)
+    registry1.append_transcript(user_chat.id, "assistant", "Hello! What environment?")
+    registry1.append_transcript(
+        user_chat.id, "assistant", "Sure, deploying to staging sounds good."
+    )
+    # last_result should be None (as with real user_chat set_status calls).
+    raw = registry1.get(user_chat.id)
+    assert raw is not None
+    assert raw.last_result is None
+
+    gate = asyncio.Event()
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=FakeAgent(["resumed"], gate=gate),
+        registry=registry2,
+        settings=make_settings(),
+    )
+    resume_subsessions(env)
+
+    resumed = registry2.get(user_chat.id)
+    assert resumed is not None
+    assert resumed.status in (SubsessionStatus.RUNNING, SubsessionStatus.WAITING)
+    # The prompt should include the last assistant text from the transcript.
+    assert "Sure, deploying to staging sounds good." in resumed.prompt
+    assert "restarted after a server restart" in resumed.prompt
+
+    worker = registry2._running.get(user_chat.id)
+    if worker is not None:
+        registry2.cancel_and_close(user_chat.id, reason="teardown", closed_by="system")
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(worker, 2.0)
+
+
+@pytest.mark.asyncio
+async def test_resume_user_chat_no_augmentation_when_no_transcript(
+    tmp_path: Path,
+) -> None:
+    """When the user_chat has no transcript, the prompt is not augmented."""
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    user_chat = registry1.create(
+        kind=SubsessionKind.USER_CHAT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="fresh chat",
+        prompt="Ask the user a question",
+        model_level=3,
+    )
+    registry1.set_status(user_chat.id, SubsessionStatus.WAITING)
+
+    gate = asyncio.Event()
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=FakeAgent(["resumed"], gate=gate),
+        registry=registry2,
+        settings=make_settings(),
+    )
+    resume_subsessions(env)
+
+    resumed = registry2.get(user_chat.id)
+    assert resumed is not None
+    # No restart note should be added — prompt stays as-is.
+    assert "restarted after a server restart" not in resumed.prompt
+    assert resumed.prompt == "Ask the user a question"
+
+    worker = registry2._running.get(user_chat.id)
+    if worker is not None:
+        registry2.cancel_and_close(user_chat.id, reason="teardown", closed_by="system")
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(worker, 2.0)

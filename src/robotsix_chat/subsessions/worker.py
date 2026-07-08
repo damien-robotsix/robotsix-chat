@@ -663,6 +663,26 @@ def _entry_to_common_kwargs(entry: dict[str, object]) -> _CommonEntryKwargs:
     }
 
 
+def _entry_last_assistant_text(entry: dict[str, object]) -> str:
+    """Extract the most recent assistant reply from a persisted entry's transcript.
+
+    ``user_chat`` subsessions never write to ``last_result`` (only periodic
+    does), but the transcript is always persisted.  This helper falls back
+    through the transcript when the direct field is empty.
+    """
+    last_result = _entry_opt_str(entry, "last_result")
+    if last_result:
+        return last_result
+    transcript_raw = entry.get("transcript")
+    if isinstance(transcript_raw, list):
+        for item in reversed(transcript_raw):
+            if isinstance(item, dict) and item.get("role") == "assistant":
+                text = item.get("text")
+                if isinstance(text, str):
+                    return text
+    return ""
+
+
 def _resume_entry(env: SubsessionEnv, entry: dict[str, object]) -> None:
     """Resume a single persisted registry entry (see resume_subsessions)."""
     status = _entry_str(entry, "status")
@@ -700,7 +720,7 @@ def _resume_entry(env: SubsessionEnv, entry: dict[str, object]) -> None:
         # conversation after a restart instead of the chat dying
         # mid-question.
         common = _entry_to_common_kwargs(entry)
-        last_text = _entry_opt_str(entry, "last_result") or ""
+        last_text = _entry_last_assistant_text(entry)
         if last_text:
             common["prompt"] = (
                 f"{common['prompt']}\n\n"
