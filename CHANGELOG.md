@@ -1,5 +1,8 @@
 ## 0.0.0 (unreleased)
 
+- Add zizmor pre-commit hook (`v1.26.1`) after actionlint to detect
+  GitHub Actions workflow security vulnerabilities (script injection,
+  hardcoded credentials, unsafe permissions).
 - Extract repeated `_serializer.persist` guard into a private `_persist()` helper in `ConversationStore`.
 - Move `docs/api/robotsix_chat/server.md` to `docs/chat/server.md` to align with per-module docs layout convention.
 - Moved `docs/api/robotsix_chat/config.md` to `docs/config/api.md` to align with the per-module doc layout convention.

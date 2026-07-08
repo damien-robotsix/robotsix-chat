@@ -44,6 +44,11 @@ repos:
     hooks:
       - id: actionlint
 
+  - repo: https://github.com/woodruffw/zizmor
+    rev: v1.26.1
+    hooks:
+      - id: zizmor
+
   - repo: local
     hooks:
       - id: uv-audit
