@@ -46,6 +46,16 @@ repos:
 
   - repo: local
     hooks:
+      - id: zizmor
+        name: zizmor
+        entry: uv tool run zizmor
+        language: system
+        args: ["."]
+        types: [yaml]
+        pass_filenames: false
+
+  - repo: local
+    hooks:
       - id: uv-audit
         name: uv audit
         entry: uv audit

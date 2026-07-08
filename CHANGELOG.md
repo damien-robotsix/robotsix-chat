@@ -1,5 +1,8 @@
 ## 0.0.0 (unreleased)
 
+- Add zizmor pre-commit hook (`v1.26.1`) after actionlint to detect
+  GitHub Actions workflow security vulnerabilities (script injection,
+  hardcoded credentials, unsafe permissions).
 - Extract repeated `_serializer.persist` guard into a private `_persist()` helper in `ConversationStore`.
 - Remove orphaned `scripts/check_kind_literals.py` (dead code — no CI
   job, pre-commit hook, or Makefile target references it) and update
