@@ -144,6 +144,10 @@
   .subs-row.status-failed,
   .subs-row.status-interrupted { border-left: 3px solid #ef4444; }
 
+  /* Plain block wrappers — purely structural (see renderSubsessionRow),
+     no visual styling of their own so the header/body split is invisible. */
+  .subs-header, .subs-body { display: block; }
+
   .subs-title-line {
     display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
   }
@@ -1302,8 +1306,15 @@
     return out;
   }
 
+  // Reconciles the list in place rather than wiping and rebuilding it —
+  // a full innerHTML="" on every subsession_updated frame (fired
+  // frequently by an in-flight subsession) used to blow away the panel's
+  // own scroll position on every refresh, and destroy+recreate the reply
+  // textarea for any expanded user_chat row, stealing focus mid-keystroke.
+  // Existing rows are reused and only their (cheap, non-interactive)
+  // header is rebuilt; the transcript/reply-box body is never touched
+  // here — see renderSubsessionRow.
   function renderSubsessionsList() {
-    subsList.innerHTML = "";
     var order = subsDisplayOrder();
     var terminalCount = 0;
     var visible = [];
@@ -1313,6 +1324,7 @@
     }
     updateSubsToggleTerminalButton(terminalCount);
     if (visible.length === 0) {
+      subsList.innerHTML = "";
       var empty = document.createElement("div");
       empty.className = "subs-empty";
       empty.textContent = order.length === 0
@@ -1322,8 +1334,23 @@
       subsList.appendChild(empty);
       return;
     }
+    var seenIds = {};
+    var prevEl = null;
     for (var j = 0; j < visible.length; j++) {
-      subsList.appendChild(renderSubsessionRow(visible[j]));
+      var sub = visible[j];
+      seenIds[sub.subsession_id] = true;
+      var row = renderSubsessionRow(sub);
+      var expectedNext = prevEl ? prevEl.nextSibling : subsList.firstChild;
+      if (row !== expectedNext) subsList.insertBefore(row, expectedNext);
+      prevEl = row;
+    }
+    // Drop rows for subsessions that are no longer visible (closed and
+    // hidden, or gone entirely) — anything not touched above.
+    var child = subsList.firstChild;
+    while (child) {
+      var next = child.nextSibling;
+      if (!child._subsId || !seenIds[child._subsId]) subsList.removeChild(child);
+      child = next;
     }
   }
 
@@ -1342,20 +1369,52 @@
       : "Show closed (" + terminalCount + ")";
   }
 
+  // Builds (or rebuilds) *sub*'s row. The header — title/status/meta/
+  // result/actions — has no interactive state and is cheap to throw away
+  // and rebuild on every call. The body — transcript + reply textarea —
+  // is expensive to lose (scroll position, focus, in-progress typing) so
+  // it is built once per expand and left completely alone on subsequent
+  // calls; transcript content updates go through renderSubsTranscript /
+  // handleSubsessionMessage instead, which mutate it in place.
   function renderSubsessionRow(sub) {
-    // Reset per-render DOM refs so stale nodes are never updated.
-    sub._transcriptEl = null;
-    sub._countdownEl = null;
-    sub._msgInput = null;
-    sub._msgBtn = null;
-
     var terminal = isSubsTerminal(sub);
     var status = sub.status || "running";
 
-    var row = document.createElement("div");
+    var row = sub._rowEl;
+    if (!row) {
+      row = document.createElement("div");
+      sub._rowEl = row;
+    }
+    row._subsId = sub.subsession_id;
     row.className = "subs-row status-" + status + (terminal ? " terminal" : "");
     // Indent children under their parent (depth 1 = top level).
     row.style.marginLeft = (((sub.depth || 1) - 1) * 14) + "px";
+
+    var header = buildSubsHeader(sub, terminal, status);
+    if (sub._headerEl) {
+      row.replaceChild(header, sub._headerEl);
+    } else {
+      row.insertBefore(header, row.firstChild);
+    }
+    sub._headerEl = header;
+
+    if (sub.expanded && !sub._bodyEl) {
+      sub._bodyEl = buildSubsBody(sub, terminal);
+      row.appendChild(sub._bodyEl);
+    } else if (!sub.expanded && sub._bodyEl) {
+      row.removeChild(sub._bodyEl);
+      sub._bodyEl = null;
+      sub._transcriptEl = null;
+      sub._msgInput = null;
+      sub._msgBtn = null;
+    }
+
+    return row;
+  }
+
+  function buildSubsHeader(sub, terminal, status) {
+    var header = document.createElement("div");
+    header.className = "subs-header";
 
     // Title line: kind icon+label, title, status pill, model-level badge.
     var titleLine = document.createElement("div");
@@ -1384,7 +1443,7 @@
       levelSpan.title = "Model level " + sub.model_level;
       titleLine.appendChild(levelSpan);
     }
-    row.appendChild(titleLine);
+    header.appendChild(titleLine);
 
     // Meta line: periodic run counter + interval + live countdown;
     // close reason for terminal rows.
@@ -1401,6 +1460,7 @@
     }
     if (terminal && sub.close_reason) metaParts.push(sub.close_reason);
     metaDiv.textContent = metaParts.join(" • ");
+    sub._countdownEl = null;
     if (!terminal && sub.kind === "periodic" && sub.next_run_at) {
       var countdownSpan = document.createElement("span");
       countdownSpan.className = "subs-countdown";
@@ -1409,7 +1469,7 @@
       metaDiv.appendChild(countdownSpan);
     }
     if (metaDiv.textContent !== "" || metaDiv.firstChild) {
-      row.appendChild(metaDiv);
+      header.appendChild(metaDiv);
     }
 
     // Latest result / summary / error line (one-liner, truncated).
@@ -1420,7 +1480,7 @@
       resultDiv.textContent = truncateText(resultText, 160);
       resultDiv.title = truncateText(resultText, 400);
       if (sub.error) resultDiv.style.color = "#fca5a5";
-      row.appendChild(resultDiv);
+      header.appendChild(resultDiv);
     }
 
     // Actions row: labeled expand/collapse + Close (active rows only).
@@ -1455,24 +1515,28 @@
       });
       actionsDiv.appendChild(closeBtn);
     }
-    row.appendChild(actionsDiv);
+    header.appendChild(actionsDiv);
 
-    // Expanded view: transcript (+ reply box for active user_chat rows).
-    if (sub.expanded) {
-      var transcriptDiv = document.createElement("div");
-      transcriptDiv.className = "subs-transcript";
-      sub._transcriptEl = transcriptDiv;
-      row.appendChild(transcriptDiv);
-      renderSubsTranscript(sub);
-      // Lazy-load the transcript from the server on first expand.
-      if (!sub.transcriptLoaded) loadSubsTranscript(sub);
+    return header;
+  }
 
-      if (sub.kind === "user_chat" && !terminal) {
-        row.appendChild(buildSubsInputRow(sub));
-      }
+  function buildSubsBody(sub, terminal) {
+    var wrapper = document.createElement("div");
+    wrapper.className = "subs-body";
+
+    var transcriptDiv = document.createElement("div");
+    transcriptDiv.className = "subs-transcript";
+    sub._transcriptEl = transcriptDiv;
+    wrapper.appendChild(transcriptDiv);
+    renderSubsTranscript(sub);
+    // Lazy-load the transcript from the server on first expand.
+    if (!sub.transcriptLoaded) loadSubsTranscript(sub);
+
+    if (sub.kind === "user_chat" && !terminal) {
+      wrapper.appendChild(buildSubsInputRow(sub));
     }
 
-    return row;
+    return wrapper;
   }
 
   function renderSubsTranscript(sub) {
