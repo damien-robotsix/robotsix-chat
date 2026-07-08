@@ -21,6 +21,7 @@
 #   audit               | jscpd clone-pair detection — mechanical refactoring proposals
 #   test_gap            | Coverage gap analysis — deterministic fact
 #   completeness_check  | Config/env completeness scan — deterministic gap detection
+#   env_doc_sync         | Mechanical env-var ↔ docs cross-reference — deterministic gap detection
 #   module_curator      | Module path validation — deterministic stale-path detection
 #   agent_check         | Agent-discovered discrepancies — deterministic findings
 #
