@@ -377,8 +377,10 @@ def test_build_ancestor_context_three_generation(reg: SubsessionRegistry) -> Non
     assert "## grandparent" in result
     assert "## parent" in result
     assert "## child" in result
-    assert result.index("## grandparent") < result.index("## parent") < result.index(
-        "## child"
+    assert (
+        result.index("## grandparent")
+        < result.index("## parent")
+        < result.index("## child")
     )
 
 

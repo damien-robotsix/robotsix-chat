@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TypedDict
 
@@ -577,43 +577,43 @@ def resume_subsessions(env: SubsessionEnv) -> None:
             logger.exception("Could not resume subsession entry %r", entry)
 
 
-def _entry_str(entry: dict[str, object], key: str, default: str = "") -> str:
+def _entry_str(entry: Mapping[str, object], key: str, default: str = "") -> str:
     """Coerce a persisted-entry field to ``str`` (typed JSON accessor)."""
     value = entry.get(key, default)
     return value if isinstance(value, str) else default
 
 
-def _entry_int(entry: dict[str, object], key: str, default: int = 0) -> int:
+def _entry_int(entry: Mapping[str, object], key: str, default: int = 0) -> int:
     """Coerce a persisted-entry field to ``int``."""
     value = entry.get(key)
     return int(value) if isinstance(value, (int, float)) else default
 
 
-def _entry_float(entry: dict[str, object], key: str, default: float = 0.0) -> float:
+def _entry_float(entry: Mapping[str, object], key: str, default: float = 0.0) -> float:
     """Coerce a persisted-entry field to ``float``."""
     value = entry.get(key)
     return float(value) if isinstance(value, (int, float)) else default
 
 
-def _entry_opt_int(entry: dict[str, object], key: str) -> int | None:
+def _entry_opt_int(entry: Mapping[str, object], key: str) -> int | None:
     """Coerce a persisted-entry field to ``int | None``."""
     value = entry.get(key)
     return int(value) if isinstance(value, (int, float)) else None
 
 
-def _entry_opt_float(entry: dict[str, object], key: str) -> float | None:
+def _entry_opt_float(entry: Mapping[str, object], key: str) -> float | None:
     """Coerce a persisted-entry field to ``float | None``."""
     value = entry.get(key)
     return float(value) if isinstance(value, (int, float)) else None
 
 
-def _entry_opt_str(entry: dict[str, object], key: str) -> str | None:
+def _entry_opt_str(entry: Mapping[str, object], key: str) -> str | None:
     """Coerce a persisted-entry field to ``str | None``."""
     value = entry.get(key)
     return value if isinstance(value, str) else None
 
 
-def _rebuild_completed_runs(entry: dict[str, object]) -> set[int]:
+def _rebuild_completed_runs(entry: Mapping[str, object]) -> set[int]:
     """Reconstruct the ``completed_runs`` set from a persisted entry."""
     raw = entry.get("completed_runs")
     if isinstance(raw, list):
@@ -650,7 +650,7 @@ class _CommonEntryKwargs(TypedDict):
     include_previous_result: bool
 
 
-def _entry_to_common_kwargs(entry: dict[str, object]) -> _CommonEntryKwargs:
+def _entry_to_common_kwargs(entry: Mapping[str, object]) -> _CommonEntryKwargs:
     """Extract common SubsessionInfo/spawn_subsession fields from a persisted entry."""
     return {
         "parent_id": _entry_opt_str(entry, "parent_id"),
@@ -663,7 +663,7 @@ def _entry_to_common_kwargs(entry: dict[str, object]) -> _CommonEntryKwargs:
     }
 
 
-def _entry_last_assistant_text(entry: dict[str, object]) -> str:
+def _entry_last_assistant_text(entry: Mapping[str, object]) -> str:
     """Extract the most recent assistant reply from a persisted entry's transcript.
 
     ``user_chat`` subsessions never write to ``last_result`` (only periodic
@@ -683,7 +683,7 @@ def _entry_last_assistant_text(entry: dict[str, object]) -> str:
     return ""
 
 
-def _resume_entry(env: SubsessionEnv, entry: dict[str, object]) -> None:
+def _resume_entry(env: SubsessionEnv, entry: Mapping[str, object]) -> None:
     """Resume a single persisted registry entry (see resume_subsessions)."""
     status = _entry_str(entry, "status")
     kind = SubsessionKind(_entry_str(entry, "kind", "task"))
@@ -758,7 +758,7 @@ def _resume_entry(env: SubsessionEnv, entry: dict[str, object]) -> None:
 
 def _restore_entry(
     registry: SubsessionRegistry,
-    entry: dict[str, object],
+    entry: Mapping[str, object],
     *,
     force_active: bool = False,
 ) -> SubsessionInfo | None:
