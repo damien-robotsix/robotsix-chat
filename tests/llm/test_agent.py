@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, call, patch
 
 import pytest
 
@@ -15,16 +15,22 @@ class _RecordingMemory:
 
     def __init__(self, recall: str = "") -> None:
         self._recall = recall
-        self.remembered: list[tuple[str, str]] = []
+        self.remembered: list[tuple[str, str, str | None]] = []
 
     async def setup(self) -> None:
         return None
 
-    async def recall(self, query: str) -> str:
+    async def recall(self, query: str, *, session_id: str | None = None) -> str:
         return self._recall
 
-    async def remember(self, user_message: str, assistant_message: str) -> None:
-        self.remembered.append((user_message, assistant_message))
+    async def remember(
+        self,
+        user_message: str,
+        assistant_message: str,
+        *,
+        session_id: str | None = None,
+    ) -> None:
+        self.remembered.append((user_message, assistant_message, session_id))
 
 
 def _patched_create_model(output: str = "hi there") -> tuple[MagicMock, MagicMock]:
@@ -163,29 +169,47 @@ async def _agent_with_memory(
 
 
 @pytest.mark.asyncio
-async def test_recalled_memory_injected_into_system_prompt() -> None:
-    """Recalled memory is appended to the system prompt for that call."""
+async def test_recalled_memory_prepended_to_user_turn() -> None:
+    """Recalled memory goes into the current user turn, not the system prompt."""
     provider, _, _, _ = await _agent_with_memory(
-        output="ok", recall="Damien prefers Python."
+        output="ok", recall="Damien prefers Python.", message="hi"
     )
 
+    handle = provider.build_agent.return_value
+    sent = handle.run_calls[0]["message"]
+    assert sent.startswith("# Relevant memory")
+    assert "Damien prefers Python." in sent
+    assert sent.endswith("hi")  # the user's text closes the turn
+
+    # The system prompt stays byte-stable (the head of the provider's
+    # cacheable prefix must never carry per-message recall text).
     system_prompt = provider.build_agent.call_args.kwargs["system_prompt"]
-    assert system_prompt.startswith("Be helpful.")
-    assert "Damien prefers Python." in system_prompt
+    assert system_prompt == "Be helpful."
 
 
 @pytest.mark.asyncio
 async def test_no_recall_adds_no_memory_block() -> None:
-    """Keep the system prompt clean when recall is empty.
+    """With no recalled memory the message and system prompt are untouched."""
+    provider, _, _, _ = await _agent_with_memory(output="ok", message="hi")
 
-    With no recalled memory, the system prompt is just the instruction
-    with no memory block.
-    """
-    provider, _, _, _ = await _agent_with_memory(output="ok")
-
+    handle = provider.build_agent.return_value
+    assert handle.run_calls[0]["message"] == "hi"
     system_prompt = provider.build_agent.call_args.kwargs["system_prompt"]
     assert system_prompt.startswith("Be helpful.")
     assert "# Relevant memory" not in system_prompt  # no recall block
+
+
+@pytest.mark.asyncio
+async def test_system_prompt_identical_with_and_without_recall() -> None:
+    """Recall never alters the system prompt (prompt-cache stability)."""
+    provider_plain, _, _, _ = await _agent_with_memory(output="ok")
+    provider_recall, _, _, _ = await _agent_with_memory(
+        output="ok", recall="Damien prefers Python."
+    )
+
+    plain = provider_plain.build_agent.call_args.kwargs["system_prompt"]
+    with_recall = provider_recall.build_agent.call_args.kwargs["system_prompt"]
+    assert plain == with_recall
 
 
 @pytest.mark.asyncio
@@ -197,7 +221,7 @@ async def test_exchange_persisted_in_background() -> None:
     # Let the fire-and-forget write task run.
     await asyncio.sleep(0)
 
-    assert memory.remembered == [("the question", "the reply")]
+    assert memory.remembered == [("the question", "the reply", None)]
 
 
 @pytest.mark.asyncio
@@ -208,6 +232,240 @@ async def test_empty_reply_not_persisted() -> None:
 
     assert chunks == []
     assert memory.remembered == []
+
+
+@pytest.mark.asyncio
+async def test_session_id_forwarded_to_memory() -> None:
+    """session_id from agent.stream is threaded to both recall and remember."""
+    create_model, _ = _patched_create_model("ok")
+    memory = _RecordingMemory(recall="some recall")
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.", memory=memory)
+        _ = [c async for c in agent.stream("hi", session_id="sess-abc")]
+
+    await asyncio.sleep(0)
+    assert memory.remembered == [("hi", "ok", "sess-abc")]
+
+
+# ---------------------------------------------------------------------------
+# event_sink — live claudeSDK activity forwarding
+# ---------------------------------------------------------------------------
+
+
+class _RecordingEventSink:
+    """An EventSink stub that records every published (session_id, frame)."""
+
+    def __init__(self) -> None:
+        self.published: list[tuple[str, dict[str, object]]] = []
+
+    def publish(self, session_id: str, frame: dict[str, object]) -> None:
+        self.published.append((session_id, frame))
+
+
+def _patched_create_model_with_activity(
+    output: str = "hi there",
+) -> tuple[MagicMock, MagicMock]:
+    """Like _patched_create_model, but ``run`` fires one activity event.
+
+    It fires via the ambient ``activity_events()`` contextvar while it
+    "runs" — simulating what robotsix-llmio's ``_stream_query`` does
+    internally.
+    """
+    from robotsix_llmio.claude_sdk import ClaudeSDKActivityEvent
+    from robotsix_llmio.claude_sdk._stream import _current_on_event
+
+    handle = MagicMock()
+
+    async def fake_run(message: str, *, message_history: object = None) -> MagicMock:
+        on_event = _current_on_event.get()
+        if on_event is not None:
+            on_event(
+                ClaudeSDKActivityEvent(
+                    kind="tool_call", turn=1, tool_name="search", detail="{}"
+                )
+            )
+        result = MagicMock()
+        result.output = output
+        return result
+
+    handle.run = fake_run
+    handle.close = MagicMock()
+
+    provider = MagicMock()
+    provider.build_agent.return_value = handle
+
+    create_model = MagicMock(return_value=provider)
+    return create_model, handle
+
+
+@pytest.mark.asyncio
+async def test_event_sink_receives_activity_frame() -> None:
+    """A configured event_sink gets an ``activity`` frame published.
+
+    Scoped to the turn's session_id, for an event the claudeSDK run fires.
+    """
+    create_model, _ = _patched_create_model_with_activity()
+    sink = _RecordingEventSink()
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(
+            model_level=3, instruction="Be helpful.", event_sink=sink
+        )
+        _ = [c async for c in agent.stream("hi", session_id="sess-abc")]
+
+    from robotsix_chat.chat.events import SSE_ACTIVITY_TYPE
+
+    # The synthetic recall_memory tool_call/tool_result frames (published
+    # around memory.recall(), see test_recall_activity_frames_* below) bracket
+    # the claudeSDK run's own event — recall() is a no-op with the default
+    # NullMemory, so its result frame reports no context found.
+    assert sink.published == [
+        (
+            "sess-abc",
+            {
+                "type": SSE_ACTIVITY_TYPE,
+                "kind": "tool_call",
+                "turn": 0,
+                "tool_name": "recall_memory",
+                "detail": "",
+                "is_error": False,
+            },
+        ),
+        (
+            "sess-abc",
+            {
+                "type": SSE_ACTIVITY_TYPE,
+                "kind": "tool_result",
+                "turn": 0,
+                "tool_name": None,
+                "detail": "no relevant memory found",
+                "is_error": False,
+            },
+        ),
+        (
+            "sess-abc",
+            {
+                "type": SSE_ACTIVITY_TYPE,
+                "kind": "tool_call",
+                "turn": 1,
+                "tool_name": "search",
+                "detail": "{}",
+                "is_error": False,
+            },
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_no_event_sink_configured_is_silent() -> None:
+    """Without an event_sink, a stream() call behaves exactly as before.
+
+    No callback is installed, and nothing raises.
+    """
+    create_model, _ = _patched_create_model_with_activity()
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
+        chunks = [c async for c in agent.stream("hi", session_id="sess-abc")]
+
+    assert chunks == ["hi there"]
+
+
+@pytest.mark.asyncio
+async def test_event_sink_configured_but_no_session_id_is_silent() -> None:
+    """event_sink is configured, but stream() is called without a session_id.
+
+    A stateless single query has nowhere to scope the frame, so no callback
+    is installed and nothing is published.
+    """
+    create_model, _ = _patched_create_model_with_activity()
+    sink = _RecordingEventSink()
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(
+            model_level=3, instruction="Be helpful.", event_sink=sink
+        )
+        _ = [c async for c in agent.stream("hi")]  # no session_id
+
+    assert sink.published == []
+
+
+# ---------------------------------------------------------------------------
+# Synthetic activity frames around memory.recall()
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_recall_activity_frames_no_context_found() -> None:
+    """recall() returning "" publishes a tool_call/tool_result pair around it."""
+    create_model, _ = _patched_create_model("hi there")
+    sink = _RecordingEventSink()
+    memory = _RecordingMemory(recall="")
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(
+            model_level=3, instruction="Be helpful.", event_sink=sink, memory=memory
+        )
+        _ = [c async for c in agent.stream("hi", session_id="sess-abc")]
+
+    from robotsix_chat.chat.events import SSE_ACTIVITY_TYPE
+
+    assert sink.published == [
+        (
+            "sess-abc",
+            {
+                "type": SSE_ACTIVITY_TYPE,
+                "kind": "tool_call",
+                "turn": 0,
+                "tool_name": "recall_memory",
+                "detail": "",
+                "is_error": False,
+            },
+        ),
+        (
+            "sess-abc",
+            {
+                "type": SSE_ACTIVITY_TYPE,
+                "kind": "tool_result",
+                "turn": 0,
+                "tool_name": None,
+                "detail": "no relevant memory found",
+                "is_error": False,
+            },
+        ),
+    ]
+
+
+@pytest.mark.asyncio
+async def test_recall_activity_frames_context_found() -> None:
+    """A non-empty recall() reports how much context was found."""
+    create_model, _ = _patched_create_model("hi there")
+    sink = _RecordingEventSink()
+    memory = _RecordingMemory(recall="prior fact")
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(
+            model_level=3, instruction="Be helpful.", event_sink=sink, memory=memory
+        )
+        _ = [c async for c in agent.stream("hi", session_id="sess-abc")]
+
+    result_frame = sink.published[1]
+    assert result_frame[1]["kind"] == "tool_result"
+    assert result_frame[1]["detail"] == "found 10 chars of prior context"
+
+
+@pytest.mark.asyncio
+async def test_recall_activity_frames_no_event_sink_is_silent() -> None:
+    """Without an event_sink, recall() runs normally and nothing is published."""
+    create_model, _ = _patched_create_model("hi there")
+    memory = _RecordingMemory(recall="prior fact")
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model):
+        agent = LlmioChatAgent(model_level=3, instruction="Be helpful.", memory=memory)
+        chunks = [c async for c in agent.stream("hi", session_id="sess-abc")]
+
+    assert chunks == ["hi there"]
 
 
 # ---------------------------------------------------------------------------
@@ -378,6 +636,136 @@ async def test_retries_exhausted_on_persistent_transient() -> None:
 
     assert provider.build_agent.call_count == _MAX_RUN_ATTEMPTS
     assert handle.close.call_count == _MAX_RUN_ATTEMPTS
+
+
+# ---------------------------------------------------------------------------
+# Usage-exhausted tier fallback
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_usage_exhausted_falls_back_to_another_tier() -> None:
+    """ClaudeSDKUsageExhaustedError at level 4 falls back to level 3 (opus).
+
+    Falls back for the SAME turn instead of surfacing the raw error text.
+    """
+    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+
+    level4_handle = MagicMock()
+
+    async def exhausted(_message: str, *, message_history: object = None) -> None:
+        raise ClaudeSDKUsageExhaustedError("You're out of usage credits")
+
+    level4_handle.run = exhausted
+    level4_handle.close = MagicMock()
+    level4_provider = MagicMock()
+    level4_provider.build_agent.return_value = level4_handle
+
+    level3_handle = MagicMock()
+
+    async def recovered(_message: str, *, message_history: object = None) -> MagicMock:
+        result = MagicMock()
+        result.output = "opus reply"
+        return result
+
+    level3_handle.run = recovered
+    level3_handle.close = MagicMock()
+    level3_provider = MagicMock()
+    level3_provider.build_agent.return_value = level3_handle
+
+    # acall_with_tier_fallback retries its starting level (4) once — it has
+    # no way to know this level was already just attempted outside it — and
+    # that retry fails identically before falling back to level 3.
+    create_model_patch = MagicMock(
+        side_effect=[level4_provider, level4_provider, level3_provider]
+    )
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
+        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
+        chunks = [c async for c in agent.stream("hi")]
+
+    assert chunks == ["opus reply"]
+    assert create_model_patch.call_args_list == [
+        call(level=4),
+        call(level=4),
+        call(level=3),
+    ]
+    assert level4_handle.close.call_count == 2
+    level3_handle.close.assert_called_once()
+    # The fallback attempt reuses the exact same prompt/instruction — the
+    # user should get a real answer, not have to re-ask.
+    assert level3_provider.build_agent.call_args.kwargs["system_prompt"].startswith(
+        "Be helpful."
+    )
+
+
+@pytest.mark.asyncio
+async def test_usage_exhausted_fallback_also_failing_raises() -> None:
+    """If the fallback tier ALSO fails, the failure propagates.
+
+    Scoped to one promotion — does not keep cascading through every
+    remaining tier.
+    """
+    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+
+    level4_handle = MagicMock()
+
+    async def exhausted(_message: str, *, message_history: object = None) -> None:
+        raise ClaudeSDKUsageExhaustedError("You're out of usage credits")
+
+    level4_handle.run = exhausted
+    level4_handle.close = MagicMock()
+    level4_provider = MagicMock()
+    level4_provider.build_agent.return_value = level4_handle
+
+    level3_handle = MagicMock()
+
+    async def also_boom(_message: str, *, message_history: object = None) -> None:
+        raise RuntimeError("opus is also down")
+
+    level3_handle.run = also_boom
+    level3_handle.close = MagicMock()
+    level3_provider = MagicMock()
+    level3_provider.build_agent.return_value = level3_handle
+
+    create_model_patch = MagicMock(
+        side_effect=[level4_provider, level4_provider, level3_provider]
+    )
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
+        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
+        with pytest.raises(RuntimeError, match="opus is also down"):
+            _ = [c async for c in agent.stream("hi")]
+
+    assert create_model_patch.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_non_usage_exhausted_error_not_affected_by_fallback() -> None:
+    """A plain non-transient error at the primary level still raises.
+
+    Raises immediately — the fallback path is never entered for it.
+    """
+    handle = MagicMock()
+
+    async def boom(_message: str, *, message_history: object = None) -> None:
+        raise RuntimeError("unrelated failure")
+
+    handle.run = boom
+    handle.close = MagicMock()
+    provider = MagicMock()
+    provider.build_agent.return_value = handle
+    create_model_patch = MagicMock(return_value=provider)
+
+    with (
+        patch("robotsix_chat.llm.agent.create_model", create_model_patch),
+        patch("robotsix_chat.llm.agent.is_openrouter_transient", return_value=False),
+    ):
+        agent = LlmioChatAgent(model_level=4, instruction="Be helpful.")
+        with pytest.raises(RuntimeError, match="unrelated failure"):
+            _ = [c async for c in agent.stream("hi")]
+
+    assert create_model_patch.call_count == 1
 
 
 @pytest.mark.asyncio

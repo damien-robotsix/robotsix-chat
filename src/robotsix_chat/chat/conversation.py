@@ -7,10 +7,8 @@ conversations are now addressable by ``session_id`` and grouped under an
 named sessions; the store maintains per-session turn history and per-owner
 metadata (title, last-active timestamp, turn count, active session).
 
-Sessions are **persistent**: history is never wiped on idle timeout.  The
-``idle_reset_seconds`` parameter is retained for caller compatibility but
-no longer triggers a destructive reset — sessions survive idle/restart
-indefinitely.
+Sessions are **persistent**: history is never wiped on idle timeout —
+sessions survive idle/restart indefinitely.
 
 The store is process-local and unsynchronised: it is sized for the single-worker
 ``uvicorn.run`` the server uses. Running multiple workers would split an owner's
@@ -67,6 +65,7 @@ class Session:
     turns: list[Turn] = field(default_factory=list)
     turn_count: int = 0
     closed: bool = False
+    compacted_summary: str | None = None
 
 
 @dataclass
@@ -313,7 +312,6 @@ class ConversationStore:
     def __init__(
         self,
         *,
-        idle_reset_seconds: float = 1800.0,
         max_history_turns: int = 50,
         max_conversations: int = 1000,
         session_factory: Callable[[], str] | None = None,
@@ -322,13 +320,9 @@ class ConversationStore:
     ) -> None:
         """Configure store bounds, session factory, and optional persistence.
 
-        *idle_reset_seconds* is retained for caller compatibility but no longer
-        triggers destructive history reset — sessions are persistent.
-
         *wall_clock* provides wall-clock timestamps for ``last_active`` metadata;
         defaults to ``time.time`` so tests can inject deterministic values.
         """
-        self._idle_reset_seconds = idle_reset_seconds
         self._max_history_turns = max_history_turns
         self._max_conversations = max_conversations
         self._wall_clock = wall_clock
@@ -417,8 +411,7 @@ class ConversationStore:
                 owner.active_session_id = session_id
                 owner.session_ids.add(session_id)
 
-        if self._serializer is not None:
-            self._serializer.persist(self._owners, self._sessions)
+        self._persist()
 
     def record_for_owner(
         self, owner_id: str, user_message: str, assistant_reply: str
@@ -494,8 +487,7 @@ class ConversationStore:
                 session_ids={sid},
             )
             self._evict_overflow()
-            if self._serializer is not None:
-                self._serializer.persist(self._owners, self._sessions)
+            self._persist()
             return (
                 [
                     {
@@ -548,9 +540,7 @@ class ConversationStore:
 
         self._sessions.move_to_end(sid)
         self._evict_overflow()
-
-        if self._serializer is not None:
-            self._serializer.persist(self._owners, self._sessions)
+        self._persist()
 
         return {
             "session_id": sid,
@@ -604,8 +594,7 @@ class ConversationStore:
                 owner.active_session_id = sid
                 self._evict_overflow()
 
-        if self._serializer is not None:
-            self._serializer.persist(self._owners, self._sessions)
+        self._persist()
 
         return {"deleted": True, "active_session_id": owner.active_session_id}
 
@@ -628,8 +617,7 @@ class ConversationStore:
         if session is None:
             return {"closed": False, "reason": "session not found"}
         session.closed = True
-        if self._serializer is not None:
-            self._serializer.persist(self._owners, self._sessions)
+        self._persist()
         return {"closed": True}
 
     def is_session_closed(self, session_id: str) -> bool:
@@ -646,6 +634,11 @@ class ConversationStore:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def _persist(self) -> None:
+        """Persist current state to disk when serialization is active."""
+        if self._serializer is not None:
+            self._serializer.persist(self._owners, self._sessions)
 
     def _evict_overflow(self) -> None:
         while len(self._sessions) > self._max_conversations:
@@ -695,17 +688,3 @@ class ConversationStore:
                 }
             )
         return result
-
-    def stats(self) -> dict[str, int]:
-        """Return a read-only summary of conversation counts.
-
-        Returns a dict with ``sessions``, ``owners``, and ``total_turns``
-        keys — no LRU ordering, ``last_activity`` timestamp, eviction, or
-        persistence side effects.
-        """
-        total_turns = sum(len(session.turns) for session in self._sessions.values())
-        return {
-            "sessions": len(self._sessions),
-            "owners": len(self._owners),
-            "total_turns": total_turns,
-        }

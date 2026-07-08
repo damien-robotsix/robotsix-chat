@@ -58,14 +58,15 @@ ______________________________________________________________________
 
 ### Top-level
 
-| JSON key                    | Type              | Default                                               | Description                                                    |
-| --------------------------- | ----------------- | ----------------------------------------------------- | -------------------------------------------------------------- |
-| `llmio_model_level`         | `integer`         | `3`                                                   | LLM capability level: `1` (cheapest), `2`, `3`, or `4` (best). |
-| `llmio_api_key`             | `string` (secret) | `""`                                                  | OpenRouter API key. Required for levels 1–2; ignored for 3–4.  |
-| `agent_instruction`         | `string`          | (long default)                                        | System instruction for the agent.                              |
-| `max_images_per_message`    | `integer`         | `8`                                                   | Maximum images per chat message.                               |
-| `max_image_bytes`           | `integer`         | `5242880`                                             | Maximum image size in bytes (5 MiB).                           |
-| `allowed_image_media_types` | `array[string]`   | `["image/png","image/jpeg","image/gif","image/webp"]` | Allowed image MIME types.                                      |
+| JSON key                    | Type              | Default                                               | Description                                                                                      |
+| --------------------------- | ----------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------ |
+| `llmio_model_level`         | `integer`         | `3`                                                   | LLM capability level: `1` (cheapest), `2`, `3`, or `4` (best).                                   |
+| `llmio_api_key`             | `string` (secret) | `""`                                                  | OpenRouter API key. Required for levels 1–2; ignored for 3–4.                                    |
+| `summary_model_level`       | `integer`         | `1`                                                   | LLM capability level used to regenerate `POST /summary`'s structured extraction after each turn. |
+| `agent_instruction`         | `string`          | (long default)                                        | System instruction for the agent.                                                                |
+| `max_images_per_message`    | `integer`         | `8`                                                   | Maximum images per chat message.                                                                 |
+| `max_image_bytes`           | `integer`         | `5242880`                                             | Maximum image size in bytes (5 MiB).                                                             |
+| `allowed_image_media_types` | `array[string]`   | `["image/png","image/jpeg","image/gif","image/webp"]` | Allowed image MIME types.                                                                        |
 
 ### Server
 
@@ -136,12 +137,11 @@ Direct HTTP access to the mill's board API for listing, reading, and creating ti
 
 ### Conversation
 
-| JSON key                          | Type      | Default                      | Description                                              |
-| --------------------------------- | --------- | ---------------------------- | -------------------------------------------------------- |
-| `conversation.idle_reset_seconds` | `integer` | `1800`                       | Seconds of idle before resetting the conversation store. |
-| `conversation.max_history_turns`  | `integer` | `50`                         | Maximum conversation turns to retain.                    |
-| `conversation.max_conversations`  | `integer` | `1000`                       | Maximum concurrent conversations.                        |
-| `conversation.persist_path`       | `string`  | `"/data/conversations.json"` | Path to the conversation persistence file.               |
+| JSON key                         | Type      | Default                      | Description                                |
+| -------------------------------- | --------- | ---------------------------- | ------------------------------------------ |
+| `conversation.max_history_turns` | `integer` | `50`                         | Maximum conversation turns to retain.      |
+| `conversation.max_conversations` | `integer` | `1000`                       | Maximum concurrent conversations.          |
+| `conversation.persist_path`      | `string`  | `"/data/conversations.json"` | Path to the conversation persistence file. |
 
 ### Diagnostics
 
@@ -220,7 +220,7 @@ Background sub-agent spawning configuration.
 | -------------------------------------- | --------- | -------------------------- | -------------------------------------------- |
 | `subsessions.max_concurrent`           | `integer` | `8`                        | Maximum concurrent subsessions.              |
 | `subsessions.max_depth`                | `integer` | `3`                        | Maximum nesting depth.                       |
-| `subsessions.default_model_level`      | `integer` | `3`                        | Default model level for spawned subsessions. |
+| `subsessions.default_model_level`      | `integer` | `2`                        | Default model level for spawned subsessions. |
 | `subsessions.min_interval_seconds`     | `number`  | `60.0`                     | Minimum interval between periodic runs.      |
 | `subsessions.auto_stop_no_change_runs` | `integer` | `5`                        | Consecutive NO_CHANGE runs before auto-stop. |
 | `subsessions.store_path`               | `string`  | `"/data/subsessions.json"` | Path to the subsession persistence file.     |

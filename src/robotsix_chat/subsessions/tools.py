@@ -29,7 +29,9 @@ from .models import (
     SubsessionIntervalError,
     SubsessionKind,
     SubsessionLevelError,
+    SubsessionPeriodicSpawnError,
 )
+from .registry import SubsessionRegistry
 from .worker import CloseState, SubsessionContext, SubsessionEnv, spawn_subsession
 
 logger = logging.getLogger(__name__)
@@ -55,7 +57,7 @@ def build_subsession_tools(
     if ctx.depth < cfg.max_depth:
         tools.extend(_build_spawn_and_control_tools(env, ctx))
     if close_state is not None and ctx.subsession_id is not None:
-        tools.append(_build_complete_tool(close_state, ctx.subsession_id))
+        tools.append(_build_complete_tool(close_state, ctx.subsession_id, env.registry))
     return tools
 
 
@@ -68,6 +70,31 @@ def _scope_ids(env: SubsessionEnv, ctx: SubsessionContext) -> set[str]:
     if ctx.subsession_id is None:
         return {info.id for info in env.registry.list_for_owner(ctx.owner_session_id)}
     return {info.id for info in env.registry.list_descendants(ctx.subsession_id)}
+
+
+def _resolve_subsession_id(
+    env: SubsessionEnv, ctx: SubsessionContext, candidate: str
+) -> str | None:
+    """Resolve *candidate* to a full subsession id in scope.
+
+    Tries exact match first, then prefix match (so the agent can pass
+    the 8-char truncated id that ``list_subsessions`` displays).  Returns
+    ``None`` when there is no match or the prefix is ambiguous.
+    """
+    scope = _scope_ids(env, ctx)
+    if candidate in scope:
+        return candidate
+    matches = [sid for sid in scope if sid.startswith(candidate)]
+    if len(matches) == 1:
+        return matches[0]
+    if len(matches) > 1:
+        logger.warning(
+            "Ambiguous subsession prefix %r matches %d ids: %s",
+            candidate,
+            len(matches),
+            ", ".join(matches),
+        )
+    return None
 
 
 def _build_spawn_and_control_tools(
@@ -84,6 +111,7 @@ def _build_spawn_and_control_tools(
         interval_seconds: float | None = None,
         max_runs: int | None = None,
         include_previous_result: bool = False,
+        inherit_context: bool = False,
     ) -> str:
         """Start a background subsession and return its id immediately.
 
@@ -100,11 +128,18 @@ def _build_spawn_and_control_tools(
 
         instructions must be complete and self-contained — the subsession
         agent starts with NO conversation history. title is a short
-        human-readable label shown in the UI panel. model_level picks
+        human-readable label shown in the UI panel. Set inherit_context
+        to True to automatically prepend an ancestor context block (the
+        root task and each ancestor's title/prompt summary) so a nested
+        child does not start from scratch — useful when spawning from a
+        subsession that itself runs a focused sub-task. model_level picks
         capability 1 (cheapest) to 4 (frontier, most expensive) — match
-        it to difficulty: 1-2 for simple polling/extraction (needs an
-        API key), 3 for general work, 4 only for genuinely hard
-        reasoning. interval_seconds (minimum applies) and max_runs are
+        it to difficulty: 1 for trivial polling/extraction, 2 for
+        general work (the default choice unless the task needs stronger
+        reasoning), 3 for reasoning 2 struggles with, 4 only for
+        genuinely hard reasoning. Levels 1-2 need an OpenRouter API key;
+        if a spawn errors for a missing key, retry at level 3.
+        interval_seconds (minimum applies) and max_runs are
         for kind="periodic" only.
 
         The subsession runs in the background; you will receive its
@@ -130,12 +165,14 @@ def _build_spawn_and_control_tools(
                 interval_seconds=interval_seconds,
                 include_previous_result=include_previous_result,
                 max_runs=max_runs,
+                inherit_context=inherit_context,
             )
         except (
             SubsessionCapacityError,
             SubsessionDepthError,
             SubsessionIntervalError,
             SubsessionLevelError,
+            SubsessionPeriodicSpawnError,
         ) as exc:
             return f"Could not start the subsession: {exc}"
         return f"Started {kind} subsession {sub_id} ('{title}')."
@@ -152,9 +189,10 @@ def _build_spawn_and_control_tools(
         subsessions started from this conversation (or their
         descendants) can be messaged.
         """
-        if subsession_id not in _scope_ids(env, ctx):
+        resolved = _resolve_subsession_id(env, ctx, subsession_id)
+        if resolved is None:
             return f"No subsession {subsession_id!r} in this conversation's tree."
-        if env.registry.enqueue_message(subsession_id, "parent", text):
+        if env.registry.enqueue_message(resolved, "parent", text):
             return (
                 f"Message queued for subsession {subsession_id} — it will "
                 "be seen when its current step finishes."
@@ -169,10 +207,11 @@ def _build_spawn_and_control_tools(
         conversation. Prefer letting a subsession finish on its own —
         use this when its work is no longer needed or it is stuck.
         """
-        if subsession_id not in _scope_ids(env, ctx):
+        resolved = _resolve_subsession_id(env, ctx, subsession_id)
+        if resolved is None:
             return f"No subsession {subsession_id!r} in this conversation's tree."
         closed = env.registry.cancel_and_close(
-            subsession_id,
+            resolved,
             reason=reason or "closed by parent",
             closed_by="parent",
         )
@@ -206,7 +245,9 @@ def _build_spawn_and_control_tools(
     ]
 
 
-def _build_complete_tool(close_state: CloseState, sub_id: str) -> Any:
+def _build_complete_tool(
+    close_state: CloseState, sub_id: str, registry: SubsessionRegistry
+) -> Any:
     """Build the self-close tool bound to *close_state*."""
 
     async def complete_subsession(summary: str) -> str:
@@ -220,6 +261,12 @@ def _build_complete_tool(close_state: CloseState, sub_id: str) -> Any:
         thing your parent conversation is guaranteed to see. The
         subsession ends after your current reply.
         """
+        info = registry.get(sub_id)
+        if info is None or not info.is_active:
+            return (
+                f"Error: subsession {sub_id} is no longer active — its tree "
+                "record may have been lost. Cannot complete."
+            )
         close_state.requested = True
         close_state.summary = summary
         return (

@@ -5,6 +5,51 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v20 — 2026-07-07 — self-upgrade-capability-via-tickets
+
+**Summary:** Add a bullet to the Autonomy section documenting that the agent upgrades its own
+capabilities by filing tickets on the robotsix-chat repo: new tools, components, and permissions are
+granted through the standard ticket workflow, and after merge+deploy the agent self-restarts via the
+deploy component to pick up newly registered capabilities.
+
+**SHA256:** `a3a77a1426baf3da4a300b107e7a9401f6325490d6878d0374753c741fa97ab4`
+
+______________________________________________________________________
+
+## v19 — 2026-07-05 — subsession-prefer-level-2-for-general-work
+
+**Summary:** Reword the subsession `model_level` guidance in the default `agent_instruction`. Level
+3 (keyless Claude Opus) was described as "the default for general work" while levels 1-2 were
+pigeonholed to "trivial polling/extraction", so the agent nearly always spawned level-3 subsessions
+even for tasks a cheap OpenRouter tier could handle. Now level 2 is the default choice for general
+work, level 3 is reserved for reasoning level 2 struggles with, and the text tells the agent to
+retry at level 3 if a level 1-2 spawn errors for a missing API key.
+
+**SHA256:** `0387f250d8092d248e1e29b7736966c09aa1c3e6a32df4d7c6bb42024a07e939`
+
+______________________________________________________________________
+
+## v18 — 2026-07-04 — default-prompt-promises-component-request-cc62
+
+**Summary:** Remove the "Component access" section from the default `agent_instruction`. It is now
+conditionally injected by `create_agent_from_settings()` only when `central_deploy.url` is
+configured, so the prompt no longer promises a `component_request` tool in the default out-of-box
+deployment where no central-deploy roster is wired.
+
+**SHA256:** `91f785fc2ff229ecc5c5bfd39c75b3aaaa5b070cf0b0a9a7f31066ac1787e3f2`
+
+______________________________________________________________________
+
+## v17 — 2026-07-04 — knowledge-tool-names-in-system-prompt
+
+**Summary:** Update the knowledge-base tool names in the agent system prompt from shorthand
+(`add/append/update/list/read_knowledge_note`) to the actual tool names
+(`add_knowledge_note, append_to_knowledge_note, update_knowledge_note, list_knowledge_notes, read_knowledge_note`).
+
+**SHA256:** `efb12c78d114b5ea64d3bb79c4522b74c6e1c82a4203abe79c69e4d56ceca041`
+
+______________________________________________________________________
+
 ## Governance policy
 
 Every change to `Settings.agent_instruction` (the pydantic field default literal in
@@ -15,8 +60,10 @@ Every change to `Settings.agent_instruction` (the pydantic field default literal
    `## v<N> — <YYYY-MM-DD> — <ticket-id>`.
 3. **Record the SHA256** of the new `agent_instruction` default literal (computed as
    `hashlib.sha256(default.encode()).hexdigest()`) in the entry.
-4. **Mirror** the updated default literal verbatim in the `agent.instruction` row of
-   `docs/configuration.md`.
+4. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` in
+   the Default column — the full multi-paragraph instruction literal is impractical to embed
+   verbatim in a Markdown table cell. Do not attempt to inline the literal; the placeholder is
+   sufficient.
 
 A CI test (`tests/config/test_system_prompt_governance.py`) enforces that the latest entry's version
 matches `SYSTEM_PROMPT_VERSION` and its recorded hash matches the live default — edits that skip
@@ -35,7 +82,8 @@ prompt:
    - **Summary**: `rollback to v<K>`
    - **Rationale**: why the rollback is needed and which ticket authorises it.
    - **SHA256**: the hash of the restored literal (must match the prior version's recorded hash).
-5. Mirror the restored literal in `docs/configuration.md`.
+5. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` — no
+   change needed there for a rollback.
 
 ______________________________________________________________________
 

@@ -17,6 +17,7 @@ from robotsix_chat.config.models import (
     DirectRepoSettings,
     KnowledgeSettings,
     LangfuseSettings,
+    LifecycleSettings,
     MailSettings,
     MemoryEmbeddingSettings,
     MemoryLlmSettings,
@@ -33,6 +34,7 @@ from robotsix_chat.config.settings import (
 )
 
 __all__ = [
+    "SYSTEM_PROMPT_VERSION",
     "CentralDeploySettings",
     "ComponentClientSettings",
     "ComponentTarget",
@@ -42,13 +44,13 @@ __all__ = [
     "DirectRepoSettings",
     "KnowledgeSettings",
     "LangfuseSettings",
+    "LifecycleSettings",
     "MailSettings",
     "MemoryEmbeddingSettings",
     "MemoryLlmSettings",
     "MemorySettings",
     "RefDocsSettings",
     "RepoStudySettings",
-    "SYSTEM_PROMPT_VERSION",
     "SelfReviewSettings",
     "Settings",
     "SubsessionsSettings",

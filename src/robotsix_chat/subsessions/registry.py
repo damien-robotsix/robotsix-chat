@@ -53,6 +53,11 @@ logger = logging.getLogger(__name__)
 # recent history after a reload; older ones are pruned oldest-first.
 _MAX_TERMINAL_ENTRIES = 50
 
+# Cap on persisted (turn_input, reply) pairs per subsession — must match
+# worker._MAX_WORKER_HISTORY_TURNS (the replay window the worker actually
+# feeds the agent); capping here too bounds what's kept in the JSON store.
+_MAX_TURN_HISTORY_ENTRIES = 20
+
 
 class SubsessionRegistry:
     """Track every subsession in the process (see module docstring)."""
@@ -107,12 +112,26 @@ class SubsessionRegistry:
         include_previous_result: bool = False,
         max_runs: int | None = None,
         sub_id: str | None = None,
+        completed_runs: set[int] | None = None,
+        turn_history: list[tuple[str, str]] | None = None,
     ) -> SubsessionInfo:
         """Register a new subsession and publish ``subsession_started``.
 
         *sub_id* lets the resume path re-register a persisted subsession
-        under its original id.  Returns the created record.
+        under its original id.  Idempotent: when *sub_id* is given and
+        already registered the existing record is returned unchanged and
+        no frame is published — the caller must not launch a duplicate
+        worker.
+
+        *completed_runs* seeds the run guard for periodic subsessions
+        resumed after a restart, so already-executed run numbers are
+        persisted atomically from the first write. *turn_history* seeds
+        the agent-visible replay window the same way, so a resumed
+        periodic worker picks up with the context it had before the
+        restart instead of starting blank.
         """
+        if sub_id is not None and sub_id in self._subs:
+            return self._subs[sub_id]
         now = self._clock()
         info = SubsessionInfo(
             id=sub_id or self._id_factory(),
@@ -129,6 +148,8 @@ class SubsessionRegistry:
             interval_seconds=interval_seconds,
             include_previous_result=include_previous_result,
             max_runs=max_runs,
+            completed_runs=completed_runs or set(),
+            turn_history=turn_history or [],
         )
         self._subs[info.id] = info
         self._inboxes[info.id] = deque()
@@ -174,7 +195,7 @@ class SubsessionRegistry:
         an external close and the worker's own bookkeeping).
         """
         info = self._subs.get(sub_id)
-        if info is None or not info.is_active and status in ACTIVE_STATUSES:
+        if info is None or (not info.is_active and status in ACTIVE_STATUSES):
             return
         info.status = status
         info.last_activity_at = self._clock()
@@ -211,6 +232,16 @@ class SubsessionRegistry:
             info.owner_session_id,
             subsession_message_frame(info.id, role, text, now),
         )
+        self._persist()
+
+    def append_turn_history(self, sub_id: str, turn_input: str, reply: str) -> None:
+        """Record one (turn_input, reply) pair for context-on-resume, capped."""
+        info = self._subs.get(sub_id)
+        if info is None:
+            return
+        info.turn_history.append((turn_input, reply))
+        if len(info.turn_history) > _MAX_TURN_HISTORY_ENTRIES:
+            del info.turn_history[:-_MAX_TURN_HISTORY_ENTRIES]
         self._persist()
 
     def enqueue_message(self, sub_id: str, role: str, text: str) -> bool:
@@ -454,6 +485,62 @@ class SubsessionRegistry:
     def count_active(self) -> int:
         """Return the number of active subsessions process-wide."""
         return sum(1 for info in self._subs.values() if info.is_active)
+
+    def claim_run(self, sub_id: str, run_n: int) -> bool:
+        """Atomically claim a periodic run number.
+
+        Returns ``True`` when *run_n* was claimed (not previously
+        executed); ``False`` when it was already completed — the caller
+        must skip the agent turn.
+        """
+        info = self._subs.get(sub_id)
+        if info is None or not info.is_active:
+            return False
+        if run_n in info.completed_runs:
+            return False
+        info.completed_runs.add(run_n)
+        self._persist()
+        return True
+
+    def reap_orphans(self) -> int:
+        """Cancel any timer whose subsession id is not in a conversation tree.
+
+        An orphaned subsession has a live worker task but no tree
+        membership — the record was removed while the timer survived.
+        Returns the number of timers cancelled.
+        """
+        orphaned: list[str] = []
+        for sub_id, task in list(self._running.items()):
+            if task.done():
+                continue
+            found = any(sub_id in owner_ids for owner_ids in self._by_owner.values())
+            if not found:
+                orphaned.append(sub_id)
+
+        for sub_id in orphaned:
+            orphan_task = self._running.get(sub_id)
+            if orphan_task is not None and not orphan_task.done():
+                orphan_task.cancel()
+            logger.warning(
+                "Reaped orphaned subsession timer %s — tree record was lost.",
+                sub_id,
+            )
+            # Transition to FAILED so the subsession no longer counts
+            # against the concurrency cap and shows as terminal in the
+            # UI.  _close_and_publish handles the frame, status mutation
+            # and persistence atomically.
+            info = self._subs.get(sub_id)
+            if info is not None:
+                self._close_and_publish(
+                    info,
+                    status=SubsessionStatus.FAILED,
+                    summary=(
+                        "This subsession's tree record was lost; its "
+                        "timer has been cancelled."
+                    ),
+                    error="orphaned_timer_reaped",
+                )
+        return len(orphaned)
 
     # ------------------------------------------------------------------
     # persistence

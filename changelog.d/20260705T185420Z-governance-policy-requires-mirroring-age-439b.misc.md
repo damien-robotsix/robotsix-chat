@@ -1,0 +1,2 @@
+Governance policy requires mirroring agent_instruction in docs/configuration.md but docs use
+placeholder

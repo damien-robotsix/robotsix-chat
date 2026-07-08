@@ -179,17 +179,11 @@ class EffectivenessStore(JsonStoreBase[Any]):
         return any(r.fix_proposal_id == fix_proposal_id for r in self._reports.values())
 
     # ------------------------------------------------------------------
-    # persistence (overrides base — two-dict format)
+    # serialisation (overrides base — two-dict format)
     # ------------------------------------------------------------------
 
-    def _persist(self) -> None:
-        """Write all fixes and reports to the JSON store (best-effort atomic)."""
-        try:
-            self._path.parent.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            logger.warning("Could not create parent dir for %s", self._path)
-            return
-
+    def _serialize(self) -> bytes:
+        """Serialize fixes and reports to JSON bytes."""
         payload: dict[str, list[dict[str, object]]] = {
             "fixes": [
                 {
@@ -215,26 +209,11 @@ class EffectivenessStore(JsonStoreBase[Any]):
                 for r in self._reports.values()
             ],
         }
-        tmp_path = self._path.with_suffix(self._path.suffix + ".tmp")
-        try:
-            tmp_path.write_text(json.dumps(payload, indent=2), encoding="utf-8")
-            tmp_path.replace(self._path)
-        except OSError:
-            logger.exception("Failed to persist effectiveness store to %s", self._path)
+        return json.dumps(payload, indent=2).encode("utf-8")
 
-    def _load(self) -> None:
-        """Load fixes and reports from disk; tolerate missing/empty/corrupt file."""
-        if not self._path.exists():
-            return
-        try:
-            raw = json.loads(self._path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError, OSError:
-            logger.warning(
-                "Could not read effectiveness store file %s; starting empty",
-                self._path,
-            )
-            return
-
+    def _deserialize(self, data: bytes) -> None:
+        """Deserialize JSON bytes into self._fixes and self._reports."""
+        raw = json.loads(data)
         if not isinstance(raw, dict):
             return
 

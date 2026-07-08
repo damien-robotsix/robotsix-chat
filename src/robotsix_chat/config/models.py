@@ -295,7 +295,10 @@ class KnowledgeSettings(BaseModel):
 
     A deliberate, explicit, agent-curated store of durable lessons and findings
     — plain local JSON, no embeddings, no external service, always-on.  The
-    agent writes notes via five tools (``add/append/update/list/read_knowledge_note``)
+    agent writes notes via five tools
+    (``add_knowledge_note``, ``append_to_knowledge_note``,
+    ``update_knowledge_note``, ``list_knowledge_notes``,
+    ``read_knowledge_note``)
     and can re-read and revise them by id across sessions.
 
     This store is **complementary to**, not a duplicate of, the optional cognee
@@ -406,7 +409,7 @@ class SubsessionsSettings(BaseModel):
 
     max_concurrent: int = 8
     max_depth: int = 3
-    default_model_level: int = 3
+    default_model_level: int = 2
     min_interval_seconds: float = 60.0
     auto_stop_no_change_runs: int = 5
     store_path: str = "/data/subsessions.json"
@@ -422,8 +425,6 @@ class ConversationSettings(BaseModel):
     idle — sessions are persistent when ``persist_path`` is configured.
 
     Attributes:
-        idle_reset_seconds: Retained for compatibility; no longer triggers
-            destructive history reset (sessions are explicit and persistent).
         max_history_turns: Most recent user/assistant turns kept per
             session and replayed to the agent (bounds prompt size).
         max_conversations: Maximum number of distinct sessions tracked at once
@@ -433,10 +434,34 @@ class ConversationSettings(BaseModel):
 
     """
 
-    idle_reset_seconds: int = 1800
     max_history_turns: int = 50
     max_conversations: int = 1000
     persist_path: str = "/data/conversations.json"
+
+
+class LifecycleSettings(BaseModel):
+    """Read-only deploy-lifecycle API access for the agent.
+
+    When enabled, the chat agent gains read-only tools to inspect the
+    central-deploy lifecycle server: list services, check service status
+    and health, and read configuration and environment (with secrets
+    already masked as ``***`` server-side by ``_mask_secrets``).
+
+    Attributes:
+        enabled: Master switch.  When ``False``, no lifecycle tools are
+            offered.
+        base_url: Base URL of the deploy-lifecycle API server (no trailing
+            slash).
+        api_key: API key sent as the ``X-API-Key`` header.  Injected
+            server-side from ``ROBOTSIX_LIFECYCLE_API_KEY``.
+        timeout: Per-request HTTP timeout in seconds.
+
+    """
+
+    enabled: bool = False
+    base_url: str = ""
+    api_key: SecretStr = SecretStr("")
+    timeout: float = 30.0
 
 
 class CentralDeploySettings(BaseModel):

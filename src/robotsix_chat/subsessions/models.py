@@ -76,6 +76,10 @@ class SubsessionLevelError(ValueError):
     """Raised when the requested model level is invalid or unusable."""
 
 
+class SubsessionPeriodicSpawnError(RuntimeError):
+    """Raised when a periodic subsession attempts to spawn a periodic child."""
+
+
 @dataclass
 class TranscriptEntry:
     """One rendered line of a subsession's conversation transcript."""
@@ -120,11 +124,20 @@ class SubsessionInfo:
     runs: int = 0
     max_runs: int | None = None
     last_result: str | None = None
+    # run guard (persisted) — tracks which run numbers have been executed
+    # so a duplicate worker cannot re-execute runs that already completed.
+    completed_runs: set[int] = field(default_factory=set)
     # terminal fields:
     summary: str | None = None
     close_reason: str | None = None
     error: str | None = None
     transcript: list[TranscriptEntry] = field(default_factory=list)
+    # Capped rolling window of (turn_input, reply) pairs, persisted so a
+    # periodic subsession's worker can rebuild its agent-visible history
+    # when resumed after a restart instead of starting blank — separate
+    # from `transcript` (UI-facing, role-tagged, may omit the composed
+    # periodic turn_input) since this needs the exact text the model saw.
+    turn_history: list[tuple[str, str]] = field(default_factory=list)
 
     def snapshot(self, *, with_transcript: bool = False) -> dict[str, object]:
         """Return a JSON-serialisable snapshot for SSE frames and REST bodies.
@@ -153,6 +166,8 @@ class SubsessionInfo:
             "summary": self.summary,
             "close_reason": self.close_reason,
             "error": self.error,
+            "completed_runs": sorted(self.completed_runs),
+            "turn_history": [list(pair) for pair in self.turn_history],
         }
         if with_transcript:
             data["transcript"] = [entry.as_dict() for entry in self.transcript]

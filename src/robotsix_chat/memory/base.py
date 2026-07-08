@@ -18,12 +18,27 @@ class ChatMemory(Protocol):
         """Initialise the backend once (idempotent). Safe to call repeatedly."""
         ...
 
-    async def recall(self, query: str) -> str:
-        """Return memory relevant to *query* as a context string (``""`` if none)."""
+    async def recall(self, query: str, *, session_id: str | None = None) -> str:
+        """Return memory relevant to *query* as a context string (``""`` if none).
+
+        *session_id* scopes the recall to one conversation so that
+        session-level guidance (goals, rules, preferences) is isolated
+        across concurrent windows.
+        """
         ...
 
-    async def remember(self, user_message: str, assistant_message: str) -> None:
-        """Persist a completed exchange into long-term memory."""
+    async def remember(
+        self,
+        user_message: str,
+        assistant_message: str,
+        *,
+        session_id: str | None = None,
+    ) -> None:
+        """Persist a completed exchange into long-term memory.
+
+        *session_id* scopes the write to one conversation so that
+        session-level guidance stays per-window.
+        """
         ...
 
 
@@ -38,10 +53,16 @@ class NullMemory:
         """No-op: nothing to initialise."""
         return None
 
-    async def recall(self, query: str) -> str:
+    async def recall(self, query: str, *, session_id: str | None = None) -> str:
         """Return an empty string (no memory stored)."""
         return ""
 
-    async def remember(self, user_message: str, assistant_message: str) -> None:
+    async def remember(
+        self,
+        user_message: str,
+        assistant_message: str,
+        *,
+        session_id: str | None = None,
+    ) -> None:
         """Discard the exchange (no memory backend)."""
         return None

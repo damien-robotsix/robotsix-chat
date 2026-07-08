@@ -22,6 +22,7 @@ from robotsix_chat.config.models import (
     DirectRepoSettings,
     KnowledgeSettings,
     LangfuseSettings,
+    LifecycleSettings,
     MailSettings,
     MemorySettings,
     RefDocsSettings,
@@ -36,7 +37,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 16
+SYSTEM_PROMPT_VERSION = 20
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -60,6 +61,12 @@ class Settings(BaseModel):
         llmio_api_key: Provider API key, forwarded to llmio when the chosen
             level's provider needs one (e.g. ``openrouter``); unused
             by keyless providers like ``claudeSDK``.
+        summary_model_level: Capability level used to generate the
+            structured conversation summary (``POST /summary``, regenerated
+            after every assistant turn). Defaults to the cheapest tier since
+            it is a bounded extraction task, not open-ended reasoning —
+            reusing the main agent's (often much pricier) level here would
+            burn a full-capability call on every single turn.
         agent_instruction: System instruction handed to the LLM agent.
             Includes guidance on spawning subsessions for background work.
         server_host: Host address the chat SSE server binds to.
@@ -89,10 +96,12 @@ class Settings(BaseModel):
 
     llmio_model_level: int = 3
     llmio_api_key: SecretStr = SecretStr("")
+    summary_model_level: int = 1
     agent_instruction: str = (
         "You are a helpful assistant. "
         "You have a local, durable knowledge base "
-        "(add/append/update/list/read_knowledge_note) "
+        "(add_knowledge_note, append_to_knowledge_note, "
+        "update_knowledge_note, list_knowledge_notes, read_knowledge_note) "
         "for operational notes and lessons you deliberately author — "
         "consult it at the start of every session and write durable "
         "findings to it. Unlike the stable, human-governed system "
@@ -111,10 +120,13 @@ class Settings(BaseModel):
         "monitoring, polling), and 'user_chat' (a side-chat with the user "
         "for a focused question or decision — use it instead of blocking "
         "this conversation while you wait for an answer).\n"
-        "– Pick model_level by difficulty and cost: 1-2 are cheap "
-        "OpenRouter tiers for trivial polling or extraction (only when an "
-        "API key is configured), 3 is the default for general work, 4 is "
-        "the frontier tier — reserve it for genuinely hard reasoning. "
+        "– Pick model_level by difficulty and cost: 1 is the cheapest "
+        "OpenRouter tier for trivial polling or extraction, 2 is the "
+        "default choice for general work — prefer it unless the task "
+        "needs stronger reasoning, 3 is a stronger keyless tier reserved "
+        "for reasoning 2 struggles with, 4 is the frontier tier — only "
+        "for genuinely hard reasoning. Levels 1-2 need an OpenRouter API "
+        "key; if a spawn errors for a missing key, retry at level 3. "
         "Never spawn at level 4 for routine checks.\n"
         "– Write instructions that are complete and self-contained: the "
         "subsession starts with NO conversation history, so include every "
@@ -136,17 +148,6 @@ class Settings(BaseModel):
         "for its own sake. Check list_subsessions before spawning to "
         "avoid duplicating running work.\n"
         "\n"
-        "Component access:\n"
-        "– You have one generic tool for calling external components: "
-        "component_request(component_id, method, path, json_body=None). "
-        "Each component declares its own API surface as a skill — read "
-        "the skill descriptions below for allowed operations.\n"
-        "– Obey each component skill's safety section. When a skill marks "
-        "an operation as requiring confirmation, ask the user in "
-        "conversation before calling it.\n"
-        "– If the roster is unavailable or a component returns an error, "
-        "report the error clearly — do not retry in a loop.\n"
-        "\n"
         "Autonomy:\n"
         "– Proactively perform actions that are clearly safe and reversible "
         "without waiting for explicit human validation — do not ask for "
@@ -157,6 +158,14 @@ class Settings(BaseModel):
         "– Gate risky, destructive, irreversible, or ambiguous actions "
         "behind human approval — when in doubt about safety or "
         "reversibility, ask before acting.\n"
+        "– You upgrade your own capabilities by filing tickets on the "
+        "robotsix-chat repo — new tools, components, and permissions are "
+        "granted through the standard ticket workflow. When you need a new "
+        "capability (e.g. a new virtual component, a new tool, or broader "
+        "access), file a ticket on the robotsix-chat repo describing what you "
+        "need and why. After the ticket is implemented, merged, and deployed, "
+        "you self-restart via the deploy component to pick up the newly "
+        "registered capability.\n"
         "\n\n"
         "Efficiency:\n"
         "– If a required tool is missing, state it in one sentence and stop — "
@@ -204,6 +213,7 @@ class Settings(BaseModel):
     subsessions: SubsessionsSettings = Field(default_factory=SubsessionsSettings)
     direct_repo: DirectRepoSettings = Field(default_factory=DirectRepoSettings)
     repo_study: RepoStudySettings = Field(default_factory=RepoStudySettings)
+    lifecycle: LifecycleSettings = Field(default_factory=LifecycleSettings)
     max_images_per_message: int = 8
     max_image_bytes: int = 5_242_880
     allowed_image_media_types: list[str] = Field(
@@ -235,6 +245,15 @@ class Settings(BaseModel):
                 "it via the `llmio.api_key` field of your config file "
                 "(or use model_level 3, which is keyless)"
             )
+        if self.summary_model_level not in _VALID_MODEL_LEVELS:
+            raise ValueError(
+                f"summary_model_level must be one of {sorted(_VALID_MODEL_LEVELS)}, "
+                f"got {self.summary_model_level!r}"
+            )
+        # Unlike llmio_model_level, a missing key here is not fatal at config
+        # load — create_agent_from_settings falls back to a keyless level
+        # (see cli.py) so the default (level 1) never breaks a deployment
+        # that has not configured an OpenRouter key.
         if self.memory.enabled:
             if not self.memory.llm.api_key.get_secret_value():
                 raise ValueError(

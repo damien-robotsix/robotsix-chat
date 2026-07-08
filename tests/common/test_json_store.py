@@ -77,11 +77,11 @@ def test_persist_mkdir_oserror_does_not_crash(tmp_path: Path) -> None:
 
 
 def test_persist_write_oserror_does_not_crash(tmp_path: Path) -> None:
-    """When write_text raises OSError, _persist logs and returns cleanly."""
+    """When write_bytes raises OSError, _persist logs and returns cleanly."""
     store = _TestStore(tmp_path / "test.json")
     store._items["x"] = _TestItem(id="x", name="X")
 
-    with patch.object(Path, "write_text", side_effect=OSError("disk full")):
+    with patch.object(Path, "write_bytes", side_effect=OSError("disk full")):
         store._persist()  # should not raise
 
 
@@ -100,17 +100,17 @@ def test_persist_replace_oserror_does_not_crash(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
-# _load OSError on read_text
+# _load OSError on read_bytes
 # ---------------------------------------------------------------------------
 
 
 def test_load_oserror_starts_empty(tmp_path: Path) -> None:
-    """When _path.read_text raises OSError, _load logs and starts empty."""
+    """When _path.read_bytes raises OSError, _load logs and starts empty."""
     path = tmp_path / "test.json"
     # File must exist so _path.exists() returns True, triggering the read.
     path.write_text("[]")
 
-    with patch.object(Path, "read_text", side_effect=OSError("permission denied")):
+    with patch.object(Path, "read_bytes", side_effect=OSError("permission denied")):
         store = _TestStore(path)
 
     assert store._items == {}

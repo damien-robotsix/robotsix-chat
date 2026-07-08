@@ -11,6 +11,8 @@ from starlette.requests import Request
 from starlette.responses import StreamingResponse
 
 from robotsix_chat.chat.events import (
+    SSE_ACTIVITY_TYPE,
+    SSE_AGENT_MESSAGE_TYPE,
     SSE_SUBSESSION_CLOSED_TYPE,
     SSE_SUBSESSION_FAILED_TYPE,
     SSE_SUBSESSION_MESSAGE_TYPE,
@@ -18,6 +20,8 @@ from robotsix_chat.chat.events import (
     SSE_SUBSESSION_STARTED_TYPE,
     SSE_SUBSESSION_UPDATED_TYPE,
     EventBus,
+    activity_frame,
+    agent_message_frame,
     subsession_closed_frame,
     subsession_failed_frame,
     subsession_message_frame,
@@ -162,6 +166,47 @@ def test_subsession_failed_frame_shape() -> None:
         "summary": "Failed: boom",
         "parent_id": "parent-9",
         "status": "failed",
+    }
+
+
+def test_activity_frame_shape() -> None:
+    """``activity_frame`` returns the documented JSON shape."""
+    frame = activity_frame(
+        "tool_call", 3, tool_name="search", detail='{"q": "x"}', is_error=False
+    )
+    assert frame == {
+        "type": SSE_ACTIVITY_TYPE,
+        "kind": "tool_call",
+        "turn": 3,
+        "tool_name": "search",
+        "detail": '{"q": "x"}',
+        "is_error": False,
+    }
+
+
+def test_activity_frame_defaults() -> None:
+    """tool_name/detail/is_error default to None/""/False.
+
+    (thinking and text kinds carry no tool_name.)
+    """
+    frame = activity_frame("thinking", 1)
+    assert frame == {
+        "type": SSE_ACTIVITY_TYPE,
+        "kind": "thinking",
+        "turn": 1,
+        "tool_name": None,
+        "detail": "",
+        "is_error": False,
+    }
+
+
+def test_agent_message_frame_shape() -> None:
+    """``agent_message_frame`` returns the documented JSON shape."""
+    frame = agent_message_frame("hello there", 12345.0)
+    assert frame == {
+        "type": SSE_AGENT_MESSAGE_TYPE,
+        "text": "hello there",
+        "timestamp": 12345.0,
     }
 
 

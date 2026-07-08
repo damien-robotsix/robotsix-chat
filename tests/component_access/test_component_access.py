@@ -36,6 +36,7 @@ def _settings(**kw: object) -> CentralDeploySettings:
 def _wipe_cache() -> None:
     """Reset the module-level roster cache between tests."""
     _roster._cache = None
+    _roster._last_non_empty_cache = None
 
 
 # ---------------------------------------------------------------------------
@@ -152,10 +153,57 @@ async def test_fetch_roster_non_list_response(
 
 
 @pytest.mark.asyncio
+async def test_fetch_roster_empty_list_not_cached(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Empty roster is not cached — next call re-fetches."""
+    _wipe_cache()
+
+    # First: prime a non-empty cache so we have a known state.
+    entries = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(200, json=entries)
+    )
+    settings = _settings(url="http://deploy:8080", roster_cache_ttl=300.0)
+    result = await fetch_roster(settings)
+    assert result == entries
+
+    # Second: the upstream returns an empty list.
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    # Expire the cache so we actually fetch.
+    _roster._cache = (time.monotonic() - 301.0, entries)
+    cache_before = _roster._cache  # snapshot before empty fetch
+    result = await fetch_roster(settings)
+    # Should fall back to the last non-empty cache, not the empty list.
+    assert result == entries
+    # Cache must not have been updated (identity check) — the empty-path
+    # deliberately leaves _cache alone so it isn't poisoned by [].
+    assert _roster._cache is cache_before
+
+
+@pytest.mark.asyncio
+async def test_fetch_roster_empty_list_no_fallback_returns_empty(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Empty roster with no prior non-empty cache returns []."""
+    _wipe_cache()
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    settings = _settings(url="http://deploy:8080", roster_cache_ttl=300.0)
+    result = await fetch_roster(settings)
+    assert result == []
+    # Cache must not have been set.
+    assert _roster._cache is None
+
+
+@pytest.mark.asyncio
 async def test_fetch_roster_with_token(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """Bearer token is sent in the Authorization header."""
+    """The API token is sent as X-API-Key (central-deploy's accepted scheme)."""
     _wipe_cache()
     entries = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
     route = respx_mock.get("http://deploy:8080/chat/components").mock(
@@ -170,7 +218,8 @@ async def test_fetch_roster_with_token(
     result = await fetch_roster(settings)
     assert result == entries
     assert route.called
-    assert route.calls[0].request.headers["Authorization"] == "Bearer tk-secret"
+    assert route.calls[0].request.headers["X-API-Key"] == "tk-secret"
+    assert "Authorization" not in route.calls[0].request.headers
 
 
 @pytest.mark.asyncio
@@ -275,6 +324,44 @@ def test_fetch_roster_sync_non_list_response(
     assert result == []
 
 
+def test_fetch_roster_sync_empty_list_not_cached(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Sync empty roster is not cached — next call re-fetches."""
+    _wipe_cache()
+
+    # Prime a non-empty cache.
+    entries = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(200, json=entries)
+    )
+    settings = _settings(url="http://deploy:8080", roster_cache_ttl=300.0)
+    result = fetch_roster_sync(settings)
+    assert result == entries
+
+    # Now return empty, with expired cache.
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    _roster._cache = (time.monotonic() - 301.0, entries)
+    result = fetch_roster_sync(settings)
+    assert result == entries  # stale fallback
+
+
+def test_fetch_roster_sync_empty_no_fallback_returns_empty(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Sync empty roster with no prior cache returns []."""
+    _wipe_cache()
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    settings = _settings(url="http://deploy:8080", roster_cache_ttl=300.0)
+    result = fetch_roster_sync(settings)
+    assert result == []
+    assert _roster._cache is None
+
+
 # ---------------------------------------------------------------------------
 # build_skill_prompt
 # ---------------------------------------------------------------------------
@@ -357,11 +444,31 @@ async def test_component_request_unknown_id() -> None:
 
 
 @pytest.mark.asyncio
+async def test_component_request_empty_roster() -> None:
+    """Empty roster returns an explicit unavailable message, not unknown id."""
+    result = await _component_request_impl([], "mill", "GET", "/tickets")
+    assert "empty or unavailable" in result.lower()
+    assert "unknown component_id" not in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_component_request_error_only_roster() -> None:
+    """Roster with only error entries returns unavailable message."""
+    roster = [
+        {"id": "_error", "base_url": "", "skill": "", "_error": "Roster down"},
+        {"id": "_error", "base_url": "", "skill": "", "_error": "Also down"},
+    ]
+    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
+    assert "empty or unavailable" in result.lower()
+    assert "unknown component_id" not in result.lower()
+
+
+@pytest.mark.asyncio
 async def test_component_request_error_entry() -> None:
-    """When the only entry is an error entry, the error is surfaced."""
+    """When the only entry is an error entry, roster-unavailable message is shown."""
     roster = [{"id": "_error", "base_url": "", "skill": "", "_error": "Roster down"}]
     result = await _component_request_impl(roster, "_error", "GET", "/tickets")
-    assert "roster unavailable" in result.lower()
+    assert "empty or unavailable" in result.lower()
 
 
 @pytest.mark.asyncio
@@ -594,3 +701,272 @@ async def test_tool_refreshes_roster_on_call(
     tool = tools[0]
     result = await tool("mill", "GET", "/tickets")
     assert "HTTP 200" in result
+
+
+# ---------------------------------------------------------------------------
+# Roster auth metadata (virtual components: langfuse basic, deploy header)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_component_request_basic_auth_from_env(
+    respx_mock: respx.MockRouter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 'basic' auth entry resolves env vars and sends Basic credentials."""
+    monkeypatch.setenv("LF_PK", "pk-user")
+    monkeypatch.setenv("LF_SK", "sk-pass")
+    roster = [
+        {
+            "id": "langfuse",
+            "base_url": "http://lf:3000",
+            "skill": "...",
+            "auth": {
+                "type": "basic",
+                "username_env": "LF_PK",
+                "password_env": "LF_SK",  # pragma: allowlist secret
+            },
+        }
+    ]
+    route = respx_mock.get("http://lf:3000/api/public/traces").mock(
+        return_value=httpx.Response(200, json={"data": []})
+    )
+    result = await _component_request_impl(
+        roster, "langfuse", "GET", "/api/public/traces"
+    )
+    assert "HTTP 200" in result
+    sent = route.calls.last.request
+    import base64 as _b64
+
+    expected = _b64.b64encode(b"pk-user:sk-pass").decode()
+    assert sent.headers["Authorization"] == f"Basic {expected}"
+
+
+@pytest.mark.asyncio
+async def test_component_request_header_auth_from_env(
+    respx_mock: respx.MockRouter,
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A 'header' auth entry resolves the token env var into the header."""
+    monkeypatch.setenv("DEPLOY_KEY", "tok-123")
+    roster = [
+        {
+            "id": "deploy",
+            "base_url": "http://cd:8100",
+            "skill": "...",
+            "auth": {
+                "type": "header",
+                "header_name": "X-API-Key",
+                "token_env": "DEPLOY_KEY",
+            },
+        }
+    ]
+    route = respx_mock.get("http://cd:8100/services").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    result = await _component_request_impl(roster, "deploy", "GET", "/services")
+    assert "HTTP 200" in result
+    assert route.calls.last.request.headers["X-API-Key"] == "tok-123"
+
+
+@pytest.mark.asyncio
+async def test_component_request_basic_auth_missing_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing Basic-auth env vars yield a provisioning error, no request."""
+    monkeypatch.delenv("LF_PK", raising=False)
+    monkeypatch.delenv("LF_SK", raising=False)
+    roster = [
+        {
+            "id": "langfuse",
+            "base_url": "http://lf:3000",
+            "skill": "...",
+            "auth": {
+                "type": "basic",
+                "username_env": "LF_PK",
+                "password_env": "LF_SK",  # pragma: allowlist secret
+            },
+        }
+    ]
+    result = await _component_request_impl(roster, "langfuse", "GET", "/x")
+    assert "Error" in result
+    assert "LF_PK" in result
+    assert "EnvStore" in result
+
+
+@pytest.mark.asyncio
+async def test_component_request_header_auth_missing_env(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Missing header-auth token env yields a provisioning error, no request."""
+    monkeypatch.delenv("DEPLOY_KEY", raising=False)
+    roster = [
+        {
+            "id": "deploy",
+            "base_url": "http://cd:8100",
+            "skill": "...",
+            "auth": {
+                "type": "header",
+                "header_name": "X-API-Key",
+                "token_env": "DEPLOY_KEY",
+            },
+        }
+    ]
+    result = await _component_request_impl(roster, "deploy", "GET", "/services")
+    assert "Error" in result
+    assert "DEPLOY_KEY" in result
+
+
+@pytest.mark.asyncio
+async def test_component_request_no_auth_unchanged(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Entries without auth metadata behave exactly as before."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    route = respx_mock.get("http://m:8080/tickets").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
+    assert "HTTP 200" in result
+    assert "Authorization" not in route.calls.last.request.headers
+
+
+# ---------------------------------------------------------------------------
+# Retry-with-backoff tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_retry_on_transient_network_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Transient ConnectError is retried; exhausted attempts include count."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    respx_mock.get("http://m:8080/tickets").mock(
+        side_effect=httpx.ConnectError("connection refused")
+    )
+    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
+    assert "Error calling" in result
+    assert "all 3 attempts failed" in result
+    assert "connection refused" in result
+
+
+@pytest.mark.asyncio
+async def test_no_retry_on_terminal_4xx_for_get(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """4xx is terminal for idempotent GET — returned immediately without retries."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    route = respx_mock.get("http://m:8080/forbidden").mock(
+        return_value=httpx.Response(403, json={"error": "forbidden"})
+    )
+    result = await _component_request_impl(roster, "mill", "GET", "/forbidden")
+    assert "HTTP 403" in result
+    assert "forbidden" in result
+    assert "all 3 attempts" not in result
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_no_retry_on_any_http_response_for_post(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Any HTTP response is terminal for non-idempotent POST — even 5xx."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    route = respx_mock.post("http://m:8080/tickets").mock(
+        return_value=httpx.Response(500, json={"error": "internal"})
+    )
+    result = await _component_request_impl(
+        roster, "mill", "POST", "/tickets", {"title": "test"}
+    )
+    assert "HTTP 500" in result
+    assert "all 3 attempts" not in result
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_on_5xx_for_get(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """5xx is retried for idempotent GET — 503 on every attempt triggers 3 calls."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    route = respx_mock.get("http://m:8080/tickets").mock(
+        return_value=httpx.Response(503, json={"error": "overloaded"})
+    )
+    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
+    assert "HTTP 503" in result
+    assert route.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_retry_on_empty_exception_message(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Exception with empty message is transient — retried until exhausted."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    respx_mock.get("http://m:8080/tickets").mock(side_effect=Exception(""))
+    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
+    assert "Error calling" in result
+    assert "all 3 attempts failed" in result
+
+
+@pytest.mark.asyncio
+async def test_non_transient_exception_not_retried(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Non-transient exception (e.g. ValueError) is returned immediately, no retry."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    route = respx_mock.get("http://m:8080/tickets").mock(
+        side_effect=ValueError("bad value")
+    )
+    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
+    assert "Error calling" in result
+    assert "bad value" in result
+    assert "all 3 attempts" not in result
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_on_nested_transient_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """OSError is treated as transient network error and retried."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    respx_mock.get("http://m:8080/tickets").mock(
+        side_effect=OSError("network unreachable")
+    )
+    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
+    assert "Error calling" in result
+    assert "all 3 attempts failed" in result
+
+
+@pytest.mark.asyncio
+async def test_put_is_idempotent_retries_on_5xx(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """PUT is idempotent — 5xx responses are retried (3 calls total)."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    route = respx_mock.put("http://m:8080/tickets/1").mock(
+        return_value=httpx.Response(500, json={"error": "boom"})
+    )
+    result = await _component_request_impl(
+        roster, "mill", "PUT", "/tickets/1", {"title": "x"}
+    )
+    assert "HTTP 500" in result
+    assert route.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_patch_is_non_idempotent_no_retry_on_any_response(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """PATCH is non-idempotent — any HTTP response is terminal (no retry)."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    route = respx_mock.patch("http://m:8080/tickets/1").mock(
+        return_value=httpx.Response(503, json={"error": "overloaded"})
+    )
+    result = await _component_request_impl(
+        roster, "mill", "PATCH", "/tickets/1", {"title": "patched"}
+    )
+    assert "HTTP 503" in result
+    assert route.call_count == 1

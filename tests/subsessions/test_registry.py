@@ -141,6 +141,36 @@ def test_append_transcript_caps_entries_and_publishes() -> None:
     assert last["text"] == "line 4"
 
 
+def test_append_turn_history_caps_entries_and_persists(tmp_path: Path) -> None:
+    """turn_history is capped at _MAX_TURN_HISTORY_ENTRIES, newest kept."""
+    from robotsix_chat.subsessions.registry import _MAX_TURN_HISTORY_ENTRIES
+
+    store_path = tmp_path / "subsessions.json"
+    registry = SubsessionRegistry(store_path=store_path)
+    info = _create(registry)
+
+    for i in range(_MAX_TURN_HISTORY_ENTRIES + 5):
+        registry.append_turn_history(info.id, f"in {i}", f"out {i}")
+
+    assert len(info.turn_history) == _MAX_TURN_HISTORY_ENTRIES
+    assert info.turn_history[0] == ("in 5", "out 5")
+    assert info.turn_history[-1] == (
+        f"in {_MAX_TURN_HISTORY_ENTRIES + 4}",
+        f"out {_MAX_TURN_HISTORY_ENTRIES + 4}",
+    )
+
+    # Persisted as list-of-lists (JSON has no tuples).
+    raw = json.loads(store_path.read_text())
+    entry = next(e for e in raw if e["subsession_id"] == info.id)
+    assert entry["turn_history"][0] == ["in 5", "out 5"]
+
+
+def test_append_turn_history_unknown_id_is_noop() -> None:
+    """``append_turn_history`` for an unknown id does not raise."""
+    registry = SubsessionRegistry(store_path=None)
+    registry.append_turn_history("ghost", "in", "out")  # no error
+
+
 def test_enqueue_message_unknown_or_terminal_returns_false() -> None:
     """Messages cannot be queued for unknown or terminal subsessions."""
     registry = SubsessionRegistry(store_path=None)
@@ -496,3 +526,123 @@ def test_restore_registers_new_entry_without_publishing() -> None:
     assert registry.get("restored-1") is info
     assert registry.list_for_owner("sess-9") == [info]
     assert sink.frames == []
+
+
+# ---------------------------------------------------------------------------
+# idempotent create
+# ---------------------------------------------------------------------------
+
+
+def test_create_with_existing_sub_id_returns_original() -> None:
+    """``create`` with an existing sub_id returns the original record.
+
+    The existing record is returned without overwriting or publishing a
+    second frame.
+    """
+    sink = RecordingSink()
+    registry = SubsessionRegistry(event_sink=sink, store_path=None)
+
+    first = _create(registry, sub_id="dup-1", title="first")
+    first_publish_count = len(sink.frames)
+
+    second = _create(registry, sub_id="dup-1", title="second")
+
+    # Returns the SAME object, not a new record.
+    assert second is first
+    assert second.title == "first"
+    # No additional frame published.
+    assert len(sink.frames) == first_publish_count
+
+
+# ---------------------------------------------------------------------------
+# claim_run
+# ---------------------------------------------------------------------------
+
+
+def test_claim_run_returns_true_for_new_run() -> None:
+    """``claim_run`` returns True the first time a run number is claimed."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+
+    assert registry.claim_run(info.id, 1) is True
+    assert 1 in info.completed_runs
+
+
+def test_claim_run_returns_false_for_duplicate() -> None:
+    """``claim_run`` returns False when the run number was already claimed."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+
+    assert registry.claim_run(info.id, 1) is True
+    assert registry.claim_run(info.id, 1) is False
+
+
+def test_claim_run_returns_false_for_terminal_subsession() -> None:
+    """``claim_run`` returns False for a subsession that is no longer active."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+    registry.mark_closed(info.id, summary="done", reason="completed")
+
+    assert registry.claim_run(info.id, 1) is False
+
+
+def test_claim_run_returns_false_for_unknown_id() -> None:
+    """``claim_run`` returns False for an unknown subsession id."""
+    registry = SubsessionRegistry(store_path=None)
+
+    assert registry.claim_run("ghost", 1) is False
+
+
+# ---------------------------------------------------------------------------
+# reap_orphans
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reap_orphans_cancels_tasks_without_tree_membership() -> None:
+    """``reap_orphans`` cancels workers not in any owner's tree.
+
+    Workers whose subsession has no tree membership are cancelled and
+    marked as FAILED.
+    """
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, owner="sess-A", kind=SubsessionKind.PERIODIC)
+
+    # Attach a fake task.
+    task: asyncio.Task[None] = asyncio.create_task(asyncio.sleep(30))
+    registry.attach_task(info.id, task)
+
+    # Remove from the owner's tree.
+    registry._by_owner["sess-A"].discard(info.id)
+
+    reaped = registry.reap_orphans()
+    assert reaped >= 1
+
+    with contextlib.suppress(asyncio.CancelledError):
+        _ = await task
+    assert task.cancelled()
+    # The subsession must be terminal (FAILED) so it no longer consumes
+    # a concurrency slot.
+    assert info.status is SubsessionStatus.FAILED
+    assert info.error == "orphaned_timer_reaped"
+
+
+@pytest.mark.asyncio
+async def test_reap_orphans_skips_tasks_with_tree_membership() -> None:
+    """``reap_orphans`` skips workers that are still in a tree.
+
+    Workers whose subsession is still in a conversation tree are not
+    cancelled.
+    """
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, owner="sess-A", kind=SubsessionKind.PERIODIC)
+
+    task: asyncio.Task[None] = asyncio.create_task(asyncio.sleep(30))
+    registry.attach_task(info.id, task)
+
+    reaped = registry.reap_orphans()
+    assert reaped == 0
+
+    task.cancel()
+    with contextlib.suppress(asyncio.CancelledError):
+        _ = await task

@@ -54,17 +54,67 @@ def _build_delivery(
     store: MagicMock | None = None,
     registry: MagicMock | None = None,
     lock: MagicMock | None = None,
+    event_sink: MagicMock | None = None,
+    agent: MagicMock | None = None,
 ) -> ParentDelivery:
-    """Build a ``ParentDelivery`` with mocked collaborators."""
+    """Build a ``ParentDelivery`` with mocked collaborators.
+
+    Passing *agent* calls :meth:`ParentDelivery.set_agent` after
+    construction, mirroring how ``cli.py`` wires it post-construction.
+    """
     store = store or MagicMock()
     registry = registry or MagicMock()
     run_serializer = MagicMock()
     run_serializer.for_owner.return_value = lock or _async_context_manager()
-    return ParentDelivery(
+    delivery = ParentDelivery(
         conversation_store=store,
         registry=registry,
         run_serializer=run_serializer,
+        event_sink=event_sink,
     )
+    if agent is not None:
+        delivery.set_agent(agent)
+    return delivery
+
+
+def _fake_agent(chunks: list[str]) -> MagicMock:
+    """Build a ChatAgent stub whose ``stream()`` yields the given chunks."""
+    agent = MagicMock()
+
+    async def _stream(
+        message: str,
+        *,
+        history=None,
+        session_id=None,
+        client_id=None,
+        images=None,
+        trace_metadata=None,
+    ):
+        for chunk in chunks:
+            yield chunk
+
+    agent.stream = _stream
+    return agent
+
+
+def _raising_agent(exc: Exception) -> MagicMock:
+    """Build a ChatAgent stub whose ``stream()`` raises *exc* once consumed."""
+    agent = MagicMock()
+
+    async def _stream(
+        message: str,
+        *,
+        history=None,
+        session_id=None,
+        client_id=None,
+        images=None,
+        trace_metadata=None,
+    ):
+        raise exc
+        yield  # pragma: no cover — makes this an async generator
+
+    agent.stream = _stream
+    return agent
 
 
 def _async_context_manager() -> MagicMock:
@@ -116,6 +166,149 @@ async def test_deliver_result_main_chat_parent_records_to_store() -> None:
     assert info.id[:8] in args[1]  # label (id truncated to 8 chars)
     assert "run 3" in args[1]
     assert "interim result text" in args[2]
+
+
+# ---------------------------------------------------------------------------
+# deliver_summary — main-chat parent, agent wired (real reaction turn)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_with_agent_runs_reaction_turn() -> None:
+    """With an agent wired, the outcome triggers a real turn.
+
+    Not a passive record of the raw summary.
+    """
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["Got it, ", "moving on."])
+    delivery = _build_delivery(store=store, registry=registry, agent=agent)
+    info = _make_info(parent_id=None)
+
+    await delivery.deliver_summary(info, "all done", "completed")
+
+    store.record_for_session.assert_called_once()
+    args, _kwargs = store.record_for_session.call_args
+    assert args[0] == "owner-sess-1"
+    # The recorded "user" turn is the reaction prompt (mentions the outcome),
+    # not the bare label — and the "assistant" reply is the agent's own
+    # output, not the raw summary text.
+    assert "all done" in args[1]
+    assert args[2] == "Got it, moving on."
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_with_agent_publishes_agent_message_frame() -> None:
+    """A wired event_sink gets an agent_message frame with the reply."""
+    from robotsix_chat.chat.events import SSE_AGENT_MESSAGE_TYPE
+
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["reaction reply"])
+    event_sink = MagicMock()
+    delivery = _build_delivery(
+        store=store, registry=registry, agent=agent, event_sink=event_sink
+    )
+    info = _make_info(parent_id=None)
+
+    await delivery.deliver_summary(info, "all done", "completed")
+
+    event_sink.publish.assert_called_once()
+    session_id, frame = event_sink.publish.call_args[0]
+    assert session_id == "owner-sess-1"
+    assert frame["type"] == SSE_AGENT_MESSAGE_TYPE
+    assert frame["text"] == "reaction reply"
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_with_agent_no_event_sink_skips_publish() -> None:
+    """Without an event_sink, the reply is still recorded but never published.
+
+    No sink to publish to — this must not raise.
+    """
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["reply text"])
+    delivery = _build_delivery(store=store, registry=registry, agent=agent)
+    info = _make_info(parent_id=None)
+
+    await delivery.deliver_summary(info, "all done", "completed")
+
+    store.record_for_session.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_empty_reply_skips_publish() -> None:
+    """An empty reply from the reaction turn is still recorded.
+
+    But no agent_message frame is published for empty text.
+    """
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent([])  # no chunks → empty reply
+    event_sink = MagicMock()
+    delivery = _build_delivery(
+        store=store, registry=registry, agent=agent, event_sink=event_sink
+    )
+    info = _make_info(parent_id=None)
+
+    await delivery.deliver_summary(info, "all done", "completed")
+
+    store.record_for_session.assert_called_once()
+    args, _kwargs = store.record_for_session.call_args
+    assert args[2] == ""
+    event_sink.publish.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_reaction_turn_failure_degrades_to_passive_record() -> (
+    None
+):
+    """When the reaction turn itself raises, fall back to the old record.
+
+    The old passive record of the raw outcome — it must never be silently
+    lost.
+    """
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _raising_agent(RuntimeError("backend exploded"))
+    event_sink = MagicMock()
+    delivery = _build_delivery(
+        store=store, registry=registry, agent=agent, event_sink=event_sink
+    )
+    info = _make_info(parent_id=None)
+
+    await delivery.deliver_summary(info, "all done", "completed")
+
+    store.record_for_session.assert_called_once()
+    args, _kwargs = store.record_for_session.call_args
+    assert args[0] == "owner-sess-1"
+    assert info.id[:8] in args[1]  # degraded label form
+    assert args[2] == "all done"  # raw outcome, not a generated reply
+    event_sink.publish.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_deliver_result_with_agent_runs_reaction_turn() -> None:
+    """deliver_result also runs a real reaction turn when an agent is wired."""
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["noted"])
+    delivery = _build_delivery(store=store, registry=registry, agent=agent)
+    info = _make_info(parent_id=None)
+
+    await delivery.deliver_result(info, 2, "interim text")
+
+    store.record_for_session.assert_called_once()
+    args, _kwargs = store.record_for_session.call_args
+    assert "interim text" in args[1]  # prompt mentions the outcome
+    assert args[2] == "noted"
 
 
 # ---------------------------------------------------------------------------
