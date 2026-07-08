@@ -161,6 +161,61 @@ async def test_resume_periodic_run_budget_never_below_one(tmp_path: Path) -> Non
             await asyncio.wait_for(worker, 2.0)
 
 
+@pytest.mark.asyncio
+async def test_resume_periodic_seeds_history_from_turn_history(
+    tmp_path: Path,
+) -> None:
+    """A resumed periodic worker replays its persisted turn_history.
+
+    Without this, a chat restart would blank a long-running periodic
+    subsession's context on every resume — the agent would start its
+    next run with no memory of anything it learned or decided in prior
+    runs, and any nested subsession it spawns inherits that gap too.
+    """
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    periodic = registry1.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="watch board",
+        prompt="sweep the board",
+        model_level=3,
+        interval_seconds=0.05,
+        max_runs=5,
+    )
+    registry1.append_turn_history(periodic.id, "sweep the board", "approved 3 MRs")
+    registry1.set_status(periodic.id, SubsessionStatus.SLEEPING, runs=1)
+
+    gate = asyncio.Event()
+    agent = FakeAgent(["resumed with context"], gate=gate)
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=agent,
+        registry=registry2,
+        settings=make_settings(min_interval_seconds=0.01),
+    )
+
+    resume_subsessions(env)
+
+    # FakeAgent records the call before blocking on the gate, so just
+    # yielding to the event loop is enough for the resumed worker's
+    # first turn to reach the agent.
+    for _ in range(50):
+        if agent.calls:
+            break
+        await asyncio.sleep(0.01)
+    assert agent.calls, "resumed worker never called the agent"
+    assert agent.calls[0]["history"] == [("sweep the board", "approved 3 MRs")]
+
+    worker = registry2._running.get(periodic.id)
+    registry2.cancel_and_close(periodic.id, reason="teardown", closed_by="system")
+    if worker is not None:
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(worker, 2.0)
+
+
 def test_resume_skips_malformed_entries(tmp_path: Path) -> None:
     """Entries without id/owner are skipped without blocking the others."""
     store_path = tmp_path / "subsessions.json"

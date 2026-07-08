@@ -53,6 +53,11 @@ logger = logging.getLogger(__name__)
 # recent history after a reload; older ones are pruned oldest-first.
 _MAX_TERMINAL_ENTRIES = 50
 
+# Cap on persisted (turn_input, reply) pairs per subsession — must match
+# worker._MAX_WORKER_HISTORY_TURNS (the replay window the worker actually
+# feeds the agent); capping here too bounds what's kept in the JSON store.
+_MAX_TURN_HISTORY_ENTRIES = 20
+
 
 class SubsessionRegistry:
     """Track every subsession in the process (see module docstring)."""
@@ -108,6 +113,7 @@ class SubsessionRegistry:
         max_runs: int | None = None,
         sub_id: str | None = None,
         completed_runs: set[int] | None = None,
+        turn_history: list[tuple[str, str]] | None = None,
     ) -> SubsessionInfo:
         """Register a new subsession and publish ``subsession_started``.
 
@@ -119,7 +125,10 @@ class SubsessionRegistry:
 
         *completed_runs* seeds the run guard for periodic subsessions
         resumed after a restart, so already-executed run numbers are
-        persisted atomically from the first write.
+        persisted atomically from the first write. *turn_history* seeds
+        the agent-visible replay window the same way, so a resumed
+        periodic worker picks up with the context it had before the
+        restart instead of starting blank.
         """
         if sub_id is not None and sub_id in self._subs:
             return self._subs[sub_id]
@@ -140,6 +149,7 @@ class SubsessionRegistry:
             include_previous_result=include_previous_result,
             max_runs=max_runs,
             completed_runs=completed_runs or set(),
+            turn_history=turn_history or [],
         )
         self._subs[info.id] = info
         self._inboxes[info.id] = deque()
@@ -222,6 +232,16 @@ class SubsessionRegistry:
             info.owner_session_id,
             subsession_message_frame(info.id, role, text, now),
         )
+        self._persist()
+
+    def append_turn_history(self, sub_id: str, turn_input: str, reply: str) -> None:
+        """Record one (turn_input, reply) pair for context-on-resume, capped."""
+        info = self._subs.get(sub_id)
+        if info is None:
+            return
+        info.turn_history.append((turn_input, reply))
+        if len(info.turn_history) > _MAX_TURN_HISTORY_ENTRIES:
+            del info.turn_history[:-_MAX_TURN_HISTORY_ENTRIES]
         self._persist()
 
     def enqueue_message(self, sub_id: str, role: str, text: str) -> bool:
