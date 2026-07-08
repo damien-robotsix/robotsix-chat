@@ -170,6 +170,7 @@ class ParentDelivery:
                         history=history or None,
                         session_id=session_id,
                         client_id=session_id,
+                        trace_metadata={"subsession_id": info.id},
                     )
                 ]
             except Exception:

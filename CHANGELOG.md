@@ -2,6 +2,9 @@
 
 - Added "Out-of-Scope CI Failure" boilerplate to `docs/triage-boilerplate.md` for use in scope-triage decisions during `draft → ready` transitions.
 - Remove unused `# noqa: E402` comment from `src/robotsix_chat/chat/server/__init__.py` to satisfy RUF100 (unused noqa directive).
+- Subsessions: add `inherit_context` parameter to `spawn_subsession` — when set, a compact ancestor-context block (root task plus each ancestor's title/prompt summary) is prepended to the child's first turn, so nested subsessions no longer start from scratch and fall back on memory.
+- Subsessions: persist and resume `user_chat` across server restarts — the worker is re-spawned under its original id with the original prompt plus the last delivered assistant state, instead of being marked `INTERRUPTED`.
+- Tracing: subsession worker turns and main-chat reaction turns now stamp `parent_session_id`/`owner_session_id`/`subsession_id` as Langfuse trace metadata, so the trace tree mirrors the subsession tree in observability.
 - `SubsessionsSettings.default_model_level` changed from `3` to `2` to match the system prompt guidance that level 2 "is the default choice for general work."
 - Derive `chat.server.__all__` from `routes.__all__` instead of duplicating
   the endpoint-name list across two `__init__.py` files.  When a new route
