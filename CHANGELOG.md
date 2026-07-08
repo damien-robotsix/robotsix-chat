@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Remove dead `ConversationStore.stats()` method — zero callers in the codebase.
+- Moved `docs/api/robotsix_chat/agent.md` to `docs/llm/agent.md` to align with per-module docs layout.
 - Moved `memory` API doc from `docs/api/robotsix_chat/memory.md` to `docs/memory/api.md` to follow the per-module layout convention.
 - Added "Out-of-Scope CI Failure" boilerplate to `docs/triage-boilerplate.md` for use in scope-triage decisions during `draft → ready` transitions.
 - Remove unused `# noqa: E402` comment from `src/robotsix_chat/chat/server/__init__.py` to satisfy RUF100 (unused noqa directive).
