@@ -200,8 +200,8 @@ def _validate_model_level(settings: Settings, model_level: int) -> None:
     """Reject invalid levels and key-bearing levels without a key."""
     from robotsix_chat.config import level_needs_api_key
 
-    if model_level not in (1, 2, 3):
-        raise SubsessionLevelError("model_level must be between 1 and 3")
+    if model_level not in (1, 2, 3, 4):
+        raise SubsessionLevelError("model_level must be between 1 and 4")
     if (
         level_needs_api_key(model_level)
         and not settings.llmio_api_key.get_secret_value()
