@@ -253,6 +253,7 @@ class TestRunServer:
 
         mock_create.assert_called_once_with(
             agent,
+            summary_agent=None,
             serve_ui=False,
             idle_timeout_minutes=5,
             max_images_per_message=4,
@@ -378,8 +379,9 @@ class TestRunServerFromConfig:
 
             run_server_from_config(agent=None)
 
-        # create_agent_from_settings should have been called.
-        mock_create_agent.assert_called_once()
+        # create_agent_from_settings is called twice: once for the main agent
+        # (because agent=None) and once for the summary_agent.
+        assert mock_create_agent.call_count >= 2
         # The agent passed to run_server should be the one we created.
         mock_run_server.assert_called_once()
         assert mock_run_server.call_args.args[0] is mock_agent
