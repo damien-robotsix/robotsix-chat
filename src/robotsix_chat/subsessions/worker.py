@@ -621,7 +621,7 @@ def _rebuild_completed_runs(entry: Mapping[str, object]) -> set[int]:
     return set()
 
 
-def _rebuild_turn_history(entry: dict[str, object]) -> list[tuple[str, str]]:
+def _rebuild_turn_history(entry: Mapping[str, object]) -> list[tuple[str, str]]:
     """Reconstruct the ``turn_history`` replay window from a persisted entry."""
     raw = entry.get("turn_history")
     if not isinstance(raw, list):
