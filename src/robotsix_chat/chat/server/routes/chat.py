@@ -53,11 +53,15 @@ class ChatAgent(Protocol):
         session_id: str | None = None,
         client_id: str | None = None,
         images: list[tuple[str, bytes]] | None = None,
+        trace_metadata: dict[str, str] | None = None,
     ) -> AsyncIterator[str]:
         """Yield tokens from the LLM in response to ``message``.
 
         *images* is an optional list of ``(media_type, raw_bytes)`` pairs
         representing attached images (e.g. ``[("image/png", b"...")]``).
+        *trace_metadata* is an optional dict of key-value attributes
+        stamped onto the Langfuse trace span for observability (e.g.
+        ``{"parent_session_id": "..."}``).
         """
 
 

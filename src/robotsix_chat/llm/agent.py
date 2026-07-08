@@ -79,11 +79,19 @@ def _build_message_history(history: list[Turn] | None) -> list[Any] | None:
 
 
 @contextlib.contextmanager
-def _trace_session(session_id: str | None) -> Iterator[None]:
+def _trace_session(
+    session_id: str | None,
+    trace_metadata: dict[str, str] | None = None,
+) -> Iterator[None]:
     """Group the enclosed agent run under *session_id* in Langfuse.
 
     A no-op when *session_id* is falsy or llmio's tracing extra is absent, so
     callers can wrap unconditionally.
+
+    When *trace_metadata* is supplied, each key-value pair is stamped as a
+    span attribute on the current recording span (if any) inside the session
+    context — used for parent/owner lineage so the trace tree mirrors the
+    subsession tree in observability.
     """
     if not session_id:
         yield
@@ -94,7 +102,25 @@ def _trace_session(session_id: str | None) -> Iterator[None]:
         yield
         return
     with langfuse_session(session_id):
+        if trace_metadata:
+            _stamp_trace_metadata(trace_metadata)
         yield
+
+
+def _stamp_trace_metadata(metadata: dict[str, str]) -> None:
+    """Stamp *metadata* as attributes on the current OTel recording span.
+
+    A no-op when OpenTelemetry is absent or no span is currently recording —
+    the attributes are best-effort observability, not critical to the run.
+    """
+    try:
+        from robotsix_llmio.core.tracing import get_recording_span
+    except ImportError:
+        return
+    span = get_recording_span()
+    if span is not None:
+        for key, value in metadata.items():
+            span.set_attribute(key, value)
 
 
 def _activity_context(
@@ -231,6 +257,7 @@ class LlmioChatAgent:
         session_id: str | None = None,
         client_id: str | None = None,
         images: list[tuple[str, bytes]] | None = None,
+        trace_metadata: dict[str, str] | None = None,
     ) -> AsyncIterator[str]:
         """Yield the assistant's reply to *message* as a single block.
 
@@ -330,7 +357,10 @@ class LlmioChatAgent:
             )
             try:
                 try:
-                    with _trace_session(session_id), _activity_context(on_activity):
+                    with (
+                        _trace_session(session_id, trace_metadata),
+                        _activity_context(on_activity),
+                    ):
                         result = await handle.run(
                             prompt, message_history=message_history
                         )
@@ -344,7 +374,7 @@ class LlmioChatAgent:
                     exc,
                 )
                 result = await self._run_with_usage_fallback(
-                    prompt, message_history, tools_arg, session_id
+                    prompt, message_history, tools_arg, session_id, trace_metadata
                 )
                 break
             except Exception as exc:
@@ -374,6 +404,7 @@ class LlmioChatAgent:
         message_history: list[Any] | None,
         tools_arg: list[Any] | None,
         session_id: str | None,
+        trace_metadata: dict[str, str] | None = None,
     ) -> Any:
         """Retry the same turn at a different tier after a usage-exhaustion.
 
@@ -422,7 +453,7 @@ class LlmioChatAgent:
                 )
                 try:
                     with (
-                        _trace_session(session_id),
+                        _trace_session(session_id, trace_metadata),
                         _activity_context(on_activity),
                     ):
                         return await fallback_handle.run(

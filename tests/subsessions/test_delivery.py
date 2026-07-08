@@ -81,7 +81,15 @@ def _fake_agent(chunks: list[str]) -> MagicMock:
     """Build a ChatAgent stub whose ``stream()`` yields the given chunks."""
     agent = MagicMock()
 
-    async def _stream(message: str, *, history=None, session_id=None, client_id=None):
+    async def _stream(
+        message: str,
+        *,
+        history=None,
+        session_id=None,
+        client_id=None,
+        images=None,
+        trace_metadata=None,
+    ):
         for chunk in chunks:
             yield chunk
 
@@ -93,7 +101,15 @@ def _raising_agent(exc: Exception) -> MagicMock:
     """Build a ChatAgent stub whose ``stream()`` raises *exc* once consumed."""
     agent = MagicMock()
 
-    async def _stream(message: str, *, history=None, session_id=None, client_id=None):
+    async def _stream(
+        message: str,
+        *,
+        history=None,
+        session_id=None,
+        client_id=None,
+        images=None,
+        trace_metadata=None,
+    ):
         raise exc
         yield  # pragma: no cover — makes this an async generator
 
