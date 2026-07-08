@@ -2,8 +2,6 @@
 
 - Move `docs/api/robotsix_chat/server.md` to `docs/chat/server.md` to align with per-module docs layout convention.
 - Moved `docs/api/robotsix_chat/config.md` to `docs/config/api.md` to align with the per-module doc layout convention.
-- Moved `config` module API doc from `docs/api/robotsix_chat/config.md` to
-  `docs/config/api.md` to align with per-module docs layout convention.
 - Remove dead `ConversationStore.stats()` method — zero callers in the codebase.
 - Moved `docs/api/robotsix_chat/agent.md` to `docs/llm/agent.md` to align with per-module docs layout.
 - Moved `memory` API doc from `docs/api/robotsix_chat/memory.md` to `docs/memory/api.md` to follow the per-module layout convention.
