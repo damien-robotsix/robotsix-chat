@@ -340,7 +340,7 @@ def create_app(
             404: not_found_handler,
             500: server_error_handler,
         },
-        lifespan=lambda app: _make_lifespan(
+        lifespan=lambda _app: _make_lifespan(
             on_startup,
             on_startup_async=on_startup_async,
             on_shutdown=on_shutdown,

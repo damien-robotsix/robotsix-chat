@@ -130,6 +130,6 @@ async def safe_http_request(
         return HttpResult(
             error=f"{label} request timed out after {timeout}s: {url}",
         )
-    except Exception as exc:  # noqa: BLE001 — surface as text, never crash
+    except Exception as exc:
         logger.warning("%s request failed for %s: %s", label, url, exc)
         return HttpResult(error=f"{label} request failed: {exc}")
