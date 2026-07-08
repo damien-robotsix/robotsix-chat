@@ -53,9 +53,12 @@ def _parse_subsession_kinds(models_path: Path) -> dict[str, str]:
 # Step 2 — find SubsessionKind-looking string literals in HTML JavaScript
 # ---------------------------------------------------------------------------
 
-# sub.kind === "periodic"  /  frame.kind === "user_chat"  /  kind === "periodic"
+# sub.kind === "periodic"  /  kind === "periodic"
+# NOTE: frame.kind comparisons are deliberately excluded — those are
+# FrameKind values (tool_call, tool_result, thinking, ...) from
+# chat/events.py, not SubsessionKind values.
 _KIND_COMPARISON_RE = re.compile(
-    r'(?:\.)?kind\s*[=!]==?\s*"(?P<kind>[a-z_][a-z_0-9]*)"'
+    r'(?:^|\s|\()(?:sub\.)?kind\s*[=!]==?\s*"(?P<kind>[a-z_][a-z_0-9]*)"'
 )
 
 
