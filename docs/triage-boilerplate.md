@@ -52,8 +52,8 @@ on this CI check.
 
 ### When to apply
 
-Apply during the `draft → ready` transition when a CI check fails but the
-failure is determined to be:
+Apply during the `draft → ready` transition when a CI check fails but the failure is determined to
+be:
 
 - Pre-existing on the main branch (not introduced by this change)
 - In unrelated infrastructure (e.g., a flaky linter, a broken external service)
@@ -64,20 +64,20 @@ failure is determined to be:
 
 Do NOT apply when:
 
-- The CI failure is in a check that the change affects (e.g., a lint rule
-  violation introduced by new code)
+- The CI failure is in a check that the change affects (e.g., a lint rule violation introduced by
+  new code)
 - The failure has not been independently reproduced on main
-- The failure blocks a required check (merge protection) — in that case, fix
-  or escalate; don't out-of-scope it
+- The failure blocks a required check (merge protection) — in that case, fix or escalate; don't
+  out-of-scope it
 
 ### Observed frequency
 
-9 resolved tickets (2026-06-27 through 2026-07-04) across tools:
-pre-commit (3), zizmor (2), lint-workflow (2), hadolint (1), build-and-push (1).
-Naming pattern: `ci-fix: out-of-scope CI failure — <tool>`.
+9 resolved tickets (2026-06-27 through 2026-07-04) across tools: pre-commit (3), zizmor (2),
+lint-workflow (2), hadolint (1), build-and-push (1). Naming pattern:
+`ci-fix: out-of-scope CI failure — <tool>`.
 
 ### Related patterns
 
-- `ci-failure: release-image on main` — pre-existing CI infrastructure
-  failures tracked on main. These may use the same triage boilerplate if the
-  failure is determined not to block the current change.
+- `ci-failure: release-image on main` — pre-existing CI infrastructure failures tracked on main.
+  These may use the same triage boilerplate if the failure is determined not to block the current
+  change.
