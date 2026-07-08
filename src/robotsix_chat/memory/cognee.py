@@ -223,7 +223,7 @@ class CogneeMemory:
         if litellm.langfuse_default_tags is None:
             litellm.langfuse_default_tags = [tag]
         elif tag not in litellm.langfuse_default_tags:
-            litellm.langfuse_default_tags = list(litellm.langfuse_default_tags) + [tag]
+            litellm.langfuse_default_tags = [*list(litellm.langfuse_default_tags), tag]
 
         logger.info(
             "litellm Langfuse OTLP tracing configured for cognee traffic (%s)",

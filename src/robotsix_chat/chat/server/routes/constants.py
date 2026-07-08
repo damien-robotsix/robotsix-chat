@@ -1,7 +1,7 @@
 """SSE wire-format constants — single source of truth for tests and consumers."""
 
 SSE_CONTENT_TYPE = "text/event-stream"
-SSE_TOKEN_TYPE = "token"  # noqa: S105 — SSE event type name, not a credential
+SSE_TOKEN_TYPE = "token"
 SSE_DONE_TYPE = "done"
 SSE_ERROR_TYPE = "error"
 
