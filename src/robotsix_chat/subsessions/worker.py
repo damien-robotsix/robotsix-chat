@@ -127,6 +127,7 @@ def spawn_subsession(
     max_runs: int | None = None,
     sub_id: str | None = None,
     completed_runs: set[int] | None = None,
+    turn_history: list[tuple[str, str]] | None = None,
 ) -> str:
     """Validate, register, and launch a subsession worker; return its id.
 
@@ -182,6 +183,7 @@ def spawn_subsession(
         max_runs=max_runs,
         sub_id=sub_id,
         completed_runs=completed_runs,
+        turn_history=turn_history,
     )
     task = asyncio.create_task(_subsession_worker(env, info.id))
     env.registry.attach_task(info.id, task)
@@ -375,7 +377,10 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
         agent = await asyncio.to_thread(
             env.agent_factory, env.settings, info.model_level, ctx, close_state
         )
-        history: list[tuple[str, str]] = []
+        # Seed from any persisted replay window — non-empty when this
+        # worker is resuming a periodic subsession after a restart, so
+        # the agent picks up with its prior context instead of blank.
+        history: list[tuple[str, str]] = list(info.turn_history)
         previous_result: str | None = None
         consecutive_no_change = 0
         first_turn = True
@@ -427,6 +432,7 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
 
             reply = await _run_turn(agent, turn_input, history, sub_id)
             history.append((turn_input, reply))
+            registry.append_turn_history(sub_id, turn_input, reply)
             # Inbox messages were transcripted at enqueue time; only the
             # assistant side is appended here.
             registry.append_transcript(sub_id, "assistant", reply)
@@ -547,6 +553,23 @@ def _rebuild_completed_runs(entry: dict[str, object]) -> set[int]:
     return set()
 
 
+def _rebuild_turn_history(entry: dict[str, object]) -> list[tuple[str, str]]:
+    """Reconstruct the ``turn_history`` replay window from a persisted entry."""
+    raw = entry.get("turn_history")
+    if not isinstance(raw, list):
+        return []
+    pairs: list[tuple[str, str]] = []
+    for item in raw:
+        if (
+            isinstance(item, list)
+            and len(item) == 2
+            and isinstance(item[0], str)
+            and isinstance(item[1], str)
+        ):
+            pairs.append((item[0], item[1]))
+    return pairs
+
+
 class _CommonEntryKwargs(TypedDict):
     """Typed dict for the common fields extracted from a persisted entry."""
 
@@ -596,6 +619,7 @@ def _resume_entry(env: SubsessionEnv, entry: dict[str, object]) -> None:
             max_runs=remaining,
             sub_id=sub_id,
             completed_runs=_rebuild_completed_runs(entry),
+            turn_history=_rebuild_turn_history(entry),
         )
         return
 
