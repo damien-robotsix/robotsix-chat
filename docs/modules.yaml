@@ -102,7 +102,7 @@ modules:
       - src/robotsix_chat/config/constants.py
       - src/robotsix_chat/config/models.py
       - src/robotsix_chat/config/settings.py
-      - docs/api/robotsix_chat/config.md
+      - docs/config/api.md
       - tests/config/__init__.py
       - tests/config/test_config.py
       - tests/config/test_system_prompt_governance.py
@@ -126,7 +126,7 @@ modules:
       - src/robotsix_chat/chat/server/routes/events.py
       - src/robotsix_chat/chat/server/routes/sessions.py
       - src/robotsix_chat/chat/server/routes/subsessions.py
-      - docs/api/robotsix_chat/server.md
+      - docs/chat/server.md
       - tests/chat/test_conversation.py
       - tests/chat/test_events.py
       - tests/chat/test_subsessions_e2e.py
@@ -187,7 +187,7 @@ modules:
     paths:
       - src/robotsix_chat/llm/__init__.py
       - src/robotsix_chat/llm/agent.py
-      - docs/api/robotsix_chat/agent.md
+      - docs/llm/agent.md
       - tests/llm/__init__.py
       - tests/llm/test_agent.py
 
@@ -197,7 +197,7 @@ modules:
       - src/robotsix_chat/memory/__init__.py
       - src/robotsix_chat/memory/base.py
       - src/robotsix_chat/memory/cognee.py
-      - docs/api/robotsix_chat/memory.md
+      - docs/memory/api.md
       - tests/memory/__init__.py
       - tests/memory/test_memory.py
 

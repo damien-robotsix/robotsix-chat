@@ -411,8 +411,7 @@ class ConversationStore:
                 owner.active_session_id = session_id
                 owner.session_ids.add(session_id)
 
-        if self._serializer is not None:
-            self._serializer.persist(self._owners, self._sessions)
+        self._persist()
 
     def record_for_owner(
         self, owner_id: str, user_message: str, assistant_reply: str
@@ -488,8 +487,7 @@ class ConversationStore:
                 session_ids={sid},
             )
             self._evict_overflow()
-            if self._serializer is not None:
-                self._serializer.persist(self._owners, self._sessions)
+            self._persist()
             return (
                 [
                     {
@@ -542,9 +540,7 @@ class ConversationStore:
 
         self._sessions.move_to_end(sid)
         self._evict_overflow()
-
-        if self._serializer is not None:
-            self._serializer.persist(self._owners, self._sessions)
+        self._persist()
 
         return {
             "session_id": sid,
@@ -598,8 +594,7 @@ class ConversationStore:
                 owner.active_session_id = sid
                 self._evict_overflow()
 
-        if self._serializer is not None:
-            self._serializer.persist(self._owners, self._sessions)
+        self._persist()
 
         return {"deleted": True, "active_session_id": owner.active_session_id}
 
@@ -622,8 +617,7 @@ class ConversationStore:
         if session is None:
             return {"closed": False, "reason": "session not found"}
         session.closed = True
-        if self._serializer is not None:
-            self._serializer.persist(self._owners, self._sessions)
+        self._persist()
         return {"closed": True}
 
     def is_session_closed(self, session_id: str) -> bool:
@@ -640,6 +634,11 @@ class ConversationStore:
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
+
+    def _persist(self) -> None:
+        """Persist current state to disk when serialization is active."""
+        if self._serializer is not None:
+            self._serializer.persist(self._owners, self._sessions)
 
     def _evict_overflow(self) -> None:
         while len(self._sessions) > self._max_conversations:
@@ -689,17 +688,3 @@ class ConversationStore:
                 }
             )
         return result
-
-    def stats(self) -> dict[str, int]:
-        """Return a read-only summary of conversation counts.
-
-        Returns a dict with ``sessions``, ``owners``, and ``total_turns``
-        keys — no LRU ordering, ``last_activity`` timestamp, eviction, or
-        persistence side effects.
-        """
-        total_turns = sum(len(session.turns) for session in self._sessions.values())
-        return {
-            "sessions": len(self._sessions),
-            "owners": len(self._owners),
-            "total_turns": total_turns,
-        }

@@ -50,7 +50,7 @@ def _get_session_id(request: Request) -> str | JSONResponse:
     return session_id
 
 
-async def health_endpoint(request: Request) -> JSONResponse:
+async def health_endpoint(_request: Request) -> JSONResponse:
     """Liveness probe — returns 200 ``{"status": "ok"}``."""
     return JSONResponse({"status": "ok"})
 

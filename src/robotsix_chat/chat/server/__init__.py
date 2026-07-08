@@ -51,7 +51,7 @@ from .routes import (  # noqa: F401 — imports used via dynamic __all__ below
 # We import routes.__all__ as the authoritative list and filter to only the
 # symbols that were actually imported into this module — this avoids
 # duplicating the endpoint-name list across two __init__.py files.
-from .routes import __all__ as _routes_all  # noqa: E402
+from .routes import __all__ as _routes_all
 
 _routes_in_scope = [name for name in _routes_all if name in globals()]
 

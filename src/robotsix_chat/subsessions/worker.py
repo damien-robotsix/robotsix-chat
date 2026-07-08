@@ -21,7 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, TypedDict
 
@@ -125,6 +125,7 @@ def spawn_subsession(
     interval_seconds: float | None = None,
     include_previous_result: bool = False,
     max_runs: int | None = None,
+    inherit_context: bool = False,
     sub_id: str | None = None,
     completed_runs: set[int] | None = None,
     turn_history: list[tuple[str, str]] | None = None,
@@ -170,6 +171,9 @@ def spawn_subsession(
     else:
         interval_seconds = None
 
+    if inherit_context and parent_id is not None:
+        prompt = _build_ancestor_context(env.registry, parent_id) + prompt
+
     info = env.registry.create(
         kind=kind,
         owner_session_id=owner_session_id,
@@ -208,6 +212,58 @@ def _validate_model_level(settings: Settings, model_level: int) -> None:
         )
 
 
+# Character budget for the ancestor-context block prepended to a nested
+# child's prompt when ``inherit_context=True``.  The budget covers the
+# block header plus each ancestor (title + first 300 chars of its prompt);
+# ancestors beyond the budget are silently dropped so the block never
+# overwhelms the child's own instructions.
+_MAX_ANCESTOR_CONTEXT_CHARS = 2000
+
+
+def _build_ancestor_context(registry: SubsessionRegistry, parent_id: str) -> str:
+    """Walk up the parent chain and build a compact context block.
+
+    Returns a string of the form::
+
+        # Ancestor context (inherited from the subsession tree above you)
+
+        ## ancestor-1 title
+        ancestor-1 prompt summary …
+
+        ## ancestor-2 title
+        ...
+
+    or an empty string when the parent chain is unreachable.
+    """
+    ancestors: list[SubsessionInfo] = []
+    current_id: str | None = parent_id
+    while current_id is not None:
+        info = registry.get(current_id)
+        if info is None:
+            break
+        ancestors.append(info)
+        current_id = info.parent_id
+    if not ancestors:
+        return ""
+
+    # Build from root downward (reverse the walk-up order).
+    ancestors.reverse()
+    parts: list[str] = [
+        "# Ancestor context (inherited from the subsession tree above you)\n"
+    ]
+    budget = _MAX_ANCESTOR_CONTEXT_CHARS - len(parts[0])
+    for info in ancestors:
+        snippet = info.prompt[:300]
+        entry = f"## {info.title}\n{snippet}"
+        if len(entry) > budget:
+            break
+        parts.append(entry)
+        budget -= len(entry) + 1  # +1 for the blank line separator
+    if not parts[1:]:  # only the header, no actual ancestor entries
+        return ""
+    return "\n\n".join(parts) + "\n\n"
+
+
 def _render_turn_input(messages: list[InboxMessage]) -> str:
     """Merge an inbox batch into one turn input, labelled by role."""
     if len(messages) == 1:
@@ -242,6 +298,8 @@ async def _run_turn(
     turn_input: str,
     history: list[tuple[str, str]],
     sub_id: str,
+    *,
+    trace_metadata: dict[str, str] | None = None,
 ) -> str:
     """Run one agent turn and return the reply text."""
     parts = [
@@ -251,6 +309,7 @@ async def _run_turn(
             history=history[-_MAX_WORKER_HISTORY_TURNS:] or None,
             session_id=sub_id,
             client_id=sub_id,
+            trace_metadata=trace_metadata,
         )
     ]
     return "".join(parts)
@@ -430,7 +489,16 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                 turn_input = _render_turn_input(pending)
             first_turn = False
 
-            reply = await _run_turn(agent, turn_input, history, sub_id)
+            reply = await _run_turn(
+                agent,
+                turn_input,
+                history,
+                sub_id,
+                trace_metadata={
+                    "owner_session_id": info.owner_session_id,
+                    "parent_session_id": info.parent_id or info.owner_session_id,
+                },
+            )
             history.append((turn_input, reply))
             registry.append_turn_history(sub_id, turn_input, reply)
             # Inbox messages were transcripted at enqueue time; only the
@@ -509,43 +577,43 @@ def resume_subsessions(env: SubsessionEnv) -> None:
             logger.exception("Could not resume subsession entry %r", entry)
 
 
-def _entry_str(entry: dict[str, object], key: str, default: str = "") -> str:
+def _entry_str(entry: Mapping[str, object], key: str, default: str = "") -> str:
     """Coerce a persisted-entry field to ``str`` (typed JSON accessor)."""
     value = entry.get(key, default)
     return value if isinstance(value, str) else default
 
 
-def _entry_int(entry: dict[str, object], key: str, default: int = 0) -> int:
+def _entry_int(entry: Mapping[str, object], key: str, default: int = 0) -> int:
     """Coerce a persisted-entry field to ``int``."""
     value = entry.get(key)
     return int(value) if isinstance(value, (int, float)) else default
 
 
-def _entry_float(entry: dict[str, object], key: str, default: float = 0.0) -> float:
+def _entry_float(entry: Mapping[str, object], key: str, default: float = 0.0) -> float:
     """Coerce a persisted-entry field to ``float``."""
     value = entry.get(key)
     return float(value) if isinstance(value, (int, float)) else default
 
 
-def _entry_opt_int(entry: dict[str, object], key: str) -> int | None:
+def _entry_opt_int(entry: Mapping[str, object], key: str) -> int | None:
     """Coerce a persisted-entry field to ``int | None``."""
     value = entry.get(key)
     return int(value) if isinstance(value, (int, float)) else None
 
 
-def _entry_opt_float(entry: dict[str, object], key: str) -> float | None:
+def _entry_opt_float(entry: Mapping[str, object], key: str) -> float | None:
     """Coerce a persisted-entry field to ``float | None``."""
     value = entry.get(key)
     return float(value) if isinstance(value, (int, float)) else None
 
 
-def _entry_opt_str(entry: dict[str, object], key: str) -> str | None:
+def _entry_opt_str(entry: Mapping[str, object], key: str) -> str | None:
     """Coerce a persisted-entry field to ``str | None``."""
     value = entry.get(key)
     return value if isinstance(value, str) else None
 
 
-def _rebuild_completed_runs(entry: dict[str, object]) -> set[int]:
+def _rebuild_completed_runs(entry: Mapping[str, object]) -> set[int]:
     """Reconstruct the ``completed_runs`` set from a persisted entry."""
     raw = entry.get("completed_runs")
     if isinstance(raw, list):
@@ -553,7 +621,7 @@ def _rebuild_completed_runs(entry: dict[str, object]) -> set[int]:
     return set()
 
 
-def _rebuild_turn_history(entry: dict[str, object]) -> list[tuple[str, str]]:
+def _rebuild_turn_history(entry: Mapping[str, object]) -> list[tuple[str, str]]:
     """Reconstruct the ``turn_history`` replay window from a persisted entry."""
     raw = entry.get("turn_history")
     if not isinstance(raw, list):
@@ -582,7 +650,7 @@ class _CommonEntryKwargs(TypedDict):
     include_previous_result: bool
 
 
-def _entry_to_common_kwargs(entry: dict[str, object]) -> _CommonEntryKwargs:
+def _entry_to_common_kwargs(entry: Mapping[str, object]) -> _CommonEntryKwargs:
     """Extract common SubsessionInfo/spawn_subsession fields from a persisted entry."""
     return {
         "parent_id": _entry_opt_str(entry, "parent_id"),
@@ -595,7 +663,27 @@ def _entry_to_common_kwargs(entry: dict[str, object]) -> _CommonEntryKwargs:
     }
 
 
-def _resume_entry(env: SubsessionEnv, entry: dict[str, object]) -> None:
+def _entry_last_assistant_text(entry: Mapping[str, object]) -> str:
+    """Extract the most recent assistant reply from a persisted entry's transcript.
+
+    ``user_chat`` subsessions never write to ``last_result`` (only periodic
+    does), but the transcript is always persisted.  This helper falls back
+    through the transcript when the direct field is empty.
+    """
+    last_result = _entry_opt_str(entry, "last_result")
+    if last_result:
+        return last_result
+    transcript_raw = entry.get("transcript")
+    if isinstance(transcript_raw, list):
+        for item in reversed(transcript_raw):
+            if isinstance(item, dict) and item.get("role") == "assistant":
+                text = item.get("text")
+                if isinstance(text, str):
+                    return text
+    return ""
+
+
+def _resume_entry(env: SubsessionEnv, entry: Mapping[str, object]) -> None:
     """Resume a single persisted registry entry (see resume_subsessions)."""
     status = _entry_str(entry, "status")
     kind = SubsessionKind(_entry_str(entry, "kind", "task"))
@@ -623,7 +711,33 @@ def _resume_entry(env: SubsessionEnv, entry: dict[str, object]) -> None:
         )
         return
 
-    # task / user_chat: mark interrupted and report to the main session.
+    # task / user_chat: recoverable kinds are respawned; others are
+    # marked interrupted and reported to the main session.
+    if kind is SubsessionKind.USER_CHAT:
+        # Re-open a user_chat under its original id — the worker starts
+        # fresh with an augmented prompt (the original instructions +
+        # the last assistant state) so the user can continue the
+        # conversation after a restart instead of the chat dying
+        # mid-question.
+        common = _entry_to_common_kwargs(entry)
+        last_text = _entry_last_assistant_text(entry)
+        if last_text:
+            common["prompt"] = (
+                f"{common['prompt']}\n\n"
+                f"[System note: this subsession was restarted after a "
+                f"server restart. The assistant's last delivered state "
+                f"was:]\n\n{last_text[:2000]}"
+            )
+        spawn_subsession(
+            env=env,
+            kind=kind,
+            owner_session_id=owner,
+            **common,
+            sub_id=sub_id,
+        )
+        return
+
+    # task: cannot be resumed (in-flight agent state is gone).
     info = _restore_entry(env.registry, entry, force_active=True)
     if info is None:
         return
@@ -644,7 +758,7 @@ def _resume_entry(env: SubsessionEnv, entry: dict[str, object]) -> None:
 
 def _restore_entry(
     registry: SubsessionRegistry,
-    entry: dict[str, object],
+    entry: Mapping[str, object],
     *,
     force_active: bool = False,
 ) -> SubsessionInfo | None:
