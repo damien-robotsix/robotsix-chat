@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Extract repeated `_serializer.persist` guard into a private `_persist()` helper in `ConversationStore`.
 - Move `docs/api/robotsix_chat/server.md` to `docs/chat/server.md` to align with per-module docs layout convention.
 - Moved `docs/api/robotsix_chat/config.md` to `docs/config/api.md` to align with the per-module doc layout convention.
 - Remove dead `ConversationStore.stats()` method — zero callers in the codebase.
