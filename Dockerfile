@@ -73,6 +73,30 @@ RUN apt-get update \
         /usr/lib/node_modules/npm /usr/lib/node_modules/corepack \
         /usr/bin/npm /usr/bin/npx /usr/bin/corepack
 
+# Install Chromium system dependencies for Playwright (render_url tool).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends \
+        libnss3 \
+        libnspr4 \
+        libatk-bridge2.0-0t64 \
+        libdrm2 \
+        libxkbcommon0 \
+        libgbm1 \
+        libasound2t64 \
+        libxcomposite1 \
+        libxdamage1 \
+        libxfixes3 \
+        libxrandr2 \
+        libpango-1.0-0 \
+        libcairo2 \
+    && apt-get clean \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install the Chromium browser binary for Playwright into a fixed image path
+# so it survives the USER switch and volume mounts.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
+RUN python -m playwright install chromium
+
 # Standardized robotsix container layout (see robotsix-standards, docker
 # page): non-root user `app`, uid/gid 1000, home /home/app. Central-deploy
 # sets the container user to the deployment uid at container-create time;

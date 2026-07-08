@@ -464,6 +464,29 @@ class LifecycleSettings(BaseModel):
     timeout: float = 30.0
 
 
+class RenderUrlSettings(BaseModel):
+    """Headless Chromium page rendering tool for the agent.
+
+    When enabled, the chat agent gains a ``render_url`` tool that loads a
+    page in headless Chromium (Playwright) and returns a screenshot plus
+    the accessibility tree.  Read-only — no forms are submitted, no state
+    is mutated.
+
+    Attributes:
+        enabled: Master switch.  When ``False``, no render-url tool is
+            offered.
+        timeout: Page load timeout in seconds.
+        viewport_width: Browser viewport width in pixels.
+        viewport_height: Browser viewport height in pixels.
+
+    """
+
+    enabled: bool = False
+    timeout: float = 30.0
+    viewport_width: int = 1280
+    viewport_height: int = 720
+
+
 class CentralDeploySettings(BaseModel):
     """Central-deploy roster and component-access settings.
 

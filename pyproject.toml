@@ -13,6 +13,7 @@ authors = [{ name = "Damien Robotsix", email = "damien.robotsix@gmail.com" }]
 dependencies = [
     "asgi-correlation-id",
     "httpx",
+    "playwright",
     "pydantic",
     "pyjwt",
     "structlog>=24.0.0",
