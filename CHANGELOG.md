@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Move `docs/api/robotsix_chat/server.md` to `docs/chat/server.md` to align with per-module docs layout convention.
 - Moved `docs/api/robotsix_chat/config.md` to `docs/config/api.md` to align with the per-module doc layout convention.
 - Moved `config` module API doc from `docs/api/robotsix_chat/config.md` to
   `docs/config/api.md` to align with per-module docs layout convention.
