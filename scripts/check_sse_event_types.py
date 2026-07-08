@@ -16,8 +16,8 @@ literals matching canonical event-type values.  Exits non-zero when:
 3. A bare string literal in a test file matches a canonical event-type
    value (e.g. ``"task_started"`` instead of ``SSE_TASK_STARTED_TYPE``).
 
-This complements ``scripts/check_kind_literals.py`` (which enforces
-``TicketKind`` constants in test files).
+This covers the role previously filled by the now-removed
+``scripts/check_kind_literals.py`` for enum-constant hygiene.
 """
 
 from __future__ import annotations

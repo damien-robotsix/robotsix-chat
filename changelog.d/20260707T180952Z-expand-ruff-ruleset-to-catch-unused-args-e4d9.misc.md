@@ -1,0 +1,1 @@
+Expand ruff ruleset to catch unused args, naming bugs, debug leftovers, and ruff-specific issues

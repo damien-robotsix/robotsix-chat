@@ -141,6 +141,36 @@ def test_append_transcript_caps_entries_and_publishes() -> None:
     assert last["text"] == "line 4"
 
 
+def test_append_turn_history_caps_entries_and_persists(tmp_path: Path) -> None:
+    """turn_history is capped at _MAX_TURN_HISTORY_ENTRIES, newest kept."""
+    from robotsix_chat.subsessions.registry import _MAX_TURN_HISTORY_ENTRIES
+
+    store_path = tmp_path / "subsessions.json"
+    registry = SubsessionRegistry(store_path=store_path)
+    info = _create(registry)
+
+    for i in range(_MAX_TURN_HISTORY_ENTRIES + 5):
+        registry.append_turn_history(info.id, f"in {i}", f"out {i}")
+
+    assert len(info.turn_history) == _MAX_TURN_HISTORY_ENTRIES
+    assert info.turn_history[0] == ("in 5", "out 5")
+    assert info.turn_history[-1] == (
+        f"in {_MAX_TURN_HISTORY_ENTRIES + 4}",
+        f"out {_MAX_TURN_HISTORY_ENTRIES + 4}",
+    )
+
+    # Persisted as list-of-lists (JSON has no tuples).
+    raw = json.loads(store_path.read_text())
+    entry = next(e for e in raw if e["subsession_id"] == info.id)
+    assert entry["turn_history"][0] == ["in 5", "out 5"]
+
+
+def test_append_turn_history_unknown_id_is_noop() -> None:
+    """``append_turn_history`` for an unknown id does not raise."""
+    registry = SubsessionRegistry(store_path=None)
+    registry.append_turn_history("ghost", "in", "out")  # no error
+
+
 def test_enqueue_message_unknown_or_terminal_returns_false() -> None:
     """Messages cannot be queued for unknown or terminal subsessions."""
     registry = SubsessionRegistry(store_path=None)

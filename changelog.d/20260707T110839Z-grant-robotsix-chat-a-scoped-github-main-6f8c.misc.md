@@ -1,0 +1,1 @@
+Grant robotsix-chat a scoped GitHub-maintenance capability (register a github virtual component)

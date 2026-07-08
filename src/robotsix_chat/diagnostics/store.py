@@ -14,10 +14,8 @@ from __future__ import annotations
 
 import logging
 import uuid
-from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import datetime
-from pathlib import Path
 from typing import Any
 
 from robotsix_chat.common.json_store import JsonStoreBase
@@ -56,38 +54,7 @@ class DiagnosticStore(JsonStoreBase[DiagnosticBundle]):
     """
 
     _store_name = "diagnostic store"
-
-    def __init__(
-        self,
-        path: str | Path = "/data/diagnostics.json",
-        *,
-        clock: Callable[[], datetime] | None = None,
-    ) -> None:
-        """Create a store persisting to *path*."""
-        super().__init__(path, clock=clock)
-
-    # ------------------------------------------------------------------
-    # serialisation hooks
-    # ------------------------------------------------------------------
-
-    def _to_dict(self, item: DiagnosticBundle) -> dict[str, object]:
-        return {
-            "id": item.id,
-            "category": item.category,
-            "message": item.message,
-            "details": item.details,
-            "created_at": item.created_at,
-        }
-
-    @classmethod
-    def _from_dict(cls, d: dict[str, Any]) -> DiagnosticBundle:
-        return DiagnosticBundle(
-            id=d.get("id", ""),
-            category=d.get("category", ""),
-            message=d.get("message", ""),
-            details=d.get("details"),
-            created_at=d.get("created_at", ""),
-        )
+    _default_path = "/data/diagnostics.json"
 
     # ------------------------------------------------------------------
     # public API

@@ -51,6 +51,7 @@ class FakeAgent:
         session_id: str | None = None,
         client_id: str | None = None,
         images: list[tuple[str, bytes]] | None = None,
+        trace_metadata: dict[str, str] | None = None,
     ) -> AsyncIterator[str]:
         """Record the call, optionally wait on the gate, yield one reply."""
         self.calls.append(
@@ -60,6 +61,7 @@ class FakeAgent:
                 "session_id": session_id,
                 "client_id": client_id,
                 "images": images,
+                "trace_metadata": trace_metadata,
             }
         )
         if self.gate is not None:
@@ -134,7 +136,7 @@ def make_settings(
     *,
     max_concurrent: int = 8,
     max_depth: int = 3,
-    default_model_level: int = 3,
+    default_model_level: int = 2,
     min_interval_seconds: float = 0.01,
     auto_stop_no_change_runs: int = 3,
     llmio_api_key: str = "",

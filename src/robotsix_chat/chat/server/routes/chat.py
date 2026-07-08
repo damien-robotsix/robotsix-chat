@@ -53,11 +53,15 @@ class ChatAgent(Protocol):
         session_id: str | None = None,
         client_id: str | None = None,
         images: list[tuple[str, bytes]] | None = None,
+        trace_metadata: dict[str, str] | None = None,
     ) -> AsyncIterator[str]:
         """Yield tokens from the LLM in response to ``message``.
 
         *images* is an optional list of ``(media_type, raw_bytes)`` pairs
         representing attached images (e.g. ``[("image/png", b"...")]``).
+        *trace_metadata* is an optional dict of key-value attributes
+        stamped onto the Langfuse trace span for observability (e.g.
+        ``{"parent_session_id": "..."}``).
         """
 
 
@@ -136,6 +140,14 @@ class MessageCoalescer:
         # which are only accessed by their dedicated processor task after
         # the guard releases.
         self._guard: asyncio.Lock = asyncio.Lock()
+        # Strong references to in-flight processor tasks. asyncio only
+        # holds a weak reference to a task once created — without this,
+        # the task backing an agent run can be garbage-collected mid-run
+        # (e.g. when the user switches sessions or reloads, freeing other
+        # objects and triggering a GC pass), silently aborting the run
+        # before store.record() ever persists the reply. See the asyncio
+        # docs' own warning on create_task() for this exact pitfall.
+        self._background_tasks: set[asyncio.Task[None]] = set()
 
     async def submit(
         self,
@@ -171,7 +183,7 @@ class MessageCoalescer:
             # Only start a processor when the first message lands in an
             # empty batch.
             if len(batch) == 1:
-                asyncio.create_task(
+                task = asyncio.create_task(
                     self._process_batch(
                         session_id,
                         agent,
@@ -183,6 +195,8 @@ class MessageCoalescer:
                         had_session,
                     )
                 )
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
 
         return response_queue
 

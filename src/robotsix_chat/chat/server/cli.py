@@ -26,6 +26,9 @@ from .routes import ChatAgent, RunSerializer
 logger = logging.getLogger(__name__)
 
 
+# Keyword parameters shared with create_app() are tracked in
+# robotsix_chat.chat.server.app.SHARED_PARAMS — keep the two
+# signatures in sync or the test suite will catch the drift.
 def run_server(
     agent: ChatAgent,
     *,
@@ -140,8 +143,10 @@ def _configure_logging(settings: Settings) -> None:
     ]
 
     structlog.configure(
-        processors=shared_processors
-        + [structlog.stdlib.ProcessorFormatter.wrap_for_formatter],
+        processors=[
+            *shared_processors,
+            structlog.stdlib.ProcessorFormatter.wrap_for_formatter,
+        ],
         logger_factory=structlog.stdlib.LoggerFactory(),
         wrapper_class=structlog.stdlib.BoundLogger,
         cache_logger_on_first_use=True,
@@ -230,6 +235,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         conversation_store=conversation_store,
         registry=subsession_registry,
         run_serializer=run_serializer,
+        event_sink=event_bus,
     )
 
     # Subsession agent factory: same full tool suite as the main agent,
@@ -264,7 +270,13 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             settings=settings,
             conversation_store=conversation_store,
             subsession_env=env,
+            event_sink=event_bus,
         )
+    # Wire the main agent into ParentDelivery now that both exist (see
+    # ParentDelivery.set_agent for why this can't happen at construction
+    # time) — main-chat-parent subsession outcomes then get a real reaction
+    # turn instead of a passive history record.
+    delivery.set_agent(agent)
 
     # Cheap dedicated agent for POST /summary (bounded extraction, not
     # open-ended reasoning) — avoids running the main agent's often-pricier

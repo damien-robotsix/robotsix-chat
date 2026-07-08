@@ -29,12 +29,17 @@ import logging
 from collections.abc import AsyncIterator, Callable, Iterator
 from typing import Any
 
-from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+from robotsix_llmio.claude_sdk import (
+    ClaudeSDKActivityEvent,
+    ClaudeSDKUsageExhaustedError,
+    activity_events,
+)
 from robotsix_llmio.config import create_model
 from robotsix_llmio.config.tier import TierConfig, TierLevel, TierLevelConfig
 from robotsix_llmio.core.tier_fallback import acall_with_tier_fallback
 from robotsix_llmio.openrouter import is_openrouter_transient
 
+from robotsix_chat.chat.events import EventSink, activity_frame
 from robotsix_chat.memory import ChatMemory, NullMemory
 
 logger = logging.getLogger(__name__)
@@ -74,11 +79,19 @@ def _build_message_history(history: list[Turn] | None) -> list[Any] | None:
 
 
 @contextlib.contextmanager
-def _trace_session(session_id: str | None) -> Iterator[None]:
+def _trace_session(
+    session_id: str | None,
+    trace_metadata: dict[str, str] | None = None,
+) -> Iterator[None]:
     """Group the enclosed agent run under *session_id* in Langfuse.
 
     A no-op when *session_id* is falsy or llmio's tracing extra is absent, so
     callers can wrap unconditionally.
+
+    When *trace_metadata* is supplied, each key-value pair is stamped as a
+    span attribute on the current recording span (if any) inside the session
+    context — used for parent/owner lineage so the trace tree mirrors the
+    subsession tree in observability.
     """
     if not session_id:
         yield
@@ -89,7 +102,37 @@ def _trace_session(session_id: str | None) -> Iterator[None]:
         yield
         return
     with langfuse_session(session_id):
+        if trace_metadata:
+            _stamp_trace_metadata(trace_metadata)
         yield
+
+
+def _stamp_trace_metadata(metadata: dict[str, str]) -> None:
+    """Stamp *metadata* as attributes on the current OTel recording span.
+
+    A no-op when OpenTelemetry is absent or no span is currently recording —
+    the attributes are best-effort observability, not critical to the run.
+    """
+    try:
+        from robotsix_llmio.core.tracing import get_recording_span
+    except ImportError:
+        return
+    span = get_recording_span()
+    if span is not None:
+        for key, value in metadata.items():
+            span.set_attribute(key, value)
+
+
+def _activity_context(
+    on_event: Callable[[ClaudeSDKActivityEvent], None] | None,
+) -> contextlib.AbstractContextManager[None]:
+    """``activity_events(on_event)``, or a no-op when *on_event* is ``None``.
+
+    ``None`` means no sink was configured, or no session to scope frames to.
+    """
+    if on_event is None:
+        return contextlib.nullcontext()
+    return activity_events(on_event)
 
 
 # Header for the recalled-memory block prepended to the current user turn.
@@ -119,6 +162,7 @@ class LlmioChatAgent:
         memory: ChatMemory | None = None,
         tools: list[Any] | None = None,
         request_tools_factory: Callable[[str], list[Any]] | None = None,
+        event_sink: EventSink | None = None,
     ) -> None:
         """Store the agent configuration for later ``stream`` calls.
 
@@ -127,6 +171,15 @@ class LlmioChatAgent:
         subsession tools whose closures capture that session id).  It keeps
         the module dependency acyclic: those tools are built fresh per
         request inside ``stream``, not baked into the shared agent.
+
+        *event_sink*, when given, receives an ``activity`` frame (see
+        :func:`robotsix_chat.chat.events.activity_frame`) for every tool
+        call, tool result, thinking block, or intermediate assistant text
+        the claudeSDK backend streams during a turn — live feedback on what
+        the agent is doing while the final reply is still pending. A
+        non-claudeSDK level (e.g. an OpenRouter tier) simply never triggers
+        it: ``robotsix_llmio.claude_sdk.activity_events()`` is a no-op unless
+        the resolved transport is the Claude Agent SDK.
         """
         self._model_level = model_level
         self._instruction = instruction
@@ -137,8 +190,64 @@ class LlmioChatAgent:
         # returned as one block.
         self._tools = list(tools) if tools is not None else None
         self._request_tools_factory = request_tools_factory
+        self._event_sink = event_sink
         # Hold references to in-flight background writes so they aren't GC'd.
         self._write_tasks: set[asyncio.Task[None]] = set()
+
+    def _activity_callback(
+        self, session_id: str | None
+    ) -> Callable[[ClaudeSDKActivityEvent], None] | None:
+        """Build the ``on_event`` callback for :func:`activity_events`.
+
+        Bound to *session_id*. Returns ``None`` when there is nowhere to
+        publish to (no sink configured, or no session to scope the frame to)
+        so the caller can skip wrapping the run in a no-op context.
+        """
+        if self._event_sink is None or not session_id:
+            return None
+        sink = self._event_sink
+
+        def _on_activity(event: ClaudeSDKActivityEvent) -> None:
+            sink.publish(
+                session_id,
+                activity_frame(
+                    event.kind,
+                    event.turn,
+                    tool_name=event.tool_name,
+                    detail=event.detail,
+                    is_error=event.is_error,
+                ),
+            )
+
+        return _on_activity
+
+    def _publish_synthetic_activity(
+        self,
+        session_id: str | None,
+        kind: str,
+        *,
+        tool_name: str | None = None,
+        detail: str = "",
+        is_error: bool = False,
+    ) -> None:
+        """Publish an activity frame for a preliminary step outside the SDK run.
+
+        E.g. memory recall — so the UI shows something during phases the
+        Claude SDK's own activity events don't cover — otherwise the typing
+        indicator sits blank for as long as that step takes, which can be
+        the majority of the wall-clock time for a turn (memory recall alone
+        has been observed taking 90+ seconds).
+
+        A no-op when there is nowhere to publish to (no sink, no session).
+        """
+        if self._event_sink is None or not session_id:
+            return
+        self._event_sink.publish(
+            session_id,
+            activity_frame(
+                kind, 0, tool_name=tool_name, detail=detail, is_error=is_error
+            ),
+        )
 
     async def stream(
         self,
@@ -148,6 +257,7 @@ class LlmioChatAgent:
         session_id: str | None = None,
         client_id: str | None = None,
         images: list[tuple[str, bytes]] | None = None,
+        trace_metadata: dict[str, str] | None = None,
     ) -> AsyncIterator[str]:
         """Yield the assistant's reply to *message* as a single block.
 
@@ -178,7 +288,19 @@ class LlmioChatAgent:
         # prompt cache for the whole request on every turn. Prepending to the
         # newest user turn keeps the instruction, tools, and replayed
         # transcript byte-stable and cache-servable.
+        self._publish_synthetic_activity(
+            session_id, "tool_call", tool_name="recall_memory"
+        )
         recalled = await self._memory.recall(message, session_id=session_id)
+        self._publish_synthetic_activity(
+            session_id,
+            "tool_result",
+            detail=(
+                f"found {len(recalled)} chars of prior context"
+                if recalled
+                else "no relevant memory found"
+            ),
+        )
         system_prompt = self._instruction
         llm_message = message
         if recalled:
@@ -221,6 +343,7 @@ class LlmioChatAgent:
         else:
             prompt = llm_message
 
+        on_activity = self._activity_callback(session_id)
         result: Any = None
         for attempt in range(1, _MAX_RUN_ATTEMPTS + 1):
             # Build a fresh handle per attempt so each try starts from a
@@ -234,7 +357,10 @@ class LlmioChatAgent:
             )
             try:
                 try:
-                    with _trace_session(session_id):
+                    with (
+                        _trace_session(session_id, trace_metadata),
+                        _activity_context(on_activity),
+                    ):
                         result = await handle.run(
                             prompt, message_history=message_history
                         )
@@ -248,7 +374,7 @@ class LlmioChatAgent:
                     exc,
                 )
                 result = await self._run_with_usage_fallback(
-                    prompt, message_history, tools_arg, session_id
+                    prompt, message_history, tools_arg, session_id, trace_metadata
                 )
                 break
             except Exception as exc:
@@ -278,6 +404,7 @@ class LlmioChatAgent:
         message_history: list[Any] | None,
         tools_arg: list[Any] | None,
         session_id: str | None,
+        trace_metadata: dict[str, str] | None = None,
     ) -> Any:
         """Retry the same turn at a different tier after a usage-exhaustion.
 
@@ -311,6 +438,8 @@ class LlmioChatAgent:
             for level in TierLevel
         }
 
+        on_activity = self._activity_callback(session_id)
+
         def _fn_factory(tlc: TierLevelConfig) -> Callable[[], Any]:
             level = level_by_model[tlc.model]
 
@@ -323,7 +452,10 @@ class LlmioChatAgent:
                     builtin_tools=False,
                 )
                 try:
-                    with _trace_session(session_id):
+                    with (
+                        _trace_session(session_id, trace_metadata),
+                        _activity_context(on_activity),
+                    ):
                         return await fallback_handle.run(
                             prompt, message_history=message_history
                         )

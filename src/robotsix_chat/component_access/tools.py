@@ -331,7 +331,10 @@ def build_component_access_tools(
     system-prompt injection.
 
     The roster is fetched once at agent construction time and refreshed
-    on each tool call if the TTL has expired.
+    on each tool call if the TTL has expired. Every component — including
+    ``github`` — is reached exclusively through the roster: there is no
+    per-component fallback, so the roster's skill document is always the
+    single, authoritative description of what a component supports.
     """
     if not settings.url:
         return []

@@ -2350,3 +2350,39 @@ async def test_coalescer_second_batch_after_first_completes() -> None:
         )
         assert f.agent.call_count == 2
         assert f.agent.called_with == "batch2-msg1"
+
+
+# -- create_app / run_server shared-parameter sync guard --------------------
+
+
+def test_create_app_and_run_server_shared_params() -> None:
+    """Verify ``create_app()`` and ``run_server()`` share keyword params."""
+    from inspect import signature
+
+    from robotsix_chat.chat.server.app import (
+        SHARED_PARAMS,
+    )
+    from robotsix_chat.chat.server.app import (
+        create_app as _create_app,
+    )
+    from robotsix_chat.chat.server.cli import run_server as _run_server
+
+    ca_sig = signature(_create_app)
+    rs_sig = signature(_run_server)
+
+    for name in SHARED_PARAMS:
+        assert name in ca_sig.parameters, (
+            f"Missing in create_app: '{name}' — add it to the signature "
+            f"or remove it from SHARED_PARAMS"
+        )
+        assert name in rs_sig.parameters, (
+            f"Missing in run_server: '{name}' — add it to the signature "
+            f"or remove it from SHARED_PARAMS"
+        )
+
+        ca_default = ca_sig.parameters[name].default
+        rs_default = rs_sig.parameters[name].default
+        assert ca_default == rs_default, (
+            f"Default mismatch for '{name}': "
+            f"create_app={ca_default!r}, run_server={rs_default!r}"
+        )

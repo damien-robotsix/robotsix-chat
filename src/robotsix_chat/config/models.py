@@ -409,7 +409,7 @@ class SubsessionsSettings(BaseModel):
 
     max_concurrent: int = 8
     max_depth: int = 3
-    default_model_level: int = 3
+    default_model_level: int = 2
     min_interval_seconds: float = 60.0
     auto_stop_no_change_runs: int = 5
     store_path: str = "/data/subsessions.json"

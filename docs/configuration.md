@@ -220,7 +220,7 @@ Background sub-agent spawning configuration.
 | -------------------------------------- | --------- | -------------------------- | -------------------------------------------- |
 | `subsessions.max_concurrent`           | `integer` | `8`                        | Maximum concurrent subsessions.              |
 | `subsessions.max_depth`                | `integer` | `3`                        | Maximum nesting depth.                       |
-| `subsessions.default_model_level`      | `integer` | `3`                        | Default model level for spawned subsessions. |
+| `subsessions.default_model_level`      | `integer` | `2`                        | Default model level for spawned subsessions. |
 | `subsessions.min_interval_seconds`     | `number`  | `60.0`                     | Minimum interval between periodic runs.      |
 | `subsessions.auto_stop_no_change_runs` | `integer` | `5`                        | Consecutive NO_CHANGE runs before auto-stop. |
 | `subsessions.store_path`               | `string`  | `"/data/subsessions.json"` | Path to the subsession persistence file.     |
