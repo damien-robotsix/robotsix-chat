@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import threading
+from typing import Any
 
 import pytest
 
@@ -14,10 +16,15 @@ from robotsix_chat.subsessions import (
     SubsessionIntervalError,
     SubsessionKind,
     SubsessionLevelError,
+    SubsessionPeriodicSpawnError,
     SubsessionStatus,
     spawn_subsession,
 )
-from robotsix_chat.subsessions.worker import SubsessionContext, SubsessionEnv
+from robotsix_chat.subsessions.worker import (
+    CloseState,
+    SubsessionContext,
+    SubsessionEnv,
+)
 from tests.common.subsession_fakes import (
     CapturingAgentFactory,
     FakeAgent,
@@ -96,6 +103,40 @@ async def test_task_single_turn_completes_and_delivers() -> None:
     assert label.startswith(f"[Subsession {sub_id[:8]} (task)")
     assert "completed" in label
     assert reply == "result 42"
+
+
+@pytest.mark.asyncio
+async def test_agent_factory_runs_off_the_event_loop_thread() -> None:
+    """agent_factory must never be invoked on the event loop's own thread.
+
+    Regression test for a production incident: create_agent_from_settings
+    calls fetch_roster_sync, which does asyncio.run(...) internally — legal
+    only when the calling thread has no running event loop. _subsession_worker
+    itself runs as a task on the server's already-running loop, so calling
+    agent_factory directly there reproduced exactly that crash ("asyncio.run()
+    cannot be called from a running event loop") for every subsession spawn.
+    The worker must dispatch the call to a separate thread.
+    """
+    event_loop_thread = threading.current_thread()
+
+    def factory(
+        settings: Any,
+        model_level: int,
+        ctx: SubsessionContext,
+        close_state: CloseState,
+    ) -> FakeAgent:
+        assert threading.current_thread() is not event_loop_thread
+        return FakeAgent(["ok"])
+
+    env = build_env(agent_factory=factory)
+
+    sub_id = _spawn(env, prompt="hello")
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.summary == "ok"
 
 
 @pytest.mark.asyncio
@@ -463,6 +504,71 @@ def test_spawn_level_errors() -> None:
     assert env.registry.list_for_owner(OWNER) == []
 
 
+@pytest.mark.asyncio
+async def test_periodic_parent_cannot_spawn_periodic_child() -> None:
+    """A periodic subsession cannot spawn another periodic subsession."""
+    env = build_env()
+    # Register a periodic parent.
+    parent = env.registry.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="parent periodic",
+        prompt="monitor",
+        model_level=3,
+        interval_seconds=10.0,
+    )
+
+    with pytest.raises(SubsessionPeriodicSpawnError, match="periodic"):
+        _spawn(
+            env,
+            kind=SubsessionKind.PERIODIC,
+            parent_id=parent.id,
+            depth=2,
+            interval_seconds=5.0,
+        )
+
+    # Non-periodic children (e.g. task) are still allowed.
+    task_id = _spawn(
+        env,
+        kind=SubsessionKind.TASK,
+        parent_id=parent.id,
+        depth=2,
+    )
+    assert task_id
+    # Clean up the spawned worker.
+    env.registry.cancel_and_close(task_id, reason="teardown", closed_by="system")
+
+
+@pytest.mark.asyncio
+async def test_non_periodic_parent_can_spawn_periodic_child() -> None:
+    """A task or user_chat parent can still spawn periodic children."""
+    env = build_env()
+    parent = env.registry.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="parent task",
+        prompt="work",
+        model_level=3,
+    )
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        parent_id=parent.id,
+        depth=2,
+        interval_seconds=10.0,
+    )
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.kind is SubsessionKind.PERIODIC
+    # Clean up the spawned worker.
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
+
+
 # ---------------------------------------------------------------------------
 # idempotent spawn
 # ---------------------------------------------------------------------------
@@ -677,3 +783,36 @@ async def test_complete_subsession_fails_when_subsession_inactive() -> None:
     assert "Error" in result or "no longer active" in result
     # The close state should NOT have been flipped.
     assert not close_state.requested
+
+
+def test_rebuild_turn_history_parses_valid_pairs() -> None:
+    """``_rebuild_turn_history`` converts persisted list-of-lists to tuples."""
+    from robotsix_chat.subsessions.worker import _rebuild_turn_history
+
+    entry = {"turn_history": [["in 1", "out 1"], ["in 2", "out 2"]]}
+
+    assert _rebuild_turn_history(entry) == [("in 1", "out 1"), ("in 2", "out 2")]
+
+
+def test_rebuild_turn_history_ignores_malformed_entries() -> None:
+    """Malformed items (wrong shape/type) are dropped, not raised on."""
+    from robotsix_chat.subsessions.worker import _rebuild_turn_history
+
+    entry = {
+        "turn_history": [
+            ["ok in", "ok out"],
+            ["only one"],
+            [1, 2],
+            "not a list",
+            None,
+        ]
+    }
+
+    assert _rebuild_turn_history(entry) == [("ok in", "ok out")]
+
+
+def test_rebuild_turn_history_missing_field_returns_empty() -> None:
+    """A persisted entry without ``turn_history`` (older format) is fine."""
+    from robotsix_chat.subsessions.worker import _rebuild_turn_history
+
+    assert _rebuild_turn_history({}) == []

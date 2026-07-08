@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "robotsix-chat"
-version = "0.2.0"
+version = "0.2.1"
 description = "Browser + SSE chat server exposing an LLM agent to human users"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -95,7 +95,7 @@ packages = ["src/robotsix_chat"]
 # fleet pin-bump workflow advances them through reviewed PRs.
 [tool.uv.sources]
 robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.git", rev = "424f8ec5140e14e9699b92d5c3755d929625b570" }  # pragma: allowlist secret
-robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "519c3763518b1d2ca0f94a85654100e413d77d77" }  # pragma: allowlist secret
+robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "01127721a1608d308c7db54d5efcd7ed6e5b342a" }  # pragma: allowlist secret
 # robotsix-modules: same SHA as robotsix-mill (coherent-set rule).
 robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "d7c5e59980516de6e050db02ff54aef4e15ff5c3" }  # pragma: allowlist secret
 
@@ -143,16 +143,45 @@ line-length = 88
 exclude = [".local-deps", ".local_pkgs"]
 
 [tool.ruff.lint]
-select = ["E", "F", "I", "UP", "B", "SIM", "S", "D", "FURB"]
+select = ["E", "F", "I", "UP", "B", "SIM", "S", "D", "FURB", "ARG", "N", "RUF", "T"]
 
 [tool.ruff.lint.per-file-ignores]
-# S105: `SSE_TOKEN_TYPE = "token"` is an SSE event-type name, not a credential.
-"src/robotsix_chat/chat/server/routes.py" = ["S105"]
+# S105: SSE event-type names like "token" / "done" / "error" are not
+# credentials.
+"src/robotsix_chat/chat/server/routes/**" = ["S105"]
 # Test files routinely use asserts (S101), bind-all-interfaces test servers
 # (S104), and hard-coded sentinel credentials/tokens (S105-S107).
-"tests/**" = ["S101", "S104", "S105", "S106", "S107"]
+# ARG001 / ARG002 / ARG005: pytest fixture arguments are often required for
+# setup even when not referenced in the body.
+# N811: test files import module-level constants via aliases (e.g.
+# `_INSTALLATION_TOKEN_CACHE as _cache`) to manipulate internal state.
+# RUF002 / RUF003: ambiguous unicode characters in test docstrings and
+# comments (multiplication sign, en dash) are intentional.
+# RUF015: single-element list-comprehension slices in test assertions are
+# deliberate for readability.
+# RUF043: unescaped metacharacters in ``match=`` patterns are intentional
+# (testing error messages that contain literal dots).
+# RUF059: unpacking with unused variables is common in test assertions.
+"tests/**" = ["S101", "S104", "S105", "S106", "S107", "ARG001", "ARG002", "ARG005", "N811", "RUF002", "RUF003", "RUF015", "RUF043", "RUF059"]
 # The vulture whitelist is a tooling artefact, not a documented module.
 "vulture_whitelist.py" = ["D100"]
+# RUF001: en dashes used as bullet markers in prose / prompt strings are
+# intentional and not ambiguous in context.
+"src/robotsix_chat/chat/server/app.py" = ["RUF001"]
+"src/robotsix_chat/config/settings.py" = ["RUF001"]
+# ARG002: NullMemory parameters are required by the ChatMemory protocol;
+# the no-op implementation intentionally ignores them.
+"src/robotsix_chat/memory/base.py" = ["ARG002"]
+# ARG002: `ticket_id` is required by the RepoClient.commit_changes protocol
+# even though the direct-GitDB implementation doesn't use it.
+"src/robotsix_chat/repo/direct/client.py" = ["ARG002"]
+# Standalone scripts are expected to use print() for output; T (print /
+# pdb / breakpoint) guards are for production library code.
+# N806: PascalCase regex pattern variable names in scripts are intentional.
+"scripts/**" = ["T", "N806"]
+# ARG001/ARG002: stub middleware signatures follow the target protocol;
+# unused *args/**kwargs are part of the interface contract.
+"_stubs/**" = ["ARG001", "ARG002"]
 
 [tool.mypy]
 python_version = "3.14"

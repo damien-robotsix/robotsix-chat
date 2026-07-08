@@ -186,6 +186,27 @@ async def test_spawn_tool_keyless_level_refusal() -> None:
 
 
 @pytest.mark.asyncio
+async def test_spawn_tool_periodic_parent_periodic_child_refusal() -> None:
+    """A periodic subsession spawning a periodic child is refused politely."""
+    env = build_env()
+    # Register a periodic parent and build tools from its context.
+    parent = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=10.0)
+    tools = build_subsession_tools(env, ctx=_ctx(subsession_id=parent.id, depth=1))
+    spawn = _by_name(tools, "spawn_subsession")
+
+    result = await spawn(
+        "periodic",
+        "child periodic",
+        "do monitoring",
+        interval_seconds=5.0,
+        model_level=3,
+    )
+
+    assert result.startswith("Could not start the subsession:")
+    assert "periodic" in result
+
+
+@pytest.mark.asyncio
 async def test_spawn_tool_refused_for_closed_session() -> None:
     """A closed chat session cannot spawn new subsessions."""
     store = ConversationStore()
@@ -208,7 +229,7 @@ async def test_spawn_tool_starts_a_worker() -> None:
     env = build_env(agent=agent)
     spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
 
-    result = await spawn("task", "quick job", "do it")
+    result = await spawn("task", "quick job", "do it", model_level=3)
 
     assert result.startswith("Started task subsession ")
     assert "'quick job'" in result
@@ -324,7 +345,7 @@ async def test_close_tool_cancels_worker_and_delivers_summary() -> None:
     spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
     close = _by_name(build_subsession_tools(env, ctx=_ctx()), "close_subsession")
 
-    await spawn("task", "long job", "work forever")
+    await spawn("task", "long job", "work forever", model_level=3)
     await wait_until(lambda: len(agent.calls) == 1)
     info = env.registry.list_for_owner(OWNER)[0]
     worker = env.registry._running[info.id]

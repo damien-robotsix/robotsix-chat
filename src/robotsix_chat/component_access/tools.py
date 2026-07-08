@@ -6,6 +6,7 @@ in the roster — no per-component tools, no typed board operations.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -20,6 +21,68 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 _TRUNCATE_LENGTH = 8000
+
+# Retry configuration for transient component-call failures.
+_MAX_ATTEMPTS = 3
+_BASE_DELAY = 1.0  # seconds
+_MAX_DELAY = 10.0  # seconds
+_HEALTH_PROBE_TIMEOUT = 2.0  # seconds
+
+
+def _is_transient_exception(exc: Exception) -> bool:
+    """Return True if *exc* represents a transient (retryable) error.
+
+    Network-level errors (connection refused, timeout, protocol errors)
+    are transient — the request may not have reached the server at all.
+    An empty exception message is also treated as transient: it often
+    indicates a proxy/network hiccup that didn't produce a meaningful
+    diagnostic.
+    """
+    if isinstance(
+        exc,
+        (
+            httpx.ConnectError,
+            httpx.TimeoutException,
+            httpx.RemoteProtocolError,
+            httpx.NetworkError,
+        ),
+    ):
+        return True
+    if isinstance(exc, OSError):
+        return True
+    # Empty error messages often signal transient network hiccups.
+    return bool(not str(exc))
+
+
+def _is_terminal_http_status(status_code: int, method: str) -> bool:
+    """Return True if this HTTP status should NOT be retried.
+
+    For idempotent methods (GET, HEAD, PUT, DELETE): only 4xx is terminal.
+    For non-idempotent methods (POST, PATCH): ANY HTTP response is terminal
+    — the write may have been partially or fully processed server-side,
+    and a retry would risk duplication.
+    """
+    if method.upper() in ("POST", "PATCH"):
+        # Non-idempotent: a response means the server received the request.
+        return True
+    # Idempotent: only client errors (4xx) are terminal.
+    return 400 <= status_code < 500
+
+
+async def _health_probe(base_url: str) -> bool:
+    """Lightweight health check before attempting component calls.
+
+    Returns True if the component's /health endpoint responds (any 2xx),
+    False if it is unreachable or errors. Used to distinguish a
+    genuinely-down component from a transient request failure.
+    """
+    url = f"{base_url.rstrip('/')}/health"
+    try:
+        async with httpx.AsyncClient(timeout=_HEALTH_PROBE_TIMEOUT) as client:
+            resp = await client.get(url)
+            return 200 <= resp.status_code < 300
+    except Exception:
+        return False
 
 
 async def _component_request_impl(
@@ -112,33 +175,151 @@ async def _component_request_impl(
 
     auth_arg: Any = auth if auth is not None else httpx.USE_CLIENT_DEFAULT
 
-    try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
-            if method_upper == "GET":
-                resp = await client.get(url, headers=headers, auth=auth_arg)
-            elif method_upper == "DELETE":
-                resp = await client.delete(url, headers=headers, auth=auth_arg)
-            else:
-                resp = await client.request(
-                    method_upper, url, headers=headers, json=json_body, auth=auth_arg
-                )
-    except Exception as exc:
-        return f"Error calling {component_id} {method_upper} {path}: {exc}"
-
-    # Try to parse JSON body; fall back to text.
-    try:
-        body = resp.json()
-        body_str = json.dumps(body)
-    except Exception:
-        body_str = resp.text
-
-    if len(body_str) > _TRUNCATE_LENGTH:
-        body_str = body_str[:_TRUNCATE_LENGTH] + (
-            f"\n\n... (truncated at {_TRUNCATE_LENGTH} chars, "
-            f"original length {len(body_str)})"
+    # Optional health probe before the first attempt — if the component
+    # is genuinely down, we surface a clear message without wasting retries.
+    health_ok = await _health_probe(base_url)
+    if not health_ok:
+        logger.warning(
+            "Health probe failed for %s at %s — component may be down; "
+            "will still attempt the request",
+            component_id,
+            base_url,
         )
 
-    return f"HTTP {resp.status_code}\n{body_str}"
+    def _format_body(status: int, body_str: str) -> str:
+        """Format a response body with truncation."""
+        if len(body_str) > _TRUNCATE_LENGTH:
+            body_str = body_str[:_TRUNCATE_LENGTH] + (
+                f"\n\n... (truncated at {_TRUNCATE_LENGTH} chars, "
+                f"original length {len(body_str)})"
+            )
+        return f"HTTP {status}\n{body_str}"
+
+    last_error: str | None = None
+    last_status: int | None = None
+    last_body_str: str | None = None
+    for attempt in range(1, _MAX_ATTEMPTS + 1):
+        resp: httpx.Response | None = None
+        try:
+            async with httpx.AsyncClient(timeout=30.0) as client:
+                if method_upper == "GET":
+                    resp = await client.get(url, headers=headers, auth=auth_arg)
+                elif method_upper == "DELETE":
+                    resp = await client.delete(url, headers=headers, auth=auth_arg)
+                else:
+                    resp = await client.request(
+                        method_upper,
+                        url,
+                        headers=headers,
+                        json=json_body,
+                        auth=auth_arg,
+                    )
+        except Exception as exc:
+            if not _is_transient_exception(exc):
+                # Non-transient error — report immediately.
+                logger.warning(
+                    "component_request %s %s %s failed with non-transient "
+                    "error (attempt %d/%d): %s",
+                    component_id,
+                    method_upper,
+                    path,
+                    attempt,
+                    _MAX_ATTEMPTS,
+                    exc,
+                )
+                return f"Error calling {component_id} {method_upper} {path}: {exc}"
+
+            # Transient exception — retry if attempts remain.
+            last_error = str(exc) or f"{type(exc).__name__} (no detail)"
+            if attempt < _MAX_ATTEMPTS:
+                delay = min(_BASE_DELAY * (2 ** (attempt - 1)), _MAX_DELAY)
+                logger.warning(
+                    "component_request %s %s %s transient error "
+                    "(attempt %d/%d, retrying in %.1fs): %s",
+                    component_id,
+                    method_upper,
+                    path,
+                    attempt,
+                    _MAX_ATTEMPTS,
+                    delay,
+                    exc,
+                )
+                await asyncio.sleep(delay)
+                continue
+            logger.error(
+                "component_request %s %s %s exhausted %d attempts; last error: %s",
+                component_id,
+                method_upper,
+                path,
+                _MAX_ATTEMPTS,
+                exc,
+            )
+            continue
+
+        # We got an HTTP response (resp is not None).
+        if resp is None:  # pragma: no cover — defensive, not reachable
+            raise RuntimeError("Expected httpx.Response but got None")
+        status = resp.status_code
+
+        # Extract body once.
+        try:
+            body = resp.json()
+            body_str = json.dumps(body)
+        except Exception:
+            body_str = resp.text
+
+        # Save for possible exhausted-return at loop end.
+        last_status = status
+        last_body_str = body_str
+
+        # Immediate return: success (2xx / 3xx) or terminal status.
+        if status < 400 or _is_terminal_http_status(status, method_upper):
+            tag = "terminal" if status >= 400 else "ok"
+            logger.info(
+                "component_request %s %s %s → %d (%s, attempt %d/%d)",
+                component_id,
+                method_upper,
+                path,
+                status,
+                tag,
+                attempt,
+                _MAX_ATTEMPTS,
+            )
+            return _format_body(status, body_str)
+
+        # Retryable HTTP status (5xx on idempotent methods).
+        last_error = f"HTTP {status}"
+        if attempt < _MAX_ATTEMPTS:
+            delay = min(_BASE_DELAY * (2 ** (attempt - 1)), _MAX_DELAY)
+            logger.warning(
+                "component_request %s %s %s → %d (attempt %d/%d, retrying in %.1fs)",
+                component_id,
+                method_upper,
+                path,
+                status,
+                attempt,
+                _MAX_ATTEMPTS,
+                delay,
+            )
+            await asyncio.sleep(delay)
+        else:
+            logger.error(
+                "component_request %s %s %s → %d (attempt %d/%d, exhausted)",
+                component_id,
+                method_upper,
+                path,
+                status,
+                attempt,
+                _MAX_ATTEMPTS,
+            )
+
+    # All retries exhausted.
+    if last_status is not None and last_body_str is not None:
+        return _format_body(last_status, last_body_str)
+    return (
+        f"Error calling {component_id} {method_upper} {path}: "
+        f"all {_MAX_ATTEMPTS} attempts failed. Last error: {last_error}"
+    )
 
 
 def build_component_access_tools(
@@ -150,7 +331,10 @@ def build_component_access_tools(
     system-prompt injection.
 
     The roster is fetched once at agent construction time and refreshed
-    on each tool call if the TTL has expired.
+    on each tool call if the TTL has expired. Every component — including
+    ``github`` — is reached exclusively through the roster: there is no
+    per-component fallback, so the roster's skill document is always the
+    single, authoritative description of what a component supports.
     """
     if not settings.url:
         return []

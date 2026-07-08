@@ -65,6 +65,7 @@ def test_snapshot_round_trips_every_field() -> None:
         "close_reason": None,
         "error": None,
         "completed_runs": [],
+        "turn_history": [],
     }
 
 
@@ -86,6 +87,16 @@ def test_snapshot_omits_transcript_by_default() -> None:
     info.transcript.append(TranscriptEntry(role="assistant", text="hi", timestamp=1.0))
 
     assert "transcript" not in info.snapshot()
+
+
+def test_snapshot_serialises_turn_history_as_lists() -> None:
+    """``turn_history`` (tuples in memory) round-trips as JSON-safe lists."""
+    info = _info()
+    info.turn_history.append(("sweep the board", "approved 3 MRs"))
+
+    snapshot = info.snapshot()
+
+    assert snapshot["turn_history"] == [["sweep the board", "approved 3 MRs"]]
 
 
 def test_snapshot_with_transcript_includes_entries() -> None:

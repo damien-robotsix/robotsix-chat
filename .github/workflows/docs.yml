@@ -22,7 +22,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0
       - name: Install docs dependencies
-        run: uv sync --group docs
+        run: uv sync --frozen --group docs
       - name: Build mkdocs site
         run: uv run mkdocs build
       - name: Upload Pages artifact

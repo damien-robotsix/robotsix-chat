@@ -829,3 +829,144 @@ async def test_component_request_no_auth_unchanged(
     result = await _component_request_impl(roster, "mill", "GET", "/tickets")
     assert "HTTP 200" in result
     assert "Authorization" not in route.calls.last.request.headers
+
+
+# ---------------------------------------------------------------------------
+# Retry-with-backoff tests
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_retry_on_transient_network_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Transient ConnectError is retried; exhausted attempts include count."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    respx_mock.get("http://m:8080/tickets").mock(
+        side_effect=httpx.ConnectError("connection refused")
+    )
+    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
+    assert "Error calling" in result
+    assert "all 3 attempts failed" in result
+    assert "connection refused" in result
+
+
+@pytest.mark.asyncio
+async def test_no_retry_on_terminal_4xx_for_get(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """4xx is terminal for idempotent GET — returned immediately without retries."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    route = respx_mock.get("http://m:8080/forbidden").mock(
+        return_value=httpx.Response(403, json={"error": "forbidden"})
+    )
+    result = await _component_request_impl(roster, "mill", "GET", "/forbidden")
+    assert "HTTP 403" in result
+    assert "forbidden" in result
+    assert "all 3 attempts" not in result
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_no_retry_on_any_http_response_for_post(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Any HTTP response is terminal for non-idempotent POST — even 5xx."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    route = respx_mock.post("http://m:8080/tickets").mock(
+        return_value=httpx.Response(500, json={"error": "internal"})
+    )
+    result = await _component_request_impl(
+        roster, "mill", "POST", "/tickets", {"title": "test"}
+    )
+    assert "HTTP 500" in result
+    assert "all 3 attempts" not in result
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_on_5xx_for_get(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """5xx is retried for idempotent GET — 503 on every attempt triggers 3 calls."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    route = respx_mock.get("http://m:8080/tickets").mock(
+        return_value=httpx.Response(503, json={"error": "overloaded"})
+    )
+    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
+    assert "HTTP 503" in result
+    assert route.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_retry_on_empty_exception_message(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Exception with empty message is transient — retried until exhausted."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    respx_mock.get("http://m:8080/tickets").mock(side_effect=Exception(""))
+    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
+    assert "Error calling" in result
+    assert "all 3 attempts failed" in result
+
+
+@pytest.mark.asyncio
+async def test_non_transient_exception_not_retried(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Non-transient exception (e.g. ValueError) is returned immediately, no retry."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    route = respx_mock.get("http://m:8080/tickets").mock(
+        side_effect=ValueError("bad value")
+    )
+    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
+    assert "Error calling" in result
+    assert "bad value" in result
+    assert "all 3 attempts" not in result
+    assert route.call_count == 1
+
+
+@pytest.mark.asyncio
+async def test_retry_on_nested_transient_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """OSError is treated as transient network error and retried."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    respx_mock.get("http://m:8080/tickets").mock(
+        side_effect=OSError("network unreachable")
+    )
+    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
+    assert "Error calling" in result
+    assert "all 3 attempts failed" in result
+
+
+@pytest.mark.asyncio
+async def test_put_is_idempotent_retries_on_5xx(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """PUT is idempotent — 5xx responses are retried (3 calls total)."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    route = respx_mock.put("http://m:8080/tickets/1").mock(
+        return_value=httpx.Response(500, json={"error": "boom"})
+    )
+    result = await _component_request_impl(
+        roster, "mill", "PUT", "/tickets/1", {"title": "x"}
+    )
+    assert "HTTP 500" in result
+    assert route.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_patch_is_non_idempotent_no_retry_on_any_response(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """PATCH is non-idempotent — any HTTP response is terminal (no retry)."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    route = respx_mock.patch("http://m:8080/tickets/1").mock(
+        return_value=httpx.Response(503, json={"error": "overloaded"})
+    )
+    result = await _component_request_impl(
+        roster, "mill", "PATCH", "/tickets/1", {"title": "patched"}
+    )
+    assert "HTTP 503" in result
+    assert route.call_count == 1

@@ -1,5 +1,72 @@
 ## 0.0.0 (unreleased)
 
+- Extract repeated `_serializer.persist` guard into a private `_persist()` helper in `ConversationStore`.
+- Remove orphaned `scripts/check_kind_literals.py` (dead code — no CI
+  job, pre-commit hook, or Makefile target references it) and update
+  `scripts/check_sse_event_types.py` docstring to drop stale reference.
+- Move `docs/api/robotsix_chat/server.md` to `docs/chat/server.md` to align with per-module docs layout convention.
+- Moved `docs/api/robotsix_chat/config.md` to `docs/config/api.md` to align with the per-module doc layout convention.
+- Remove dead `ConversationStore.stats()` method — zero callers in the codebase.
+- Moved `docs/api/robotsix_chat/agent.md` to `docs/llm/agent.md` to align with per-module docs layout.
+- Moved `memory` API doc from `docs/api/robotsix_chat/memory.md` to `docs/memory/api.md` to follow the per-module layout convention.
+- Added "Out-of-Scope CI Failure" boilerplate to `docs/triage-boilerplate.md` for use in scope-triage decisions during `draft → ready` transitions.
+- Remove unused `# noqa: E402` comment from `src/robotsix_chat/chat/server/__init__.py` to satisfy RUF100 (unused noqa directive).
+- Subsessions: add `inherit_context` parameter to `spawn_subsession` — when set, a compact ancestor-context block (root task plus each ancestor's title/prompt summary) is prepended to the child's first turn, so nested subsessions no longer start from scratch and fall back on memory.
+- Subsessions: persist and resume `user_chat` across server restarts — the worker is re-spawned under its original id with the original prompt plus the last delivered assistant state, instead of being marked `INTERRUPTED`.
+- Tracing: subsession worker turns and main-chat reaction turns now stamp `parent_session_id`/`owner_session_id`/`subsession_id` as Langfuse trace metadata, so the trace tree mirrors the subsession tree in observability.
+- `SubsessionsSettings.default_model_level` changed from `3` to `2` to match the system prompt guidance that level 2 "is the default choice for general work."
+- Derive `chat.server.__all__` from `routes.__all__` instead of duplicating
+  the endpoint-name list across two `__init__.py` files.  When a new route
+  endpoint module is added, the public API of the server package
+  automatically picks it up (provided the symbol is imported), avoiding
+  silent `__all__` drift.
+- Expand ruff ruleset with `ARG`, `N`, `RUF`, and `T` to catch unused
+  function/method arguments, naming convention violations, ambiguous unicode
+  characters, unsorted `__all__`, unused `# noqa` directives, and stray
+  `print()`/`pdb` calls before they reach CI.  Per-file-ignores suppress
+  known-safe patterns (test fixtures, intentional en-dash bullets in prompt
+  strings, `NullMemory` protocol stubs).
+- Consolidated duplicated `_get`/`_post`/`_patch` HTTP methods in `GitHubClient`
+  into a single `_request(method, path, body=None)` private method, eliminating
+  ~35 lines of copy-paste duplication.
+- Added ``_SHARED_PARAMS`` constant and a sync-guard test to verify
+  ``create_app()`` and ``run_server()`` share the same keyword parameters,
+  preventing silent drift between the two signatures.
+- When the central-deploy `github` virtual component backend is unavailable or misconfigured (returning another component's skill doc, bare 303 redirects), `component_request(component_id="github", ...)` calls are now intercepted and handled locally using `GitHubClient`. The local handler serves the correct skill document at `/chat-skill`, returns a proper component root at `/`, and delegates repo operations to the GitHub REST API.
+- Fix top toolbar buttons being hidden behind the subsessions/sessions side panels.
+  The header now uses `position: sticky` with `z-index: 30` so toolbar buttons
+  remain above the panels, and on desktop the header is pushed aside via CSS
+  `:has()` rules that match the existing content-wrap push layout.
+- Add `github` virtual component: agent can create GitHub repositories (confirmation-gated), update repo settings, and read repo details.  Token provisioned via `GitHubSettings.token` (`SecretStr`) — never exposed to the chat container.
+- Removed three unused public symbols: `ConversationStore.compact_session`, `ConversationStore.get_compacted_summary`, and `EventBus.subscriber_count` (dead code with no callers)
+- Mirror source directory structure under `tests/chat/`: moved `test_server.py` and `test_idempotency.py` into new `tests/chat/server/`, moved `test_shared.py` into new `tests/chat/server/routes/`.
+- Register the new `github` virtual component: a scoped GitHub repository-administration capability reachable via `component_request(component_id="github", ...)`. The component skill documents creating repos, setting metadata (description, visibility), and registering new repos with the mill board — all behind a 🛑 confirmation gate requiring explicit user approval before every write operation. The GitHub token is server-side only, never exposed in the chat container.
+- Thickened the border around subsession rows in the subsession panel from 1px to 2px for better visual distinction.
+- Persist subsession panel open/closed state in localStorage so it survives page refreshes instead of always resetting to closed.
+- Rapid-fire user messages for the same session are now coalesced into a single agent run. A configurable debounce window (default 0.3 s) batches pending messages together, concatenating them with a separator and passing them to the agent as combined context. This avoids redundant runs and disjointed handling when messages arrive in quick succession.
+- Consolidate duplicated `JsonStoreBase` subclass boilerplate: base class now
+  uses `dataclasses.fields()` to auto-generate `_to_dict`/`_from_dict`, and
+  `_default_path` class attribute eliminates the need for per-subclass
+  `__init__` overrides.  `DiagnosticStore`, `KnowledgeStore`, and
+  `FixProposalStore` now only declare `_store_name` and `_default_path`.
+- Prevent periodic subsessions from spawning periodic children; a periodic
+  run that needs follow-up polling must reuse its own schedule rather than
+  creating new periodic pollers.
+- Mill component calls now automatically retry on transient errors (empty responses, network failures, 5xx for idempotent methods) with exponential backoff (~1s, ~2s). A lightweight health probe runs before the first attempt to distinguish genuinely-down components from transient hiccups. Non-idempotent writes (POST/PATCH) are never retried on any HTTP response to avoid silent duplication.
+- Prevent the summary container from consuming vertical space when empty (no summary banner present).
+- Pin the conversation summary banner above the scrollable chat area so it stays
+  visible regardless of conversation length. The summary now lives in a non-scrolling
+  flex child (`#summary-container`) above `#chat`; only the message list scrolls.
+- Idle-timeout notice now says "conversation has been compacted" instead of "reset" (the conversation history is preserved, not destroyed).
+- Remove dead `idle_reset_seconds` parameter from `ConversationStore.__init__`, `ConversationSettings` config model, and all call-sites; the parameter has been a no-op since the session persistence refactor.
+- Drop the governance-policy requirement to mirror `agent_instruction` verbatim in
+  `docs/configuration.md` — the full multi-paragraph literal is impractical in a
+  Markdown table cell.  The `(long default)` placeholder is the accepted
+  representation (rule 4 and rollback procedure updated). (mill: Governance policy requires mirroring agent_instruction in docs/configuration.md but docs use placeholder (20260705T185420Z-governance-policy-requires-mirroring-age-439b))
+- Extract duplicated ``owner_id`` query-parameter validation into a shared
+  ``_require_owner_id`` helper, reducing duplication across session list,
+  delete, and close endpoints.  Adds a JSON-aware ``HTTPException`` handler
+  so validation failures return structured ``{"detail": "..."}`` responses.
 - Component roster robustness: empty rosters are no longer cached for the full TTL; the last non-empty roster is preserved as a stale fallback. When the roster is unavailable, `component_request` returns an explicit "empty or unavailable" error instead of the misleading "unknown component_id".
 - Pin `robotsix-config` git dependency to full 40-character commit SHA (`424f8ec5140e14e9699b92d5c3755d929625b570`), consistent with the other first-party git dependencies.
 - Add `step-security/harden-runner` egress monitoring as the first step in all CI jobs that execute external actions directly (`lockfile`, `pre-commit`, `check-sse-types`, `image-scan`, `check-config-schema`), starting in `egress-policy: audit` mode for runtime supply-chain visibility.
@@ -41,6 +108,7 @@
   agent) when the subsession is no longer active.
 - Fix: in-flight assistant response is persisted to conversation history even when the client disconnects mid-stream (page reload, conversation switch). The SSE stream now lets the background producer task complete independently of the client connection.
 - On desktop viewports (≥768px), opening the sessions or subsessions panel now shifts the central conversation column aside instead of overlaying it. Closing the panel restores full width with a smooth CSS transition. Narrow screens keep the overlay behaviour.
+- Eliminate duplicated code between `fetch_roster` and `fetch_roster_sync` in `component_access.roster` — the sync variant now delegates to the async version via `asyncio.run()`.
 - Exclude auto-generated CHANGELOG.md from the typos spell-check pre-commit hook to
   eliminate false positives on hyphen-separated issue reference slugs.
 - Log resolved persistence paths at startup (conversation, knowledge, memory, diagnostics, subsessions) so a volume-mount mismatch is immediately visible in logs.
@@ -189,6 +257,42 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
 <!-- towncrier release notes start -->
+
+## [0.2.1] - 2026-07-06
+
+### Bugfixes
+
+- Bump the pinned `robotsix-llmio` commit to pick up detection of usage-credit exhaustion when the
+  Claude SDK collapses it into a raised exception instead of a clean `is_error=True` return (the
+  `ClaudeSDKUsageExhaustedError` fallback added in the previous fix only covered the latter shape).
+  Without this, the raw "Claude Code returned an error result: success" text could still leak to the
+  main chat session instead of triggering the tier fallback. ([#bump-llmio-usage-exhausted-collapsed-fix](https://github.com/damien-robotsix/robotsix-chat/issues/bump-llmio-usage-exhausted-collapsed-fix))
+- When a claudeSDK tier's Claude subscription usage credits are exhausted (e.g. level 4's
+  `claude-fable-5`), the chat agent no longer surfaces the raw "You're out of usage credits" text as
+  if it were a genuine reply. It now catches the new `ClaudeSDKUsageExhaustedError` from
+  robotsix-llmio and retries the same turn at a fallback tier (level 3's `opus`) via robotsix-llmio's
+  `acall_with_tier_fallback`, scoped to one promotion. ([#claude-sdk-usage-fallback](https://github.com/damien-robotsix/robotsix-chat/issues/claude-sdk-usage-fallback))
+- `POST /summary` (regenerated after every assistant turn) reused the main conversation agent — often
+  the most expensive configured tier — for a bounded JSON-extraction task. It now runs on a dedicated
+  agent at a new `summary_model_level` setting (default level 1, the cheapest tier). Unlike
+  `llmio_model_level`, a missing OpenRouter key for this level is not fatal: the server logs a warning
+  and falls back to the keyless level 3 instead of failing to start. ([#summary-endpoint-cheap-model-level](https://github.com/damien-robotsix/robotsix-chat/issues/summary-endpoint-cheap-model-level))
+- Main-agent Langfuse tracing: export `LANGFUSE_BASE_URL` (the name `robotsix-llmio` reads) alongside
+  `LANGFUSE_HOST`. Without it the OTLP exporter fell back to Langfuse Cloud US and every span batch
+  was rejected with 401, so the self-hosted project received no traces. ([#20260704T192500Z-langfuse-base-url-env](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T192500Z-langfuse-base-url-env))
+- Recalled memory is now prepended to the current user turn instead of appended to the system prompt.
+  Per-message recall text in the system prompt sat at the head of the provider's cacheable prefix,
+  invalidating the prompt cache on every turn; the system prompt is now byte-stable across a
+  conversation so the instruction, tools, and replayed transcript can be served from cache. ([#20260704T200500Z-memory-injection-cache-friendly](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T200500Z-memory-injection-cache-friendly))
+- Reword the subsession `model_level` guidance in the default agent instruction and the
+  `spawn_subsession` tool description: level 2 (cheap OpenRouter tier) is now the default choice for
+  general work, and level 3 (keyless Claude Opus) is reserved for reasoning level 2 struggles with.
+  Previously the guidance framed level 3 as "the default for general work", so subsessions almost
+  always spawned at level 3 even when a cheaper tier would have been enough. ([#subsession-prefer-level-2-for-general-work](https://github.com/damien-robotsix/robotsix-chat/issues/subsession-prefer-level-2-for-general-work))
+
+### Misc
+
+- [#20260704T082645Z-config-not-durable-no-config-volume-robo-95ae](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T082645Z-config-not-durable-no-config-volume-robo-95ae), [#20260704T100051Z-ci-failure-release-image-on-main-55fd](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T100051Z-ci-failure-release-image-on-main-55fd), [#20260705T100556Z-agent-md-key-file-map-update-stale-refer-fea4](https://github.com/damien-robotsix/robotsix-chat/issues/20260705T100556Z-agent-md-key-file-map-update-stale-refer-fea4), [#20260704T102723Z-ci-fix-out-of-scope-ci-failure-build-and-a7cd](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T102723Z-ci-fix-out-of-scope-ci-failure-build-and-a7cd), [#20260704T104029Z-persistence-path-defaults-point-at-unmou-b9de](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T104029Z-persistence-path-defaults-point-at-unmou-b9de), [#20260704T111500Z-release-commit-ci-fixes](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T111500Z-release-commit-ci-fixes), [#20260704T114500Z-fix-duplicate-config-volume-mount-point](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T114500Z-fix-duplicate-config-volume-mount-point), [#20260704T141344Z-periodic-subsession-lifecycle-bugs-dupli-7cd4](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T141344Z-periodic-subsession-lifecycle-bugs-dupli-7cd4), [#20260704T141855Z-eliminate-duplicated-fetch-roster-fetch-4b1e](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T141855Z-eliminate-duplicated-fetch-roster-fetch-4b1e), [#20260704T141855Z-split-chat-server-routes-py-850-lines-in-a45b](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T141855Z-split-chat-server-routes-py-850-lines-in-a45b), [#20260704T142126Z-register-the-deploy-lifecycle-api-as-a-s-a5d9](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T142126Z-register-the-deploy-lifecycle-api-as-a-s-a5d9), [#20260704T143423Z-bug-in-flight-assistant-response-lost-on-f753](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T143423Z-bug-in-flight-assistant-response-lost-on-f753), [#20260704T144024Z-message-subsession-close-subsession-fail-9671](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T144024Z-message-subsession-close-subsession-fail-9671), [#20260705T160000Z-component-request-roster-auth-metadata-cc01](https://github.com/damien-robotsix/robotsix-chat/issues/20260705T160000Z-component-request-roster-auth-metadata-cc01), [#20260705T163000Z-roster-fetch-x-api-key-auth-dd02](https://github.com/damien-robotsix/robotsix-chat/issues/20260705T163000Z-roster-fetch-x-api-key-auth-dd02), [#20260704T180112Z-add-serialize-deserialize-hooks-to-jsons-3b8a](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T180112Z-add-serialize-deserialize-hooks-to-jsons-3b8a), [#20260704T180112Z-pin-robotsix-config-git-dependency-to-fu-784d](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T180112Z-pin-robotsix-config-git-dependency-to-fu-784d), [#20260704T182301Z-show-a-conversation-summary-at-the-top-o-55d3](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T182301Z-show-a-conversation-summary-at-the-top-o-55d3), [#20260704T182446Z-default-prompt-promises-component-reques-cc62](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T182446Z-default-prompt-promises-component-reques-cc62), [#20260704T182446Z-knowledge-tool-names-in-system-prompt-do-4c24](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T182446Z-knowledge-tool-names-in-system-prompt-do-4c24), [#20260704T182453Z-ui-session-panel-should-shift-the-centra-b10a](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T182453Z-ui-session-panel-should-shift-the-centra-b10a), [#20260704T183942Z-test-gap-add-unit-tests-for-src-robotsix-64c1](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T183942Z-test-gap-add-unit-tests-for-src-robotsix-64c1), [#20260704T194304Z-add-step-security-harden-runner-for-ci-r-1d97](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T194304Z-add-step-security-harden-runner-for-ci-r-1d97), [#20260704T195122Z-memory-scope-cognee-session-guidance-per-ae55](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T195122Z-memory-scope-cognee-session-guidance-per-ae55), [#20260704T195125Z-component-access-do-not-cache-empty-rost-b233](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T195125Z-component-access-do-not-cache-empty-rost-b233), [#20260704T195133Z-conversation-py-remove-dead-self-idle-re-4afb](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T195133Z-conversation-py-remove-dead-self-idle-re-4afb), [#20260704T200308Z-refactor-subsession-worker-to-split-per-cc69](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T200308Z-refactor-subsession-worker-to-split-per-cc69), [#20260704T200308Z-remove-dead-chat-init-py-re-export-layer-67d0](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T200308Z-remove-dead-chat-init-py-re-export-layer-67d0), [#20260704T202829Z-consolidate-modules-direct-repo-repo-stu-42f2](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T202829Z-consolidate-modules-direct-repo-repo-stu-42f2), [#20260704T213735Z-ci-failure-docs-on-main-ff1d](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T213735Z-ci-failure-docs-on-main-ff1d), [#20260704T213817Z-ci-failure-release-image-on-main-3b09](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T213817Z-ci-failure-release-image-on-main-3b09), [#20260705T222454Z-add-unit-tests-for-shared-route-utilitie-3757](https://github.com/damien-robotsix/robotsix-chat/issues/20260705T222454Z-add-unit-tests-for-shared-route-utilitie-3757), [#20260704T231504Z-ci-failure-release-image-on-main-13e4](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T231504Z-ci-failure-release-image-on-main-13e4), [#20260705T234250Z-robotsix-chat-add-repo-description-sync-a46a](https://github.com/damien-robotsix/robotsix-chat/issues/20260705T234250Z-robotsix-chat-add-repo-description-sync-a46a), [#20260704T234414Z-ensure-changelog-fragments-created-by-pi-1bd2](https://github.com/damien-robotsix/robotsix-chat/issues/20260704T234414Z-ensure-changelog-fragments-created-by-pi-1bd2)
 
 ## [0.2.0] - 2026-07-04
 

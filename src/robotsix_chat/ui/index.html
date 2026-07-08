@@ -55,6 +55,8 @@
     padding: 0.5rem 1rem;
     background: var(--header-bg); color: var(--header-fg);
     flex-shrink: 0;
+    position: sticky; top: 0; z-index: 30;
+    transition: margin-left 0.3s ease, margin-right 0.3s ease;
   }
   #header .title {
     font-weight: 700; font-size: 1.05rem; flex: 1;
@@ -113,6 +115,14 @@
     opacity: 0.7;
   }
   .subs-header .dismiss:hover { opacity: 1; }
+  .subs-header-actions { display: flex; align-items: center; gap: 0.5rem; }
+  .subs-header .toggle-terminal {
+    background: none; border: 1px solid var(--header-fg);
+    color: var(--header-fg); font-size: 0.72rem; font-weight: 400;
+    cursor: pointer; line-height: 1; padding: 0.2rem 0.45rem;
+    border-radius: 0.8rem; opacity: 0.75; white-space: nowrap;
+  }
+  .subs-header .toggle-terminal:hover { opacity: 1; }
 
   #subsessions-list { flex: 1; overflow-y: auto; padding: 0.5rem; }
 
@@ -121,7 +131,7 @@
   .subs-row {
     padding: 0.5rem 0.6rem; margin-bottom: 0.4rem;
     border-radius: 6px; font-size: 0.82rem;
-    border: 1px solid var(--composer-border);
+    border: 2px solid var(--composer-border);
     background: var(--assistant-bubble-bg);
     word-break: break-word;
   }
@@ -133,6 +143,10 @@
   .subs-row.status-closed      { border-left: 3px solid #475569; }
   .subs-row.status-failed,
   .subs-row.status-interrupted { border-left: 3px solid #ef4444; }
+
+  /* Plain block wrappers — purely structural (see renderSubsessionRow),
+     no visual styling of their own so the header/body split is invisible. */
+  .subs-header, .subs-body { display: block; }
 
   .subs-title-line {
     display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
@@ -345,6 +359,16 @@
   }
 
   /* ------------------------------------------------------------------ */
+  /* Summary container — pinned above the scrollable chat area           */
+  /* ------------------------------------------------------------------ */
+  #summary-container {
+    flex-shrink: 0;
+  }
+  #summary-container:not(:empty) {
+    padding: 0.5rem 1rem 0 1rem;
+  }
+
+  /* ------------------------------------------------------------------ */
   /* Chat area                                                           */
   /* ------------------------------------------------------------------ */
   #chat {
@@ -400,15 +424,14 @@
     font-style: italic;
   }
 
-  /* Conversation summary banner */
+  /* Conversation summary banner — pinned above the scrollable chat */
   .summary-banner {
-    align-self: stretch;
+    flex-shrink: 0;
     background: #1e293b;
     border: 1px solid #334155;
     border-left: 3px solid #3b82f6;
     border-radius: 8px;
-    padding: 0.6rem 0.9rem;
-    margin-bottom: 0.25rem;
+    padding: 0.6rem 1rem;
     font-size: 0.85rem;
     line-height: 1.5;
     color: #cbd5e1;
@@ -431,14 +454,8 @@
   .summary-banner.collapsed .summary-body {
     display: none;
   }
-  .summary-banner .summary-section {
-    display: flex; gap: 0.4rem;
-  }
-  .summary-banner .summary-label {
-    font-weight: 600; color: #94a3b8; white-space: nowrap;
-  }
-  .summary-banner .summary-value {
-    color: #e2e8f0;
+  .summary-banner .summary-text {
+    color: #e2e8f0; white-space: pre-wrap;
   }
   .summary-banner .summary-loading {
     color: #64748b; font-style: italic;
@@ -552,6 +569,11 @@
   #typing-indicator .dot:nth-child(1) { animation-delay: -0.32s; }
   #typing-indicator .dot:nth-child(2) { animation-delay: -0.16s; }
   #typing-indicator .dot:nth-child(3) { animation-delay: 0s; }
+  #typing-indicator .activity-label {
+    font-size: 0.8rem; color: #94a3b8; margin-left: 0.4rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 60vw;
+  }
 
   @keyframes pulse {
     0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
@@ -576,6 +598,12 @@
       margin-left: var(--sessions-width);
     }
     #subsessions-panel.visible ~ #content-wrap {
+      margin-right: var(--subsessions-width);
+    }
+    body:has(#sessions-panel.visible) #header {
+      margin-left: var(--sessions-width);
+    }
+    body:has(#subsessions-panel.visible) #header {
       margin-right: var(--subsessions-width);
     }
   }
@@ -620,7 +648,13 @@
 <!-- ================================================================= -->
 <div id="subsessions-resize-handle"></div>
 <div id="subsessions-panel">
-  <div class="subs-header">Subsessions<button class="dismiss" title="Close panel" aria-label="Close subsessions panel">&times;</button></div>
+  <div class="subs-header">
+    Subsessions
+    <div class="subs-header-actions">
+      <button id="subs-toggle-terminal" class="toggle-terminal" style="display:none" title="Show closed/failed subsessions" aria-label="Toggle closed/failed subsessions"></button>
+      <button class="dismiss" title="Close panel" aria-label="Close subsessions panel">&times;</button>
+    </div>
+  </div>
   <div id="subsessions-list"></div>
 </div>
 
@@ -640,6 +674,7 @@
 <!-- ================================================================= -->
 <!-- Chat messages                                                      -->
 <!-- ================================================================= -->
+<div id="summary-container"></div>
 <div id="chat" aria-live="polite"></div>
 
 <!-- ================================================================= -->
@@ -669,6 +704,7 @@
 
   // ---- DOM refs --------------------------------------------------------
   const chatEl       = document.getElementById("chat");
+  const summaryContainerEl = document.getElementById("summary-container");
   const msgInput     = document.getElementById("msg-input");
   const sendBtn      = document.getElementById("send-btn");
   const errorBanner  = document.getElementById("error-banner");
@@ -842,7 +878,7 @@
     notice.style.fontStyle = "italic";
     notice.textContent = "You were idle for "
                        + IDLE_TIMEOUT_MINUTES + " minute(s) — "
-                       + "the conversation has been reset. "
+                       + "the conversation has been compacted. "
                        + "Your previous messages are still visible above.";
     chatEl.appendChild(notice);
     scrollToBottom();
@@ -889,6 +925,7 @@
 
   // ---- Session management (localStorage-backed) -----------------------
   var ACTIVE_SESSION_KEY = "{{ PROJECT_TITLE }}-active-session-id";
+  var SUBS_PANEL_KEY = "{{ PROJECT_TITLE }}-subsessions-panel-visible";
   var activeSessionId = null;
   var sessionsList = [];        // cached session list from server
 
@@ -900,6 +937,19 @@
   function setActiveSessionId(sid) {
     activeSessionId = sid;
     try { localStorage.setItem(ACTIVE_SESSION_KEY, sid); } catch (_) {}
+  }
+
+  function getSubsPanelVisible() {
+    try { return localStorage.getItem(SUBS_PANEL_KEY) === "true"; }
+    catch (_) { return false; }
+  }
+
+  function setSubsPanelVisible(visible) {
+    try { localStorage.setItem(SUBS_PANEL_KEY, visible ? "true" : "false"); } catch (_) {}
+  }
+
+  function restoreSubsPanelState() {
+    if (getSubsPanelVisible()) { openSubsessionsPanel(); }
   }
 
   // ---- Session API helpers --------------------------------------------
@@ -1115,6 +1165,10 @@
   // recomputed per render by subsDisplayOrder().
   var subsById = {};
   var subsOrder = [];
+  // Closed/failed/interrupted subsessions are hidden by default (they pile
+  // up over time and crowd out the running ones); toggled via the panel's
+  // "Show closed" button.
+  var showTerminalSubs = false;
 
   var SUBS_SNAPSHOT_FIELDS = [
     "subsession_id", "kind", "owner_session_id", "parent_id", "depth",
@@ -1252,36 +1306,115 @@
     return out;
   }
 
+  // Reconciles the list in place rather than wiping and rebuilding it —
+  // a full innerHTML="" on every subsession_updated frame (fired
+  // frequently by an in-flight subsession) used to blow away the panel's
+  // own scroll position on every refresh, and destroy+recreate the reply
+  // textarea for any expanded user_chat row, stealing focus mid-keystroke.
+  // Existing rows are reused and only their (cheap, non-interactive)
+  // header is rebuilt; the transcript/reply-box body is never touched
+  // here — see renderSubsessionRow.
   function renderSubsessionsList() {
-    subsList.innerHTML = "";
     var order = subsDisplayOrder();
-    if (order.length === 0) {
+    var terminalCount = 0;
+    var visible = [];
+    for (var i = 0; i < order.length; i++) {
+      if (isSubsTerminal(order[i])) terminalCount++;
+      if (showTerminalSubs || !isSubsTerminal(order[i])) visible.push(order[i]);
+    }
+    updateSubsToggleTerminalButton(terminalCount);
+    if (visible.length === 0) {
+      subsList.innerHTML = "";
       var empty = document.createElement("div");
       empty.className = "subs-empty";
-      empty.textContent = "No subsessions yet — the assistant spawns " +
-                          "background work here.";
+      empty.textContent = order.length === 0
+        ? "No subsessions yet — the assistant spawns background work here."
+        : "No running subsessions — " + terminalCount + " closed/failed " +
+          "hidden (use the button above to show them).";
       subsList.appendChild(empty);
       return;
     }
-    for (var i = 0; i < order.length; i++) {
-      subsList.appendChild(renderSubsessionRow(order[i]));
+    var seenIds = {};
+    var prevEl = null;
+    for (var j = 0; j < visible.length; j++) {
+      var sub = visible[j];
+      seenIds[sub.subsession_id] = true;
+      var row = renderSubsessionRow(sub);
+      var expectedNext = prevEl ? prevEl.nextSibling : subsList.firstChild;
+      if (row !== expectedNext) subsList.insertBefore(row, expectedNext);
+      prevEl = row;
+    }
+    // Drop rows for subsessions that are no longer visible (closed and
+    // hidden, or gone entirely) — anything not touched above.
+    var child = subsList.firstChild;
+    while (child) {
+      var next = child.nextSibling;
+      if (!child._subsId || !seenIds[child._subsId]) subsList.removeChild(child);
+      child = next;
     }
   }
 
-  function renderSubsessionRow(sub) {
-    // Reset per-render DOM refs so stale nodes are never updated.
-    sub._transcriptEl = null;
-    sub._countdownEl = null;
-    sub._msgInput = null;
-    sub._msgBtn = null;
+  // Shows/labels the "Show closed (N)" toggle button; hidden entirely when
+  // there are no terminal (closed/failed/interrupted) subsessions to hide.
+  function updateSubsToggleTerminalButton(terminalCount) {
+    var btn = document.getElementById("subs-toggle-terminal");
+    if (!btn) return;
+    if (terminalCount === 0) {
+      btn.style.display = "none";
+      return;
+    }
+    btn.style.display = "";
+    btn.textContent = showTerminalSubs
+      ? "Hide closed (" + terminalCount + ")"
+      : "Show closed (" + terminalCount + ")";
+  }
 
+  // Builds (or rebuilds) *sub*'s row. The header — title/status/meta/
+  // result/actions — has no interactive state and is cheap to throw away
+  // and rebuild on every call. The body — transcript + reply textarea —
+  // is expensive to lose (scroll position, focus, in-progress typing) so
+  // it is built once per expand and left completely alone on subsequent
+  // calls; transcript content updates go through renderSubsTranscript /
+  // handleSubsessionMessage instead, which mutate it in place.
+  function renderSubsessionRow(sub) {
     var terminal = isSubsTerminal(sub);
     var status = sub.status || "running";
 
-    var row = document.createElement("div");
+    var row = sub._rowEl;
+    if (!row) {
+      row = document.createElement("div");
+      sub._rowEl = row;
+    }
+    row._subsId = sub.subsession_id;
     row.className = "subs-row status-" + status + (terminal ? " terminal" : "");
     // Indent children under their parent (depth 1 = top level).
     row.style.marginLeft = (((sub.depth || 1) - 1) * 14) + "px";
+
+    var header = buildSubsHeader(sub, terminal, status);
+    if (sub._headerEl) {
+      row.replaceChild(header, sub._headerEl);
+    } else {
+      row.insertBefore(header, row.firstChild);
+    }
+    sub._headerEl = header;
+
+    if (sub.expanded && !sub._bodyEl) {
+      sub._bodyEl = buildSubsBody(sub, terminal);
+      row.appendChild(sub._bodyEl);
+    } else if (!sub.expanded && sub._bodyEl) {
+      row.removeChild(sub._bodyEl);
+      sub._bodyEl = null;
+      sub._transcriptEl = null;
+      sub._msgInput = null;
+      sub._msgBtn = null;
+    }
+
+    return row;
+  }
+
+  function buildSubsHeader(sub, terminal, status) {
+    var header = document.createElement("div");
+    header.className = "subs-header";
 
     // Title line: kind icon+label, title, status pill, model-level badge.
     var titleLine = document.createElement("div");
@@ -1310,7 +1443,7 @@
       levelSpan.title = "Model level " + sub.model_level;
       titleLine.appendChild(levelSpan);
     }
-    row.appendChild(titleLine);
+    header.appendChild(titleLine);
 
     // Meta line: periodic run counter + interval + live countdown;
     // close reason for terminal rows.
@@ -1327,6 +1460,7 @@
     }
     if (terminal && sub.close_reason) metaParts.push(sub.close_reason);
     metaDiv.textContent = metaParts.join(" • ");
+    sub._countdownEl = null;
     if (!terminal && sub.kind === "periodic" && sub.next_run_at) {
       var countdownSpan = document.createElement("span");
       countdownSpan.className = "subs-countdown";
@@ -1335,7 +1469,7 @@
       metaDiv.appendChild(countdownSpan);
     }
     if (metaDiv.textContent !== "" || metaDiv.firstChild) {
-      row.appendChild(metaDiv);
+      header.appendChild(metaDiv);
     }
 
     // Latest result / summary / error line (one-liner, truncated).
@@ -1346,7 +1480,7 @@
       resultDiv.textContent = truncateText(resultText, 160);
       resultDiv.title = truncateText(resultText, 400);
       if (sub.error) resultDiv.style.color = "#fca5a5";
-      row.appendChild(resultDiv);
+      header.appendChild(resultDiv);
     }
 
     // Actions row: labeled expand/collapse + Close (active rows only).
@@ -1381,24 +1515,28 @@
       });
       actionsDiv.appendChild(closeBtn);
     }
-    row.appendChild(actionsDiv);
+    header.appendChild(actionsDiv);
 
-    // Expanded view: transcript (+ reply box for active user_chat rows).
-    if (sub.expanded) {
-      var transcriptDiv = document.createElement("div");
-      transcriptDiv.className = "subs-transcript";
-      sub._transcriptEl = transcriptDiv;
-      row.appendChild(transcriptDiv);
-      renderSubsTranscript(sub);
-      // Lazy-load the transcript from the server on first expand.
-      if (!sub.transcriptLoaded) loadSubsTranscript(sub);
+    return header;
+  }
 
-      if (sub.kind === "user_chat" && !terminal) {
-        row.appendChild(buildSubsInputRow(sub));
-      }
+  function buildSubsBody(sub, terminal) {
+    var wrapper = document.createElement("div");
+    wrapper.className = "subs-body";
+
+    var transcriptDiv = document.createElement("div");
+    transcriptDiv.className = "subs-transcript";
+    sub._transcriptEl = transcriptDiv;
+    wrapper.appendChild(transcriptDiv);
+    renderSubsTranscript(sub);
+    // Lazy-load the transcript from the server on first expand.
+    if (!sub.transcriptLoaded) loadSubsTranscript(sub);
+
+    if (sub.kind === "user_chat" && !terminal) {
+      wrapper.appendChild(buildSubsInputRow(sub));
     }
 
-    return row;
+    return wrapper;
   }
 
   function renderSubsTranscript(sub) {
@@ -1653,6 +1791,7 @@
   function openSubsessionsPanel() {
     if (!subsPanel.classList.contains("visible")) {
       subsPanel.classList.add("visible");
+      setSubsPanelVisible(true);
       positionResizeHandle();
     }
   }
@@ -1692,6 +1831,9 @@
       dot.className = "dot";
       typingIndicatorEl.appendChild(dot);
     }
+    var label = document.createElement("span");
+    label.className = "activity-label";
+    typingIndicatorEl.appendChild(label);
     chatEl.appendChild(typingIndicatorEl);
     scrollToBottom();
   }
@@ -1700,6 +1842,31 @@
     if (!typingIndicatorEl) return;
     typingIndicatorEl.remove();
     typingIndicatorEl = null;
+  }
+
+  // Live "what's it doing" caption inside the typing indicator, fed by
+  // "activity" frames on the /events channel (see handleActivityFrame).
+  // A no-op when no turn is in flight (typingIndicatorEl is null) — activity
+  // frames only arrive during one, but a frame arriving just after the
+  // indicator was hidden (race with the "done" frame) must not resurrect it.
+  function updateActivityLabel(text) {
+    if (!typingIndicatorEl) return;
+    var label = typingIndicatorEl.querySelector(".activity-label");
+    if (label) label.textContent = text;
+  }
+
+  function handleActivityFrame(frame) {
+    var text;
+    if (frame.kind === "tool_call") {
+      text = "🔧 " + (frame.tool_name || "tool") + "(" + (frame.detail || "") + ")";
+    } else if (frame.kind === "tool_result") {
+      text = frame.is_error ? "⚠️ tool error — " + frame.detail : "✓ " + frame.detail;
+    } else if (frame.kind === "thinking") {
+      text = "💭 thinking…";
+    } else {
+      return;  // "text" kind: the real reply arrives via the normal token frame
+    }
+    updateActivityLabel(text);
   }
 
   // ---- Send button busy state ------------------------------------------
@@ -1842,7 +2009,7 @@
     if (!summaryBannerEl) {
       summaryBannerEl = document.createElement("div");
       summaryBannerEl.className = "summary-banner";
-      chatEl.insertBefore(summaryBannerEl, chatEl.firstChild);
+      summaryContainerEl.appendChild(summaryBannerEl);
     }
     var body = summaryBannerEl.querySelector(".summary-body");
     if (!body) {
@@ -1887,31 +2054,13 @@
     var body = summaryBannerEl.querySelector(".summary-body");
     if (!body) return;
 
-    var sections = [
-      { key: "purpose", label: "Purpose" },
-      { key: "pending_work", label: "Pending work" },
-      { key: "pending_questions", label: "Pending questions" },
-      { key: "blockers", label: "Blockers" },
-      { key: "relevant_info", label: "Relevant info" }
-    ];
-
-    var html = "";
-    var hasContent = false;
-    for (var i = 0; i < sections.length; i++) {
-      var s = sections[i];
-      var value = data[s.key];
-      if (value && typeof value === "string" && value.trim()) {
-        html += "<div class=\"summary-section\">" +
-                "<span class=\"summary-label\">" + s.label + ":</span>" +
-                "<span class=\"summary-value\">" + escapeHtml(value.trim()) + "</span>" +
-                "</div>";
-        hasContent = true;
-      }
+    var value = data.summary;
+    if (value && typeof value === "string" && value.trim()) {
+      body.innerHTML = "<div class=\"summary-text\">" +
+              escapeHtml(value.trim()) + "</div>";
+    } else {
+      body.innerHTML = "<span class=\"summary-loading\">No summary available yet.</span>";
     }
-    if (!hasContent) {
-      html = "<span class=\"summary-loading\">No summary available yet.</span>";
-    }
-    body.innerHTML = html;
   }
 
   function escapeHtml(text) {
@@ -2030,6 +2179,15 @@
           if (frame.parent_id === null || frame.parent_id === undefined) {
             addNotificationBubble(frame);
           }
+        } else if (frame.type === "activity") {
+          // Live claudeSDK tool/thinking activity for the in-flight turn.
+          handleActivityFrame(frame);
+        } else if (frame.type === "agent_message") {
+          // A background-triggered agent reply (e.g. reacting to a
+          // subsession closing) — not a live /chat response, so it arrives
+          // here instead of as a token/done frame. Render it as a normal
+          // assistant bubble.
+          if (frame.text) addAssistantBubble(frame.text);
         }
         // ignore unknown types gracefully
       },
@@ -2468,6 +2626,7 @@
     e.stopPropagation();
     var opening = !subsPanel.classList.contains("visible");
     subsPanel.classList.toggle("visible");
+    setSubsPanelVisible(subsPanel.classList.contains("visible"));
     if (opening) {
       positionResizeHandle();
       document.documentElement.style.setProperty('--subsessions-width', subsPanel.getBoundingClientRect().width + 'px');
@@ -2479,7 +2638,15 @@
   subsDismiss.addEventListener("click", function (e) {
     e.stopPropagation();
     subsPanel.classList.remove("visible");
+    setSubsPanelVisible(false);
     hideResizeHandle();
+  });
+
+  var subsToggleTerminal = document.getElementById("subs-toggle-terminal");
+  subsToggleTerminal.addEventListener("click", function (e) {
+    e.stopPropagation();
+    showTerminalSubs = !showTerminalSubs;
+    renderSubsessionsList();
   });
 
   subsPanel.addEventListener("click", function (e) {
@@ -2489,6 +2656,7 @@
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && subsPanel.classList.contains("visible")) {
       subsPanel.classList.remove("visible");
+      setSubsPanelVisible(false);
       hideResizeHandle();
     }
   });
@@ -2578,6 +2746,7 @@
     renderSessionList(data);
     loadHistory();
     fetchSubsessions();
+    restoreSubsPanelState();
     openEventStream();
     resetIdleTimer();
   }).catch(function () {
@@ -2591,6 +2760,7 @@
     }
     loadHistory();
     fetchSubsessions();
+    restoreSubsPanelState();
     openEventStream();
     resetIdleTimer();
   });

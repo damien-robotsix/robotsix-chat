@@ -192,11 +192,14 @@ def test_docs_configuration_md_mirrors_llmio_model_level_default() -> None:
 
 
 def test_docs_configuration_md_mirrors_agent_instruction_default() -> None:
-    """``docs/configuration.md`` ``agent_instruction`` row mirrors the live default.
+    """``docs/configuration.md`` ``agent_instruction`` row uses ``(long default)``.
 
-    Governance item #4 (from docs/system_prompt_changelog.md) requires the
-    docs table to stay verbatim in sync with the pydantic field default.
-    This test enforces that automatically.
+    Governance item #4 (from docs/system_prompt_changelog.md) states that the
+    full multi-paragraph ``agent_instruction`` default is impractical to embed
+    verbatim in a Markdown table cell — the ``(long default)`` placeholder is
+    the accepted representation.  This test verifies the placeholder is present
+    (or, if ever replaced with an inlined literal, that it matches the code
+    default).
     """
     docs_path = Path("docs") / "configuration.md"
     if not docs_path.exists():

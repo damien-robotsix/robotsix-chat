@@ -34,6 +34,7 @@ from robotsix_chat.config.settings import (
 )
 
 __all__ = [
+    "SYSTEM_PROMPT_VERSION",
     "CentralDeploySettings",
     "ComponentClientSettings",
     "ComponentTarget",
@@ -50,7 +51,6 @@ __all__ = [
     "MemorySettings",
     "RefDocsSettings",
     "RepoStudySettings",
-    "SYSTEM_PROMPT_VERSION",
     "SelfReviewSettings",
     "Settings",
     "SubsessionsSettings",

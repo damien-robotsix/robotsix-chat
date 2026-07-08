@@ -409,7 +409,7 @@ class SubsessionsSettings(BaseModel):
 
     max_concurrent: int = 8
     max_depth: int = 3
-    default_model_level: int = 3
+    default_model_level: int = 2
     min_interval_seconds: float = 60.0
     auto_stop_no_change_runs: int = 5
     store_path: str = "/data/subsessions.json"
@@ -425,8 +425,6 @@ class ConversationSettings(BaseModel):
     idle — sessions are persistent when ``persist_path`` is configured.
 
     Attributes:
-        idle_reset_seconds: Retained for compatibility; no longer triggers
-            destructive history reset (sessions are explicit and persistent).
         max_history_turns: Most recent user/assistant turns kept per
             session and replayed to the agent (bounds prompt size).
         max_conversations: Maximum number of distinct sessions tracked at once
@@ -436,7 +434,6 @@ class ConversationSettings(BaseModel):
 
     """
 
-    idle_reset_seconds: int = 1800
     max_history_turns: int = 50
     max_conversations: int = 1000
     persist_path: str = "/data/conversations.json"

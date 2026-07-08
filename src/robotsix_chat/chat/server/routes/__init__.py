@@ -9,6 +9,7 @@ from ._shared import (
 )
 from .chat import (
     ChatAgent,
+    MessageCoalescer,
     RunSerializer,
     _parse_and_validate_images,
     chat_endpoint,
@@ -22,6 +23,7 @@ from .constants import (
     SSE_TOKEN_TYPE,
 )
 from .errors import (
+    http_exception_handler,
     not_found_handler,
     server_error_handler,
 )
@@ -48,14 +50,15 @@ from .subsessions import (
 )
 
 __all__ = [
-    "ChatAgent",
-    "RunSerializer",
     "SSE_CONTENT_TYPE",
     "SSE_DONE_TYPE",
     "SSE_ERROR_TYPE",
+    "SSE_HEARTBEAT_FRAME",
     "SSE_HEARTBEAT_INTERVAL",
     "SSE_TOKEN_TYPE",
-    "SSE_HEARTBEAT_FRAME",
+    "ChatAgent",
+    "MessageCoalescer",
+    "RunSerializer",
     "_cleanup_session",
     "_get_session_id",
     "_get_subsession_registry",
@@ -67,6 +70,7 @@ __all__ = [
     "events_endpoint",
     "health_endpoint",
     "history_endpoint",
+    "http_exception_handler",
     "not_found_handler",
     "server_error_handler",
     "sessions_close_endpoint",

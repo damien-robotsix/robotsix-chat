@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import contextlib
+import dataclasses
 import logging
 from collections.abc import AsyncIterator
 from typing import Any, Protocol
@@ -52,11 +53,15 @@ class ChatAgent(Protocol):
         session_id: str | None = None,
         client_id: str | None = None,
         images: list[tuple[str, bytes]] | None = None,
+        trace_metadata: dict[str, str] | None = None,
     ) -> AsyncIterator[str]:
         """Yield tokens from the LLM in response to ``message``.
 
         *images* is an optional list of ``(media_type, raw_bytes)`` pairs
         representing attached images (e.g. ``[("image/png", b"...")]``).
+        *trace_metadata* is an optional dict of key-value attributes
+        stamped onto the Langfuse trace span for observability (e.g.
+        ``{"parent_session_id": "..."}``).
         """
 
 
@@ -94,6 +99,192 @@ class RunSerializer:
     def __repr__(self) -> str:
         """Return a concise representation showing the lock count."""
         return f"RunSerializer(locks={len(self._locks)})"
+
+
+# ---------------------------------------------------------------------------
+# Per-session message coalescing — batches rapid-fire user messages
+# ---------------------------------------------------------------------------
+
+
+@dataclasses.dataclass
+class _PendingMessage:
+    """A single user message waiting to be batched."""
+
+    message: str
+    images: list[tuple[str, bytes]] | None
+    message_id: str | None
+    response_queue: asyncio.Queue[tuple[str, str | None]]
+
+
+class MessageCoalescer:
+    """Coalesce rapid-fire user messages into a single agent run per session.
+
+    When multiple ``POST /chat`` requests arrive for the same session in
+    quick succession (within *debounce_seconds*), the coalescer batches
+    their messages together and runs the agent once with the concatenated
+    text.  Each waiting client receives the same streamed response.
+
+    Process-local (single-worker server): batching is NOT distributed across
+    processes.  In a multi-worker setup each worker coalesces independently
+    for the requests it receives.
+    """
+
+    # Separator inserted between concatenated messages.
+    MESSAGE_SEPARATOR: str = "\n\n---\n\n"
+
+    def __init__(self, *, debounce_seconds: float = 0.3) -> None:
+        """*debounce_seconds* — window to wait for additional messages."""
+        self._debounce_seconds = debounce_seconds
+        self._batches: dict[str, list[_PendingMessage]] = {}
+        # Guard protects the _batches dict — not the individual lists,
+        # which are only accessed by their dedicated processor task after
+        # the guard releases.
+        self._guard: asyncio.Lock = asyncio.Lock()
+        # Strong references to in-flight processor tasks. asyncio only
+        # holds a weak reference to a task once created — without this,
+        # the task backing an agent run can be garbage-collected mid-run
+        # (e.g. when the user switches sessions or reloads, freeing other
+        # objects and triggering a GC pass), silently aborting the run
+        # before store.record() ever persists the reply. See the asyncio
+        # docs' own warning on create_task() for this exact pitfall.
+        self._background_tasks: set[asyncio.Task[None]] = set()
+
+    async def submit(
+        self,
+        session_id: str,
+        message: str,
+        images: list[tuple[str, bytes]] | None,
+        message_id: str | None,
+        *,
+        agent: ChatAgent,
+        store: ConversationStore,
+        run_serializer: RunSerializer,
+        msg_id_store: Any,  # MessageIdempotencyStore (lazy import to avoid circular)
+        lock_key: str,
+        owner_id: str,
+        had_session: bool,
+    ) -> asyncio.Queue[tuple[str, str | None]]:
+        """Submit a message for batching; return a queue of SSE frames.
+
+        The caller reads ``(type, payload)`` tuples from the returned
+        queue and streams them as SSE frames.  The queue receives
+        ``SSE_DONE_TYPE`` at completion or ``SSE_ERROR_TYPE`` on failure.
+        """
+        response_queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
+        pending = _PendingMessage(message, images, message_id, response_queue)
+
+        async with self._guard:
+            batch = self._batches.get(session_id)
+            if batch is None:
+                batch = []
+                self._batches[session_id] = batch
+            batch.append(pending)
+
+            # Only start a processor when the first message lands in an
+            # empty batch.
+            if len(batch) == 1:
+                task = asyncio.create_task(
+                    self._process_batch(
+                        session_id,
+                        agent,
+                        store,
+                        run_serializer,
+                        msg_id_store,
+                        lock_key,
+                        owner_id,
+                        had_session,
+                    )
+                )
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+
+        return response_queue
+
+    async def _process_batch(
+        self,
+        session_id: str,
+        agent: ChatAgent,
+        store: ConversationStore,
+        run_serializer: RunSerializer,
+        msg_id_store: Any,
+        lock_key: str,
+        owner_id: str,
+        had_session: bool,
+    ) -> None:
+        """Wait for the debounce window, drain, lock, run agent, fan out."""
+        await asyncio.sleep(self._debounce_seconds)
+
+        # Atomically drain the batch — messages arriving after this point
+        # will start a fresh batch (next submit call creates a new
+        # processor).
+        async with self._guard:
+            pending = self._batches.pop(session_id, [])
+
+        if not pending:
+            return
+
+        # Concatenate messages in arrival order.
+        messages = [p.message for p in pending if p.message]
+        if len(messages) > 1:
+            concatenated = self.MESSAGE_SEPARATOR.join(messages)
+        elif messages:
+            concatenated = messages[0]
+        else:
+            concatenated = ""
+
+        # Combine images from all batched messages.
+        all_images: list[tuple[str, bytes]] = []
+        for p in pending:
+            if p.images:
+                all_images.extend(p.images)
+        combined_images = all_images or None
+
+        # Acquire the per-owner lock, read history, and run the agent.
+        async with run_serializer.for_owner(lock_key):
+            _, current_history = (
+                store.begin(session_id) if had_session else (None, None)
+            )
+
+            # Idempotency check on the first pending message's message_id.
+            first_msg = pending[0]
+            if first_msg.message_id and session_id:
+                existing = msg_id_store.get_reply(session_id, first_msg.message_id)
+                if existing is not None:
+                    for p in pending:
+                        await p.response_queue.put((SSE_TOKEN_TYPE, existing))
+                        await p.response_queue.put((SSE_DONE_TYPE, None))
+                    return
+
+            reply_parts: list[str] = []
+            try:
+                async for token in agent.stream(
+                    concatenated,
+                    history=current_history,
+                    session_id=session_id,
+                    client_id=session_id,
+                    images=combined_images,
+                ):
+                    reply_parts.append(token)
+                    for p in pending:
+                        await p.response_queue.put((SSE_TOKEN_TYPE, token))
+
+                full_reply = "".join(reply_parts)
+                if session_id:
+                    store.record(session_id, owner_id, concatenated, full_reply)
+                    for p in pending:
+                        if p.message_id:
+                            msg_id_store.mark_completed(
+                                session_id, p.message_id, full_reply
+                            )
+
+                for p in pending:
+                    await p.response_queue.put((SSE_DONE_TYPE, None))
+            except asyncio.CancelledError:
+                raise
+            except Exception as exc:
+                logger.exception("Agent stream error")
+                for p in pending:
+                    await p.response_queue.put((SSE_ERROR_TYPE, str(exc)))
 
 
 def _parse_and_validate_images(
@@ -258,79 +449,35 @@ async def chat_endpoint(
     if not session_id:
         session_id = store.new_session_id()
 
+    lock_key = client_id or session_id
+
+    # -- Submit to the message coalescer ----------------------------------
+
+    coalescer: MessageCoalescer = request.app.state.message_coalescer
+    response_queue = await coalescer.submit(
+        session_id,
+        message,
+        images,
+        message_id,
+        agent=agent,
+        store=store,
+        run_serializer=request.app.state.run_serializer,
+        msg_id_store=request.app.state.msg_id_store,
+        lock_key=lock_key,
+        owner_id=owner_id or "",
+        had_session=had_session,
+    )
+
     # -- SSE async generator ----------------------------------------------
 
     async def sse_stream() -> AsyncIterator[bytes]:
-        # Drive the agent in a background task and forward its output through a
-        # queue, so the response loop can interleave heartbeats while the agent
-        # works (it yields its reply only at the end, after a long quiet spell).
-        queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
-
-        async def _produce() -> None:
-            # Serialize with any concurrent tick-triggered run for the same
-            # owner (the lock is process-local; see RunSerializer docstring).
-            run_serializer = request.app.state.run_serializer
-            lock_key = client_id or session_id
-            async with run_serializer.for_owner(lock_key):
-                # Read history inside the lock so a new message always sees
-                # the previous message's reply.  Only read when the session
-                # pre-existed — a brand-new session has no history.
-                _, current_history = (
-                    store.begin(session_id) if had_session else (None, None)
-                )
-
-                # Idempotency check — replay completed reply if seen before.
-                msg_id_store = request.app.state.msg_id_store
-                if message_id and session_id:
-                    existing_reply = msg_id_store.get_reply(session_id, message_id)
-                    if existing_reply is not None:
-                        # Replay completed reply as a single token + done;
-                        # skip agent.
-                        await queue.put((SSE_TOKEN_TYPE, existing_reply))
-                        await queue.put((SSE_DONE_TYPE, None))
-                        return
-
-                reply_parts: list[str] = []
-                try:
-                    # NOTE: client_id here feeds the per-request tools factory
-                    # (subsession tool scoping) — it must be the SESSION id,
-                    # not the per-browser client id, so spawned subsessions and
-                    # their SSE frames land in the owning chat session.
-                    async for token in agent.stream(
-                        message,
-                        history=current_history,
-                        session_id=session_id,
-                        client_id=session_id,
-                        images=images,
-                    ):
-                        reply_parts.append(token)
-                        await queue.put((SSE_TOKEN_TYPE, token))
-                    # Persist the completed exchange so the next message in
-                    # this conversation sees it (only on a clean finish, not
-                    # on error).
-                    if session_id:
-                        store.record(
-                            session_id, owner_id, message, "".join(reply_parts)
-                        )
-                        # Record the completed reply for idempotency replay.
-                        if message_id:
-                            msg_id_store.mark_completed(
-                                session_id, message_id, "".join(reply_parts)
-                            )
-                    await queue.put((SSE_DONE_TYPE, None))
-                except asyncio.CancelledError:
-                    raise
-                except Exception as exc:
-                    logger.exception("Agent stream error")
-                    await queue.put((SSE_ERROR_TYPE, str(exc)))
-
-        producer = asyncio.create_task(_produce())
+        finished_normally = False
         try:
             yield SSE_HEARTBEAT_FRAME  # first byte immediately
             while True:
                 try:
                     kind, payload = await asyncio.wait_for(
-                        queue.get(), SSE_HEARTBEAT_INTERVAL
+                        response_queue.get(), SSE_HEARTBEAT_INTERVAL
                     )
                 except TimeoutError:
                     yield SSE_HEARTBEAT_FRAME
@@ -339,18 +486,25 @@ async def chat_endpoint(
                     yield _sse_frame({"type": SSE_TOKEN_TYPE, "content": payload})
                 elif kind == SSE_DONE_TYPE:
                     yield _sse_frame({"type": SSE_DONE_TYPE})
+                    finished_normally = True
                     break
                 else:  # SSE_ERROR_TYPE
                     yield _sse_frame({"type": SSE_ERROR_TYPE, "message": payload})
+                    finished_normally = True
                     break
         except asyncio.CancelledError:
             logger.debug("SSE stream cancelled (client disconnect)")
         finally:
-            # Let the producer finish on disconnect so the reply is
-            # persisted to conversation history even when the client
-            # disconnects mid-stream.
-            with contextlib.suppress(BaseException):
-                await producer
+            # On client disconnect the DONE/ERROR frame hasn't been
+            # consumed yet — drain the response queue so the background
+            # coalescer task can complete and persist the reply (matches
+            # the old ``await producer`` guarantee).
+            if not finished_normally:
+                with contextlib.suppress(Exception):
+                    while True:
+                        kind, _ = await response_queue.get()
+                        if kind in (SSE_DONE_TYPE, SSE_ERROR_TYPE):
+                            break
 
     return StreamingResponse(
         sse_stream(),

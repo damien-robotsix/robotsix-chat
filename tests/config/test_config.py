@@ -229,7 +229,6 @@ def test_conversation_defaults() -> None:
     """Conversation continuity defaults to a 30-minute idle reset."""
     settings = Settings()
 
-    assert settings.conversation.idle_reset_seconds == 1800
     assert settings.conversation.max_history_turns == 50
     assert settings.conversation.max_conversations == 1000
 
@@ -321,7 +320,7 @@ def test_subsessions_defaults() -> None:
     assert settings.subsessions == SubsessionsSettings()
     assert settings.subsessions.max_concurrent == 8
     assert settings.subsessions.max_depth == 3
-    assert settings.subsessions.default_model_level == 3
+    assert settings.subsessions.default_model_level == 2
     assert settings.subsessions.min_interval_seconds == 60.0
     assert settings.subsessions.auto_stop_no_change_runs == 5
     assert settings.subsessions.store_path == "/data/subsessions.json"

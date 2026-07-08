@@ -116,52 +116,12 @@ def fetch_roster_sync(settings: CentralDeploySettings) -> list[dict[str, Any]]:
 
     Used by ``create_agent_from_settings`` to prime the roster cache and
     build the initial skill prompt before the async event loop is running.
+
+    Delegates to :func:`fetch_roster` via :func:`asyncio.run`.
     """
-    global _cache, _last_non_empty_cache
-    if not settings.url:
-        return []
+    import asyncio
 
-    if _cache_valid(settings.roster_cache_ttl):
-        _, entries = _cache  # type: ignore[misc]
-        return entries
-
-    token = settings.api_token.get_secret_value()
-    headers: dict[str, str] = {}
-    if token:
-        # central-deploy's verify_auth accepts X-API-Key (or Basic) — NOT
-        # Bearer. A Bearer header only ever "worked" while the deploy server
-        # ran with auth disabled (exposed 2026-07-05 when an api_key was set).
-        headers["X-API-Key"] = token
-
-    roster_url = f"{settings.url.rstrip('/')}/chat/components"
-    try:
-        resp = httpx.get(roster_url, headers=headers, timeout=30.0)
-        resp.raise_for_status()
-        entries = resp.json()
-    except Exception as exc:
-        logger.warning("Failed to fetch component roster (sync): %s", exc)
-        return [
-            {
-                "id": "_error",
-                "base_url": "",
-                "skill": "",
-                "_error": f"Roster unavailable: {exc}",
-            }
-        ]
-
-    if not isinstance(entries, list):
-        logger.warning("Roster response is not a list: %r", type(entries))
-        return []
-
-    if not entries:
-        logger.warning("Fetched component roster is empty (sync)")
-        if _last_non_empty_cache is not None:
-            return _last_non_empty_cache[1]
-        return []
-
-    _cache = (time.monotonic(), entries)
-    _last_non_empty_cache = _cache
-    return entries
+    return asyncio.run(fetch_roster(settings))
 
 
 def build_skill_prompt(entries: list[dict[str, Any]]) -> str:

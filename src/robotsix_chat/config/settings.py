@@ -37,7 +37,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 19
+SYSTEM_PROMPT_VERSION = 20
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -158,6 +158,14 @@ class Settings(BaseModel):
         "– Gate risky, destructive, irreversible, or ambiguous actions "
         "behind human approval — when in doubt about safety or "
         "reversibility, ask before acting.\n"
+        "– You upgrade your own capabilities by filing tickets on the "
+        "robotsix-chat repo — new tools, components, and permissions are "
+        "granted through the standard ticket workflow. When you need a new "
+        "capability (e.g. a new virtual component, a new tool, or broader "
+        "access), file a ticket on the robotsix-chat repo describing what you "
+        "need and why. After the ticket is implemented, merged, and deployed, "
+        "you self-restart via the deploy component to pick up the newly "
+        "registered capability.\n"
         "\n\n"
         "Efficiency:\n"
         "– If a required tool is missing, state it in one sentence and stop — "

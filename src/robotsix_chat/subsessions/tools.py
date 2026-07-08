@@ -29,6 +29,7 @@ from .models import (
     SubsessionIntervalError,
     SubsessionKind,
     SubsessionLevelError,
+    SubsessionPeriodicSpawnError,
 )
 from .registry import SubsessionRegistry
 from .worker import CloseState, SubsessionContext, SubsessionEnv, spawn_subsession
@@ -110,6 +111,7 @@ def _build_spawn_and_control_tools(
         interval_seconds: float | None = None,
         max_runs: int | None = None,
         include_previous_result: bool = False,
+        inherit_context: bool = False,
     ) -> str:
         """Start a background subsession and return its id immediately.
 
@@ -126,7 +128,11 @@ def _build_spawn_and_control_tools(
 
         instructions must be complete and self-contained — the subsession
         agent starts with NO conversation history. title is a short
-        human-readable label shown in the UI panel. model_level picks
+        human-readable label shown in the UI panel. Set inherit_context
+        to True to automatically prepend an ancestor context block (the
+        root task and each ancestor's title/prompt summary) so a nested
+        child does not start from scratch — useful when spawning from a
+        subsession that itself runs a focused sub-task. model_level picks
         capability 1 (cheapest) to 4 (frontier, most expensive) — match
         it to difficulty: 1 for trivial polling/extraction, 2 for
         general work (the default choice unless the task needs stronger
@@ -159,12 +165,14 @@ def _build_spawn_and_control_tools(
                 interval_seconds=interval_seconds,
                 include_previous_result=include_previous_result,
                 max_runs=max_runs,
+                inherit_context=inherit_context,
             )
         except (
             SubsessionCapacityError,
             SubsessionDepthError,
             SubsessionIntervalError,
             SubsessionLevelError,
+            SubsessionPeriodicSpawnError,
         ) as exc:
             return f"Could not start the subsession: {exc}"
         return f"Started {kind} subsession {sub_id} ('{title}')."
