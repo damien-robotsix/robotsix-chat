@@ -123,6 +123,7 @@ Component-access roster and skill loading from the central-deploy management pla
 | `central_deploy.url`              | `string`          | `""`    | Base URL of the central-deploy API (no trailing slash).   |
 | `central_deploy.api_token`        | `string` (secret) | `""`    | Bearer token for the central-deploy API.                  |
 | `central_deploy.roster_cache_ttl` | `number`          | `300.0` | Seconds to cache the component roster before re-fetching. |
+| `central_deploy.component_response_max_chars` | `integer` | `200000` | Truncation limit for GET/HEAD component responses — write methods keep the 8,000-char limit. Raised from 8,000 so large ticket lists (e.g. mill board blocked tickets) enumerate fully. |
 
 ### Mail (board HTTP)
 
