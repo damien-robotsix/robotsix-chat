@@ -65,6 +65,7 @@ class Session:
     turns: list[Turn] = field(default_factory=list)
     turn_count: int = 0
     closed: bool = False
+    compacted_summary: str | None = None
 
 
 @dataclass
@@ -371,7 +372,13 @@ class ConversationStore:
 
         self._sessions.move_to_end(session_id)
         self._evict_overflow()
-        return session.session_id, list(session.turns)
+
+        history = list(session.turns)
+        if session.compacted_summary:
+            history.insert(0, ("", session.compacted_summary))
+            session.compacted_summary = None  # only inject once
+
+        return session.session_id, history
 
     def record(
         self,
@@ -629,6 +636,65 @@ class ConversationStore:
         if session is None:
             return False
         return session.closed
+
+    def compact_session(
+        self,
+        owner_id: str,
+        session_id: str,  # noqa: ARG002
+        summary: str,
+    ) -> dict[str, object]:
+        """Create a new session for *owner_id* with a compaction summary.
+
+        The old session's history is preserved but the new session starts with
+        *summary* stored as ``compacted_summary`` — it will be injected into
+        the agent's context on the next user message so the LLM retains
+        awareness of the prior conversation.
+
+        Returns the new session metadata dict including ``compacted_summary``.
+        """
+        sid = self._session_factory()
+        now = self._wall_clock()
+        session = Session(
+            session_id=sid,
+            wall_last_active=now,
+            compacted_summary=summary,
+        )
+        self._sessions[sid] = session
+
+        owner = self._owners.get(owner_id)
+        if owner is None:
+            self._owners[owner_id] = _OwnerState(
+                active_session_id=sid,
+                session_ids={sid},
+            )
+        else:
+            owner.active_session_id = sid
+            owner.session_ids.add(sid)
+
+        self._sessions.move_to_end(sid)
+        self._evict_overflow()
+        self._persist()
+
+        return {
+            "session_id": sid,
+            "title": _DEFAULT_TITLE,
+            "last_active": now,
+            "turn_count": 0,
+            "closed": False,
+            "compacted_summary": summary,
+        }
+
+    def get_compacted_summary(self, session_id: str) -> str | None:
+        """Return the compaction summary stored for *session_id*, or ``None``.
+
+        A compaction summary is a plain-text summary of the preceding session's
+        conversation that is injected into the agent context when a new session
+        is created after an idle timeout.
+        """
+        session = self._sessions.get(session_id)
+        if session is None:
+            return None
+        return session.compacted_summary
 
     # ------------------------------------------------------------------
     # Internals
