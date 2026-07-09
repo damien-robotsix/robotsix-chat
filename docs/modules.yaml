@@ -127,6 +127,8 @@ modules:
       - src/robotsix_chat/chat/server/routes/sessions.py
       - src/robotsix_chat/chat/server/routes/subsessions.py
       - docs/chat/server.md
+      - tests/chat/__init__.py
+      - tests/chat/test_cli.py
       - tests/chat/test_conversation.py
       - tests/chat/test_events.py
       - tests/chat/test_subsessions_e2e.py

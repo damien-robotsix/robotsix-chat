@@ -90,6 +90,10 @@
   a fallback for transient GitHub Pages infrastructure errors ("Deployment failed, try again
   later."). This is a restructuring that makes the full workflow visible and manageable within
   this repo; it does not fix the specific Pages infra flake.
+- Add unit tests for the CLI entry point module (`tests/chat/test_cli.py`):
+  `_configure_logging`, `_setup_observability`, `run_server`, and
+  `run_server_from_config` — covering structlog wiring, Langfuse tracing
+  fallback, uvicorn invocation, and full startup wiring. (mill: test gap: add unit tests for src/robotsix_chat/chat/server/cli.py (20260704T183942Z-test-gap-add-unit-tests-for-src-robotsix-d155))
 - Register the deploy-lifecycle API as a read-only component:
   four new tools — ``list_lifecycle_services``,
   ``get_lifecycle_service_status``, ``get_lifecycle_service_config``,
