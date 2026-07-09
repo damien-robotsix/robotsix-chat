@@ -19,7 +19,7 @@
     "recall_search_type": "GRAPH_COMPLETION",
     "llm": {
       "provider": "custom",
-      "model": "openrouter/deepseek/deepseek-v4-flash",
+      "model": "openrouter/anthropic/claude-haiku-4.5",
       "endpoint": "https://openrouter.ai/api/v1",
       "api_key": ""
     },
