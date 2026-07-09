@@ -54,6 +54,9 @@
   `__init__` overrides.  `DiagnosticStore`, `KnowledgeStore`, and
   `FixProposalStore` now only declare `_store_name` and `_default_path`.
 - Added `scripts/check_subsession_kinds.py` CI gate to verify that `SubsessionKind` enum values in `models.py` stay in sync with `.kind` string comparisons in `index.html`, preventing silent frontend breakage when a kind value is renamed.
+- Remove unused `compact_session()` and `get_compacted_summary()` methods and the
+  `compacted_summary` field from `ConversationStore` — the idle-timeout compaction
+  path was never wired into a route handler or test.
 - Prevent periodic subsessions from spawning periodic children; a periodic
   run that needs follow-up polling must reuse its own schedule rather than
   creating new periodic pollers.
