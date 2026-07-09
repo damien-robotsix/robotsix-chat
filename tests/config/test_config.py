@@ -147,7 +147,7 @@ def test_memory_disabled_by_default() -> None:
     assert settings.memory.enabled is False
     assert settings.memory.data_dir == "/data/cognee"
     assert settings.memory.recall_search_type == "GRAPH_COMPLETION"
-    assert settings.memory.llm.model == "openrouter/deepseek/deepseek-v4-flash"
+    assert settings.memory.llm.model == "openrouter/anthropic/claude-haiku-4.5"
     assert settings.memory.embedding.provider == "openai_compatible"
     assert settings.memory.embedding.dimensions == 1024
 

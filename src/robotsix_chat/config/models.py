@@ -21,13 +21,16 @@ class LangfuseSettings(BaseModel):
 class MemoryLlmSettings(BaseModel):
     """Extraction-LLM config for cognee memory (OpenRouter via litellm).
 
-    Defaults match the validated robotsix setup: the cheap OpenRouter DeepSeek
-    model through the ``custom`` provider. ``api_key`` is required when memory
+    Defaults match the validated robotsix setup: Claude Haiku through
+    OpenRouter's ``custom`` provider. ``api_key`` is required when memory
     is enabled (provide it via ``MEMORY_LLM_API_KEY``).
     """
 
     provider: str = "custom"
-    model: str = "openrouter/deepseek/deepseek-v4-flash"
+    # deepseek-v4-flash produced malformed JSON under instructor's
+    # structured-output prompting, causing multi-minute retry stalls in
+    # production (2026-07-09).
+    model: str = "openrouter/anthropic/claude-haiku-4.5"
     endpoint: str = "https://openrouter.ai/api/v1"
     api_key: SecretStr = SecretStr("")
 
