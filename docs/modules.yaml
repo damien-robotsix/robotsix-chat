@@ -248,6 +248,8 @@ modules:
     description: "Browser chat UI — self-contained HTML frontend served at /."
     paths:
       - src/robotsix_chat/ui/index.html
+      - src/robotsix_chat/ui/static/chat.css
+      - src/robotsix_chat/ui/static/chat.js
 
   - id: lifecycle
     description: "Read-only deploy-lifecycle API tools for the agent — exposes build_lifecycle_tools() returning tools to list services, check status/health, and read config/env (secrets masked server-side), plus load_lifecycle_skill() for the component skill document."

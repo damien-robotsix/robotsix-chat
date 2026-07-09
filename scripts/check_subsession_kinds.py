@@ -77,7 +77,7 @@ def main() -> int:
     """Check SubsessionKind string consistency and return 0 (ok) or 1 (violations)."""
     repo_root = Path(__file__).resolve().parent.parent
     models_py = repo_root / "src" / "robotsix_chat" / "subsessions" / "models.py"
-    index_html = repo_root / "src" / "robotsix_chat" / "ui" / "index.html"
+    chat_js = repo_root / "src" / "robotsix_chat" / "ui" / "static" / "chat.js"
 
     # ------------------------------------------------------------------
     # Parse canonical constants
@@ -95,9 +95,9 @@ def main() -> int:
     canonical_values: set[str] = set(canonical.values())
 
     # ------------------------------------------------------------------
-    # Collect kind-comparison strings from HTML
+    # Collect kind-comparison strings from chat.js
     # ------------------------------------------------------------------
-    html_strings = _iter_html_kind_strings(index_html)
+    html_strings = _iter_html_kind_strings(chat_js)
     html_values: set[str] = set(html_strings)
 
     violations = False
@@ -109,7 +109,7 @@ def main() -> int:
     if missing_from_html:
         violations = True
         print(
-            "SubsessionKind values missing from index.html (.kind / kind comparisons):",
+            "SubsessionKind values missing from chat.js (.kind / kind comparisons):",
             file=sys.stderr,
         )
         for val in sorted(missing_from_html):
@@ -127,7 +127,7 @@ def main() -> int:
     if unrecognised:
         violations = True
         print(
-            "Unrecognised SubsessionKind strings in index.html"
+            "Unrecognised SubsessionKind strings in chat.js"
             " (.kind / kind comparisons — no matching Python constant):",
             file=sys.stderr,
         )
