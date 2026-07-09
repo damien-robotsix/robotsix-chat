@@ -31,6 +31,9 @@ typecheck:
 check-sse-types:
 	python scripts/check_sse_event_types.py
 
+check-subsession-kinds:
+	python scripts/check_subsession_kinds.py
+
 security:
 	uv run bandit -c pyproject.toml -r src/
 
