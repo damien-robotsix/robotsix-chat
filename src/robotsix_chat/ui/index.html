@@ -3,6 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="project-title" content="{{ PROJECT_TITLE }}">
 <title>{{ PROJECT_TITLE }} — Chat</title>
 <style>
   /* ------------------------------------------------------------------ */
@@ -897,7 +898,8 @@
   // A stable per-browser id sent with every message so the server can thread
   // consecutive messages into one conversation (and reset to a new one after
   // it's been idle). Persisted so a page reload continues the conversation.
-  var CLIENT_ID_KEY = "{{ PROJECT_TITLE }}-client-id";
+  var PROJECT_TITLE = document.querySelector('meta[name="project-title"]').content;
+  var CLIENT_ID_KEY = PROJECT_TITLE + "-client-id";
 
   function randomId() {
     try {
@@ -924,8 +926,8 @@
   var clientId = getClientId();
 
   // ---- Session management (localStorage-backed) -----------------------
-  var ACTIVE_SESSION_KEY = "{{ PROJECT_TITLE }}-active-session-id";
-  var SUBS_PANEL_KEY = "{{ PROJECT_TITLE }}-subsessions-panel-visible";
+  var ACTIVE_SESSION_KEY = PROJECT_TITLE + "-active-session-id";
+  var SUBS_PANEL_KEY = PROJECT_TITLE + "-subsessions-panel-visible";
   var activeSessionId = null;
   var sessionsList = [];        // cached session list from server
 
