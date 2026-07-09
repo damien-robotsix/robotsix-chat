@@ -331,7 +331,7 @@
       "type": "object"
     },
     "MemoryLlmSettings": {
-      "description": "Extraction-LLM config for cognee memory (OpenRouter via litellm).\n\nDefaults match the validated robotsix setup: the cheap OpenRouter DeepSeek\nmodel through the ``custom`` provider. ``api_key`` is required when memory\nis enabled (provide it via ``MEMORY_LLM_API_KEY``).",
+      "description": "Extraction-LLM config for cognee memory (OpenRouter via litellm).\n\nDefaults match the validated robotsix setup: Claude Haiku through\nOpenRouter's ``custom`` provider. ``api_key`` is required when memory\nis enabled (provide it via ``MEMORY_LLM_API_KEY``).",
       "properties": {
         "provider": {
           "default": "custom",
@@ -339,7 +339,7 @@
           "type": "string"
         },
         "model": {
-          "default": "openrouter/deepseek/deepseek-v4-flash",
+          "default": "openrouter/anthropic/claude-haiku-4.5",
           "title": "Model",
           "type": "string"
         },
