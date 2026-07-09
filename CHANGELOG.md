@@ -1,11 +1,35 @@
 ## 0.0.0 (unreleased)
 
+- Add zizmor pre-commit hook (`v1.26.1`) after actionlint to detect
+  GitHub Actions workflow security vulnerabilities (script injection,
+  hardcoded credentials, unsafe permissions).
+- Allow `model_level` 4 for subsession spawns. The config layer, system prompt, and tool docs all described level 4 as valid for frontier-tier reasoning, but the runtime validator rejected it; the validator now accepts levels 1–4 consistently.
+- Extract repeated `_serializer.persist` guard into a private `_persist()` helper in `ConversationStore`.
+- Remove orphaned `scripts/check_kind_literals.py` (dead code — no CI
+  job, pre-commit hook, or Makefile target references it) and update
+  `scripts/check_sse_event_types.py` docstring to drop stale reference.
+- Move `docs/api/robotsix_chat/server.md` to `docs/chat/server.md` to align with per-module docs layout convention.
+- Moved `docs/api/robotsix_chat/config.md` to `docs/config/api.md` to align with the per-module doc layout convention.
+- Remove dead `ConversationStore.stats()` method — zero callers in the codebase.
+- Moved `docs/api/robotsix_chat/agent.md` to `docs/llm/agent.md` to align with per-module docs layout.
+- Moved `memory` API doc from `docs/api/robotsix_chat/memory.md` to `docs/memory/api.md` to follow the per-module layout convention.
+- Added "Out-of-Scope CI Failure" boilerplate to `docs/triage-boilerplate.md` for use in scope-triage decisions during `draft → ready` transitions.
+- Remove unused `# noqa: E402` comment from `src/robotsix_chat/chat/server/__init__.py` to satisfy RUF100 (unused noqa directive).
+- Subsessions: add `inherit_context` parameter to `spawn_subsession` — when set, a compact ancestor-context block (root task plus each ancestor's title/prompt summary) is prepended to the child's first turn, so nested subsessions no longer start from scratch and fall back on memory.
+- Subsessions: persist and resume `user_chat` across server restarts — the worker is re-spawned under its original id with the original prompt plus the last delivered assistant state, instead of being marked `INTERRUPTED`.
+- Tracing: subsession worker turns and main-chat reaction turns now stamp `parent_session_id`/`owner_session_id`/`subsession_id` as Langfuse trace metadata, so the trace tree mirrors the subsession tree in observability.
 - `SubsessionsSettings.default_model_level` changed from `3` to `2` to match the system prompt guidance that level 2 "is the default choice for general work."
 - Derive `chat.server.__all__` from `routes.__all__` instead of duplicating
   the endpoint-name list across two `__init__.py` files.  When a new route
   endpoint module is added, the public API of the server package
   automatically picks it up (provided the symbol is imported), avoiding
   silent `__all__` drift.
+- Expand ruff ruleset with `ARG`, `N`, `RUF`, and `T` to catch unused
+  function/method arguments, naming convention violations, ambiguous unicode
+  characters, unsorted `__all__`, unused `# noqa` directives, and stray
+  `print()`/`pdb` calls before they reach CI.  Per-file-ignores suppress
+  known-safe patterns (test fixtures, intentional en-dash bullets in prompt
+  strings, `NullMemory` protocol stubs).
 - Consolidated duplicated `_get`/`_post`/`_patch` HTTP methods in `GitHubClient`
   into a single `_request(method, path, body=None)` private method, eliminating
   ~35 lines of copy-paste duplication.

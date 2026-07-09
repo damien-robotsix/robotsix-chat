@@ -44,6 +44,7 @@ class _SlowAgent:
         session_id: str | None = None,
         client_id: str | None = None,
         images: list[tuple[str, bytes]] | None = None,
+        trace_metadata: dict[str, str] | None = None,
     ) -> AsyncIterator[str]:
         await self._release.wait()
         for token in self._tokens:
