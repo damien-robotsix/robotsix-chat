@@ -487,3 +487,4 @@ class CentralDeploySettings(BaseModel):
     url: str = ""
     api_token: SecretStr = SecretStr("")
     roster_cache_ttl: float = 300.0
+    component_response_max_chars: int = 200_000

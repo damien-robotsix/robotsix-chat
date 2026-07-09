@@ -20,6 +20,11 @@
           "default": 300.0,
           "title": "Roster Cache Ttl",
           "type": "number"
+        },
+        "component_response_max_chars": {
+          "default": 200000,
+          "title": "Component Response Max Chars",
+          "type": "integer"
         }
       },
       "title": "CentralDeploySettings",

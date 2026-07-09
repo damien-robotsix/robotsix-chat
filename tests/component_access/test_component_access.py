@@ -639,15 +639,46 @@ async def test_component_request_timeout(
 async def test_component_request_truncates_long_response(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """Very long response body is truncated."""
+    """Very long response body is truncated for write methods."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    long_text = "x" * 10000
+    respx_mock.post("http://m:8080/big").mock(
+        return_value=httpx.Response(200, text=long_text)
+    )
+    result = await _component_request_impl(roster, "mill", "POST", "/big")
+    assert "truncated" in result
+    assert len(result) < len(long_text) + 100  # should be shorter than original
+
+
+@pytest.mark.asyncio
+async def test_component_request_get_uses_read_response_limit(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """GET responses respect the read_response_max_chars limit."""
     roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
     long_text = "x" * 10000
     respx_mock.get("http://m:8080/big").mock(
         return_value=httpx.Response(200, text=long_text)
     )
+    # Default read_response_max_chars is 8000 (fallback), so GET
+    # should also truncate with the default.
     result = await _component_request_impl(roster, "mill", "GET", "/big")
     assert "truncated" in result
-    assert len(result) < len(long_text) + 100  # should be shorter than original
+    assert len(result) < len(long_text) + 100
+
+    # With a higher limit, the response should not be truncated.
+    respx_mock.get("http://m:8080/big").mock(
+        return_value=httpx.Response(200, text=long_text)
+    )
+    result = await _component_request_impl(
+        roster,
+        "mill",
+        "GET",
+        "/big",
+        read_response_max_chars=200_000,
+    )
+    assert "truncated" not in result
+    assert "x" * 10000 in result
 
 
 @pytest.mark.asyncio
