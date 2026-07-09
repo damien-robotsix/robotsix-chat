@@ -20,7 +20,7 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
-_TRUNCATE_LENGTH = 8000
+_TRUNCATE_LENGTH = 8000  # default for write methods (POST/PUT/PATCH/DELETE)
 
 # Retry configuration for transient component-call failures.
 _MAX_ATTEMPTS = 3
@@ -91,6 +91,7 @@ async def _component_request_impl(
     method: str,
     path: str,
     json_body: dict[str, Any] | None = None,
+    read_response_max_chars: int = _TRUNCATE_LENGTH,
 ) -> str:
     """Call *component_id*'s API at *method* *path*.
 
@@ -187,11 +188,19 @@ async def _component_request_impl(
         )
 
     def _format_body(status: int, body_str: str) -> str:
-        """Format a response body with truncation."""
-        if len(body_str) > _TRUNCATE_LENGTH:
-            body_str = body_str[:_TRUNCATE_LENGTH] + (
-                f"\n\n... (truncated at {_TRUNCATE_LENGTH} chars, "
-                f"original length {len(body_str)})"
+        """Format a response body with truncation.
+
+        Read-only methods (GET, HEAD) use *read_response_max_chars*;
+        write methods use the lower ``_TRUNCATE_LENGTH`` default.
+        """
+        limit = (
+            read_response_max_chars
+            if method_upper in ("GET", "HEAD")
+            else _TRUNCATE_LENGTH
+        )
+        if len(body_str) > limit:
+            body_str = body_str[:limit] + (
+                f"\n\n... (truncated at {limit} chars, original length {len(body_str)})"
             )
         return f"HTTP {status}\n{body_str}"
 
@@ -375,7 +384,12 @@ def build_component_access_tools(
         # Refresh the roster on every call (TTL-gated internally).
         await _refresh()
         return await _component_request_impl(
-            _state["entries"], component_id, method, path, json_body
+            _state["entries"],
+            component_id,
+            method,
+            path,
+            json_body,
+            read_response_max_chars=settings.component_response_max_chars,
         )
 
     return [component_request]
