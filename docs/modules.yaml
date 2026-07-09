@@ -149,6 +149,7 @@ modules:
       - tests/common/subsession_fakes.py
       - tests/common/test_http.py
       - tests/common/test_json_store.py
+      - tests/common/test_hypothesis_json_store.py
 
   - id: direct-repo
     description: "Direct-repository-capability tools — push branches and open PRs as the robotsix-mill GitHub App installation for BLOCKED tickets."
@@ -181,6 +182,7 @@ modules:
     paths:
       - src/robotsix_chat/knowledge/__init__.py
       - src/robotsix_chat/knowledge/store.py
+      - tests/knowledge/__init__.py
       - tests/knowledge/test_knowledge.py
 
   - id: llm

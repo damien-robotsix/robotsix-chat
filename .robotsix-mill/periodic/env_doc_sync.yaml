@@ -1,5 +1,0 @@
-# Per-repo periodic workflow: presence enables env_doc_sync for this repo.
-# Cross-references every env-var declared in the codebase against
-# docs/configuration.md, and files draft tickets for documentation
-# discrepancies.
-name: env_doc_sync
