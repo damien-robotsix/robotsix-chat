@@ -1,0 +1,1 @@
+UI: increase subsession panel detail text size by 1-2pt
