@@ -7,6 +7,7 @@ import base64
 import contextlib
 import dataclasses
 import logging
+import time
 from collections.abc import AsyncIterator
 from typing import Any, Protocol
 
@@ -372,6 +373,49 @@ def _parse_and_validate_images(
     return images, None
 
 
+async def _generate_idle_summary(
+    summary_agent: ChatAgent,
+    turns: list[tuple[str, str]],
+) -> str:
+    """Generate a plain-text summary of *turns* using *summary_agent*.
+
+    Returns an empty string when there are no turns or on failure.
+    """
+    if not turns:
+        return ""
+
+    transcript_parts: list[str] = []
+    for user_msg, asst_msg in turns:
+        transcript_parts.append(f"User: {user_msg}")
+        if asst_msg:
+            truncated = asst_msg[:2000] + "\u2026" if len(asst_msg) > 2000 else asst_msg
+            transcript_parts.append(f"Assistant: {truncated}")
+    transcript = "\n".join(transcript_parts)
+
+    prompt = (
+        "Write a brief, plain-text summary of the conversation below — "
+        "what it's about, what's currently in progress, and anything "
+        "blocking or worth remembering. A few sentences of prose. No "
+        "headers, no bullet points, no JSON, no markdown fences — just "
+        "plain text.\n\nConversation:\n"
+        f"{transcript}\n\nSummary:"
+    )
+
+    try:
+        reply_parts: list[str] = []
+        async for token in summary_agent.stream(
+            prompt,
+            history=None,
+            session_id=None,
+            client_id=None,
+        ):
+            reply_parts.append(token)
+        return "".join(reply_parts).strip()
+    except Exception:
+        logger.exception("Idle-timeout summary generation failed")
+        return ""
+
+
 async def chat_endpoint(
     request: Request,
 ) -> JSONResponse | StreamingResponse:
@@ -448,6 +492,27 @@ async def chat_endpoint(
     had_session = bool(session_id)
     if not session_id:
         session_id = store.new_session_id()
+
+    # -- idle-timeout compaction ------------------------------------------
+
+    idle_timeout_minutes: int = request.app.state.idle_timeout_minutes
+    if had_session and idle_timeout_minutes > 0:
+        idle_session = store.get_session(session_id)
+        if idle_session is not None:
+            idle_seconds = time.time() - idle_session.wall_last_active
+            if idle_seconds > idle_timeout_minutes * 60:
+                summary = await _generate_idle_summary(
+                    request.app.state.summary_agent,
+                    store.history(session_id),
+                )
+                compacted = store.compact_session(owner_id or "", session_id, summary)
+                session_id = str(compacted["session_id"])
+                logger.info(
+                    "Idle timeout (%d min): compacted session %s → %s",
+                    idle_timeout_minutes,
+                    idle_session.session_id,
+                    session_id,
+                )
 
     lock_key = client_id or session_id
 
