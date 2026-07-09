@@ -1,5 +1,11 @@
 ## 0.0.0 (unreleased)
 
+- Refactor monolithic `ui/index.html` into separate CSS, JS, and HTML files:
+  - Extracted inline `<style>` block (613 lines) into `ui/static/chat.css`
+  - Extracted inline `<script>` block (2069 lines) into `ui/static/chat.js`
+  - Replaced placeholders with external `<link>` and `<script src>` tags
+  - Added `StaticFiles` mount at `/static` in the Starlette app
+  - Added `<meta>` tag for `IDLE_TIMEOUT_MINUTES` so the JS reads it from the DOM
 - Increase subsession panel detail text font size from 0.75rem to 0.85rem for improved readability.
 - Add configurable `component_response_max_chars` (default 200,000) to `central_deploy` settings, used as the truncation limit for GET/HEAD component responses — write methods keep the existing 8,000 limit. This lets the agent enumerate large ticket lists (e.g. mill board blocked tickets) without truncation.
 - Rebuild and wire server-side idle compaction: re-implement `compact_session` and `get_compacted_summary` on `ConversationStore`, and wire idle-timeout detection into the POST /chat route so that when a session has been idle longer than `idle_timeout_minutes`, a summary is generated and injected into the agent context on the next message.

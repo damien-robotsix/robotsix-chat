@@ -806,20 +806,24 @@ def test_idle_does_not_wipe_history() -> None:
 
 @pytest.mark.asyncio
 async def test_ui_injects_history_load_path() -> None:
-    """``GET /`` contains the history-loading wiring.
+    """``GET /`` and ``/static/chat.js`` contain the history-loading wiring.
 
-    The served HTML must reference:
+    The served HTML must reference the external JS bundle, and that bundle
+    must contain:
     - the ``loadHistory`` function
     - the ``/history`` endpoint (via string match)
     - the ``addAssistantBubble`` helper
     """
     async with mock_app() as f:
-        response = await f.client.get("/")
+        html_response = await f.client.get("/")
+        js_response = await f.client.get("/static/chat.js")
 
-    assert response.status_code == 200
-    assert "loadHistory" in response.text
-    assert '"/history"' in response.text
-    assert "addAssistantBubble" in response.text
+    assert html_response.status_code == 200
+    assert 'src="/static/chat.js"' in html_response.text
+    assert js_response.status_code == 200
+    assert "loadHistory" in js_response.text
+    assert '"/history"' in js_response.text
+    assert "addAssistantBubble" in js_response.text
 
 
 # ---------------------------------------------------------------------------
@@ -1363,13 +1367,13 @@ async def test_ui_served_at_root_by_default() -> None:
 @pytest.mark.parametrize(
     "timeout, expect_substring",
     [
-        (30, "var IDLE_TIMEOUT_MINUTES = 30;"),
-        (5, "var IDLE_TIMEOUT_MINUTES = 5;"),
-        (0, "var IDLE_TIMEOUT_MINUTES = 0;"),
+        (30, 'content="30"'),
+        (5, 'content="5"'),
+        (0, 'content="0"'),
     ],
 )
 async def test_ui_injects_idle_timeout(timeout: int, expect_substring: str) -> None:
-    """``GET /`` injects the configured ``idle_timeout_minutes`` into the JS."""
+    """``GET /`` injects idle_timeout_minutes into the ``<meta>`` tag."""
     async with mock_app(idle_timeout_minutes=timeout) as f:
         response = await f.client.get("/")
 
@@ -1381,27 +1385,34 @@ async def test_ui_injects_idle_timeout(timeout: int, expect_substring: str) -> N
 
 @pytest.mark.asyncio
 async def test_ui_injects_message_queue() -> None:
-    """``GET /`` contains the client-side FIFO message-queue markers."""
-    async with mock_app() as f:
-        response = await f.client.get("/")
+    """The static assets contain the client-side FIFO message-queue markers.
 
-    assert response.status_code == 200
-    assert "messageQueue" in response.text
-    assert "drainQueue" in response.text
-    assert ".bubble.user.queued" in response.text
+    ``chat.js`` must reference ``messageQueue``/``drainQueue``;
+    ``chat.css`` must define ``.bubble.user.queued`` styling.
+    """
+    async with mock_app() as f:
+        js_response = await f.client.get("/static/chat.js")
+        css_response = await f.client.get("/static/chat.css")
+
+    assert js_response.status_code == 200
+    assert "messageQueue" in js_response.text
+    assert "drainQueue" in js_response.text
+
+    assert css_response.status_code == 200
+    assert ".bubble.user.queued" in css_response.text
 
 
 @pytest.mark.asyncio
 async def test_ui_renders_event_stream_wiring() -> None:
-    """``GET /`` contains the persistent notification-stream wiring.
+    """``/static/chat.js`` contains the persistent notification-stream wiring.
 
-    The served HTML must reference the ``/events`` SSE endpoint and the
+    The served JS must reference the ``/events`` SSE endpoint and the
     ``openEventStream`` function that opens it.  (The subsession-panel
     JS markup is covered by ``scripts/check_sse_event_types.py``, which
     cross-checks the frame-type literals against ``events.py``.)
     """
     async with mock_app() as f:
-        response = await f.client.get("/")
+        response = await f.client.get("/static/chat.js")
 
     assert response.status_code == 200
     assert '"/events"' in response.text
