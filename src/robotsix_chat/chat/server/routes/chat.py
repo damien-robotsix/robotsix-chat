@@ -497,7 +497,7 @@ async def chat_endpoint(
 
     idle_timeout_minutes: int = request.app.state.idle_timeout_minutes
     if had_session and idle_timeout_minutes > 0:
-        idle_session = store._sessions.get(session_id)
+        idle_session = store.get_session(session_id)
         if idle_session is not None:
             idle_seconds = time.time() - idle_session.wall_last_active
             if idle_seconds > idle_timeout_minutes * 60:

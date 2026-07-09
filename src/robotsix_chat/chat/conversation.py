@@ -233,6 +233,13 @@ class ConversationStoreSerializer:
                 if not isinstance(last_active, int | float):
                     last_active = now
 
+                compacted_summary_raw = sraw.get("compacted_summary")
+                compacted_summary = (
+                    str(compacted_summary_raw)
+                    if isinstance(compacted_summary_raw, str)
+                    else None
+                )
+
                 session = Session(
                     session_id=sid,
                     title=title,
@@ -240,6 +247,7 @@ class ConversationStoreSerializer:
                     turns=turns,
                     turn_count=int(sraw.get("turn_count", len(turns))),
                     closed=bool(sraw.get("closed", False)),
+                    compacted_summary=compacted_summary,
                 )
                 sessions[sid] = session
                 session_ids.add(sid)
@@ -272,16 +280,17 @@ class ConversationStoreSerializer:
                 session = sessions.get(sid)
                 if session is None:
                     continue
-                sessions_list.append(
-                    {
-                        "session_id": session.session_id,
-                        "title": session.title,
-                        "last_active": session.wall_last_active,
-                        "turn_count": session.turn_count,
-                        "turns": [list(t) for t in session.turns],
-                        "closed": session.closed,
-                    }
-                )
+                session_dict: dict[str, object] = {
+                    "session_id": session.session_id,
+                    "title": session.title,
+                    "last_active": session.wall_last_active,
+                    "turn_count": session.turn_count,
+                    "turns": [list(t) for t in session.turns],
+                    "closed": session.closed,
+                }
+                if session.compacted_summary is not None:
+                    session_dict["compacted_summary"] = session.compacted_summary
+                sessions_list.append(session_dict)
             if sessions_list:
                 data[owner_id] = {
                     "active_session_id": owner_state.active_session_id,
@@ -467,6 +476,13 @@ class ConversationStore:
             return []
         return list(session.turns)
 
+    def get_session(self, session_id: str) -> Session | None:
+        """Return the :class:`Session` object for *session_id*, or ``None``.
+
+        Read-only: does not update any metadata or LRU order.
+        """
+        return self._sessions.get(session_id)
+
     def list_sessions(self, owner_id: str) -> tuple[list[dict[str, object]], str]:
         """Return ``(sessions, active_session_id)`` for *owner_id*.
 
@@ -640,7 +656,7 @@ class ConversationStore:
     def compact_session(
         self,
         owner_id: str,
-        session_id: str,  # noqa: ARG002
+        session_id: str,  # noqa: ARG002 — kept for call-site clarity & future use
         summary: str,
     ) -> dict[str, object]:
         """Create a new session for *owner_id* with a compaction summary.
@@ -649,6 +665,9 @@ class ConversationStore:
         *summary* stored as ``compacted_summary`` — it will be injected into
         the agent's context on the next user message so the LLM retains
         awareness of the prior conversation.
+
+        *session_id* is accepted for call-site clarity and potential future
+        use (e.g. marking the old session compacted) but is currently unused.
 
         Returns the new session metadata dict including ``compacted_summary``.
         """
