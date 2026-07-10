@@ -553,6 +553,7 @@ def create_agent_from_settings(
             req_factories.append(_make_request_tools)
 
     if not bare and settings.notification.enabled and event_sink is not None:
+
         def _make_notification_tools(session_id: str) -> list[Any]:
             return build_notification_tools(
                 settings.notification,
@@ -563,6 +564,7 @@ def create_agent_from_settings(
         req_factories.append(_make_notification_tools)
 
     if req_factories:
+
         def _compose(session_id: str) -> list[Any]:
             result: list[Any] = []
             for f in req_factories:

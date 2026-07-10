@@ -308,7 +308,6 @@ class Settings(BaseModel):
                 "provide it via the `version_check.repo` config field"
             )
 
-
     # ------------------------------------------------------------------
     # Factories
     # ------------------------------------------------------------------
