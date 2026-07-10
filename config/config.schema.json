@@ -686,6 +686,11 @@
       "title": "Idle Timeout Minutes",
       "type": "integer"
     },
+    "compaction_min_turns": {
+      "default": 3,
+      "title": "Compaction Min Turns",
+      "type": "integer"
+    },
     "log_level": {
       "default": "INFO",
       "title": "Log Level",

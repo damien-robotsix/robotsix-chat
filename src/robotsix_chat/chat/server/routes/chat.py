@@ -493,9 +493,11 @@ async def chat_endpoint(
     if not session_id:
         session_id = store.new_session_id()
 
-    # A client whose stored session id was already compacted (its pointer
-    # only updates when it sees a response) posts to a dead session — route
-    # the message to the live continuation instead of compacting again.
+    # LEGACY reroute: sessions compacted by the old design carry a
+    # ``compacted_into`` pointer to the continuation session they were
+    # replaced with — a client still posting to such an id is routed to the
+    # live end of the chain.  In-place compaction never sets the pointer, so
+    # this only fires for pre-existing persisted chains.
     resolved_session_id = store.resolve_session(session_id)
     if resolved_session_id != session_id:
         logger.info(
@@ -505,48 +507,43 @@ async def chat_endpoint(
         )
         session_id = resolved_session_id
 
-    # -- idle-timeout compaction ------------------------------------------
+    # -- idle-timeout compaction (in place) --------------------------------
+    # The session keeps its id: turns before this point are replaced by a
+    # summary in the agent's replay, the UI transcript and the subsession
+    # tree are untouched.  Skipped entirely for conversations with fewer
+    # than ``compaction_min_turns`` fresh (not-yet-summarized) turns, so an
+    # empty or tiny conversation never churns the summary agent.
 
     idle_timeout_minutes: int = request.app.state.idle_timeout_minutes
+    compaction_min_turns: int = request.app.state.compaction_min_turns
     if had_session and idle_timeout_minutes > 0:
         idle_session = store.get_session(session_id)
         if idle_session is not None:
             idle_seconds = time.time() - idle_session.wall_last_active
-            if idle_seconds > idle_timeout_minutes * 60:
-                compaction_turns = store.history(session_id)
+            fresh_turns = len(idle_session.turns) - idle_session.compacted_turn_index
+            if (
+                idle_seconds > idle_timeout_minutes * 60
+                and fresh_turns >= compaction_min_turns
+            ):
+                compaction_turns = store.agent_history(session_id)
                 summary = await _generate_idle_summary(
                     request.app.state.summary_agent,
                     compaction_turns,
                 )
-                compacted = store.compact_session(owner_id or "", session_id, summary)
-                old_session_id = session_id
-                session_id = str(compacted["session_id"])
-                logger.info(
-                    "Idle timeout (%d min): compacted session %s → %s",
-                    idle_timeout_minutes,
-                    old_session_id,
-                    session_id,
-                )
-                # The subsession tree follows the conversation: transfer it
-                # so running work delivers to the continuation session and
-                # the UI panel for the new session keeps showing it.
-                registry = request.app.state.subsession_registry
-                if registry is not None:
-                    moved = registry.reassign_owner(old_session_id, session_id)
-                    if moved:
-                        logger.info(
-                            "Transferred %d subsession(s) from %s to %s",
-                            moved,
-                            old_session_id,
-                            session_id,
-                        )
+                if summary:
+                    store.compact_session(owner_id or "", session_id, summary)
+                    logger.info(
+                        "Idle timeout (%d min): compacted session %s in place "
+                        "(%d turns folded into summary)",
+                        idle_timeout_minutes,
+                        session_id,
+                        fresh_turns,
+                    )
 
                 # Schedule a feedback run for the compacted session.
                 feedback_runner = request.app.state.feedback_runner
                 if feedback_runner is not None:
-                    feedback_runner.schedule(
-                        "compaction", old_session_id, compaction_turns
-                    )
+                    feedback_runner.schedule("compaction", session_id, compaction_turns)
 
     lock_key = client_id or session_id
 

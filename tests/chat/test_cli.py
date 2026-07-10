@@ -256,6 +256,7 @@ class TestRunServer:
             summary_agent=None,
             serve_ui=False,
             idle_timeout_minutes=5,
+            compaction_min_turns=3,
             max_images_per_message=4,
             max_image_bytes=1_000_000,
             allowed_image_media_types=["image/png"],
