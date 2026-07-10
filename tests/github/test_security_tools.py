@@ -279,7 +279,7 @@ async def test_multiple_toggles(
         repo_name="my-repo",
         dependency_graph="enabled",
         advanced_security="disabled",
-        secret_scanning="enabled",
+        secret_scanning="enabled",  # pragma: allowlist secret
     )
     assert "updated" in out.lower()
 
