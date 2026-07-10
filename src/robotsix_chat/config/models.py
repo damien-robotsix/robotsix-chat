@@ -526,6 +526,33 @@ class NotificationSettings(BaseModel):
     enabled: bool = False
 
 
+class FeedbackSettings(BaseModel):
+    """Automated feedback analysis for continuous self-improvement.
+
+    When enabled, a feedback run analyses the conversation at compaction
+    and session-end boundaries, then files improvement tickets via the
+    board's ``POST /tickets/ingest`` endpoint.  Tickets flow through the
+    normal human-approval workflow — the feedback run never auto-approves.
+
+    Attributes:
+        enabled: Master switch.  When ``False``, no feedback runs occur.
+        model_level: llmio capability level for the feedback-analysis
+            agent (a cheap, single-turn extraction call).  Default ``1``.
+        board_url: Base URL of the board HTTP API (no trailing slash).
+            Required when *enabled* — the runner POSTs to
+            ``{board_url}/tickets/ingest``.
+        board_api_token: Optional Bearer token for the board API.
+        timeout: Per-request HTTP timeout in seconds for ingest calls.
+
+    """
+
+    enabled: bool = False
+    model_level: int = 1
+    board_url: str = ""
+    board_api_token: SecretStr = SecretStr("")
+    timeout: float = 60.0
+
+
 class CentralDeploySettings(BaseModel):
     """Central-deploy roster and component-access settings.
 

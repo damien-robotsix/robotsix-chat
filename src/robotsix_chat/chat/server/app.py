@@ -179,6 +179,7 @@ SHARED_PARAMS: frozenset[str] = frozenset(
         "run_serializer",
         "subsession_registry",
         "subsession_delivery",
+        "feedback_runner",
         "on_startup",
         "on_startup_async",
         "on_shutdown",
@@ -207,6 +208,7 @@ def create_app(
     message_coalesce_seconds: float = 0.3,
     subsession_registry: SubsessionRegistry | None = None,
     subsession_delivery: ParentDelivery | None = None,
+    feedback_runner: Any = None,
     on_startup: Callable[[], None] | None = None,
     on_startup_async: Callable[[], Any] | None = None,
     on_shutdown: Callable[[], Any] | None = None,
@@ -274,6 +276,10 @@ def create_app(
             ``/subsessions/{id}/close`` route to deliver the summary of an
             externally-closed subsession.  Required together with
             *subsession_registry* for full functionality.
+        feedback_runner: Optional
+            :class:`~robotsix_chat.feedback.FeedbackRunner` that schedules
+            feedback analysis runs at compaction and session-end boundaries.
+            When ``None`` (default), feedback runs are disabled.
         on_startup: Optional callable invoked during application startup
             (the Starlette lifespan ``startup`` phase).  Pass a closure
             that e.g. resumes persisted subsessions.
@@ -396,6 +402,7 @@ def create_app(
     app.state.subsession_delivery = subsession_delivery  # may be None
     app.state.direct_repo_settings = direct_repo_settings
     app.state.github_security_settings = github_security_settings
+    app.state.feedback_runner = feedback_runner  # may be None
     return app
 
 
