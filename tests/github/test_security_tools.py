@@ -326,7 +326,7 @@ async def test_push_protection_toggle(
 
     out = await tool(
         repo_name="my-repo",
-        secret_scanning_push_protection="enabled",
+        secret_scanning_push_protection="enabled",  # pragma: allowlist secret
     )
     assert "updated" in out.lower()
 
