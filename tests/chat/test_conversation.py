@@ -525,3 +525,63 @@ def test_close_session_persists_closed_flag(tmp_path: Path) -> None:
     assert store2.is_session_closed(sid) is True
     sessions, _ = store2.list_sessions("owner-1")
     assert sessions[0]["closed"] is True
+
+
+# -- compaction / continuation routing -----------------------------------
+
+
+def test_compact_session_marks_old_session() -> None:
+    """Compaction records the continuation id on the old session."""
+    store = _store()
+    old_sid = str(store.create_session("owner-1")["session_id"])
+
+    new_sid = str(store.compact_session("owner-1", old_sid, "summary")["session_id"])
+
+    old = store.get_session(old_sid)
+    assert old is not None
+    assert old.compacted_into == new_sid
+
+
+def test_resolve_session_follows_compaction_chain() -> None:
+    """resolve_session walks compacted_into links to the live session."""
+    store = _store()
+    s0 = str(store.create_session("owner-1")["session_id"])
+    s1 = str(store.compact_session("owner-1", s0, "first")["session_id"])
+    s2 = str(store.compact_session("owner-1", s1, "second")["session_id"])
+
+    assert store.resolve_session(s0) == s2
+    assert store.resolve_session(s1) == s2
+    assert store.resolve_session(s2) == s2
+
+
+def test_resolve_session_unknown_or_uncompacted_returns_itself() -> None:
+    """Unknown ids and never-compacted sessions resolve to themselves."""
+    store = _store()
+    sid = str(store.create_session("owner-1")["session_id"])
+
+    assert store.resolve_session("ghost") == "ghost"
+    assert store.resolve_session(sid) == sid
+
+
+def test_resolve_session_guards_against_cycles() -> None:
+    """A (corrupt) compacted_into cycle terminates instead of hanging."""
+    store = _store()
+    a = str(store.create_session("owner-1")["session_id"])
+    b = str(store.compact_session("owner-1", a, "x")["session_id"])
+    # Manufacture a cycle — cannot happen through the public API.
+    session_b = store.get_session(b)
+    assert session_b is not None
+    session_b.compacted_into = a
+
+    assert store.resolve_session(a) in {a, b}
+
+
+def test_compacted_into_survives_persist_round_trip(tmp_path: Path) -> None:
+    """A store reloaded from disk still reroutes old ids to the continuation."""
+    path = tmp_path / "conversations.json"
+    store1 = _store(persist_path=path)
+    old_sid = str(store1.create_session("owner-1")["session_id"])
+    new_sid = str(store1.compact_session("owner-1", old_sid, "summary")["session_id"])
+
+    store2 = _store(persist_path=path)
+    assert store2.resolve_session(old_sid) == new_sid

@@ -1207,6 +1207,22 @@
     resetIdleTimer();
   }
 
+  // Adopt a continuation session announced by the server (idle-timeout
+  // compaction reroutes a turn into a fresh session and reports it in the
+  // "done" frame). Unlike switchSession this keeps the visible transcript —
+  // the current bubbles ARE the continuation's content — and only rebinds
+  // the persisted id, the event stream, and the subsessions panel.
+  function adoptSession(sessionId) {
+    if (!sessionId || sessionId === activeSessionId) return;
+    setActiveSessionId(sessionId);
+    closeEventStream();
+    openEventStream();
+    clearSubsessions();
+    fetchSubsessions();
+    refreshSessions();
+    updateActiveHighlight();
+  }
+
   // ---- Event stream lifecycle -----------------------------------------
   var eventStreamAbortController = null;
   var eventsStreamIntentionallyClosed = false;
@@ -2479,6 +2495,13 @@
           setConnectionStatus(true);
           state = "idle";
           updateSendBusy();
+          // The server may have rerouted this turn into a continuation
+          // session (idle-timeout compaction) — adopt it before anything
+          // below reads activeSessionId, so the summary refresh and any
+          // queued messages target the session the turn actually landed in.
+          if (frame.session_id && frame.session_id !== requestSessionId) {
+            adoptSession(frame.session_id);
+          }
           // Refresh the conversation summary after each turn.
           refreshSummary();
           // Automatically dispatch the next queued message (FIFO).

@@ -493,6 +493,18 @@ async def chat_endpoint(
     if not session_id:
         session_id = store.new_session_id()
 
+    # A client whose stored session id was already compacted (its pointer
+    # only updates when it sees a response) posts to a dead session — route
+    # the message to the live continuation instead of compacting again.
+    resolved_session_id = store.resolve_session(session_id)
+    if resolved_session_id != session_id:
+        logger.info(
+            "Session %s was compacted — routing message to continuation %s",
+            session_id,
+            resolved_session_id,
+        )
+        session_id = resolved_session_id
+
     # -- idle-timeout compaction ------------------------------------------
 
     idle_timeout_minutes: int = request.app.state.idle_timeout_minutes
@@ -513,6 +525,19 @@ async def chat_endpoint(
                     idle_session.session_id,
                     session_id,
                 )
+                # The subsession tree follows the conversation: transfer it
+                # so running work delivers to the continuation session and
+                # the UI panel for the new session keeps showing it.
+                registry = request.app.state.subsession_registry
+                if registry is not None:
+                    moved = registry.reassign_owner(idle_session.session_id, session_id)
+                    if moved:
+                        logger.info(
+                            "Transferred %d subsession(s) from %s to %s",
+                            moved,
+                            idle_session.session_id,
+                            session_id,
+                        )
 
     lock_key = client_id or session_id
 
@@ -550,7 +575,10 @@ async def chat_endpoint(
                 if kind == SSE_TOKEN_TYPE:
                     yield _sse_frame({"type": SSE_TOKEN_TYPE, "content": payload})
                 elif kind == SSE_DONE_TYPE:
-                    yield _sse_frame({"type": SSE_DONE_TYPE})
+                    # session_id lets the client adopt the continuation
+                    # session when compaction (or a stale-id reroute)
+                    # changed it mid-request.
+                    yield _sse_frame({"type": SSE_DONE_TYPE, "session_id": session_id})
                     finished_normally = True
                     break
                 else:  # SSE_ERROR_TYPE
