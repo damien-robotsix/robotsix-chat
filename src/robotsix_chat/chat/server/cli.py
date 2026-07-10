@@ -50,6 +50,8 @@ def run_server(
     on_startup: Callable[[], None] | None = None,
     on_startup_async: Callable[[], Any] | None = None,
     on_shutdown: Callable[[], Any] | None = None,
+    direct_repo_settings: Any = None,
+    github_security_settings: Any = None,
 ) -> None:
     """Start the chat SSE server on ``host:port``.
 
@@ -76,6 +78,8 @@ def run_server(
         on_startup=on_startup,
         on_startup_async=on_startup_async,
         on_shutdown=on_shutdown,
+        direct_repo_settings=direct_repo_settings,
+        github_security_settings=github_security_settings,
     )
     uvicorn.run(app, host=host, port=port)
 
@@ -338,4 +342,6 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         subsession_registry=subsession_registry,
         subsession_delivery=delivery,
         on_startup=_resume,
+        direct_repo_settings=settings.direct_repo,
+        github_security_settings=settings.github_security,
     )

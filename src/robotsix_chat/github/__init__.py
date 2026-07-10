@@ -5,18 +5,39 @@ tool that lets the agent enable or disable repository-level security
 features (dependency graph, advanced security, secret scanning) on repos
 under the configured GitHub organisation.
 
+Also exposes :func:`load_github_skill` which returns the component skill
+markdown — a description of the ``PATCH /chat/github/repos/{owner}/{repo}/settings``
+endpoint, its auth requirements, and its confirmation-gated mutation policy.
+
 Returns no tools when the capability is disabled.
 """
 
 from __future__ import annotations
 
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from robotsix_chat.config import DirectRepoSettings, GitHubSecuritySettings
 
-__all__ = ["build_github_security_tools"]
+__all__ = ["build_github_security_tools", "load_github_skill"]
+
+
+def load_github_skill() -> str:
+    """Return the GitHub component skill markdown.
+
+    Reads ``skill.md`` (shipped next to this module) and returns it as a
+    string suitable for appending to the agent's system prompt.  Returns
+    an empty string when the file is missing, so a missing skill document
+    never prevents the agent from starting.
+
+    """
+    skill_path = Path(__file__).parent / "skill.md"
+    try:
+        return skill_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ""
 
 
 def build_github_security_tools(

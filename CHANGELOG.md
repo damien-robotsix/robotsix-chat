@@ -2,6 +2,11 @@
 
 - User notification channel: proactive alerts when agent needs user attention via browser/native notifications over the existing SSE/EventBus channel (no external push-provider infrastructure needed)
 - Add `notify_user` push-notification tool so the agent can proactively alert the user outside the active conversation flow — three trigger classes: subsession chat opens, subsession completes/raises, and state/result requiring user awareness. Gated by `notification.enabled`.
+- Add ``PATCH /chat/github/repos/{owner}/{repo}/settings`` endpoint to toggle
+  repository security-and-analysis features (dependency graph, advanced
+  security, secret scanning, push protection) on repos under the GitHub App
+  installation scope.  Requires ``github_security.deploy_api_key`` via
+  ``X-API-Key`` header.  Returns 403/404/503 for auth/scope/config errors.
 - Extract inline `<style>` and `<script>` blocks from `ui/index.html` into
   standalone `ui/static/chat.css` and `ui/static/chat.js` files; serve them
   via a Starlette `StaticFiles` mount at `/static`. The `IDLE_TIMEOUT_MINUTES`

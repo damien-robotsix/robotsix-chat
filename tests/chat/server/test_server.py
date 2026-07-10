@@ -25,6 +25,7 @@ from robotsix_chat.chat.server import (
 )
 from robotsix_chat.chat.server.cli import _export_langfuse_env
 from robotsix_chat.config import LangfuseSettings, Settings
+from robotsix_chat.config.models import DirectRepoSettings, GitHubSecuritySettings
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.memory import NullMemory
 from robotsix_chat.subsessions import (
@@ -1293,6 +1294,10 @@ async def test_run_server_from_config_creates_agent_from_settings(
         assert callable(on_startup)
         summary_agent = call_args[1].pop("summary_agent")
         assert isinstance(summary_agent, LlmioChatAgent)
+        direct_repo_settings = call_args[1].pop("direct_repo_settings")
+        assert isinstance(direct_repo_settings, DirectRepoSettings)
+        github_security_settings = call_args[1].pop("github_security_settings")
+        assert isinstance(github_security_settings, GitHubSecuritySettings)
         assert call_args[1] == {
             "host": "127.0.0.1",
             "port": 8080,
