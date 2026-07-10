@@ -425,6 +425,84 @@
     font-style: italic;
   }
 
+  /* Markdown content inside bubbles */
+  .bubble h1, .bubble h2, .bubble h3,
+  .bubble h4, .bubble h5, .bubble h6 {
+    margin: 0.6em 0 0.3em;
+    line-height: 1.25;
+    font-weight: 600;
+  }
+  .bubble h1 { font-size: 1.4em; }
+  .bubble h2 { font-size: 1.25em; }
+  .bubble h3 { font-size: 1.1em; }
+  .bubble p { margin: 0.4em 0; }
+  .bubble p:first-child { margin-top: 0; }
+  .bubble p:last-child { margin-bottom: 0; }
+  .bubble ul, .bubble ol { margin: 0.4em 0; padding-left: 1.5em; }
+  .bubble li { margin: 0.15em 0; }
+  .bubble strong { font-weight: 600; }
+  .bubble em { font-style: italic; }
+  .bubble a {
+    color: #60a5fa;
+    text-decoration: underline;
+  }
+  .bubble a:visited { color: #a78bfa; }
+  .bubble blockquote {
+    margin: 0.5em 0;
+    padding: 0.3em 0.8em;
+    border-left: 3px solid #475569;
+    color: #94a3b8;
+  }
+  .bubble code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.875em;
+    background: rgba(255, 255, 255, 0.08);
+    padding: 0.15em 0.35em;
+    border-radius: 3px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .bubble pre {
+    margin: 0.5em 0;
+    padding: 0.6em 0.8em;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 0.85em;
+    line-height: 1.45;
+  }
+  .bubble pre code {
+    background: none;
+    padding: 0;
+    font-size: inherit;
+    white-space: pre;
+    word-break: normal;
+  }
+  .bubble table {
+    margin: 0.5em 0;
+    border-collapse: collapse;
+    font-size: 0.9em;
+    width: 100%;
+  }
+  .bubble th, .bubble td {
+    border: 1px solid #475569;
+    padding: 0.35em 0.6em;
+    text-align: left;
+  }
+  .bubble th {
+    background: rgba(255, 255, 255, 0.06);
+    font-weight: 600;
+  }
+  .bubble hr {
+    margin: 0.6em 0;
+    border: none;
+    border-top: 1px solid #475569;
+  }
+  .bubble img {
+    max-width: 100%;
+    border-radius: 6px;
+  }
+
   /* Conversation summary banner — pinned above the scrollable chat */
   .summary-banner {
     flex-shrink: 0;
@@ -618,6 +696,8 @@
     #composer { padding: 0.5rem 0.6rem; }
   }
 </style>
+<script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/dompurify/dist/purify.min.js"></script>
 </head>
 <body>
 
@@ -729,6 +809,7 @@
   // ---- State -----------------------------------------------------------
   var state = "idle";          // idle | sending | streaming | error
   var currentAssistantBubble = null;  // the <div> receiving tokens
+  var rawAssistantText       = "";    // accumulated raw text for markdown rendering
   var typingIndicatorEl      = null;  // the animated dots element
   var messageQueue = [];       // FIFO queue of { text, el } for busy-state
   // (currentRequestSessionId removed — unused; cross-session guard uses
@@ -1886,6 +1967,18 @@
     }
   }
 
+  // ---- Markdown rendering ----------------------------------------------
+  function renderMarkdown(raw) {
+    if (typeof marked === "undefined" || typeof DOMPurify === "undefined") {
+      // Fallback: escape and wrap with pre-wrap (graceful degradation).
+      var d = document.createElement("div");
+      d.textContent = raw;
+      return d.innerHTML;
+    }
+    var html = marked.parse(raw);
+    return DOMPurify.sanitize(html);
+  }
+
   // ---- Message bubbles -------------------------------------------------
   function clearChatBubbles() {
     // Remove all bubble elements, typing indicator, summary banner,
@@ -1897,6 +1990,7 @@
     }
     clearSummary();
     currentAssistantBubble = null;
+    rawAssistantText = "";
     typingIndicatorEl = null;
     // Also clear queued messages — they belong to the old session.
     messageQueue = [];
@@ -1910,7 +2004,7 @@
   function addUserBubble(text) {
     var div = document.createElement("div");
     div.className = "bubble user";
-    div.textContent = text;
+    div.innerHTML = renderMarkdown(text);
     chatEl.appendChild(div);
     scrollToBottom();
     return div;
@@ -1919,7 +2013,7 @@
   function addAssistantBubble(text) {
     var div = document.createElement("div");
     div.className = "bubble assistant";
-    div.textContent = text;
+    div.innerHTML = renderMarkdown(text);
     chatEl.appendChild(div);
     scrollToBottom();
     return div;
@@ -1951,7 +2045,7 @@
       return; // ignore unknown types
     }
     div.className = "bubble notification " + typeClass;
-    div.textContent = text;
+    div.innerHTML = renderMarkdown(text);
     chatEl.appendChild(div);
     scrollToBottom();
   }
@@ -1963,20 +2057,27 @@
     div.textContent = "";
     chatEl.appendChild(div);
     currentAssistantBubble = div;
+    rawAssistantText = "";
     return div;
   }
 
   function appendToken(token) {
     var bubble = createAssistantBubble();
-    bubble.textContent += token;
+    rawAssistantText += token;
+    bubble.textContent = rawAssistantText;
     scrollToBottom();
   }
 
   function finaliseAssistantBubble() {
-    if (currentAssistantBubble && currentAssistantBubble.textContent === "") {
-      currentAssistantBubble.textContent = "(empty response)";
+    if (currentAssistantBubble) {
+      if (rawAssistantText === "") {
+        currentAssistantBubble.textContent = "(empty response)";
+      } else {
+        currentAssistantBubble.innerHTML = renderMarkdown(rawAssistantText);
+      }
     }
     currentAssistantBubble = null;
+    rawAssistantText = "";
   }
 
   // ---- Conversation summary --------------------------------------------
@@ -2060,7 +2161,7 @@
     var value = data.summary;
     if (value && typeof value === "string" && value.trim()) {
       body.innerHTML = "<div class=\"summary-text\">" +
-              escapeHtml(value.trim()) + "</div>";
+              renderMarkdown(value.trim()) + "</div>";
     } else {
       body.innerHTML = "<span class=\"summary-loading\">No summary available yet.</span>";
     }
