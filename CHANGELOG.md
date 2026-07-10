@@ -7,6 +7,10 @@
   security, secret scanning, push protection) on repos under the GitHub App
   installation scope.  Requires ``github_security.deploy_api_key`` via
   ``X-API-Key`` header.  Returns 403/404/503 for auth/scope/config errors.
+- New **automated feedback run** at compaction and session-end boundaries:
+  analyses the conversation, surfaces actionable improvements, and files
+  tickets via ``POST /tickets/ingest`` with ``source_tag`` dedup. Disabled
+  by default; enable with ``feedback.enabled`` + ``feedback.board_url``.
 - Extract inline `<style>` and `<script>` blocks from `ui/index.html` into
   standalone `ui/static/chat.css` and `ui/static/chat.js` files; serve them
   via a Starlette `StaticFiles` mount at `/static`. The `IDLE_TIMEOUT_MINUTES`

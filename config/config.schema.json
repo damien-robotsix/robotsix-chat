@@ -188,6 +188,40 @@
       "title": "DirectRepoSettings",
       "type": "object"
     },
+    "FeedbackSettings": {
+      "description": "Automated feedback analysis for continuous self-improvement.\n\nWhen enabled, a feedback run analyses the conversation at compaction\nand session-end boundaries, then files improvement tickets via the\nboard's ``POST /tickets/ingest`` endpoint.  Tickets flow through the\nnormal human-approval workflow \u2014 the feedback run never auto-approves.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no feedback runs occur.\n    model_level: llmio capability level for the feedback-analysis\n        agent (a cheap, single-turn extraction call).  Default ``1``.\n    board_url: Base URL of the board HTTP API (no trailing slash).\n        Required when *enabled* \u2014 the runner POSTs to\n        ``{board_url}/tickets/ingest``.\n    board_api_token: Optional Bearer token for the board API.\n    timeout: Per-request HTTP timeout in seconds for ingest calls.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "model_level": {
+          "default": 1,
+          "title": "Model Level",
+          "type": "integer"
+        },
+        "board_url": {
+          "default": "",
+          "title": "Board Url",
+          "type": "string"
+        },
+        "board_api_token": {
+          "default": "",
+          "format": "password",
+          "title": "Board Api Token",
+          "type": "string",
+          "writeOnly": true
+        },
+        "timeout": {
+          "default": 60.0,
+          "title": "Timeout",
+          "type": "number"
+        }
+      },
+      "title": "FeedbackSettings",
+      "type": "object"
+    },
     "GitHubSecuritySettings": {
       "description": "Repository security-feature toggle via the GitHub App installation.\n\nWhen enabled, the chat agent gains a ``set_repo_security_and_analysis``\ntool that can enable or disable repository-level security features\n(dependency graph, advanced security, secret scanning) on repos under\nthe configured GitHub App's installation scope.\n\n**Guardrails built into the tool (not configurable):**\n- Repo scope is resolved dynamically from the GitHub App installation\n  (list-installation-repositories) \u2014 no static allowlist.\n- Only repos within the installation scope are modifiable.\n- Each feature toggle explicitly requires ``\"enabled\"`` or ``\"disabled\"``\n  \u2014 no accidental bulk changes.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no security-feature tool\n        is offered.\n    github_org: GitHub organisation name whose repos are in scope\n        (e.g. ``\"damien-robotsix\"``).  The tool only targets repos\n        under this org.\n    deploy_api_key: API key that clients must present in the\n        ``X-API-Key`` header when calling the\n        ``PATCH /chat/github/repos/{owner}/{repo}/settings``\n        endpoint.  When empty, the endpoint returns 503 (unconfigured).\n    timeout: Per-request HTTP timeout in seconds.\n\nNote: GitHub App authentication is delegated to\n:class:`DirectRepoSettings` \u2014 those credentials must also be configured\nfor the tool to function.",
       "properties": {
@@ -613,7 +647,7 @@
       "type": "object"
     }
   },
-  "description": "Application settings, loaded from a single JSON config file.\n\nThe LLM is configured the robotsix-llmio way \u2014 pick a capability\n``model_level`` and llmio resolves the provider + model for that level\n(from its baked default :class:`~robotsix_llmio.config.TierLevelConfig`).\n\nAttributes:\n    llmio_model_level: Capability level \u2014 ``1`` (cheapest/fastest) to\n        ``4`` (frontier). The level encodes the provider + model: by\n        default levels 1-2 use ``openrouter``, level 3 uses\n        ``claudeSDK``/``opus``, level 4 ``claudeSDK``/``claude-fable-5``.\n    llmio_api_key: Provider API key, forwarded to llmio when the chosen\n        level's provider needs one (e.g. ``openrouter``); unused\n        by keyless providers like ``claudeSDK``.\n    summary_model_level: Capability level used to generate the\n        structured conversation summary (``POST /summary``, regenerated\n        after every assistant turn). Defaults to the cheapest tier since\n        it is a bounded extraction task, not open-ended reasoning \u2014\n        reusing the main agent's (often much pricier) level here would\n        burn a full-capability call on every single turn.\n    agent_instruction: System instruction handed to the LLM agent.\n        Includes guidance on spawning subsessions for background work.\n    server_host: Host address the chat SSE server binds to.\n    server_port: Port the chat SSE server listens on.\n    idle_timeout_minutes: Minutes of no user activity before the UI\n        auto-restarts the conversation; ``0`` disables the feature.\n    subsessions: Unified subsession system (background/periodic/user-chat\n        sub-agents) \u2014 see :class:`SubsessionsSettings`.\n    log_level: Python logging level name.\n    log_json_format: When ``True`` (default), log lines are emitted as\n        structured JSON via structlog.  Set to ``False`` for human-readable\n        console output during local development.\n    cors_allow_origins: Origins allowed to call /chat cross-origin\n        (empty = none; ``[\"*\"]`` = any). Only needed when the browser\n        UI is hosted on a different origin than the server.\n    correlation_id_header: HTTP header name used for the correlation /\n        request-id (both inbound and outbound). Default ``X-Request-ID``.\n    langfuse: Main-agent Langfuse observability credentials.\n    max_images_per_message: Maximum number of images a client may attach to\n        a single ``POST /chat`` request.  Default ``8``.\n    max_image_bytes: Maximum decoded size (bytes) of a single attached\n        image.  Default ``5_242_880`` (5 MiB).\n    allowed_image_media_types: Media types accepted for image attachments.\n        Default ``[\"image/png\", \"image/jpeg\", \"image/gif\", \"image/webp\"]``.",
+  "description": "Application settings, loaded from a single JSON config file.\n\nThe LLM is configured the robotsix-llmio way \u2014 pick a capability\n``model_level`` and llmio resolves the provider + model for that level\n(from its baked default :class:`~robotsix_llmio.config.TierLevelConfig`).\n\nAttributes:\n    llmio_model_level: Capability level \u2014 ``1`` (cheapest/fastest) to\n        ``4`` (frontier). The level encodes the provider + model: by\n        default levels 1-2 use ``openrouter``, level 3 uses\n        ``claudeSDK``/``opus``, level 4 ``claudeSDK``/``claude-fable-5``.\n    llmio_api_key: Provider API key, forwarded to llmio when the chosen\n        level's provider needs one (e.g. ``openrouter``); unused\n        by keyless providers like ``claudeSDK``.\n    summary_model_level: Capability level used to generate the\n        structured conversation summary (``POST /summary``, regenerated\n        after every assistant turn). Defaults to the cheapest tier since\n        it is a bounded extraction task, not open-ended reasoning \u2014\n        reusing the main agent's (often much pricier) level here would\n        burn a full-capability call on every single turn.\n    agent_instruction: System instruction handed to the LLM agent.\n        Includes guidance on spawning subsessions for background work.\n    server_host: Host address the chat SSE server binds to.\n    server_port: Port the chat SSE server listens on.\n    idle_timeout_minutes: Minutes of no user activity before the UI\n        auto-restarts the conversation; ``0`` disables the feature.\n    subsessions: Unified subsession system (background/periodic/user-chat\n        sub-agents) \u2014 see :class:`SubsessionsSettings`.\n    log_level: Python logging level name.\n    log_json_format: When ``True`` (default), log lines are emitted as\n        structured JSON via structlog.  Set to ``False`` for human-readable\n        console output during local development.\n    cors_allow_origins: Origins allowed to call /chat cross-origin\n        (empty = none; ``[\"*\"]`` = any). Only needed when the browser\n        UI is hosted on a different origin than the server.\n    correlation_id_header: HTTP header name used for the correlation /\n        request-id (both inbound and outbound). Default ``X-Request-ID``.\n    langfuse: Main-agent Langfuse observability credentials.\n    feedback: Automated feedback analysis that files improvement\n        tickets at compaction and session-end boundaries.\n    max_images_per_message: Maximum number of images a client may attach to\n        a single ``POST /chat`` request.  Default ``8``.\n    max_image_bytes: Maximum decoded size (bytes) of a single attached\n        image.  Default ``5_242_880`` (5 MiB).\n    allowed_image_media_types: Media types accepted for image attachments.\n        Default ``[\"image/png\", \"image/jpeg\", \"image/gif\", \"image/webp\"]``.",
   "properties": {
     "llmio_model_level": {
       "default": 3,
@@ -724,6 +758,9 @@
     },
     "notification": {
       "$ref": "#/$defs/NotificationSettings"
+    },
+    "feedback": {
+      "$ref": "#/$defs/FeedbackSettings"
     },
     "max_images_per_message": {
       "default": 8,

@@ -135,6 +135,13 @@
   "notification": {
     "enabled": false
   },
+  "feedback": {
+    "enabled": false,
+    "model_level": 1,
+    "board_url": "",
+    "board_api_token": "",
+    "timeout": 60.0
+  },
   "max_images_per_message": 8,
   "max_image_bytes": 5242880,
   "allowed_image_media_types": [

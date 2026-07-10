@@ -254,6 +254,12 @@ modules:
       - tests/selfreview/__init__.py
       - tests/selfreview/test_read.py
 
+  - id: feedback
+    description: "Automated feedback analysis — runs at compaction and session-end boundaries, analyses the conversation, and files improvement tickets via POST /tickets/ingest."
+    paths:
+      - src/robotsix_chat/feedback/__init__.py
+      - src/robotsix_chat/feedback/runner.py
+
   - id: ui
     description: "Browser chat UI — self-contained HTML frontend served at /."
     paths:

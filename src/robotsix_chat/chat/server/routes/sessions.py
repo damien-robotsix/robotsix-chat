@@ -139,6 +139,10 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
 
     # 2. Delete the conversation/session itself.
     store: ConversationStore = request.app.state.conversation_store
+
+    # Capture history before deletion (for the feedback run).
+    deletion_turns = store.history(session_id)
+
     result = store.delete_session(owner_id, session_id)
 
     if not result.get("deleted"):
@@ -150,6 +154,11 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
             },
             status_code=404,
         )
+
+    # Schedule a feedback run for the deleted session.
+    feedback_runner = request.app.state.feedback_runner
+    if feedback_runner is not None and deletion_turns:
+        feedback_runner.schedule("session_end", session_id, deletion_turns)
 
     return JSONResponse(
         {
@@ -201,6 +210,13 @@ async def sessions_close_endpoint(request: Request) -> JSONResponse:
             },
             status_code=404,
         )
+
+    # Schedule a feedback run for the closed session.
+    feedback_runner = request.app.state.feedback_runner
+    if feedback_runner is not None:
+        turns = store.history(session_id)
+        if turns:
+            feedback_runner.schedule("session_end", session_id, turns)
 
     return JSONResponse(
         {

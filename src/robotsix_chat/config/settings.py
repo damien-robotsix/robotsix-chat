@@ -20,6 +20,7 @@ from robotsix_chat.config.models import (
     ConversationSettings,
     DiagnosticsSettings,
     DirectRepoSettings,
+    FeedbackSettings,
     GitHubSecuritySettings,
     KnowledgeSettings,
     LangfuseSettings,
@@ -87,6 +88,8 @@ class Settings(BaseModel):
         correlation_id_header: HTTP header name used for the correlation /
             request-id (both inbound and outbound). Default ``X-Request-ID``.
         langfuse: Main-agent Langfuse observability credentials.
+        feedback: Automated feedback analysis that files improvement
+            tickets at compaction and session-end boundaries.
         max_images_per_message: Maximum number of images a client may attach to
             a single ``POST /chat`` request.  Default ``8``.
         max_image_bytes: Maximum decoded size (bytes) of a single attached
@@ -220,6 +223,7 @@ class Settings(BaseModel):
     repo_study: RepoStudySettings = Field(default_factory=RepoStudySettings)
     lifecycle: LifecycleSettings = Field(default_factory=LifecycleSettings)
     notification: NotificationSettings = Field(default_factory=NotificationSettings)
+    feedback: FeedbackSettings = Field(default_factory=FeedbackSettings)
     max_images_per_message: int = 8
     max_image_bytes: int = 5_242_880
     allowed_image_media_types: list[str] = Field(

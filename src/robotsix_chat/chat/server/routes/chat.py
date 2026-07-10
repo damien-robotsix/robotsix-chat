@@ -513,16 +513,18 @@ async def chat_endpoint(
         if idle_session is not None:
             idle_seconds = time.time() - idle_session.wall_last_active
             if idle_seconds > idle_timeout_minutes * 60:
+                compaction_turns = store.history(session_id)
                 summary = await _generate_idle_summary(
                     request.app.state.summary_agent,
-                    store.history(session_id),
+                    compaction_turns,
                 )
                 compacted = store.compact_session(owner_id or "", session_id, summary)
+                old_session_id = session_id
                 session_id = str(compacted["session_id"])
                 logger.info(
                     "Idle timeout (%d min): compacted session %s → %s",
                     idle_timeout_minutes,
-                    idle_session.session_id,
+                    old_session_id,
                     session_id,
                 )
                 # The subsession tree follows the conversation: transfer it
@@ -530,14 +532,21 @@ async def chat_endpoint(
                 # the UI panel for the new session keeps showing it.
                 registry = request.app.state.subsession_registry
                 if registry is not None:
-                    moved = registry.reassign_owner(idle_session.session_id, session_id)
+                    moved = registry.reassign_owner(old_session_id, session_id)
                     if moved:
                         logger.info(
                             "Transferred %d subsession(s) from %s to %s",
                             moved,
-                            idle_session.session_id,
+                            old_session_id,
                             session_id,
                         )
+
+                # Schedule a feedback run for the compacted session.
+                feedback_runner = request.app.state.feedback_runner
+                if feedback_runner is not None:
+                    feedback_runner.schedule(
+                        "compaction", old_session_id, compaction_turns
+                    )
 
     lock_key = client_id or session_id
 

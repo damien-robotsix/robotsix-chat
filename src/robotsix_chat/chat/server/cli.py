@@ -47,6 +47,7 @@ def run_server(
     run_serializer: RunSerializer | None = None,
     subsession_registry: Any = None,
     subsession_delivery: Any = None,
+    feedback_runner: Any = None,
     on_startup: Callable[[], None] | None = None,
     on_startup_async: Callable[[], Any] | None = None,
     on_shutdown: Callable[[], Any] | None = None,
@@ -75,6 +76,7 @@ def run_server(
         run_serializer=run_serializer,
         subsession_registry=subsession_registry,
         subsession_delivery=subsession_delivery,
+        feedback_runner=feedback_runner,
         on_startup=on_startup,
         on_startup_async=on_startup_async,
         on_shutdown=on_shutdown,
@@ -310,6 +312,37 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         bare=True,
     )
 
+    # -- feedback runner ---------------------------------------------------
+    feedback_runner = None
+    if settings.feedback.enabled:
+        feedback_model_level = settings.feedback.model_level
+        if (
+            level_needs_api_key(feedback_model_level)
+            and not settings.llmio_api_key.get_secret_value()
+        ):
+            logger.warning(
+                "feedback.model_level=%d needs an OpenRouter API key which is "
+                "not configured — falling back to level 3 for feedback runner",
+                feedback_model_level,
+            )
+            feedback_model_level = 3
+        from robotsix_chat.feedback import FEEDBACK_SYSTEM_PROMPT, FeedbackRunner
+
+        feedback_agent = create_agent_from_settings(
+            instruction=FEEDBACK_SYSTEM_PROMPT,
+            settings=settings,
+            conversation_store=conversation_store,
+            model_level=feedback_model_level,
+            bare=True,
+        )
+
+        feedback_runner = FeedbackRunner(
+            settings.feedback,
+            feedback_agent,
+            subsession_registry=subsession_registry,
+        )
+        logger.info("Feedback runner enabled (model_level=%d)", feedback_model_level)
+
     # -- resume persisted subsessions after redeploy -----------------------
     def _resume() -> None:
         """Resume periodic subsessions; report interrupted one-shot work."""
@@ -341,6 +374,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         run_serializer=run_serializer,
         subsession_registry=subsession_registry,
         subsession_delivery=delivery,
+        feedback_runner=feedback_runner,
         on_startup=_resume,
         direct_repo_settings=settings.direct_repo,
         github_security_settings=settings.github_security,

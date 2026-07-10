@@ -266,6 +266,7 @@ class TestRunServer:
             run_serializer=run_serializer,
             subsession_registry=sub_registry,
             subsession_delivery=sub_delivery,
+            feedback_runner=None,
             on_startup=on_startup,
             on_startup_async=None,
             on_shutdown=None,
