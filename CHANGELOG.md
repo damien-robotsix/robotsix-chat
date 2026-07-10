@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add `notify_user` push-notification tool (ntfy backend) so the agent can proactively alert the user outside the active conversation flow — three trigger classes: subsession chat opens, subsession completes/raises, and state/result requiring user awareness. Gated by `notification.enabled`.
 - Extract inline `<style>` and `<script>` blocks from `ui/index.html` into
   standalone `ui/static/chat.css` and `ui/static/chat.js` files; serve them
   via a Starlette `StaticFiles` mount at `/static`. The `IDLE_TIMEOUT_MINUTES`

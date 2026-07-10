@@ -26,6 +26,7 @@ from robotsix_chat.config.models import (
     LifecycleSettings,
     MailSettings,
     MemorySettings,
+    NotificationSettings,
     RefDocsSettings,
     RepoStudySettings,
     SelfReviewSettings,
@@ -218,6 +219,7 @@ class Settings(BaseModel):
     )
     repo_study: RepoStudySettings = Field(default_factory=RepoStudySettings)
     lifecycle: LifecycleSettings = Field(default_factory=LifecycleSettings)
+    notification: NotificationSettings = Field(default_factory=NotificationSettings)
     max_images_per_message: int = 8
     max_image_bytes: int = 5_242_880
     allowed_image_media_types: list[str] = Field(
@@ -304,6 +306,11 @@ class Settings(BaseModel):
             raise ValueError(
                 "version_check.repo is required when version_check.enabled is true — "
                 "provide it via the `version_check.repo` config field"
+            )
+        if self.notification.enabled and not self.notification.ntfy_topic:
+            raise ValueError(
+                "notification.ntfy_topic is required when notification is enabled — "
+                "provide it via the `notification.ntfy_topic` config field"
             )
 
     # ------------------------------------------------------------------

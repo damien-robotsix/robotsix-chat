@@ -274,3 +274,11 @@ modules:
       - src/robotsix_chat/version_check/client.py
       - tests/version_check/__init__.py
       - tests/version_check/test_version_check.py
+
+  - id: notification
+    description: "Push notification tool for the agent — exposes build_notification_tools(), a factory returning a notify_user LLM tool that pushes concise alerts (title, body, urgency, optional link) to the user's device via ntfy so the agent can proactively notify the user outside the active conversation flow."
+    paths:
+      - src/robotsix_chat/notification/__init__.py
+      - src/robotsix_chat/notification/skill.md
+      - tests/notification/__init__.py
+      - tests/notification/test_notification.py

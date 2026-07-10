@@ -36,6 +36,7 @@ from robotsix_chat.lifecycle import build_lifecycle_tools
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.mail import build_mail_tools
 from robotsix_chat.memory import NullMemory, build_memory
+from robotsix_chat.notification import build_notification_tools
 from robotsix_chat.refdocs import build_refdocs_tools
 from robotsix_chat.repo.direct import build_direct_repo_tools
 from robotsix_chat.repo.study import build_repo_study_tools
@@ -474,6 +475,14 @@ def create_agent_from_settings(
         if lifecycle_skill:
             instruction = f"{instruction}\n\n{lifecycle_skill}"
 
+    # Inject the notification component skill when notification is enabled.
+    if not bare and settings.notification.enabled:
+        from robotsix_chat.notification import load_notification_skill
+
+        notification_skill = load_notification_skill()
+        if notification_skill:
+            instruction = f"{instruction}\n\n{notification_skill}"
+
     effective_level = (
         model_level if model_level is not None else settings.llmio_model_level
     )
@@ -500,6 +509,7 @@ def create_agent_from_settings(
             *build_recent_activity_tools(settings.self_review, conversation_store),
             *build_version_check_tools(settings.version_check),
             *build_lifecycle_tools(settings.lifecycle),
+            *build_notification_tools(settings.notification),
         ]
     )
     if tool_wrapper is not None:
