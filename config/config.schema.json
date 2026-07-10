@@ -223,7 +223,6 @@
       "type": "object"
     },
     "GitHubSecuritySettings": {
-      "additionalProperties": false,
       "description": "Repository security-feature toggle via the GitHub App installation.\n\nWhen enabled, the chat agent gains a ``set_repo_security_and_analysis``\ntool that can enable or disable repository-level security features\n(dependency graph, advanced security, secret scanning) on repos under\nthe configured GitHub App's installation scope.\n\n**Guardrails built into the tool (not configurable):**\n- Repo scope is resolved dynamically from the GitHub App installation\n  (list-installation-repositories) \u2014 no static allowlist.\n- Only repos within the installation scope are modifiable.\n- Each feature toggle explicitly requires ``\"enabled\"`` or ``\"disabled\"``\n  \u2014 no accidental bulk changes.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no security-feature tool\n        is offered.\n    github_org: GitHub organisation name whose repos are in scope\n        (e.g. ``\"damien-robotsix\"``).  The tool only targets repos\n        under this org.\n    deploy_api_key: API key that clients must present in the\n        ``X-API-Key`` header when calling the\n        ``PATCH /chat/github/repos/{owner}/{repo}/settings``\n        endpoint.  When empty, the endpoint returns 503 (unconfigured).\n    timeout: Per-request HTTP timeout in seconds.\n\nNote: GitHub App authentication is delegated to\n:class:`DirectRepoSettings` \u2014 those credentials must also be configured\nfor the tool to function.",
       "properties": {
         "enabled": {
@@ -757,11 +756,11 @@
     "lifecycle": {
       "$ref": "#/$defs/LifecycleSettings"
     },
-    "feedback": {
-      "$ref": "#/$defs/FeedbackSettings"
-    },
     "notification": {
       "$ref": "#/$defs/NotificationSettings"
+    },
+    "feedback": {
+      "$ref": "#/$defs/FeedbackSettings"
     },
     "max_images_per_message": {
       "default": 8,
