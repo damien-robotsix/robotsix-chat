@@ -103,7 +103,11 @@ async def test_chat_endpoint_streams_tokens() -> None:
     assert frames[0] == {"type": SSE_TOKEN_TYPE, "content": "Hello"}
     assert frames[1] == {"type": SSE_TOKEN_TYPE, "content": " "}
     assert frames[2] == {"type": SSE_TOKEN_TYPE, "content": "world!"}
-    assert frames[-1] == {"type": SSE_DONE_TYPE}
+    done = frames[-1]
+    assert done["type"] == SSE_DONE_TYPE
+    # The done frame reports the session the turn landed in, so the client
+    # can adopt a continuation session after idle-timeout compaction.
+    assert isinstance(done["session_id"], str) and done["session_id"]
 
 
 @pytest.mark.asyncio
@@ -126,7 +130,7 @@ async def test_chat_endpoint_opens_with_heartbeat() -> None:
         if e.startswith("data: ")
     ]
     assert {"type": SSE_TOKEN_TYPE, "content": "hi"} in frames
-    assert {"type": SSE_DONE_TYPE} in frames
+    assert any(f["type"] == SSE_DONE_TYPE for f in frames)
 
 
 @pytest.mark.asyncio
@@ -145,7 +149,10 @@ async def test_chat_endpoint_sends_done_at_end() -> None:
     async with mock_app(tokens=["one", "two"]) as f:
         response = await f.client.post("/chat", json={"message": "x"})
 
-    assert response.text.rstrip("\r\n").endswith(f'data: {{"type": "{SSE_DONE_TYPE}"}}')
+    tail = response.text.rstrip("\r\n").rsplit("data: ", 1)[-1]
+    done = json.loads(tail)
+    assert done["type"] == SSE_DONE_TYPE
+    assert isinstance(done["session_id"], str) and done["session_id"]
 
 
 # ---------------------------------------------------------------------------
@@ -2386,3 +2393,66 @@ def test_create_app_and_run_server_shared_params() -> None:
             f"Default mismatch for '{name}': "
             f"create_app={ca_default!r}, run_server={rs_default!r}"
         )
+
+
+@pytest.mark.asyncio
+async def test_stale_compacted_session_id_reroutes_instead_of_recompacting() -> None:
+    """Regression: the idle-compaction runaway that split conversations.
+
+    After an idle timeout compacts a session into a continuation, a client
+    still posting with the OLD session id (its localStorage pointer updates
+    only when it sees the response) must be rerouted to the continuation —
+    previously the old session's frozen last-active re-triggered compaction
+    on every message, minting a new session per message.  Subsessions must
+    follow the conversation to the continuation session.
+    """
+    import time as time_mod
+
+    store = ConversationStore()
+    old_sid = cast(str, store.create_session("owner-idle")["session_id"])
+    store.record(old_sid, "owner-idle", "hi", "hello!")
+    registry = SubsessionRegistry(store_path=None)
+    sub = _register_subsession(registry, owner=old_sid)
+
+    # Make the session look idle: last active one hour ago.
+    old_session = store.get_session(old_sid)
+    assert old_session is not None
+    old_session.wall_last_active = time_mod.time() - 3600
+
+    async with mock_app(
+        tokens=["ok"],
+        summary_agent=MockAgent(tokens=["summary of prior chat"]),
+        conversation_store=store,
+        subsession_registry=registry,
+        idle_timeout_minutes=30,
+    ) as f:
+        # First message after the idle gap → compaction into a continuation.
+        response1 = await f.client.post(
+            "/chat",
+            json={"message": "back", "session_id": old_sid, "owner_id": "owner-idle"},
+        )
+        frames1 = _parse_sse(response1)
+        done1 = [fr for fr in frames1 if fr["type"] == SSE_DONE_TYPE][-1]
+        new_sid = done1["session_id"]
+        assert new_sid != old_sid
+
+        # The old session points at the continuation; subsessions moved.
+        assert store.resolve_session(old_sid) == new_sid
+        assert [i.id for i in registry.list_for_owner(new_sid)] == [sub.id]
+        assert registry.list_for_owner(old_sid) == []
+        assert sub.owner_session_id == new_sid
+
+        # Second message still using the STALE id → rerouted, NOT re-compacted.
+        response2 = await f.client.post(
+            "/chat",
+            json={"message": "again", "session_id": old_sid, "owner_id": "owner-idle"},
+        )
+        frames2 = _parse_sse(response2)
+        done2 = [fr for fr in frames2 if fr["type"] == SSE_DONE_TYPE][-1]
+        assert done2["session_id"] == new_sid
+
+    # Both post-gap turns landed in the one continuation session.
+    assert [u for u, _ in store.history(new_sid)] == ["back", "again"]
+    # Exactly two sessions exist: the compacted original and its continuation.
+    sessions, _ = store.list_sessions("owner-idle")
+    assert {s["session_id"] for s in sessions} == {old_sid, new_sid}

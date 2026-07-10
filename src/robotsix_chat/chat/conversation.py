@@ -66,6 +66,9 @@ class Session:
     turn_count: int = 0
     closed: bool = False
     compacted_summary: str | None = None
+    # Set when an idle-timeout compaction replaced this session: the id of
+    # the continuation session that new messages should be routed to.
+    compacted_into: str | None = None
 
 
 @dataclass
@@ -239,6 +242,12 @@ class ConversationStoreSerializer:
                     if isinstance(compacted_summary_raw, str)
                     else None
                 )
+                compacted_into_raw = sraw.get("compacted_into")
+                compacted_into = (
+                    str(compacted_into_raw)
+                    if isinstance(compacted_into_raw, str)
+                    else None
+                )
 
                 session = Session(
                     session_id=sid,
@@ -248,6 +257,7 @@ class ConversationStoreSerializer:
                     turn_count=int(sraw.get("turn_count", len(turns))),
                     closed=bool(sraw.get("closed", False)),
                     compacted_summary=compacted_summary,
+                    compacted_into=compacted_into,
                 )
                 sessions[sid] = session
                 session_ids.add(sid)
@@ -290,6 +300,8 @@ class ConversationStoreSerializer:
                 }
                 if session.compacted_summary is not None:
                     session_dict["compacted_summary"] = session.compacted_summary
+                if session.compacted_into is not None:
+                    session_dict["compacted_into"] = session.compacted_into
                 sessions_list.append(session_dict)
             if sessions_list:
                 data[owner_id] = {
@@ -656,7 +668,7 @@ class ConversationStore:
     def compact_session(
         self,
         owner_id: str,
-        session_id: str,  # noqa: ARG002 — kept for call-site clarity & future use
+        session_id: str,
         summary: str,
     ) -> dict[str, object]:
         """Create a new session for *owner_id* with a compaction summary.
@@ -666,8 +678,11 @@ class ConversationStore:
         the agent's context on the next user message so the LLM retains
         awareness of the prior conversation.
 
-        *session_id* is accepted for call-site clarity and potential future
-        use (e.g. marking the old session compacted) but is currently unused.
+        The old *session_id* is marked with ``compacted_into`` pointing at the
+        new session, so a client still posting to the old id (its localStorage
+        pointer only updates when it sees the response) is rerouted by
+        :meth:`resolve_session` instead of triggering another compaction —
+        without this every message after an idle gap minted a fresh session.
 
         Returns the new session metadata dict including ``compacted_summary``.
         """
@@ -679,6 +694,10 @@ class ConversationStore:
             compacted_summary=summary,
         )
         self._sessions[sid] = session
+
+        old_session = self._sessions.get(session_id)
+        if old_session is not None:
+            old_session.compacted_into = sid
 
         owner = self._owners.get(owner_id)
         if owner is None:
@@ -702,6 +721,23 @@ class ConversationStore:
             "closed": False,
             "compacted_summary": summary,
         }
+
+    def resolve_session(self, session_id: str) -> str:
+        """Follow ``compacted_into`` links to the live continuation session.
+
+        Returns *session_id* itself when the session is unknown or was never
+        compacted.  Guards against cycles and unbounded chains by capping the
+        walk at the number of tracked sessions.
+        """
+        seen: set[str] = set()
+        current = session_id
+        while current not in seen:
+            seen.add(current)
+            session = self._sessions.get(current)
+            if session is None or session.compacted_into is None:
+                return current
+            current = session.compacted_into
+        return current
 
     def get_compacted_summary(self, session_id: str) -> str | None:
         """Return the compaction summary stored for *session_id*, or ``None``.

@@ -646,3 +646,62 @@ async def test_reap_orphans_skips_tasks_with_tree_membership() -> None:
     task.cancel()
     with contextlib.suppress(asyncio.CancelledError):
         _ = await task
+
+
+# ---------------------------------------------------------------------------
+# reassign_owner
+# ---------------------------------------------------------------------------
+
+
+def test_reassign_owner_moves_tree_and_publishes_to_new_owner() -> None:
+    """The whole tree moves to the new owner and started frames are pushed."""
+    sink = RecordingSink()
+    registry = SubsessionRegistry(event_sink=sink, store_path=None)
+    a = _create(registry, owner="sess-old", title="one")
+    b = _create(registry, owner="sess-old", title="two")
+    other = _create(registry, owner="sess-other", title="unrelated")
+
+    moved = registry.reassign_owner("sess-old", "sess-new")
+
+    assert moved == 2
+    assert a.owner_session_id == "sess-new"
+    assert b.owner_session_id == "sess-new"
+    assert other.owner_session_id == "sess-other"
+    assert {i.id for i in registry.list_for_owner("sess-new")} == {a.id, b.id}
+    assert registry.list_for_owner("sess-old") == []
+    started_for_new = [
+        frame
+        for session_id, frame in sink.of_type(SSE_SUBSESSION_STARTED_TYPE)
+        if session_id == "sess-new"
+    ]
+    assert {frame["subsession_id"] for frame in started_for_new} == {a.id, b.id}
+
+
+def test_reassign_owner_same_or_unknown_owner_is_a_noop() -> None:
+    """Same-owner and unknown-owner reassignments move nothing."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, owner="sess-A")
+
+    assert registry.reassign_owner("sess-A", "sess-A") == 0
+    assert registry.reassign_owner("ghost", "sess-B") == 0
+    assert info.owner_session_id == "sess-A"
+    assert [i.id for i in registry.list_for_owner("sess-A")] == [info.id]
+
+
+def test_reassign_owner_persists_new_owner(tmp_path: Path) -> None:
+    """The new owner_session_id is written to the JSON store."""
+    store_path = tmp_path / "subsessions.json"
+    registry = SubsessionRegistry(store_path=store_path)
+    info = _create(registry, owner="sess-old")
+
+    registry.reassign_owner("sess-old", "sess-new")
+
+    raw = json.loads(store_path.read_text(encoding="utf-8"))
+    entries = raw if isinstance(raw, list) else list(raw.values())
+    stored = [
+        e
+        for e in entries
+        if e.get("id") == info.id or e.get("subsession_id") == info.id
+    ]
+    assert stored, f"subsession {info.id} not found in store: {raw!r}"
+    assert stored[0]["owner_session_id"] == "sess-new"

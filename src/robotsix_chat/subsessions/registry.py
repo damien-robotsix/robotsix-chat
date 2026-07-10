@@ -437,6 +437,40 @@ class SubsessionRegistry:
                 closed += 1
         return closed
 
+    def reassign_owner(
+        self, old_owner_session_id: str, new_owner_session_id: str
+    ) -> int:
+        """Move every subsession owned by *old_owner_session_id* to the new owner.
+
+        Used when an idle-timeout compaction replaces a chat session with a
+        continuation session: the whole subsession tree (all kinds, all
+        statuses) follows the conversation, so running work keeps delivering
+        summaries to the session the user is actually in and the UI panel for
+        the continuation shows the full tree.
+
+        Publishes a ``subsession_started`` frame per moved subsession to the
+        new owner's event stream so an already-subscribed browser picks them
+        up without a refetch.  Returns the number of subsessions moved.
+        """
+        if old_owner_session_id == new_owner_session_id:
+            return 0
+        sub_ids = self._by_owner.pop(old_owner_session_id, None)
+        if not sub_ids:
+            return 0
+        moved = 0
+        for sub_id in sub_ids:
+            info = self._subs.get(sub_id)
+            if info is None:
+                continue
+            info.owner_session_id = new_owner_session_id
+            self._by_owner[new_owner_session_id].add(sub_id)
+            self._publish(
+                new_owner_session_id, subsession_started_frame(info.snapshot())
+            )
+            moved += 1
+        self._persist()
+        return moved
+
     # ------------------------------------------------------------------
     # queries
     # ------------------------------------------------------------------
