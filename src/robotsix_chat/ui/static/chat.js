@@ -1526,6 +1526,16 @@
           // here instead of as a token/done frame. Render it as a normal
           // assistant bubble.
           if (frame.text) addAssistantBubble(frame.text);
+        } else if (frame.type === "notification") {
+          // Push notification from the agent's notify_user tool.
+          // The browser shows a native notification when permission is
+          // granted; silently ignored otherwise (same as the server-side
+          // silent drop when no client is connected).
+          if ("Notification" in window && Notification.permission === "granted") {
+            new Notification(frame.title || "Notification", {
+              body: frame.body || "",
+            });
+          }
         }
         // ignore unknown types gracefully
       },
@@ -2067,6 +2077,14 @@
   // ---- Initial state ---------------------------------------------------
   setConnectionStatus(true);  // optimistic green; turns red on first error
   renderSubsessionsList();    // show the empty state until the snapshot lands
+
+  // Request browser notification permission early so the agent's
+  // notify_user tool can push native alerts.  Silently ignored when the
+  // browser does not support the Notifications API or when permission
+  // was previously denied.
+  if ("Notification" in window && Notification.permission === "default") {
+    Notification.requestPermission();
+  }
 
   // Bootstrap: fetch sessions, pick the active one, then load history/events.
   fetchSessions().then(function (data) {
