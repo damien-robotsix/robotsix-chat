@@ -2,11 +2,15 @@
 
 When a background subsession needs user awareness or action (a decision
 escalation, a completed task, a blocking condition), the agent calls
-``notify_user`` which pushes a concise alert — one-line summary +
-optional link — to a delivery provider (ntfy by default).
+``notify_user`` which publishes a notification event to connected clients
+over the existing SSE channel (EventBus).  The user's browser (or mobile
+app in future) renders the event via the native Notifications API.
+
+Delivery only reaches clients that are currently connected — notifications
+are silently dropped when no browser is listening for the session.
 
 Exposes :func:`build_notification_tools` — a factory returning the LLM
-tool that pushes notifications.  Returns no tools when disabled, so the
+tool that publishes notifications.  Returns no tools when disabled, so the
 chat runs exactly as before.  Also exposes :func:`load_notification_skill`
 which returns the component skill markdown for injection into the agent
 instruction.
@@ -31,10 +35,9 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
-import httpx
-
 if TYPE_CHECKING:
-    from robotsix_chat.config import NotificationSettings
+    from robotsix_chat.chat.events import EventSink
+    from robotsix_chat.config.models import NotificationSettings
 
 logger = logging.getLogger(__name__)
 
@@ -59,19 +62,12 @@ def load_notification_skill() -> str:
 
 def build_notification_tools(
     settings: NotificationSettings,
+    event_sink: EventSink,
+    session_id: str,
 ) -> list[Callable[..., Any]]:
     """Return the notification tool for the agent, or ``[]`` when disabled."""
     if not settings.enabled:
         return []
-
-    ntfy_topic = settings.ntfy_topic
-    ntfy_token = settings.ntfy_token.get_secret_value()
-    ntfy_server = settings.ntfy_server.rstrip("/")
-    timeout = settings.timeout
-    publish_url = f"{ntfy_server}/{ntfy_topic}"
-    headers: dict[str, str] = {}
-    if ntfy_token:
-        headers["Authorization"] = f"Bearer {ntfy_token}"
 
     async def notify_user(
         title: str,
@@ -79,7 +75,7 @@ def build_notification_tools(
         urgency: str = "default",
         link: str = "",
     ) -> str:
-        """Push a concise notification to the user's device.
+        """Push a concise notification to the user's connected browser.
 
         Use this to proactively alert the user when something needs their
         awareness or action outside the active conversation flow.  Keep
@@ -101,6 +97,9 @@ def build_notification_tools(
         routine completions, ``"default"`` for standard notifications,
         ``"high"`` for urgent attention).
 
+        Delivery only reaches clients that are currently connected — the
+        notification is silently dropped when no browser is listening.
+
         Args:
             title: One-line notification title (required, keep it short).
             body: The notification message body (required, concise summary
@@ -112,41 +111,22 @@ def build_notification_tools(
                 id). Leave empty when no link is relevant.
 
         Returns:
-            ``"Notification sent."`` on success, or an error message when
-            the push failed.
+            ``"Notification sent."`` on success.  Publication is always
+            successful — frames are silently dropped when no client is
+            connected.
 
         """
         if urgency not in ("low", "default", "high"):
             urgency = "default"
 
-        payload: dict[str, str] = {
+        frame: dict[str, object] = {
+            "type": "notification",
             "title": title,
-            "message": body,
-            "priority": urgency,
+            "body": body,
+            "urgency": urgency,
+            "link": link,
         }
-        if link:
-            payload["click"] = link
-
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                resp = await client.post(
-                    publish_url,
-                    json=payload,
-                    headers=headers,
-                )
-                if resp.is_success:
-                    return "Notification sent."
-                logger.warning(
-                    "Notification push returned %s: %s",
-                    resp.status_code,
-                    resp.text[:500],
-                )
-                return f"Notification failed — server returned HTTP {resp.status_code}."
-        except httpx.TimeoutException:
-            logger.exception("Notification push timed out")
-            return "Notification failed — request timed out."
-        except Exception:
-            logger.exception("Notification push error")
-            return "Notification failed — unexpected error."
+        event_sink.publish(session_id, frame)
+        return "Notification sent."
 
     return [notify_user]

@@ -509,13 +509,14 @@ def create_agent_from_settings(
             *build_recent_activity_tools(settings.self_review, conversation_store),
             *build_version_check_tools(settings.version_check),
             *build_lifecycle_tools(settings.lifecycle),
-            *build_notification_tools(settings.notification),
         ]
     )
     if tool_wrapper is not None:
         tools = tool_wrapper(tools)
 
     request_tools_factory: Callable[[str], list[Any]] | None = None
+    req_factories: list[Callable[[str], list[Any]]] = []
+
     if not bare and subsession_env is not None:
         from robotsix_chat.subsessions import (
             SubsessionContext as _Ctx,
@@ -549,7 +550,26 @@ def create_agent_from_settings(
                     ),
                 )
 
-            request_tools_factory = _make_request_tools
+            req_factories.append(_make_request_tools)
+
+    if not bare and settings.notification.enabled and event_sink is not None:
+        def _make_notification_tools(session_id: str) -> list[Any]:
+            return build_notification_tools(
+                settings.notification,
+                event_sink=event_sink,
+                session_id=session_id,
+            )
+
+        req_factories.append(_make_notification_tools)
+
+    if req_factories:
+        def _compose(session_id: str) -> list[Any]:
+            result: list[Any] = []
+            for f in req_factories:
+                result.extend(f(session_id))
+            return result
+
+        request_tools_factory = _compose
 
     return LlmioChatAgent(
         model_level=effective_level,

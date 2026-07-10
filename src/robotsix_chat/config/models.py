@@ -502,33 +502,23 @@ class GitHubSecuritySettings(BaseModel):
 
 
 class NotificationSettings(BaseModel):
-    """Push notification settings — lets the agent alert the user proactively.
+    """Browser notification settings — lets the agent alert the user proactively.
 
-    When enabled, the agent gains a ``notify_user`` tool that pushes a
-    one-line alert to the user's device via a delivery provider (ntfy by
-    default).  Notifications are concise: title, body, urgency, and an
-    optional link.  Credentials are provisioned through the config file.
+    When enabled, the agent gains a ``notify_user`` tool that publishes a
+    notification event to connected clients over the existing SSE channel
+    (EventBus).  The user's browser renders the event via the native
+    Notifications API.
+
+    Delivery only reaches clients that are currently connected — the
+    notification is silently dropped when no browser is listening.
 
     Attributes:
         enabled: Master switch.  When ``False``, no notify_user tool is
             offered.
-        provider: Delivery provider.  ``"ntfy"`` is the only current
-            backend.  Default ``"ntfy"``.
-        ntfy_topic: ntfy topic name (the path component after the server).
-            Required when *enabled* and provider is ``"ntfy"``.
-        ntfy_token: Optional ntfy access token for protected topics.
-        ntfy_server: Base URL of the ntfy server.  Default
-            ``"https://ntfy.sh"``.
-        timeout: Per-request HTTP timeout in seconds.
 
     """
 
     enabled: bool = False
-    provider: str = "ntfy"
-    ntfy_topic: str = ""
-    ntfy_token: SecretStr = SecretStr("")
-    ntfy_server: str = "https://ntfy.sh"
-    timeout: float = 30.0
 
 
 class CentralDeploySettings(BaseModel):

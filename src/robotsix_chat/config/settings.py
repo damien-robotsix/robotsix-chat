@@ -307,11 +307,7 @@ class Settings(BaseModel):
                 "version_check.repo is required when version_check.enabled is true — "
                 "provide it via the `version_check.repo` config field"
             )
-        if self.notification.enabled and not self.notification.ntfy_topic:
-            raise ValueError(
-                "notification.ntfy_topic is required when notification is enabled — "
-                "provide it via the `notification.ntfy_topic` config field"
-            )
+
 
     # ------------------------------------------------------------------
     # Factories

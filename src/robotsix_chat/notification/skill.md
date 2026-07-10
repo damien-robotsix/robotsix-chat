@@ -1,8 +1,12 @@
 # notify_user skill
 
-The `notify_user` tool pushes a concise alert to the user's device via a push-notification
-provider (ntfy).  It is the agent's only channel for proactive, out-of-band communication — the
-user receives the notification on their device even when they are not watching the conversation.
+The `notify_user` tool publishes a notification event that reaches the user's connected
+browser (or mobile app in future) over the existing SSE channel.  It is the agent's only
+channel for proactive, out-of-band communication — the user receives the notification as a
+browser-native alert when they are connected to the session.
+
+**Delivery limitation:** notifications only reach clients that are currently connected.
+When no browser is listening for the session, the notification is silently dropped.
 
 ## Allowed operations
 

@@ -132,12 +132,7 @@
     "timeout": 30.0
   },
   "notification": {
-    "enabled": false,
-    "provider": "ntfy",
-    "ntfy_topic": "",
-    "ntfy_token": "",
-    "ntfy_server": "https://ntfy.sh",
-    "timeout": 30.0
+    "enabled": false
   },
   "max_images_per_message": 8,
   "max_image_bytes": 5242880,
