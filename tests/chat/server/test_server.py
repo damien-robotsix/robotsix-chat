@@ -827,8 +827,8 @@ async def test_ui_injects_history_load_path() -> None:
     assert response.status_code == 200
     assert 'href="/static/chat.css"' in response.text
     assert 'src="/static/chat.js"' in response.text
-    assert 'idle-timeout-minutes' in response.text
-    assert 'project-title' in response.text
+    assert "idle-timeout-minutes" in response.text
+    assert "project-title" in response.text
 
 
 # ---------------------------------------------------------------------------
