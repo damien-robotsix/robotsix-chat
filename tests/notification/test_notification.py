@@ -11,13 +11,12 @@ from typing import Any
 
 import pytest
 
-from robotsix_chat.chat.events import EventBus, EventSink
+from robotsix_chat.chat.events import EventBus
 from robotsix_chat.config import NotificationSettings
 from robotsix_chat.notification import (
     build_notification_tools,
     load_notification_skill,
 )
-
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -34,9 +33,11 @@ class SpySink:
     """An :class:`EventSink` spy that records every published frame."""
 
     def __init__(self) -> None:
+        """Initialize the spy with an empty call log."""
         self.calls: list[tuple[str, dict[str, object]]] = []
 
     def publish(self, session_id: str, frame: dict[str, object]) -> None:
+        """Record the published frame along with the session id."""
         self.calls.append((session_id, dict(frame)))
 
 
@@ -85,14 +86,11 @@ def test_build_enabled_returns_one_tool() -> None:
 
 @pytest.mark.asyncio
 async def test_notify_user_success() -> None:
-    """Calling notify_user returns 'Notification sent.' and publishes the
-    expected frame on the EventSink."""
+    """notify_user returns success and publishes the expected frame."""
     spy = SpySink()
     session_id = "sess-1"
 
-    tools = build_notification_tools(
-        _settings(), event_sink=spy, session_id=session_id
-    )
+    tools = build_notification_tools(_settings(), event_sink=spy, session_id=session_id)
     result = await tools[0](title="Test", body="Test body")
 
     assert result == "Notification sent."
@@ -112,9 +110,7 @@ async def test_notify_user_with_link() -> None:
     spy = SpySink()
     session_id = "sess-2"
 
-    tools = build_notification_tools(
-        _settings(), event_sink=spy, session_id=session_id
-    )
+    tools = build_notification_tools(_settings(), event_sink=spy, session_id=session_id)
     await tools[0](
         title="PR merged",
         body="PR #42 was merged.",
@@ -196,8 +192,7 @@ async def test_notify_user_publishes_to_correct_session() -> None:
 
 @pytest.mark.asyncio
 async def test_notify_user_no_subscribers_returns_success() -> None:
-    """When no client is subscribed to the EventBus session, the tool still
-    returns 'Notification sent.' (silent drop — design trade-off)."""
+    """notify_user still returns success when no subscriber is connected."""
     bus = EventBus()
     session_id = "sess-no-sub"
 

@@ -412,6 +412,18 @@
       "title": "MemorySettings",
       "type": "object"
     },
+    "NotificationSettings": {
+      "description": "Browser notification settings \u2014 lets the agent alert the user proactively.\n\nWhen enabled, the agent gains a ``notify_user`` tool that publishes a\nnotification event to connected clients over the existing SSE channel\n(EventBus).  The user's browser renders the event via the native\nNotifications API.\n\nDelivery only reaches clients that are currently connected \u2014 the\nnotification is silently dropped when no browser is listening.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no notify_user tool is\n        offered.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        }
+      },
+      "title": "NotificationSettings",
+      "type": "object"
+    },
     "RefDocsSettings": {
       "description": "Read-only reference-docs tool for the agent.\n\nLets the agent fetch documentation from allowlisted GitHub repos on\ndemand. Primarily used to consult the board-workflow reference repo\nwhen deciding whether a ticket needs manual human action. The tool is\nstrictly read-only, fetches are on-demand (no bulk ingestion), and only\nrepos in the *repos* allowlist are reachable.\n\nAttributes:\n    enabled: Master switch. When ``False``, no refdocs tools are offered.\n    repos: Allowlist of ``owner/name`` GitHub repos the agent may read.\n        The board-workflow reference repo goes here. The tool refuses\n        any repo not in this list.\n    ref: Default git ref/branch to read from (``\"main\"``).\n    github_token: Optional PAT for private team repos; public repos work\n        without a token.\n    base_url: Overridable base URL for GitHub Enterprise.\n    timeout: Per-request HTTP timeout in seconds.",
       "properties": {
@@ -702,6 +714,9 @@
     },
     "lifecycle": {
       "$ref": "#/$defs/LifecycleSettings"
+    },
+    "notification": {
+      "$ref": "#/$defs/NotificationSettings"
     },
     "max_images_per_message": {
       "default": 8,
