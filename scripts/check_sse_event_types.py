@@ -63,6 +63,7 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parent.parent
     events_py = repo_root / "src" / "robotsix_chat" / "chat" / "events.py"
     index_html = repo_root / "src" / "robotsix_chat" / "ui" / "index.html"
+    chat_js = repo_root / "src" / "robotsix_chat" / "ui" / "static" / "chat.js"
 
     # ------------------------------------------------------------------
     # Parse canonical constants
@@ -83,9 +84,9 @@ def main() -> int:
     canonical_values: set[str] = set(canonical.values())
 
     # ------------------------------------------------------------------
-    # Collect SSE-type strings from HTML
+    # Collect SSE-type strings from HTML + chat.js
     # ------------------------------------------------------------------
-    html_strings = _iter_html_js_strings(index_html)
+    html_strings = _iter_html_js_strings(index_html) + _iter_html_js_strings(chat_js)
     # We only care about strings that match any canonical value; avoid
     # flagging unrelated strings like "error", "warn", etc.
     html_sse_strings = [s for s in html_strings if s in canonical_values]
@@ -118,7 +119,9 @@ def main() -> int:
     # ------------------------------------------------------------------
     # Re-scan without pre-filtering so we catch strings that don't match
     # any canonical value but still look like SSE type references.
-    raw_html_strings = _iter_html_js_strings(index_html)
+    raw_html_strings = _iter_html_js_strings(index_html) + _iter_html_js_strings(
+        chat_js
+    )
     # Deduplicate while preserving uniqueness
     unique_html: list[str] = []
     seen: set[str] = set()

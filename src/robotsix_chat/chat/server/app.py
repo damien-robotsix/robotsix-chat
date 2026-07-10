@@ -19,7 +19,8 @@ from starlette.applications import Starlette
 from starlette.exceptions import HTTPException
 from starlette.middleware import Middleware
 from starlette.middleware.cors import CORSMiddleware
-from starlette.routing import Route
+from starlette.routing import Mount, Route
+from starlette.staticfiles import StaticFiles
 from structlog.contextvars import bind_contextvars, clear_contextvars
 
 from robotsix_chat import PROJECT_TITLE
@@ -277,7 +278,7 @@ def create_app(
             e.g. stops the component-agent responder.
 
     """
-    routes = [
+    routes: list[Route | Mount] = [
         Route("/health", health_endpoint, methods=["GET"]),
         Route("/chat", chat_endpoint, methods=["POST"]),
         Route("/events", events_endpoint, methods=["GET"]),
@@ -315,6 +316,12 @@ def create_app(
     ]
     if serve_ui:
         routes.append(Route("/", ui_endpoint, methods=["GET"]))
+        routes.append(
+            Mount(
+                "/static",
+                app=StaticFiles(packages=["robotsix_chat"], directory="ui/static"),
+            )
+        )
 
     # CorrelationIdMiddleware is outermost so every request (and its log lines)
     # carries a request id. Authentication is centralized at the

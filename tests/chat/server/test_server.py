@@ -1370,13 +1370,13 @@ async def test_ui_served_at_root_by_default() -> None:
 @pytest.mark.parametrize(
     "timeout, expect_substring",
     [
-        (30, "var IDLE_TIMEOUT_MINUTES = 30;"),
-        (5, "var IDLE_TIMEOUT_MINUTES = 5;"),
-        (0, "var IDLE_TIMEOUT_MINUTES = 0;"),
+        (30, 'content="30"'),
+        (5, 'content="5"'),
+        (0, 'content="0"'),
     ],
 )
 async def test_ui_injects_idle_timeout(timeout: int, expect_substring: str) -> None:
-    """``GET /`` injects the configured ``idle_timeout_minutes`` into the JS."""
+    """``GET /`` injects the configured ``idle_timeout_minutes`` into a meta tag."""
     async with mock_app(idle_timeout_minutes=timeout) as f:
         response = await f.client.get("/")
 
@@ -1388,31 +1388,29 @@ async def test_ui_injects_idle_timeout(timeout: int, expect_substring: str) -> N
 
 @pytest.mark.asyncio
 async def test_ui_injects_message_queue() -> None:
-    """``GET /`` contains the client-side FIFO message-queue markers."""
+    """``GET /`` references the external chat.js script."""
     async with mock_app() as f:
         response = await f.client.get("/")
 
     assert response.status_code == 200
-    assert "messageQueue" in response.text
-    assert "drainQueue" in response.text
-    assert ".bubble.user.queued" in response.text
+    assert 'src="/static/chat.js"' in response.text
 
 
 @pytest.mark.asyncio
 async def test_ui_renders_event_stream_wiring() -> None:
-    """``GET /`` contains the persistent notification-stream wiring.
+    """``GET /`` references the external chat.css and chat.js files.
 
-    The served HTML must reference the ``/events`` SSE endpoint and the
-    ``openEventStream`` function that opens it.  (The subsession-panel
-    JS markup is covered by ``scripts/check_sse_event_types.py``, which
-    cross-checks the frame-type literals against ``events.py``.)
+    The served HTML must reference the CSS and JS for the UI.
+    (The subsession-panel JS markup is covered by
+    ``scripts/check_sse_event_types.py``, which cross-checks the
+    frame-type literals against ``events.py``.)
     """
     async with mock_app() as f:
         response = await f.client.get("/")
 
     assert response.status_code == 200
-    assert '"/events"' in response.text
-    assert "openEventStream" in response.text
+    assert 'href="/static/chat.css"' in response.text
+    assert 'src="/static/chat.js"' in response.text
 
 
 @pytest.mark.asyncio

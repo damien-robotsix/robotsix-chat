@@ -1,0 +1,688 @@
+  /* ------------------------------------------------------------------ */
+  /* Reset & base                                                        */
+  /* ------------------------------------------------------------------ */
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --font-stack: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto,
+                  Oxygen, Ubuntu, Cantarell, 'Helvetica Neue', Arial, sans-serif;
+    /* Dark theme */
+    --header-bg: #020617;
+    --header-fg: #f1f5f9;
+    --chat-bg: #0f172a;
+    --text-fg: #e2e8f0;
+    --user-bubble-bg: #1d4ed8;
+    --user-bubble-fg: #eff6ff;
+    --assistant-bubble-bg: #1e293b;
+    --assistant-bubble-fg: #e2e8f0;
+    --composer-bg: #0b1120;
+    --composer-border: #334155;
+    --btn-primary-bg: #2563eb;
+    --btn-primary-fg: #ffffff;
+    --btn-primary-hover: #1d4ed8;
+    --btn-disabled-bg: #475569;
+    --error-banner-bg: #450a0a;
+    --error-banner-fg: #fca5a5;
+    --error-banner-border: #7f1d1d;
+    --dot-green: #22c55e;
+    --dot-red: #ef4444;
+    /* Panel widths (kept in sync by JS when panels are resized) */
+    --sessions-width: 300px;
+    --subsessions-width: 420px;
+  }
+
+  html { color-scheme: dark; }
+
+  html, body { height: 100%; font-family: var(--font-stack); }
+
+  body {
+    display: flex; flex-direction: column;
+    background: var(--chat-bg); color: var(--text-fg);
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Header bar                                                          */
+  /* ------------------------------------------------------------------ */
+  #header {
+    display: flex; align-items: center; gap: 0.75rem;
+    padding: 0.5rem 1rem;
+    background: var(--header-bg); color: var(--header-fg);
+    flex-shrink: 0;
+    position: sticky; top: 0; z-index: 30;
+    transition: margin-left 0.3s ease, margin-right 0.3s ease;
+  }
+  #header .title {
+    font-weight: 700; font-size: 1.05rem; flex: 1;
+  }
+  #connection-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--dot-green);
+    flex-shrink: 0;
+    transition: background 0.3s;
+  }
+  #connection-dot.error { background: var(--dot-red); }
+
+  /* Shared style for the labeled header buttons (Chats / Subsessions).
+     Icon + short text label + title tooltip, so their purpose is clear
+     at a glance. */
+  .header-btn {
+    display: inline-flex; align-items: center; gap: 0.3rem;
+    background: none; border: 1px solid rgba(255,255,255,0.18);
+    color: var(--header-fg);
+    font-size: 0.8rem; font-family: inherit; cursor: pointer; line-height: 1;
+    padding: 0.3rem 0.55rem; border-radius: 4px; white-space: nowrap;
+    transition: background 0.15s;
+  }
+  .header-btn:hover { background: rgba(255,255,255,0.15); }
+
+  /* ------------------------------------------------------------------ */
+  /* Subsessions side panel                                              */
+  /* ------------------------------------------------------------------ */
+  #subsessions-panel {
+    display: none; position: fixed; top: 0; right: 0; bottom: 0;
+    width: 420px; min-width: 260px; max-width: 90vw;
+    background: var(--composer-bg); color: var(--text-fg);
+    border-left: 1px solid var(--composer-border);
+    z-index: 20; overflow-y: auto;
+    box-shadow: -4px 0 12px rgba(0,0,0,0.25);
+  }
+  #subsessions-panel.visible { display: flex; flex-direction: column; }
+
+  #subsessions-resize-handle {
+    display: none; position: fixed; top: 0; bottom: 0;
+    width: 6px; cursor: ew-resize; z-index: 21;
+  }
+  #subsessions-resize-handle:hover,
+  #subsessions-resize-handle.active { background: rgba(59, 130, 246, 0.5); }
+
+  .subs-header {
+    padding: 0.6rem 0.75rem; font-weight: 700; font-size: 0.95rem;
+    border-bottom: 1px solid var(--composer-border);
+    background: var(--header-bg); color: var(--header-fg);
+    flex-shrink: 0; display: flex; align-items: center;
+    justify-content: space-between;
+  }
+  .subs-header .dismiss {
+    background: none; border: none; color: var(--header-fg);
+    font-size: 1.2rem; cursor: pointer; line-height: 1; padding: 0 0.2rem;
+    opacity: 0.7;
+  }
+  .subs-header .dismiss:hover { opacity: 1; }
+  .subs-header-actions { display: flex; align-items: center; gap: 0.5rem; }
+  .subs-header .toggle-terminal {
+    background: none; border: 1px solid var(--header-fg);
+    color: var(--header-fg); font-size: 0.72rem; font-weight: 400;
+    cursor: pointer; line-height: 1; padding: 0.2rem 0.45rem;
+    border-radius: 0.8rem; opacity: 0.75; white-space: nowrap;
+  }
+  .subs-header .toggle-terminal:hover { opacity: 1; }
+
+  #subsessions-list { flex: 1; overflow-y: auto; padding: 0.5rem; }
+
+  .subs-empty { padding: 0.75rem 0.5rem; font-size: 0.82rem; color: #64748b; }
+
+  .subs-row {
+    padding: 0.5rem 0.6rem; margin-bottom: 0.4rem;
+    border-radius: 6px; font-size: 0.82rem;
+    border: 2px solid var(--composer-border);
+    background: var(--assistant-bubble-bg);
+    word-break: break-word;
+  }
+  .subs-row.terminal { opacity: 0.55; }
+
+  .subs-row.status-running     { border-left: 3px solid #3b82f6; }
+  .subs-row.status-waiting     { border-left: 3px solid #f59e0b; }
+  .subs-row.status-sleeping    { border-left: 3px solid #64748b; }
+  .subs-row.status-closed      { border-left: 3px solid #475569; }
+  .subs-row.status-failed,
+  .subs-row.status-interrupted { border-left: 3px solid #ef4444; }
+
+  /* Plain block wrappers — purely structural (see renderSubsessionRow),
+     no visual styling of their own so the header/body split is invisible. */
+  .subs-header, .subs-body { display: block; }
+
+  .subs-title-line {
+    display: flex; align-items: center; gap: 0.4rem; flex-wrap: wrap;
+  }
+  .subs-kind  { font-size: 0.72rem; color: #94a3b8; white-space: nowrap; }
+  .subs-title { font-weight: 600; flex: 1; min-width: 0; }
+
+  .subs-status {
+    font-size: 0.68rem; font-weight: 600; padding: 0.1rem 0.45rem;
+    border-radius: 999px; white-space: nowrap; text-transform: uppercase;
+  }
+  .subs-status.status-running {
+    background: rgba(59, 130, 246, 0.2); color: #93c5fd;
+    animation: subs-pulse 1.6s infinite ease-in-out;
+  }
+  .subs-status.status-waiting  { background: rgba(245, 158, 11, 0.2); color: #fcd34d; }
+  .subs-status.status-sleeping { background: rgba(100, 116, 139, 0.3); color: #cbd5e1; }
+  .subs-status.status-closed   { background: rgba(148, 163, 184, 0.2); color: #94a3b8; }
+  .subs-status.status-failed,
+  .subs-status.status-interrupted {
+    background: rgba(239, 68, 68, 0.2); color: #fca5a5;
+  }
+
+  @keyframes subs-pulse {
+    0%, 100% { opacity: 1; }
+    50%      { opacity: 0.55; }
+  }
+
+  .subs-level {
+    font-size: 0.68rem; padding: 0.1rem 0.35rem; border-radius: 4px;
+    border: 1px solid var(--composer-border); color: #94a3b8;
+    white-space: nowrap;
+  }
+
+  .subs-meta { font-size: 0.72rem; color: #94a3b8; margin-top: 0.2rem; }
+
+  .subs-result {
+    margin-top: 0.25rem; font-size: 0.85rem; color: #cbd5e1;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+
+  .subs-actions { display: flex; gap: 0.4rem; margin-top: 0.35rem; }
+
+  .subs-action-btn {
+    padding: 0.2rem 0.55rem; font-size: 0.75rem; font-weight: 600;
+    border: 1px solid var(--composer-border); border-radius: 4px;
+    background: transparent; color: var(--text-fg); cursor: pointer;
+    transition: background 0.15s;
+  }
+  .subs-action-btn:hover:not(:disabled) { background: rgba(59, 130, 246, 0.15); }
+  .subs-action-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .subs-close-btn { border-color: #ef4444; color: #fca5a5; }
+  .subs-close-btn:hover:not(:disabled) { background: rgba(239, 68, 68, 0.15); }
+
+  .subs-transcript {
+    display: flex; flex-direction: column; gap: 0.3rem;
+    margin-top: 0.4rem; padding-top: 0.4rem;
+    border-top: 1px solid var(--composer-border);
+    max-height: 240px; overflow-y: auto;
+  }
+
+  .subs-msg {
+    font-size: 0.78rem; line-height: 1.35; white-space: pre-wrap;
+    word-break: break-word; padding: 0.25rem 0.45rem; border-radius: 6px;
+    max-width: 95%;
+  }
+  .subs-msg--user {
+    background: rgba(29, 78, 216, 0.3); color: var(--user-bubble-fg);
+    align-self: flex-end;
+  }
+  .subs-msg--assistant {
+    background: var(--chat-bg); color: var(--text-fg);
+    align-self: flex-start;
+  }
+  .subs-msg--parent {
+    background: rgba(124, 58, 237, 0.2); color: #ddd6fe;
+    align-self: flex-start;
+  }
+  .subs-msg--system { color: #94a3b8; font-style: italic; }
+
+  .subs-msg-role {
+    display: block; font-weight: 600; font-size: 0.68rem;
+    opacity: 0.8; margin-bottom: 0.1rem;
+  }
+
+  .subs-input-row {
+    display: flex; gap: 0.4rem; align-items: flex-end; margin-top: 0.4rem;
+  }
+  .subs-input-row textarea {
+    flex: 1; resize: none;
+    background: var(--chat-bg); color: var(--text-fg);
+    border: 1px solid var(--composer-border); border-radius: 6px;
+    padding: 0.35rem 0.5rem; font-size: 0.82rem; font-family: inherit;
+    line-height: 1.35; min-height: 32px; max-height: 90px;
+    outline: none;
+  }
+  .subs-input-row textarea:focus { border-color: var(--btn-primary-bg); }
+
+  .subs-send-btn {
+    background: var(--btn-primary-bg); color: var(--btn-primary-fg);
+    border: none; border-radius: 6px; padding: 0.35rem 0.7rem;
+    font-size: 0.8rem; font-weight: 600; cursor: pointer;
+    white-space: nowrap; transition: background 0.15s;
+  }
+  .subs-send-btn:hover:not(:disabled) { background: var(--btn-primary-hover); }
+  .subs-send-btn:disabled {
+    background: var(--btn-disabled-bg); cursor: not-allowed;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Sessions panel (left sidebar)                                       */
+  /* ------------------------------------------------------------------ */
+  #sessions-panel {
+    display: none; position: fixed; top: 0; left: 0; bottom: 0;
+    width: 300px; min-width: 220px; max-width: 80vw;
+    background: var(--composer-bg); color: var(--text-fg);
+    border-right: 1px solid var(--composer-border);
+    z-index: 20; overflow-y: auto;
+    box-shadow: 4px 0 12px rgba(0,0,0,0.25);
+  }
+  #sessions-panel.visible { display: flex; flex-direction: column; }
+
+  #sessions-resize-handle {
+    display: none; position: fixed; top: 0; bottom: 0;
+    width: 6px; cursor: ew-resize; z-index: 21;
+  }
+  #sessions-resize-handle:hover,
+  #sessions-resize-handle.active { background: rgba(59, 130, 246, 0.5); }
+
+  .sessions-header {
+    padding: 0.6rem 0.75rem; font-weight: 700; font-size: 0.95rem;
+    border-bottom: 1px solid var(--composer-border);
+    background: var(--header-bg); color: var(--header-fg);
+    flex-shrink: 0; display: flex; align-items: center;
+    justify-content: space-between;
+  }
+  .sessions-header .dismiss {
+    background: none; border: none; color: var(--header-fg);
+    font-size: 1.2rem; cursor: pointer; line-height: 1; padding: 0 0.2rem;
+    opacity: 0.7;
+  }
+  .sessions-header .dismiss:hover { opacity: 1; }
+
+  #new-chat-btn {
+    margin: 0.5rem; padding: 0.4rem 0.75rem;
+    background: var(--btn-primary-bg); color: var(--btn-primary-fg);
+    border: none; border-radius: 6px; font-size: 0.85rem;
+    font-weight: 600; cursor: pointer;
+    flex-shrink: 0;
+    transition: background 0.15s;
+  }
+  #new-chat-btn:hover:not(:disabled) { background: var(--btn-primary-hover); }
+  #new-chat-btn:disabled {
+    background: var(--btn-disabled-bg); cursor: not-allowed;
+  }
+
+  #sessions-list { flex: 1; overflow-y: auto; padding: 0 0.5rem 0.5rem; }
+
+  .session-row {
+    position: relative;
+    padding: 0.5rem 0.6rem; margin-bottom: 0.3rem;
+    border-radius: 6px; font-size: 0.82rem;
+    border: 1px solid var(--composer-border);
+    background: var(--assistant-bubble-bg);
+    cursor: pointer;
+    word-break: break-word;
+    transition: background 0.15s;
+  }
+  .session-row:hover { background: rgba(59, 130, 246, 0.15); }
+  .session-delete-btn {
+    position: absolute; top: 4px; right: 4px;
+    background: transparent; border: none; color: #94a3b8;
+    font-size: 0.9rem; line-height: 1; cursor: pointer;
+    padding: 1px 6px; border-radius: 4px;
+    opacity: 0; transition: opacity 0.1s, color 0.1s, background 0.1s;
+  }
+  .session-row:hover .session-delete-btn,
+  .session-row.active .session-delete-btn { opacity: 1; }
+  .session-delete-btn:hover {
+    color: #ef4444; background: rgba(239, 68, 68, 0.12);
+  }
+  .session-row.active {
+    border-color: var(--btn-primary-bg);
+    background: rgba(59, 130, 246, 0.12);
+  }
+  .session-row .session-title {
+    font-weight: 600; margin-bottom: 0.15rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .session-row .session-meta {
+    font-size: 0.72rem; color: #94a3b8;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Error banner                                                        */
+  /* ------------------------------------------------------------------ */
+  #error-banner {
+    display: none; align-items: center; gap: 0.75rem;
+    padding: 0.6rem 1rem;
+    background: var(--error-banner-bg); color: var(--error-banner-fg);
+    border-bottom: 1px solid var(--error-banner-border);
+    font-size: 0.9rem; flex-shrink: 0;
+  }
+  #error-banner.visible { display: flex; }
+  #error-banner .msg { flex: 1; }
+  #error-banner .dismiss {
+    background: none; border: none; color: var(--error-banner-fg);
+    font-size: 1.2rem; cursor: pointer; line-height: 1; padding: 0 0.2rem;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Summary container — pinned above the scrollable chat area           */
+  /* ------------------------------------------------------------------ */
+  #summary-container {
+    flex-shrink: 0;
+  }
+  #summary-container:not(:empty) {
+    padding: 0.5rem 1rem 0 1rem;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Chat area                                                           */
+  /* ------------------------------------------------------------------ */
+  #chat {
+    flex: 1; overflow-y: auto; padding: 1rem;
+    display: flex; flex-direction: column; gap: 0.75rem;
+  }
+  .bubble {
+    max-width: 80%; padding: 0.6rem 0.9rem; border-radius: 12px;
+    line-height: 1.5; font-size: 0.95rem; white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .bubble.user {
+    align-self: flex-end;
+    background: var(--user-bubble-bg); color: var(--user-bubble-fg);
+    border-bottom-right-radius: 4px;
+  }
+  .bubble.assistant {
+    align-self: flex-start;
+    background: var(--assistant-bubble-bg); color: var(--assistant-bubble-fg);
+    border-bottom-left-radius: 4px;
+  }
+
+  .bubble.user.queued { opacity: 0.55; }
+  .bubble.user.queued::after { content: " (queued)"; font-style: italic; }
+
+  /* Subsession notification bubbles (from /events SSE channel) */
+  .bubble.notification {
+    align-self: center;
+    max-width: 90%;
+    font-size: 0.85rem;
+    text-align: center;
+    border-radius: 8px;
+    padding: 0.5rem 0.8rem;
+    opacity: 0.92;
+    background: #1e293b;
+    color: #94a3b8;
+    border: 1px solid #334155;
+  }
+  .bubble.notification.completed {
+    background: #1e293b;
+    color: #86efac;
+    border-color: #15803d;
+  }
+  .bubble.notification.failed {
+    background: #1e293b;
+    color: #fca5a5;
+    border-color: #b91c1c;
+  }
+  .bubble.notification.result {
+    background: #1e293b;
+    color: #fde68a;
+    border-color: #a16207;
+    font-style: italic;
+  }
+
+  /* Markdown content inside bubbles */
+  .bubble h1, .bubble h2, .bubble h3,
+  .bubble h4, .bubble h5, .bubble h6 {
+    margin: 0.6em 0 0.3em;
+    line-height: 1.25;
+    font-weight: 600;
+  }
+  .bubble h1 { font-size: 1.4em; }
+  .bubble h2 { font-size: 1.25em; }
+  .bubble h3 { font-size: 1.1em; }
+  .bubble p { margin: 0.4em 0; }
+  .bubble p:first-child { margin-top: 0; }
+  .bubble p:last-child { margin-bottom: 0; }
+  .bubble ul, .bubble ol { margin: 0.4em 0; padding-left: 1.5em; }
+  .bubble li { margin: 0.15em 0; }
+  .bubble strong { font-weight: 600; }
+  .bubble em { font-style: italic; }
+  .bubble a {
+    color: #60a5fa;
+    text-decoration: underline;
+  }
+  .bubble a:visited { color: #a78bfa; }
+  .bubble blockquote {
+    margin: 0.5em 0;
+    padding: 0.3em 0.8em;
+    border-left: 3px solid #475569;
+    color: #94a3b8;
+  }
+  .bubble code {
+    font-family: "SFMono-Regular", Consolas, "Liberation Mono", Menlo, monospace;
+    font-size: 0.875em;
+    background: rgba(255, 255, 255, 0.08);
+    padding: 0.15em 0.35em;
+    border-radius: 3px;
+    white-space: pre-wrap;
+    word-break: break-word;
+  }
+  .bubble pre {
+    margin: 0.5em 0;
+    padding: 0.6em 0.8em;
+    background: rgba(0, 0, 0, 0.3);
+    border-radius: 6px;
+    overflow-x: auto;
+    font-size: 0.85em;
+    line-height: 1.45;
+  }
+  .bubble pre code {
+    background: none;
+    padding: 0;
+    font-size: inherit;
+    white-space: pre;
+    word-break: normal;
+  }
+  .bubble table {
+    margin: 0.5em 0;
+    border-collapse: collapse;
+    font-size: 0.9em;
+    width: 100%;
+  }
+  .bubble th, .bubble td {
+    border: 1px solid #475569;
+    padding: 0.35em 0.6em;
+    text-align: left;
+  }
+  .bubble th {
+    background: rgba(255, 255, 255, 0.06);
+    font-weight: 600;
+  }
+  .bubble hr {
+    margin: 0.6em 0;
+    border: none;
+    border-top: 1px solid #475569;
+  }
+  .bubble img {
+    max-width: 100%;
+    border-radius: 6px;
+  }
+
+  /* Conversation summary banner — pinned above the scrollable chat */
+  .summary-banner {
+    flex-shrink: 0;
+    background: #1e293b;
+    border: 1px solid #334155;
+    border-left: 3px solid #3b82f6;
+    border-radius: 8px;
+    padding: 0.6rem 1rem;
+    font-size: 0.85rem;
+    line-height: 1.5;
+    color: #cbd5e1;
+  }
+  .summary-banner .summary-header {
+    display: flex; align-items: center; gap: 0.4rem;
+    cursor: pointer; user-select: none;
+    font-weight: 600; font-size: 0.8rem; color: #94a3b8;
+    text-transform: uppercase; letter-spacing: 0.04em;
+  }
+  .summary-banner .summary-toggle {
+    font-size: 0.7rem; transition: transform 0.15s;
+  }
+  .summary-banner.collapsed .summary-toggle {
+    transform: rotate(-90deg);
+  }
+  .summary-banner .summary-body {
+    margin-top: 0.5rem; display: flex; flex-direction: column; gap: 0.4rem;
+  }
+  .summary-banner.collapsed .summary-body {
+    display: none;
+  }
+  .summary-banner .summary-text {
+    color: #e2e8f0; white-space: pre-wrap;
+  }
+  .summary-banner .summary-loading {
+    color: #64748b; font-style: italic;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Composer row                                                        */
+  /* ------------------------------------------------------------------ */
+  #composer {
+    display: flex; align-items: flex-end; gap: 0.5rem;
+    padding: 0.75rem 1rem;
+    background: var(--composer-bg);
+    border-top: 1px solid var(--composer-border);
+    flex-shrink: 0;
+    position: sticky; bottom: 0;
+  }
+  #composer textarea {
+    flex: 1; resize: none;
+    background: var(--chat-bg); color: var(--text-fg);
+    border: 1px solid var(--composer-border); border-radius: 8px;
+    padding: 0.5rem 0.75rem; font-family: inherit; font-size: 0.95rem;
+    line-height: 1.4; min-height: 40px; max-height: 120px;
+    outline: none;
+  }
+  #composer textarea::placeholder { color: #64748b; }
+  #composer textarea:focus { border-color: var(--btn-primary-bg); }
+  #composer textarea:disabled { background: #1e293b; }
+
+  #send-btn {
+    background: var(--btn-primary-bg); color: var(--btn-primary-fg);
+    border: none; border-radius: 8px; padding: 0.5rem 1.2rem;
+    font-size: 0.95rem; font-weight: 600; cursor: pointer;
+    height: 40px; white-space: nowrap;
+    transition: background 0.15s;
+  }
+  #send-btn:hover:not(:disabled) { background: var(--btn-primary-hover); }
+  #send-btn:disabled {
+    background: var(--btn-disabled-bg); cursor: not-allowed;
+  }
+  /* Visually-disabled while the assistant is replying; still clickable so
+     messages typed during a reply are queued (see messageQueue). */
+  #send-btn.busy,
+  #send-btn.busy:hover { background: var(--btn-disabled-bg); }
+
+  #attach-btn {
+    background: var(--assistant-bubble-bg); color: var(--text-fg);
+    border: 1px solid var(--composer-border); border-radius: 8px;
+    padding: 0 0.7rem; font-size: 1.1rem; cursor: pointer;
+    height: 40px; white-space: nowrap; line-height: 1;
+    transition: background 0.15s;
+  }
+  #attach-btn:hover:not(:disabled) { background: var(--composer-border); }
+  #attach-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  /* ------------------------------------------------------------------ */
+  /* Preview tray                                                        */
+  /* ------------------------------------------------------------------ */
+  #preview-tray {
+    display: none; flex-wrap: wrap; gap: 0.5rem; align-items: flex-start;
+    padding: 0.5rem 1rem 0 1rem;
+  }
+  #preview-tray.has-images { display: flex; }
+
+  .preview-item {
+    position: relative; width: 64px; height: 64px; flex-shrink: 0;
+    border-radius: 6px; overflow: hidden;
+    border: 1px solid var(--composer-border);
+  }
+  .preview-item img {
+    width: 100%; height: 100%; object-fit: cover; display: block;
+  }
+  .preview-item .remove-btn {
+    position: absolute; top: 2px; right: 2px;
+    width: 18px; height: 18px; border-radius: 50%;
+    background: rgba(0,0,0,0.65); color: #fff;
+    border: none; font-size: 12px; line-height: 1;
+    cursor: pointer; display: flex; align-items: center;
+    justify-content: center; padding: 0;
+  }
+  .preview-item .remove-btn:hover { background: rgba(239,68,68,0.85); }
+
+  #attach-error {
+    display: none; padding: 0.3rem 1rem; font-size: 0.82rem;
+    color: #fca5a5;
+  }
+  #attach-error.visible { display: block; }
+
+  /* Image thumbnails inside user bubbles */
+  .bubble-images {
+    display: flex; flex-wrap: wrap; gap: 0.4rem;
+    margin-bottom: 0.4rem;
+  }
+  .bubble-images img {
+    max-width: 120px; max-height: 120px; border-radius: 6px;
+    object-fit: cover; cursor: pointer;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Typing indicator                                                    */
+  /* ------------------------------------------------------------------ */
+  #typing-indicator {
+    display: none; align-items: center; gap: 0.3rem;
+    padding: 0.5rem 0.9rem; align-self: flex-start;
+  }
+  #typing-indicator.visible { display: flex; }
+  #typing-indicator .dot {
+    width: 8px; height: 8px; border-radius: 50%;
+    background: #94a3b8;
+    animation: pulse 1.4s infinite ease-in-out both;
+  }
+  #typing-indicator .dot:nth-child(1) { animation-delay: -0.32s; }
+  #typing-indicator .dot:nth-child(2) { animation-delay: -0.16s; }
+  #typing-indicator .dot:nth-child(3) { animation-delay: 0s; }
+  #typing-indicator .activity-label {
+    font-size: 0.8rem; color: #94a3b8; margin-left: 0.4rem;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+    max-width: 60vw;
+  }
+
+  @keyframes pulse {
+    0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
+    40%           { transform: scale(1.0); opacity: 1.0; }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Content wrapper — wraps the scrollable main area so panels can     */
+  /* push it aside on wider screens.                                     */
+  /* ------------------------------------------------------------------ */
+  #content-wrap {
+    display: flex; flex-direction: column; flex: 1; min-height: 0;
+    transition: margin-left 0.3s ease, margin-right 0.3s ease;
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Desktop push layout: on screens >= 768px, opening a side panel     */
+  /* shifts the central column instead of overlaying it.                 */
+  /* ------------------------------------------------------------------ */
+  @media (min-width: 768px) {
+    #sessions-panel.visible ~ #content-wrap {
+      margin-left: var(--sessions-width);
+    }
+    #subsessions-panel.visible ~ #content-wrap {
+      margin-right: var(--subsessions-width);
+    }
+    body:has(#sessions-panel.visible) #header {
+      margin-left: var(--sessions-width);
+    }
+    body:has(#subsessions-panel.visible) #header {
+      margin-right: var(--subsessions-width);
+    }
+  }
+
+  /* ------------------------------------------------------------------ */
+  /* Responsive tweaks                                                   */
+  /* ------------------------------------------------------------------ */
+  @media (max-width: 480px) {
+    .bubble { max-width: 92%; }
+    #header { padding: 0.4rem 0.6rem; }
+    #composer { padding: 0.5rem 0.6rem; }
