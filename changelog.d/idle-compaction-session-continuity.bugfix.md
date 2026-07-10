@@ -1,1 +1,5 @@
-Fix idle-timeout compaction splitting one conversation into many sessions: a message posted to an already-compacted session id is now rerouted to its continuation session instead of re-compacting (the runaway that minted a new session per message), the subsession tree is transferred to the continuation session so running work follows the conversation, and the SSE `done` frame now carries the effective `session_id` so the UI adopts the continuation immediately.
+Fix idle-timeout compaction splitting one conversation into many sessions: a message posted to an
+already-compacted session id is now rerouted to its continuation session instead of re-compacting
+(the runaway that minted a new session per message), the subsession tree is transferred to the
+continuation session so running work follows the conversation, and the SSE `done` frame now carries
+the effective `session_id` so the UI adopts the continuation immediately.
