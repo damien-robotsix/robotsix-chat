@@ -48,6 +48,7 @@ Secret fields include:
 - `direct_repo.github_app_private_key`, `direct_repo.board_api_token`
 - `refdocs.github_token`
 - `version_check.github_token`
+- `feedback.board_api_token`
 
 ## Settings reference
 
@@ -224,8 +225,23 @@ Background sub-agent spawning configuration.
 | `subsessions.default_model_level`      | `integer` | `2`                        | Default model level for spawned subsessions. |
 | `subsessions.min_interval_seconds`     | `number`  | `60.0`                     | Minimum interval between periodic runs.      |
 | `subsessions.auto_stop_no_change_runs` | `integer` | `5`                        | Consecutive NO_CHANGE runs before auto-stop. |
-| `subsessions.store_path`               | `string`  | `"/data/subsessions.json"` | Path to the subsession persistence file.     |
+| `subsessions.store_path`               | `string`  | `"/data/subsessions.json`" | Path to the subsession persistence file.     |
 | `subsessions.transcript_max_entries`   | `integer` | `200`                      | Maximum transcript entries per subsession.   |
+
+### Feedback
+
+Automated feedback analysis for continuous self-improvement. When enabled, a feedback run analyses
+the conversation at compaction and session-end boundaries, then files improvement tickets via the
+board's `POST /tickets/ingest` endpoint. Tickets flow through the normal human-approval workflow —
+the feedback run never auto-approves. Disabled by default.
+
+| JSON key                         | Type              | Default                   | Description                                                                |
+| -------------------------------- | ----------------- | ------------------------- | -------------------------------------------------------------------------- |
+| `feedback.enabled`               | `boolean`         | `false`                   | Master switch.                                                             |
+| `feedback.model_level`           | `integer`         | `1`                       | llmio capability level for the feedback-analysis agent (cheap extraction). |
+| `feedback.board_url`             | `string`          | `""`                      | Base URL of the board HTTP API (no trailing slash). Required when enabled. |
+| `feedback.board_api_token`       | `string` (secret) | `""`                      | Optional Bearer token for the board API.                                   |
+| `feedback.timeout`               | `number`          | `60.0`                    | Per-request HTTP timeout (seconds) for ingest calls.                       |
 
 ### Direct Repo (GitHub App)
 

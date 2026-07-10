@@ -2,7 +2,7 @@
   "$defs": {
     "CentralDeploySettings": {
       "additionalProperties": false,
-      "description": "Central-deploy roster and component-access settings.\n\nProvides the base URL and bearer token for the central-deploy\nmanagement-plane API.  At session start the agent fetches the\n``GET /chat/components`` roster (a list of component agents the chat\nis allowed to call), caches it with a short TTL, and loads each\ncomponent's declared skill into the agent.\n\nAttributes:\n    url: Base URL of the central-deploy API (no trailing slash).\n    api_token: Bearer token for authenticating to the central-deploy\n        API.  Required when any component access is expected.\n    roster_cache_ttl: Seconds to cache the roster before re-fetching.\n        Default 300 (5 min).",
+      "description": "Central-deploy roster and component-access settings.\n\nProvides the base URL and bearer token for the central-deploy\nmanagement-plane API.  At session start the agent fetches the\n``GET /chat/components`` roster (a list of component agents the chat\nis allowed to call), caches it with a short TTL, and loads each\ncomponent's declared skill into the agent.\n\nAttributes:\n    url: Base URL of the central-deploy API (no trailing slash).\n    api_token: Bearer token for authenticating to the central-deploy\n        API.  Required when any component access is expected.\n    roster_cache_ttl: Seconds to cache the roster before re-fetching.\n        Default 300 (5 min).\n    component_response_max_chars: Truncation limit for GET/HEAD component\n        responses — write methods keep the existing 8,000 limit. This lets\n        the agent enumerate large ticket lists (e.g. mill board blocked\n        tickets) without truncation.",
       "properties": {
         "url": {
           "default": "",
@@ -31,7 +31,8 @@
       "type": "object"
     },
     "ComponentClientSettings": {
-      "description": "Component agent client settings \u2014 inspect and configure remote agents.\n\nWhen enabled, the chat agent gains four tools: ``list_component_agents``,\n``get_component_telemetry``, ``get_component_config``, and\n``set_component_config`` so it can enumerate configured component agents,\nread live telemetry, and read/update configuration on demand via direct\nHTTP.\n\nAttributes:\n    enabled: Master switch.\n    timeout: Per-request HTTP timeout (seconds).\n    components: Allowlist of component agents the chat may contact.\n        Each entry has a ``base_url`` and an optional ``label``.",
+      "additionalProperties": false,
+      "description": "Component client settings.\n\nProvides the per-request timeout and a list of remote component agents\nthat the chat agent can inspect and configure (monitor / config-get /\nconfig-set).  Gated behind ``enabled`` — when False (the default), no\ncomponent-client tools are offered to the agent.",
       "properties": {
         "enabled": {
           "default": false,
@@ -44,6 +45,7 @@
           "type": "number"
         },
         "components": {
+          "default": [],
           "items": {
             "$ref": "#/$defs/ComponentTarget"
           },
@@ -55,16 +57,24 @@
       "type": "object"
     },
     "ComponentTarget": {
-      "description": "A single component agent that the chat may inspect or configure.\n\nAttributes:\n    base_url: Base URL of the component agent (e.g.\n        ``\"http://comp-1:8090\"``).\n    label: Optional human-readable label shown in discovery output.",
+      "additionalProperties": false,
+      "description": "A single remote component agent target.\n\nAttributes:\n    base_url: Base URL of the component agent's HTTP API (no trailing\n        slash).  Required.\n    label: Optional human-readable label shown in the agent's\n        component list tool output.  When empty, the base_url is used\n        as the display name.",
       "properties": {
         "base_url": {
           "title": "Base Url",
           "type": "string"
         },
         "label": {
+          "anyOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "null"
+            }
+          ],
           "default": "",
-          "title": "Label",
-          "type": "string"
+          "title": "Label"
         }
       },
       "required": [
@@ -74,7 +84,8 @@
       "type": "object"
     },
     "ConversationSettings": {
-      "description": "Multi-session conversation continuity for the browser chat.\n\nThe server groups conversations by a per-browser ``owner_id`` and addresses\nindividual sessions by ``session_id``. Each owner can have multiple named\nsessions with independent turn histories. History is **never** wiped on\nidle \u2014 sessions are persistent when ``persist_path`` is configured.\n\nAttributes:\n    max_history_turns: Most recent user/assistant turns kept per\n        session and replayed to the agent (bounds prompt size).\n    max_conversations: Maximum number of distinct sessions tracked at once\n        (LRU-evicted); bounds the in-memory store.\n    persist_path: Path to the JSON persistence file. Default\n        ``/data/conversations.json``. Set to an empty string to disable.",
+      "additionalProperties": false,
+      "description": "Multi-session conversation store settings.\n\nAttributes:\n    max_history_turns: Maximum conversation turns to retain per session.\n    max_conversations: Maximum concurrent conversations across all owners.\n    persist_path: Path to the JSON persistence file on disk.",
       "properties": {
         "max_history_turns": {
           "default": 50,
@@ -96,7 +107,8 @@
       "type": "object"
     },
     "DiagnosticsSettings": {
-      "description": "Diagnostics capture and systemic fix surfacing.\n\nWhen enabled, the agent captures diagnostic bundles for failure events\nand can detect recurring failure categories.  When a category crosses\nthe recurrence threshold a ``FixProposal`` is auto-generated (but NOT\nauto-applied) for agent or human review.\n\nApplied fixes are tracked in the effectiveness store; after the\nobservation window elapses a ``FixEffectivenessReport`` is generated\ncomparing pre-fix and post-fix recurrence counts.\n\nAttributes:\n    enabled: Master switch.  Default ``True``.\n    store_path: Path to the diagnostic-event JSON persistence file.\n        Default ``/data/diagnostics.json``.\n    proposals_path: Path to the fix-proposal JSON persistence file.\n        Default ``/data/fix_proposals.json``.\n    effectiveness_path: Path to the effectiveness-report JSON\n        persistence file.  Default ``/data/diagnostics_effectiveness.json``.\n    recurrence_threshold: Minimum number of occurrences within the\n        window to trigger a recurrence alert.  Default ``3``.\n    recurrence_window_days: Look-back window in days for recurrence\n        detection.  Default ``30``.\n    observation_window_days: Days after a fix is applied to wait before\n        generating an effectiveness report.  The pre-fix and post-fix\n        windows are both this many days.  Default ``30``.",
+      "additionalProperties": false,
+      "description": "Diagnostics subsystem settings.\n\nBlocked-ticket diagnostics capture, recurrence detection, and\nsystemic-fix surfacing.  Enabled by default.\n\nAttributes:\n    enabled: Master switch.  When False, no diagnostics events are\n        captured and no diagnostic tools are offered.\n    store_path: Path to the diagnostic-event JSON persistence file.\n    proposals_path: Path to the fix-proposal JSON persistence file.\n    effectiveness_path: Path to the effectiveness-report JSON\n        persistence file.\n    recurrence_threshold: Number of occurrences within the\n        recurrence window that triggers a recurrence alert.\n    recurrence_window_days: Look-back window in days for recurrence\n        detection.\n    observation_window_days: Days after a fix is applied to wait\n        before generating an effectiveness report.",
       "properties": {
         "enabled": {
           "default": true,
@@ -138,7 +150,8 @@
       "type": "object"
     },
     "DirectRepoSettings": {
-      "description": "Direct-repo push-branch + open-PR capability as the robotsix-mill GitHub App.\n\nWhen enabled, the chat agent gains two tools: ``push_direct_repo_branch``\n(create/push a branch with file changes) and ``open_direct_repo_pr``\n(open a PR from a branch).  Both authenticate as the configured GitHub App\ninstallation (JWT \u2192 short-lived installation token) and dynamically resolve\nthe allowed repo set from the installation at action time \u2014 no static\nallowlist.\n\n**Guardrails built into the tools (not configurable):**\n- Actions are ONLY permitted for tickets in BLOCKED state.\n- Repo scope is resolved dynamically from the GitHub App installation.\n- PRs are opened in a reviewable state with no auto-merge.\n- No merge capability exists on this path.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no direct-repo tools are\n        offered.\n    github_app_id: The GitHub App's numeric or slug id.  Required when\n        *enabled*.\n    github_app_private_key: The app's RSA private key in PEM format.\n        Required when *enabled*.  Stored in config only \u2014 never\n        hardcoded.\n    github_app_installation_id: The installation id to act as.  The\n        app must be installed on the target org/account.  Required when\n        *enabled*.\n    github_api_base_url: Overridable base URL for GitHub Enterprise.\n    board_api_base_url: Base URL of the board HTTP API for ticket-state\n        lookups (verifying BLOCKED state).\n    board_api_token: Optional bearer token for the board API.\n    timeout: Per-request HTTP timeout in seconds.",
+      "additionalProperties": false,
+      "description": "Direct-repository capability settings.\n\nPush branches and open PRs as the robotsix-mill GitHub App\ninstallation.  Gated behind ``enabled``.\n\nAttributes:\n    enabled: Master switch for direct-repo capability.\n    github_app_id: GitHub App slug (or numeric id).\n    github_app_private_key: RSA private key in PEM format.\n    github_app_installation_id: App installation id.\n    github_api_base_url: Base URL for GitHub API.\n    board_api_base_url: Board HTTP API base URL for ticket-state lookups.\n    board_api_token: Optional bearer token for the board API.\n    timeout: Per-request HTTP timeout.",
       "properties": {
         "enabled": {
           "default": false,
@@ -188,7 +201,43 @@
       "title": "DirectRepoSettings",
       "type": "object"
     },
+    "FeedbackSettings": {
+      "additionalProperties": false,
+      "description": "Automated feedback analysis for continuous self-improvement.\n\nWhen enabled, a feedback run analyses the conversation at compaction\nand session-end boundaries, then files improvement tickets via the\nboard's ``POST /tickets/ingest`` endpoint.  Tickets flow through the\nnormal human-approval workflow — the feedback run never auto-approves.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no feedback runs occur.\n    model_level: llmio capability level for the feedback-analysis\n        agent (a cheap, single-turn extraction call).  Default ``1``.\n    board_url: Base URL of the board HTTP API (no trailing slash).\n        Required when *enabled* — the runner POSTs to\n        ``{board_url}/tickets/ingest``.\n    board_api_token: Optional Bearer token for the board API.\n    timeout: Per-request HTTP timeout in seconds for ingest calls.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "model_level": {
+          "default": 1,
+          "title": "Model Level",
+          "type": "integer"
+        },
+        "board_url": {
+          "default": "",
+          "title": "Board Url",
+          "type": "string"
+        },
+        "board_api_token": {
+          "default": "",
+          "format": "password",
+          "title": "Board Api Token",
+          "type": "string",
+          "writeOnly": true
+        },
+        "timeout": {
+          "default": 60.0,
+          "title": "Timeout",
+          "type": "number"
+        }
+      },
+      "title": "FeedbackSettings",
+      "type": "object"
+    },
     "GitHubSecuritySettings": {
+      "additionalProperties": false,
       "description": "Repository security-feature toggle via the GitHub App installation.\n\nWhen enabled, the chat agent gains a ``set_repo_security_and_analysis``\ntool that can enable or disable repository-level security features\n(dependency graph, advanced security, secret scanning) on repos under\nthe configured GitHub App's installation scope.\n\n**Guardrails built into the tool (not configurable):**\n- Repo scope is resolved dynamically from the GitHub App installation\n  (list-installation-repositories) \u2014 no static allowlist.\n- Only repos within the installation scope are modifiable.\n- Each feature toggle explicitly requires ``\"enabled\"`` or ``\"disabled\"``\n  \u2014 no accidental bulk changes.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no security-feature tool\n        is offered.\n    github_org: GitHub organisation name whose repos are in scope\n        (e.g. ``\"damien-robotsix\"``).  The tool only targets repos\n        under this org.\n    deploy_api_key: API key that clients must present in the\n        ``X-API-Key`` header when calling the\n        ``PATCH /chat/github/repos/{owner}/{repo}/settings``\n        endpoint.  When empty, the endpoint returns 503 (unconfigured).\n    timeout: Per-request HTTP timeout in seconds.\n\nNote: GitHub App authentication is delegated to\n:class:`DirectRepoSettings` \u2014 those credentials must also be configured\nfor the tool to function.",
       "properties": {
         "enabled": {
@@ -218,7 +267,8 @@
       "type": "object"
     },
     "KnowledgeSettings": {
-      "description": "Local, writable knowledge base for agent-authored operational notes.\n\nA deliberate, explicit, agent-curated store of durable lessons and findings\n\u2014 plain local JSON, no embeddings, no external service, always-on.  The\nagent writes notes via five tools\n(``add_knowledge_note``, ``append_to_knowledge_note``,\n``update_knowledge_note``, ``list_knowledge_notes``,\n``read_knowledge_note``)\nand can re-read and revise them by id across sessions.\n\nThis store is **complementary to**, not a duplicate of, the optional cognee\nepisodic memory system (``memory/``).  cognee automatically recalls past\nconversations by similarity; this knowledge base holds notes the agent\ndeliberately authors and addresses by id.\n\nAttributes:\n    enabled: Master switch.  Default ``True`` \u2014 this is a purely local,\n        no-credential, no-external-dependency primitive.\n    path: Path to the JSON persistence file.  Default\n        ``/data/knowledge.json``.",
+      "additionalProperties": false,
+      "description": "Writable knowledge-base settings.\n\nA plain JSON file on disk that the agent can read, write, and\nmaintain as a durable store across sessions.\n\nAttributes:\n    enabled: Master switch.\n    path: Path to the JSON persistence file on disk.",
       "properties": {
         "enabled": {
           "default": true,
@@ -236,7 +286,7 @@
     },
     "LangfuseSettings": {
       "additionalProperties": false,
-      "description": "Langfuse observability credentials.",
+      "description": "Langfuse observability settings.\n\nProvides credentials for an OpenTelemetry-backed Langfuse project.\nThese are used to trace the main chat agent (and subsession agents\nspawned from it).  A **separate** ``memory.langfuse`` key set traces\nthe cognee / LiteLLM pipeline.\n\nWhen the public key is set, credentials are exported to process-level\nenvironment variables at startup so ``robotsix-llmio``'s OTLP exporter\npicks them up automatically.\n\nAttributes:\n    public_key: Langfuse project public key.\n    secret_key: Langfuse project secret key.\n    host: Langfuse host URL (e.g. ``https://cloud.langfuse.com``\n        or a self-hosted instance).  Exported as both\n        ``LANGFUSE_BASE_URL`` and ``LANGFUSE_HOST``.",
       "properties": {
         "public_key": {
           "default": "",
@@ -262,7 +312,8 @@
       "type": "object"
     },
     "LifecycleSettings": {
-      "description": "Read-only deploy-lifecycle API access for the agent.\n\nWhen enabled, the chat agent gains read-only tools to inspect the\ncentral-deploy lifecycle server: list services, check service status\nand health, and read configuration and environment (with secrets\nalready masked as ``***`` server-side by ``_mask_secrets``).\n\nAttributes:\n    enabled: Master switch.  When ``False``, no lifecycle tools are\n        offered.\n    base_url: Base URL of the deploy-lifecycle API server (no trailing\n        slash).\n    api_key: API key sent as the ``X-API-Key`` header.  Injected\n        server-side from ``ROBOTSIX_LIFECYCLE_API_KEY``.\n    timeout: Per-request HTTP timeout in seconds.",
+      "additionalProperties": false,
+      "description": "Deploy-lifecycle component settings.\n\nProvides the base URL, API key, and per-request timeout for the\ncentral-deploy lifecycle server.  Gated behind ``enabled`` — when\nFalse (the default), no lifecycle tools are offered to the agent.",
       "properties": {
         "enabled": {
           "default": false,
@@ -290,9 +341,39 @@
       "title": "LifecycleSettings",
       "type": "object"
     },
+    "LlmSettings": {
+      "additionalProperties": false,
+      "description": "LLM endpoint settings for memory extraction.\n\nAttributes:\n    provider: Model provider e.g. ``custom`` for OpenRouter.\n    model: Model name.\n    endpoint: Base URL for API calls.\n    api_key: API key.",
+      "properties": {
+        "provider": {
+          "default": "custom",
+          "title": "Provider",
+          "type": "string"
+        },
+        "model": {
+          "default": "openrouter/deepseek/deepseek-v4-flash",
+          "title": "Model",
+          "type": "string"
+        },
+        "endpoint": {
+          "default": "https://openrouter.ai/api/v1",
+          "title": "Endpoint",
+          "type": "string"
+        },
+        "api_key": {
+          "default": "",
+          "format": "password",
+          "title": "Api Key",
+          "type": "string",
+          "writeOnly": true
+        }
+      },
+      "title": "LlmSettings",
+      "type": "object"
+    },
     "MailSettings": {
       "additionalProperties": false,
-      "description": "Direct HTTP access to the auto-mail board server. Disabled by default.\n\nWhen enabled, the chat agent gains discrete tools that call the\nauto-mail board HTTP API directly (no broker indirection, no NL\nreinterpretation): get the board content, check email status, move\n/ delete / archive emails, and run triage.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no mail tools are offered.\n    api_base_url: Base URL of the auto-mail board HTTP server (no\n        trailing slash).  Default ``http://127.0.0.1:8077``.\n    api_token: Optional Bearer token; empty means no Authorization\n        header.\n    timeout: Per-request HTTP timeout in seconds.",
+      "description": "Mail board integration settings.\n\nDirect HTTP access to the robotsix-auto-mail board server.  Gated\nbehind ``enabled`` — when False (the default), no mail tools are\noffered to the agent.",
       "properties": {
         "enabled": {
           "default": false,
@@ -321,7 +402,8 @@
       "type": "object"
     },
     "MemoryEmbeddingSettings": {
-      "description": "Embedding config for cognee memory (remote OpenAI-compatible server).\n\nDefaults target a self-hosted Ollama ``bge-m3`` endpoint. ``provider`` must\nbe ``openai_compatible`` for that path (it tolerates a non-OpenAI model\nname); ``endpoint`` (e.g. ``http://host:11434/v1``) is required when memory\nis enabled. ``dimensions`` is sticky \u2014 changing it invalidates stored\nvectors.",
+      "additionalProperties": false,
+      "description": "Embedding endpoint settings for cognee memory.\n\nAttributes:\n    provider: Embedding provider e.g. ``openai_compatible``.\n    model: Embedding model name.\n    endpoint: Embedding server URL (e.g. ``http://10.0.0.1:11434/v1``).\n    dimensions: Embedding vector dimensions.\n    api_key: API key.\n    huggingface_tokenizer: HuggingFace tokenizer name.",
       "properties": {
         "provider": {
           "default": "openai_compatible",
@@ -344,7 +426,7 @@
           "type": "integer"
         },
         "api_key": {
-          "default": "**********",
+          "default": "",
           "format": "password",
           "title": "Api Key",
           "type": "string",
@@ -359,8 +441,36 @@
       "title": "MemoryEmbeddingSettings",
       "type": "object"
     },
+    "MemoryLangfuseSettings": {
+      "additionalProperties": false,
+      "description": "Langfuse settings for the memory subsystem.\n\nSeparate credentials for a dedicated ``robotsix-chat-cognee`` Langfuse\nproject so internal LLM traffic (cognify, recall) lands in a\ndifferent project than the main-agent traces.\n\nAttributes:\n    public_key: Langfuse project public key.\n    secret_key: Langfuse project secret key.\n    host: Langfuse host URL.",
+      "properties": {
+        "public_key": {
+          "default": "",
+          "format": "password",
+          "title": "Public Key",
+          "type": "string",
+          "writeOnly": true
+        },
+        "secret_key": {
+          "default": "",
+          "format": "password",
+          "title": "Secret Key",
+          "type": "string",
+          "writeOnly": true
+        },
+        "host": {
+          "default": "https://cloud.langfuse.com",
+          "title": "Host",
+          "type": "string"
+        }
+      },
+      "title": "MemoryLangfuseSettings",
+      "type": "object"
+    },
     "MemoryLlmSettings": {
-      "description": "Extraction-LLM config for cognee memory (OpenRouter via litellm).\n\nDefaults match the validated robotsix setup: Claude Haiku through\nOpenRouter's ``custom`` provider. ``api_key`` is required when memory\nis enabled (provide it via ``MEMORY_LLM_API_KEY``).",
+      "additionalProperties": false,
+      "description": "LLM endpoint settings for cognee memory extraction.\n\nAttributes:\n    provider: Model provider e.g. ``custom`` for OpenRouter.\n    model: Model name.\n    endpoint: Base URL for API calls.\n    api_key: API key.",
       "properties": {
         "provider": {
           "default": "custom",
@@ -368,7 +478,7 @@
           "type": "string"
         },
         "model": {
-          "default": "openrouter/anthropic/claude-haiku-4.5",
+          "default": "openrouter/deepseek/deepseek-v4-flash",
           "title": "Model",
           "type": "string"
         },
@@ -389,7 +499,8 @@
       "type": "object"
     },
     "MemorySettings": {
-      "description": "Long-term agent memory (cognee). Disabled by default.\n\nAttributes:\n    enabled: When ``True``, the agent recalls before and persists after each\n        reply. Requires the ``memory`` extra (cognee) installed.\n    data_dir: Directory for cognee's stores (relative to the working dir).\n        Put it under the persistent ``.data`` mount so memory survives\n        container redeploys.\n    recall_search_type: cognee ``SearchType`` name used for recall.\n        ``GRAPH_COMPLETION`` (default) returns clean, relevant facts as text\n        but costs one (cheap) LLM call per message; retrieval-only types\n        like ``CHUNKS``/``SUMMARIES`` are faster but return raw, noisier\n        payloads.\n    llm: Extraction-LLM config (graph building / consolidation).\n    embedding: Embedding-server config (semantic search).\n    langfuse: Dedicated Langfuse credentials for the\n        ``robotsix-chat-cognee`` project (separate from the main chat's\n        Langfuse project). When the public key is empty, cognee LLM calls\n        are not traced.",
+      "additionalProperties": false,
+      "description": "Cognee-based long-term memory settings.\n\nPersistent, cross-conversation episodic memory via an embedded cognee\ninstance running within the chat container.  Disabled by default\nbecause cognee carries significant overhead — both in startup time\nand per-turn LLM cost.\n\nAttributes:\n    enabled: Master switch.  When False, a no-op ``NullMemory`` is\n        used instead of the full cognee pipeline.\n    data_dir: Cognee store directory (should be on a persistent\n        volume so memory survives restarts).\n    recall_search_type: Cognee recall search type for querying stored\n        memories (e.g. ``GRAPH_COMPLETION``, ``KEYWORD``).\n    llm: The LLM endpoint settings used by cognee for extraction\n        (cognify) and recall.\n    embedding: The embedding endpoint settings.\n    langfuse: Credentials for a separate Langfuse project that traces\n        the cognee / LiteLLM pipeline independently from the main\n        chat agent.",
       "properties": {
         "enabled": {
           "default": false,
@@ -407,13 +518,32 @@
           "type": "string"
         },
         "llm": {
-          "$ref": "#/$defs/MemoryLlmSettings"
+          "$ref": "#/$defs/MemoryLlmSettings",
+          "default": {
+            "api_key": "",
+            "provider": "custom",
+            "model": "openrouter/deepseek/deepseek-v4-flash",
+            "endpoint": "https://openrouter.ai/api/v1"
+          }
         },
         "embedding": {
-          "$ref": "#/$defs/MemoryEmbeddingSettings"
+          "$ref": "#/$defs/MemoryEmbeddingSettings",
+          "default": {
+            "api_key": "",
+            "provider": "openai_compatible",
+            "model": "bge-m3",
+            "endpoint": "",
+            "dimensions": 1024,
+            "huggingface_tokenizer": "BAAI/bge-m3"
+          }
         },
         "langfuse": {
-          "$ref": "#/$defs/LangfuseSettings"
+          "$ref": "#/$defs/MemoryLangfuseSettings",
+          "default": {
+            "public_key": "",
+            "secret_key": "",
+            "host": "https://cloud.langfuse.com"
+          }
         }
       },
       "title": "MemorySettings",
@@ -432,7 +562,8 @@
       "type": "object"
     },
     "RefDocsSettings": {
-      "description": "Read-only reference-docs tool for the agent.\n\nLets the agent fetch documentation from allowlisted GitHub repos on\ndemand. Primarily used to consult the board-workflow reference repo\nwhen deciding whether a ticket needs manual human action. The tool is\nstrictly read-only, fetches are on-demand (no bulk ingestion), and only\nrepos in the *repos* allowlist are reachable.\n\nAttributes:\n    enabled: Master switch. When ``False``, no refdocs tools are offered.\n    repos: Allowlist of ``owner/name`` GitHub repos the agent may read.\n        The board-workflow reference repo goes here. The tool refuses\n        any repo not in this list.\n    ref: Default git ref/branch to read from (``\"main\"``).\n    github_token: Optional PAT for private team repos; public repos work\n        without a token.\n    base_url: Overridable base URL for GitHub Enterprise.\n    timeout: Per-request HTTP timeout in seconds.",
+      "additionalProperties": false,
+      "description": "Reference-docs tool settings.\n\nRead-only access to team GitHub repos.  Gated behind ``enabled``.\nAt minimum, ``repos`` must be non-empty when enabled.\n\nAttributes:\n    enabled: Master switch.\n    repos: Allowlist of ``owner/name`` GitHub repos.\n    ref: Default git ref/branch to read from.\n    github_token: Optional GitHub PAT for private repos.\n    base_url: Base URL for GitHub API.\n    timeout: Per-request HTTP timeout.",
       "properties": {
         "enabled": {
           "default": false,
@@ -440,6 +571,7 @@
           "type": "boolean"
         },
         "repos": {
+          "default": [],
           "items": {
             "type": "string"
           },
@@ -473,7 +605,8 @@
       "type": "object"
     },
     "RepoStudySettings": {
-      "description": "Temporary local repo workspaces the agent can fetch and study.\n\nWhen enabled, the chat agent gains read-only tools to download a GitHub\nrepository snapshot (tarball \u2014 no ``git`` binary involved), extract it\ninto a temporary workspace under *data_dir*, and study it locally\n(list / read / regex-search files) before dropping it.  Workspaces are\ntransient: they are deleted on demand (``drop_repo_workspace``) and\nswept automatically once older than *ttl_minutes*.\n\nAuthentication reuses the ``direct_repo`` GitHub App credentials when\nthey are configured (the app's installation scope defines the private\nrepos the agent may fetch); without them only public repositories are\nreachable.  No new credential fields are introduced.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no repo-study tools are\n        offered.\n    data_dir: Directory holding the temporary workspaces.  Default\n        ``/data/repo_study`` (on the persistent volume, so a redeploy\n        mid-study does not lose the workspace; the TTL sweep still\n        bounds growth).\n    ttl_minutes: Age after which a workspace is deleted by the sweep\n        that runs on every repo-study tool call.\n    max_archive_bytes: Maximum size of the downloaded tarball.\n    max_extracted_bytes: Maximum total uncompressed size of a workspace.\n    max_read_bytes: Maximum bytes returned by a single file read.\n    timeout: Per-request HTTP timeout in seconds for the download.",
+      "additionalProperties": false,
+      "description": "Repo-study capability settings.\n\nTemporary local repo snapshots (GitHub tarball, no git binary) the\nagent can list, read, and regex-search before they expire.\nAuthentication for private repos reuses the ``direct_repo`` GitHub App\ncredentials; public repos need no auth.  Gated behind ``enabled``.\n\nAttributes:\n    enabled: Master switch.\n    data_dir: Workspace directory on the persistent volume.\n    ttl_minutes: Workspace lifetime before the automatic sweep.\n    max_archive_bytes: Tarball download cap (64 MiB).\n    max_extracted_bytes: Total uncompressed cap (256 MiB).\n    max_read_bytes: Per-read file byte cap (200 KiB).\n    timeout: Download HTTP timeout.",
       "properties": {
         "enabled": {
           "default": false,
@@ -515,7 +648,8 @@
       "type": "object"
     },
     "SelfReviewSettings": {
-      "description": "Self-review tool \u2014 a read-only digest of live conversation activity.\n\nWhen enabled, the agent gains a ``read_recent_activity`` tool that\nreads the in-process :class:`~robotsix_chat.chat.conversation.ConversationStore`\n(short-lived per-client conversation turns) and returns a human-readable\nmulti-session digest.  This is a deliberate, explicit, cross-client\nsnapshot \u2014 complementary to, but independent of, the optional cognee\nepisodic memory subsystem (``src/robotsix_chat/memory/``).\n\nDefault-disabled so behaviour is unchanged unless explicitly turned on.\n\nAttributes:\n    enabled: Master switch. When ``True``, the ``read_recent_activity``\n        tool is attached to the agent.\n    recent_activity_limit: Maximum number of conversations returned by\n        the tool (clamps the caller's ``limit`` argument).",
+      "additionalProperties": false,
+      "description": "Self-review tools settings.\n\nA read-only digest of live conversation activity.  Gated behind\n``enabled`` — when False (the default), no self-review tools are\noffered to the agent.\n\nAttributes:\n    enabled: Master switch.\n    recent_activity_limit: Maximum number of conversations returned by\n        the ``read_recent_activity`` tool.",
       "properties": {
         "enabled": {
           "default": false,
@@ -532,7 +666,8 @@
       "type": "object"
     },
     "SubsessionsSettings": {
-      "description": "Unified subsession system \u2014 background agents spawned from a chat.\n\nA subsession is a background agent run (``task``, ``periodic``, or\n``user_chat``) spawned by the main chat agent \u2014 or, nested, by another\nsubsession \u2014 with its own model level chosen by task difficulty.\n\nAttributes:\n    max_concurrent: Process-wide cap on simultaneously active\n        subsessions (all kinds, all depths).\n        Env override: ``SUBSESSIONS_MAX_CONCURRENT``.\n    max_depth: Maximum nesting depth.  The main chat session is depth\n        0; its subsessions are depth 1.  Agents at ``max_depth`` get\n        no spawn tools.  Env override: ``SUBSESSIONS_MAX_DEPTH``.\n    default_model_level: llmio capability level used when the\n        spawning agent does not pick one explicitly (1 cheapest \u2026 4\n        frontier).  Env override: ``SUBSESSIONS_DEFAULT_MODEL_LEVEL``.\n    min_interval_seconds: Minimum interval for ``periodic``\n        subsessions.  Env override: ``SUBSESSIONS_MIN_INTERVAL_SECONDS``.\n    auto_stop_no_change_runs: A periodic subsession auto-closes after\n        this many consecutive ``NO_CHANGE`` runs.\n        Env override: ``SUBSESSIONS_AUTO_STOP_NO_CHANGE_RUNS``.\n    store_path: JSON persistence file (periodic subsessions resume\n        across restarts).  Env override: ``SUBSESSIONS_STORE_PATH``.\n    transcript_max_entries: Per-subsession transcript retention cap.\n        Env override: ``SUBSESSIONS_TRANSCRIPT_MAX_ENTRIES``.",
+      "additionalProperties": false,
+      "description": "Unified subsession system configuration.\n\nControls spawn limits, default model level, periodic run intervals,\nand persistence for the subsession tree.\n\nAttributes:\n    max_concurrent: Maximum number of concurrently running subsessions\n        across the entire server.\n    max_depth: Maximum nesting depth for subsession spawning.\n    default_model_level: Default model level assigned to subsessions\n        when the spawner does not specify one.  Level 2 is the default\n        choice for general work.\n    min_interval_seconds: Minimum interval between periodic run\n        executions.\n    auto_stop_no_change_runs: Consecutive NO_CHANGE runs before\n        auto-stopping a periodic subsession.\n    store_path: Path to the subsession persistence JSON file.\n    transcript_max_entries: Maximum transcript entries per subsession.",
       "properties": {
         "max_concurrent": {
           "default": 8,
@@ -574,7 +709,8 @@
       "type": "object"
     },
     "VersionCheckSettings": {
-      "description": "Self-version-check tool: compare running version vs latest GitHub release.\n\nDisabled by default. When enabled, the agent gains a tool that reports the\nrunning ``robotsix_chat.__version__`` and the latest published release of\nthe configured GitHub repo, and flags when the deployment is out of date.\n\nAttributes:\n    enabled: Master switch. When ``False``, no version-check tool is offered.\n    repo: GitHub ``owner/name`` (e.g. ``robotsix/robotsix-chat``). Required\n        when *enabled*.\n    github_token: Optional PAT to avoid unauthenticated rate limits.\n    base_url: Overridable base URL for GitHub Enterprise.\n    timeout: Per-request HTTP timeout in seconds.\n    cache_ttl: Seconds to cache the latest-release lookup (monotonic clock).\n\nNote: the check is only meaningful when releases bump\n``robotsix_chat.__version__`` in lockstep with the GitHub release tag.",
+      "additionalProperties": false,
+      "description": "Self-version-check tool settings.\n\nCompares the running ``robotsix_chat.__version__`` against the latest\npublished GitHub release and warns the user when the deployment is\nbehind.  Gated behind ``enabled`` — when False (the default), no\nversion-check tool is offered to the agent.\n\nAttributes:\n    enabled: Master switch.\n    repo: GitHub ``owner/name`` of the repository to check against.\n        Required when enabled.\n    github_token: Optional GitHub PAT to avoid rate limits.\n    base_url: Base URL for GitHub API.\n    timeout: Per-request HTTP timeout.\n    cache_ttl: Seconds to cache the latest-release lookup before\n        re-fetching.",
       "properties": {
         "enabled": {
           "default": false,
@@ -613,11 +749,17 @@
       "type": "object"
     }
   },
-  "description": "Application settings, loaded from a single JSON config file.\n\nThe LLM is configured the robotsix-llmio way \u2014 pick a capability\n``model_level`` and llmio resolves the provider + model for that level\n(from its baked default :class:`~robotsix_llmio.config.TierLevelConfig`).\n\nAttributes:\n    llmio_model_level: Capability level \u2014 ``1`` (cheapest/fastest) to\n        ``4`` (frontier). The level encodes the provider + model: by\n        default levels 1-2 use ``openrouter``, level 3 uses\n        ``claudeSDK``/``opus``, level 4 ``claudeSDK``/``claude-fable-5``.\n    llmio_api_key: Provider API key, forwarded to llmio when the chosen\n        level's provider needs one (e.g. ``openrouter``); unused\n        by keyless providers like ``claudeSDK``.\n    summary_model_level: Capability level used to generate the\n        structured conversation summary (``POST /summary``, regenerated\n        after every assistant turn). Defaults to the cheapest tier since\n        it is a bounded extraction task, not open-ended reasoning \u2014\n        reusing the main agent's (often much pricier) level here would\n        burn a full-capability call on every single turn.\n    agent_instruction: System instruction handed to the LLM agent.\n        Includes guidance on spawning subsessions for background work.\n    server_host: Host address the chat SSE server binds to.\n    server_port: Port the chat SSE server listens on.\n    idle_timeout_minutes: Minutes of no user activity before the UI\n        auto-restarts the conversation; ``0`` disables the feature.\n    subsessions: Unified subsession system (background/periodic/user-chat\n        sub-agents) \u2014 see :class:`SubsessionsSettings`.\n    log_level: Python logging level name.\n    log_json_format: When ``True`` (default), log lines are emitted as\n        structured JSON via structlog.  Set to ``False`` for human-readable\n        console output during local development.\n    cors_allow_origins: Origins allowed to call /chat cross-origin\n        (empty = none; ``[\"*\"]`` = any). Only needed when the browser\n        UI is hosted on a different origin than the server.\n    correlation_id_header: HTTP header name used for the correlation /\n        request-id (both inbound and outbound). Default ``X-Request-ID``.\n    langfuse: Main-agent Langfuse observability credentials.\n    max_images_per_message: Maximum number of images a client may attach to\n        a single ``POST /chat`` request.  Default ``8``.\n    max_image_bytes: Maximum decoded size (bytes) of a single attached\n        image.  Default ``5_242_880`` (5 MiB).\n    allowed_image_media_types: Media types accepted for image attachments.\n        Default ``[\"image/png\", \"image/jpeg\", \"image/gif\", \"image/webp\"]``.",
+  "additionalProperties": false,
+  "description": "Application settings for robotsix-chat.\n\nThis is the single-source-of-truth settings model, loaded from the\nJSON config file via ``robotsix-config``.  Every field has a sensible\ndefault — the committed ``config/config.json`` mirrors those defaults\nso operators only need to edit the fields they want to change.\n\nThere is **no YAML cascade and no env-var overlay** — the only\nenvironment variable consumed for config is ``ROBOTSIX_CONFIG_FILE``,\nwhich points to the JSON file.\n\nAttributes:\n    llmio_model_level: LLM capability level: ``1`` (cheapest), ``2``,\n        ``3``, or ``4`` (best).\n    summary_model_level: LLM capability level for the dedicated\n        ``POST /summary`` extraction agent.  Default ``1`` (cheapest).\n        Unlike ``llmio_model_level``, a missing API key for this\n        level is not fatal — the server logs a warning and falls back\n        to the keyless level 3 instead of refusing to start.\n    llmio_api_key: OpenRouter API key.  Required for levels 1-2;\n        ignored for keyless tiers 3-4.\n    agent_instruction: System instruction for the agent.  Default is\n        the pinned version from ``system_prompt.py``, tracked by\n        ``SYSTEM_PROMPT_VERSION``.\n    server_host: Host the server binds to.\n    server_port: Port the server listens on.\n    idle_timeout_minutes: Minutes of no user activity before\n        auto-compaction. ``0`` disables.\n    log_level: Python logging level.\n    log_json_format: When ``True`` (default), logs are emitted as JSON\n        suitable for structured log ingestion.  Set to ``False`` for\n        human-readable console output during development.\n    cors_allow_origins: Origins permitted to call ``/chat``\n        cross-origin. ``[]`` (default) adds no CORS headers;\n        ``[\"*\"]`` allows any origin.\n    correlation_id_header: HTTP header name used for the correlation /\n        request-id (both inbound and outbound). Default ``X-Request-ID``.\n    langfuse: Main-agent Langfuse observability credentials.\n    feedback: Automated feedback analysis that files improvement\n        tickets at compaction and session-end boundaries.\n    max_images_per_message: Maximum number of images a client may attach to\n        a single ``POST /chat`` request.  Default ``8``.\n    max_image_bytes: Maximum decoded size (bytes) of a single attached\n        image.  Default ``5_242_880`` (5 MiB).\n    allowed_image_media_types: Allowed image MIME types.  Default\n        ``[\"image/png\", \"image/jpeg\", \"image/gif\", \"image/webp\"]``.",
   "properties": {
     "llmio_model_level": {
       "default": 3,
       "title": "Llmio Model Level",
+      "type": "integer"
+    },
+    "summary_model_level": {
+      "default": 1,
+      "title": "Summary Model Level",
       "type": "integer"
     },
     "llmio_api_key": {
@@ -627,13 +769,8 @@
       "type": "string",
       "writeOnly": true
     },
-    "summary_model_level": {
-      "default": 1,
-      "title": "Summary Model Level",
-      "type": "integer"
-    },
     "agent_instruction": {
-      "default": "You are a helpful assistant. You have a local, durable knowledge base (add_knowledge_note, append_to_knowledge_note, update_knowledge_note, list_knowledge_notes, read_knowledge_note) for operational notes and lessons you deliberately author \u2014 consult it at the start of every session and write durable findings to it. Unlike the stable, human-governed system prompt (which you must not modify), these notes are yours to author and revise by id. This store is distinct from the automatic cognee conversation memory \u2014 cognee recalls past exchanges by similarity, while these notes you explicitly create and address by id. Answer quick questions inline.\n\nSubsessions:\n\u2013 spawn_subsession offloads work to a background sub-agent that has the same tools you do. Three kinds: 'task' (one-shot job \u2014 multi-step research, long generation, anything that would stall your reply), 'periodic' (re-runs instructions on an interval \u2014 monitoring, polling), and 'user_chat' (a side-chat with the user for a focused question or decision \u2014 use it instead of blocking this conversation while you wait for an answer).\n\u2013 Pick model_level by difficulty and cost: 1 is the cheapest OpenRouter tier for trivial polling or extraction, 2 is the default choice for general work \u2014 prefer it unless the task needs stronger reasoning, 3 is a stronger keyless tier reserved for reasoning 2 struggles with, 4 is the frontier tier \u2014 only for genuinely hard reasoning. Levels 1-2 need an OpenRouter API key; if a spawn errors for a missing key, retry at level 3. Never spawn at level 4 for routine checks.\n\u2013 Write instructions that are complete and self-contained: the subsession starts with NO conversation history, so include every id, URL, constraint, and expected outcome it needs.\n\u2013 The subsession's summary arrives in this conversation when it closes. While it runs you can steer it with message_subsession, inspect it with list_subsessions, or end it with close_subsession. Tell the user the work is running in the background.\n\u2013 Inside a subsession, call complete_subsession(summary) as soon as your goal is reached \u2014 for periodic work, that means as soon as the monitored condition reaches a verified terminal state; do NOT keep re-reporting a finished state. Reply exactly NO_CHANGE on a periodic run where nothing changed.\n\u2013 In a user_chat subsession, ask a pending question ONCE and wait for the user's reply; close with a summary once the discussion reaches a conclusion. The user can also close it at any time.\n\u2013 Subsessions can spawn their own subsessions (nesting is depth-limited) \u2014 split genuinely independent subtasks, do not chain for its own sake. Check list_subsessions before spawning to avoid duplicating running work.\n\nAutonomy:\n\u2013 Proactively perform actions that are clearly safe and reversible without waiting for explicit human validation \u2014 do not ask for permission when the action is low-risk and can be easily undone. Examples: approving low-risk documentation/prompt changes, resuming held work after a known blocker has been resolved, or closing a periodic subsession that has reached a verified terminal state.\n\u2013 Gate risky, destructive, irreversible, or ambiguous actions behind human approval \u2014 when in doubt about safety or reversibility, ask before acting.\n\u2013 You upgrade your own capabilities by filing tickets on the robotsix-chat repo \u2014 new tools, components, and permissions are granted through the standard ticket workflow. When you need a new capability (e.g. a new virtual component, a new tool, or broader access), file a ticket on the robotsix-chat repo describing what you need and why. After the ticket is implemented, merged, and deployed, you self-restart via the deploy component to pick up the newly registered capability.\n\n\nEfficiency:\n\u2013 If a required tool is missing, state it in one sentence and stop \u2014 do not explore alternatives, explain why, or narrate checking for it.\n\u2013 Answer in three sentences or fewer unless the user explicitly asks you to elaborate. Do NOT volunteer multi-row markdown tables, timeline/audit dumps, or recap lists \u2014 emit those formats ONLY when the user explicitly requests them (e.g. 'show me a table', 'give me the full audit'). Never repeat content already shown earlier in the same conversation.\n\u2013 All tools are already loaded and available for the entire session; there is no separate tool-loading step. Never narrate loading, preparing, or fetching tools (e.g. 'I'll load the tools\u2026', 'Let me load the task management tool first') and never announce or run a 'capability check'. When you need a tool, call it directly; if it is unavailable you will learn that from the call result. Do not restate tool descriptions across turns.\n\nYou are a conversational assistant with no ability to run shell commands, read or edit files, browse the web, or otherwise access the host system or its network. You can only converse and use the tools explicitly provided to you in this session. If a request needs access you don't have, briefly say so and suggest an alternative; never narrate or pretend to perform such actions.",
+      "default": "You are a helpful assistant...",
       "title": "Agent Instruction",
       "type": "string"
     },
@@ -663,6 +800,7 @@
       "type": "boolean"
     },
     "cors_allow_origins": {
+      "default": [],
       "items": {
         "type": "string"
       },
@@ -675,52 +813,185 @@
       "type": "string"
     },
     "langfuse": {
-      "$ref": "#/$defs/LangfuseSettings"
+      "$ref": "#/$defs/LangfuseSettings",
+      "default": {
+        "public_key": "",
+        "secret_key": "",
+        "host": "https://cloud.langfuse.com"
+      }
     },
     "memory": {
-      "$ref": "#/$defs/MemorySettings"
+      "$ref": "#/$defs/MemorySettings",
+      "default": {
+        "enabled": false,
+        "data_dir": "/data/cognee",
+        "recall_search_type": "GRAPH_COMPLETION",
+        "llm": {
+          "api_key": "",
+          "provider": "custom",
+          "model": "openrouter/deepseek/deepseek-v4-flash",
+          "endpoint": "https://openrouter.ai/api/v1"
+        },
+        "embedding": {
+          "api_key": "",
+          "provider": "openai_compatible",
+          "model": "bge-m3",
+          "endpoint": "",
+          "dimensions": 1024,
+          "huggingface_tokenizer": "BAAI/bge-m3"
+        },
+        "langfuse": {
+          "public_key": "",
+          "secret_key": "",
+          "host": "https://cloud.langfuse.com"
+        }
+      }
     },
     "central_deploy": {
-      "$ref": "#/$defs/CentralDeploySettings"
+      "$ref": "#/$defs/CentralDeploySettings",
+      "default": {
+        "url": "",
+        "api_token": "",
+        "roster_cache_ttl": 300.0,
+        "component_response_max_chars": 200000
+      }
     },
     "mail": {
-      "$ref": "#/$defs/MailSettings"
+      "$ref": "#/$defs/MailSettings",
+      "default": {
+        "enabled": false,
+        "api_base_url": "http://127.0.0.1:8077",
+        "api_token": "",
+        "timeout": 30.0
+      }
     },
     "conversation": {
-      "$ref": "#/$defs/ConversationSettings"
+      "$ref": "#/$defs/ConversationSettings",
+      "default": {
+        "max_history_turns": 50,
+        "max_conversations": 1000,
+        "persist_path": "/data/conversations.json"
+      }
     },
     "diagnostics": {
-      "$ref": "#/$defs/DiagnosticsSettings"
+      "$ref": "#/$defs/DiagnosticsSettings",
+      "default": {
+        "enabled": true,
+        "store_path": "/data/diagnostics.json",
+        "proposals_path": "/data/fix_proposals.json",
+        "effectiveness_path": "/data/diagnostics_effectiveness.json",
+        "recurrence_threshold": 3,
+        "recurrence_window_days": 30,
+        "observation_window_days": 30
+      }
     },
     "refdocs": {
-      "$ref": "#/$defs/RefDocsSettings"
+      "$ref": "#/$defs/RefDocsSettings",
+      "default": {
+        "enabled": false,
+        "repos": [],
+        "ref": "main",
+        "github_token": "",
+        "base_url": "https://api.github.com",
+        "timeout": 30.0
+      }
     },
     "knowledge": {
-      "$ref": "#/$defs/KnowledgeSettings"
+      "$ref": "#/$defs/KnowledgeSettings",
+      "default": {
+        "enabled": true,
+        "path": "/data/knowledge.json"
+      }
     },
     "self_review": {
-      "$ref": "#/$defs/SelfReviewSettings"
+      "$ref": "#/$defs/SelfReviewSettings",
+      "default": {
+        "enabled": false,
+        "recent_activity_limit": 20
+      }
     },
     "version_check": {
-      "$ref": "#/$defs/VersionCheckSettings"
+      "$ref": "#/$defs/VersionCheckSettings",
+      "default": {
+        "enabled": false,
+        "repo": "",
+        "github_token": "",
+        "base_url": "https://api.github.com",
+        "timeout": 30.0,
+        "cache_ttl": 300.0
+      }
     },
     "component_client": {
-      "$ref": "#/$defs/ComponentClientSettings"
+      "$ref": "#/$defs/ComponentClientSettings",
+      "default": {
+        "enabled": false,
+        "timeout": 240.0,
+        "components": []
+      }
     },
     "subsessions": {
-      "$ref": "#/$defs/SubsessionsSettings"
+      "$ref": "#/$defs/SubsessionsSettings",
+      "default": {
+        "max_concurrent": 8,
+        "max_depth": 3,
+        "default_model_level": 2,
+        "min_interval_seconds": 60.0,
+        "auto_stop_no_change_runs": 5,
+        "store_path": "/data/subsessions.json",
+        "transcript_max_entries": 200
+      }
     },
     "direct_repo": {
-      "$ref": "#/$defs/DirectRepoSettings"
+      "$ref": "#/$defs/DirectRepoSettings",
+      "default": {
+        "enabled": false,
+        "github_app_id": "",
+        "github_app_private_key": "",
+        "github_app_installation_id": "",
+        "github_api_base_url": "https://api.github.com",
+        "board_api_base_url": "http://127.0.0.1:8077",
+        "board_api_token": "",
+        "timeout": 30.0
+      }
     },
     "github_security": {
-      "$ref": "#/$defs/GitHubSecuritySettings"
+      "$ref": "#/$defs/GitHubSecuritySettings",
+      "default": {
+        "enabled": false,
+        "github_org": "damien-robotsix",
+        "timeout": 30.0
+      }
     },
     "repo_study": {
-      "$ref": "#/$defs/RepoStudySettings"
+      "$ref": "#/$defs/RepoStudySettings",
+      "default": {
+        "enabled": false,
+        "data_dir": "/data/repo_study",
+        "ttl_minutes": 240,
+        "max_archive_bytes": 67108864,
+        "max_extracted_bytes": 268435456,
+        "max_read_bytes": 204800,
+        "timeout": 60.0
+      }
     },
     "lifecycle": {
-      "$ref": "#/$defs/LifecycleSettings"
+      "$ref": "#/$defs/LifecycleSettings",
+      "default": {
+        "enabled": false,
+        "base_url": "",
+        "api_key": "",
+        "timeout": 30.0
+      }
+    },
+    "feedback": {
+      "$ref": "#/$defs/FeedbackSettings",
+      "default": {
+        "enabled": false,
+        "model_level": 1,
+        "board_url": "",
+        "board_api_token": "",
+        "timeout": 60.0
+      }
     },
     "notification": {
       "$ref": "#/$defs/NotificationSettings"
@@ -736,6 +1007,12 @@
       "type": "integer"
     },
     "allowed_image_media_types": {
+      "default": [
+        "image/png",
+        "image/jpeg",
+        "image/gif",
+        "image/webp"
+      ],
       "items": {
         "type": "string"
       },
