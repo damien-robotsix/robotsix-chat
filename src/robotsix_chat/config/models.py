@@ -501,6 +501,26 @@ class GitHubSecuritySettings(BaseModel):
     timeout: float = 30.0
 
 
+class NotificationSettings(BaseModel):
+    """Browser notification settings — lets the agent alert the user proactively.
+
+    When enabled, the agent gains a ``notify_user`` tool that publishes a
+    notification event to connected clients over the existing SSE channel
+    (EventBus).  The user's browser renders the event via the native
+    Notifications API.
+
+    Delivery only reaches clients that are currently connected — the
+    notification is silently dropped when no browser is listening.
+
+    Attributes:
+        enabled: Master switch.  When ``False``, no notify_user tool is
+            offered.
+
+    """
+
+    enabled: bool = False
+
+
 class CentralDeploySettings(BaseModel):
     """Central-deploy roster and component-access settings.
 

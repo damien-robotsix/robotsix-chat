@@ -36,6 +36,7 @@ from robotsix_chat.lifecycle import build_lifecycle_tools
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.mail import build_mail_tools
 from robotsix_chat.memory import NullMemory, build_memory
+from robotsix_chat.notification import build_notification_tools
 from robotsix_chat.refdocs import build_refdocs_tools
 from robotsix_chat.repo.direct import build_direct_repo_tools
 from robotsix_chat.repo.study import build_repo_study_tools
@@ -474,6 +475,14 @@ def create_agent_from_settings(
         if lifecycle_skill:
             instruction = f"{instruction}\n\n{lifecycle_skill}"
 
+    # Inject the notification component skill when notification is enabled.
+    if not bare and settings.notification.enabled:
+        from robotsix_chat.notification import load_notification_skill
+
+        notification_skill = load_notification_skill()
+        if notification_skill:
+            instruction = f"{instruction}\n\n{notification_skill}"
+
     effective_level = (
         model_level if model_level is not None else settings.llmio_model_level
     )
@@ -506,6 +515,8 @@ def create_agent_from_settings(
         tools = tool_wrapper(tools)
 
     request_tools_factory: Callable[[str], list[Any]] | None = None
+    req_factories: list[Callable[[str], list[Any]]] = []
+
     if not bare and subsession_env is not None:
         from robotsix_chat.subsessions import (
             SubsessionContext as _Ctx,
@@ -539,7 +550,28 @@ def create_agent_from_settings(
                     ),
                 )
 
-            request_tools_factory = _make_request_tools
+            req_factories.append(_make_request_tools)
+
+    if not bare and settings.notification.enabled and event_sink is not None:
+
+        def _make_notification_tools(session_id: str) -> list[Any]:
+            return build_notification_tools(
+                settings.notification,
+                event_sink=event_sink,
+                session_id=session_id,
+            )
+
+        req_factories.append(_make_notification_tools)
+
+    if req_factories:
+
+        def _compose(session_id: str) -> list[Any]:
+            result: list[Any] = []
+            for f in req_factories:
+                result.extend(f(session_id))
+            return result
+
+        request_tools_factory = _compose
 
     return LlmioChatAgent(
         model_level=effective_level,
