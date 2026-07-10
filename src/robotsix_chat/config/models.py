@@ -467,6 +467,40 @@ class LifecycleSettings(BaseModel):
     timeout: float = 30.0
 
 
+class GitHubSecuritySettings(BaseModel):
+    """Repository security-feature toggle via the GitHub App installation.
+
+    When enabled, the chat agent gains a ``set_repo_security_and_analysis``
+    tool that can enable or disable repository-level security features
+    (dependency graph, advanced security, secret scanning) on repos under
+    the configured GitHub App's installation scope.
+
+    **Guardrails built into the tool (not configurable):**
+    - Repo scope is resolved dynamically from the GitHub App installation
+      (list-installation-repositories) — no static allowlist.
+    - Only repos within the installation scope are modifiable.
+    - Each feature toggle explicitly requires ``"enabled"`` or ``"disabled"``
+      — no accidental bulk changes.
+
+    Attributes:
+        enabled: Master switch.  When ``False``, no security-feature tool
+            is offered.
+        github_org: GitHub organisation name whose repos are in scope
+            (e.g. ``"damien-robotsix"``).  The tool only targets repos
+            under this org.
+        timeout: Per-request HTTP timeout in seconds.
+
+    Note: GitHub App authentication is delegated to
+    :class:`DirectRepoSettings` — those credentials must also be configured
+    for the tool to function.
+
+    """
+
+    enabled: bool = False
+    github_org: str = "damien-robotsix"
+    timeout: float = 30.0
+
+
 class CentralDeploySettings(BaseModel):
     """Central-deploy roster and component-access settings.
 

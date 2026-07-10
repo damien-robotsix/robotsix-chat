@@ -196,6 +196,24 @@ class DirectRepoClient:
         except json.JSONDecodeError as exc:
             raise RuntimeError(f"GitHub API POST {path}: invalid JSON: {exc}") from exc
 
+    async def _patch_json(self, path: str, body: dict[str, Any]) -> Any:
+        """PATCH *path* on the GitHub API and return the parsed JSON body."""
+        url = f"{self._base_url}{path}"
+        result = await safe_http_request(
+            "PATCH",
+            url,
+            headers=await self._gh_headers(),
+            timeout=self._s.timeout,
+            json_body=body,
+            label="GitHub API",
+        )
+        if result.error:
+            raise RuntimeError(f"GitHub API PATCH {path}: {result.error}")
+        try:
+            return json.loads(result.text or "")
+        except json.JSONDecodeError as exc:
+            raise RuntimeError(f"GitHub API PATCH {path}: invalid JSON: {exc}") from exc
+
     # -- public API --------------------------------------------------------
 
     async def list_installation_repos(self) -> list[str]:
@@ -376,3 +394,63 @@ class DirectRepoClient:
             return f"Error opening PR: {exc}"
         except Exception as exc:
             return f"Error opening PR: {exc}"
+
+    async def set_security_and_analysis(
+        self,
+        repo_full_name: str,
+        *,
+        dependency_graph: str | None = None,
+        advanced_security: str | None = None,
+        secret_scanning: str | None = None,
+        secret_scanning_push_protection: str | None = None,
+    ) -> str:
+        """Enable or disable repository security features.
+
+        Sets the ``security_and_analysis`` block on a repo via
+        ``PATCH /repos/{owner}/{repo}``.  Each argument accepts
+        ``"enabled"`` or ``"disabled"``; ``None`` leaves the setting
+        unchanged.
+
+        Never raises — returns a success/error message string.
+        """
+        valid = frozenset({"enabled", "disabled"})
+        for name, val in (
+            ("dependency_graph", dependency_graph),
+            ("advanced_security", advanced_security),
+            ("secret_scanning", secret_scanning),
+            ("secret_scanning_push_protection", secret_scanning_push_protection),
+        ):
+            if val is not None and val not in valid:
+                return f"Error: {name} must be 'enabled' or 'disabled', got {val!r}"
+
+        body: dict[str, Any] = {"security_and_analysis": {}}
+        for key, val in (
+            ("dependency_graph", dependency_graph),
+            ("advanced_security", advanced_security),
+            ("secret_scanning", secret_scanning),
+            (
+                "secret_scanning_push_protection",
+                secret_scanning_push_protection,
+            ),
+        ):
+            if val is not None:
+                body["security_and_analysis"][key] = {"status": val}
+
+        if not body["security_and_analysis"]:
+            return "Error: at least one security feature must be specified."
+
+        try:
+            data = await self._patch_json(
+                f"/repos/{repo_full_name}",
+                body,
+            )
+            changed = list(body["security_and_analysis"].keys())
+            return (
+                f"Security settings updated for {repo_full_name}: "
+                f"{', '.join(changed)}.\n"
+                f"Response: {json.dumps(data, indent=2)}"
+            )
+        except RuntimeError as exc:
+            return f"Error updating security settings: {exc}"
+        except Exception as exc:
+            return f"Error updating security settings: {exc}"

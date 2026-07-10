@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- New `set_repo_security_and_analysis` tool: enable or disable repository-level security features (dependency graph, advanced security, secret scanning, push protection) on repos under the configured GitHub organisation. Gated behind `github_security.enabled`; dynamically scoped to the GitHub App's installation repositories.
 - Migrate PROJECT_TITLE to a `<meta name="project-title">` tag in index.html, and read it from the DOM in the inline JS instead of using Jinja2 placeholders, to prepare for extraction of JS into a static file.
 - Increase subsession panel detail text font size from 0.75rem to 0.85rem for improved readability.
 - Add configurable `component_response_max_chars` (default 200,000) to `central_deploy` settings, used as the truncation limit for GET/HEAD component responses — write methods keep the existing 8,000 limit. This lets the agent enumerate large ticket lists (e.g. mill board blocked tickets) without truncation.
