@@ -198,6 +198,7 @@ class Settings(BaseModel):
     server_host: str = "0.0.0.0"  # noqa: S104  # nosec B104
     server_port: int = 8000
     idle_timeout_minutes: int = 30
+    compaction_min_turns: int = 3
     log_level: str = "INFO"
     log_json_format: bool = True
     cors_allow_origins: list[str] = Field(default_factory=list)
@@ -278,6 +279,7 @@ class Settings(BaseModel):
                     "the config file"
                 )
         self._require_min(self.idle_timeout_minutes, 0, "idle_timeout_minutes")
+        self._require_min(self.compaction_min_turns, 0, "compaction_min_turns")
         self._require_min(
             self.subsessions.max_concurrent, 1, "subsessions.max_concurrent"
         )

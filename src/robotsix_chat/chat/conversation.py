@@ -65,9 +65,16 @@ class Session:
     turns: list[Turn] = field(default_factory=list)
     turn_count: int = 0
     closed: bool = False
+    # Summary of the turns before ``compacted_turn_index`` — replayed to the
+    # agent in place of those turns.  The full ``turns`` list is untouched, so
+    # the UI transcript stays complete.
     compacted_summary: str | None = None
-    # Set when an idle-timeout compaction replaced this session: the id of
-    # the continuation session that new messages should be routed to.
+    # How many leading entries of ``turns`` the summary covers.  Adjusted when
+    # history trimming drops leading turns.
+    compacted_turn_index: int = 0
+    # LEGACY (pre in-place compaction): id of the continuation session an old
+    # compaction created.  Kept so persisted chains still reroute; new
+    # compactions never set it.
     compacted_into: str | None = None
 
 
@@ -248,6 +255,12 @@ class ConversationStoreSerializer:
                     if isinstance(compacted_into_raw, str)
                     else None
                 )
+                compacted_turn_index_raw = sraw.get("compacted_turn_index", 0)
+                compacted_turn_index = (
+                    int(compacted_turn_index_raw)
+                    if isinstance(compacted_turn_index_raw, int | float)
+                    else 0
+                )
 
                 session = Session(
                     session_id=sid,
@@ -257,6 +270,7 @@ class ConversationStoreSerializer:
                     turn_count=int(sraw.get("turn_count", len(turns))),
                     closed=bool(sraw.get("closed", False)),
                     compacted_summary=compacted_summary,
+                    compacted_turn_index=min(compacted_turn_index, len(turns)),
                     compacted_into=compacted_into,
                 )
                 sessions[sid] = session
@@ -300,6 +314,8 @@ class ConversationStoreSerializer:
                 }
                 if session.compacted_summary is not None:
                     session_dict["compacted_summary"] = session.compacted_summary
+                if session.compacted_turn_index:
+                    session_dict["compacted_turn_index"] = session.compacted_turn_index
                 if session.compacted_into is not None:
                     session_dict["compacted_into"] = session.compacted_into
                 sessions_list.append(session_dict)
@@ -394,12 +410,39 @@ class ConversationStore:
         self._sessions.move_to_end(session_id)
         self._evict_overflow()
 
-        history = list(session.turns)
-        if session.compacted_summary:
-            history.insert(0, ("", session.compacted_summary))
-            session.compacted_summary = None  # only inject once
+        return session.session_id, self._agent_view(session)
 
-        return session.session_id, history
+    @staticmethod
+    def _agent_view(session: Session) -> list[Turn]:
+        """Build the agent-facing history: summary + post-summary turns.
+
+        Turns covered by ``compacted_summary`` are replaced by the summary (a
+        synthetic ``("", summary)`` leading turn); everything after
+        ``compacted_turn_index`` is replayed verbatim.  The raw ``turns`` list
+        (the UI transcript) is never mutated.
+        """
+        history = list(session.turns[session.compacted_turn_index :])
+        if session.compacted_summary:
+            history.insert(
+                0,
+                (
+                    "",
+                    "[Summary of the earlier part of this conversation]\n"
+                    + session.compacted_summary,
+                ),
+            )
+        return history
+
+    def agent_history(self, session_id: str) -> list[Turn]:
+        """Read-only agent-facing history for *session_id* (see ``_agent_view``).
+
+        Unlike :meth:`begin` this has no side effects (no lazy creation, no
+        LRU bump).  Returns an empty list for unknown sessions.
+        """
+        session = self._sessions.get(session_id)
+        if session is None:
+            return []
+        return self._agent_view(session)
 
     def record(
         self,
@@ -427,7 +470,12 @@ class ConversationStore:
 
         session.turns.append((user_message, assistant_reply))
         if len(session.turns) > self._max_history_turns:
+            trimmed = len(session.turns) - self._max_history_turns
             del session.turns[: -self._max_history_turns]
+            # Keep the compaction marker aligned with the surviving turns.
+            session.compacted_turn_index = max(
+                0, session.compacted_turn_index - trimmed
+            )
         session.turn_count += 1
         session.wall_last_active = self._wall_clock()
         self._sessions.move_to_end(session_id)
@@ -667,58 +715,46 @@ class ConversationStore:
 
     def compact_session(
         self,
-        owner_id: str,
+        owner_id: str,  # noqa: ARG002 — kept for call-site clarity
         session_id: str,
         summary: str,
     ) -> dict[str, object]:
-        """Create a new session for *owner_id* with a compaction summary.
+        """Compact *session_id* **in place**: store *summary* over its turns.
 
-        The old session's history is preserved but the new session starts with
-        *summary* stored as ``compacted_summary`` — it will be injected into
-        the agent's context on the next user message so the LLM retains
-        awareness of the prior conversation.
+        The session keeps its id, title, and full ``turns`` list (the UI
+        transcript is untouched); only the agent-facing replay changes —
+        turns up to this point are replaced by *summary* (see
+        :meth:`agent_history`).  No new session is created, so the session
+        list stays stable and subsessions never change owner.
 
-        The old *session_id* is marked with ``compacted_into`` pointing at the
-        new session, so a client still posting to the old id (its localStorage
-        pointer only updates when it sees the response) is rerouted by
-        :meth:`resolve_session` instead of triggering another compaction —
-        without this every message after an idle gap minted a fresh session.
+        (The previous design minted a continuation session per idle gap,
+        which proliferated "New chat" husks, dragged subsession trees across
+        sessions, and stranded clients still posting to the old id.)
 
-        Returns the new session metadata dict including ``compacted_summary``.
+        Returns the session's metadata dict including ``compacted_summary``.
+        No-op (still returning metadata) for unknown sessions.
         """
-        sid = self._session_factory()
-        now = self._wall_clock()
-        session = Session(
-            session_id=sid,
-            wall_last_active=now,
-            compacted_summary=summary,
-        )
-        self._sessions[sid] = session
+        session = self._sessions.get(session_id)
+        if session is None:
+            return {
+                "session_id": session_id,
+                "title": _DEFAULT_TITLE,
+                "last_active": self._wall_clock(),
+                "turn_count": 0,
+                "closed": False,
+                "compacted_summary": summary,
+            }
 
-        old_session = self._sessions.get(session_id)
-        if old_session is not None:
-            old_session.compacted_into = sid
-
-        owner = self._owners.get(owner_id)
-        if owner is None:
-            self._owners[owner_id] = _OwnerState(
-                active_session_id=sid,
-                session_ids={sid},
-            )
-        else:
-            owner.active_session_id = sid
-            owner.session_ids.add(sid)
-
-        self._sessions.move_to_end(sid)
-        self._evict_overflow()
+        session.compacted_summary = summary
+        session.compacted_turn_index = len(session.turns)
         self._persist()
 
         return {
-            "session_id": sid,
-            "title": _DEFAULT_TITLE,
-            "last_active": now,
-            "turn_count": 0,
-            "closed": False,
+            "session_id": session.session_id,
+            "title": session.title,
+            "last_active": session.wall_last_active,
+            "turn_count": session.turn_count,
+            "closed": session.closed,
             "compacted_summary": summary,
         }
 

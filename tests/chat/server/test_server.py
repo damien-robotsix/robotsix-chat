@@ -1304,6 +1304,7 @@ async def test_run_server_from_config_creates_agent_from_settings(
             "host": "127.0.0.1",
             "port": 8080,
             "idle_timeout_minutes": 30,
+            "compaction_min_turns": 3,
             "max_images_per_message": 8,
             "max_image_bytes": 5_242_880,
             "allowed_image_media_types": [
@@ -2432,28 +2433,27 @@ def test_create_app_and_run_server_shared_params() -> None:
 
 
 @pytest.mark.asyncio
-async def test_stale_compacted_session_id_reroutes_instead_of_recompacting() -> None:
-    """Regression: the idle-compaction runaway that split conversations.
+async def test_idle_compaction_is_in_place_same_session() -> None:
+    """Idle compaction keeps the session id.
 
-    After an idle timeout compacts a session into a continuation, a client
-    still posting with the OLD session id (its localStorage pointer updates
-    only when it sees the response) must be rerouted to the continuation —
-    previously the old session's frozen last-active re-triggered compaction
-    on every message, minting a new session per message.  Subsessions must
-    follow the conversation to the continuation session.
+    No continuation session is minted, the UI transcript survives, and
+    subsessions never change owner.
+
+    Regression for the session-proliferation mess: the old design created a
+    new session per idle gap and dragged the subsession tree along.
     """
     import time as time_mod
 
     store = ConversationStore()
-    old_sid = cast(str, store.create_session("owner-idle")["session_id"])
-    store.record(old_sid, "owner-idle", "hi", "hello!")
+    sid = cast(str, store.create_session("owner-idle")["session_id"])
+    for i in range(3):
+        store.record(sid, "owner-idle", f"q{i}", f"a{i}")
     registry = SubsessionRegistry(store_path=None)
-    sub = _register_subsession(registry, owner=old_sid)
+    sub = _register_subsession(registry, owner=sid)
 
-    # Make the session look idle: last active one hour ago.
-    old_session = store.get_session(old_sid)
-    assert old_session is not None
-    old_session.wall_last_active = time_mod.time() - 3600
+    session = store.get_session(sid)
+    assert session is not None
+    session.wall_last_active = time_mod.time() - 3600  # one hour idle
 
     async with mock_app(
         tokens=["ok"],
@@ -2462,33 +2462,83 @@ async def test_stale_compacted_session_id_reroutes_instead_of_recompacting() -> 
         subsession_registry=registry,
         idle_timeout_minutes=30,
     ) as f:
-        # First message after the idle gap → compaction into a continuation.
-        response1 = await f.client.post(
+        response = await f.client.post(
             "/chat",
-            json={"message": "back", "session_id": old_sid, "owner_id": "owner-idle"},
+            json={"message": "back", "session_id": sid, "owner_id": "owner-idle"},
         )
-        frames1 = _parse_sse(response1)
-        done1 = [fr for fr in frames1 if fr["type"] == SSE_DONE_TYPE][-1]
-        new_sid = done1["session_id"]
-        assert new_sid != old_sid
+        frames = _parse_sse(response)
+        done = [fr for fr in frames if fr["type"] == SSE_DONE_TYPE][-1]
 
-        # The old session points at the continuation; subsessions moved.
-        assert store.resolve_session(old_sid) == new_sid
-        assert [i.id for i in registry.list_for_owner(new_sid)] == [sub.id]
-        assert registry.list_for_owner(old_sid) == []
-        assert sub.owner_session_id == new_sid
+    assert done["session_id"] == sid  # same session — nothing minted
+    sessions, active = store.list_sessions("owner-idle")
+    assert [s["session_id"] for s in sessions] == [sid]
+    assert active == sid
+    # Subsession untouched.
+    assert sub.owner_session_id == sid
+    # Transcript intact (3 old turns + the new one); agent view compacted.
+    assert len(store.history(sid)) == 4
+    agent_view = store.agent_history(sid)
+    assert "summary of prior chat" in agent_view[0][1]
+    assert [u for u, _ in agent_view[1:]] == ["back"]
 
-        # Second message still using the STALE id → rerouted, NOT re-compacted.
-        response2 = await f.client.post(
+
+@pytest.mark.asyncio
+async def test_idle_compaction_skipped_below_min_turns() -> None:
+    """A tiny (or empty) idle conversation is never compacted.
+
+    The summary agent must not even be called (user-reported: compaction
+    churned on empty conversations).
+    """
+    import time as time_mod
+
+    store = ConversationStore()
+    sid = cast(str, store.create_session("owner-idle")["session_id"])
+    store.record(sid, "owner-idle", "only turn", "reply")
+
+    session = store.get_session(sid)
+    assert session is not None
+    session.wall_last_active = time_mod.time() - 3600
+
+    summary_agent = MockAgent(tokens=["should never run"])
+    async with mock_app(
+        tokens=["ok"],
+        summary_agent=summary_agent,
+        conversation_store=store,
+        idle_timeout_minutes=30,
+        compaction_min_turns=3,
+    ) as f:
+        await f.client.post(
             "/chat",
-            json={"message": "again", "session_id": old_sid, "owner_id": "owner-idle"},
+            json={"message": "back", "session_id": sid, "owner_id": "owner-idle"},
         )
-        frames2 = _parse_sse(response2)
-        done2 = [fr for fr in frames2 if fr["type"] == SSE_DONE_TYPE][-1]
-        assert done2["session_id"] == new_sid
 
-    # Both post-gap turns landed in the one continuation session.
-    assert [u for u, _ in store.history(new_sid)] == ["back", "again"]
-    # Exactly two sessions exist: the compacted original and its continuation.
-    sessions, _ = store.list_sessions("owner-idle")
-    assert {s["session_id"] for s in sessions} == {old_sid, new_sid}
+    assert summary_agent.call_count == 0
+    assert store.get_session(sid).compacted_summary is None  # type: ignore[union-attr]
+
+
+@pytest.mark.asyncio
+async def test_legacy_compacted_into_chain_still_reroutes() -> None:
+    """Sessions compacted by the OLD design carry compacted_into pointers.
+
+    Posting to such an id must land in the live end of the chain.
+    """
+    store = ConversationStore()
+    old_sid = cast(str, store.create_session("owner-idle")["session_id"])
+    live_sid = cast(str, store.create_session("owner-idle")["session_id"])
+    store.get_session(old_sid).compacted_into = live_sid  # type: ignore[union-attr]
+
+    async with mock_app(
+        tokens=["ok"],
+        conversation_store=store,
+        idle_timeout_minutes=30,
+    ) as f:
+        response = await f.client.post(
+            "/chat",
+            json={"message": "hi", "session_id": old_sid, "owner_id": "owner-idle"},
+        )
+        frames = _parse_sse(response)
+        done = [fr for fr in frames if fr["type"] == SSE_DONE_TYPE][-1]
+
+    assert done["session_id"] == live_sid
+    assert [u for u, _ in store.history(live_sid)] == ["hi"]
+    assert store.history(old_sid) == []
