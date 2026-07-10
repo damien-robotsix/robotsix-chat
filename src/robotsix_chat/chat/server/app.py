@@ -316,10 +316,11 @@ def create_app(
     ]
     if serve_ui:
         routes.append(Route("/", ui_endpoint, methods=["GET"]))
+        static_dir = str(resources.files("robotsix_chat") / "ui" / "static")
         routes.append(
             Mount(
                 "/static",
-                app=StaticFiles(packages=["robotsix_chat"], directory="ui/static"),
+                app=StaticFiles(directory=static_dir),
             )
         )
 

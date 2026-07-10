@@ -813,20 +813,51 @@ def test_idle_does_not_wipe_history() -> None:
 
 @pytest.mark.asyncio
 async def test_ui_injects_history_load_path() -> None:
-    """``GET /`` contains the history-loading wiring.
+    """``GET /`` returns HTML that references the external CSS, JS, and meta tags.
 
-    The served HTML must reference:
-    - the ``loadHistory`` function
-    - the ``/history`` endpoint (via string match)
-    - the ``addAssistantBubble`` helper
+    The served HTML must:
+    - link ``/static/chat.css`` via a ``<link>`` tag
+    - load ``/static/chat.js`` via a ``<script src>`` tag
+    - carry an ``idle-timeout-minutes`` ``<meta>`` tag
+    - carry a ``project-title`` ``<meta>`` tag for JS bootstrapping
     """
     async with mock_app() as f:
         response = await f.client.get("/")
 
     assert response.status_code == 200
-    assert "loadHistory" in response.text
-    assert '"/history"' in response.text
-    assert "addAssistantBubble" in response.text
+    assert 'href="/static/chat.css"' in response.text
+    assert 'src="/static/chat.js"' in response.text
+    assert 'idle-timeout-minutes' in response.text
+    assert 'project-title' in response.text
+
+
+# ---------------------------------------------------------------------------
+# UI: static file serving
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ui_static_files_served() -> None:
+    """``GET /static/chat.css`` returns the CSS with ``text/css`` content-type."""
+    async with mock_app() as f:
+        response = await f.client.get("/static/chat.css")
+
+    assert response.status_code == 200
+    assert "text/css" in response.headers["content-type"]
+    assert ".bubble {" in response.text
+    assert "color-scheme: dark" in response.text
+
+
+@pytest.mark.asyncio
+async def test_ui_static_js_served() -> None:
+    """``GET /static/chat.js`` returns the JS with ``text/javascript`` content-type."""
+    async with mock_app() as f:
+        response = await f.client.get("/static/chat.js")
+
+    assert response.status_code == 200
+    assert "javascript" in response.headers["content-type"].lower()
+    assert '"use strict"' in response.text
+    assert "function submitMessage" in response.text
 
 
 # ---------------------------------------------------------------------------
