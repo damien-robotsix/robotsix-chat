@@ -50,6 +50,7 @@ from .routes import (
     RunSerializer,
     chat_endpoint,
     events_endpoint,
+    github_settings_endpoint,
     health_endpoint,
     history_endpoint,
     http_exception_handler,
@@ -69,6 +70,7 @@ from .routes import (
 )
 
 if TYPE_CHECKING:
+    from robotsix_chat.config.models import DirectRepoSettings, GitHubSecuritySettings
     from robotsix_chat.subsessions import (
         CloseState,
         ParentDelivery,
@@ -180,6 +182,8 @@ SHARED_PARAMS: frozenset[str] = frozenset(
         "on_startup",
         "on_startup_async",
         "on_shutdown",
+        "direct_repo_settings",
+        "github_security_settings",
     }
 )
 
@@ -206,6 +210,8 @@ def create_app(
     on_startup: Callable[[], None] | None = None,
     on_startup_async: Callable[[], Any] | None = None,
     on_shutdown: Callable[[], Any] | None = None,
+    direct_repo_settings: DirectRepoSettings | None = None,
+    github_security_settings: GitHubSecuritySettings | None = None,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -277,6 +283,14 @@ def create_app(
         on_shutdown: Optional async callable invoked during application
             shutdown (after ``yield``).  Pass a coroutine function that
             e.g. stops the component-agent responder.
+        direct_repo_settings: GitHub App credentials (app id, private key,
+            installation id) used by the
+            ``PATCH /chat/github/repos/{owner}/{repo}/settings`` endpoint.
+            When ``None``, the endpoint returns 503.
+        github_security_settings: GitHub security-feature toggle config
+            (org, deploy API key) used by the
+            ``PATCH /chat/github/repos/{owner}/{repo}/settings`` endpoint.
+            When ``None``, the endpoint returns 503.
 
     """
     routes: list[Route | Mount] = [
@@ -313,6 +327,11 @@ def create_app(
             "/subsessions/{sub_id}/close",
             subsessions_close_endpoint,
             methods=["POST"],
+        ),
+        Route(
+            "/chat/github/repos/{owner}/{repo}/settings",
+            github_settings_endpoint,
+            methods=["PATCH"],
         ),
     ]
     if serve_ui:
@@ -375,6 +394,8 @@ def create_app(
     )
     app.state.subsession_registry = subsession_registry  # may be None
     app.state.subsession_delivery = subsession_delivery  # may be None
+    app.state.direct_repo_settings = direct_repo_settings
+    app.state.github_security_settings = github_security_settings
     return app
 
 
@@ -482,6 +503,14 @@ def create_agent_from_settings(
         notification_skill = load_notification_skill()
         if notification_skill:
             instruction = f"{instruction}\n\n{notification_skill}"
+
+    # Inject the GitHub component skill when github_security is enabled.
+    if not bare and settings.github_security.enabled:
+        from robotsix_chat.github import load_github_skill
+
+        github_skill = load_github_skill()
+        if github_skill:
+            instruction = f"{instruction}\n\n{github_skill}"
 
     effective_level = (
         model_level if model_level is not None else settings.llmio_model_level

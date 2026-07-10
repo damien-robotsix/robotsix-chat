@@ -30,6 +30,9 @@ from .errors import (
 from .events import (
     events_endpoint,
 )
+from .github import (
+    github_settings_endpoint,
+)
 from .sessions import (
     _cleanup_session,
     history_endpoint,
@@ -68,6 +71,7 @@ __all__ = [
     "_sse_frame",
     "chat_endpoint",
     "events_endpoint",
+    "github_settings_endpoint",
     "health_endpoint",
     "history_endpoint",
     "http_exception_handler",

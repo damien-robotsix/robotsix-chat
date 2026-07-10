@@ -488,6 +488,10 @@ class GitHubSecuritySettings(BaseModel):
         github_org: GitHub organisation name whose repos are in scope
             (e.g. ``"damien-robotsix"``).  The tool only targets repos
             under this org.
+        deploy_api_key: API key that clients must present in the
+            ``X-API-Key`` header when calling the
+            ``PATCH /chat/github/repos/{owner}/{repo}/settings``
+            endpoint.  When empty, the endpoint returns 503 (unconfigured).
         timeout: Per-request HTTP timeout in seconds.
 
     Note: GitHub App authentication is delegated to
@@ -498,6 +502,7 @@ class GitHubSecuritySettings(BaseModel):
 
     enabled: bool = False
     github_org: str = "damien-robotsix"
+    deploy_api_key: SecretStr = SecretStr("")
     timeout: float = 30.0
 
 

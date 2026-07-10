@@ -114,6 +114,7 @@
   "github_security": {
     "enabled": false,
     "github_org": "damien-robotsix",
+    "deploy_api_key": "",
     "timeout": 30.0
   },
   "repo_study": {
