@@ -30,7 +30,6 @@ conversation (subsessions share the agent's tool surface).
 
 from __future__ import annotations
 
-import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -38,8 +37,6 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from robotsix_chat.chat.events import EventSink
     from robotsix_chat.config.models import NotificationSettings
-
-logger = logging.getLogger(__name__)
 
 __all__ = ["build_notification_tools", "load_notification_skill"]
 
