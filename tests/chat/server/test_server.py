@@ -813,20 +813,51 @@ def test_idle_does_not_wipe_history() -> None:
 
 @pytest.mark.asyncio
 async def test_ui_injects_history_load_path() -> None:
-    """``GET /`` contains the history-loading wiring.
+    """``GET /`` returns HTML that references the external CSS, JS, and meta tags.
 
-    The served HTML must reference:
-    - the ``loadHistory`` function
-    - the ``/history`` endpoint (via string match)
-    - the ``addAssistantBubble`` helper
+    The served HTML must:
+    - link ``/static/chat.css`` via a ``<link>`` tag
+    - load ``/static/chat.js`` via a ``<script src>`` tag
+    - carry an ``idle-timeout-minutes`` ``<meta>`` tag
+    - carry a ``project-title`` ``<meta>`` tag for JS bootstrapping
     """
     async with mock_app() as f:
         response = await f.client.get("/")
 
     assert response.status_code == 200
-    assert "loadHistory" in response.text
-    assert '"/history"' in response.text
-    assert "addAssistantBubble" in response.text
+    assert 'href="/static/chat.css"' in response.text
+    assert 'src="/static/chat.js"' in response.text
+    assert "idle-timeout-minutes" in response.text
+    assert "project-title" in response.text
+
+
+# ---------------------------------------------------------------------------
+# UI: static file serving
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ui_static_files_served() -> None:
+    """``GET /static/chat.css`` returns the CSS with ``text/css`` content-type."""
+    async with mock_app() as f:
+        response = await f.client.get("/static/chat.css")
+
+    assert response.status_code == 200
+    assert "text/css" in response.headers["content-type"]
+    assert ".bubble {" in response.text
+    assert "color-scheme: dark" in response.text
+
+
+@pytest.mark.asyncio
+async def test_ui_static_js_served() -> None:
+    """``GET /static/chat.js`` returns the JS with ``text/javascript`` content-type."""
+    async with mock_app() as f:
+        response = await f.client.get("/static/chat.js")
+
+    assert response.status_code == 200
+    assert "javascript" in response.headers["content-type"].lower()
+    assert '"use strict"' in response.text
+    assert "function submitMessage" in response.text
 
 
 # ---------------------------------------------------------------------------
@@ -1370,13 +1401,13 @@ async def test_ui_served_at_root_by_default() -> None:
 @pytest.mark.parametrize(
     "timeout, expect_substring",
     [
-        (30, "var IDLE_TIMEOUT_MINUTES = 30;"),
-        (5, "var IDLE_TIMEOUT_MINUTES = 5;"),
-        (0, "var IDLE_TIMEOUT_MINUTES = 0;"),
+        (30, 'content="30"'),
+        (5, 'content="5"'),
+        (0, 'content="0"'),
     ],
 )
 async def test_ui_injects_idle_timeout(timeout: int, expect_substring: str) -> None:
-    """``GET /`` injects the configured ``idle_timeout_minutes`` into the JS."""
+    """``GET /`` injects the configured ``idle_timeout_minutes`` into a meta tag."""
     async with mock_app(idle_timeout_minutes=timeout) as f:
         response = await f.client.get("/")
 
@@ -1388,31 +1419,29 @@ async def test_ui_injects_idle_timeout(timeout: int, expect_substring: str) -> N
 
 @pytest.mark.asyncio
 async def test_ui_injects_message_queue() -> None:
-    """``GET /`` contains the client-side FIFO message-queue markers."""
+    """``GET /`` references the external chat.js script."""
     async with mock_app() as f:
         response = await f.client.get("/")
 
     assert response.status_code == 200
-    assert "messageQueue" in response.text
-    assert "drainQueue" in response.text
-    assert ".bubble.user.queued" in response.text
+    assert 'src="/static/chat.js"' in response.text
 
 
 @pytest.mark.asyncio
 async def test_ui_renders_event_stream_wiring() -> None:
-    """``GET /`` contains the persistent notification-stream wiring.
+    """``GET /`` references the external chat.css and chat.js files.
 
-    The served HTML must reference the ``/events`` SSE endpoint and the
-    ``openEventStream`` function that opens it.  (The subsession-panel
-    JS markup is covered by ``scripts/check_sse_event_types.py``, which
-    cross-checks the frame-type literals against ``events.py``.)
+    The served HTML must reference the CSS and JS for the UI.
+    (The subsession-panel JS markup is covered by
+    ``scripts/check_sse_event_types.py``, which cross-checks the
+    frame-type literals against ``events.py``.)
     """
     async with mock_app() as f:
         response = await f.client.get("/")
 
     assert response.status_code == 200
-    assert '"/events"' in response.text
-    assert "openEventStream" in response.text
+    assert 'href="/static/chat.css"' in response.text
+    assert 'src="/static/chat.js"' in response.text
 
 
 @pytest.mark.asyncio

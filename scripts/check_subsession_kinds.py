@@ -78,6 +78,7 @@ def main() -> int:
     repo_root = Path(__file__).resolve().parent.parent
     models_py = repo_root / "src" / "robotsix_chat" / "subsessions" / "models.py"
     index_html = repo_root / "src" / "robotsix_chat" / "ui" / "index.html"
+    chat_js = repo_root / "src" / "robotsix_chat" / "ui" / "static" / "chat.js"
 
     # ------------------------------------------------------------------
     # Parse canonical constants
@@ -97,7 +98,9 @@ def main() -> int:
     # ------------------------------------------------------------------
     # Collect kind-comparison strings from HTML
     # ------------------------------------------------------------------
-    html_strings = _iter_html_kind_strings(index_html)
+    html_strings = _iter_html_kind_strings(index_html) + _iter_html_kind_strings(
+        chat_js
+    )
     html_values: set[str] = set(html_strings)
 
     violations = False

@@ -1,5 +1,10 @@
 ## 0.0.0 (unreleased)
 
+- Extract inline `<style>` and `<script>` blocks from `ui/index.html` into
+  standalone `ui/static/chat.css` and `ui/static/chat.js` files; serve them
+  via a Starlette `StaticFiles` mount at `/static`. The `IDLE_TIMEOUT_MINUTES`
+  value is now passed to JS through a `<meta>` tag instead of a server-side
+  template variable.
 - Render message content as Markdown in the chat UI (headings, bold, lists, code blocks, links, tables). Uses marked.js for rendering and DOMPurify for XSS sanitization. Streaming continues to display plain text during token delivery and re-renders as formatted Markdown on completion.
 - New `set_repo_security_and_analysis` tool: enable or disable repository-level security features (dependency graph, advanced security, secret scanning, push protection) on repos under the configured GitHub organisation. Gated behind `github_security.enabled`; dynamically scoped to the GitHub App's installation repositories.
 - Migrate PROJECT_TITLE to a `<meta name="project-title">` tag in index.html, and read it from the DOM in the inline JS instead of using Jinja2 placeholders, to prepare for extraction of JS into a static file.
