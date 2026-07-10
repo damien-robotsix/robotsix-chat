@@ -1298,6 +1298,8 @@ async def test_run_server_from_config_creates_agent_from_settings(
         assert isinstance(direct_repo_settings, DirectRepoSettings)
         github_security_settings = call_args[1].pop("github_security_settings")
         assert isinstance(github_security_settings, GitHubSecuritySettings)
+        feedback_runner = call_args[1].pop("feedback_runner")
+        assert feedback_runner is None
         assert call_args[1] == {
             "host": "127.0.0.1",
             "port": 8080,

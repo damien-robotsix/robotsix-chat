@@ -235,13 +235,13 @@ the conversation at compaction and session-end boundaries, then files improvemen
 board's `POST /tickets/ingest` endpoint. Tickets flow through the normal human-approval workflow —
 the feedback run never auto-approves. Disabled by default.
 
-| JSON key                         | Type              | Default                   | Description                                                                |
-| -------------------------------- | ----------------- | ------------------------- | -------------------------------------------------------------------------- |
-| `feedback.enabled`               | `boolean`         | `false`                   | Master switch.                                                             |
-| `feedback.model_level`           | `integer`         | `1`                       | llmio capability level for the feedback-analysis agent (cheap extraction). |
-| `feedback.board_url`             | `string`          | `""`                      | Base URL of the board HTTP API (no trailing slash). Required when enabled. |
-| `feedback.board_api_token`       | `string` (secret) | `""`                      | Optional Bearer token for the board API.                                   |
-| `feedback.timeout`               | `number`          | `60.0`                    | Per-request HTTP timeout (seconds) for ingest calls.                       |
+| JSON key                   | Type              | Default | Description                                                                |
+| -------------------------- | ----------------- | ------- | -------------------------------------------------------------------------- |
+| `feedback.enabled`         | `boolean`         | `false` | Master switch.                                                             |
+| `feedback.model_level`     | `integer`         | `1`     | llmio capability level for the feedback-analysis agent (cheap extraction). |
+| `feedback.board_url`       | `string`          | `""`    | Base URL of the board HTTP API (no trailing slash). Required when enabled. |
+| `feedback.board_api_token` | `string` (secret) | `""`    | Optional Bearer token for the board API.                                   |
+| `feedback.timeout`         | `number`          | `60.0`  | Per-request HTTP timeout (seconds) for ingest calls.                       |
 
 ### Direct Repo (GitHub App)
 
