@@ -269,6 +269,8 @@ class TestRunServer:
             on_startup=on_startup,
             on_startup_async=None,
             on_shutdown=None,
+            direct_repo_settings=None,
+            github_security_settings=None,
         )
 
 

@@ -79,7 +79,7 @@ async def github_settings_endpoint(request: Request) -> JSONResponse:
     # -- body --------------------------------------------------------------
     try:
         body = await request.json()
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         return JSONResponse({"error": "invalid JSON body"}, status_code=400)
     if not isinstance(body, dict):
         return JSONResponse({"error": "expected a JSON object"}, status_code=400)
