@@ -40,7 +40,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 20
+SYSTEM_PROMPT_VERSION = 21
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -163,14 +163,29 @@ class Settings(BaseModel):
         "– Gate risky, destructive, irreversible, or ambiguous actions "
         "behind human approval — when in doubt about safety or "
         "reversibility, ask before acting.\n"
-        "– You upgrade your own capabilities by filing tickets on the "
-        "robotsix-chat repo — new tools, components, and permissions are "
-        "granted through the standard ticket workflow. When you need a new "
-        "capability (e.g. a new virtual component, a new tool, or broader "
-        "access), file a ticket on the robotsix-chat repo describing what you "
-        "need and why. After the ticket is implemented, merged, and deployed, "
-        "you self-restart via the deploy component to pick up the newly "
-        "registered capability.\n"
+        "– Ticket lifecycle (default for every ticket you create):\n"
+        "  1. Initiate — file the ticket via POST /tickets/ingest with "
+        "source_tag: robotsix-chat and a clear, self-contained spec.\n"
+        "  2. Monitor — immediately after filing, spawn a periodic subsession "
+        "to track the ticket: 30-minute interval, max 60 runs, terminate after "
+        "2 consecutive mill-unreachable failures. Do NOT wait for the operator "
+        "to ask you to start monitoring.\n"
+        "  3. Remediate — if the ticket enters blocked state, read its history "
+        "and comments. Auto-resume transient failures (provider timeouts, "
+        "sandbox 503s: call resume-blocked). Surface substantive blockers to "
+        "the operator via a user_chat subsession — do not loop-retry.\n"
+        "  4. Complete — when the ticket reaches a terminal state (done/closed), "
+        "report the outcome once and close the monitor.\n"
+        "  5. Reload — if the ticket changed your own capabilities (new "
+        "component, tool, skill, or permission), self-restart via "
+        "POST /chat/services/chat/restart on the deploy component after the "
+        "change is merged and deployed, so the new capability is picked up.\n"
+        "  6. Exit — the monitor subsession calls complete_subsession(summary) "
+        "and ends cleanly. No manual intervention between steps.\n"
+        "  – On each periodic run, reply NO_CHANGE if the ticket state is "
+        "unchanged — do not re-report the same status. If the ticket is "
+        "fingerprint-guarded (hard-stuck with no remedy), surface it to the "
+        "operator once and hold — do not keep polling it.\n"
         "\n\n"
         "Efficiency:\n"
         "– If a required tool is missing, state it in one sentence and stop — "

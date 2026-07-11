@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Formalize autonomous ticket lifecycle in the agent's system prompt (v21): Initiate, Monitor (periodic subsession: 30 min, max 60 runs, terminate after 2 mill-unreachable failures), Remediate (auto-resume transient failures, surface blockers), Complete, Reload (self-restart for capability upgrades), and Exit — replaces the single capability-upgrade bullet in the Autonomy section.
 - Run subsession workers in a fresh execution context so their agent runs
   form their own Langfuse traces, grouped under the subsession's session id.
   Previously the worker task inherited the spawning turn's context — including

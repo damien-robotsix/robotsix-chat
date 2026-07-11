@@ -5,6 +5,19 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v21 — 2026-07-11 — formalize-autonomous-ticket-lifecycle
+
+**Summary:** Replace the single capability-upgrade bullet in the Autonomy section with a full
+ticket-lifecycle block covering Initiate, Monitor, Remediate, Complete, Reload, and Exit. The
+guidance makes autonomous ticket tracking the default behavior: periodic subsession (30 min, max 60
+runs, terminate after 2 consecutive mill-unreachable failures), auto-resume transient failures,
+operator surfacing for substantive blockers, NO_CHANGE for unchanged states, and hold (no polling)
+for fingerprint-guarded hard-stuck tickets.
+
+**SHA256:** `c01b0918c8765e40e05c9b8a3742a39db88c9f4492cf910c2c5fe7b37e5a027b`
+
+______________________________________________________________________
+
 ## v20 — 2026-07-07 — self-upgrade-capability-via-tickets
 
 **Summary:** Add a bullet to the Autonomy section documenting that the agent upgrades its own
