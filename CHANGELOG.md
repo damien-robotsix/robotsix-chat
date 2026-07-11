@@ -1,5 +1,11 @@
 ## 0.0.0 (unreleased)
 
+- Fence the recalled-memory block prepended to the user turn with an explicit
+  "End of recalled memory" marker before the live message. Similarity-recalled
+  text reads like the current topic, and without the fence the model could take
+  the whole turn as background and see no active request — observed on a
+  subsession first turn, which idled with "no live instruction" instead of
+  executing its spawn instructions.
 - User notification channel: proactive alerts when agent needs user attention via browser/native notifications over the existing SSE/EventBus channel (no external push-provider infrastructure needed)
 - Add `notify_user` push-notification tool so the agent can proactively alert the user outside the active conversation flow — three trigger classes: subsession chat opens, subsession completes/raises, and state/result requiring user awareness. Gated by `notification.enabled`.
 - Add ``PATCH /chat/github/repos/{owner}/{repo}/settings`` endpoint to toggle

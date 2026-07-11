@@ -135,10 +135,19 @@ def _activity_context(
     return activity_events(on_event)
 
 
-# Header for the recalled-memory block prepended to the current user turn.
+# Fencing for the recalled-memory block prepended to the current user turn.
+# Recall is similarity-based, so the recalled text is often about the same
+# topic as the live message — without an explicit end marker the model can
+# read the whole turn as background and conclude there is no active request
+# (observed 2026-07-11 on a subsession first turn, whose instructions carry
+# no conversational framing that would separate them from the recall block).
 _MEMORY_PROMPT_HEADER = (
     "# Relevant memory from earlier conversations\n"
     "Use this background only if it helps; ignore it otherwise.\n"
+)
+_MEMORY_PROMPT_FOOTER = (
+    "\n# End of recalled memory\n"
+    "Everything below is the current message — act on it now:\n"
 )
 
 
@@ -304,7 +313,9 @@ class LlmioChatAgent:
         system_prompt = self._instruction
         llm_message = message
         if recalled:
-            llm_message = f"{_MEMORY_PROMPT_HEADER}{recalled}\n\n{message}"
+            llm_message = (
+                f"{_MEMORY_PROMPT_HEADER}{recalled}{_MEMORY_PROMPT_FOOTER}\n{message}"
+            )
 
         # Forward the key only when one is configured; keyless levels
         # (claudeSDK) must not receive an api_key (the provider rejects it).

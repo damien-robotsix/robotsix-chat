@@ -180,6 +180,11 @@ async def test_recalled_memory_prepended_to_user_turn() -> None:
     assert sent.startswith("# Relevant memory")
     assert "Damien prefers Python." in sent
     assert sent.endswith("hi")  # the user's text closes the turn
+    # The recall block must be explicitly fenced off from the live message:
+    # similarity-recalled text reads like the current topic, and without an
+    # end marker the model can take the whole turn as background.
+    assert "# End of recalled memory" in sent
+    assert sent.index("Damien prefers Python.") < sent.index("# End of recalled memory")
 
     # The system prompt stays byte-stable (the head of the provider's
     # cacheable prefix must never carry per-message recall text).
