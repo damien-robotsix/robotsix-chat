@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import asyncio
 import contextlib
+import contextvars
 import threading
+from collections.abc import AsyncIterator
 from typing import Any
 
 import pytest
@@ -137,6 +139,43 @@ async def test_agent_factory_runs_off_the_event_loop_thread() -> None:
     assert info is not None
     assert info.status is SubsessionStatus.CLOSED
     assert info.summary == "ok"
+
+
+_AMBIENT = contextvars.ContextVar("test_worker_ambient", default="unset")
+
+
+@pytest.mark.asyncio
+async def test_worker_does_not_inherit_the_spawning_turn_context() -> None:
+    """The worker task runs in a fresh context, not the spawning turn's.
+
+    spawn_subsession is called from inside the parent agent's turn; if the
+    worker inherited that context, the turn's active OTEL span (stored in a
+    contextvar) would parent every subsession span and the subsession's runs
+    would nest inside the owner session's Langfuse trace instead of forming
+    their own trace under the subsession's session id.
+    """
+
+    class ContextProbeAgent(FakeAgent):
+        def __init__(self) -> None:
+            super().__init__(["ok"])
+            self.seen: list[str] = []
+
+        async def stream(self, message: str, **kwargs: Any) -> AsyncIterator[str]:
+            self.seen.append(_AMBIENT.get())
+            async for chunk in super().stream(message, **kwargs):
+                yield chunk
+
+    agent = ContextProbeAgent()
+    env = build_env(agent=agent)
+
+    token = _AMBIENT.set("parent-turn")
+    try:
+        sub_id = _spawn(env, prompt="probe context")
+    finally:
+        _AMBIENT.reset(token)
+    await _await_worker(env, sub_id)
+
+    assert agent.seen == ["unset"]
 
 
 @pytest.mark.asyncio

@@ -20,6 +20,7 @@ External closes cancel the task (plain asyncio cancellation; the agent's
 from __future__ import annotations
 
 import asyncio
+import contextvars
 import logging
 from collections.abc import Callable, Mapping
 from dataclasses import dataclass, field
@@ -189,7 +190,16 @@ def spawn_subsession(
         completed_runs=completed_runs,
         turn_history=turn_history,
     )
-    task = asyncio.create_task(_subsession_worker(env, info.id))
+    # spawn_subsession runs inside the parent agent's turn, so a plain
+    # create_task would snapshot that turn's context — including the active
+    # OTEL span — and every span the subsession opens would nest inside the
+    # owner session's Langfuse trace instead of forming its own (observed
+    # 2026-07-11: subsession generations invisible as traces, grouped under
+    # the owner's session). An empty Context() makes the worker's runs trace
+    # roots, grouped under the subsession's own session id by langfuse_session.
+    task = asyncio.create_task(
+        _subsession_worker(env, info.id), context=contextvars.Context()
+    )
     env.registry.attach_task(info.id, task)
     env._tasks.add(task)
     task.add_done_callback(env._tasks.discard)

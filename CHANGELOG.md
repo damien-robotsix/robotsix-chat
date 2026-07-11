@@ -1,5 +1,10 @@
 ## 0.0.0 (unreleased)
 
+- Run subsession workers in a fresh execution context so their agent runs
+  form their own Langfuse traces, grouped under the subsession's session id.
+  Previously the worker task inherited the spawning turn's context — including
+  the active OTEL span — so every subsession span nested inside the owner
+  session's trace, making subsession runs effectively invisible as traces.
 - Fence the recalled-memory block prepended to the user turn with an explicit
   "End of recalled memory" marker before the live message. Similarity-recalled
   text reads like the current topic, and without the fence the model could take
