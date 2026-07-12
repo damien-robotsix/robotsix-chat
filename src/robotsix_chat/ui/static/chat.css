@@ -646,6 +646,45 @@ body {
   max-width: 60vw;
 }
 
+/* ------------------------------------------------------------------ */
+/* Suggestion chips                                                    */
+/* ------------------------------------------------------------------ */
+.suggestion-chips {
+  display: flex; flex-wrap: wrap; gap: 0.4rem;
+  margin-top: 0.5rem;
+  align-self: flex-start;
+  max-width: 80%;
+}
+.suggestion-chip {
+  display: inline-flex; align-items: center;
+  padding: 0.3rem 0.7rem;
+  font-size: 0.85rem; font-weight: 500; font-family: inherit;
+  color: #e2e8f0;
+  background: rgba(59, 130, 246, 0.15);
+  border: 1px solid rgba(59, 130, 246, 0.35);
+  border-radius: 999px;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 0.15s, border-color 0.15s;
+}
+.suggestion-chip:hover {
+  background: rgba(59, 130, 246, 0.3);
+  border-color: rgba(59, 130, 246, 0.6);
+}
+.suggestion-chip:active {
+  background: rgba(59, 130, 246, 0.45);
+}
+
+/* Suggestion chips inside subsession transcripts */
+.subs-transcript > .suggestion-chips {
+  margin-top: 0;
+  margin-bottom: 0.15rem;
+}
+.subs-transcript > .suggestion-chips .suggestion-chip {
+  font-size: 0.75rem;
+  padding: 0.2rem 0.55rem;
+}
+
 @keyframes pulse {
   0%, 80%, 100% { transform: scale(0.6); opacity: 0.4; }
   40%           { transform: scale(1.0); opacity: 1.0; }
