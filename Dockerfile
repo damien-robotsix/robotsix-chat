@@ -49,6 +49,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 COPY --from=builder /usr/local/lib/python3.14/site-packages/ /usr/local/lib/python3.14/site-packages/
 COPY --from=builder /usr/local/bin/robotsix-chat /usr/local/bin/robotsix-chat
+COPY --from=builder /usr/local/bin/playwright /usr/local/bin/playwright
 
 # Install Node.js (LTS) and the claude CLI — required at runtime: the
 # claude-sdk subscription transport spawns the `claude` CLI as a subprocess.
