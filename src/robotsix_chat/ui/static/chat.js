@@ -873,6 +873,7 @@
       container.appendChild(placeholder);
       return;
     }
+    var isUserChat = sub.kind === "user_chat";
     for (var i = 0; i < msgs.length; i++) {
       var msg = msgs[i];
       var role = msg.role || "assistant";
@@ -885,9 +886,23 @@
         : role === "system" ? "System" : "Assistant";
       msgDiv.appendChild(roleLabel);
       var textSpan = document.createElement("span");
-      textSpan.textContent = msg.text || "";
-      msgDiv.appendChild(textSpan);
-      container.appendChild(msgDiv);
+      var msgText = msg.text || "";
+      // Parse suggestions for assistant messages in user_chat subsessions.
+      if (isUserChat && role === "assistant") {
+        var parsed = parseSuggestions(msgText);
+        textSpan.textContent = parsed.cleanText;
+        msgDiv.appendChild(textSpan);
+        container.appendChild(msgDiv);
+        if (parsed.suggestions && parsed.suggestions.length > 0) {
+          renderSuggestionChips(parsed.suggestions, (function (s) {
+            return function (text) { sendSubsessionMessage(s, text); };
+          })(sub), msgDiv);
+        }
+      } else {
+        textSpan.textContent = msgText;
+        msgDiv.appendChild(textSpan);
+        container.appendChild(msgDiv);
+      }
     }
     container.scrollTop = container.scrollHeight;
   }
@@ -1213,6 +1228,62 @@
     return DOMPurify.sanitize(html);
   }
 
+  // ---- Suggested answer options ----------------------------------------
+  // Parses a ```suggestions fenced block from the assistant message text.
+  // Returns { cleanText: string, suggestions: string[] | null }.
+  // cleanText has the fenced block removed; suggestions is null when no
+  // block is present.
+  var SUGGESTIONS_RE = /```suggestions\s*\n([\s\S]*?)```/;
+
+  function parseSuggestions(raw) {
+    var match = SUGGESTIONS_RE.exec(raw);
+    if (!match) return { cleanText: raw, suggestions: null };
+
+    var blockContent = match[1];
+    var lines = blockContent.split("\n");
+    var suggestions = [];
+    for (var i = 0; i < lines.length; i++) {
+      var trimmed = lines[i].trim();
+      if (trimmed) suggestions.push(trimmed);
+    }
+
+    var cleanText = raw.slice(0, match.index) + raw.slice(match.index + match[0].length);
+    // Collapse trailing blank lines that may be left behind.
+    cleanText = cleanText.replace(/\n{3,}$/, "\n\n").trimEnd();
+
+    return {
+      cleanText: cleanText,
+      suggestions: suggestions.length > 0 ? suggestions : null
+    };
+  }
+
+  function renderSuggestionChips(suggestions, onSubmit, afterElement) {
+    var container = document.createElement("div");
+    container.className = "suggestion-chips";
+    for (var i = 0; i < suggestions.length; i++) {
+      var chip = document.createElement("button");
+      chip.type = "button";
+      chip.className = "suggestion-chip";
+      chip.textContent = suggestions[i];
+      chip.title = "Click to reply: " + suggestions[i];
+      chip.addEventListener("click", (function (text) {
+        return function () { onSubmit(text); };
+      })(suggestions[i]));
+      container.appendChild(chip);
+    }
+    // Insert after the bubble element so chips sit below the message.
+    if (afterElement && afterElement.parentNode) {
+      afterElement.parentNode.insertBefore(container, afterElement.nextSibling);
+    }
+    return container;
+  }
+
+  // Submit a suggestion as a user reply in the main chat.
+  function submitMainChatSuggestion(text) {
+    msgInput.value = text;
+    submitMessage();
+  }
+
   // ---- Message bubbles -------------------------------------------------
   function clearChatBubbles() {
     // Remove all bubble elements, typing indicator, summary banner,
@@ -1247,8 +1318,12 @@
   function addAssistantBubble(text) {
     var div = document.createElement("div");
     div.className = "bubble assistant";
-    div.innerHTML = renderMarkdown(text);
+    var parsed = parseSuggestions(text);
+    div.innerHTML = renderMarkdown(parsed.cleanText);
     chatEl.appendChild(div);
+    if (parsed.suggestions && parsed.suggestions.length > 0) {
+      renderSuggestionChips(parsed.suggestions, submitMainChatSuggestion, div);
+    }
     scrollToBottom();
     return div;
   }
@@ -1307,7 +1382,11 @@
       if (rawAssistantText === "") {
         currentAssistantBubble.textContent = "(empty response)";
       } else {
-        currentAssistantBubble.innerHTML = renderMarkdown(rawAssistantText);
+        var parsed = parseSuggestions(rawAssistantText);
+        currentAssistantBubble.innerHTML = renderMarkdown(parsed.cleanText);
+        if (parsed.suggestions && parsed.suggestions.length > 0) {
+          renderSuggestionChips(parsed.suggestions, submitMainChatSuggestion, currentAssistantBubble);
+        }
       }
     }
     currentAssistantBubble = null;
