@@ -76,8 +76,14 @@ RUN apt-get update \
 # Install Playwright's Chromium browser with its system dependencies.
 # playwright is already in site-packages (copied from the builder); this
 # step downloads the Chromium binary and the shared libraries it needs.
-RUN playwright install --with-deps chromium \
-    && playwright --version
+# Store browsers in a fixed path so the `app` user can find them at
+# runtime — the default cache (~/.cache/ms-playwright) resolves to
+# /root/.cache at build time (we run as root), invisible to `app`.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
+RUN mkdir -p /opt/playwright-browsers \
+    && playwright install --with-deps chromium \
+    && playwright --version \
+    && chmod -R a+rX /opt/playwright-browsers
 
 # Standardized robotsix container layout (see robotsix-standards, docker
 # page): non-root user `app`, uid/gid 1000, home /home/app. Central-deploy
