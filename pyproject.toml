@@ -63,6 +63,10 @@ tracing = ["robotsix-llmio[tracing]"]
 # Disabled at runtime unless `memory.enabled` is set; absent extra = graceful
 # no-op (NullMemory).
 memory = ["cognee", "transformers"]
+# render-url: Playwright + headless Chromium for the render_url(url) tool
+# (full-page screenshots + accessibility tree extraction).  Optional —
+# when absent the factory returns no tools.
+render-url = ["playwright"]
 
 [project.scripts]
 robotsix-chat = "robotsix_chat.chat.server:run_server_from_config"
@@ -191,6 +195,11 @@ exclude = ["vulture_whitelist.py", ".local-deps", "_stubs"]
 # cognee (the optional `memory` extra) ships no type information.
 [[tool.mypy.overrides]]
 module = ["cognee.*"]
+ignore_missing_imports = true
+
+# playwright (the optional `render-url` extra) ships no type information.
+[[tool.mypy.overrides]]
+module = ["playwright.*"]
 ignore_missing_imports = true
 
 # PyJWT is an optional dependency for direct_repo; tolerate its absence

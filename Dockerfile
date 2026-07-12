@@ -32,7 +32,7 @@ COPY src ./src
 # the LLM transport, tracing for Langfuse observability, memory for cognee.
 # --no-hashes: the git-sourced first-party deps cannot carry hashes.
 RUN uv export --frozen --no-emit-project --no-hashes \
-        --extra claude-sdk --extra tracing --extra memory \
+        --extra claude-sdk --extra tracing --extra memory --extra render-url \
         -o /tmp/requirements.txt \
     && uv pip install --system --no-cache -r /tmp/requirements.txt \
     && uv pip install --system --no-cache --no-deps . \
@@ -49,6 +49,7 @@ SHELL ["/bin/bash", "-o", "pipefail", "-c"]
 
 COPY --from=builder /usr/local/lib/python3.14/site-packages/ /usr/local/lib/python3.14/site-packages/
 COPY --from=builder /usr/local/bin/robotsix-chat /usr/local/bin/robotsix-chat
+COPY --from=builder /usr/local/bin/playwright /usr/local/bin/playwright
 
 # Install Node.js (LTS) and the claude CLI — required at runtime: the
 # claude-sdk subscription transport spawns the `claude` CLI as a subprocess.
@@ -72,6 +73,18 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/* /root/.npm \
         /usr/lib/node_modules/npm /usr/lib/node_modules/corepack \
         /usr/bin/npm /usr/bin/npx /usr/bin/corepack
+
+# Install Playwright's Chromium browser with its system dependencies.
+# playwright is already in site-packages (copied from the builder); this
+# step downloads the Chromium binary and the shared libraries it needs.
+# Store browsers in a fixed path so the `app` user can find them at
+# runtime — the default cache (~/.cache/ms-playwright) resolves to
+# /root/.cache at build time (we run as root), invisible to `app`.
+ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
+RUN mkdir -p /opt/playwright-browsers \
+    && playwright install --with-deps chromium \
+    && playwright --version \
+    && chmod -R a+rX /opt/playwright-browsers
 
 # Standardized robotsix container layout (see robotsix-standards, docker
 # page): non-root user `app`, uid/gid 1000, home /home/app. Central-deploy

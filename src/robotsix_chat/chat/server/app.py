@@ -38,6 +38,7 @@ from robotsix_chat.mail import build_mail_tools
 from robotsix_chat.memory import NullMemory, build_memory
 from robotsix_chat.notification import build_notification_tools
 from robotsix_chat.refdocs import build_refdocs_tools
+from robotsix_chat.render_url import build_render_url_tools
 from robotsix_chat.repo.direct import build_direct_repo_tools
 from robotsix_chat.repo.study import build_repo_study_tools
 from robotsix_chat.selfreview import build_recent_activity_tools
@@ -551,6 +552,7 @@ def create_agent_from_settings(
             *build_recent_activity_tools(settings.self_review, conversation_store),
             *build_version_check_tools(settings.version_check),
             *build_lifecycle_tools(settings.lifecycle),
+            *build_render_url_tools(settings.render_url),
         ]
     )
     if tool_wrapper is not None:

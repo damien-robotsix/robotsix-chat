@@ -278,6 +278,24 @@ default.
 
 ______________________________________________________________________
 
+### Render URL
+
+Read-only URL rendering via headless Chromium (Playwright). Loads a URL in a headless browser,
+captures a full-page screenshot (base64-encoded PNG), and extracts the accessibility tree — both
+returned to the agent as structured JSON for UI verification. No interactive browsing, form-filling,
+or navigation beyond the initial page load is permitted. Requires the `render-url` extra
+(`playwright`) in the image as well as a Playwright Chromium browser installation. Disabled by
+default.
+
+| JSON key                     | Type      | Default | Description                              |
+| ---------------------------- | --------- | ------- | ---------------------------------------- |
+| `render_url.enabled`         | `boolean` | `false` | Master switch.                           |
+| `render_url.timeout`         | `number`  | `30.0`  | Per-request page-load timeout (seconds). |
+| `render_url.viewport_width`  | `integer` | `1280`  | Browser viewport width (pixels).         |
+| `render_url.viewport_height` | `integer` | `720`   | Browser viewport height (pixels).        |
+
+______________________________________________________________________
+
 ## Schema
 
 The committed `config/config.schema.json` is the authoritative schema for the `Settings` model. It

@@ -506,6 +506,33 @@
       "title": "RefDocsSettings",
       "type": "object"
     },
+    "RenderUrlSettings": {
+      "description": "Read-only URL rendering with headless Chromium (Playwright).\n\nWhen enabled, the agent gains a tool that loads a URL in a headless\nChromium browser (via Playwright), takes a full-page screenshot, and\nextracts the accessibility tree \u2014 both returned as structured output.\nNo interactive browsing, form-filling, or navigation beyond the initial\npage load is permitted.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no URL-render tool is offered.\n    timeout: Per-request timeout in seconds for the page load.\n    viewport_width: Browser viewport width in pixels.\n    viewport_height: Browser viewport height in pixels.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "timeout": {
+          "default": 30.0,
+          "title": "Timeout",
+          "type": "number"
+        },
+        "viewport_width": {
+          "default": 1280,
+          "title": "Viewport Width",
+          "type": "integer"
+        },
+        "viewport_height": {
+          "default": 720,
+          "title": "Viewport Height",
+          "type": "integer"
+        }
+      },
+      "title": "RenderUrlSettings",
+      "type": "object"
+    },
     "RepoStudySettings": {
       "description": "Temporary local repo workspaces the agent can fetch and study.\n\nWhen enabled, the chat agent gains read-only tools to download a GitHub\nrepository snapshot (tarball \u2014 no ``git`` binary involved), extract it\ninto a temporary workspace under *data_dir*, and study it locally\n(list / read / regex-search files) before dropping it.  Workspaces are\ntransient: they are deleted on demand (``drop_repo_workspace``) and\nswept automatically once older than *ttl_minutes*.\n\nAuthentication reuses the ``direct_repo`` GitHub App credentials when\nthey are configured (the app's installation scope defines the private\nrepos the agent may fetch); without them only public repositories are\nreachable.  No new credential fields are introduced.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no repo-study tools are\n        offered.\n    data_dir: Directory holding the temporary workspaces.  Default\n        ``/data/repo_study`` (on the persistent volume, so a redeploy\n        mid-study does not lose the workspace; the TTL sweep still\n        bounds growth).\n    ttl_minutes: Age after which a workspace is deleted by the sweep\n        that runs on every repo-study tool call.\n    max_archive_bytes: Maximum size of the downloaded tarball.\n    max_extracted_bytes: Maximum total uncompressed size of a workspace.\n    max_read_bytes: Maximum bytes returned by a single file read.\n    timeout: Per-request HTTP timeout in seconds for the download.",
       "properties": {
@@ -733,6 +760,9 @@
     },
     "refdocs": {
       "$ref": "#/$defs/RefDocsSettings"
+    },
+    "render_url": {
+      "$ref": "#/$defs/RenderUrlSettings"
     },
     "knowledge": {
       "$ref": "#/$defs/KnowledgeSettings"
