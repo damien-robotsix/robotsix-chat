@@ -246,6 +246,12 @@ modules:
       - src/robotsix_chat/refdocs/client.py
       - tests/refdocs/__init__.py
       - tests/refdocs/test_refdocs.py
+  - id: render-url
+    description: "Read-only URL rendering tool — headless Chromium (Playwright) that captures full-page screenshots and accessibility trees for UI verification. Exposes build_render_url_tools(), a factory returning a single render_url async tool."
+    paths:
+      - src/robotsix_chat/render_url/__init__.py
+      - tests/render_url/__init__.py
+      - tests/render_url/test_render_url.py
   - id: selfreview
     description: "Self-review tools — a read-only digest of live conversation activity. Exposes build_recent_activity_tools(), a factory that returns a single read_recent_activity tool that reads from the in-process ConversationStore."
     paths:

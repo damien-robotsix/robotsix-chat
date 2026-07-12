@@ -135,6 +135,12 @@
   "notification": {
     "enabled": false
   },
+  "render_url": {
+    "enabled": false,
+    "timeout": 30.0,
+    "viewport_width": 1280,
+    "viewport_height": 720
+  },
   "feedback": {
     "enabled": false,
     "model_level": 1,

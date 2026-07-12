@@ -553,6 +553,29 @@ class FeedbackSettings(BaseModel):
     timeout: float = 60.0
 
 
+class RenderUrlSettings(BaseModel):
+    """Read-only URL rendering with headless Chromium (Playwright).
+
+    When enabled, the agent gains a tool that loads a URL in a headless
+    Chromium browser (via Playwright), takes a full-page screenshot, and
+    extracts the accessibility tree — both returned as structured output.
+    No interactive browsing, form-filling, or navigation beyond the initial
+    page load is permitted.
+
+    Attributes:
+        enabled: Master switch.  When ``False``, no URL-render tool is offered.
+        timeout: Per-request timeout in seconds for the page load.
+        viewport_width: Browser viewport width in pixels.
+        viewport_height: Browser viewport height in pixels.
+
+    """
+
+    enabled: bool = False
+    timeout: float = 30.0
+    viewport_width: int = 1280
+    viewport_height: int = 720
+
+
 class CentralDeploySettings(BaseModel):
     """Central-deploy roster and component-access settings.
 

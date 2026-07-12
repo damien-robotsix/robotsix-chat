@@ -29,6 +29,7 @@ from robotsix_chat.config.models import (
     MemorySettings,
     NotificationSettings,
     RefDocsSettings,
+    RenderUrlSettings,
     RepoStudySettings,
     SelfReviewSettings,
     SubsessionsSettings,
@@ -225,6 +226,7 @@ class Settings(BaseModel):
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)
     diagnostics: DiagnosticsSettings = Field(default_factory=DiagnosticsSettings)
     refdocs: RefDocsSettings = Field(default_factory=RefDocsSettings)
+    render_url: RenderUrlSettings = Field(default_factory=RenderUrlSettings)
     knowledge: KnowledgeSettings = Field(default_factory=KnowledgeSettings)
     self_review: SelfReviewSettings = Field(default_factory=SelfReviewSettings)
     version_check: VersionCheckSettings = Field(default_factory=VersionCheckSettings)
