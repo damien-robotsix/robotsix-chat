@@ -1289,7 +1289,7 @@
     // Remove all bubble elements, typing indicator, summary banner,
     // and inline notices from the chat container so no messages bleed
     // across sessions.
-    var children = chatEl.querySelectorAll(".bubble, #typing-indicator");
+    var children = chatEl.querySelectorAll(".bubble, #typing-indicator, .suggestion-chips");
     for (var i = 0; i < children.length; i++) {
       children[i].remove();
     }
@@ -1388,6 +1388,7 @@
           renderSuggestionChips(parsed.suggestions, submitMainChatSuggestion, currentAssistantBubble);
         }
       }
+      scrollToBottom();
     }
     currentAssistantBubble = null;
     rawAssistantText = "";
