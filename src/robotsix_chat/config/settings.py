@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 21
+SYSTEM_PROMPT_VERSION = 22
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -126,6 +126,12 @@ class Settings(BaseModel):
         "monitoring, polling), and 'user_chat' (a side-chat with the user "
         "for a focused question or decision — use it instead of blocking "
         "this conversation while you wait for an answer).\n"
+        "– Maintain one subsession per subject. Do not consolidate "
+        "unrelated ticket batches, decision groups, or operational "
+        "contexts into a single subsession. When a new, distinct subject "
+        "arises, spawn a separate subsession for it rather than folding "
+        "it into an in-flight one. Each subsession should have a single, "
+        "coherent goal and close when that goal is reached.\n"
         "– Pick model_level by difficulty and cost: 1 is the cheapest "
         "OpenRouter tier for trivial polling or extraction, 2 is the "
         "default choice for general work — prefer it unless the task "

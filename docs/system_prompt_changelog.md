@@ -5,6 +5,17 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v22 — 2026-07-12 — add-one-subsession-per-subject-rule-to-s-efab
+
+**Summary:** Add a "one subsession per subject" rule to the subsession guidance in the default
+`agent_instruction`. Instructs the agent to spawn separate subsessions for distinct subjects rather
+than consolidating unrelated ticket batches, decision groups, or operational contexts into a single
+subsession. Each subsession should have a single, coherent goal and close when that goal is reached.
+
+**SHA256:** `c9da8ee6d80ebf1f9c1f243638e519172453db5e20e1d98581609fefca53e895`
+
+______________________________________________________________________
+
 ## v21 — 2026-07-11 — formalize-autonomous-ticket-lifecycle
 
 **Summary:** Replace the single capability-upgrade bullet in the Autonomy section with a full
