@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Document feature-flag activation rule in `AGENT.md`: any flag-gated feature must include activation config, live-proof, and post-deploy follow-up in its definition of done.
 - Added "one subsession per subject" rule to the agent system prompt, instructing the agent to spawn separate subsessions for distinct subjects rather than consolidating unrelated ticket batches or decision groups into a single subsession lifecycle.
 - Chat UI now renders suggested answer options as clickable chips when the assistant includes a `` ```suggestions `` fenced block in its reply. Clicking a chip submits it as a user reply; the free-text input remains available. Applies to both the main conversation and user_chat subsession panels.
 - Add ``render_url(url)`` agent tool (Playwright headless Chromium) — captures a full-page screenshot and accessibility tree for UI verification. Gated behind ``render_url.enabled`` in config; requires the ``render-url`` extra (``playwright``).
