@@ -159,16 +159,17 @@ post-activation) is incomplete.
 Every ticket for a flag-gated feature must cover:
 
 1. **Activation config** — the exact config keys and target values needed to turn the feature on
-   (e.g. `feedback.enabled: true`, `feedback.board_url: "<url>"`).  The committed
+   (e.g. `feedback.enabled: true`, `feedback.board_url: "<url>"`). The committed
    `config/config.json` template may carry `"enabled": false` as a safe default; the ticket must
    still specify what an operator changes to activate.
 2. **Live-proof step** — a concrete verification that the feature fires after activation (e.g.
-   "verify FeedbackRunner fires after idle compaction", "check the log for `FeedbackRunner started`").
+   "verify FeedbackRunner fires after idle compaction", "check the log for
+   `FeedbackRunner started`").
 3. **Post-deploy follow-up** — a task or checklist item to revisit the config after the deploy
    settles (closed-loop: did the feature actually turn on in production?).
 
 The implementing agent is responsible for including these in the ticket's acceptance criteria or in
-a follow-up task filed under `tasks/`.  A feature that ships default-off with no documented
+a follow-up task filed under `tasks/`. A feature that ships default-off with no documented
 activation path is a process bug — treat it the same as a feature that ships broken.
 
 ## Task tracking
