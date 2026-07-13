@@ -55,6 +55,7 @@ COPY --from=builder /usr/local/bin/playwright /usr/local/bin/playwright
 # claude-sdk subscription transport spawns the `claude` CLI as a subprocess.
 # Build-only packages and caches are pruned in the same layer.
 RUN apt-get update \
+    && apt-get install --only-upgrade -y --no-install-recommends liblzma5="5.*" \
     && apt-get install -y --no-install-recommends curl="8.*" gnupg="2.*" \
     && mkdir -p /etc/apt/keyrings \
     && curl -fsSL https://deb.nodesource.com/gpgkey/nodesource-repo.gpg.key \
