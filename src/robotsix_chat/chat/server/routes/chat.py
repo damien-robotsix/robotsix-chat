@@ -201,6 +201,49 @@ class MessageCoalescer:
 
         return response_queue
 
+    async def cancel_message(
+        self,
+        session_id: str,
+        message_id: str | None = None,
+    ) -> dict[str, Any]:
+        """Cancel pending (not-yet-processing) messages for *session_id*.
+
+        When *message_id* is given, only that specific message is cancelled.
+        When ``None``, every pending message in the session's batch is
+        cancelled (bulk cancel).
+
+        Returns a dict:
+            ``{"cancelled": N}`` — *N* messages were removed.
+            ``{"cancelled": 0, "processing": True}`` — the batch is already
+                being processed; no messages can be cancelled.
+        """
+        async with self._guard:
+            batch = self._batches.get(session_id)
+            if batch is None:
+                # No batch at all — either already drained into processing
+                # or never existed.
+                return {"cancelled": 0, "processing": True}
+
+            if message_id is None:
+                # Bulk cancel: remove every pending message.
+                count = len(batch)
+                self._batches.pop(session_id, None)
+                for p in batch:
+                    await p.response_queue.put((SSE_DONE_TYPE, None))
+                return {"cancelled": count}
+
+            # Per-message cancel: find and remove one.
+            for idx, p in enumerate(batch):
+                if p.message_id == message_id:
+                    batch.pop(idx)
+                    await p.response_queue.put((SSE_DONE_TYPE, None))
+                    if not batch:
+                        self._batches.pop(session_id, None)
+                    return {"cancelled": 1}
+
+            # message_id not found in the batch.
+            return {"cancelled": 0, "processing": True}
+
     async def _process_batch(
         self,
         session_id: str,
@@ -610,3 +653,49 @@ async def chat_endpoint(
         media_type=SSE_CONTENT_TYPE,
         headers={"Content-Type": SSE_CONTENT_TYPE},
     )
+
+
+async def cancel_queued_endpoint(request: Request) -> JSONResponse:
+    """Cancel queued (not-yet-processing) messages for a session.
+
+    ``POST /chat/queue/cancel``
+
+    Request body (JSON):
+        ``session_id`` (str, required) — the session whose queue to cancel
+            from.
+        ``message_id`` (str | null, optional) — cancel only this specific
+            message.  When absent or ``null``, cancel **every** pending
+            message in the session's coalescer batch.
+
+    Returns:
+        200 — ``{"cancelled": N}`` when *N* messages were removed from the
+            coalescer batch before processing started.
+        200 — ``{"cancelled": 0, "processing": True}`` when the batch (or
+            the specific message) has already been handed off to the agent
+            and can no longer be cancelled.
+
+    Race-safe: the check-and-remove happens inside the coalescer's guard
+    lock.  If the batch was popped between the check and the cancel, the
+    response indicates "already processing".
+
+    """
+    body = await _parse_json_body(request)
+    if isinstance(body, JSONResponse):
+        return body
+
+    session_id = body.get("session_id")
+    if not session_id or not isinstance(session_id, str):
+        return JSONResponse(
+            {"error": "session_id (string) is required"}, status_code=400
+        )
+
+    message_id = body.get("message_id")
+    if message_id is not None and not isinstance(message_id, str):
+        return JSONResponse(
+            {"error": "message_id must be a string when present"},
+            status_code=400,
+        )
+
+    coalescer: MessageCoalescer = request.app.state.message_coalescer
+    result = await coalescer.cancel_message(session_id, message_id)
+    return JSONResponse(result)
