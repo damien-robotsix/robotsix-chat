@@ -49,6 +49,7 @@ from .routes import (
     ChatAgent,
     MessageCoalescer,
     RunSerializer,
+    cancel_queued_endpoint,
     chat_endpoint,
     events_endpoint,
     github_settings_endpoint,
@@ -308,6 +309,7 @@ def create_app(
     routes: list[Route | Mount] = [
         Route("/health", health_endpoint, methods=["GET"]),
         Route("/chat", chat_endpoint, methods=["POST"]),
+        Route("/chat/queue/cancel", cancel_queued_endpoint, methods=["POST"]),
         Route("/events", events_endpoint, methods=["GET"]),
         Route("/history", history_endpoint, methods=["GET"]),
         Route("/summary", summary_endpoint, methods=["POST"]),

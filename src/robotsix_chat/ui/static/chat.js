@@ -23,6 +23,7 @@
   const fileInput      = document.getElementById("file-input");
   const previewTray    = document.getElementById("preview-tray");
   const attachErrorEl  = document.getElementById("attach-error");
+  const cancelQueuedBtn = document.getElementById("cancel-queued-btn");
 
   // ---- State -----------------------------------------------------------
   var state = "idle";          // idle | sending | streaming | error
@@ -1214,6 +1215,7 @@
       sendBtn.classList.remove("busy");
       sendBtn.title = "Send message (Enter)";
     }
+    updateCancelQueuedButton();
   }
 
   // ---- Markdown rendering ----------------------------------------------
@@ -1723,26 +1725,132 @@
       el.insertBefore(imgsDiv, el.firstChild);
     }
 
-    if (isBusy()) {
-      el.classList.add("queued");
-    }
-
     var messageId = (typeof crypto !== 'undefined' && crypto.randomUUID)
       ? crypto.randomUUID()
       : (Math.random().toString(36).slice(2) + Date.now().toString(36));
 
+    if (isBusy()) {
+      el.classList.add("queued");
+      addCancelButton(el, messageId);
+    }
+
     messageQueue.push({ text: message, el: el, images: imagesForSend, messageId: messageId });
     drainQueue();
+    updateCancelQueuedButton();
   }
 
   function drainQueue() {
     // Do not dispatch while a request is in flight.
     if (isBusy()) return;
-    if (messageQueue.length === 0) return;
+    if (messageQueue.length === 0) { updateCancelQueuedButton(); return; }
 
     var item = messageQueue.shift();
     item.el.classList.remove("queued");
+    removeCancelButton(item.el);
     startRequest(item.text, item.images || [], item.messageId);
+    updateCancelQueuedButton();
+  }
+
+  // ---- Cancel queued messages ------------------------------------------
+
+  function addCancelButton(bubbleEl, messageId) {
+    // Only add if one isn't already present.
+    if (bubbleEl.querySelector(".cancel-queued-btn")) return;
+    var btn = document.createElement("button");
+    btn.className = "cancel-queued-btn";
+    btn.type = "button";
+    btn.textContent = "\u00d7";
+    btn.title = "Cancel this queued message";
+    btn.setAttribute("aria-label", "Cancel queued message");
+    btn.addEventListener("click", function (e) {
+      e.stopPropagation();
+      cancelQueuedMessage(messageId, bubbleEl);
+    });
+    bubbleEl.appendChild(btn);
+  }
+
+  function removeCancelButton(bubbleEl) {
+    var btn = bubbleEl.querySelector(".cancel-queued-btn");
+    if (btn) btn.remove();
+  }
+
+  function cancelQueuedMessage(messageId, bubbleEl) {
+    // 1. Try to remove from the client-side queue (not yet dispatched).
+    var found = false;
+    for (var i = 0; i < messageQueue.length; i++) {
+      if (messageQueue[i].messageId === messageId) {
+        // Revoke any pending image object URLs.
+        var imgs = messageQueue[i].images || [];
+        for (var j = 0; j < imgs.length; j++) {
+          if (imgs[j].objectURL) URL.revokeObjectURL(imgs[j].objectURL);
+        }
+        messageQueue.splice(i, 1);
+        found = true;
+        break;
+      }
+    }
+
+    // 2. Remove the DOM bubble.
+    if (bubbleEl && bubbleEl.parentNode) {
+      bubbleEl.remove();
+    }
+
+    updateCancelQueuedButton();
+
+    // 3. If not in client queue, ask the server (may be in coalescer).
+    if (!found && activeSessionId) {
+      fetch(apiBase() + "/chat/queue/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          session_id: activeSessionId,
+          message_id: messageId
+        })
+      }).then(function (r) { return r.json(); }).then(function (data) {
+        if (data && data.processing) {
+          // Message already processing — it can't be cancelled.
+          // The bubble is already removed; nothing more to do.
+        }
+      }).catch(function () {
+        // Best-effort; bubble already removed.
+      });
+    }
+  }
+
+  function cancelAllQueued() {
+    // 1. Revoke image URLs and clear the client-side queue.
+    for (var i = 0; i < messageQueue.length; i++) {
+      var imgs = messageQueue[i].images || [];
+      for (var j = 0; j < imgs.length; j++) {
+        if (imgs[j].objectURL) URL.revokeObjectURL(imgs[j].objectURL);
+      }
+      if (messageQueue[i].el && messageQueue[i].el.parentNode) {
+        messageQueue[i].el.remove();
+      }
+    }
+    messageQueue = [];
+
+    updateCancelQueuedButton();
+
+    // 2. Also tell the server to drop any pending batch.
+    if (activeSessionId) {
+      fetch(apiBase() + "/chat/queue/cancel", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ session_id: activeSessionId })
+      }).catch(function () {
+        // Best-effort.
+      });
+    }
+  }
+
+  function updateCancelQueuedButton() {
+    if (messageQueue.length > 0 && isBusy()) {
+      cancelQueuedBtn.style.display = "";
+      cancelQueuedBtn.textContent = "Cancel queued (" + messageQueue.length + ")";
+    } else {
+      cancelQueuedBtn.style.display = "none";
+    }
   }
 
   function startRequest(message, pendingForSend, messageId) {
@@ -1878,6 +1986,10 @@
 
   // ---- Event listeners -------------------------------------------------
   sendBtn.addEventListener("click", submitMessage);
+
+  cancelQueuedBtn.addEventListener("click", function () {
+    cancelAllQueued();
+  });
 
   msgInput.addEventListener("keydown", function (e) {
     if (e.key === "Enter" && !e.shiftKey) {

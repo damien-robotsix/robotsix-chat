@@ -12,6 +12,7 @@ from .chat import (
     MessageCoalescer,
     RunSerializer,
     _parse_and_validate_images,
+    cancel_queued_endpoint,
     chat_endpoint,
 )
 from .constants import (
@@ -69,6 +70,7 @@ __all__ = [
     "_parse_json_body",
     "_resolve_subsession",
     "_sse_frame",
+    "cancel_queued_endpoint",
     "chat_endpoint",
     "events_endpoint",
     "github_settings_endpoint",
