@@ -554,7 +554,7 @@ async def test_configure_langfuse_env_guard_regression(
     assert "LANGFUSE_SECRET_KEY" in popped, (
         "LANGFUSE_SECRET_KEY must be popped before import cognee"
     )
-    # pragma: allowlist secret
     assert os.environ["LANGFUSE_PUBLIC_KEY"] == "pk-guard-test"
-    # pragma: allowlist secret
-    assert os.environ["LANGFUSE_SECRET_KEY"] == "sk-guard-test"
+    assert os.environ["LANGFUSE_SECRET_KEY"] == (
+        "sk-guard-test"  # pragma: allowlist secret
+    )
