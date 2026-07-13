@@ -149,6 +149,29 @@ implement the protocol (`_MockAgent`, `MockAgent`, and any other test-local mock
 Run `mypy` on the full test suite to verify protocol conformance — a mock that lacks a keyword
 argument silently passes structural subtyping at runtime but fails static `mypy --strict` checks.
 
+## Feature flags and activation
+
+**Rule:** Any feature gated behind a runtime flag (`enabled: false`, a feature toggle, or a config
+key that must be set to opt in) must include an activation step in its definition of done. A ticket
+that ships a new feature without documenting how to activate it (or without verifying it runs
+post-activation) is incomplete.
+
+Every ticket for a flag-gated feature must cover:
+
+1. **Activation config** — the exact config keys and target values needed to turn the feature on
+   (e.g. `feedback.enabled: true`, `feedback.board_url: "<url>"`). The committed
+   `config/config.json` template may carry `"enabled": false` as a safe default; the ticket must
+   still specify what an operator changes to activate.
+2. **Live-proof step** — a concrete verification that the feature fires after activation (e.g.
+   "verify FeedbackRunner fires after idle compaction", "check the log for
+   `FeedbackRunner started`").
+3. **Post-deploy follow-up** — a task or checklist item to revisit the config after the deploy
+   settles (closed-loop: did the feature actually turn on in production?).
+
+The implementing agent is responsible for including these in the ticket's acceptance criteria or in
+a follow-up task filed under `tasks/`. A feature that ships default-off with no documented
+activation path is a process bug — treat it the same as a feature that ships broken.
+
 ## Task tracking
 
 Persistent, human-readable task tracking lives under `tasks/` at the repo root:
