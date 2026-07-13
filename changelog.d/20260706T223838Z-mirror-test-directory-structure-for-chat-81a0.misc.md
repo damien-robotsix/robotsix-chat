@@ -1,1 +1,0 @@
-Mirror test directory structure for chat/server/routes/ subpackage

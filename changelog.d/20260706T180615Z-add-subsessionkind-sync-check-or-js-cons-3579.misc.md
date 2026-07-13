@@ -1,2 +1,0 @@
-Add SubsessionKind sync check or JS constant layer to prevent silent frontend breakage on enum
-rename

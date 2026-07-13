@@ -1,1 +1,0 @@
-Migrate PROJECT_TITLE to <meta> tag in index.html for chat.js localStorage keys

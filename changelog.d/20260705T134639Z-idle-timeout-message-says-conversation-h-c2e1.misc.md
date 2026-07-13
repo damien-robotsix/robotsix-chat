@@ -1,1 +1,0 @@
-Idle-timeout message says 'conversation has been reset' — should say 'compacted'

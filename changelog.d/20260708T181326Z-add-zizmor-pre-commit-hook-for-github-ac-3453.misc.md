@@ -1,1 +1,0 @@
-Add zizmor pre-commit hook for GitHub Actions workflow security auditing

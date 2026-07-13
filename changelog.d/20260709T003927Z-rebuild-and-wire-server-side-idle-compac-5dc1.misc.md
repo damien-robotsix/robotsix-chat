@@ -1,1 +1,0 @@
-Rebuild and wire server-side idle compaction into the chat route

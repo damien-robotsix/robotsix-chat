@@ -1,2 +1,0 @@
-\_validate_model_level rejects level 4 for subsessions but prompt, tool docstring, and config layer
-all describe it as available

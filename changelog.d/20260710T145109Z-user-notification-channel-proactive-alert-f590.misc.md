@@ -1,1 +1,0 @@
-User notification channel: proactive alerts when agent needs user attention

@@ -1,1 +1,0 @@
-Grant robotsix-chat agent GitHub-maintenance capability (create/register repos)

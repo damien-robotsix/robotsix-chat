@@ -1,1 +1,0 @@
-Reorganize module memory: align docs to per-module layout (docs/memory/)
