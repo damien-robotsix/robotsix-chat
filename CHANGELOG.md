@@ -1,6 +1,6 @@
 ## 0.0.0 (unreleased)
 
-- Upgrade liblzma5 in the runtime Docker stage to resolve CVE-2026-34743 in the base image.
+- Upgrade liblzma5 in the runtime Docker stage to resolve CVE-2026-34743 flagged by the Trivy container scan gate.
 - Document feature-flag activation rule in `AGENT.md`: any flag-gated feature must include activation config, live-proof, and post-deploy follow-up in its definition of done.
 - Chat UI: queued (not-yet-processed) user messages now show a cancel button. Users can cancel individual queued messages (per-message ✕) or bulk-cancel all queued messages. Cancelled messages are removed from the processing queue server-side; messages already in processing are rejected gracefully.
 - Added "one subsession per subject" rule to the agent system prompt, instructing the agent to spawn separate subsessions for distinct subjects rather than consolidating unrelated ticket batches or decision groups into a single subsession lifecycle.
