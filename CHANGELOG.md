@@ -4,6 +4,7 @@
   the patched `5.8.1-1+deb13u1` is resolved instead of the vulnerable `5.8.1-1`
   (CVE-2026-34743).
 - Upgrade liblzma5 in the runtime Docker stage to resolve CVE-2026-34743 flagged by the Trivy container scan gate.
+- Fix release-image `Verify CI is green` job timing out waiting on itself: use `actions.getWorkflowRun` to discover the check-suite id directly instead of matching against check-run `details_url` (which uses check-run ids, not workflow-run ids). Also handles the edge case where no non-self CI checks exist for a commit (break immediately).
 - Document feature-flag activation rule in `AGENT.md`: any flag-gated feature must include activation config, live-proof, and post-deploy follow-up in its definition of done.
 - Chat UI: queued (not-yet-processed) user messages now show a cancel button. Users can cancel individual queued messages (per-message ✕) or bulk-cancel all queued messages. Cancelled messages are removed from the processing queue server-side; messages already in processing are rejected gracefully.
 - Added "one subsession per subject" rule to the agent system prompt, instructing the agent to spawn separate subsessions for distinct subjects rather than consolidating unrelated ticket batches or decision groups into a single subsession lifecycle.
