@@ -1,5 +1,8 @@
 ## 0.0.0 (unreleased)
 
+- Pin liblzma5 to `5.8.*` (was `5.*`) in the Dockerfile runtime stage to ensure
+  the patched `5.8.1-1+deb13u1` is resolved instead of the vulnerable `5.8.1-1`
+  (CVE-2026-34743).
 - Upgrade liblzma5 in the runtime Docker stage to resolve CVE-2026-34743 flagged by the Trivy container scan gate.
 - Document feature-flag activation rule in `AGENT.md`: any flag-gated feature must include activation config, live-proof, and post-deploy follow-up in its definition of done.
 - Chat UI: queued (not-yet-processed) user messages now show a cancel button. Users can cancel individual queued messages (per-message ✕) or bulk-cancel all queued messages. Cancelled messages are removed from the processing queue server-side; messages already in processing are rejected gracefully.
