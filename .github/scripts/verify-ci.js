@@ -2,21 +2,32 @@ module.exports = async ({github, context, core}) => {
   const deadlineMs = 20 * 60 * 1000;
   const start = Date.now();
 
-  // The check-suite id is per-workflow-run: every job in this run shares the
-  // same suite.  We locate it once from any check run belonging to this
-  // workflow (jobs listed below), then exclude the whole suite so we never
-  // wait on ourselves.
+  // Every GitHub Actions workflow run is backed by a single check suite.
+  // We fetch our own check-suite id directly from the workflow-run API so we
+  // can exclude our entire suite — this guarantees we never wait on ourselves
+  // even with re-runs or timing issues.
   //
-  // Prior approach relied on check-run `details_url` containing the workflow
-  // run id (`/runs/<run_id>/`), but GitHub Actions check-run URLs use the
-  // check-run id, not the workflow-run id — so the self-filter silently
-  // failed and the verify job waited on its own still-running check forever.
-  const RELEASE_JOB_NAMES = [
-    'Verify CI is green',
-    'Build, scan, and publish image',
-  ];
+  // Prior approaches:
+  //   1. Matching `/runs/<run_id>/` in `details_url` — broken because
+  //      check-run URLs use the check-run id, not the workflow-run id.
+  //   2. Scanning `checks.listForRef` for job names — ambiguous when
+  //      multiple workflow runs exist for the same commit (re-runs), and
+  //      fragile when a check run hasn't been indexed yet on first poll.
+  let currentSuiteId;
+  try {
+    const {data: wfRun} = await github.rest.actions.getWorkflowRun({
+      ...context.repo,
+      run_id: context.runId,
+    });
+    currentSuiteId = wfRun.check_suite_id;
+  } catch {
+    // If we can't determine our check suite (permissions, API error),
+    // fall through — the loop will wait on itself and eventually time out
+    // rather than silently passing. This is the safe default.
+  }
 
-  let currentSuiteId = undefined;
+  const isSelf = (r) =>
+    currentSuiteId != null && r.check_suite?.id === currentSuiteId;
 
   let others = [];
   while (true) {
@@ -26,23 +37,15 @@ module.exports = async ({github, context, core}) => {
       per_page: 100,
     });
 
-    // Discover our own check-suite id on the first poll (or if it was
-    // somehow missed earlier).
-    if (currentSuiteId === undefined) {
-      const ourRun = runs.find((r) => RELEASE_JOB_NAMES.includes(r.name));
-      currentSuiteId = ourRun?.check_suite?.id;
-    }
-
-    const isSelf = (r) =>
-      currentSuiteId != null && r.check_suite?.id === currentSuiteId;
-
     // Deploy jobs (e.g. GitHub Pages) can fail for infrastructure reasons
     // outside the codebase (repo settings, environment config).  Exclude them
     // from the CI gate so they don't block releases.
     const isDeploy = (r) => (r.name || '').endsWith(' / Deploy');
     others = runs.filter((r) => !isSelf(r) && !isDeploy(r));
     const pending = others.filter((r) => r.status !== 'completed');
-    if (others.length > 0 && pending.length === 0) break;
+
+    if (others.length === 0 || pending.length === 0) break;
+
     if (Date.now() - start > deadlineMs) {
       core.setFailed(
         `Timed out waiting for CI checks to complete: ${pending.map((r) => r.name).join(', ') || 'no checks found'}`
