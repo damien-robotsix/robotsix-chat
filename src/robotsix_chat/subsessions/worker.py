@@ -838,7 +838,7 @@ def _inject_restart_notice(
     """
     lines = [
         "[System notice: the chat service was restarted. "
-        "The following background tasks were affected:]",
+        + "The following background tasks were affected:]",
         "",
     ]
     for fate in fates:
