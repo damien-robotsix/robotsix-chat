@@ -113,6 +113,21 @@ async def test_resume_subsessions_full_scenario(tmp_path: Path) -> None:
         for label in labels
     )
 
+    # -- restart notice: injected into the conversation ---------------------
+    restart_notices = [
+        label for label, _ in history if "the chat service was restarted" in label
+    ]
+    assert len(restart_notices) == 1, (
+        "expected exactly one restart notice per affected conversation"
+    )
+    notice = restart_notices[0]
+    assert f'Periodic "watch CI" ({ids["periodic"][:8]})' in notice
+    assert "resumed" in notice
+    assert f'Task "one shot" ({ids["task"][:8]})' in notice
+    assert "interrupted" in notice
+    # Terminal entries are not listed.
+    assert ids["closed"][:8] not in notice
+
     # -- closed: restored as-is, no worker, no new report -------------------
     closed = registry.get(ids["closed"])
     assert closed is not None
@@ -532,3 +547,130 @@ async def test_resume_user_chat_no_augmentation_when_no_transcript(
         registry2.cancel_and_close(user_chat.id, reason="teardown", closed_by="system")
         with contextlib.suppress(asyncio.CancelledError):
             await asyncio.wait_for(worker, 2.0)
+
+
+# ---------------------------------------------------------------------------
+# restart notice injection
+# ---------------------------------------------------------------------------
+
+
+def test_restart_notice_not_injected_when_no_active_subsessions(
+    tmp_path: Path,
+) -> None:
+    """No restart notice when all persisted entries are already terminal."""
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    closed = registry1.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="done job",
+        prompt="already finished",
+        model_level=3,
+    )
+    registry1.mark_closed(closed.id, summary="done", reason="completed")
+
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(registry=registry2)
+    resume_subsessions(env)
+
+    history = env.conversation_store.history(OWNER)
+    restart_notices = [
+        label for label, _ in history if "the chat service was restarted" in label
+    ]
+    assert restart_notices == []
+
+
+@pytest.mark.asyncio
+async def test_restart_notice_includes_user_chat_as_resumed(
+    tmp_path: Path,
+) -> None:
+    """User_chat subsessions appear as 'resumed' in the restart notice."""
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    uc = registry1.create(
+        kind=SubsessionKind.USER_CHAT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="side chat",
+        prompt="discuss the plan",
+        model_level=3,
+    )
+    registry1.set_status(uc.id, SubsessionStatus.WAITING)
+
+    gate = asyncio.Event()
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=FakeAgent(["ok"], gate=gate),
+        registry=registry2,
+        settings=make_settings(),
+    )
+    resume_subsessions(env)
+
+    history = env.conversation_store.history(OWNER)
+    notices = [
+        label for label, _ in history if "the chat service was restarted" in label
+    ]
+    assert len(notices) == 1
+    notice = notices[0]
+    assert f'User_chat "side chat" ({uc.id[:8]})' in notice
+    assert "resumed" in notice
+
+    worker = registry2._running.get(uc.id)
+    if worker is not None:
+        registry2.cancel_and_close(uc.id, reason="teardown", closed_by="system")
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(worker, 2.0)
+
+
+def test_restart_notice_multiple_owners_each_get_own_notice(
+    tmp_path: Path,
+) -> None:
+    """Each affected owner gets a restart notice scoped to its subsessions."""
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    owner_a = "sess-a"
+    owner_b = "sess-b"
+
+    task_a = registry1.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id=owner_a,
+        parent_id=None,
+        depth=1,
+        title="task A",
+        prompt="do A",
+        model_level=3,
+    )
+    task_b = registry1.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id=owner_b,
+        parent_id=None,
+        depth=1,
+        title="task B",
+        prompt="do B",
+        model_level=3,
+    )
+
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(registry=registry2)
+    resume_subsessions(env)
+
+    # Owner A's notice mentions only task A.
+    history_a = env.conversation_store.history(owner_a)
+    notices_a = [
+        label for label, _ in history_a if "the chat service was restarted" in label
+    ]
+    assert len(notices_a) == 1
+    assert f'Task "task A" ({task_a.id[:8]})' in notices_a[0]
+    assert task_b.id[:8] not in notices_a[0]
+
+    # Owner B's notice mentions only task B.
+    history_b = env.conversation_store.history(owner_b)
+    notices_b = [
+        label for label, _ in history_b if "the chat service was restarted" in label
+    ]
+    assert len(notices_b) == 1
+    assert f'Task "task B" ({task_b.id[:8]})' in notices_b[0]
+    assert task_a.id[:8] not in notices_b[0]
