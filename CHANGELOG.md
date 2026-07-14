@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Subsessions now survive service restarts: periodic monitors are re-armed automatically on startup (with one immediate tick if the scheduled run elapsed during downtime), and a restart notice is injected into each affected conversation listing which subsessions were resumed or interrupted — so the model can reconcile on its next turn.
 - Pin liblzma5 to `5.8.*` (was `5.*`) in the Dockerfile runtime stage to ensure
   the patched `5.8.1-1+deb13u1` is resolved instead of the vulnerable `5.8.1-1`
   (CVE-2026-34743).

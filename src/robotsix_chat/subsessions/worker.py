@@ -573,18 +573,35 @@ def resume_subsessions(env: SubsessionEnv) -> None:
 
     * ``periodic`` entries that were active at shutdown are respawned
       under their original id with the remaining run budget.
-    * active ``task`` / ``user_chat`` entries cannot be resumed (their
-      in-flight agent state is gone) — they are re-registered as
-      ``INTERRUPTED`` and a summary is delivered to the owning main
-      session (a nested parent's worker is also gone pre-resume).
+    * active ``task`` / ``user_chat`` entries are either resumed
+      (``user_chat`` gets a fresh worker with an augmented prompt) or
+      marked ``INTERRUPTED`` (``task`` — in-flight state is gone).
     * terminal entries are re-registered as-is so the UI keeps its
       recent-history view after a restart.
+
+    After processing all persisted entries a **restart notice** is injected
+    into every conversation that had live subsessions at shutdown, listing
+    the affected subsessions and whether each was resumed or lost — the
+    model sees this on its next turn and can reconcile (re-open unresumable
+    tasks, rebuild owed decisions).
     """
+    # Collect fate info per owner so we can inject one restart notice per
+    # affected conversation.
+    fate_by_owner: dict[str, list[_ResumeFate]] = {}
     for entry in env.registry.load_persisted():
         try:
-            _resume_entry(env, entry)
+            fate = _resume_entry(env, entry)
+            if fate is not None:
+                owner = fate["owner_session_id"]
+                fate_by_owner.setdefault(owner, []).append(fate)
         except Exception:
             logger.exception("Could not resume subsession entry %r", entry)
+
+    for owner_id, fates in fate_by_owner.items():
+        try:
+            _inject_restart_notice(env, owner_id, fates)
+        except Exception:
+            logger.exception("Failed to inject restart notice for owner %s", owner_id)
 
 
 def _entry_str(entry: Mapping[str, object], key: str, default: str = "") -> str:
@@ -660,6 +677,17 @@ class _CommonEntryKwargs(TypedDict):
     include_previous_result: bool
 
 
+class _ResumeFate(TypedDict):
+    """Result of attempting to resume one persisted subsession entry."""
+
+    owner_session_id: str
+    sub_id: str
+    kind: str
+    title: str
+    fate: str  # "resumed" | "interrupted"
+    detail: str
+
+
 def _entry_to_common_kwargs(entry: Mapping[str, object]) -> _CommonEntryKwargs:
     """Extract common SubsessionInfo/spawn_subsession fields from a persisted entry."""
     return {
@@ -693,17 +721,26 @@ def _entry_last_assistant_text(entry: Mapping[str, object]) -> str:
     return ""
 
 
-def _resume_entry(env: SubsessionEnv, entry: Mapping[str, object]) -> None:
-    """Resume a single persisted registry entry (see resume_subsessions)."""
+def _resume_entry(
+    env: SubsessionEnv, entry: Mapping[str, object]
+) -> _ResumeFate | None:
+    """Resume a single persisted registry entry (see resume_subsessions).
+
+    Returns a :class:`_ResumeFate` describing what happened so the caller
+    can build a per-conversation restart notice, or ``None`` for entries
+    that were already terminal (no notice needed).
+    """
     status = _entry_str(entry, "status")
     kind = SubsessionKind(_entry_str(entry, "kind", "task"))
     sub_id = _entry_str(entry, "subsession_id")
     owner = _entry_str(entry, "owner_session_id")
     if not sub_id or not owner:
-        return
+        return None
     if status not in {s.value for s in ACTIVE_STATUSES}:
         _restore_entry(env.registry, entry)
-        return
+        return None
+
+    title = _entry_str(entry, "title")
 
     if kind is SubsessionKind.PERIODIC:
         max_runs = _entry_opt_int(entry, "max_runs")
@@ -719,7 +756,14 @@ def _resume_entry(env: SubsessionEnv, entry: Mapping[str, object]) -> None:
             completed_runs=_rebuild_completed_runs(entry),
             turn_history=_rebuild_turn_history(entry),
         )
-        return
+        return _ResumeFate(
+            owner_session_id=owner,
+            sub_id=sub_id,
+            kind="periodic",
+            title=title,
+            fate="resumed",
+            detail="Will continue ticking on its normal schedule.",
+        )
 
     # task / user_chat: recoverable kinds are respawned; others are
     # marked interrupted and reported to the main session.
@@ -745,12 +789,19 @@ def _resume_entry(env: SubsessionEnv, entry: Mapping[str, object]) -> None:
             **common,
             sub_id=sub_id,
         )
-        return
+        return _ResumeFate(
+            owner_session_id=owner,
+            sub_id=sub_id,
+            kind="user_chat",
+            title=title,
+            fate="resumed",
+            detail="Restarted — the conversation can continue.",
+        )
 
     # task: cannot be resumed (in-flight agent state is gone).
     info = _restore_entry(env.registry, entry, force_active=True)
     if info is None:
-        return
+        return None
     last = SubsessionRegistry.last_assistant_text(info)
     summary = "Interrupted by a server restart."
     if last:
@@ -764,6 +815,43 @@ def _resume_entry(env: SubsessionEnv, entry: Mapping[str, object]) -> None:
         f"[Subsession {sub_id[:8]} ({kind.value}) '{info.title}' interrupted]",
         summary,
     )
+    return _ResumeFate(
+        owner_session_id=owner,
+        sub_id=sub_id,
+        kind="task",
+        title=info.title,
+        fate="interrupted",
+        detail="One-shot tasks cannot survive restarts.",
+    )
+
+
+def _inject_restart_notice(
+    env: SubsessionEnv,
+    owner_id: str,
+    fates: list[_ResumeFate],
+) -> None:
+    """Inject a restart notice into the conversation for *owner_id*.
+
+    Lists every affected subsession and whether it was resumed or lost,
+    so the model can reconcile on its next turn (re-open unresumable
+    tasks, rebuild owed decisions).
+    """
+    lines = [
+        "[System notice: the chat service was restarted. "
+        "The following background tasks were affected:]",
+        "",
+    ]
+    for fate in fates:
+        short_id = fate["sub_id"][:8]
+        kind_label = fate["kind"]
+        display_title = fate["title"] or "(untitled)"
+        verb = "resumed" if fate["fate"] == "resumed" else "interrupted"
+        lines.append(
+            f'- {kind_label.capitalize()} "{display_title}" ({short_id}): '
+            f"{verb} — {fate['detail']}"
+        )
+    notice = "\n".join(lines)
+    env.conversation_store.record_for_session(owner_id, notice, "")
 
 
 def _restore_entry(
