@@ -739,6 +739,41 @@ async def test_run_guard_survives_duplicate_worker_race() -> None:
     assert 1 in info.completed_runs
 
 
+@pytest.mark.asyncio
+async def test_run_guard_fast_forwards_without_sleeping() -> None:
+    """A stale run counter fast-forwards past completed runs instantly.
+
+    Regression: when the counter lags ``completed_runs`` (a pre-fix
+    persisted store resumed at runs=0), each collision used to sleep a
+    full interval before trying the next number.  The 60 s interval
+    here makes any such sleep overshoot the test's wait budget.
+    """
+    agent = FakeAgent(["run 4 result"], gate=asyncio.Event())
+    env = build_env(agent=agent)
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        max_runs=10,
+        title="stale-counter",
+        completed_runs={1, 2, 3},
+    )
+
+    await wait_until(lambda: len(agent.calls) >= 1)
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # The worker skipped 1..3 without sleeping and claimed run 4.
+    assert info.runs == 3
+    assert 4 in info.completed_runs
+
+    worker = env.registry._running.get(sub_id)
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
+    if worker is not None:
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(worker, 2.0)
+
+
 # ---------------------------------------------------------------------------
 # reaper
 # ---------------------------------------------------------------------------
