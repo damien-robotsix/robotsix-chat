@@ -2,7 +2,10 @@
 
 Covers ``_build_feedback_prompt``, ``_parse_tickets``, and
 ``FeedbackRunner`` (with mocked I/O: ``respx`` for HTTP, ``MockAgent`` for
-the LLM agent, and a fake ``SubsessionRegistry``).
+the LLM agent, and a fake ``SubsessionRegistry``), as well as
+Langfuse trace helpers (``_trace_context``, ``_stamp_tags``,
+``_stamp_outcome``) and the ``session_id`` / ``trace_metadata``
+forwarding through ``_call_agent``.
 """
 
 from __future__ import annotations
@@ -11,6 +14,7 @@ import json
 import logging
 from collections.abc import AsyncIterator
 from typing import Any
+from unittest.mock import MagicMock, patch
 
 import httpx
 import pytest
@@ -26,7 +30,8 @@ from robotsix_chat.subsessions.models import (
 )
 
 # ---------------------------------------------------------------------------
-# Helpers
+# Helpers (comprehensive suite — prompt, parse, constructor, schedule,
+# subsession summaries, agent calls, ticket filing, full run cycle)
 # ---------------------------------------------------------------------------
 
 
@@ -503,7 +508,7 @@ class TestCallAgent:
         """Tokens are concatenated and whitespace-stripped."""
         agent = _FakeAgent(tokens=["Hello", " ", "world!"])
         runner = _make_runner(agent=agent)
-        result = await runner._call_agent("analyse this")
+        result = await runner._call_agent("analyse this", session_id="sess-test")
         assert result == "Hello world!"
         assert agent.call_count == 1
         assert agent.called_with == "analyse this"
@@ -516,7 +521,7 @@ class TestCallAgent:
         agent = _FakeAgent(error=RuntimeError("agent down"))
         runner = _make_runner(agent=agent)
         with caplog.at_level(logging.ERROR):
-            result = await runner._call_agent("analyse this")
+            result = await runner._call_agent("analyse this", session_id="sess-test")
         assert result is None
         assert "Feedback agent call failed" in caplog.text
 
@@ -525,7 +530,7 @@ class TestCallAgent:
         """Leading and trailing whitespace is stripped from the reply."""
         agent = _FakeAgent(tokens=["  \n  response text  \n  "])
         runner = _make_runner(agent=agent)
-        result = await runner._call_agent("prompt")
+        result = await runner._call_agent("prompt", session_id="sess-test")
         assert result == "response text"
 
 
@@ -711,8 +716,6 @@ class TestRun:
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """An unexpected exception after agent call is caught by _run."""
-        from unittest.mock import patch
-
         agent = _FakeAgent(tokens=[_ticket_json()])
         runner = _make_runner(agent=agent)
         with (
@@ -739,3 +742,173 @@ class TestRun:
         runner = _make_runner(agent=agent, subsession_registry=registry)
         await runner._run("compaction", "sess-1", [("q", "a")])
         assert "work done" in (agent.called_with or "")
+
+
+# ===========================================================================
+# Trace-observability tests (Langfuse trace naming, tagging, metadata)
+# ===========================================================================
+
+
+# ---------------------------------------------------------------------------
+# Fake agent — captures stream() kwargs for assertion
+# ---------------------------------------------------------------------------
+
+
+class _CaptureAgent:
+    """A fake agent that records the last ``stream()`` call's kwargs."""
+
+    def __init__(self, tokens: list[str] | None = None) -> None:
+        self.tokens = tokens or ["{}"]
+        self.last_kwargs: dict[str, object] = {}
+
+    async def stream(self, message: str, **kwargs: object) -> AsyncIterator[str]:
+        self.last_kwargs = kwargs
+        for token in self.tokens:
+            yield token
+
+
+# ---------------------------------------------------------------------------
+# Fixtures
+# ---------------------------------------------------------------------------
+
+
+@pytest.fixture
+def settings() -> FeedbackSettings:
+    """FeedbackSettings with a board URL so the runner is active."""
+    return FeedbackSettings(
+        enabled=True,
+        board_url="http://board.example.com",
+        board_api_token="test-token",  # type: ignore[arg-type]
+    )
+
+
+@pytest.fixture
+def agent() -> _CaptureAgent:
+    """Return a fresh _CaptureAgent for each test."""
+    return _CaptureAgent()
+
+
+@pytest.fixture
+def runner(settings: FeedbackSettings, agent: _CaptureAgent) -> FeedbackRunner:
+    """FeedbackRunner wired to the fake agent."""
+    return FeedbackRunner(settings, agent)  # type: ignore[arg-type]
+
+
+# ---------------------------------------------------------------------------
+# Tests: _call_agent passes session_id and trace_metadata to stream()
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_call_agent_forwards_session_id(
+    runner: FeedbackRunner, agent: _CaptureAgent
+) -> None:
+    """_call_agent passes session_id to agent.stream()."""
+    await runner._call_agent("test prompt", session_id="sess-123")
+
+    assert agent.last_kwargs.get("session_id") == "sess-123"
+
+
+@pytest.mark.asyncio
+async def test_call_agent_forwards_trace_metadata(
+    runner: FeedbackRunner, agent: _CaptureAgent
+) -> None:
+    """_call_agent passes trace_metadata to agent.stream()."""
+    meta = {"trigger_type": "compaction", "session_id": "sess-456"}
+    await runner._call_agent("test prompt", session_id="sess-456", trace_metadata=meta)
+
+    assert agent.last_kwargs.get("trace_metadata") == meta
+
+
+@pytest.mark.asyncio
+async def test_call_agent_passes_none_history_and_client_id(
+    runner: FeedbackRunner, agent: _CaptureAgent
+) -> None:
+    """_call_agent still passes history=None, client_id=None (backward compat)."""
+    await runner._call_agent("test prompt", session_id="sess-789")
+
+    assert agent.last_kwargs.get("history") is None
+    assert agent.last_kwargs.get("client_id") is None
+
+
+# ---------------------------------------------------------------------------
+# Tests: _trace_context returns appropriate context manager
+# ---------------------------------------------------------------------------
+
+
+def test_trace_context_with_start_trace_available() -> None:
+    """When start_trace is available, _trace_context returns it."""
+    fake_cm = MagicMock()
+    with patch("robotsix_chat.feedback.runner.start_trace", return_value=fake_cm):
+        ctx = FeedbackRunner._trace_context("feedback-compaction", "sess-1")
+    assert ctx is fake_cm
+
+
+def test_trace_context_when_start_trace_is_none() -> None:
+    """When start_trace is None (tracing absent), returns a nullcontext."""
+    with patch("robotsix_chat.feedback.runner.start_trace", None):
+        ctx = FeedbackRunner._trace_context("feedback-compaction", "sess-1")
+    # nullcontext is truthy and can be entered/exited
+    with ctx:
+        pass  # no error → works
+
+
+# ---------------------------------------------------------------------------
+# Tests: _stamp_tags sets langfuse.trace.tags on the recording span
+# ---------------------------------------------------------------------------
+
+
+def test_stamp_tags_sets_attribute() -> None:
+    """_stamp_tags sets the langfuse.trace.tags attribute with JSON array."""
+    fake_span = MagicMock()
+    with patch(
+        "robotsix_chat.feedback.runner.get_recording_span",
+        return_value=fake_span,
+    ):
+        FeedbackRunner._stamp_tags("compaction")
+
+    fake_span.set_attribute.assert_called_once_with(
+        "langfuse.trace.tags", '["feedback", "compaction"]'
+    )
+
+
+def test_stamp_tags_noop_when_get_recording_span_is_none() -> None:
+    """_stamp_tags is a no-op when get_recording_span is None."""
+    with patch("robotsix_chat.feedback.runner.get_recording_span", None):
+        # Should not raise
+        FeedbackRunner._stamp_tags("compaction")
+
+
+def test_stamp_tags_noop_when_span_is_none() -> None:
+    """_stamp_tags is a no-op when get_recording_span returns None."""
+    with patch(
+        "robotsix_chat.feedback.runner.get_recording_span",
+        return_value=None,
+    ):
+        # Should not raise
+        FeedbackRunner._stamp_tags("compaction")
+
+
+# ---------------------------------------------------------------------------
+# Tests: _stamp_outcome sets feedback.* attributes
+# ---------------------------------------------------------------------------
+
+
+def test_stamp_outcome_sets_attributes() -> None:
+    """_stamp_outcome sets feedback.filed_tickets and feedback.total_tickets."""
+    fake_span = MagicMock()
+    with patch(
+        "robotsix_chat.feedback.runner.get_recording_span",
+        return_value=fake_span,
+    ):
+        FeedbackRunner._stamp_outcome(filed=3, total=5)
+
+    assert fake_span.set_attribute.call_count == 2
+    fake_span.set_attribute.assert_any_call("feedback.filed_tickets", 3)
+    fake_span.set_attribute.assert_any_call("feedback.total_tickets", 5)
+
+
+def test_stamp_outcome_noop_when_get_recording_span_is_none() -> None:
+    """_stamp_outcome is a no-op when get_recording_span is None."""
+    with patch("robotsix_chat.feedback.runner.get_recording_span", None):
+        FeedbackRunner._stamp_outcome(filed=0, total=0)
