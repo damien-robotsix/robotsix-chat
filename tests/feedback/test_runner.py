@@ -412,7 +412,7 @@ class TestFeedbackRunnerSchedule:
         (task,) = tasks
         assert task.get_name().startswith("feedback-session_end-sess-2")
         if not task.done():
-            await task
+            _ = await task
 
     @pytest.mark.asyncio
     async def test_task_cleans_up_after_completion(self) -> None:
@@ -423,7 +423,7 @@ class TestFeedbackRunnerSchedule:
         assert len(tasks) == 1
         for t in list(tasks):
             if not t.done():
-                await t
+                _ = await t
         assert len(tasks) == 0
 
 
