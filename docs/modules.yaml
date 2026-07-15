@@ -297,5 +297,6 @@ modules:
     paths:
       - src/robotsix_chat/notification/__init__.py
       - src/robotsix_chat/notification/skill.md
+      - docs/notification/skill.md
       - tests/notification/__init__.py
       - tests/notification/test_notification.py

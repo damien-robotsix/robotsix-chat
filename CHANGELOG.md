@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Move `src/robotsix_chat/github/skill.md` → `docs/github/skill.md` to align with the per-module docs layout.
+- Moved `src/robotsix_chat/notification/skill.md` to `docs/notification/skill.md` to align with per-module docs layout convention.
 - Added unit tests for ``FeedbackRunner`` and its helpers (``_build_feedback_prompt``, ``_parse_tickets``) — 52 tests covering pure functions, agent I/O (mocked), HTTP ingest (``respx``), subsession summarisation, error handling, and the full ``_run`` cycle.
 - FeedbackRunner now produces named Langfuse traces (`feedback-{trigger}`) tagged `feedback` and `{trigger}`, forwards the source `session_id` to the LLM call, and stamps trace metadata (trigger type, session id, filed ticket counts).  Feedback runs are filterable via `GET /api/public/traces?tags=feedback`.
 - Subsessions now survive service restarts: periodic monitors are re-armed automatically on startup (with one immediate tick if the scheduled run elapsed during downtime), and a restart notice is injected into each affected conversation listing which subsessions were resumed or interrupted — so the model can reconcile on its next turn.
