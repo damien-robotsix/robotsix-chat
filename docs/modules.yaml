@@ -265,6 +265,8 @@ modules:
     paths:
       - src/robotsix_chat/feedback/__init__.py
       - src/robotsix_chat/feedback/runner.py
+      - tests/feedback/__init__.py
+      - tests/feedback/test_runner.py
 
   - id: ui
     description: "Browser chat UI — self-contained HTML frontend served at /."
