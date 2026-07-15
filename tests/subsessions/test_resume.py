@@ -91,8 +91,11 @@ async def test_resume_subsessions_full_scenario(tmp_path: Path) -> None:
     assert periodic.kind is SubsessionKind.PERIODIC
     assert periodic.status in (SubsessionStatus.RUNNING, SubsessionStatus.SLEEPING)
     assert periodic.interval_seconds == 0.05
-    # Remaining run budget: max_runs(5) - runs(2) = 3.
-    assert periodic.max_runs == 3
+    # The budget and the executed-run counter both survive the restart —
+    # the effective remaining budget (5 - 2 = 3) falls out of the
+    # ``runs >= max_runs`` check instead of a rebudget.
+    assert periodic.max_runs == 5
+    assert periodic.runs == 2
     worker = registry._running.get(ids["periodic"])
     assert worker is not None
 
@@ -143,8 +146,14 @@ async def test_resume_subsessions_full_scenario(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_resume_periodic_run_budget_never_below_one(tmp_path: Path) -> None:
-    """An exhausted persisted run budget still allows one resumed run."""
+async def test_resume_periodic_restores_run_counter_and_budget(
+    tmp_path: Path,
+) -> None:
+    """The run counter and original ``max_runs`` both survive a restart.
+
+    An exhausted budget still allows exactly one resumed run: the
+    ``runs >= max_runs`` check fires after that run completes.
+    """
     store_path = tmp_path / "subsessions.json"
     registry1 = SubsessionRegistry(store_path=store_path)
     periodic = registry1.create(
@@ -171,7 +180,67 @@ async def test_resume_periodic_run_budget_never_below_one(tmp_path: Path) -> Non
 
     resumed = registry2.get(periodic.id)
     assert resumed is not None
-    assert resumed.max_runs == 1
+    assert resumed.max_runs == 3
+    assert resumed.runs == 3
+
+    worker = registry2._running.get(periodic.id)
+    registry2.cancel_and_close(periodic.id, reason="teardown", closed_by="system")
+    if worker is not None:
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(worker, 2.0)
+
+
+@pytest.mark.asyncio
+async def test_resume_periodic_does_not_replay_completed_runs(
+    tmp_path: Path,
+) -> None:
+    """A resumed periodic worker executes the NEXT run immediately.
+
+    Regression: resume used to seed ``completed_runs`` but restart the
+    counter at 0, so the worker collided with every historical run
+    number and slept one full interval per collision — with a long
+    interval and regular restarts the subsession never ran again.  The
+    60 s interval here makes any such sleep fail the test's 2 s wait.
+    """
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    periodic = registry1.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="long watch",
+        prompt="check the board",
+        model_level=3,
+        interval_seconds=60.0,
+        max_runs=10,
+    )
+    for run_n in (1, 2, 3):
+        assert registry1.claim_run(periodic.id, run_n)
+    registry1.set_status(periodic.id, SubsessionStatus.SLEEPING, runs=3)
+
+    agent = FakeAgent(["run 4 result"], gate=asyncio.Event())
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=agent,
+        registry=registry2,
+        settings=make_settings(min_interval_seconds=0.01),
+    )
+    resume_subsessions(env)
+
+    resumed = registry2.get(periodic.id)
+    assert resumed is not None
+    assert resumed.runs == 3
+    assert resumed.completed_runs == {1, 2, 3}
+
+    # The first turn (run 4) must start promptly — a worker that
+    # replays runs 1..3 sleeps 60 s per replay and never gets here.
+    for _ in range(200):
+        if agent.calls:
+            break
+        await asyncio.sleep(0.01)
+    assert agent.calls, "resumed worker never reached its next run"
+    assert 4 in resumed.completed_runs
 
     worker = registry2._running.get(periodic.id)
     registry2.cancel_and_close(periodic.id, reason="teardown", closed_by="system")

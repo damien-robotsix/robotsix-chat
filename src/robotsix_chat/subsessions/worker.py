@@ -128,6 +128,7 @@ def spawn_subsession(
     max_runs: int | None = None,
     inherit_context: bool = False,
     sub_id: str | None = None,
+    runs: int = 0,
     completed_runs: set[int] | None = None,
     turn_history: list[tuple[str, str]] | None = None,
 ) -> str:
@@ -187,6 +188,7 @@ def spawn_subsession(
         include_previous_result=include_previous_result,
         max_runs=max_runs,
         sub_id=sub_id,
+        runs=runs,
         completed_runs=completed_runs,
         turn_history=turn_history,
     )
@@ -475,20 +477,16 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                         next_run,
                         sub_id,
                     )
-                    # Advance the run counter so we don't loop forever
-                    # on the same run number.
+                    # Advance the run counter and retry immediately.  A
+                    # collision means the counter is behind completed_runs
+                    # (a pre-fix persisted store); sleeping an interval per
+                    # historical run number starves the schedule — with
+                    # regular restarts the subsession never runs again.
                     registry.set_status(
                         sub_id,
-                        SubsessionStatus.SLEEPING,
+                        SubsessionStatus.RUNNING,
                         runs=next_run,
-                        next_run_at=(registry.now() + (info.interval_seconds or 60.0)),
-                        last_result=info.last_result,
                     )
-                    # Sleep until the next tick (or a steering message).
-                    woke = await registry.wait_for_inbox(
-                        sub_id, timeout=info.interval_seconds
-                    )
-                    pending = registry.drain_inbox(sub_id) if woke else []
                     continue
 
                 steering = [] if first_turn else pending
@@ -743,17 +741,27 @@ def _resume_entry(
     title = _entry_str(entry, "title")
 
     if kind is SubsessionKind.PERIODIC:
-        max_runs = _entry_opt_int(entry, "max_runs")
-        runs = _entry_int(entry, "runs")
-        remaining = None if max_runs is None else max(1, max_runs - runs)
+        completed_runs = _rebuild_completed_runs(entry)
+        # Restore the executed-run counter alongside the run guard.
+        # max(completed_runs) is the highest run number that actually
+        # executed (claims happen right before the agent turn); the
+        # persisted ``runs`` field is the fallback for entries that
+        # never claimed a run.  Resuming at runs=0 while the guard
+        # remembers 1..N makes the worker collide on every historical
+        # number, and the original ``max_runs - runs`` rebudgeting then
+        # shrank the budget by those phantom skips on every restart.
+        # The counter now survives, so ``max_runs`` carries over as-is
+        # and the ``runs >= max_runs`` check stays correct.
+        runs = max(completed_runs) if completed_runs else _entry_int(entry, "runs")
         spawn_subsession(
             env=env,
             kind=kind,
             owner_session_id=owner,
             **_entry_to_common_kwargs(entry),
-            max_runs=remaining,
+            max_runs=_entry_opt_int(entry, "max_runs"),
             sub_id=sub_id,
-            completed_runs=_rebuild_completed_runs(entry),
+            runs=runs,
+            completed_runs=completed_runs,
             turn_history=_rebuild_turn_history(entry),
         )
         return _ResumeFate(
