@@ -2,6 +2,7 @@
 
 - Enable `bc_check` periodic agent to detect backward-compatibility debt and file draft removal tickets.
 - Module curator: add premise-verification step to check for runtime references (`Path(__file__).parent / "skill.md"`) before proposing relocation of `skill.md` files from the source tree to `docs/`. Prevents silently broken runtime loads when a file is moved but a module still loads it from the old location.
+- Restore `src/robotsix_chat/github/skill.md` — the file was moved to `docs/github/` in a prior reorganization but `load_github_skill()` still loads from the module directory, so the GitHub skill instructions were silently empty at runtime.
 - Move `src/robotsix_chat/github/skill.md` → `docs/github/skill.md` to align with the per-module docs layout.
 - Moved `src/robotsix_chat/notification/skill.md` to `docs/notification/skill.md` to align with per-module docs layout convention.
 - Move `src/robotsix_chat/lifecycle/skill.md` → `docs/lifecycle/skill.md` to align with per-module docs layout.
