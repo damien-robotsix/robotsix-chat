@@ -296,6 +296,6 @@ modules:
     description: "Browser notification tool for the agent — exposes build_notification_tools(), a factory returning a notify_user LLM tool that publishes concise alerts (title, body, urgency, optional link) as notification events to connected clients over the SSE channel. The browser renders them via the Notifications API. No external push-provider infrastructure is needed."
     paths:
       - src/robotsix_chat/notification/__init__.py
-      - src/robotsix_chat/notification/skill.md
+      - docs/notification/skill.md
       - tests/notification/__init__.py
       - tests/notification/test_notification.py
