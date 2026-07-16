@@ -168,15 +168,15 @@ modules:
       - tests/repo/study/__init__.py
       - tests/repo/study/test_repo_study.py
 
-  - id: github
+  - id: repo-security
     description: "GitHub repository security-feature tools — enable/disable dependency graph, advanced security, secret scanning, and push protection on repos under the configured GitHub organisation. Auth delegates to the direct-repo GitHub App installation."
     paths:
-      - src/robotsix_chat/github/__init__.py
-      - src/robotsix_chat/github/skill.md
-      - docs/github/skill.md
-      - tests/github/__init__.py
-      - tests/github/test_security_tools.py
-      - tests/github/test_settings_endpoint.py
+      - src/robotsix_chat/repo/security/__init__.py
+      - src/robotsix_chat/repo/security/skill.md
+      - docs/repo/security/skill.md
+      - tests/repo/security/__init__.py
+      - tests/repo/security/test_security_tools.py
+      - tests/repo/security/test_settings_endpoint.py
 
   - id: diagnostics
     description: "Diagnostics tools for the agent — exposes build_diagnostics_tools() that returns tools for listing diagnostic events, checking recurring failure categories, and managing fix proposals. Returns no tools when diagnostics is disabled."
