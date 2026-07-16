@@ -107,7 +107,7 @@ class CogneeMemory:
         # current database.  The next db open then hard-crashes with
         # "RuntimeError: Database ID ... does not match the current
         # database".  We remove any left-over shadow entries before cognee
-        # ever opens the database so the crash is pre-empted.
+        # ever opens the database so the crash is preempted.
         self._remove_stale_kuzu_shadows(system_root)
 
         cognee.config.data_root_directory(str(data_root))

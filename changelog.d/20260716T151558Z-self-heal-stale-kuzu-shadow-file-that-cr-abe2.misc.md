@@ -1,1 +1,2 @@
-Self-heal stale kuzu .shadow file that crashes cognee memory worker (blocks compaction & FeedbackRunner)
+Self-heal stale kuzu .shadow file that crashes cognee memory worker (blocks compaction &
+FeedbackRunner)
