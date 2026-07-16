@@ -1,0 +1,1 @@
+copy-paste: 2-file clone in notification — deduplicate skill.md between docs/ and src/
