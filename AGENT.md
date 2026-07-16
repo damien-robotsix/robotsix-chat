@@ -175,10 +175,11 @@ activation path is a process bug — treat it the same as a feature that ships b
 ## Module registration
 
 **Rule:** Every new file created under `src/robotsix_chat/<module>/` or `tests/<module>/` must be
-registered in `docs/modules.yaml` under the corresponding module's `paths:` list.  The
+registered in `docs/modules.yaml` under the corresponding module's `paths:` list. The
 `modules-registration` pre-commit hook catches unregistered files at commit time so CI does not
-waste a cycle on the drift.  Run `uv run robotsix-modules check-registration docs/modules.yaml
---root .` to verify locally before committing.
+waste a cycle on the drift. Run
+`uv run robotsix-modules check-registration docs/modules.yaml --root .` to verify locally before
+committing.
 
 ## Task tracking
 
