@@ -88,6 +88,18 @@ repos:
         language: system
         pass_filenames: false
 
+  - repo: local
+    hooks:
+      - id: modules-registration
+        name: modules registration
+        description: >-
+          Verify every file in the repo is claimed by at least one
+          module in docs/modules.yaml — catches newly created files
+          that were not registered before commit.
+        entry: uv run robotsix-modules check-registration docs/modules.yaml --root .
+        language: system
+        pass_filenames: false
+
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: v0.23.0
     hooks:
