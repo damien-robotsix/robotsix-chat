@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Enable `bc_check` periodic agent to detect backward-compatibility debt and file draft removal tickets.
 - Move `src/robotsix_chat/github/skill.md` → `docs/github/skill.md` to align with the per-module docs layout.
 - Moved `src/robotsix_chat/notification/skill.md` to `docs/notification/skill.md` to align with per-module docs layout convention.
 - Move `src/robotsix_chat/lifecycle/skill.md` → `docs/lifecycle/skill.md` to align with per-module docs layout.
