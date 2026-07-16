@@ -172,6 +172,14 @@ The implementing agent is responsible for including these in the ticket's accept
 a follow-up task filed under `tasks/`. A feature that ships default-off with no documented
 activation path is a process bug — treat it the same as a feature that ships broken.
 
+## Module registration
+
+**Rule:** Every new file created under `src/robotsix_chat/<module>/` or `tests/<module>/` must be
+registered in `docs/modules.yaml` under the corresponding module's `paths:` list.  The
+`modules-registration` pre-commit hook catches unregistered files at commit time so CI does not
+waste a cycle on the drift.  Run `uv run robotsix-modules check-registration docs/modules.yaml
+--root .` to verify locally before committing.
+
 ## Task tracking
 
 Persistent, human-readable task tracking lives under `tasks/` at the repo root:

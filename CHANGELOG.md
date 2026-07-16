@@ -1,5 +1,8 @@
 ## 0.0.0 (unreleased)
 
+- Added `modules-registration` pre-commit hook that verifies every file in the repo is
+  claimed by at least one module in `docs/modules.yaml`, catching unregistered new files
+  before commit and preventing CI drift.
 - Self-heal stale kuzu shadow files before cognee opens its database.  If the
   process crashed while kuzu had a WAL/shadow directory open, the leftover
   ``.shadow`` file no longer causes a hard crash on the next start — it is
