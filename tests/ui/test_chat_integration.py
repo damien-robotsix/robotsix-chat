@@ -43,11 +43,7 @@ def _parse_sse_frames(response: Any) -> list[dict[str, object]]:
 
 def _token_frames(frames: list[dict[str, object]]) -> list[str]:
     """Extract token content strings from a list of SSE frames."""
-    return [
-        cast(str, f["content"])
-        for f in frames
-        if f["type"] == SSE_TOKEN_TYPE
-    ]
+    return [cast(str, f["content"]) for f in frames if f["type"] == SSE_TOKEN_TYPE]
 
 
 def _last_frame_of_type(
@@ -165,9 +161,7 @@ class TestSessionLifecycle:
     async def test_create_session_returns_session_id(self) -> None:
         """``POST /sessions`` returns a new session dict."""
         async with mock_app() as f:
-            response = await f.client.post(
-                "/sessions", json={"owner_id": "owner-1"}
-            )
+            response = await f.client.post("/sessions", json={"owner_id": "owner-1"})
 
         assert response.status_code == 200
         data = response.json()
@@ -532,7 +526,8 @@ class TestCancelQueued:
     async def test_cancel_queued_returns_cancelled_count(self) -> None:
         """A successful bulk cancel returns ``{"cancelled": N}``."""
         async with mock_app(
-            tokens=["ok"], message_coalesce_seconds=5.0  # long debounce
+            tokens=["ok"],
+            message_coalesce_seconds=5.0,  # long debounce
         ) as f:
             session_id = "sq-cancel"
             owner_id = "o-cancel"

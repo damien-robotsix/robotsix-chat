@@ -34,12 +34,9 @@ def static_css() -> str:
     """Return the raw chat.css content."""
     from importlib import resources
 
-    return (
-        resources.files("robotsix_chat")
-        / "ui"
-        / "static"
-        / "chat.css"
-    ).read_text(encoding="utf-8")
+    return (resources.files("robotsix_chat") / "ui" / "static" / "chat.css").read_text(
+        encoding="utf-8"
+    )
 
 
 @pytest.fixture
@@ -47,9 +44,6 @@ def static_js() -> str:
     """Return the raw chat.js content."""
     from importlib import resources
 
-    return (
-        resources.files("robotsix_chat")
-        / "ui"
-        / "static"
-        / "chat.js"
-    ).read_text(encoding="utf-8")
+    return (resources.files("robotsix_chat") / "ui" / "static" / "chat.js").read_text(
+        encoding="utf-8"
+    )
