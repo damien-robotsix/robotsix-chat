@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Re-enable `copy_paste` periodic workflow: add `.robotsix-mill/periodic/copy_paste.yaml` to detect clone pairs with jscpd, triage by severity, and file draft tickets for high-severity duplication.
 - Added `modules-registration` pre-commit hook that verifies every file in the repo is
   claimed by at least one module in `docs/modules.yaml`, catching unregistered new files
   before commit and preventing CI drift.
