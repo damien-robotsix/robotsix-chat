@@ -415,6 +415,158 @@ def create_app(
     return app
 
 
+def _inject_skills(
+    settings: Settings,
+    instruction: str,
+    *,
+    bare: bool = False,
+) -> str:
+    """Augment *instruction* with component-access instructions and skill prompts.
+
+    Only active when *bare* is ``False``.  Each skill gate is independently
+    gated by its own settings key (``central_deploy.url``,
+    ``lifecycle.enabled``, ``notification.enabled``,
+    ``github_security.enabled``).
+    """
+    if bare:
+        return instruction
+
+    # Central-deploy roster — component-access instruction + skill prompts.
+    if settings.central_deploy.url:
+        instruction = (
+            f"{instruction}\n\n"
+            "Component access:\n"
+            "– You have one generic tool for calling external components: "
+            "component_request(component_id, method, path, json_body=None). "
+            "Each component declares its own API surface as a skill — read "
+            "the skill descriptions below for allowed operations.\n"
+            "– Obey each component skill's safety section. When a skill marks "
+            "an operation as requiring confirmation, ask the user in "
+            "conversation before calling it.\n"
+            "– If the roster is unavailable or a component returns an error, "
+            "report the error clearly — do not retry in a loop."
+        )
+        from robotsix_chat.component_access.roster import (
+            build_skill_prompt,
+            fetch_roster_sync,
+        )
+
+        roster = fetch_roster_sync(settings.central_deploy)
+        skill_prompt = build_skill_prompt(roster)
+        if skill_prompt:
+            instruction = f"{instruction}\n\n{skill_prompt}"
+
+    # Lifecycle skill.
+    if settings.lifecycle.enabled:
+        from robotsix_chat.lifecycle import load_lifecycle_skill
+
+        lifecycle_skill = load_lifecycle_skill()
+        if lifecycle_skill:
+            instruction = f"{instruction}\n\n{lifecycle_skill}"
+
+    # Notification skill.
+    if settings.notification.enabled:
+        from robotsix_chat.notification import load_notification_skill
+
+        notification_skill = load_notification_skill()
+        if notification_skill:
+            instruction = f"{instruction}\n\n{notification_skill}"
+
+    # GitHub skill.
+    if settings.github_security.enabled:
+        from robotsix_chat.github import load_github_skill
+
+        github_skill = load_github_skill()
+        if github_skill:
+            instruction = f"{instruction}\n\n{github_skill}"
+
+    return instruction
+
+
+def _build_static_tools(
+    settings: Settings,
+    *,
+    bare: bool = False,
+    conversation_store: ConversationStore | None = None,
+) -> list[Any]:
+    """Return the static (non-per-request) tool suite gated by *settings*.
+
+    When *bare* is ``True`` returns an empty list — the agent gets no tools.
+    """
+    if bare:
+        return []
+
+    return [
+        *build_component_access_tools(settings.central_deploy),
+        *build_mail_tools(settings.mail),
+        *build_component_tools(settings.component_client),
+        *build_refdocs_tools(settings.refdocs),
+        *build_repo_study_tools(settings.repo_study, settings.direct_repo),
+        *build_direct_repo_tools(settings.direct_repo),
+        *build_github_security_tools(settings.github_security, settings.direct_repo),
+        *build_knowledge_tools(settings.knowledge),
+        *build_diagnostics_tools(settings.diagnostics),
+        *build_recent_activity_tools(settings.self_review, conversation_store),
+        *build_version_check_tools(settings.version_check),
+        *build_lifecycle_tools(settings.lifecycle),
+        *build_render_url_tools(settings.render_url),
+    ]
+
+
+def _build_request_tools_factory(
+    settings: Settings,
+    subsession_env: SubsessionEnv | None,
+    event_sink: EventSink | None,
+) -> Callable[[str], list[Any]] | None:
+    """Build a per-request tools factory for the main chat agent.
+
+    Combines subsession tools (built per ``stream()`` call so closures
+    capture the request's session id) and, when enabled, notification
+    tools.  Returns ``None`` when no per-request tools are configured.
+    """
+    req_factories: list[Callable[[str], list[Any]]] = []
+
+    if subsession_env is not None:
+        from robotsix_chat.subsessions import SubsessionContext as _Ctx
+        from robotsix_chat.subsessions import build_subsession_tools
+
+        env = subsession_env
+
+        def _make_request_tools(session_id: str) -> list[Any]:
+            return build_subsession_tools(
+                env,
+                ctx=_Ctx(
+                    owner_session_id=session_id,
+                    subsession_id=None,
+                    depth=0,
+                ),
+            )
+
+        req_factories.append(_make_request_tools)
+
+    if settings.notification.enabled and event_sink is not None:
+
+        def _make_notification_tools(session_id: str) -> list[Any]:
+            return build_notification_tools(
+                settings.notification,
+                event_sink=event_sink,
+                session_id=session_id,
+            )
+
+        req_factories.append(_make_notification_tools)
+
+    if not req_factories:
+        return None
+
+    def _compose(session_id: str) -> list[Any]:
+        result: list[Any] = []
+        for f in req_factories:
+            result.extend(f(session_id))
+        return result
+
+    return _compose
+
+
 def create_agent_from_settings(
     instruction: str | None = None,
     settings: Settings | None = None,
@@ -440,93 +592,33 @@ def create_agent_from_settings(
     from the YAML config file and environment. When *instruction* is ``None``,
     it is taken from ``settings.agent_instruction``.
 
-    Long-term memory is attached when ``settings.memory.enabled`` is set;
-    every feature tool suite (mail, board reader, …) is
-    attached according to its own settings gate — for the main agent and
-    subsession agents alike.
-
-    *bare* (default ``False``) skips all of that: no component-access/
-    roster/lifecycle instruction augmentation, no feature tools, no
-    subsession wiring, and memory is a no-op ``NullMemory`` instead of
-    ``build_memory(settings.memory)``. Use it for a single bounded
-    text-transformation call (e.g. the ``POST /summary`` agent) that has
-    no business paying for cross-session memory recall or agentic tool
-    access — ``ChatMemory.recall()`` alone was observed taking 90+
-    seconds in production, dwarfing the actual (cheap-tier) model call.
+    *bare* (default ``False``) skips skill injection, feature tools,
+    subsession wiring, and memory — the agent gets a ``NullMemory`` and no
+    tools.  Use it for bounded text-transformation calls (e.g. the
+    ``POST /summary`` agent).
 
     Subsession wiring (*subsession_env*):
 
     * **Main chat agent** — pass *subsession_env* with ``subsession_ctx=None``.
-      The subsession tools (spawn/message/close/list) are built **per
-      request** via ``request_tools_factory``, so each tool closure captures
-      the owning ``session_id`` lexically (surviving the claude_sdk/MCP
-      boundary).
+      Per-request tools are built via ``request_tools_factory`` so each tool
+      closure captures the owning ``session_id`` lexically.
     * **Subsession agent** — pass *subsession_env*, the worker's
       *subsession_ctx*, and its *subsession_close_state*.  The depth-aware
       tools (including ``complete_subsession``) are baked in statically;
       identity is fixed at construction.
-    * ``None`` (default) — no subsession tools (bare agent, e.g. tests).
+    * ``None`` (default) — no subsession tools.
 
     *event_sink* is forwarded to :class:`~robotsix_chat.llm.LlmioChatAgent`
-    so a claudeSDK turn's live tool/thinking activity is published as
-    ``activity`` frames on the ``GET /events`` channel. Pass the same
-    :class:`~robotsix_chat.chat.events.EventBus` given to ``create_app`` —
-    typically only for the main chat agent, not the bare ``/summary`` agent.
+    for live tool/thinking activity frames on the ``GET /events`` channel.
+    Pass the same :class:`~robotsix_chat.chat.events.EventBus` given to
+    ``create_app`` — typically only for the main chat agent.
     """
     if settings is None:
         settings = Settings.load()
     if instruction is None:
         instruction = settings.agent_instruction
 
-    # Inject component-access instruction and skill prompts from the
-    # central-deploy roster — only when a roster URL is configured.
-    if not bare and settings.central_deploy.url:
-        instruction = (
-            f"{instruction}\n\n"
-            "Component access:\n"
-            "– You have one generic tool for calling external components: "
-            "component_request(component_id, method, path, json_body=None). "
-            "Each component declares its own API surface as a skill — read "
-            "the skill descriptions below for allowed operations.\n"
-            "– Obey each component skill's safety section. When a skill marks "
-            "an operation as requiring confirmation, ask the user in "
-            "conversation before calling it.\n"
-            "– If the roster is unavailable or a component returns an error, "
-            "report the error clearly — do not retry in a loop."
-        )
-        from robotsix_chat.component_access.roster import (
-            build_skill_prompt,
-            fetch_roster_sync,
-        )
-
-        roster = fetch_roster_sync(settings.central_deploy)
-        skill_prompt = build_skill_prompt(roster)
-        if skill_prompt:
-            instruction = f"{instruction}\n\n{skill_prompt}"
-
-    # Inject the lifecycle component skill when lifecycle is enabled.
-    if not bare and settings.lifecycle.enabled:
-        from robotsix_chat.lifecycle import load_lifecycle_skill
-
-        lifecycle_skill = load_lifecycle_skill()
-        if lifecycle_skill:
-            instruction = f"{instruction}\n\n{lifecycle_skill}"
-
-    # Inject the notification component skill when notification is enabled.
-    if not bare and settings.notification.enabled:
-        from robotsix_chat.notification import load_notification_skill
-
-        notification_skill = load_notification_skill()
-        if notification_skill:
-            instruction = f"{instruction}\n\n{notification_skill}"
-
-    # Inject the GitHub component skill when github_security is enabled.
-    if not bare and settings.github_security.enabled:
-        from robotsix_chat.github import load_github_skill
-
-        github_skill = load_github_skill()
-        if github_skill:
-            instruction = f"{instruction}\n\n{github_skill}"
+    instruction = _inject_skills(settings, instruction, bare=bare)
 
     effective_level = (
         model_level if model_level is not None else settings.llmio_model_level
@@ -536,43 +628,19 @@ def create_agent_from_settings(
         if level_needs_api_key(effective_level)
         else ""
     )
-    tools: list[Any] = (
-        []
-        if bare
-        else [
-            *build_component_access_tools(settings.central_deploy),
-            *build_mail_tools(settings.mail),
-            *build_component_tools(settings.component_client),
-            *build_refdocs_tools(settings.refdocs),
-            *build_repo_study_tools(settings.repo_study, settings.direct_repo),
-            *build_direct_repo_tools(settings.direct_repo),
-            *build_github_security_tools(
-                settings.github_security, settings.direct_repo
-            ),
-            *build_knowledge_tools(settings.knowledge),
-            *build_diagnostics_tools(settings.diagnostics),
-            *build_recent_activity_tools(settings.self_review, conversation_store),
-            *build_version_check_tools(settings.version_check),
-            *build_lifecycle_tools(settings.lifecycle),
-            *build_render_url_tools(settings.render_url),
-        ]
+
+    tools = _build_static_tools(
+        settings, bare=bare, conversation_store=conversation_store
     )
     if tool_wrapper is not None:
         tools = tool_wrapper(tools)
 
     request_tools_factory: Callable[[str], list[Any]] | None = None
-    req_factories: list[Callable[[str], list[Any]]] = []
-
-    if not bare and subsession_env is not None:
-        from robotsix_chat.subsessions import (
-            SubsessionContext as _Ctx,
-        )
-        from robotsix_chat.subsessions import (
-            build_subsession_tools,
-        )
-
-        if subsession_ctx is not None:
+    if not bare:
+        if subsession_env is not None and subsession_ctx is not None:
             # Subsession agent: identity fixed at construction.
+            from robotsix_chat.subsessions import build_subsession_tools
+
             tools.extend(
                 build_subsession_tools(
                     subsession_env,
@@ -580,44 +648,13 @@ def create_agent_from_settings(
                     close_state=subsession_close_state,
                 )
             )
-        else:
-            # Main chat agent: build the tools once per stream() call with
-            # the request's session id (passed via stream()'s client_id) so
-            # closures capture the owning session lexically.
-            env = subsession_env
-
-            def _make_request_tools(session_id: str) -> list[Any]:
-                return build_subsession_tools(
-                    env,
-                    ctx=_Ctx(
-                        owner_session_id=session_id,
-                        subsession_id=None,
-                        depth=0,
-                    ),
-                )
-
-            req_factories.append(_make_request_tools)
-
-    if not bare and settings.notification.enabled and event_sink is not None:
-
-        def _make_notification_tools(session_id: str) -> list[Any]:
-            return build_notification_tools(
-                settings.notification,
-                event_sink=event_sink,
-                session_id=session_id,
-            )
-
-        req_factories.append(_make_notification_tools)
-
-    if req_factories:
-
-        def _compose(session_id: str) -> list[Any]:
-            result: list[Any] = []
-            for f in req_factories:
-                result.extend(f(session_id))
-            return result
-
-        request_tools_factory = _compose
+        # Build per-request tools factory — subsession tools for the main
+        # agent, notification tools for both main and subsession agents.
+        request_tools_factory = _build_request_tools_factory(
+            settings,
+            subsession_env if subsession_ctx is None else None,
+            event_sink,
+        )
 
     return LlmioChatAgent(
         model_level=effective_level,
