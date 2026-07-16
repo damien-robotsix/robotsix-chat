@@ -30,7 +30,6 @@ from robotsix_chat.component_access import build_component_access_tools
 from robotsix_chat.component_client import build_component_tools
 from robotsix_chat.config import Settings, level_needs_api_key
 from robotsix_chat.diagnostics import build_diagnostics_tools
-from robotsix_chat.github import build_github_security_tools
 from robotsix_chat.knowledge import build_knowledge_tools
 from robotsix_chat.lifecycle import build_lifecycle_tools
 from robotsix_chat.llm import LlmioChatAgent
@@ -40,6 +39,7 @@ from robotsix_chat.notification import build_notification_tools
 from robotsix_chat.refdocs import build_refdocs_tools
 from robotsix_chat.render_url import build_render_url_tools
 from robotsix_chat.repo.direct import build_direct_repo_tools
+from robotsix_chat.repo.security import build_github_security_tools
 from robotsix_chat.repo.study import build_repo_study_tools
 from robotsix_chat.selfreview import build_recent_activity_tools
 from robotsix_chat.version_check import build_version_check_tools
@@ -474,7 +474,7 @@ def _inject_skills(
 
     # GitHub skill.
     if settings.github_security.enabled:
-        from robotsix_chat.github import load_github_skill
+        from robotsix_chat.repo.security import load_github_skill
 
         github_skill = load_github_skill()
         if github_skill:
