@@ -21,12 +21,12 @@ from .models import (
     TranscriptEntry,
 )
 from .registry import SubsessionRegistry
+from .resume import resume_subsessions
 from .tools import build_subsession_tools
 from .worker import (
     CloseState,
     SubsessionContext,
     SubsessionEnv,
-    resume_subsessions,
     spawn_subsession,
 )
 
