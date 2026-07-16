@@ -20,6 +20,7 @@ import asyncio
 import base64
 import logging
 import os
+import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -99,6 +100,16 @@ class CogneeMemory:
         system_root = data_dir / "system"
         data_root.mkdir(parents=True, exist_ok=True)
         system_root.mkdir(parents=True, exist_ok=True)
+
+        # Self-heal stale kuzu shadow directories/files — if the process
+        # crashed or was killed while kuzu had a WAL/shadow directory open,
+        # it is left behind with a database ID that does not match the
+        # current database.  The next db open then hard-crashes with
+        # "RuntimeError: Database ID ... does not match the current
+        # database".  We remove any left-over shadow entries before cognee
+        # ever opens the database so the crash is preempted.
+        self._remove_stale_kuzu_shadows(system_root)
+
         cognee.config.data_root_directory(str(data_root))
         cognee.config.system_root_directory(str(system_root))
 
@@ -129,6 +140,31 @@ class CogneeMemory:
         )
 
         self._register_litellm_langfuse_callback()
+
+    @staticmethod
+    def _remove_stale_kuzu_shadows(system_root: Path) -> None:
+        """Delete any stale kuzu ``.shadow`` directories or files.
+
+        If the process crashed or was killed while kuzu had a WAL/shadow
+        directory open, it is left behind with a database ID that does not
+        match the current database.  The next db open then hard-crashes.
+        We remove any left-over shadow entries so the open succeeds.
+        """
+        databases_dir = system_root / "databases"
+        if not databases_dir.exists():
+            return
+        for shadow_path in databases_dir.glob("*.shadow"):
+            try:
+                if shadow_path.is_dir():
+                    logger.warning(
+                        "Removing stale kuzu shadow directory: %s", shadow_path
+                    )
+                    shutil.rmtree(shadow_path)
+                elif shadow_path.is_file():
+                    logger.warning("Removing stale kuzu shadow file: %s", shadow_path)
+                    shadow_path.unlink()
+            except OSError:
+                logger.exception("Failed to remove stale kuzu shadow: %s", shadow_path)
 
     def _register_litellm_langfuse_callback(self) -> None:
         """Wire litellm Langfuse OTLP tracing with dedicated cognee creds.

@@ -9,6 +9,7 @@ from __future__ import annotations
 import base64
 import sys
 import types
+from pathlib import Path
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock
 
@@ -560,3 +561,100 @@ async def test_configure_langfuse_env_guard_regression(
     assert os.environ["LANGFUSE_SECRET_KEY"] == (
         "sk-guard-test"  # pragma: allowlist secret
     )
+
+
+# ---------------------------------------------------------------------------
+# Stale kuzu shadow-file self-heal
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_remove_stale_shadow_directory(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """A stale .shadow directory is removed during setup."""
+    mem, _ = cognee_memory
+    system_root = Path(mem._settings.data_dir) / "system"
+    databases_dir = system_root / "databases"
+    databases_dir.mkdir(parents=True, exist_ok=True)
+
+    shadow_dir = databases_dir / "cognee_graph_ladybug.shadow"
+    shadow_dir.mkdir()
+    (shadow_dir / "stale_file").write_text("leftover")
+
+    await mem.setup()
+
+    assert not shadow_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_remove_stale_shadow_file(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """A stale .shadow file is removed during setup."""
+    mem, _ = cognee_memory
+    system_root = Path(mem._settings.data_dir) / "system"
+    databases_dir = system_root / "databases"
+    databases_dir.mkdir(parents=True, exist_ok=True)
+
+    shadow_file = databases_dir / "other.shadow"
+    shadow_file.write_text("stale")
+
+    await mem.setup()
+
+    assert not shadow_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_setup_clean_with_no_shadow_entries(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """Setup succeeds when no .shadow entries exist."""
+    mem, _ = cognee_memory
+    system_root = Path(mem._settings.data_dir) / "system"
+    databases_dir = system_root / "databases"
+    databases_dir.mkdir(parents=True, exist_ok=True)
+    # No .shadow entries — must not raise.
+    await mem.setup()
+
+
+@pytest.mark.asyncio
+async def test_setup_clean_with_no_databases_dir(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """Setup succeeds when the databases directory does not exist yet."""
+    mem, _ = cognee_memory
+    # system dir exists but databases dir doesn't — must not raise.
+    await mem.setup()
+
+
+@pytest.mark.asyncio
+async def test_shadow_removal_failure_is_logged_not_raised(
+    cognee_memory: tuple[CogneeMemory, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An OSError during shadow removal is logged, not raised."""
+    mem, _ = cognee_memory
+    system_root = Path(mem._settings.data_dir) / "system"
+    databases_dir = system_root / "databases"
+    databases_dir.mkdir(parents=True, exist_ok=True)
+
+    shadow_dir = databases_dir / "cognee_graph_ladybug.shadow"
+    shadow_dir.mkdir()
+
+    import shutil as _shutil
+
+    original_rmtree = _shutil.rmtree
+
+    def _failing_rmtree(path: Any, *args: Any, **kwargs: Any) -> None:
+        if str(path).endswith(".shadow"):
+            raise OSError("permission denied")
+        original_rmtree(path, *args, **kwargs)
+
+    monkeypatch.setattr(_shutil, "rmtree", _failing_rmtree)
+
+    # Must not raise despite the OSError.
+    await mem.setup()
+
+    # The shadow directory is still there (removal failed).
+    assert shadow_dir.exists()
