@@ -227,7 +227,7 @@ jobs:
 
   check:
     name: All CI checks passed
-    needs: [lockfile, ci, security, pre-commit, check-sse-types, image-scan, check-config-schema]
+    needs: [lockfile, ci, security, pre-commit, check-sse-types, check-subsession-kinds, image-scan, check-config-schema]
     runs-on: ubuntu-latest
     steps:
       - run: echo "All CI checks passed"
