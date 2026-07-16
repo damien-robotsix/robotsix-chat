@@ -2,6 +2,7 @@
 
 - Refactor `create_agent_from_settings` (213→98 lines): extract `_inject_skills`, `_build_static_tools`, and `_build_request_tools_factory` helpers.
 - Enable `completeness_check` periodic agent to scan for dead code, unreferenced exports, and pattern gaps.)
+- Split `subsessions/worker.py` (918 lines) into `worker.py` (turn loop, spawn logic) and new `resume.py` (startup resume hook, persistence entry helpers). Extracted kind-specific continuation into `_handle_kind_continuation` and kind-specific resume logic into `_resume_periodic_entry`, `_resume_user_chat_entry`, `_resume_task_entry`.
 - Enable `bc_check` periodic agent to detect backward-compatibility debt and file draft removal tickets.
 - Module curator: add premise-verification step to check for runtime references (`Path(__file__).parent / "skill.md"`) before proposing relocation of `skill.md` files from the source tree to `docs/`. Prevents silently broken runtime loads when a file is moved but a module still loads it from the old location.
 - Restore `src/robotsix_chat/github/skill.md` — the file was moved to `docs/github/` in a prior reorganization but `load_github_skill()` still loads from the module directory, so the GitHub skill instructions were silently empty at runtime.

@@ -861,7 +861,7 @@ async def test_complete_subsession_fails_when_subsession_inactive() -> None:
 
 def test_rebuild_turn_history_parses_valid_pairs() -> None:
     """``_rebuild_turn_history`` converts persisted list-of-lists to tuples."""
-    from robotsix_chat.subsessions.worker import _rebuild_turn_history
+    from robotsix_chat.subsessions.resume import _rebuild_turn_history
 
     entry = {"turn_history": [["in 1", "out 1"], ["in 2", "out 2"]]}
 
@@ -870,7 +870,7 @@ def test_rebuild_turn_history_parses_valid_pairs() -> None:
 
 def test_rebuild_turn_history_ignores_malformed_entries() -> None:
     """Malformed items (wrong shape/type) are dropped, not raised on."""
-    from robotsix_chat.subsessions.worker import _rebuild_turn_history
+    from robotsix_chat.subsessions.resume import _rebuild_turn_history
 
     entry = {
         "turn_history": [
@@ -887,6 +887,6 @@ def test_rebuild_turn_history_ignores_malformed_entries() -> None:
 
 def test_rebuild_turn_history_missing_field_returns_empty() -> None:
     """A persisted entry without ``turn_history`` (older format) is fine."""
-    from robotsix_chat.subsessions.worker import _rebuild_turn_history
+    from robotsix_chat.subsessions.resume import _rebuild_turn_history
 
     assert _rebuild_turn_history({}) == []

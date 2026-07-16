@@ -15,9 +15,11 @@ from robotsix_chat.subsessions import (
     SubsessionStatus,
     resume_subsessions,
 )
+from robotsix_chat.subsessions.resume import (
+    _entry_last_assistant_text,
+)
 from robotsix_chat.subsessions.worker import (
     _build_ancestor_context,
-    _entry_last_assistant_text,
 )
 from tests.common.subsession_fakes import FakeAgent, build_env, make_settings
 
