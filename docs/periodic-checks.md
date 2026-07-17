@@ -67,10 +67,10 @@ POST /subsessions/{subsession_id}/close
 1. `spawn_subsession(kind="periodic", ...)` launches an asyncio worker that runs one agent turn per
    tick on the configured interval (minimum `subsessions.min_interval_seconds`, default 60s).
 2. Each turn runs the subsession's own agent (built at the chosen `model_level` via
-   `create_agent_from_settings`) with the full standard tool suite plus the subsession tools.
-   Every turn is guarded by a hard timeout (`subsessions.run_timeout_seconds`, default 600 s): if
-   the agent turn (recall + LLM call + delivery) exceeds the deadline, the run is marked failed,
-   a warning is logged, and the schedule continues with the next tick — preventing a hung cognee
+   `create_agent_from_settings`) with the full standard tool suite plus the subsession tools. Every
+   turn is guarded by a hard timeout (`subsessions.run_timeout_seconds`, default 600 s): if the
+   agent turn (recall + LLM call + delivery) exceeds the deadline, the run is marked failed, a
+   warning is logged, and the schedule continues with the next tick — preventing a hung cognee
    adapter lock or stalled LLM call from freezing the subsession forever.
 3. When `include_previous_result` is `true`, the previous run's result is prepended to the prompt so
    the agent can compare state across runs.
