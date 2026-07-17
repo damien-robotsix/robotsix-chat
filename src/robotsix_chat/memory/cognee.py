@@ -143,28 +143,59 @@ class CogneeMemory:
 
     @staticmethod
     def _remove_stale_kuzu_shadows(system_root: Path) -> None:
-        """Delete any stale kuzu ``.shadow`` directories or files.
+        """Heal stale kuzu shadow and WAL artifacts left by an unclean shutdown.
 
         If the process crashed or was killed while kuzu had a WAL/shadow
-        directory open, it is left behind with a database ID that does not
-        match the current database.  The next db open then hard-crashes.
-        We remove any left-over shadow entries so the open succeeds.
+        directory open, artifacts are left behind.  Deleting only the
+        ``.shadow`` entry while the ``.wal`` still references it causes a
+        *different* open failure ("IO exception: Cannot open file …
+        No such file or directory").  We remove **all** stale artifacts
+        together (``.shadow`` + ``.wal``) and then recreate the
+        corresponding database directory — the graph is a rebuildable
+        cache of conversation memory, so a clean slate is always safe.
         """
         databases_dir = system_root / "databases"
         if not databases_dir.exists():
             return
-        for shadow_path in databases_dir.glob("*.shadow"):
+
+        # Collect all stale artifacts: both .shadow and .wal.
+        stale_entries: list[Path] = []
+        for pattern in ("*.shadow", "*.wal"):
+            stale_entries.extend(databases_dir.glob(pattern))
+
+        for entry in stale_entries:
             try:
-                if shadow_path.is_dir():
-                    logger.warning(
-                        "Removing stale kuzu shadow directory: %s", shadow_path
-                    )
-                    shutil.rmtree(shadow_path)
-                elif shadow_path.is_file():
-                    logger.warning("Removing stale kuzu shadow file: %s", shadow_path)
-                    shadow_path.unlink()
+                if entry.is_dir():
+                    logger.warning("Removing stale kuzu artifact directory: %s", entry)
+                    shutil.rmtree(entry)
+                elif entry.is_file():
+                    logger.warning("Removing stale kuzu artifact file: %s", entry)
+                    entry.unlink()
             except OSError:
-                logger.exception("Failed to remove stale kuzu shadow: %s", shadow_path)
+                logger.exception("Failed to remove stale kuzu artifact: %s", entry)
+
+        # If we found any stale artifacts, also recreate the matching
+        # database directories (strip the .shadow / .wal suffix) so the
+        # open starts from a clean, consistent state.
+        if stale_entries:
+            db_names: set[str] = set()
+            for entry in stale_entries:
+                for suffix in (".shadow", ".wal"):
+                    if entry.name.endswith(suffix):
+                        db_names.add(entry.name[: -len(suffix)])
+                        break
+
+            for db_name in sorted(db_names):
+                db_dir = databases_dir / db_name
+                if db_dir.is_dir():
+                    try:
+                        logger.warning("Recreating kuzu database directory: %s", db_dir)
+                        shutil.rmtree(db_dir)
+                    except OSError:
+                        logger.exception(
+                            "Failed to recreate kuzu database directory: %s",
+                            db_dir,
+                        )
 
     def _register_litellm_langfuse_callback(self) -> None:
         """Wire litellm Langfuse OTLP tracing with dedicated cognee creds.

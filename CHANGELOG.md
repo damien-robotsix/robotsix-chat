@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- **Memory (cognee):** Self-heal now handles the full kuzu consistency set — removes both `.shadow` and `.wal` artifacts together and recreates the database directory when any stale entries are found, preventing the "IO exception: Cannot open file" crash that occurred when a previously-deleted shadow was still referenced by a leftover WAL.
 - Consolidate `github` module under shared `repo/` namespace as `repo.security` — move `src/robotsix_chat/github/` → `src/robotsix_chat/repo/security/`, `docs/github/` → `docs/repo/security/`, `tests/github/` → `tests/repo/security/`. Update all imports and module registration accordingly.
 - Replace `docs/notification/skill.md` with a relative symlink to the canonical `src/robotsix_chat/notification/skill.md`, eliminating a duplicate copy.
 - Replace `docs/github/skill.md` duplicate with a symlink to the canonical `src/robotsix_chat/github/skill.md` (deduplicate clone pair)
@@ -7,10 +8,6 @@
 - Added `modules-registration` pre-commit hook that verifies every file in the repo is
   claimed by at least one module in `docs/modules.yaml`, catching unregistered new files
   before commit and preventing CI drift.
-- Self-heal stale kuzu shadow files before cognee opens its database.  If the
-  process crashed while kuzu had a WAL/shadow directory open, the leftover
-  ``.shadow`` file no longer causes a hard crash on the next start — it is
-  removed automatically during memory setup.
 - Refactor `create_agent_from_settings` (213→98 lines): extract `_inject_skills`, `_build_static_tools`, and `_build_request_tools_factory` helpers.
 - Enable `completeness_check` periodic agent to scan for dead code, unreferenced exports, and pattern gaps.)
 - Split `subsessions/worker.py` (918 lines) into `worker.py` (turn loop, spawn logic) and new `resume.py` (startup resume hook, persistence entry helpers). Extracted kind-specific continuation into `_handle_kind_continuation` and kind-specific resume logic into `_resume_periodic_entry`, `_resume_user_chat_entry`, `_resume_task_entry`.
