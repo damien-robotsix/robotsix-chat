@@ -336,6 +336,11 @@ class Settings(BaseModel):
                 "version_check.repo is required when version_check.enabled is true — "
                 "provide it via the `version_check.repo` config field"
             )
+        if self.feedback.enabled and not self.feedback.board_url:
+            raise ValueError(
+                "feedback.board_url must be non-empty when feedback.enabled is "
+                "true — provide it via the `feedback.board_url` config field"
+            )
 
     # ------------------------------------------------------------------
     # Legacy config normalisation

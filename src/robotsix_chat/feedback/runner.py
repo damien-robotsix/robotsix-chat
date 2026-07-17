@@ -140,7 +140,7 @@ class FeedbackRunner:
         Errors are logged; the task is never awaited by the caller.
         """
         if not self._board_url:
-            logger.debug(
+            logger.warning(
                 "Feedback run skipped — no board_url configured (session=%s)",
                 session_id,
             )
