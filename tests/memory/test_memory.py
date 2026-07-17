@@ -658,3 +658,119 @@ async def test_shadow_removal_failure_is_logged_not_raised(
 
     # The shadow directory is still there (removal failed).
     assert shadow_dir.exists()
+
+
+# ---------------------------------------------------------------------------
+# Stale kuzu wal cleanup + database directory recreation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_remove_stale_shadow_and_wal_together(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """Stale .shadow and .wal entries are both removed, matching DB dir recreated."""
+    mem, _ = cognee_memory
+    system_root = Path(mem._settings.data_dir) / "system"
+    databases_dir = system_root / "databases"
+    databases_dir.mkdir(parents=True, exist_ok=True)
+
+    db_dir = databases_dir / "cognee_graph_ladybug"
+    db_dir.mkdir()
+    (db_dir / "data.kz").write_text("main db content")
+
+    shadow_dir = databases_dir / "cognee_graph_ladybug.shadow"
+    shadow_dir.mkdir()
+    (shadow_dir / "stale_checkpoint").write_text("stale")
+
+    wal_file = databases_dir / "cognee_graph_ladybug.wal"
+    wal_file.write_text("stale wal")
+
+    await mem.setup()
+
+    assert not shadow_dir.exists()
+    assert not wal_file.exists()
+    assert not db_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_wal_cleaned_when_shadow_already_deleted(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """Orphaned .wal referencing deleted shadow is removed, DB directory recreated."""
+    mem, _ = cognee_memory
+    system_root = Path(mem._settings.data_dir) / "system"
+    databases_dir = system_root / "databases"
+    databases_dir.mkdir(parents=True, exist_ok=True)
+
+    db_dir = databases_dir / "cognee_graph_ladybug"
+    db_dir.mkdir()
+    (db_dir / "data.kz").write_text("main db content")
+
+    # Shadow already deleted (the previous self-heal scenario).
+    # Only the WAL remains.
+    wal_file = databases_dir / "cognee_graph_ladybug.wal"
+    wal_file.write_text("wal referencing deleted shadow")
+
+    await mem.setup()
+
+    assert not wal_file.exists()
+    assert not db_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_setup_clean_with_wal_but_no_shadow_and_no_db_dir(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """An orphaned .wal with no matching DB directory is removed without error."""
+    mem, _ = cognee_memory
+    system_root = Path(mem._settings.data_dir) / "system"
+    databases_dir = system_root / "databases"
+    databases_dir.mkdir(parents=True, exist_ok=True)
+
+    # Only a stale WAL, no DB dir, no shadow.
+    wal_file = databases_dir / "cognee_graph_ladybug.wal"
+    wal_file.write_text("orphaned wal")
+
+    await mem.setup()
+
+    assert not wal_file.exists()
+
+
+@pytest.mark.asyncio
+async def test_db_recreation_failure_is_logged_not_raised(
+    cognee_memory: tuple[CogneeMemory, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An OSError during database directory recreation is logged, not raised."""
+    mem, _ = cognee_memory
+    system_root = Path(mem._settings.data_dir) / "system"
+    databases_dir = system_root / "databases"
+    databases_dir.mkdir(parents=True, exist_ok=True)
+
+    shadow_dir = databases_dir / "cognee_graph_ladybug.shadow"
+    shadow_dir.mkdir()
+
+    db_dir = databases_dir / "cognee_graph_ladybug"
+    db_dir.mkdir()
+
+    import shutil as _shutil
+
+    original_rmtree = _shutil.rmtree
+
+    def _failing_rmtree(path: Any, *args: Any, **kwargs: Any) -> None:
+        if str(path).endswith(".shadow"):
+            # Shadow removal succeeds.
+            original_rmtree(path, *args, **kwargs)
+        else:
+            # DB directory removal fails.
+            raise OSError("permission denied")
+
+    monkeypatch.setattr(_shutil, "rmtree", _failing_rmtree)
+
+    # Must not raise despite the OSError on DB dir removal.
+    await mem.setup()
+
+    # Shadow was removed, but DB dir is still there (recreation failed).
+    assert not shadow_dir.exists()
+    assert db_dir.exists()

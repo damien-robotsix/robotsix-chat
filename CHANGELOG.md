@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- **Memory (cognee):** Self-heal now handles the full kuzu consistency set — removes both `.shadow` and `.wal` artifacts together and recreates the database directory when any stale entries are found, preventing the "IO exception: Cannot open file" crash that occurred when a previously-deleted shadow was still referenced by a leftover WAL.
 - Consolidate `github` module under shared `repo/` namespace as `repo.security` — move `src/robotsix_chat/github/` → `src/robotsix_chat/repo/security/`, `docs/github/` → `docs/repo/security/`, `tests/github/` → `tests/repo/security/`. Update all imports and module registration accordingly.
 - Replace `docs/notification/skill.md` with a relative symlink to the canonical `src/robotsix_chat/notification/skill.md`, eliminating a duplicate copy.
 - Replace `docs/github/skill.md` duplicate with a symlink to the canonical `src/robotsix_chat/github/skill.md` (deduplicate clone pair)
