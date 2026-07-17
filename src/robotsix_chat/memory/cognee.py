@@ -38,6 +38,46 @@ _MAX_RECALL_CHARS = 4000
 _SHADOW_MISSING_RE = re.compile(r"Cannot open file.*\.shadow.*No such file")
 _DB_ID_MISMATCH_RE = re.compile(r"Database ID.*does not match")
 
+# First 16 bytes of every SQLite database file.
+_SQLITE_MAGIC = b"SQLite format 3\x00"
+
+
+def _is_kuzu_db_entity(entry: Path) -> bool:
+    """Return True if *entry* is (or could be) a kuzu graph database.
+
+    The self-heal below deletes any database entity that lacks a companion
+    ``.shadow`` file, on the theory that a shadow-less kuzu database is
+    inconsistent.  But cognee's ``databases`` directory also holds two stores
+    that are **not** kuzu and legitimately never have a ``.shadow``:
+
+    * ``cognee_db`` — the SQLite relational store (default user, dataset
+      registry, node/edge metadata), and
+    * ``cognee.lancedb`` — the LanceDB vector store.
+
+    Treating those as inconsistent kuzu databases wiped them on *every*
+    startup, destroying the default user/dataset registry that
+    ``cognee.search`` requires — so recall failed permanently while ingestion
+    silently recreated a fresh, empty store.  Exclude them here so only real
+    kuzu graph databases are ever healed.
+    """
+    name = entry.name
+    # LanceDB vector store (a directory, e.g. ``cognee.lancedb``).
+    if name.endswith(".lancedb"):
+        return False
+    # SQLite sidecar files (``-wal`` / ``-shm`` / ``-journal`` — note these
+    # use a hyphen, unlike kuzu's ``.wal``).
+    if name.endswith(("-wal", "-shm", "-journal")):
+        return False
+    # SQLite relational database — identify by magic header, robust to naming.
+    if entry.is_file():
+        try:
+            with entry.open("rb") as fh:
+                if fh.read(len(_SQLITE_MAGIC)) == _SQLITE_MAGIC:
+                    return False
+        except OSError:
+            pass
+    return True
+
 
 def _is_healable_kuzu_error(exc: BaseException) -> bool:
     """Return True if *exc* matches a kuzu error healable by rebuilding the DB."""
@@ -170,6 +210,12 @@ class CogneeMemory:
         entity itself plus any ``.shadow`` / ``.wal`` siblings) is removed.
         The graph is a rebuildable cache of conversation memory, so starting
         from a clean slate is always safe.
+
+        Only genuine kuzu graph databases are healed — cognee's SQLite
+        relational store and LanceDB vector store have no ``.shadow`` by
+        design (see :func:`_is_kuzu_db_entity`); deleting them would wipe the
+        default user and dataset registry that ``search`` needs, silently
+        breaking all recall.
         """
         databases_dir = system_root / "databases"
         if not databases_dir.exists():
@@ -202,9 +248,13 @@ class CogneeMemory:
                     break
 
         # From DB entities missing their companion .shadow: the DB is
-        # inconsistent and will fail on open.
+        # inconsistent and will fail on open. Only kuzu graph databases are
+        # subject to this heal — the SQLite relational store and LanceDB
+        # vector store have no .shadow by design and must never be deleted.
         for entry in databases_dir.iterdir():
             if entry.name.endswith((".shadow", ".wal")):
+                continue
+            if not _is_kuzu_db_entity(entry):
                 continue
             shadow = databases_dir / (entry.name + ".shadow")
             if not shadow.exists():
@@ -219,7 +269,7 @@ class CogneeMemory:
         # directory forms (ladybug/kuzu can use either).
         for db_name in sorted(db_names):
             db_entity = databases_dir / db_name
-            if db_entity.exists():
+            if db_entity.exists() and _is_kuzu_db_entity(db_entity):
                 try:
                     if db_entity.is_dir():
                         logger.warning(

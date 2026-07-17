@@ -23,6 +23,7 @@ from robotsix_chat.config import (
 )
 from robotsix_chat.memory import NullMemory, build_memory
 from robotsix_chat.memory.cognee import (
+    _SQLITE_MAGIC,
     CogneeMemory,
     _format_results,
     _is_healable_kuzu_error,
@@ -827,6 +828,76 @@ async def test_setup_heals_db_file_missing_shadow(
     await mem.setup()
 
     assert not db_file.exists()
+
+
+# ---------------------------------------------------------------------------
+# Non-kuzu stores (SQLite relational + LanceDB vector) must survive the heal
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_setup_preserves_sqlite_relational_db(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """The SQLite ``cognee_db`` (no .shadow, ever) must NOT be deleted.
+
+    Regression: the missing-shadow heal used to wipe it on every startup,
+    destroying the default user/dataset registry and breaking all recall.
+    """
+    mem, _ = cognee_memory
+    databases_dir = Path(mem._settings.data_dir) / "system" / "databases"
+    databases_dir.mkdir(parents=True, exist_ok=True)
+
+    sqlite_db = databases_dir / "cognee_db"
+    sqlite_db.write_bytes(_SQLITE_MAGIC + b"\x00" * 100)
+    # SQLite sidecars also have no .shadow.
+    (databases_dir / "cognee_db-wal").write_bytes(b"wal")
+    (databases_dir / "cognee_db-shm").write_bytes(b"shm")
+
+    await mem.setup()
+
+    assert sqlite_db.exists()
+    assert (databases_dir / "cognee_db-wal").exists()
+    assert (databases_dir / "cognee_db-shm").exists()
+
+
+@pytest.mark.asyncio
+async def test_setup_preserves_lancedb_vector_store(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """The LanceDB vector store (``*.lancedb``, no .shadow) must NOT be deleted."""
+    mem, _ = cognee_memory
+    databases_dir = Path(mem._settings.data_dir) / "system" / "databases"
+    databases_dir.mkdir(parents=True, exist_ok=True)
+
+    lancedb = databases_dir / "cognee.lancedb"
+    lancedb.mkdir()
+    (lancedb / "vectors.lance").write_text("vector data")
+
+    await mem.setup()
+
+    assert lancedb.exists()
+    assert (lancedb / "vectors.lance").exists()
+
+
+@pytest.mark.asyncio
+async def test_orphan_wal_does_not_delete_sqlite_db(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """A stray kuzu ``.wal`` never causes the SQLite store to be removed."""
+    mem, _ = cognee_memory
+    databases_dir = Path(mem._settings.data_dir) / "system" / "databases"
+    databases_dir.mkdir(parents=True, exist_ok=True)
+
+    sqlite_db = databases_dir / "cognee_db"
+    sqlite_db.write_bytes(_SQLITE_MAGIC + b"\x00" * 100)
+    # A stray orphan artifact whose base name collides with the sqlite db.
+    (databases_dir / "cognee_db.wal").write_text("orphan wal")
+
+    await mem.setup()
+
+    assert sqlite_db.exists()
+    assert not (databases_dir / "cognee_db.wal").exists()
 
 
 # ---------------------------------------------------------------------------
