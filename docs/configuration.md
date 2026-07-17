@@ -101,6 +101,8 @@ Persistent, cross-conversation episodic memory via embedded cognee. Disabled by 
 | `memory.enabled`                         | `boolean`         | `false`                                   | Master switch. Requires cognee extras.              |
 | `memory.data_dir`                        | `string`          | `"/data/cognee"`                          | Cognee store directory (keep on persistent volume). |
 | `memory.recall_search_type`              | `string`          | `"GRAPH_COMPLETION"`                      | Cognee recall search type.                          |
+| `memory.recall_timeout_seconds`          | `number`          | `60.0`                                    | Hard timeout (seconds) for a single ``recall`` call. On expiry degrades to empty string — the agent proceeds without memory. |
+| `memory.remember_timeout_seconds`        | `number`          | `300.0`                                   | Hard timeout (seconds) for a single ``remember`` call (cognify consolidation). On expiry the write is skipped and a warning is logged. |
 | `memory.llm.provider`                    | `string`          | `"custom"`                                | Extraction LLM provider.                            |
 | `memory.llm.model`                       | `string`          | `"openrouter/deepseek/deepseek-v4-flash"` | Extraction LLM model.                               |
 | `memory.llm.endpoint`                    | `string`          | `"https://openrouter.ai/api/v1"`          | Extraction LLM endpoint.                            |
@@ -225,6 +227,7 @@ Background sub-agent spawning configuration.
 | `subsessions.default_model_level`      | `integer` | `2`                        | Default model level for spawned subsessions. |
 | `subsessions.min_interval_seconds`     | `number`  | `60.0`                     | Minimum interval between periodic runs.      |
 | `subsessions.auto_stop_no_change_runs` | `integer` | `5`                        | Consecutive NO_CHANGE runs before auto-stop. |
+| `subsessions.run_timeout_seconds`      | `number`  | `600.0`                    | Hard per-run timeout (seconds) for a single subsession turn. On expiry the run is marked failed and the schedule continues. |
 | `subsessions.store_path`               | `string`  | `"/data/subsessions.json`" | Path to the subsession persistence file.     |
 | `subsessions.transcript_max_entries`   | `integer` | `200`                      | Maximum transcript entries per subsession.   |
 
