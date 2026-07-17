@@ -55,6 +55,18 @@ def _derive_title(first_user_message: str) -> str:
     return single_line[:_MAX_TITLE_CHARS].rstrip() + "\u2026"
 
 
+def _parse_turns(turns_raw: object, max_history_turns: int) -> list[Turn]:
+    """Parse raw turns list and enforce max history truncation."""
+    turns: list[Turn] = []
+    if isinstance(turns_raw, list):
+        for t in turns_raw:
+            if isinstance(t, list) and len(t) == 2:
+                turns.append((str(t[0]), str(t[1])))
+    if len(turns) > max_history_turns:
+        turns = turns[-max_history_turns:]
+    return turns
+
+
 @dataclass
 class Session:
     """One session: id, metadata, and turn history."""
@@ -162,15 +174,9 @@ class ConversationStoreSerializer:
             turns_raw = entry.get("turns")
             if not isinstance(turns_raw, list):
                 continue
-            turns: list[Turn] = []
-            for t in turns_raw:
-                if isinstance(t, list) and len(t) == 2:
-                    turns.append((str(t[0]), str(t[1])))
+            turns = _parse_turns(turns_raw, max_history_turns)
             if not turns:
                 continue
-
-            if len(turns) > max_history_turns:
-                turns = turns[-max_history_turns:]
 
             session_id = str(entry.get("session_id", client_id))
             title = _DEFAULT_TITLE
@@ -230,13 +236,7 @@ class ConversationStoreSerializer:
                 if not isinstance(sid, str):
                     continue
                 turns_raw = sraw.get("turns")
-                turns: list[Turn] = []
-                if isinstance(turns_raw, list):
-                    for t in turns_raw:
-                        if isinstance(t, list) and len(t) == 2:
-                            turns.append((str(t[0]), str(t[1])))
-                if len(turns) > max_history_turns:
-                    turns = turns[-max_history_turns:]
+                turns = _parse_turns(turns_raw, max_history_turns)
 
                 title = str(sraw.get("title", _DEFAULT_TITLE))
                 last_active = sraw.get("last_active")
