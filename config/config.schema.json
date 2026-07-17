@@ -423,7 +423,7 @@
       "type": "object"
     },
     "MemorySettings": {
-      "description": "Long-term agent memory (cognee). Disabled by default.\n\nAttributes:\n    enabled: When ``True``, the agent recalls before and persists after each\n        reply. Requires the ``memory`` extra (cognee) installed.\n    data_dir: Directory for cognee's stores (relative to the working dir).\n        Put it under the persistent ``.data`` mount so memory survives\n        container redeploys.\n    recall_search_type: cognee ``SearchType`` name used for recall.\n        ``GRAPH_COMPLETION`` (default) returns clean, relevant facts as text\n        but costs one (cheap) LLM call per message; retrieval-only types\n        like ``CHUNKS``/``SUMMARIES`` are faster but return raw, noisier\n        payloads.\n    llm: Extraction-LLM config (graph building / consolidation).\n    embedding: Embedding-server config (semantic search).\n    langfuse: Dedicated Langfuse credentials for the\n        ``robotsix-chat-cognee`` project (separate from the main chat's\n        Langfuse project). When the public key is empty, cognee LLM calls\n        are not traced.",
+      "description": "Long-term agent memory (cognee). Disabled by default.\n\nAttributes:\n    enabled: When ``True``, the agent recalls before and persists after each\n        reply. Requires the ``memory`` extra (cognee) installed.\n    data_dir: Directory for cognee's stores (relative to the working dir).\n        Put it under the persistent ``.data`` mount so memory survives\n        container redeploys.\n    recall_search_type: cognee ``SearchType`` name used for recall.\n        ``GRAPH_COMPLETION`` (default) returns clean, relevant facts as text\n        but costs one (cheap) LLM call per message; retrieval-only types\n        like ``CHUNKS``/``SUMMARIES`` are faster but return raw, noisier\n        payloads.\n    recall_timeout_seconds: Hard deadline for one ``recall()`` call. A\n        wedged cognee backend (e.g. an orphaned LanceDB adapter lock) hangs\n        instead of raising; past the deadline recall degrades to \"no\n        memory\" so callers \u2014 subsession workers in particular \u2014 never\n        freeze on the memory path.\n    remember_timeout_seconds: Hard deadline for one ``remember()`` call\n        (add + cognify consolidation). On timeout the exchange is dropped\n        with a warning instead of blocking the caller forever.\n    llm: Extraction-LLM config (graph building / consolidation).\n    embedding: Embedding-server config (semantic search).\n    langfuse: Dedicated Langfuse credentials for the\n        ``robotsix-chat-cognee`` project (separate from the main chat's\n        Langfuse project). When the public key is empty, cognee LLM calls\n        are not traced.",
       "properties": {
         "enabled": {
           "default": false,
@@ -439,6 +439,16 @@
           "default": "GRAPH_COMPLETION",
           "title": "Recall Search Type",
           "type": "string"
+        },
+        "recall_timeout_seconds": {
+          "default": 60.0,
+          "title": "Recall Timeout Seconds",
+          "type": "number"
+        },
+        "remember_timeout_seconds": {
+          "default": 300.0,
+          "title": "Remember Timeout Seconds",
+          "type": "number"
         },
         "llm": {
           "$ref": "#/$defs/MemoryLlmSettings"
