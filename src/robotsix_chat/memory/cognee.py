@@ -346,37 +346,22 @@ class CogneeMemory:
 
         *session_id* scopes the recall to one conversation, isolating
         session-level guidance across concurrent windows.
+
+        Wrapped in :func:`asyncio.timeout` so a hang in the cognee stack
+        (e.g. orphaned LanceDB adapter lock) degrades to "no memory"
+        instead of freezing the caller forever.
         """
         if not query.strip():
             return ""
         try:
-            await self.setup()
-            import cognee
-            from cognee import SearchType
-
-            search_type = getattr(
-                SearchType,
-                self._settings.recall_search_type,
-                SearchType.GRAPH_COMPLETION,
+            async with asyncio.timeout(self._settings.recall_timeout_seconds):
+                return await self._recall_core(query, session_id=session_id)
+        except TimeoutError:
+            logger.warning(
+                "memory recall timed out after %.0fs; continuing without memory",
+                self._settings.recall_timeout_seconds,
             )
-            for attempt in range(2):
-                try:
-                    results = await cognee.search(
-                        query_type=search_type,
-                        query_text=query,
-                        session_id=session_id,
-                    )
-                    return _format_results(results)
-                except Exception as exc:
-                    if attempt == 0 and _is_healable_kuzu_error(exc):
-                        logger.warning(
-                            "Kuzu graph open failed; rebuilding database: %s",
-                            exc,
-                        )
-                        data_dir = Path(self._settings.data_dir).expanduser().resolve()
-                        self._remove_stale_kuzu_shadows(data_dir / "system")
-                        continue
-                    raise
+            return ""
         except Exception as exc:
             # Best-effort: a recall failure (incl. the expected "empty store"
             # case on the first-ever message) must never break the reply, so
@@ -384,8 +369,37 @@ class CogneeMemory:
             logger.warning("memory recall failed (%s); continuing without memory", exc)
             return ""
 
-        # Unreachable — the retry loop always either returns or raises
-        # (caught above).  Required to satisfy mypy's exhaustive check.
+    async def _recall_core(self, query: str, *, session_id: str | None = None) -> str:
+        """Inner recall logic — separated so the timeout wrapper is clean."""
+        await self.setup()
+        import cognee
+        from cognee import SearchType
+
+        search_type = getattr(
+            SearchType,
+            self._settings.recall_search_type,
+            SearchType.GRAPH_COMPLETION,
+        )
+        for attempt in range(2):
+            try:
+                results = await cognee.search(
+                    query_type=search_type,
+                    query_text=query,
+                    session_id=session_id,
+                )
+                return _format_results(results)
+            except Exception as exc:
+                if attempt == 0 and _is_healable_kuzu_error(exc):
+                    logger.warning(
+                        "Kuzu graph open failed; rebuilding database: %s",
+                        exc,
+                    )
+                    data_dir = Path(self._settings.data_dir).expanduser().resolve()
+                    self._remove_stale_kuzu_shadows(data_dir / "system")
+                    continue
+                raise
+        # Unreachable — the retry loop always either returns or raises.
+        # Required to satisfy mypy's exhaustive check.
         return ""
 
     # -- write ------------------------------------------------------------
@@ -401,30 +415,52 @@ class CogneeMemory:
 
         *session_id* scopes the write to one conversation, isolating
         session-level guidance across concurrent windows.
+
+        Wrapped in :func:`asyncio.timeout` so a hang in cognee's
+        consolidation pipeline (e.g. orphaned LanceDB adapter lock)
+        skips the write instead of leaking a stuck background task.
         """
         try:
-            await self.setup()
-            import cognee
-
-            text = f"User: {user_message}\nAssistant: {assistant_message}"
-            for attempt in range(2):
-                try:
-                    async with self._write_lock:
-                        await cognee.add(text, session_id=session_id)
-                        await cognee.cognify(session_id=session_id)
-                    return
-                except Exception as exc:
-                    if attempt == 0 and _is_healable_kuzu_error(exc):
-                        logger.warning(
-                            "Kuzu graph open failed; rebuilding database: %s",
-                            exc,
-                        )
-                        data_dir = Path(self._settings.data_dir).expanduser().resolve()
-                        self._remove_stale_kuzu_shadows(data_dir / "system")
-                        continue
-                    raise
+            async with asyncio.timeout(self._settings.remember_timeout_seconds):
+                await self._remember_core(
+                    user_message, assistant_message, session_id=session_id
+                )
+        except TimeoutError:
+            logger.warning(
+                "memory write timed out after %.0fs; exchange not persisted",
+                self._settings.remember_timeout_seconds,
+            )
         except Exception:
             logger.exception("memory write failed; exchange not persisted")
+
+    async def _remember_core(
+        self,
+        user_message: str,
+        assistant_message: str,
+        *,
+        session_id: str | None = None,
+    ) -> None:
+        """Inner remember logic — separated so the timeout wrapper is clean."""
+        await self.setup()
+        import cognee
+
+        text = f"User: {user_message}\nAssistant: {assistant_message}"
+        for attempt in range(2):
+            try:
+                async with self._write_lock:
+                    await cognee.add(text, session_id=session_id)
+                    await cognee.cognify(session_id=session_id)
+                return
+            except Exception as exc:
+                if attempt == 0 and _is_healable_kuzu_error(exc):
+                    logger.warning(
+                        "Kuzu graph open failed; rebuilding database: %s",
+                        exc,
+                    )
+                    data_dir = Path(self._settings.data_dir).expanduser().resolve()
+                    self._remove_stale_kuzu_shadows(data_dir / "system")
+                    continue
+                raise
 
 
 def _format_results(results: Any) -> str:

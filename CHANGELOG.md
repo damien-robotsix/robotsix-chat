@@ -1,6 +1,10 @@
 ## 0.0.0 (unreleased)
 
 - Feedback runner now logs at WARNING level when `board_url` is empty, and at INFO level when disabled. Added config-validation: `feedback.board_url` must be non-empty when `feedback.enabled` is true.
+- Guard cognee memory calls with configurable timeouts to prevent hung worker tasks
+  when the LanceDB adapter lock is orphaned (recall 60 s, remember 300 s). Add a
+  per-run watchdog in the subsession worker so a stuck periodic run is marked
+  failed and the schedule continues instead of staying ``running`` forever.
 - Deduplicate `.subs-header` and `.sessions-header` CSS into shared `.panel-header` class
 - Extract `_parse_turns()` helper to eliminate duplicate turn-parsing loop in `ConversationStoreSerializer._load_legacy_format` and `_load_current_format`
 - Remove redundant `_coerce_empty_string_to_*` field validators from `MemorySettings`, `RefDocsSettings`, and `ComponentClientSettings` — the top-level `_normalize_legacy_empty_strings` on `Settings` already handles all legacy `""` → `{}`/`[]` coercion before sub-model validation.
