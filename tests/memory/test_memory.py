@@ -22,7 +22,11 @@ from robotsix_chat.config import (
     MemorySettings,
 )
 from robotsix_chat.memory import NullMemory, build_memory
-from robotsix_chat.memory.cognee import CogneeMemory, _format_results
+from robotsix_chat.memory.cognee import (
+    CogneeMemory,
+    _format_results,
+    _is_healable_kuzu_error,
+)
 
 
 def _enabled_settings(data_dir: str = "/data/cognee") -> MemorySettings:
@@ -774,3 +778,204 @@ async def test_db_recreation_failure_is_logged_not_raised(
     # Shadow was removed, but DB dir is still there (recreation failed).
     assert not shadow_dir.exists()
     assert db_dir.exists()
+
+
+# ---------------------------------------------------------------------------
+# Missing-shadow detection: DB entity without companion .shadow
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_setup_heals_db_missing_shadow(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """DB directory present with NO .shadow or .wal → removed during setup."""
+    mem, _ = cognee_memory
+    system_root = Path(mem._settings.data_dir) / "system"
+    databases_dir = system_root / "databases"
+    databases_dir.mkdir(parents=True, exist_ok=True)
+
+    db_dir = databases_dir / "cognee_graph_ladybug"
+    db_dir.mkdir()
+    (db_dir / "data.kz").write_text("db content")
+
+    # No .shadow, no .wal — this is the current production failure state.
+    assert not (databases_dir / "cognee_graph_ladybug.shadow").exists()
+    assert not (databases_dir / "cognee_graph_ladybug.wal").exists()
+
+    await mem.setup()
+
+    assert not db_dir.exists()
+
+
+@pytest.mark.asyncio
+async def test_setup_heals_db_file_missing_shadow(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """DB file (single-file ladybug form) with NO .shadow → removed during setup."""
+    mem, _ = cognee_memory
+    system_root = Path(mem._settings.data_dir) / "system"
+    databases_dir = system_root / "databases"
+    databases_dir.mkdir(parents=True, exist_ok=True)
+
+    db_file = databases_dir / "cognee_graph_ladybug"
+    db_file.write_text("single-file db content")
+
+    # No .shadow — inconsistent state.
+    assert not (databases_dir / "cognee_graph_ladybug.shadow").exists()
+
+    await mem.setup()
+
+    assert not db_file.exists()
+
+
+# ---------------------------------------------------------------------------
+# Open-time retry: catch ENOENT, heal, retry once
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_recall_retry_on_shadow_missing(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """recall() catches shadow-missing RuntimeError, heals, and retries once."""
+    mem, fake = cognee_memory
+
+    call_count = 0
+
+    async def _search(*args: Any, **kwargs: Any) -> list[str]:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RuntimeError(
+                "IO exception: Cannot open file "
+                "/data/cognee/system/databases/cognee_graph_ladybug.shadow: "
+                "No such file or directory"
+            )
+        return ["recalled after heal"]
+
+    fake.search = _search
+
+    result = await mem.recall("query")
+    assert result == "recalled after heal"
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_recall_retry_on_db_id_mismatch(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """recall() catches DB-ID-mismatch RuntimeError, heals, and retries once."""
+    mem, fake = cognee_memory
+
+    call_count = 0
+
+    async def _search(*args: Any, **kwargs: Any) -> list[str]:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RuntimeError(
+                "Database ID 12345 does not match the current database ID 67890"
+            )
+        return ["recalled after heal"]
+
+    fake.search = _search
+
+    result = await mem.recall("query")
+    assert result == "recalled after heal"
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_recall_no_retry_on_unrelated_error(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """recall() does NOT retry on errors that are not healable."""
+    mem, fake = cognee_memory
+
+    call_count = 0
+
+    async def _search(*args: Any, **kwargs: Any) -> list[str]:
+        nonlocal call_count
+        call_count += 1
+        raise RuntimeError("some unrelated database error")
+
+    fake.search = _search
+
+    result = await mem.recall("query")
+    assert result == ""
+    assert call_count == 1  # No retry attempted.
+
+
+@pytest.mark.asyncio
+async def test_remember_retry_on_shadow_missing(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """remember() catches shadow-missing RuntimeError, heals, and retries once."""
+    mem, fake = cognee_memory
+
+    call_count = 0
+
+    async def _add(*args: Any, **kwargs: Any) -> None:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise RuntimeError(
+                "IO exception: Cannot open file "
+                "/data/cognee/system/databases/cognee_graph_ladybug.shadow: "
+                "No such file or directory"
+            )
+
+    fake.add = _add
+    fake.cognify = AsyncMock(return_value=None)
+
+    await mem.remember("hello", "hi")
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_remember_no_retry_on_unrelated_error(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """remember() does NOT retry on errors that are not healable."""
+    mem, fake = cognee_memory
+
+    call_count = 0
+
+    async def _add(*args: Any, **kwargs: Any) -> None:
+        nonlocal call_count
+        call_count += 1
+        raise RuntimeError("some other error")
+
+    fake.add = _add
+    fake.cognify = AsyncMock(return_value=None)
+
+    await mem.remember("hello", "hi")  # must not raise
+    assert call_count == 1  # No retry attempted.
+
+
+# ---------------------------------------------------------------------------
+# _is_healable_kuzu_error unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_is_healable_shadow_missing() -> None:
+    """Shadow-missing ENOENT is recognised as healable."""
+    exc = RuntimeError(
+        "IO exception: Cannot open file "
+        "/data/cognee/system/databases/cognee_graph_ladybug.shadow: "
+        "No such file or directory"
+    )
+    assert _is_healable_kuzu_error(exc) is True
+
+
+def test_is_healable_db_id_mismatch() -> None:
+    """Database ID mismatch is recognised as healable."""
+    exc = RuntimeError("Database ID 12345 does not match the current database ID 67890")
+    assert _is_healable_kuzu_error(exc) is True
+
+
+def test_is_healable_unrelated_error() -> None:
+    """Unrelated RuntimeError is NOT healable."""
+    exc = RuntimeError("disk full")
+    assert _is_healable_kuzu_error(exc) is False

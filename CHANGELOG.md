@@ -1,5 +1,13 @@
 ## 0.0.0 (unreleased)
 
+- Fix kuzu graph shadow-file self-heal to detect inconsistent databases
+  where the DB entity exists but its companion ``.shadow`` is missing
+  (the opposite of the orphan-artifact case).  Handle both file and
+  directory DB forms.  Add open-time retry in ``recall()`` and
+  ``remember()``: on a healable kuzu error (shadow-missing ENOENT or
+  database-ID mismatch), the database set is removed and the operation
+  is retried once, so the graph is rebuilt eagerly instead of degrading
+  to "no memory" forever.
 - **Memory (cognee):** Self-heal now handles the full kuzu consistency set — removes both `.shadow` and `.wal` artifacts together and recreates the database directory when any stale entries are found, preventing the "IO exception: Cannot open file" crash that occurred when a previously-deleted shadow was still referenced by a leftover WAL.
 - Consolidate `github` module under shared `repo/` namespace as `repo.security` — move `src/robotsix_chat/github/` → `src/robotsix_chat/repo/security/`, `docs/github/` → `docs/repo/security/`, `tests/github/` → `tests/repo/security/`. Update all imports and module registration accordingly.
 - Replace `docs/notification/skill.md` with a relative symlink to the canonical `src/robotsix_chat/notification/skill.md`, eliminating a duplicate copy.

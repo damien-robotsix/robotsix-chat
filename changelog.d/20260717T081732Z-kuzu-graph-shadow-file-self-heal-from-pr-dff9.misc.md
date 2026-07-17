@@ -1,0 +1,1 @@
+Kuzu graph shadow-file self-heal from PR #595 does not cover the graph-open path — error persists
