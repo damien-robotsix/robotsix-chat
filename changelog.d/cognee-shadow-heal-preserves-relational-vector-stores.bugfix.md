@@ -1,0 +1,1 @@
+Cognee memory recall no longer breaks on every turn: the kuzu shadow-file self-heal was deleting cognee's SQLite relational store (`cognee_db`) and LanceDB vector store (`cognee.lancedb`) on every startup because they have no companion `.shadow` file, wiping the default user/dataset registry that `search()` requires. The heal now only ever removes genuine kuzu graph databases.
