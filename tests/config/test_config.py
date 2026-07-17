@@ -628,21 +628,3 @@ def test_coerce_memory_nested_empty_string_to_dict() -> None:
     assert settings.memory.llm.model == "openrouter/anthropic/claude-haiku-4.5"
     assert settings.memory.langfuse.host == "https://cloud.langfuse.com"
     assert settings.memory.embedding.model == "bge-m3"
-
-
-def test_coerce_refdocs_settings_direct() -> None:
-    """``RefDocsSettings(repos="")`` is coerced to ``[]``."""
-    s = RefDocsSettings(repos="")  # type: ignore[arg-type]
-    assert s.repos == []
-
-
-def test_coerce_memory_settings_direct() -> None:
-    """``MemorySettings(llm="")`` is coerced to the default ``MemoryLlmSettings``."""
-    s = MemorySettings(llm="")  # type: ignore[arg-type]
-    assert s.llm.model == "openrouter/anthropic/claude-haiku-4.5"
-
-
-def test_coerce_component_client_settings_direct() -> None:
-    """``ComponentClientSettings(components="")`` is coerced to ``[]``."""
-    s = ComponentClientSettings(components="")  # type: ignore[arg-type]
-    assert s.components == []

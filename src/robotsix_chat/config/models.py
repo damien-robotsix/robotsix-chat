@@ -6,9 +6,7 @@ be imported directly without pulling in the full Settings cascade.
 
 from __future__ import annotations
 
-from typing import Any
-
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 
 class LangfuseSettings(BaseModel):
@@ -85,14 +83,6 @@ class MemorySettings(BaseModel):
     embedding: MemoryEmbeddingSettings = Field(default_factory=MemoryEmbeddingSettings)
     langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)
 
-    @field_validator("llm", "langfuse", "embedding", mode="before")
-    @classmethod
-    def _coerce_empty_string_to_dict(cls, v: Any) -> Any:
-        """Coerce legacy ``""`` placeholder to an empty dict (→ sub-model default)."""
-        if v == "":
-            return {}
-        return v
-
 
 class RefDocsSettings(BaseModel):
     """Read-only reference-docs tool for the agent.
@@ -122,14 +112,6 @@ class RefDocsSettings(BaseModel):
     github_token: SecretStr = SecretStr("")
     base_url: str = "https://api.github.com"
     timeout: float = 30.0
-
-    @field_validator("repos", mode="before")
-    @classmethod
-    def _coerce_empty_string_to_list(cls, v: Any) -> Any:
-        """Coerce legacy ``""`` placeholder to an empty list."""
-        if v == "":
-            return []
-        return v
 
 
 class VersionCheckSettings(BaseModel):
@@ -397,14 +379,6 @@ class ComponentClientSettings(BaseModel):
     enabled: bool = False
     timeout: float = 240.0
     components: list[ComponentTarget] = Field(default_factory=list)
-
-    @field_validator("components", mode="before")
-    @classmethod
-    def _coerce_empty_string_to_list(cls, v: Any) -> Any:
-        """Coerce legacy ``""`` placeholder to an empty list."""
-        if v == "":
-            return []
-        return v
 
 
 class SubsessionsSettings(BaseModel):
