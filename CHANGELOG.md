@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Feedback runner now logs at WARNING level when `board_url` is empty, and at INFO level when disabled. Added config-validation: `feedback.board_url` must be non-empty when `feedback.enabled` is true.
 - Deduplicate `.subs-header` and `.sessions-header` CSS into shared `.panel-header` class
 - Extract `_parse_turns()` helper to eliminate duplicate turn-parsing loop in `ConversationStoreSerializer._load_legacy_format` and `_load_current_format`
 - Remove redundant `_coerce_empty_string_to_*` field validators from `MemorySettings`, `RefDocsSettings`, and `ComponentClientSettings` — the top-level `_normalize_legacy_empty_strings` on `Settings` already handles all legacy `""` → `{}`/`[]` coercion before sub-model validation.
