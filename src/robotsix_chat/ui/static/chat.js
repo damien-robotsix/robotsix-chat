@@ -446,12 +446,27 @@
   var eventStreamAbortController = null;
   var eventsStreamIntentionallyClosed = false;
   var eventStreamReconnectTimer = null;
+  // Monotonic stream generation. Callbacks captured by an older
+  // openEventStream() compare their generation against this and no-op when
+  // stale. Without it, aborting the previous stream fires its pump catch
+  // with AbortError AFTER eventsStreamIntentionallyClosed was reset to
+  // false, so the stale stream scheduled a reconnect that aborted the new
+  // healthy stream 5s later — a self-sustaining reconnect loop that left
+  // /events effectively dead (subsession echo frames published to a key
+  // with no subscriber are silently dropped).
+  var eventStreamGeneration = 0;
+  var eventStreamWatchdogTimer = null;
 
   function closeEventStream() {
     eventsStreamIntentionallyClosed = true;
+    eventStreamGeneration++;
     if (eventStreamReconnectTimer) {
       clearTimeout(eventStreamReconnectTimer);
       eventStreamReconnectTimer = null;
+    }
+    if (eventStreamWatchdogTimer) {
+      clearInterval(eventStreamWatchdogTimer);
+      eventStreamWatchdogTimer = null;
     }
     if (eventStreamAbortController) {
       eventStreamAbortController.abort();
@@ -998,10 +1013,16 @@
       } else if (!resp.ok) {
         showError("Failed to send message (HTTP " + resp.status + ")");
       } else {
-        // Accepted (202) — do NOT append locally; the echoed
-        // subsession_message SSE frame renders it.
+        // Accepted (202) — don't append a local bubble directly; re-sync
+        // the transcript from the server instead so the message renders
+        // even when the /events SSE channel is down (the echoed
+        // subsession_message frame is published fire-and-forget and is
+        // silently dropped if this tab holds no live subscription for the
+        // owner session). loadSubsTranscript dedupes by exact
+        // timestamp+role+text, so an SSE echo arriving too is harmless.
         sub._draft = "";
         if (sub._msgInput) sub._msgInput.value = "";
+        loadSubsTranscript(sub);
       }
     }).catch(function (err) {
       showError("Failed to send message: " + (err.message || "Network error"));
@@ -1538,6 +1559,7 @@
           // Ignore lines with "event:", "id:", "retry:", or comments.
         }
 
+        if (controller.onActivity) controller.onActivity();
         return pump();
       }).catch(function (err) {
         controller.error(err);
@@ -1553,9 +1575,16 @@
     // Abort any prior stream before opening a new one so we never run two
     // /events fetches at once (each would hold its own server-side EventBus
     // subscription → duplicate frames). Also cancel a pending reconnect.
+    // Bumping the generation first makes every callback captured by the
+    // prior stream (including its pump's AbortError catch) a stale no-op.
+    var gen = ++eventStreamGeneration;
     if (eventStreamReconnectTimer) {
       clearTimeout(eventStreamReconnectTimer);
       eventStreamReconnectTimer = null;
+    }
+    if (eventStreamWatchdogTimer) {
+      clearInterval(eventStreamWatchdogTimer);
+      eventStreamWatchdogTimer = null;
     }
     if (eventStreamAbortController) {
       try { eventStreamAbortController.abort(); } catch (_) {}
@@ -1565,8 +1594,19 @@
                     "?session_id=" + encodeURIComponent(activeSessionId) +
                     "&owner_id=" + encodeURIComponent(clientId);
 
+    // Read-liveness watchdog: the server writes a keepalive comment every
+    // 5s, so a healthy stream always produces reads. A silently-dead TCP
+    // connection (laptop sleep, network change) leaves reader.read()
+    // pending forever with no error — without this, the tab keeps a
+    // zombie /events subscription until reload.
+    var lastActivity = Date.now();
+
     var eventsController = {
+      onActivity: function () {
+        lastActivity = Date.now();
+      },
       onData: function (raw) {
+        if (gen !== eventStreamGeneration) return;  // stale stream
         var frame;
         try { frame = JSON.parse(raw); }
         catch (_) { return; /* skip unparsable frames */ }
@@ -1623,12 +1663,18 @@
       },
       onDone: function () {
         // Stream closed by server — reconnect after a short delay,
-        // unless the stream was intentionally closed (session switch).
+        // unless the stream was intentionally closed (session switch)
+        // or superseded by a newer stream.
+        if (gen !== eventStreamGeneration) return;  // stale stream
         if (eventsStreamIntentionallyClosed) return;
         scheduleEventReconnect();
       },
       error: function (_err) {
         // Network error or stream failure — reconnect after a short delay.
+        // A stale stream's pump lands here with AbortError when a newer
+        // openEventStream() aborted it; it must NOT schedule a reconnect
+        // (that reconnect would abort the healthy new stream, forever).
+        if (gen !== eventStreamGeneration) return;  // stale stream
         if (eventsStreamIntentionallyClosed) return;
         scheduleEventReconnect();
       }
@@ -1636,11 +1682,13 @@
 
     // Create a new AbortController so closeEventStream() can abort this fetch.
     eventStreamAbortController = new AbortController();
+    var abortController = eventStreamAbortController;
 
     fetch(eventsUrl, {
       method: "GET",
-      signal: eventStreamAbortController.signal
+      signal: abortController.signal
     }).then(function (response) {
+      if (gen !== eventStreamGeneration) return;  // stale stream
       if (!response.ok) {
         scheduleEventReconnect();
         return;
@@ -1653,10 +1701,24 @@
       // (Re)connected — re-sync the subsessions snapshot so any frames
       // missed while disconnected are reflected in the panel.
       fetchSubsessions();
+      lastActivity = Date.now();
+      eventStreamWatchdogTimer = setInterval(function () {
+        if (gen !== eventStreamGeneration) return;  // cleared by successor
+        if (Date.now() - lastActivity > 20000) {
+          // No bytes (not even the 5s keepalive) for 20s — the connection
+          // is dead even though reader.read() never rejected. Tear it
+          // down and reconnect.
+          clearInterval(eventStreamWatchdogTimer);
+          eventStreamWatchdogTimer = null;
+          try { abortController.abort(); } catch (_) {}
+          scheduleEventReconnect();
+        }
+      }, 5000);
       var parser = processSSEStream(response.body, eventsController);
       parser.start();
     }).catch(function (err) {
-      // Don't reconnect if aborted (session switch).
+      // Don't reconnect if aborted (session switch) or superseded.
+      if (gen !== eventStreamGeneration) return;
       if (err && err.name === "AbortError") return;
       scheduleEventReconnect();
     });
