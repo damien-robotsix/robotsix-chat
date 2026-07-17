@@ -95,19 +95,19 @@ body {
 #subsessions-resize-handle:hover,
 #subsessions-resize-handle.active { background: rgba(59, 130, 246, 0.5); }
 
-.subs-header {
+.panel-header {
   padding: 0.6rem 0.75rem; font-weight: 700; font-size: 0.95rem;
   border-bottom: 1px solid var(--composer-border);
   background: var(--header-bg); color: var(--header-fg);
   flex-shrink: 0; display: flex; align-items: center;
   justify-content: space-between;
 }
-.subs-header .dismiss {
+.panel-header .dismiss {
   background: none; border: none; color: var(--header-fg);
   font-size: 1.2rem; cursor: pointer; line-height: 1; padding: 0 0.2rem;
   opacity: 0.7;
 }
-.subs-header .dismiss:hover { opacity: 1; }
+.panel-header .dismiss:hover { opacity: 1; }
 .subs-header-actions { display: flex; align-items: center; gap: 0.5rem; }
 .subs-header .toggle-terminal {
   background: none; border: 1px solid var(--header-fg);
@@ -270,19 +270,6 @@ body {
 #sessions-resize-handle:hover,
 #sessions-resize-handle.active { background: rgba(59, 130, 246, 0.5); }
 
-.sessions-header {
-  padding: 0.6rem 0.75rem; font-weight: 700; font-size: 0.95rem;
-  border-bottom: 1px solid var(--composer-border);
-  background: var(--header-bg); color: var(--header-fg);
-  flex-shrink: 0; display: flex; align-items: center;
-  justify-content: space-between;
-}
-.sessions-header .dismiss {
-  background: none; border: none; color: var(--header-fg);
-  font-size: 1.2rem; cursor: pointer; line-height: 1; padding: 0 0.2rem;
-  opacity: 0.7;
-}
-.sessions-header .dismiss:hover { opacity: 1; }
 
 #new-chat-btn {
   margin: 0.5rem; padding: 0.4rem 0.75rem;
