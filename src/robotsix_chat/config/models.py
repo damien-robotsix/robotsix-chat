@@ -67,6 +67,14 @@ class MemorySettings(BaseModel):
             but costs one (cheap) LLM call per message; retrieval-only types
             like ``CHUNKS``/``SUMMARIES`` are faster but return raw, noisier
             payloads.
+        recall_timeout_seconds: Hard deadline for one ``recall()`` call. A
+            wedged cognee backend (e.g. an orphaned LanceDB adapter lock) hangs
+            instead of raising; past the deadline recall degrades to "no
+            memory" so callers — subsession workers in particular — never
+            freeze on the memory path.
+        remember_timeout_seconds: Hard deadline for one ``remember()`` call
+            (add + cognify consolidation). On timeout the exchange is dropped
+            with a warning instead of blocking the caller forever.
         llm: Extraction-LLM config (graph building / consolidation).
         embedding: Embedding-server config (semantic search).
         langfuse: Dedicated Langfuse credentials for the
@@ -79,6 +87,8 @@ class MemorySettings(BaseModel):
     enabled: bool = False
     data_dir: str = "/data/cognee"
     recall_search_type: str = "GRAPH_COMPLETION"
+    recall_timeout_seconds: float = 60.0
+    remember_timeout_seconds: float = 300.0
     llm: MemoryLlmSettings = Field(default_factory=MemoryLlmSettings)
     embedding: MemoryEmbeddingSettings = Field(default_factory=MemoryEmbeddingSettings)
     langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)

@@ -955,6 +955,67 @@ async def test_remember_no_retry_on_unrelated_error(
 
 
 # ---------------------------------------------------------------------------
+# Hung-backend timeouts (regression: 2026-07-17 orphaned LanceDB lock froze
+# every subsession worker in recall()/remember() with no error raised)
+# ---------------------------------------------------------------------------
+
+
+async def _hang_forever(*args: Any, **kwargs: Any) -> None:
+    """Simulate a wedged cognee backend: awaits forever, never raises."""
+    import asyncio
+
+    await asyncio.Event().wait()
+
+
+@pytest.mark.asyncio
+async def test_cognee_recall_times_out_on_hung_backend(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """A recall that hangs (no error) degrades to "" after the deadline."""
+    fake = _install_fake_cognee(monkeypatch)
+    fake.search = _hang_forever
+    settings = _enabled_settings(str(tmp_path / "cognee"))
+    settings.recall_timeout_seconds = 0.05
+    mem = CogneeMemory(settings)
+
+    assert await mem.recall("who?") == ""
+
+
+@pytest.mark.asyncio
+async def test_cognee_remember_times_out_on_hung_backend(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """A remember that hangs returns (exchange dropped) after the deadline."""
+    fake = _install_fake_cognee(monkeypatch)
+    fake.add = _hang_forever
+    settings = _enabled_settings(str(tmp_path / "cognee"))
+    settings.remember_timeout_seconds = 0.05
+    mem = CogneeMemory(settings)
+
+    await mem.remember("hello", "hi")  # must return, not hang
+
+
+@pytest.mark.asyncio
+async def test_remember_timeout_releases_write_lock(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """After a timed-out remember, the write lock is free for the next write."""
+    fake = _install_fake_cognee(monkeypatch)
+    fake.add = _hang_forever
+    settings = _enabled_settings(str(tmp_path / "cognee"))
+    settings.remember_timeout_seconds = 0.05
+    mem = CogneeMemory(settings)
+
+    await mem.remember("first", "hangs")
+    assert not mem._write_lock.locked()
+
+    fake.add = AsyncMock(return_value=None)
+    await mem.remember("second", "works")
+    fake.add.assert_awaited_once()
+    fake.cognify.assert_awaited_once()
+
+
+# ---------------------------------------------------------------------------
 # _is_healable_kuzu_error unit tests
 # ---------------------------------------------------------------------------
 

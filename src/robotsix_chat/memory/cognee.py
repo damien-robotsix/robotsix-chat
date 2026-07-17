@@ -350,33 +350,47 @@ class CogneeMemory:
         if not query.strip():
             return ""
         try:
-            await self.setup()
-            import cognee
-            from cognee import SearchType
+            # Hard deadline: cognee can *hang* rather than raise (observed
+            # 2026-07-17 — an orphaned LanceDB adapter lock parked every
+            # recall in Lock.acquire forever, freezing all subsession
+            # workers). A timeout degrades to "no memory" like any error.
+            async with asyncio.timeout(self._settings.recall_timeout_seconds):
+                await self.setup()
+                import cognee
+                from cognee import SearchType
 
-            search_type = getattr(
-                SearchType,
-                self._settings.recall_search_type,
-                SearchType.GRAPH_COMPLETION,
-            )
-            for attempt in range(2):
-                try:
-                    results = await cognee.search(
-                        query_type=search_type,
-                        query_text=query,
-                        session_id=session_id,
-                    )
-                    return _format_results(results)
-                except Exception as exc:
-                    if attempt == 0 and _is_healable_kuzu_error(exc):
-                        logger.warning(
-                            "Kuzu graph open failed; rebuilding database: %s",
-                            exc,
+                search_type = getattr(
+                    SearchType,
+                    self._settings.recall_search_type,
+                    SearchType.GRAPH_COMPLETION,
+                )
+                for attempt in range(2):
+                    try:
+                        results = await cognee.search(
+                            query_type=search_type,
+                            query_text=query,
+                            session_id=session_id,
                         )
-                        data_dir = Path(self._settings.data_dir).expanduser().resolve()
-                        self._remove_stale_kuzu_shadows(data_dir / "system")
-                        continue
-                    raise
+                        return _format_results(results)
+                    except Exception as exc:
+                        if attempt == 0 and _is_healable_kuzu_error(exc):
+                            logger.warning(
+                                "Kuzu graph open failed; rebuilding database: %s",
+                                exc,
+                            )
+                            data_dir = (
+                                Path(self._settings.data_dir).expanduser().resolve()
+                            )
+                            self._remove_stale_kuzu_shadows(data_dir / "system")
+                            continue
+                        raise
+        except TimeoutError:
+            logger.warning(
+                "memory recall timed out after %.0fs (hung cognee backend?); "
+                "continuing without memory",
+                self._settings.recall_timeout_seconds,
+            )
+            return ""
         except Exception as exc:
             # Best-effort: a recall failure (incl. the expected "empty store"
             # case on the first-ever message) must never break the reply, so
@@ -403,26 +417,39 @@ class CogneeMemory:
         session-level guidance across concurrent windows.
         """
         try:
-            await self.setup()
-            import cognee
+            # Same rationale as recall(): a hung cognee pipeline must drop
+            # the exchange, not block the caller (and the _write_lock queue
+            # behind it) forever. The deadline covers waiting on _write_lock
+            # too, so a wedged holder can't strand every later write.
+            async with asyncio.timeout(self._settings.remember_timeout_seconds):
+                await self.setup()
+                import cognee
 
-            text = f"User: {user_message}\nAssistant: {assistant_message}"
-            for attempt in range(2):
-                try:
-                    async with self._write_lock:
-                        await cognee.add(text, session_id=session_id)
-                        await cognee.cognify(session_id=session_id)
-                    return
-                except Exception as exc:
-                    if attempt == 0 and _is_healable_kuzu_error(exc):
-                        logger.warning(
-                            "Kuzu graph open failed; rebuilding database: %s",
-                            exc,
-                        )
-                        data_dir = Path(self._settings.data_dir).expanduser().resolve()
-                        self._remove_stale_kuzu_shadows(data_dir / "system")
-                        continue
-                    raise
+                text = f"User: {user_message}\nAssistant: {assistant_message}"
+                for attempt in range(2):
+                    try:
+                        async with self._write_lock:
+                            await cognee.add(text, session_id=session_id)
+                            await cognee.cognify(session_id=session_id)
+                        return
+                    except Exception as exc:
+                        if attempt == 0 and _is_healable_kuzu_error(exc):
+                            logger.warning(
+                                "Kuzu graph open failed; rebuilding database: %s",
+                                exc,
+                            )
+                            data_dir = (
+                                Path(self._settings.data_dir).expanduser().resolve()
+                            )
+                            self._remove_stale_kuzu_shadows(data_dir / "system")
+                            continue
+                        raise
+        except TimeoutError:
+            logger.warning(
+                "memory write timed out after %.0fs (hung cognee backend?); "
+                "exchange not persisted",
+                self._settings.remember_timeout_seconds,
+            )
         except Exception:
             logger.exception("memory write failed; exchange not persisted")
 
