@@ -67,6 +67,12 @@ class MemorySettings(BaseModel):
             but costs one (cheap) LLM call per message; retrieval-only types
             like ``CHUNKS``/``SUMMARIES`` are faster but return raw, noisier
             payloads.
+        recall_timeout_seconds: Hard timeout (seconds) for a single ``recall``
+            call.  On expiry the recall degrades to ``""`` — the agent proceeds
+            without memory.  Default 60 s.
+        remember_timeout_seconds: Hard timeout (seconds) for a single
+            ``remember`` call (cognify consolidation).  On expiry the write is
+            skipped and a warning is logged.  Default 300 s.
         llm: Extraction-LLM config (graph building / consolidation).
         embedding: Embedding-server config (semantic search).
         langfuse: Dedicated Langfuse credentials for the
@@ -79,6 +85,8 @@ class MemorySettings(BaseModel):
     enabled: bool = False
     data_dir: str = "/data/cognee"
     recall_search_type: str = "GRAPH_COMPLETION"
+    recall_timeout_seconds: float = 60.0
+    remember_timeout_seconds: float = 300.0
     llm: MemoryLlmSettings = Field(default_factory=MemoryLlmSettings)
     embedding: MemoryEmbeddingSettings = Field(default_factory=MemoryEmbeddingSettings)
     langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)
@@ -403,6 +411,11 @@ class SubsessionsSettings(BaseModel):
         auto_stop_no_change_runs: A periodic subsession auto-closes after
             this many consecutive ``NO_CHANGE`` runs.
             Env override: ``SUBSESSIONS_AUTO_STOP_NO_CHANGE_RUNS``.
+        run_timeout_seconds: Hard per-run timeout for a single subsession
+            agent turn (recall + LLM call + delivery).  On expiry the run
+            is marked failed and the schedule continues instead of staying
+            ``running`` forever.  Default 600 s.
+            Env override: ``SUBSESSIONS_RUN_TIMEOUT_SECONDS``.
         store_path: JSON persistence file (periodic subsessions resume
             across restarts).  Env override: ``SUBSESSIONS_STORE_PATH``.
         transcript_max_entries: Per-subsession transcript retention cap.
@@ -415,6 +428,7 @@ class SubsessionsSettings(BaseModel):
     default_model_level: int = 2
     min_interval_seconds: float = 60.0
     auto_stop_no_change_runs: int = 5
+    run_timeout_seconds: float = 600.0
     store_path: str = "/data/subsessions.json"
     transcript_max_entries: int = 200
 

@@ -325,6 +325,57 @@ async def _run_turn(
     return "".join(parts)
 
 
+_RUN_TIMEOUT_GRACE = 5.0
+"""Seconds of grace added to the configured run timeout for the
+asyncio.timeout context so the warning + status update have time to
+execute before the CancelledError propagates."""
+
+
+async def _run_turn_with_timeout(
+    env: SubsessionEnv,
+    agent: ChatAgent,
+    turn_input: str,
+    history: list[tuple[str, str]],
+    sub_id: str,
+    info: SubsessionInfo,
+) -> str:
+    """Run one agent turn with a hard timeout guard.
+
+    On timeout the run is marked failed for TASK/USER_CHAT kinds, or the
+    schedule continues with the failure recorded for PERIODIC kinds.
+    """
+    timeout = env.settings.subsessions.run_timeout_seconds
+    try:
+        async with asyncio.timeout(timeout + _RUN_TIMEOUT_GRACE):
+            return await _run_turn(
+                agent,
+                turn_input,
+                history,
+                sub_id,
+                trace_metadata={
+                    "owner_session_id": info.owner_session_id,
+                    "parent_session_id": info.parent_id or info.owner_session_id,
+                },
+            )
+    except TimeoutError:
+        logger.warning(
+            "Subsession %s run timed out after %.0fs; marking run as failed",
+            sub_id,
+            timeout,
+        )
+        raise _RunTimeoutError(
+            f"subsession run exceeded {timeout:.0f}s timeout"
+        ) from None
+
+
+class _RunTimeoutError(Exception):
+    """Raised when a single subsession turn exceeds the run timeout.
+
+    Internal sentinel — caught by the worker loop to trigger kind-specific
+    failure handling without conflating with other CancelledError sources.
+    """
+
+
 async def _run_task_turn(
     env: SubsessionEnv, sub_id: str, reply: str
 ) -> list[InboxMessage]:
@@ -495,16 +546,66 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                 turn_input = _render_turn_input(pending)
             first_turn = False
 
-            reply = await _run_turn(
-                agent,
-                turn_input,
-                history,
-                sub_id,
-                trace_metadata={
-                    "owner_session_id": info.owner_session_id,
-                    "parent_session_id": info.parent_id or info.owner_session_id,
-                },
-            )
+            try:
+                reply = await _run_turn_with_timeout(
+                    env,
+                    agent,
+                    turn_input,
+                    history,
+                    sub_id,
+                    info,
+                )
+            except _RunTimeoutError:
+                # Periodic runs continue the schedule after a timeout;
+                # task / user_chat runs fail the whole subsession.
+                if info.kind is SubsessionKind.PERIODIC:
+                    logger.warning(
+                        "Periodic subsession %s run %d timed out; continuing schedule.",
+                        sub_id,
+                        info.runs + 1,
+                    )
+                    registry.append_transcript(
+                        sub_id,
+                        "system",
+                        "Run timed out — the agent turn exceeded the per-run timeout.",
+                    )
+                    # Advance the run counter so the schedule moves on.
+                    runs = info.runs + 1
+                    registry.set_status(
+                        sub_id,
+                        SubsessionStatus.SLEEPING,
+                        runs=runs,
+                        next_run_at=registry.now() + (info.interval_seconds or 60.0),
+                        last_result="TIMEOUT",
+                    )
+                    # Deliver a timeout result so the parent isn't left
+                    # wondering.
+                    if env.event_sink is not None:
+                        env.event_sink.publish(
+                            info.owner_session_id,
+                            subsession_result_frame(
+                                sub_id,
+                                info.kind.value,
+                                info.title,
+                                runs,
+                                "TIMEOUT",
+                                info.parent_id,
+                            ),
+                        )
+                    if not info.include_previous_result:
+                        previous_result = None
+                    consecutive_no_change += 1
+                    # Sleep until next tick, waking early on steering.
+                    woke = await registry.wait_for_inbox(
+                        sub_id,
+                        timeout=info.interval_seconds or 60.0,
+                    )
+                    pending = registry.drain_inbox(sub_id) if woke else []
+                    env.registry.reap_orphans()
+                    continue
+                # TASK / USER_CHAT: let the outer handler fail the subsession.
+                raise
+
             history.append((turn_input, reply))
             registry.append_turn_history(sub_id, turn_input, reply)
             # Inbox messages were transcripted at enqueue time; only the
