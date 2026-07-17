@@ -1,11 +1,15 @@
 ## 0.0.0 (unreleased)
 
 - Chat UI: LLM-generated session titles after the first assistant reply (uses the summary model tier). Fix sidebar "X days ago" timestamps by handling Unix-second timestamps correctly.
+<<<<<<< HEAD
 - Subsessions closing now trigger an immediate (fire-and-forget) reaction
   turn in the parent chat so the main agent sees and acts on the summary
   without waiting for the next user message.  Reaction turns are serialised
   with user-message turns via the per-owner ``RunSerializer`` lock and are
   depth-bounded (max 3) to prevent unbounded trigger chains. (mill: Subsession closure summary must trigger a main-agent run (redraft of a175) (20260717T233626Z-subsession-closure-summary-must-trigger-9e6a))
+- Session sidebar: open by default on fresh load; persist close state in localStorage.
+- Session list auto-refreshes every 20 seconds (paused when tab is hidden).
+- Sessions with new agent messages since last viewed get a visual highlight (left border accent); clears on selection.
 - Subsessions: add loop guard to reaction-turn delivery so a summary-triggered agent run that spawns and closes another subsession cannot create an unbounded trigger chain (`_reaction_in_progress` flag).
 - Feedback runner now logs at WARNING level when `board_url` is empty, and at INFO level when disabled. Added config-validation: `feedback.board_url` must be non-empty when `feedback.enabled` is true.
 - Guard cognee memory calls with configurable timeouts to prevent hung worker tasks
