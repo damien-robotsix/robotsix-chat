@@ -78,6 +78,12 @@ class ParentDelivery:
         # from a SubsessionEnv that itself needs this ParentDelivery, so the
         # two can't be constructed in agent-first order (see set_agent).
         self._agent: ChatAgent | None = None
+        # Per-session guard that prevents a reaction turn from triggering
+        # another reaction turn for the same session while one is already in
+        # flight — bounds the trigger chain so a summary-triggered run that
+        # spawns and closes another subsession cannot create an unbounded
+        # loop.  See :meth:`_react_in_main_chat`.
+        self._reaction_in_progress: set[str] = set()
 
     def set_agent(self, agent: ChatAgent) -> None:
         """Wire the main chat agent used to react to subsession outcomes.
@@ -146,8 +152,21 @@ class ParentDelivery:
         *outcome* as the "assistant" reply) when no agent is wired yet (see
         :meth:`set_agent`) or the reaction turn itself fails — the outcome
         must never be silently lost either way.
+
+        Guards against unbounded trigger chains: if a reaction turn is
+        already in progress for this session (e.g. a subsession spawned by a
+        prior reaction completed during that same reaction), the outcome is
+        recorded passively so the chain depth is bounded at one level.
         """
         session_id = info.owner_session_id
+
+        # Loop guard: if a reaction for this session is already in flight,
+        # degrade to a passive record so we never chain reactions unbounded.
+        if session_id in self._reaction_in_progress:
+            async with self._run_serializer.for_owner(session_id):
+                self._store.record_for_session(session_id, label, outcome)
+            return
+
         if self._agent is None:
             async with self._run_serializer.for_owner(session_id):
                 self._store.record_for_session(session_id, label, outcome)
@@ -160,30 +179,34 @@ class ParentDelivery:
             reason=reason,
             outcome=outcome,
         )
-        async with self._run_serializer.for_owner(session_id):
-            history = self._store.history(session_id)
-            try:
-                parts = [
-                    chunk
-                    async for chunk in self._agent.stream(
-                        prompt,
-                        history=history or None,
-                        session_id=session_id,
-                        client_id=session_id,
-                        trace_metadata={"subsession_id": info.id},
+        self._reaction_in_progress.add(session_id)
+        try:
+            async with self._run_serializer.for_owner(session_id):
+                history = self._store.history(session_id)
+                try:
+                    parts = [
+                        chunk
+                        async for chunk in self._agent.stream(
+                            prompt,
+                            history=history or None,
+                            session_id=session_id,
+                            client_id=session_id,
+                            trace_metadata={"subsession_id": info.id},
+                        )
+                    ]
+                except Exception:
+                    logger.exception(
+                        "Reaction turn failed for subsession %s (session %s)",
+                        info.id,
+                        session_id,
                     )
-                ]
-            except Exception:
-                logger.exception(
-                    "Reaction turn failed for subsession %s (session %s)",
-                    info.id,
-                    session_id,
-                )
-                self._store.record_for_session(session_id, label, outcome)
-                return
-            reply = "".join(parts)
-            self._store.record_for_session(session_id, prompt, reply)
-            if reply and self._event_sink is not None:
-                self._event_sink.publish(
-                    session_id, agent_message_frame(reply, time.time())
-                )
+                    self._store.record_for_session(session_id, label, outcome)
+                    return
+                reply = "".join(parts)
+                self._store.record_for_session(session_id, prompt, reply)
+                if reply and self._event_sink is not None:
+                    self._event_sink.publish(
+                        session_id, agent_message_frame(reply, time.time())
+                    )
+        finally:
+            self._reaction_in_progress.discard(session_id)
