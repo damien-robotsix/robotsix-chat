@@ -1,0 +1,1 @@
+Subsession closure summary must trigger a main-agent run (redraft of a175)

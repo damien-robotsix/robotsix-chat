@@ -18,6 +18,12 @@ Replaces the old ``ConversationDeliveryChannel``.  Two destinations:
   boundary.  When the parent is no longer active, delivery degrades to
   the main-chat path so the outcome is never lost.
 
+Reaction turns are fire-and-forget: the caller (a subsession worker or
+HTTP endpoint) schedules the reaction in a background task and returns
+immediately — the worker never blocks on a potentially slow LLM call.
+The per-owner :class:`RunSerializer` lock still serialises reactions
+with user-message turns so they never overlap.
+
 Subsession agents carry the full tool suite themselves, so a *nested*
 parent's summary is still delivered as data, not by re-running a second
 agent — only the main-chat-parent case gets a live reaction turn, since
@@ -26,6 +32,7 @@ that is the one a human is actually watching.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from typing import TYPE_CHECKING
@@ -50,6 +57,12 @@ _REACT_PROMPT_TEMPLATE = (
     "appropriate, or just acknowledge it briefly. This is a real turn: your "
     "reply will be shown to the user."
 )
+
+# Hard cap on how many consecutive reaction turns (triggered by subsession
+# closures during prior reactions) can nest for the same session.  Once the
+# depth reaches this limit, further closures degrade to passive records so
+# a broken tool loop can't chain-react unboundedly.
+_MAX_REACTION_DEPTH = 3
 
 
 class ParentDelivery:
@@ -78,12 +91,14 @@ class ParentDelivery:
         # from a SubsessionEnv that itself needs this ParentDelivery, so the
         # two can't be constructed in agent-first order (see set_agent).
         self._agent: ChatAgent | None = None
-        # Per-session guard that prevents a reaction turn from triggering
-        # another reaction turn for the same session while one is already in
-        # flight — bounds the trigger chain so a summary-triggered run that
-        # spawns and closes another subsession cannot create an unbounded
-        # loop.  See :meth:`_react_in_main_chat`.
-        self._reaction_in_progress: set[str] = set()
+        # Per-session depth counter: how many nested reaction turns are
+        # currently in flight for this session.  Once the depth reaches
+        # _MAX_REACTION_DEPTH further closures degrade to passive records
+        # so a broken tool loop cannot chain-react unboundedly.
+        self._reaction_depth: dict[str, int] = {}
+        # Keep strong references to in-flight background reaction tasks so
+        # they aren't garbage-collected mid-run.
+        self._reaction_tasks: set[asyncio.Task[None]] = set()
 
     def set_agent(self, agent: ChatAgent) -> None:
         """Wire the main chat agent used to react to subsession outcomes.
@@ -103,6 +118,10 @@ class ParentDelivery:
         """Deliver a terminal *summary* to *info*'s parent (see module doc).
 
         Best-effort: failures are logged, never raised back into a worker.
+
+        Fire-and-forget: the reaction turn is scheduled as a background
+        task so the caller (subsession worker / HTTP endpoint) returns
+        immediately instead of blocking on the agent's LLM call.
         """
         label = (
             f"[Subsession {info.id[:8]} ({info.kind.value}) '{info.title}' {reason}]"
@@ -114,7 +133,7 @@ class ParentDelivery:
                 return
             # Main-chat parent, or nested parent already terminal → degrade
             # to the owning session so the outcome is never lost.
-            await self._react_in_main_chat(info, summary, reason, label)
+            self._schedule_reaction(info, summary, reason, label)
         except Exception:
             logger.exception(
                 "Failed to deliver subsession %s summary to its parent", info.id
@@ -133,9 +152,84 @@ class ParentDelivery:
                 info.parent_id, "parent", f"{label} {text}"
             ):
                 return
-            await self._react_in_main_chat(info, text, f"run {run}", label)
+            self._schedule_reaction(info, text, f"run {run}", label)
         except Exception:
             logger.exception("Failed to deliver subsession %s run result", info.id)
+
+    # ------------------------------------------------------------------
+    # Background reaction scheduling (fire-and-forget)
+    # ------------------------------------------------------------------
+
+    def _schedule_reaction(
+        self, info: SubsessionInfo, outcome: str, reason: str, label: str
+    ) -> None:
+        """Schedule a background task to react to *outcome* in the main chat.
+
+        The task runs ``_react_in_main_chat`` asynchronously; it is
+        serialised with user-message turns via the per-owner
+        :class:`RunSerializer` lock so the reaction never interleaves
+        with a live ``/chat`` run.
+
+        The task is fire-and-forget — errors are logged, never surfaced
+        to the caller.
+        """
+        session_id = info.owner_session_id
+
+        # Depth-bounded loop guard: if we're already at max depth for this
+        # session, record a passive entry instead of scheduling yet another
+        # reaction.  This bounds chains like  close → reaction → spawn →
+        # close → reaction → spawn → …  to _MAX_REACTION_DEPTH steps.
+        depth = self._reaction_depth.get(session_id, 0)
+        if depth >= _MAX_REACTION_DEPTH:
+            logger.warning(
+                "Reaction depth %d reached for session %s — "
+                "degrading subsession %s outcome to passive record.",
+                depth,
+                session_id,
+                info.id,
+            )
+            # Schedule the passive record under the lock so it doesn't race
+            # a concurrent user turn.
+            task = asyncio.create_task(self._record_passive(session_id, label, outcome))
+            self._reaction_tasks.add(task)
+            task.add_done_callback(self._reaction_tasks.discard)
+            return
+
+        self._reaction_depth[session_id] = depth + 1
+        task = asyncio.create_task(self._safe_react(info, outcome, reason, label))
+        self._reaction_tasks.add(task)
+        task.add_done_callback(self._reaction_tasks.discard)
+
+    async def _safe_react(
+        self, info: SubsessionInfo, outcome: str, reason: str, label: str
+    ) -> None:
+        """Wrap ``_react_in_main_chat`` with a top-level exception guard.
+
+        Ensures that exceptions inside the background reaction task are
+        logged and never silently swallowed (``asyncio.create_task`` does
+        not propagate exceptions to the caller).
+        """
+        try:
+            await self._react_in_main_chat(info, outcome, reason, label)
+        except Exception:
+            logger.exception("Reaction task failed for subsession %s", info.id)
+
+    async def _record_passive(self, session_id: str, label: str, outcome: str) -> None:
+        """Record *outcome* as a passive, system-authored turn under the lock.
+
+        Best-effort: errors are logged, never raised.
+        """
+        try:
+            async with self._run_serializer.for_owner(session_id):
+                self._store.record_for_session(session_id, label, outcome)
+        except Exception:
+            logger.exception(
+                "Failed to record passive outcome for session %s", session_id
+            )
+
+    # ------------------------------------------------------------------
+    # Reaction turn (runs inside a background task)
+    # ------------------------------------------------------------------
 
     async def _react_in_main_chat(
         self, info: SubsessionInfo, outcome: str, reason: str, label: str
@@ -153,34 +247,23 @@ class ParentDelivery:
         :meth:`set_agent`) or the reaction turn itself fails — the outcome
         must never be silently lost either way.
 
-        Guards against unbounded trigger chains: if a reaction turn is
-        already in progress for this session (e.g. a subsession spawned by a
-        prior reaction completed during that same reaction), the outcome is
-        recorded passively so the chain depth is bounded at one level.
+        The depth counter is decremented in the ``finally`` block so it is
+        always cleared, even when the task is cancelled.
         """
         session_id = info.owner_session_id
-
-        # Loop guard: if a reaction for this session is already in flight,
-        # degrade to a passive record so we never chain reactions unbounded.
-        if session_id in self._reaction_in_progress:
-            async with self._run_serializer.for_owner(session_id):
-                self._store.record_for_session(session_id, label, outcome)
-            return
-
-        if self._agent is None:
-            async with self._run_serializer.for_owner(session_id):
-                self._store.record_for_session(session_id, label, outcome)
-            return
-
-        prompt = _REACT_PROMPT_TEMPLATE.format(
-            sub_id=info.id[:8],
-            kind=info.kind.value,
-            title=info.title,
-            reason=reason,
-            outcome=outcome,
-        )
-        self._reaction_in_progress.add(session_id)
         try:
+            if self._agent is None:
+                async with self._run_serializer.for_owner(session_id):
+                    self._store.record_for_session(session_id, label, outcome)
+                return
+
+            prompt = _REACT_PROMPT_TEMPLATE.format(
+                sub_id=info.id[:8],
+                kind=info.kind.value,
+                title=info.title,
+                reason=reason,
+                outcome=outcome,
+            )
             async with self._run_serializer.for_owner(session_id):
                 history = self._store.history(session_id)
                 try:
@@ -209,4 +292,8 @@ class ParentDelivery:
                         session_id, agent_message_frame(reply, time.time())
                     )
         finally:
-            self._reaction_in_progress.discard(session_id)
+            depth = self._reaction_depth.get(session_id, 1) - 1
+            if depth <= 0:
+                self._reaction_depth.pop(session_id, None)
+            else:
+                self._reaction_depth[session_id] = depth
