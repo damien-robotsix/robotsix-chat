@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Extract `_parse_turns()` helper to eliminate duplicate turn-parsing loop in `ConversationStoreSerializer._load_legacy_format` and `_load_current_format`
 - Remove redundant `_coerce_empty_string_to_*` field validators from `MemorySettings`, `RefDocsSettings`, and `ComponentClientSettings` — the top-level `_normalize_legacy_empty_strings` on `Settings` already handles all legacy `""` → `{}`/`[]` coercion before sub-model validation.
 - Fix kuzu graph shadow-file self-heal to detect inconsistent databases
   where the DB entity exists but its companion ``.shadow`` is missing
