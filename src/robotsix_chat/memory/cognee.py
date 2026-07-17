@@ -20,6 +20,7 @@ import asyncio
 import base64
 import logging
 import os
+import re
 import shutil
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -31,6 +32,17 @@ logger = logging.getLogger(__name__)
 
 # Cap recalled context so a large graph can't blow up the prompt.
 _MAX_RECALL_CHARS = 4000
+
+# Patterns for kuzu/ladybug database errors that can be healed by
+# removing the database files and letting cognee recreate them.
+_SHADOW_MISSING_RE = re.compile(r"Cannot open file.*\.shadow.*No such file")
+_DB_ID_MISMATCH_RE = re.compile(r"Database ID.*does not match")
+
+
+def _is_healable_kuzu_error(exc: BaseException) -> bool:
+    """Return True if *exc* matches a kuzu error healable by rebuilding the DB."""
+    msg = str(exc)
+    return bool(_SHADOW_MISSING_RE.search(msg) or _DB_ID_MISMATCH_RE.search(msg))
 
 
 class CogneeMemory:
@@ -143,16 +155,21 @@ class CogneeMemory:
 
     @staticmethod
     def _remove_stale_kuzu_shadows(system_root: Path) -> None:
-        """Heal stale kuzu shadow and WAL artifacts left by an unclean shutdown.
+        """Heal stale or inconsistent kuzu database state from an unclean shutdown.
 
-        If the process crashed or was killed while kuzu had a WAL/shadow
-        directory open, artifacts are left behind.  Deleting only the
-        ``.shadow`` entry while the ``.wal`` still references it causes a
-        *different* open failure ("IO exception: Cannot open file …
-        No such file or directory").  We remove **all** stale artifacts
-        together (``.shadow`` + ``.wal``) and then recreate the
-        corresponding database directory — the graph is a rebuildable
-        cache of conversation memory, so a clean slate is always safe.
+        Two conditions trigger a heal:
+
+        1. **Orphan artifacts** — ``.shadow`` / ``.wal`` files left behind
+           when the process was killed while kuzu had them open.
+        2. **Missing shadow** — a database entity (file or directory) whose
+           companion ``.shadow`` file is absent.  Opening such a database
+           immediately fails with "IO exception: Cannot open file …
+           .shadow: No such file or directory".
+
+        In either case the entire dataset for that database (the database
+        entity itself plus any ``.shadow`` / ``.wal`` siblings) is removed.
+        The graph is a rebuildable cache of conversation memory, so starting
+        from a clean slate is always safe.
         """
         databases_dir = system_root / "databases"
         if not databases_dir.exists():
@@ -174,28 +191,53 @@ class CogneeMemory:
             except OSError:
                 logger.exception("Failed to remove stale kuzu artifact: %s", entry)
 
-        # If we found any stale artifacts, also recreate the matching
-        # database directories (strip the .shadow / .wal suffix) so the
-        # open starts from a clean, consistent state.
-        if stale_entries:
-            db_names: set[str] = set()
-            for entry in stale_entries:
-                for suffix in (".shadow", ".wal"):
-                    if entry.name.endswith(suffix):
-                        db_names.add(entry.name[: -len(suffix)])
-                        break
+        # Build the set of database names that need a clean slate.
+        db_names: set[str] = set()
 
-            for db_name in sorted(db_names):
-                db_dir = databases_dir / db_name
-                if db_dir.is_dir():
-                    try:
-                        logger.warning("Recreating kuzu database directory: %s", db_dir)
-                        shutil.rmtree(db_dir)
-                    except OSError:
-                        logger.exception(
-                            "Failed to recreate kuzu database directory: %s",
-                            db_dir,
+        # From orphan artifacts: the DB they belong to must be recreated.
+        for entry in stale_entries:
+            for suffix in (".shadow", ".wal"):
+                if entry.name.endswith(suffix):
+                    db_names.add(entry.name[: -len(suffix)])
+                    break
+
+        # From DB entities missing their companion .shadow: the DB is
+        # inconsistent and will fail on open.
+        for entry in databases_dir.iterdir():
+            if entry.name.endswith((".shadow", ".wal")):
+                continue
+            shadow = databases_dir / (entry.name + ".shadow")
+            if not shadow.exists():
+                logger.warning(
+                    "Kuzu database missing companion shadow file; "
+                    "treating as inconsistent: %s",
+                    entry,
+                )
+                db_names.add(entry.name)
+
+        # Remove inconsistent database entities — handle both file and
+        # directory forms (ladybug/kuzu can use either).
+        for db_name in sorted(db_names):
+            db_entity = databases_dir / db_name
+            if db_entity.exists():
+                try:
+                    if db_entity.is_dir():
+                        logger.warning(
+                            "Removing inconsistent kuzu database directory: %s",
+                            db_entity,
                         )
+                        shutil.rmtree(db_entity)
+                    else:
+                        logger.warning(
+                            "Removing inconsistent kuzu database file: %s",
+                            db_entity,
+                        )
+                        db_entity.unlink()
+                except OSError:
+                    logger.exception(
+                        "Failed to remove inconsistent kuzu database: %s",
+                        db_entity,
+                    )
 
     def _register_litellm_langfuse_callback(self) -> None:
         """Wire litellm Langfuse OTLP tracing with dedicated cognee creds.
@@ -317,18 +359,34 @@ class CogneeMemory:
                 self._settings.recall_search_type,
                 SearchType.GRAPH_COMPLETION,
             )
-            results = await cognee.search(
-                query_type=search_type,
-                query_text=query,
-                session_id=session_id,
-            )
-            return _format_results(results)
+            for attempt in range(2):
+                try:
+                    results = await cognee.search(
+                        query_type=search_type,
+                        query_text=query,
+                        session_id=session_id,
+                    )
+                    return _format_results(results)
+                except Exception as exc:
+                    if attempt == 0 and _is_healable_kuzu_error(exc):
+                        logger.warning(
+                            "Kuzu graph open failed; rebuilding database: %s",
+                            exc,
+                        )
+                        data_dir = Path(self._settings.data_dir).expanduser().resolve()
+                        self._remove_stale_kuzu_shadows(data_dir / "system")
+                        continue
+                    raise
         except Exception as exc:
             # Best-effort: a recall failure (incl. the expected "empty store"
             # case on the first-ever message) must never break the reply, so
             # log it concisely — no ERROR-level traceback — and continue.
             logger.warning("memory recall failed (%s); continuing without memory", exc)
             return ""
+
+        # Unreachable — the retry loop always either returns or raises
+        # (caught above).  Required to satisfy mypy's exhaustive check.
+        return ""
 
     # -- write ------------------------------------------------------------
 
@@ -349,9 +407,22 @@ class CogneeMemory:
             import cognee
 
             text = f"User: {user_message}\nAssistant: {assistant_message}"
-            async with self._write_lock:
-                await cognee.add(text, session_id=session_id)
-                await cognee.cognify(session_id=session_id)
+            for attempt in range(2):
+                try:
+                    async with self._write_lock:
+                        await cognee.add(text, session_id=session_id)
+                        await cognee.cognify(session_id=session_id)
+                    return
+                except Exception as exc:
+                    if attempt == 0 and _is_healable_kuzu_error(exc):
+                        logger.warning(
+                            "Kuzu graph open failed; rebuilding database: %s",
+                            exc,
+                        )
+                        data_dir = Path(self._settings.data_dir).expanduser().resolve()
+                        self._remove_stale_kuzu_shadows(data_dir / "system")
+                        continue
+                    raise
         except Exception:
             logger.exception("memory write failed; exchange not persisted")
 
