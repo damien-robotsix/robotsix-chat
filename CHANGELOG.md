@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Chat UI: LLM-generated session titles after the first assistant reply (uses the summary model tier). Fix sidebar "X days ago" timestamps by handling Unix-second timestamps correctly.
 - Subsessions: add loop guard to reaction-turn delivery so a summary-triggered agent run that spawns and closes another subsession cannot create an unbounded trigger chain (`_reaction_in_progress` flag).
 - Feedback runner now logs at WARNING level when `board_url` is empty, and at INFO level when disabled. Added config-validation: `feedback.board_url` must be non-empty when `feedback.enabled` is true.
 - Guard cognee memory calls with configurable timeouts to prevent hung worker tasks

@@ -164,6 +164,7 @@ class MessageCoalescer:
         lock_key: str,
         owner_id: str,
         had_session: bool,
+        summary_agent: ChatAgent | None = None,
     ) -> asyncio.Queue[tuple[str, str | None]]:
         """Submit a message for batching; return a queue of SSE frames.
 
@@ -194,6 +195,7 @@ class MessageCoalescer:
                         lock_key,
                         owner_id,
                         had_session,
+                        summary_agent,
                     )
                 )
                 self._background_tasks.add(task)
@@ -254,6 +256,7 @@ class MessageCoalescer:
         lock_key: str,
         owner_id: str,
         had_session: bool,
+        summary_agent: ChatAgent | None = None,
     ) -> None:
         """Wait for the debounce window, drain, lock, run agent, fan out."""
         await asyncio.sleep(self._debounce_seconds)
@@ -315,6 +318,19 @@ class MessageCoalescer:
                 full_reply = "".join(reply_parts)
                 if session_id:
                     store.record(session_id, owner_id, concatenated, full_reply)
+                    # Generate an LLM title after the first turn.
+                    if (
+                        summary_agent is not None
+                        and concatenated.strip()
+                        and full_reply.strip()
+                    ):
+                        session = store.get_session(session_id)
+                        if session is not None and session.turn_count == 1:
+                            title = await _generate_title(
+                                summary_agent, concatenated, full_reply
+                            )
+                            if title:
+                                store.set_title(session_id, title)
                     for p in pending:
                         if p.message_id:
                             msg_id_store.mark_completed(
@@ -414,6 +430,51 @@ def _parse_and_validate_images(
         images.append((media_type, raw_bytes))
 
     return images, None
+
+
+async def _generate_title(
+    summary_agent: ChatAgent,
+    user_message: str,
+    assistant_reply: str,
+) -> str:
+    """Generate a short 3-5 word title for a new conversation.
+
+    Returns an empty string on failure.
+    """
+    if not user_message.strip():
+        return ""
+
+    # Keep the prompt small — the first exchange is usually short.
+    user_snippet = user_message[:500]
+    asst_snippet = assistant_reply[:500] if assistant_reply else ""
+    prompt = (
+        "Write a very short title (3-5 words) that summarizes what the "
+        "user is asking about below. Reply with ONLY the title — no "
+        "quotes, no punctuation, no extra text.\n\n"
+        f"User: {user_snippet}\n"
+        f"Assistant: {asst_snippet}\n\n"
+        "Title:"
+    )
+
+    try:
+        reply_parts: list[str] = []
+        async for token in summary_agent.stream(
+            prompt,
+            history=None,
+            session_id=None,
+            client_id=None,
+        ):
+            reply_parts.append(token)
+        title = "".join(reply_parts).strip()
+        # Clean up common LLM artifacts.
+        title = title.strip('"').strip("'").rstrip(".")
+        # Truncate to a reasonable length.
+        if len(title) > 80:
+            title = title[:80].rstrip() + "\u2026"
+        return title
+    except Exception:
+        logger.exception("Title generation failed")
+        return ""
 
 
 async def _generate_idle_summary(
@@ -593,6 +654,12 @@ async def chat_endpoint(
     # -- Submit to the message coalescer ----------------------------------
 
     coalescer: MessageCoalescer = request.app.state.message_coalescer
+    # Only use summary_agent for title generation when it's a dedicated
+    # (cheaper) agent — not when it's the fallback-to-main-agent default.
+    title_agent = request.app.state.summary_agent
+    if title_agent is agent:
+        title_agent = None
+
     response_queue = await coalescer.submit(
         session_id,
         message,
@@ -605,6 +672,7 @@ async def chat_endpoint(
         lock_key=lock_key,
         owner_id=owner_id or "",
         had_session=had_session,
+        summary_agent=title_agent,
     )
 
     # -- SSE async generator ----------------------------------------------

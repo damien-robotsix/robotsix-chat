@@ -74,6 +74,7 @@ async def test_background_task_is_retained_while_running_and_released_after() ->
         lock_key=session_id,
         owner_id=session_id,
         had_session=True,
+        summary_agent=None,
     )
 
     # Let the processor task start and reach agent.stream()'s await point.
