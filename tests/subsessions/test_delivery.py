@@ -312,6 +312,86 @@ async def test_deliver_result_with_agent_runs_reaction_turn() -> None:
 
 
 # ---------------------------------------------------------------------------
+# loop guard — prevents unbounded trigger chains
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_loop_guard_degrades_when_reaction_in_progress() -> None:
+    """When a reaction is already in flight for the session, degrade to passive.
+
+    This prevents unbounded trigger chains: a subsession spawned by a
+    reaction that completes during that same reaction must not trigger
+    another reaction turn.
+    """
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["reply"])
+    delivery = _build_delivery(store=store, registry=registry, agent=agent)
+    info = _make_info(parent_id=None)
+
+    # Simulate a reaction already in progress for this session.
+    delivery._reaction_in_progress.add("owner-sess-1")
+
+    await delivery.deliver_summary(info, "all done", "completed")
+
+    # Must degrade to passive record — the label/outcome form, NOT the
+    # agent-generated reply.
+    store.record_for_session.assert_called_once()
+    args, _kwargs = store.record_for_session.call_args
+    assert args[0] == "owner-sess-1"
+    assert info.id[:8] in args[1]  # label form (passive degradation)
+    assert args[2] == "all done"  # raw outcome, not "reply"
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_loop_guard_allows_reaction_when_flag_cleared() -> None:
+    """When the reaction-in-progress flag is clear, the agent runs normally."""
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["real reaction"])
+    delivery = _build_delivery(store=store, registry=registry, agent=agent)
+    info = _make_info(parent_id=None)
+
+    # No flag set — reaction should proceed.
+    await delivery.deliver_summary(info, "all done", "completed")
+
+    store.record_for_session.assert_called_once()
+    args, _kwargs = store.record_for_session.call_args
+    assert args[0] == "owner-sess-1"
+    assert "all done" in args[1]  # prompt mentions the outcome
+    assert args[2] == "real reaction"  # agent-generated reply
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_loop_guard_clears_flag_after_reaction() -> None:
+    """After a reaction completes, the in-progress flag must be cleared.
+
+    Subsequent subsession closures should be able to trigger new reactions.
+    """
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["first"])
+    delivery = _build_delivery(store=store, registry=registry, agent=agent)
+    info_a = _make_info(sub_id="sub-aaaaaaaa", parent_id=None)
+    info_b = _make_info(sub_id="sub-bbbbbbbb", parent_id=None)
+
+    await delivery.deliver_summary(info_a, "summary a", "completed")
+    # After the first reaction, the flag should be cleared.
+    assert "owner-sess-1" not in delivery._reaction_in_progress
+
+    # A second reaction should now proceed normally (not degraded).
+    await delivery.deliver_summary(info_b, "summary b", "completed")
+    assert store.record_for_session.call_count == 2
+    # Second call should use the agent (not degraded).
+    second_args, _kwargs = store.record_for_session.call_args
+    assert "summary b" in second_args[1]  # prompt form
+
+
+# ---------------------------------------------------------------------------
 # deliver_summary — nested parent (parent_id is not None)
 # ---------------------------------------------------------------------------
 

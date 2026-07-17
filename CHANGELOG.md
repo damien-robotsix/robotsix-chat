@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Subsessions: add loop guard to reaction-turn delivery so a summary-triggered agent run that spawns and closes another subsession cannot create an unbounded trigger chain (`_reaction_in_progress` flag).
 - Feedback runner now logs at WARNING level when `board_url` is empty, and at INFO level when disabled. Added config-validation: `feedback.board_url` must be non-empty when `feedback.enabled` is true.
 - Guard cognee memory calls with configurable timeouts to prevent hung worker tasks
   when the LanceDB adapter lock is orphaned (recall 60 s, remember 300 s). Add a
