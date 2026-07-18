@@ -1,0 +1,20 @@
+{
+  "doc_layout": {
+    "root": "docs/",
+    "architecture": "docs/architecture.md",
+    "configuration": "docs/configuration.md",
+    "periodic_checks": "docs/periodic-checks.md",
+    "changelog": "CHANGELOG.md",
+    "changelog_fragments": "changelog.d/",
+    "subsessions": {
+      "source": "src/robotsix_chat/subsessions/delivery.py",
+      "tests": "tests/subsessions/test_delivery.py",
+      "module_doc": "docs/modules.yaml"
+    }
+  },
+  "conventions": {
+    "changelog_fragments": "One .md file per change under changelog.d/ with suffix .misc.md for non-feature/fix entries",
+    "reaction_turns": "Fire-and-forget background asyncio tasks scheduled via _schedule_reaction(), serialised with user turns via RunSerializer lock, depth-bounded at max 3 (_MAX_REACTION_DEPTH) to prevent unbounded trigger chains. Passive record fallback when cap is reached or agent not wired.",
+    "test_pattern": "Reaction-turn tests must await background tasks via _await_reaction_tasks() helper that gathers all in-flight _reaction_tasks."
+  }
+}
