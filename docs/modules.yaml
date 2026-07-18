@@ -69,6 +69,7 @@ modules:
       - Dockerfile
       - LICENSE
       - Makefile
+      - memory-ledger.json
       - README.md
       - SECURITY.md
       - docker-compose.yml
