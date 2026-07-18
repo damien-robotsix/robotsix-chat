@@ -1,7 +1,6 @@
 ## 0.0.0 (unreleased)
 
 - UI: conversation view now auto-scrolls to the bottom on session switch/load so the latest messages are always visible.
-- UI: session switch now auto-scrolls conversation to the bottom so the latest messages are always visible on load.
 - Fix summary panel layout shift: render summary as an absolute overlay
   outside the conversation's flex flow so appearing/resizing the summary
   no longer changes the chat scroll position.
