@@ -1,1 +1,1 @@
-Extract title generation and simplify nesting in MessageCoalescer._process_batch
+Extract title generation and simplify nesting in MessageCoalescer.\_process_batch
