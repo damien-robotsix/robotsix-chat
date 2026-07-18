@@ -17,7 +17,6 @@ import sys
 from pathlib import Path
 
 _LOCAL_DIR = Path(__file__).parent
-_LOCAL_STR = str(_LOCAL_DIR)
 _LOCAL_STAGES = str(_LOCAL_DIR / "stages")
 
 # ---------------------------------------------------------------------------
