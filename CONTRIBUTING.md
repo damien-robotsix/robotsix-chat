@@ -15,7 +15,7 @@ pre-commit install
 ```
 
 `pre-commit install` activates the Git hooks that run on every commit: trailing-whitespace,
-YAML/TOML checks, ruff (lint + format), mypy, bandit, uv audit, and detect-secrets.
+YAML/TOML checks, ruff (lint + format), mypy, uv audit, and detect-secrets.
 
 ## Running checks manually
 
@@ -29,7 +29,7 @@ commands below; the Makefile targets are simple wrappers with no hidden logic.
 | ruff (lint)         | `make lint`                     | `uv run ruff check src/robotsix_chat tests`                                                       | Code style, lint, and docstring rules |
 | ruff (format check) | `make format-check`             | `uv run ruff format --check src/robotsix_chat tests && uv run ruff check src/robotsix_chat tests` | Code formatting                       |
 | mypy                | `make typecheck`                | `uv run mypy src/robotsix_chat tests`                                                             | Static type checking (strict mode)    |
-| bandit              | `make security`                 | `uv run bandit -c pyproject.toml -r src/`                                                         | Security linting                      |
+
 | uv audit            | *(no target — use raw command)* | `uv audit`                                                                                        | Known vulnerabilities in dependencies |
 | pytest              | `make test`                     | `uv run pytest`                                                                                   | Test suite                            |
 | all of the above    | `make all`                      | *(runs lint, format-check, typecheck, test)*                                                      | Pre-PR validation                     |
@@ -90,12 +90,11 @@ After `pre-commit install`, the following hooks run on staged files:
 1. **pre-commit-hooks** — trailing whitespace, file endings, YAML/TOML syntax
 2. **ruff** — lint with auto-fix, then format
 3. **mypy** — strict type checking
-4. **bandit** — security-focused AST scanner
-5. **uv audit** — dependency vulnerability scan (only when `uv.lock` changes)
-6. **detect-secrets** — secret leakage prevention
-7. **markdownlint-cli2** — structural Markdown linting (broken links, duplicate headings, missing
+4. **uv audit** — dependency vulnerability scan (only when `uv.lock` changes)
+5. **detect-secrets** — secret leakage prevention
+6. **markdownlint-cli2** — structural Markdown linting (broken links, duplicate headings, missing
    alt text)
-8. **mdformat** — consistent Markdown formatting (100-char wrap, 2-space indentation, numbered
+7. **mdformat** — consistent Markdown formatting (100-char wrap, 2-space indentation, numbered
    lists)
 
 To run all hooks without committing: `pre-commit run --all-files`
