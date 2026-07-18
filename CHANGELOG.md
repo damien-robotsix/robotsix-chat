@@ -1,7 +1,6 @@
 ## 0.0.0 (unreleased)
 
 - Chat UI: LLM-generated session titles after the first assistant reply (uses the summary model tier). Fix sidebar "X days ago" timestamps by handling Unix-second timestamps correctly.
-<<<<<<< HEAD
 - Subsessions closing now trigger an immediate (fire-and-forget) reaction
   turn in the parent chat so the main agent sees and acts on the summary
   without waiting for the next user message.  Reaction turns are serialised
