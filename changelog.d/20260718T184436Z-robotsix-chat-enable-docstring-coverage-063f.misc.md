@@ -1,0 +1,1 @@
+robotsix-chat: Enable docstring_coverage periodic workflow
