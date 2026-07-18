@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -77,6 +78,13 @@ def _build_delivery(
     return delivery
 
 
+async def _await_reaction_tasks(delivery: ParentDelivery) -> None:
+    """Wait for all in-flight background reaction tasks to complete."""
+    while delivery._reaction_tasks:
+        tasks = list(delivery._reaction_tasks)
+        await asyncio.gather(*tasks, return_exceptions=True)
+
+
 def _fake_agent(chunks: list[str]) -> MagicMock:
     """Build a ChatAgent stub whose ``stream()`` yields the given chunks."""
     agent = MagicMock()
@@ -139,6 +147,7 @@ async def test_deliver_summary_main_chat_parent_records_to_store() -> None:
     info = _make_info(parent_id=None)
 
     await delivery.deliver_summary(info, "all done", "completed")
+    await _await_reaction_tasks(delivery)
 
     store.record_for_session.assert_called_once()
     args, _kwargs = store.record_for_session.call_args
@@ -159,6 +168,7 @@ async def test_deliver_result_main_chat_parent_records_to_store() -> None:
     info = _make_info(parent_id=None)
 
     await delivery.deliver_result(info, 3, "interim result text")
+    await _await_reaction_tasks(delivery)
 
     store.record_for_session.assert_called_once()
     args, _kwargs = store.record_for_session.call_args
@@ -187,6 +197,7 @@ async def test_deliver_summary_with_agent_runs_reaction_turn() -> None:
     info = _make_info(parent_id=None)
 
     await delivery.deliver_summary(info, "all done", "completed")
+    await _await_reaction_tasks(delivery)
 
     store.record_for_session.assert_called_once()
     args, _kwargs = store.record_for_session.call_args
@@ -214,6 +225,7 @@ async def test_deliver_summary_with_agent_publishes_agent_message_frame() -> Non
     info = _make_info(parent_id=None)
 
     await delivery.deliver_summary(info, "all done", "completed")
+    await _await_reaction_tasks(delivery)
 
     event_sink.publish.assert_called_once()
     session_id, frame = event_sink.publish.call_args[0]
@@ -236,6 +248,7 @@ async def test_deliver_summary_with_agent_no_event_sink_skips_publish() -> None:
     info = _make_info(parent_id=None)
 
     await delivery.deliver_summary(info, "all done", "completed")
+    await _await_reaction_tasks(delivery)
 
     store.record_for_session.assert_called_once()
 
@@ -257,6 +270,7 @@ async def test_deliver_summary_empty_reply_skips_publish() -> None:
     info = _make_info(parent_id=None)
 
     await delivery.deliver_summary(info, "all done", "completed")
+    await _await_reaction_tasks(delivery)
 
     store.record_for_session.assert_called_once()
     args, _kwargs = store.record_for_session.call_args
@@ -284,6 +298,7 @@ async def test_deliver_summary_reaction_turn_failure_degrades_to_passive_record(
     info = _make_info(parent_id=None)
 
     await delivery.deliver_summary(info, "all done", "completed")
+    await _await_reaction_tasks(delivery)
 
     store.record_for_session.assert_called_once()
     args, _kwargs = store.record_for_session.call_args
@@ -304,6 +319,7 @@ async def test_deliver_result_with_agent_runs_reaction_turn() -> None:
     info = _make_info(parent_id=None)
 
     await delivery.deliver_result(info, 2, "interim text")
+    await _await_reaction_tasks(delivery)
 
     store.record_for_session.assert_called_once()
     args, _kwargs = store.record_for_session.call_args
@@ -312,17 +328,17 @@ async def test_deliver_result_with_agent_runs_reaction_turn() -> None:
 
 
 # ---------------------------------------------------------------------------
-# loop guard — prevents unbounded trigger chains
+# loop guard — depth-bounded trigger chain
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
 async def test_deliver_summary_loop_guard_degrades_when_reaction_in_progress() -> None:
-    """When a reaction is already in flight for the session, degrade to passive.
+    """When a reaction is in flight, the new trigger queues behind it.
 
-    This prevents unbounded trigger chains: a subsession spawned by a
-    reaction that completes during that same reaction must not trigger
-    another reaction turn.
+    The outcome is recorded under the lock but the agent does NOT get a new
+    reaction turn until the prior one completes.  This prevents unbounded
+    trigger chains via depth-bounding.
     """
     store = MagicMock()
     store.history.return_value = []
@@ -331,23 +347,48 @@ async def test_deliver_summary_loop_guard_degrades_when_reaction_in_progress() -
     delivery = _build_delivery(store=store, registry=registry, agent=agent)
     info = _make_info(parent_id=None)
 
-    # Simulate a reaction already in progress for this session.
-    delivery._reaction_in_progress.add("owner-sess-1")
+    # Simulate a reaction already in progress for this session (depth=2,
+    # one below the cap — new closures still schedule, they just queue).
+    delivery._reaction_depth["owner-sess-1"] = 2
 
     await delivery.deliver_summary(info, "all done", "completed")
+    await _await_reaction_tasks(delivery)
 
-    # Must degrade to passive record — the label/outcome form, NOT the
-    # agent-generated reply.
+    # The agent runs because depth (2) < _MAX_REACTION_DEPTH (3).
     store.record_for_session.assert_called_once()
     args, _kwargs = store.record_for_session.call_args
     assert args[0] == "owner-sess-1"
-    assert info.id[:8] in args[1]  # label form (passive degradation)
-    assert args[2] == "all done"  # raw outcome, not "reply"
+    assert "all done" in args[1]  # prompt form (not degraded)
+    assert args[2] == "reply"
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_loop_guard_degraded_waits_for_lock() -> None:
+    """Passive record written under the lock when degraded due to in-flight reaction."""
+    store = MagicMock()
+    registry = MagicMock()
+    lock = MagicMock()
+    lock.__aenter__ = AsyncMock()
+    lock.__aexit__ = AsyncMock()
+    delivery = _build_delivery(store=store, registry=registry, lock=lock)
+    info = _make_info(parent_id=None)
+
+    # Push depth to max so the next schedule degrades.
+    delivery._reaction_depth["owner-sess-1"] = 3
+
+    await delivery.deliver_summary(info, "all done", "completed")
+    await _await_reaction_tasks(delivery)
+
+    lock.__aenter__.assert_awaited_once()
+    lock.__aexit__.assert_awaited_once()
+    store.record_for_session.assert_called_once()
+    args, _kwargs = store.record_for_session.call_args
+    assert args[2] == "all done"
 
 
 @pytest.mark.asyncio
 async def test_deliver_summary_loop_guard_allows_reaction_when_flag_cleared() -> None:
-    """When the reaction-in-progress flag is clear, the agent runs normally."""
+    """With an agent wired and depth below the cap, the agent runs normally."""
     store = MagicMock()
     store.history.return_value = []
     registry = MagicMock()
@@ -355,8 +396,9 @@ async def test_deliver_summary_loop_guard_allows_reaction_when_flag_cleared() ->
     delivery = _build_delivery(store=store, registry=registry, agent=agent)
     info = _make_info(parent_id=None)
 
-    # No flag set — reaction should proceed.
+    # No depth set — reaction should proceed.
     await delivery.deliver_summary(info, "all done", "completed")
+    await _await_reaction_tasks(delivery)
 
     store.record_for_session.assert_called_once()
     args, _kwargs = store.record_for_session.call_args
@@ -366,10 +408,11 @@ async def test_deliver_summary_loop_guard_allows_reaction_when_flag_cleared() ->
 
 
 @pytest.mark.asyncio
-async def test_deliver_summary_loop_guard_clears_flag_after_reaction() -> None:
-    """After a reaction completes, the in-progress flag must be cleared.
+async def test_deliver_summary_loop_guard_clears_depth_after_reaction() -> None:
+    """After a reaction completes, the depth counter must be decremented.
 
-    Subsequent subsession closures should be able to trigger new reactions.
+    Subsequent subsession closures should be able to trigger new reactions
+    (subject to the _MAX_REACTION_DEPTH cap).
     """
     store = MagicMock()
     store.history.return_value = []
@@ -380,15 +423,64 @@ async def test_deliver_summary_loop_guard_clears_flag_after_reaction() -> None:
     info_b = _make_info(sub_id="sub-bbbbbbbb", parent_id=None)
 
     await delivery.deliver_summary(info_a, "summary a", "completed")
-    # After the first reaction, the flag should be cleared.
-    assert "owner-sess-1" not in delivery._reaction_in_progress
+    await _await_reaction_tasks(delivery)
+    # After the first reaction, the depth should be cleared.
+    assert "owner-sess-1" not in delivery._reaction_depth
 
     # A second reaction should now proceed normally (not degraded).
     await delivery.deliver_summary(info_b, "summary b", "completed")
+    await _await_reaction_tasks(delivery)
     assert store.record_for_session.call_count == 2
     # Second call should use the agent (not degraded).
     second_args, _kwargs = store.record_for_session.call_args
     assert "summary b" in second_args[1]  # prompt form
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_loop_guard_depth_cap_degrades() -> None:
+    """At max depth, closures degrade to passive records — no agent turn."""
+    from robotsix_chat.subsessions.delivery import _MAX_REACTION_DEPTH
+
+    store = MagicMock()
+    registry = MagicMock()
+    agent = _fake_agent(["reply"])
+    delivery = _build_delivery(store=store, registry=registry, agent=agent)
+
+    # Push depth right up to the cap.
+    delivery._reaction_depth["owner-sess-1"] = _MAX_REACTION_DEPTH
+
+    info = _make_info(parent_id=None)
+    await delivery.deliver_summary(info, "summary at cap", "completed")
+    await _await_reaction_tasks(delivery)
+
+    # Degraded to passive — label/outcome form.
+    store.record_for_session.assert_called_once()
+    args, _kwargs = store.record_for_session.call_args
+    assert args[2] == "summary at cap"
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_loop_guard_depth_below_cap_schedules_reaction() -> None:
+    """When reaction depth is below the cap, the reaction turn is scheduled."""
+    from robotsix_chat.subsessions.delivery import _MAX_REACTION_DEPTH
+
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["still reacting"])
+    delivery = _build_delivery(store=store, registry=registry, agent=agent)
+
+    # One below the cap — should still schedule.
+    delivery._reaction_depth["owner-sess-1"] = _MAX_REACTION_DEPTH - 1
+
+    info = _make_info(parent_id=None)
+    await delivery.deliver_summary(info, "summary below cap", "completed")
+    await _await_reaction_tasks(delivery)
+
+    store.record_for_session.assert_called_once()
+    args, _kwargs = store.record_for_session.call_args
+    assert "summary below cap" in args[1]  # prompt form (not degraded)
+    assert args[2] == "still reacting"
 
 
 # ---------------------------------------------------------------------------
@@ -450,6 +542,7 @@ async def test_deliver_summary_nested_parent_terminal_degrades_to_store() -> Non
     info = _make_info(parent_id="parent-sub-terminal")
 
     await delivery.deliver_summary(info, "degraded summary", "completed")
+    await _await_reaction_tasks(delivery)
 
     registry.enqueue_message.assert_called_once()
     store.record_for_session.assert_called_once()
@@ -468,6 +561,7 @@ async def test_deliver_result_nested_parent_terminal_degrades_to_store() -> None
     info = _make_info(parent_id="parent-sub-terminal")
 
     await delivery.deliver_result(info, 5, "degraded result")
+    await _await_reaction_tasks(delivery)
 
     registry.enqueue_message.assert_called_once()
     store.record_for_session.assert_called_once()
@@ -492,11 +586,13 @@ async def test_deliver_summary_exception_is_logged_not_raised() -> None:
 
     with patch.object(logging.getLogger(_DELIVERY_LOGGER), "exception") as log_exc:
         await delivery.deliver_summary(info, "summary", "completed")
+        await _await_reaction_tasks(delivery)
 
     # Must not raise — we reach this line.
-    log_exc.assert_called_once()
-    assert "Failed to deliver subsession" in log_exc.call_args[0][0]
-    assert log_exc.call_args[0][1] == info.id
+    log_exc.assert_called()
+    # The exception is caught inside the background reaction task, not
+    # in deliver_summary itself (fire-and-forget).
+    assert "Reaction task failed for subsession" in log_exc.call_args[0][0]
 
 
 @pytest.mark.asyncio
@@ -510,9 +606,10 @@ async def test_deliver_result_exception_is_logged_not_raised() -> None:
 
     with patch.object(logging.getLogger(_DELIVERY_LOGGER), "exception") as log_exc:
         await delivery.deliver_result(info, 1, "text")
+        await _await_reaction_tasks(delivery)
 
-    log_exc.assert_called_once()
-    assert "Failed to deliver subsession" in log_exc.call_args[0][0]
+    log_exc.assert_called()
+    assert "Reaction task failed for subsession" in log_exc.call_args[0][0]
 
 
 @pytest.mark.asyncio
@@ -565,9 +662,10 @@ async def test_deliver_summary_acquires_run_serializer_lock() -> None:
     info = _make_info(parent_id=None)
 
     await delivery.deliver_summary(info, "s", "completed")
+    await _await_reaction_tasks(delivery)
 
-    lock.__aenter__.assert_awaited_once()
-    lock.__aexit__.assert_awaited_once()
+    lock.__aenter__.assert_awaited()
+    lock.__aexit__.assert_awaited()
 
 
 @pytest.mark.asyncio
