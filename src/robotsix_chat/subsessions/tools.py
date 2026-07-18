@@ -58,6 +58,7 @@ def build_subsession_tools(
         tools.extend(_build_spawn_and_control_tools(env, ctx))
     if close_state is not None and ctx.subsession_id is not None:
         tools.append(_build_complete_tool(close_state, ctx.subsession_id, env.registry))
+        tools.append(_build_set_checkpoint_tool(ctx.subsession_id, env.registry))
     return tools
 
 
@@ -275,6 +276,36 @@ def _build_complete_tool(
         )
 
     return complete_subsession
+
+
+def _build_set_checkpoint_tool(sub_id: str, registry: SubsessionRegistry) -> Any:
+    """Build the checkpoint-update tool bound to *sub_id*."""
+
+    async def set_checkpoint(data: dict[str, object]) -> str:
+        """Update this subsession's checkpoint with arbitrary key/value data.
+
+        The checkpoint persists across restarts — use it to store state
+        that recovery needs: monitored ticket id, last-known ticket state,
+        completion criteria, consecutive-failure counters, etc.  All keys
+        must be strings; values can be strings, numbers, bools, lists, or
+        nested dicts.  Pass an empty dict to clear the checkpoint.
+
+        Only the most recent call's data is kept — each call REPLACES the
+        entire checkpoint, so include ALL the fields you want to keep.
+        """
+        if not isinstance(data, dict):
+            return "set_checkpoint: data must be a dict of string keys."
+        cleaned: dict[str, object] = {}
+        for k, v in data.items():
+            if not isinstance(k, str):
+                return f"set_checkpoint: key {k!r} is not a string."
+            cleaned[str(k)] = v
+        ok = registry.update_checkpoint(sub_id, cleaned or None)
+        if not ok:
+            return "set_checkpoint: this subsession is no longer active."
+        return f"Checkpoint updated ({len(cleaned)} keys)."
+
+    return set_checkpoint
 
 
 def _format_info(info: SubsessionInfo) -> str:

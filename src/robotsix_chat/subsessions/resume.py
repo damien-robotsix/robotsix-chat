@@ -95,6 +95,14 @@ def _rebuild_turn_history(entry: Mapping[str, object]) -> list[tuple[str, str]]:
     return pairs
 
 
+def _rebuild_checkpoint(entry: Mapping[str, object]) -> dict[str, object] | None:
+    """Reconstruct the ``checkpoint`` dict from a persisted entry."""
+    raw = entry.get("checkpoint")
+    if isinstance(raw, dict):
+        return {str(k): v for k, v in raw.items()}
+    return None
+
+
 # -- typed dicts ----------------------------------------------------------
 
 
@@ -180,6 +188,7 @@ def _resume_periodic_entry(
         runs=runs,
         completed_runs=completed_runs,
         turn_history=_rebuild_turn_history(entry),
+        checkpoint=_rebuild_checkpoint(entry),
     )
     return _ResumeFate(
         owner_session_id=owner,
@@ -214,6 +223,7 @@ def _resume_user_chat_entry(
         owner_session_id=owner,
         **common,
         sub_id=sub_id,
+        checkpoint=_rebuild_checkpoint(entry),
     )
     return _ResumeFate(
         owner_session_id=owner,
@@ -375,6 +385,7 @@ def _restore_entry(
             close_reason=_entry_opt_str(entry, "close_reason"),
             error=_entry_opt_str(entry, "error"),
             completed_runs=_rebuild_completed_runs(entry),
+            checkpoint=_rebuild_checkpoint(entry),
         )
     except ValueError:
         logger.warning("Skipping malformed persisted subsession %r", sub_id)

@@ -354,6 +354,7 @@ class SubsessionRegistry:
         runs: int = 0,
         completed_runs: set[int] | None = None,
         turn_history: list[tuple[str, str]] | None = None,
+        checkpoint: dict[str, object] | None = None,
     ) -> SubsessionInfo:
         """Register a new subsession and publish ``subsession_started``.
 
@@ -371,7 +372,9 @@ class SubsessionRegistry:
         every historical one. *turn_history* seeds the agent-visible
         replay window the same way, so a resumed periodic worker picks
         up with the context it had before the restart instead of
-        starting blank.
+        starting blank.  *checkpoint* seeds task-specific state (e.g.
+        monitored ticket id and last-known state) so recovery can
+        decide whether to resume the monitoring loop or close.
         """
         if sub_id is not None and sub_id in self._subs:
             return self._subs[sub_id]
@@ -394,6 +397,7 @@ class SubsessionRegistry:
             runs=runs,
             completed_runs=completed_runs or set(),
             turn_history=turn_history or [],
+            checkpoint=checkpoint,
         )
         self._subs[info.id] = info
         self._inboxes[info.id] = deque()
@@ -735,6 +739,21 @@ class SubsessionRegistry:
         if run_n in info.completed_runs:
             return False
         info.completed_runs.add(run_n)
+        self._store.persist()
+        return True
+
+    def update_checkpoint(
+        self, sub_id: str, checkpoint: dict[str, object] | None
+    ) -> bool:
+        """Replace the checkpoint data for *sub_id* and persist.
+
+        Returns ``True`` when the update was applied; ``False`` when the
+        subsession is unknown (including already-terminal).
+        """
+        info = self._subs.get(sub_id)
+        if info is None:
+            return False
+        info.checkpoint = checkpoint
         self._store.persist()
         return True
 
