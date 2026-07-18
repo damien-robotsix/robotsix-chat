@@ -1276,10 +1276,16 @@
     }
   }
 
-  function forceScrollToBottom() {
-    // Unconditionally scroll to the bottom — used on session switch/load
-    // so the latest messages are always visible.
-    chatEl.scrollTop = chatEl.scrollHeight;
+  function scheduleForceScrollToBottom() {
+    // Defer the unconditional scroll until after the browser has laid out
+    // newly inserted DOM (double rAF).  Without this, scrollHeight is
+    // stale and the scroll lands short of the true bottom — a long-standing
+    // bug on session switch and initial page load.
+    requestAnimationFrame(function () {
+      requestAnimationFrame(function () {
+        chatEl.scrollTop = chatEl.scrollHeight;
+      });
+    });
   }
 
   function setConnectionStatus(ok) {
@@ -1869,7 +1875,7 @@
           addAssistantBubble(turn[1]);
         }
       }
-      forceScrollToBottom();
+      scheduleForceScrollToBottom();
       // Refresh the conversation summary once history is loaded.
       refreshSummary();
     }).catch(function () {
