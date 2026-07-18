@@ -483,6 +483,7 @@
   function refreshSessions() {
     fetchSessions().then(function (data) {
       updateUnreadFromList(data.sessions || []);
+      markSessionRead(activeSessionId);
       renderSessionList(data);
       // NOTE: we purposely do NOT update activeSessionId from the server's
       // active_session_id here — that would silently clobber the user's choice
