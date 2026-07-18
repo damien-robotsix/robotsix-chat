@@ -1,0 +1,1 @@
+Conversation and subsession persistence now write atomically (tmp + rename), and a corrupt `conversations.json` is preserved as `conversations.json.corrupt-<ts>` on load instead of being silently overwritten.
