@@ -9,6 +9,7 @@
 - Extract `build_transcript()` utility into `_shared.py` to deduplicate a conversation transcript assembly loop shared between `chat.py` and `sessions.py`.
 - Fix: ensure changelog fragment files (``changelog.d/*.misc.md``) end with a trailing newline, eliminating a ~7 min wasted CI ``fixing_ci`` cycle per ticket.  The fix overrides ``robotsix_mill.stages.towncrier`` via a local shadow package in ``src/robotsix_mill/``.
 - Extract shared `_request_json(method, path, body)` from near-identical `_post_json` and `_patch_json` in `GitHubDirectClient` to eliminate 9 duplicated lines.
+- Add docstring to `ConversationStore._evict_overflow` explaining its session-eviction and owner-registry cleanup behavior.
 - Fix false unread highlight on the previously-active session: `refreshSessions()` now calls `markSessionRead(activeSessionId)` to keep the active session's unread baseline current on every auto-refresh cycle.
 - Enable `state_sync` periodic check (`.robotsix-mill/periodic/state_sync.yaml`) to cross-reference enum members against string-literal reference sites across the codebase.
 - Chat UI: LLM-generated session titles after the first assistant reply (uses the summary model tier). Fix sidebar "X days ago" timestamps by handling Unix-second timestamps correctly.
