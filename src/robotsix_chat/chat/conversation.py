@@ -835,6 +835,11 @@ class ConversationStore:
             self._serializer.persist(self._owners, self._sessions)
 
     def _evict_overflow(self) -> None:
+        """Pop the least-recently-used session when the cap is exceeded.
+
+        Removes the evicted session id from every owner's ``session_ids``
+        registry.
+        """
         while len(self._sessions) > self._max_conversations:
             evicted_sid, _ = self._sessions.popitem(last=False)
             # Remove from all owner registries.
