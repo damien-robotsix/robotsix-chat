@@ -610,8 +610,12 @@ class SubsessionRegistry:
             logger.warning("Could not create parent dir for %s", self._store_path)
             return
         entries = [info.snapshot(with_transcript=True) for info in self._subs.values()]
+        # Write-then-rename so a crash or container kill mid-write can never
+        # truncate the store.
+        tmp_path = self._store_path.with_suffix(self._store_path.suffix + ".tmp")
         try:
-            self._store_path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
+            tmp_path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
+            tmp_path.replace(self._store_path)
         except OSError:
             logger.exception("Failed to persist subsessions to %s", self._store_path)
 

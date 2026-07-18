@@ -628,3 +628,53 @@ def test_resolve_session_guards_against_cycles() -> None:
     store.get_session(b).compacted_into = a  # type: ignore[union-attr]
 
     assert store.resolve_session(a) in {a, b}
+
+
+def test_persist_is_atomic_no_tmp_left_behind() -> None:
+    """persist() writes via tmp+rename and leaves no .tmp file behind."""
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        persist_path = Path(f.name)
+
+    try:
+        store = _store(persist_path=persist_path)
+        sid = cast(str, store.create_session("c1")["session_id"])
+        store.record(sid, "c1", "hello", "hi")
+
+        raw = json.loads(persist_path.read_text(encoding="utf-8"))
+        assert raw["c1"]["sessions"][0]["turns"] == [["hello", "hi"]]
+        tmp_path = persist_path.with_suffix(persist_path.suffix + ".tmp")
+        assert not tmp_path.exists()
+    finally:
+        persist_path.unlink(missing_ok=True)
+
+
+def test_corrupt_persist_file_is_preserved_not_overwritten() -> None:
+    """A corrupt store file is renamed aside on load, not silently clobbered.
+
+    Regression test for the failure mode where a container kill mid-write
+    truncates conversations.json, the next boot fails to parse it, starts
+    empty, and the first record() permanently overwrites all history.
+    """
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        persist_path = Path(f.name)
+    corrupt_content = '{"c1": {"active_session_id": "s0", "sessi'  # torn write
+    persist_path.write_text(corrupt_content, encoding="utf-8")
+
+    try:
+        store = _store(persist_path=persist_path)
+        # Store starts empty — nothing restored from the corrupt file
+        # (list_sessions auto-creates one fresh, zero-turn session).
+        sessions, _ = store.list_sessions("c1")
+        assert all(s["turn_count"] == 0 for s in sessions)
+        # The corrupt file was moved aside, with its content intact.
+        backups = list(persist_path.parent.glob(persist_path.name + ".corrupt-*"))
+        assert len(backups) == 1
+        assert backups[0].read_text(encoding="utf-8") == corrupt_content
+        # New writes recreate the store file rather than touching the backup.
+        sid = cast(str, store.create_session("c1")["session_id"])
+        store.record(sid, "c1", "hello", "hi")
+        assert json.loads(persist_path.read_text(encoding="utf-8"))
+    finally:
+        persist_path.unlink(missing_ok=True)
+        for b in persist_path.parent.glob(persist_path.name + ".corrupt-*"):
+            b.unlink(missing_ok=True)
