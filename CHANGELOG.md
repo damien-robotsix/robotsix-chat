@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Refactor `MessageCoalescer._process_batch`: extract title-generation into `_maybe_generate_title` and SSE fan-out into `_fan_out` helper, reducing nesting depth from 7 to 5.
+- Refactor `SubsessionRegistry` into three classes: extract `RegistryStore` (JSON persistence) and `RegistryIndex` (owner-scoped queries and tree operations), with `SubsessionRegistry` retaining core lifecycle and delegating to both.
 - UI: conversation view now auto-scrolls to the bottom on session switch/load so the latest messages are always visible.
 - Config: ``_normalize_legacy_empty_strings`` validator now also coerces JS-toString sentinels (``"[object Object]"``, ``"undefined"``, ``"null"``) to the appropriate empty container, preventing config corruption from a browser-side serialisation bug in the Configure UI.
 - Fix summary panel layout shift: render summary as an absolute overlay

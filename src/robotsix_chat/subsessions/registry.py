@@ -59,6 +59,240 @@ _MAX_TERMINAL_ENTRIES = 50
 _MAX_TURN_HISTORY_ENTRIES = 20
 
 
+def _truncate(text: str, limit: int) -> str:
+    """Clip *text* to *limit* characters with an ellipsis marker."""
+    return text if len(text) <= limit else text[: limit - 1] + "…"
+
+
+class RegistryStore:
+    """JSON persistence for subsession records — file I/O and terminal retention.
+
+    Owns the store-path, serialisation, and pruning of old terminal
+    entries.  Mutates the shared dicts in-place so no return-value
+    synchronisation is needed.
+    """
+
+    def __init__(
+        self,
+        store_path: Path | None,
+        subs: dict[str, SubsessionInfo],
+        inboxes: dict[str, deque[InboxMessage]],
+        wake_events: dict[str, asyncio.Event],
+        by_owner: dict[str, set[str]],
+    ) -> None:
+        """*store_path* is the JSON file; the dicts are shared references."""
+        self._store_path = store_path
+        self._subs = subs
+        self._inboxes = inboxes
+        self._wake_events = wake_events
+        self._by_owner = by_owner
+
+    # ------------------------------------------------------------------
+    # public (called by SubsessionRegistry / startup)
+    # ------------------------------------------------------------------
+
+    def load_persisted(self) -> list[dict[str, object]]:
+        """Read raw persisted entries for the startup resume hook.
+
+        Returns ``[]`` when persistence is disabled, the file is missing,
+        or it cannot be parsed (a corrupt store must not block startup).
+        """
+        if self._store_path is None or not self._store_path.exists():
+            return []
+        try:
+            raw = json.loads(self._store_path.read_text(encoding="utf-8"))
+        except OSError, ValueError:
+            logger.exception("Could not read subsession store %s", self._store_path)
+            return []
+        return raw if isinstance(raw, list) else []
+
+    def persist(self) -> None:
+        """Write the full registry state as JSON (skipped when disabled)."""
+        if self._store_path is None:
+            return
+        try:
+            self._store_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            logger.warning("Could not create parent dir for %s", self._store_path)
+            return
+        entries = [info.snapshot(with_transcript=True) for info in self._subs.values()]
+        # Write-then-rename so a crash or container kill mid-write can never
+        # truncate the store.
+        tmp_path = self._store_path.with_suffix(self._store_path.suffix + ".tmp")
+        try:
+            tmp_path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
+            tmp_path.replace(self._store_path)
+        except OSError:
+            logger.exception("Failed to persist subsessions to %s", self._store_path)
+
+    def prune_terminal(self) -> None:
+        """Drop the oldest terminal entries beyond the retention cap."""
+        terminal = sorted(
+            (info for info in self._subs.values() if not info.is_active),
+            key=lambda i: i.last_activity_at,
+        )
+        for info in terminal[: max(0, len(terminal) - _MAX_TERMINAL_ENTRIES)]:
+            self._subs.pop(info.id, None)
+            self._inboxes.pop(info.id, None)
+            self._wake_events.pop(info.id, None)
+            owner_set = self._by_owner.get(info.owner_session_id)
+            if owner_set is not None:
+                owner_set.discard(info.id)
+                if not owner_set:
+                    del self._by_owner[info.owner_session_id]
+
+
+class RegistryIndex:
+    """Owner-scoped queries and tree operations.
+
+    Owns the ``_by_owner`` index and provides fixpoint tree walks,
+    owner reassignment, orphan reaping, and bulk-close operations.
+    Receives shared dict references from the parent
+    :class:`SubsessionRegistry` and calls back into it for SSE publishing
+    and persistence.
+    """
+
+    def __init__(
+        self,
+        subs: dict[str, SubsessionInfo],
+        by_owner: dict[str, set[str]],
+        running: dict[str, asyncio.Task[None]],
+        registry: SubsessionRegistry,
+    ) -> None:
+        """*subs*, *by_owner*, *running* are shared refs; *registry* is the parent."""
+        self._subs = subs
+        self._by_owner = by_owner
+        self._running = running
+        self._registry = registry
+
+    # ------------------------------------------------------------------
+    # queries
+    # ------------------------------------------------------------------
+
+    def list_for_owner(self, owner_session_id: str) -> list[SubsessionInfo]:
+        """Return the whole subsession tree for an owner, oldest first."""
+        infos = [
+            self._subs[sub_id]
+            for sub_id in self._by_owner.get(owner_session_id, ())
+            if sub_id in self._subs
+        ]
+        return sorted(infos, key=lambda i: i.created_at)
+
+    def list_descendants(self, root_id: str) -> list[SubsessionInfo]:
+        """Return every (transitive) child of subsession *root_id*."""
+        root = self._subs.get(root_id)
+        if root is None:
+            return []
+        tree = self.list_for_owner(root.owner_session_id)
+        descendants: list[SubsessionInfo] = []
+        frontier = {root_id}
+        # Tree is small (bounded by the concurrency cap + terminal tail);
+        # a simple fixpoint pass keeps this dependency-free.
+        changed = True
+        while changed:
+            changed = False
+            for info in tree:
+                if info.parent_id in frontier and info.id not in frontier:
+                    frontier.add(info.id)
+                    descendants.append(info)
+                    changed = True
+        return descendants
+
+    # ------------------------------------------------------------------
+    # mutations
+    # ------------------------------------------------------------------
+
+    def reap_orphans(self) -> int:
+        """Cancel any timer whose subsession id is not in a conversation tree.
+
+        An orphaned subsession has a live worker task but no tree
+        membership — the record was removed while the timer survived.
+        Returns the number of timers cancelled.
+        """
+        orphaned: list[str] = []
+        for sub_id, task in list(self._running.items()):
+            if task.done():
+                continue
+            found = any(sub_id in owner_ids for owner_ids in self._by_owner.values())
+            if not found:
+                orphaned.append(sub_id)
+
+        for sub_id in orphaned:
+            orphan_task = self._running.get(sub_id)
+            if orphan_task is not None and not orphan_task.done():
+                orphan_task.cancel()
+            logger.warning(
+                "Reaped orphaned subsession timer %s — tree record was lost.",
+                sub_id,
+            )
+            # Transition to FAILED so the subsession no longer counts
+            # against the concurrency cap and shows as terminal in the
+            # UI.  _close_and_publish handles the frame, status mutation
+            # and persistence atomically.
+            info = self._subs.get(sub_id)
+            if info is not None:
+                self._registry._close_and_publish(
+                    info,
+                    status=SubsessionStatus.FAILED,
+                    summary=(
+                        "This subsession's tree record was lost; its "
+                        "timer has been cancelled."
+                    ),
+                    error="orphaned_timer_reaped",
+                )
+        return len(orphaned)
+
+    def close_all_for_owner(self, owner_session_id: str, *, reason: str) -> int:
+        """Close every active subsession owned by *owner_session_id*.
+
+        Used when a chat session is closed/deleted so its background work
+        does not outlive it.  No summaries are delivered — the parent
+        session is going away.  Returns the number actually closed.
+        """
+        closed = 0
+        for sub_id in list(self._by_owner.get(owner_session_id, ())):
+            if self._registry.cancel_and_close(
+                sub_id, reason=reason, closed_by="system"
+            ):
+                closed += 1
+        return closed
+
+    def reassign_owner(
+        self, old_owner_session_id: str, new_owner_session_id: str
+    ) -> int:
+        """Move every subsession owned by *old_owner_session_id* to the new owner.
+
+        Used when an idle-timeout compaction replaces a chat session with a
+        continuation session: the whole subsession tree (all kinds, all
+        statuses) follows the conversation, so running work keeps delivering
+        summaries to the session the user is actually in and the UI panel for
+        the continuation shows the full tree.
+
+        Publishes a ``subsession_started`` frame per moved subsession to the
+        new owner's event stream so an already-subscribed browser picks them
+        up without a refetch.  Returns the number of subsessions moved.
+        """
+        if old_owner_session_id == new_owner_session_id:
+            return 0
+        sub_ids = self._by_owner.pop(old_owner_session_id, None)
+        if not sub_ids:
+            return 0
+        moved = 0
+        for sub_id in sub_ids:
+            info = self._subs.get(sub_id)
+            if info is None:
+                continue
+            info.owner_session_id = new_owner_session_id
+            self._by_owner[new_owner_session_id].add(sub_id)
+            self._registry._publish(
+                new_owner_session_id,
+                subsession_started_frame(info.snapshot()),
+            )
+            moved += 1
+        self._registry._store.persist()
+        return moved
+
+
 class SubsessionRegistry:
     """Track every subsession in the process (see module docstring)."""
 
@@ -79,7 +313,6 @@ class SubsessionRegistry:
         persisted across restarts.
         """
         self._event_sink = event_sink
-        self._store_path = store_path
         self._clock = clock
         self._id_factory = id_factory or (lambda: uuid.uuid4().hex)
         self._transcript_max_entries = transcript_max_entries
@@ -93,6 +326,12 @@ class SubsessionRegistry:
         self._wake_events: dict[str, asyncio.Event] = {}
         # owner_session_id → set of sub_ids (whole tree, incl. terminal).
         self._by_owner: dict[str, set[str]] = defaultdict(set)
+
+        # Extracted collaborators.
+        self._store = RegistryStore(
+            store_path, self._subs, self._inboxes, self._wake_events, self._by_owner
+        )
+        self._index = RegistryIndex(self._subs, self._by_owner, self._running, self)
 
     # ------------------------------------------------------------------
     # lifecycle
@@ -160,9 +399,9 @@ class SubsessionRegistry:
         self._inboxes[info.id] = deque()
         self._wake_events[info.id] = asyncio.Event()
         self._by_owner[owner_session_id].add(info.id)
-        self._prune_terminal()
+        self._store.prune_terminal()
         self._publish(owner_session_id, subsession_started_frame(info.snapshot()))
-        self._persist()
+        self._store.persist()
         return info
 
     def attach_task(self, sub_id: str, task: asyncio.Task[None]) -> None:
@@ -221,7 +460,7 @@ class SubsessionRegistry:
                 last_result=info.last_result,
             ),
         )
-        self._persist()
+        self._store.persist()
 
     def append_transcript(self, sub_id: str, role: str, text: str) -> None:
         """Append one transcript entry, capped, and publish it as a frame."""
@@ -237,7 +476,7 @@ class SubsessionRegistry:
             info.owner_session_id,
             subsession_message_frame(info.id, role, text, now),
         )
-        self._persist()
+        self._store.persist()
 
     def append_turn_history(self, sub_id: str, turn_input: str, reply: str) -> None:
         """Record one (turn_input, reply) pair for context-on-resume, capped."""
@@ -247,7 +486,7 @@ class SubsessionRegistry:
         info.turn_history.append((turn_input, reply))
         if len(info.turn_history) > _MAX_TURN_HISTORY_ENTRIES:
             del info.turn_history[:-_MAX_TURN_HISTORY_ENTRIES]
-        self._persist()
+        self._store.persist()
 
     def enqueue_message(self, sub_id: str, role: str, text: str) -> bool:
         """Queue a message for the subsession's next turn boundary.
@@ -339,7 +578,7 @@ class SubsessionRegistry:
             )
 
         self._publish(info.owner_session_id, frame)
-        self._persist()
+        self._store.persist()
         return info
 
     def mark_closed(
@@ -429,55 +668,42 @@ class SubsessionRegistry:
             closed_by="system",
         )
 
-    def close_all_for_owner(self, owner_session_id: str, *, reason: str) -> int:
-        """Close every active subsession owned by *owner_session_id*.
+    # ------------------------------------------------------------------
+    # delegation: persistence
+    # ------------------------------------------------------------------
 
-        Used when a chat session is closed/deleted so its background work
-        does not outlive it.  No summaries are delivered — the parent
-        session is going away.  Returns the number actually closed.
-        """
-        closed = 0
-        for sub_id in list(self._by_owner.get(owner_session_id, ())):
-            if self.cancel_and_close(sub_id, reason=reason, closed_by="system"):
-                closed += 1
-        return closed
+    def load_persisted(self) -> list[dict[str, object]]:
+        """Read raw persisted entries for the startup resume hook."""
+        return self._store.load_persisted()
+
+    # ------------------------------------------------------------------
+    # delegation: index / queries
+    # ------------------------------------------------------------------
+
+    def list_for_owner(self, owner_session_id: str) -> list[SubsessionInfo]:
+        """Return the whole subsession tree for an owner, oldest first."""
+        return self._index.list_for_owner(owner_session_id)
+
+    def list_descendants(self, root_id: str) -> list[SubsessionInfo]:
+        """Return every (transitive) child of subsession *root_id*."""
+        return self._index.list_descendants(root_id)
+
+    def reap_orphans(self) -> int:
+        """Cancel any timer whose subsession id is not in a conversation tree."""
+        return self._index.reap_orphans()
+
+    def close_all_for_owner(self, owner_session_id: str, *, reason: str) -> int:
+        """Close every active subsession owned by *owner_session_id*."""
+        return self._index.close_all_for_owner(owner_session_id, reason=reason)
 
     def reassign_owner(
         self, old_owner_session_id: str, new_owner_session_id: str
     ) -> int:
-        """Move every subsession owned by *old_owner_session_id* to the new owner.
-
-        Used when an idle-timeout compaction replaces a chat session with a
-        continuation session: the whole subsession tree (all kinds, all
-        statuses) follows the conversation, so running work keeps delivering
-        summaries to the session the user is actually in and the UI panel for
-        the continuation shows the full tree.
-
-        Publishes a ``subsession_started`` frame per moved subsession to the
-        new owner's event stream so an already-subscribed browser picks them
-        up without a refetch.  Returns the number of subsessions moved.
-        """
-        if old_owner_session_id == new_owner_session_id:
-            return 0
-        sub_ids = self._by_owner.pop(old_owner_session_id, None)
-        if not sub_ids:
-            return 0
-        moved = 0
-        for sub_id in sub_ids:
-            info = self._subs.get(sub_id)
-            if info is None:
-                continue
-            info.owner_session_id = new_owner_session_id
-            self._by_owner[new_owner_session_id].add(sub_id)
-            self._publish(
-                new_owner_session_id, subsession_started_frame(info.snapshot())
-            )
-            moved += 1
-        self._persist()
-        return moved
+        """Move every subsession owned by *old_owner_session_id* to the new owner."""
+        return self._index.reassign_owner(old_owner_session_id, new_owner_session_id)
 
     # ------------------------------------------------------------------
-    # queries
+    # core queries (retained on registry)
     # ------------------------------------------------------------------
 
     def now(self) -> float:
@@ -488,38 +714,9 @@ class SubsessionRegistry:
         """Return the record for *sub_id*, or ``None``."""
         return self._subs.get(sub_id)
 
-    def list_for_owner(self, owner_session_id: str) -> list[SubsessionInfo]:
-        """Return the whole subsession tree for an owner, oldest first."""
-        infos = [
-            self._subs[sub_id]
-            for sub_id in self._by_owner.get(owner_session_id, ())
-            if sub_id in self._subs
-        ]
-        return sorted(infos, key=lambda i: i.created_at)
-
     def list_all(self) -> list[SubsessionInfo]:
         """Return every registered subsession (all owners), oldest first."""
         return sorted(self._subs.values(), key=lambda i: i.created_at)
-
-    def list_descendants(self, root_id: str) -> list[SubsessionInfo]:
-        """Return every (transitive) child of subsession *root_id*."""
-        root = self._subs.get(root_id)
-        if root is None:
-            return []
-        tree = self.list_for_owner(root.owner_session_id)
-        descendants: list[SubsessionInfo] = []
-        frontier = {root_id}
-        # Tree is small (bounded by the concurrency cap + terminal tail);
-        # a simple fixpoint pass keeps this dependency-free.
-        changed = True
-        while changed:
-            changed = False
-            for info in tree:
-                if info.parent_id in frontier and info.id not in frontier:
-                    frontier.add(info.id)
-                    descendants.append(info)
-                    changed = True
-        return descendants
 
     def count_active(self) -> int:
         """Return the number of active subsessions process-wide."""
@@ -538,102 +735,8 @@ class SubsessionRegistry:
         if run_n in info.completed_runs:
             return False
         info.completed_runs.add(run_n)
-        self._persist()
+        self._store.persist()
         return True
-
-    def reap_orphans(self) -> int:
-        """Cancel any timer whose subsession id is not in a conversation tree.
-
-        An orphaned subsession has a live worker task but no tree
-        membership — the record was removed while the timer survived.
-        Returns the number of timers cancelled.
-        """
-        orphaned: list[str] = []
-        for sub_id, task in list(self._running.items()):
-            if task.done():
-                continue
-            found = any(sub_id in owner_ids for owner_ids in self._by_owner.values())
-            if not found:
-                orphaned.append(sub_id)
-
-        for sub_id in orphaned:
-            orphan_task = self._running.get(sub_id)
-            if orphan_task is not None and not orphan_task.done():
-                orphan_task.cancel()
-            logger.warning(
-                "Reaped orphaned subsession timer %s — tree record was lost.",
-                sub_id,
-            )
-            # Transition to FAILED so the subsession no longer counts
-            # against the concurrency cap and shows as terminal in the
-            # UI.  _close_and_publish handles the frame, status mutation
-            # and persistence atomically.
-            info = self._subs.get(sub_id)
-            if info is not None:
-                self._close_and_publish(
-                    info,
-                    status=SubsessionStatus.FAILED,
-                    summary=(
-                        "This subsession's tree record was lost; its "
-                        "timer has been cancelled."
-                    ),
-                    error="orphaned_timer_reaped",
-                )
-        return len(orphaned)
-
-    # ------------------------------------------------------------------
-    # persistence
-    # ------------------------------------------------------------------
-
-    def load_persisted(self) -> list[dict[str, object]]:
-        """Read raw persisted entries for the startup resume hook.
-
-        Returns ``[]`` when persistence is disabled, the file is missing,
-        or it cannot be parsed (a corrupt store must not block startup).
-        """
-        if self._store_path is None or not self._store_path.exists():
-            return []
-        try:
-            raw = json.loads(self._store_path.read_text(encoding="utf-8"))
-        except OSError, ValueError:
-            logger.exception("Could not read subsession store %s", self._store_path)
-            return []
-        return raw if isinstance(raw, list) else []
-
-    def _persist(self) -> None:
-        """Write the full registry state as JSON (skipped when disabled)."""
-        if self._store_path is None:
-            return
-        try:
-            self._store_path.parent.mkdir(parents=True, exist_ok=True)
-        except OSError:
-            logger.warning("Could not create parent dir for %s", self._store_path)
-            return
-        entries = [info.snapshot(with_transcript=True) for info in self._subs.values()]
-        # Write-then-rename so a crash or container kill mid-write can never
-        # truncate the store.
-        tmp_path = self._store_path.with_suffix(self._store_path.suffix + ".tmp")
-        try:
-            tmp_path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
-            tmp_path.replace(self._store_path)
-        except OSError:
-            logger.exception("Failed to persist subsessions to %s", self._store_path)
-
-    def _prune_terminal(self) -> None:
-        """Drop the oldest terminal entries beyond the retention cap."""
-        terminal = sorted(
-            (info for info in self._subs.values() if not info.is_active),
-            key=lambda i: i.last_activity_at,
-        )
-        for info in terminal[: max(0, len(terminal) - _MAX_TERMINAL_ENTRIES)]:
-            self._subs.pop(info.id, None)
-            self._inboxes.pop(info.id, None)
-            self._wake_events.pop(info.id, None)
-            owner_set = self._by_owner.get(info.owner_session_id)
-            if owner_set is not None:
-                owner_set.discard(info.id)
-                if not owner_set:
-                    del self._by_owner[info.owner_session_id]
 
     # ------------------------------------------------------------------
     # helpers
@@ -651,8 +754,3 @@ class SubsessionRegistry:
             if entry.role == "assistant":
                 return entry.text
         return ""
-
-
-def _truncate(text: str, limit: int) -> str:
-    """Clip *text* to *limit* characters with an ellipsis marker."""
-    return text if len(text) <= limit else text[: limit - 1] + "…"
