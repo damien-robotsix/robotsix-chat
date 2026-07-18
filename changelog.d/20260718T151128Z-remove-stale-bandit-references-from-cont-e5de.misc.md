@@ -1,0 +1,1 @@
+Remove stale bandit references from CONTRIBUTING.md
