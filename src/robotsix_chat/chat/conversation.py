@@ -131,8 +131,29 @@ class ConversationStoreSerializer:
             raw = json.loads(self._persist_path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return  # first run — no saved state yet
-        except OSError, json.JSONDecodeError:
+        except OSError:
             logger.exception("Failed to load conversations from %s", self._persist_path)
+            return
+        except json.JSONDecodeError:
+            # Preserve the corrupt file instead of silently starting empty —
+            # the next persist() would otherwise overwrite it and every
+            # session would be unrecoverable.
+            backup = self._persist_path.with_suffix(
+                self._persist_path.suffix + f".corrupt-{int(time.time())}"
+            )
+            try:
+                self._persist_path.replace(backup)
+                logger.exception(
+                    "Corrupt conversations file %s preserved as %s; starting empty",
+                    self._persist_path,
+                    backup,
+                )
+            except OSError:
+                logger.exception(
+                    "Failed to load conversations from %s (and could not "
+                    "preserve the corrupt file)",
+                    self._persist_path,
+                )
             return
 
         if not isinstance(raw, dict):
@@ -325,8 +346,12 @@ class ConversationStoreSerializer:
                     "sessions": sessions_list,
                 }
 
+        # Write-then-rename so a crash or container kill mid-write can never
+        # truncate the store — a torn write here loses every session.
+        tmp_path = self._persist_path.with_suffix(self._persist_path.suffix + ".tmp")
         try:
-            self._persist_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            tmp_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            tmp_path.replace(self._persist_path)
         except OSError:
             logger.exception(
                 "Failed to persist conversations to %s", self._persist_path
