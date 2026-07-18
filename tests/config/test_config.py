@@ -628,3 +628,116 @@ def test_coerce_memory_nested_empty_string_to_dict() -> None:
     assert settings.memory.llm.model == "openrouter/anthropic/claude-haiku-4.5"
     assert settings.memory.langfuse.host == "https://cloud.langfuse.com"
     assert settings.memory.embedding.model == "bge-m3"
+
+
+# ---------------------------------------------------------------------------
+# JS-toString sentinel coercion ([object Object], undefined, null)
+# ---------------------------------------------------------------------------
+
+
+def test_coerce_object_object_sentinel_top_level_object() -> None:
+    """``memory="[object Object]"`` is coerced to ``{}`` → defaults."""
+    settings = Settings(memory="[object Object]")  # type: ignore[arg-type]
+    assert settings.memory.enabled is False
+    assert settings.memory.data_dir == "/data/cognee"
+
+
+def test_coerce_object_object_sentinel_nested_memory_llm() -> None:
+    """``memory.llm="[object Object]"`` is coerced to ``{}`` → defaults."""
+    settings = Settings(
+        memory={"llm": "[object Object]"}  # type: ignore[arg-type]
+    )
+    assert settings.memory.llm.model == "openrouter/anthropic/claude-haiku-4.5"
+
+
+def test_coerce_object_object_sentinel_nested_memory_embedding() -> None:
+    """``memory.embedding="[object Object]"`` is coerced to ``{}`` → defaults."""
+    settings = Settings(
+        memory={"embedding": "[object Object]"}  # type: ignore[arg-type]
+    )
+    assert settings.memory.embedding.model == "bge-m3"
+
+
+def test_coerce_object_object_sentinel_nested_memory_langfuse() -> None:
+    """``memory.langfuse="[object Object]"`` is coerced to ``{}`` → defaults."""
+    settings = Settings(
+        memory={"langfuse": "[object Object]"}  # type: ignore[arg-type]
+    )
+    assert settings.memory.langfuse.host == "https://cloud.langfuse.com"
+
+
+def test_coerce_object_object_sentinel_top_level_list() -> None:
+    """``cors_allow_origins="[object Object]"`` is coerced to ``[]``."""
+    settings = Settings(cors_allow_origins="[object Object]")  # type: ignore[arg-type]
+    assert settings.cors_allow_origins == []
+
+
+def test_coerce_object_object_sentinel_nested_refdocs_repos() -> None:
+    """``refdocs.repos="[object Object]"`` is coerced to ``[]``."""
+    settings = Settings(refdocs={"repos": "[object Object]"})  # type: ignore[arg-type]
+    assert settings.refdocs.repos == []
+
+
+def test_coerce_object_object_sentinel_nested_component_client_components() -> None:
+    """``component_client.components="[object Object]"`` is coerced to ``[]``."""
+    settings = Settings(
+        component_client={"components": "[object Object]"}  # type: ignore[arg-type]
+    )
+    assert settings.component_client.components == []
+
+
+def test_coerce_undefined_sentinel_top_level_object() -> None:
+    """``memory="undefined"`` is coerced to ``{}`` → defaults."""
+    settings = Settings(memory="undefined")  # type: ignore[arg-type]
+    assert settings.memory.enabled is False
+
+
+def test_coerce_null_sentinel_top_level_object() -> None:
+    """``memory="null"`` is coerced to ``{}`` → defaults."""
+    settings = Settings(memory="null")  # type: ignore[arg-type]
+    assert settings.memory.enabled is False
+
+
+def test_coerce_undefined_sentinel_top_level_list() -> None:
+    """``cors_allow_origins="undefined"`` is coerced to ``[]``."""
+    settings = Settings(cors_allow_origins="undefined")  # type: ignore[arg-type]
+    assert settings.cors_allow_origins == []
+
+
+# ---------------------------------------------------------------------------
+# Round-trip integrity: model_dump → model_validate
+# ---------------------------------------------------------------------------
+
+
+def test_roundtrip_nested_object_field_preserves_structure() -> None:
+    """``model_dump()`` → ``model_validate()`` round-trips a nested object intact."""
+    original = Settings()
+    dumped = original.model_dump()
+    reloaded = Settings.model_validate(dumped)
+    assert reloaded.memory.llm.model == original.memory.llm.model
+    assert reloaded.memory.llm.provider == original.memory.llm.provider
+    assert reloaded.memory.llm.endpoint == original.memory.llm.endpoint
+    # Whole nested dict is equal
+    assert reloaded.memory.llm.model_dump() == original.memory.llm.model_dump()
+
+
+def test_roundtrip_empty_array_field_preserves_structure() -> None:
+    """Empty ``list`` fields round-trip as ``[]``, not ``""``."""
+    original = Settings(cors_allow_origins=[])
+    dumped = original.model_dump()
+    reloaded = Settings.model_validate(dumped)
+    assert reloaded.cors_allow_origins == []
+    assert isinstance(reloaded.cors_allow_origins, list)
+
+
+def test_roundtrip_empty_object_field_preserves_structure() -> None:
+    """Empty ``dict`` fields round-trip as ``{}``, not ``""``."""
+    # Start from defaults — memory.langfuse is an object with defaults
+    original = Settings()
+    dumped = original.model_dump()
+    reloaded = Settings.model_validate(dumped)
+    assert isinstance(reloaded.memory.langfuse, dict) or hasattr(
+        reloaded.memory.langfuse, "model_dump"
+    )
+    # Verify it's not a string
+    assert not isinstance(dumped.get("memory", {}).get("langfuse"), str)

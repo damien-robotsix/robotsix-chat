@@ -349,22 +349,32 @@ class Settings(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _normalize_legacy_empty_strings(cls, data: Any) -> Any:
-        """Coerce legacy ``""`` placeholders to proper empty containers.
+        """Coerce legacy ``""`` and JS-toString sentinels to proper containers.
 
         Older deployed configs used ``""`` for optional array/object
-        fields that were never configured.  Pydantic rejects those, which
-        blocks partial config updates via the deploy API.  Normalize them
-        here so validation passes on the untouched legacy keys.
+        fields that were never configured, and a browser-side serialisation
+        bug in the Configure UI sometimes passes ``String(value)`` instead
+        of ``JSON.stringify(value)``, yielding sentinels like
+        ``"[object Object]"`` for objects.
+
+        Normalize all of these here so validation passes on untouched or
+        corrupted keys rather than failing with a type-mismatch error.
         """
         if not isinstance(data, dict):
             return data
 
-        # Top-level list fields that tolerate "" → []
+        # Strings that indicate a JS/browser serialisation bug — an object
+        # or array was passed through ``String()`` (or implicit
+        # ``toString()``) instead of ``JSON.stringify``.
+        _bad: frozenset[str] = frozenset({"[object Object]", "undefined", "null"})
+
+        # Top-level list fields — tolerate "" and JS sentinels → []
         for key in ("cors_allow_origins", "allowed_image_media_types"):
-            if data.get(key) == "":
+            val = data.get(key)
+            if val == "" or (isinstance(val, str) and val in _bad):
                 data[key] = []
 
-        # Top-level object fields that tolerate "" → {}
+        # Top-level object fields — tolerate "" and JS sentinels → {}
         _object_keys = (
             "langfuse",
             "memory",
@@ -387,22 +397,25 @@ class Settings(BaseModel):
             "feedback",
         )
         for key in _object_keys:
-            if data.get(key) == "":
+            val = data.get(key)
+            if val == "" or (isinstance(val, str) and val in _bad):
                 data[key] = {}
 
         # Nested list fields inside object sub-models
-        if isinstance(data.get("refdocs"), dict) and data["refdocs"].get("repos") == "":
-            data["refdocs"]["repos"] = []
-        if (
-            isinstance(data.get("component_client"), dict)
-            and data["component_client"].get("components") == ""
-        ):
-            data["component_client"]["components"] = []
+        if isinstance(data.get("refdocs"), dict):
+            rv = data["refdocs"].get("repos")
+            if rv == "" or (isinstance(rv, str) and rv in _bad):
+                data["refdocs"]["repos"] = []
+        if isinstance(data.get("component_client"), dict):
+            cv = data["component_client"].get("components")
+            if cv == "" or (isinstance(cv, str) and cv in _bad):
+                data["component_client"]["components"] = []
 
         # Nested object fields inside MemorySettings
         if isinstance(data.get("memory"), dict):
             for key in ("llm", "langfuse", "embedding"):
-                if data["memory"].get(key) == "":
+                mv = data["memory"].get(key)
+                if mv == "" or (isinstance(mv, str) and mv in _bad):
                     data["memory"][key] = {}
 
         return data

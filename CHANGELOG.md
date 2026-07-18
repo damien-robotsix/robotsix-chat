@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - UI: conversation view now auto-scrolls to the bottom on session switch/load so the latest messages are always visible.
+- Config: ``_normalize_legacy_empty_strings`` validator now also coerces JS-toString sentinels (``"[object Object]"``, ``"undefined"``, ``"null"``) to the appropriate empty container, preventing config corruption from a browser-side serialisation bug in the Configure UI.
 - Fix summary panel layout shift: render summary as an absolute overlay
   outside the conversation's flex flow so appearing/resizing the summary
   no longer changes the chat scroll position.
