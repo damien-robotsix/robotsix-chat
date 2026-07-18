@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Fix auto-scroll on session switch and page load: conversation view now reliably scrolls to the latest message after DOM layout completes.
 - Refactor `MessageCoalescer._process_batch`: extract title-generation into `_maybe_generate_title` and SSE fan-out into `_fan_out` helper, reducing nesting depth from 7 to 5.
 - Refactor `SubsessionRegistry` into three classes: extract `RegistryStore` (JSON persistence) and `RegistryIndex` (owner-scoped queries and tree operations), with `SubsessionRegistry` retaining core lifecycle and delegating to both.
 - UI: conversation view now auto-scrolls to the bottom on session switch/load so the latest messages are always visible.
