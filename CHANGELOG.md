@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Fix feedback ticket filing: align ingest payload with mill's `TicketIngest` schema (`repo_id`, `title`, `body`, `source_tag`). Previously sent `description` instead of `body` and omitted required `repo_id`, causing 100% 422 rejection. Runner metadata (`kind`, `session_id`, `trigger_type`) is now folded into the body text. Added `feedback.repo_id` config field (default `"robotsix-chat"`).
 - Fix auto-scroll on session switch and page load: conversation view now reliably scrolls to the latest message after DOM layout completes.
 - Refactor `MessageCoalescer._process_batch`: extract title-generation into `_maybe_generate_title` and SSE fan-out into `_fan_out` helper, reducing nesting depth from 7 to 5.
 - Refactor `SubsessionRegistry` into three classes: extract `RegistryStore` (JSON persistence) and `RegistryIndex` (owner-scoped queries and tree operations), with `SubsessionRegistry` retaining core lifecycle and delegating to both.

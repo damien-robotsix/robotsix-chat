@@ -149,6 +149,7 @@
     "model_level": 1,
     "board_url": "",
     "board_api_token": "",
+    "repo_id": "robotsix-chat",
     "timeout": 60.0
   },
   "max_images_per_message": 8,
