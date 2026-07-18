@@ -543,6 +543,19 @@ class ConversationStore:
         """
         return self._sessions.get(session_id)
 
+    def set_title(self, session_id: str, title: str) -> bool:
+        """Update the title of *session_id* and persist.
+
+        Returns ``True`` if the session was found and updated, ``False``
+        if the session does not exist.
+        """
+        session = self._sessions.get(session_id)
+        if session is None:
+            return False
+        session.title = title
+        self._persist()
+        return True
+
     def list_sessions(self, owner_id: str) -> tuple[list[dict[str, object]], str]:
         """Return ``(sessions, active_session_id)`` for *owner_id*.
 

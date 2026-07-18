@@ -364,11 +364,18 @@
     });
   }
 
-  function relativeTime(iso) {
+  function relativeTime(raw) {
     // Return a human-readable relative time string (e.g. "2m ago", "1h ago").
-    var then = new Date(iso).getTime();
-    var now = Date.now();
-    var diffSec = Math.floor((now - then) / 1000);
+    // Accepts Unix timestamps in seconds (number) or ISO 8601 strings.
+    var ms;
+    if (typeof raw === "number") {
+      ms = raw * 1000;  // seconds → milliseconds
+    } else {
+      ms = new Date(raw).getTime();
+    }
+    if (!ms || ms <= 0) return "";
+    var diffSec = Math.floor((Date.now() - ms) / 1000);
+    if (diffSec < 0) return "";
     if (diffSec < 60) return "just now";
     var mins = Math.floor(diffSec / 60);
     if (mins < 60) return mins + "m ago";
