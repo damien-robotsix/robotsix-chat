@@ -1,5 +1,61 @@
 ## 0.0.0 (unreleased)
 
+- Fix summary panel layout shift: render summary as an absolute overlay
+  outside the conversation's flex flow so appearing/resizing the summary
+  no longer changes the chat scroll position.
+- Conversation auto-scroll now preserves user scroll position: only scrolls to bottom when the user is already near the bottom (≤50px threshold), preventing viewport hijacking when reading history.
+- Remove orphaned `[tool.bandit]` config from `pyproject.toml` and `security` target from `Makefile` (bandit is not a dependency; ruff's S rules cover the same checks)
+- Extract `build_transcript()` utility into `_shared.py` to deduplicate a conversation transcript assembly loop shared between `chat.py` and `sessions.py`.
+- Fix: ensure changelog fragment files (``changelog.d/*.misc.md``) end with a trailing newline, eliminating a ~7 min wasted CI ``fixing_ci`` cycle per ticket.  The fix overrides ``robotsix_mill.stages.towncrier`` via a local shadow package in ``src/robotsix_mill/``.
+- Extract shared `_request_json(method, path, body)` from near-identical `_post_json` and `_patch_json` in `GitHubDirectClient` to eliminate 9 duplicated lines.
+- Fix false unread highlight on the previously-active session: `refreshSessions()` now calls `markSessionRead(activeSessionId)` to keep the active session's unread baseline current on every auto-refresh cycle.
+- Enable `state_sync` periodic check (`.robotsix-mill/periodic/state_sync.yaml`) to cross-reference enum members against string-literal reference sites across the codebase.
+- Chat UI: LLM-generated session titles after the first assistant reply (uses the summary model tier). Fix sidebar "X days ago" timestamps by handling Unix-second timestamps correctly.
+- Subsessions closing now trigger an immediate (fire-and-forget) reaction
+  turn in the parent chat so the main agent sees and acts on the summary
+  without waiting for the next user message.  Reaction turns are serialised
+  with user-message turns via the per-owner ``RunSerializer`` lock and are
+  depth-bounded (max 3) to prevent unbounded trigger chains. (mill: Subsession closure summary must trigger a main-agent run (redraft of a175) (20260717T233626Z-subsession-closure-summary-must-trigger-9e6a))
+- Session sidebar: open by default on fresh load; persist close state in localStorage.
+- Session list auto-refreshes every 20 seconds (paused when tab is hidden).
+- Sessions with new agent messages since last viewed get a visual highlight (left border accent); clears on selection.
+- Subsessions: add loop guard to reaction-turn delivery so a summary-triggered agent run that spawns and closes another subsession cannot create an unbounded trigger chain (`_reaction_in_progress` flag).
+- Feedback runner now logs at WARNING level when `board_url` is empty, and at INFO level when disabled. Added config-validation: `feedback.board_url` must be non-empty when `feedback.enabled` is true.
+- Guard cognee memory calls with configurable timeouts to prevent hung worker tasks
+  when the LanceDB adapter lock is orphaned (recall 60 s, remember 300 s). Add a
+  per-run watchdog in the subsession worker so a stuck periodic run is marked
+  failed and the schedule continues instead of staying ``running`` forever.
+- Deduplicate `.subs-header` and `.sessions-header` CSS into shared `.panel-header` class
+- Extract `_parse_turns()` helper to eliminate duplicate turn-parsing loop in `ConversationStoreSerializer._load_legacy_format` and `_load_current_format`
+- Remove redundant `_coerce_empty_string_to_*` field validators from `MemorySettings`, `RefDocsSettings`, and `ComponentClientSettings` — the top-level `_normalize_legacy_empty_strings` on `Settings` already handles all legacy `""` → `{}`/`[]` coercion before sub-model validation.
+- Fix kuzu graph shadow-file self-heal to detect inconsistent databases
+  where the DB entity exists but its companion ``.shadow`` is missing
+  (the opposite of the orphan-artifact case).  Handle both file and
+  directory DB forms.  Add open-time retry in ``recall()`` and
+  ``remember()``: on a healable kuzu error (shadow-missing ENOENT or
+  database-ID mismatch), the database set is removed and the operation
+  is retried once, so the graph is rebuilt eagerly instead of degrading
+  to "no memory" forever.
+- **Memory (cognee):** Self-heal now handles the full kuzu consistency set — removes both `.shadow` and `.wal` artifacts together and recreates the database directory when any stale entries are found, preventing the "IO exception: Cannot open file" crash that occurred when a previously-deleted shadow was still referenced by a leftover WAL.
+- Consolidate `github` module under shared `repo/` namespace as `repo.security` — move `src/robotsix_chat/github/` → `src/robotsix_chat/repo/security/`, `docs/github/` → `docs/repo/security/`, `tests/github/` → `tests/repo/security/`. Update all imports and module registration accordingly.
+- Replace `docs/notification/skill.md` with a relative symlink to the canonical `src/robotsix_chat/notification/skill.md`, eliminating a duplicate copy.
+- Replace `docs/github/skill.md` duplicate with a symlink to the canonical `src/robotsix_chat/github/skill.md` (deduplicate clone pair)
+- Re-enable `copy_paste` periodic workflow: add `.robotsix-mill/periodic/copy_paste.yaml` to detect clone pairs with jscpd, triage by severity, and file draft tickets for high-severity duplication.
+- Added `modules-registration` pre-commit hook that verifies every file in the repo is
+  claimed by at least one module in `docs/modules.yaml`, catching unregistered new files
+  before commit and preventing CI drift.
+- Refactor `create_agent_from_settings` (213→98 lines): extract `_inject_skills`, `_build_static_tools`, and `_build_request_tools_factory` helpers.
+- Enable `completeness_check` periodic agent to scan for dead code, unreferenced exports, and pattern gaps.)
+- Split `subsessions/worker.py` (918 lines) into `worker.py` (turn loop, spawn logic) and new `resume.py` (startup resume hook, persistence entry helpers). Extracted kind-specific continuation into `_handle_kind_continuation` and kind-specific resume logic into `_resume_periodic_entry`, `_resume_user_chat_entry`, `_resume_task_entry`.
+- Enable `bc_check` periodic agent to detect backward-compatibility debt and file draft removal tickets.
+- Module curator: add premise-verification step to check for runtime references (`Path(__file__).parent / "skill.md"`) before proposing relocation of `skill.md` files from the source tree to `docs/`. Prevents silently broken runtime loads when a file is moved but a module still loads it from the old location.
+- Restore `src/robotsix_chat/github/skill.md` — the file was moved to `docs/github/` in a prior reorganization but `load_github_skill()` still loads from the module directory, so the GitHub skill instructions were silently empty at runtime.
+- Move `src/robotsix_chat/github/skill.md` → `docs/github/skill.md` to align with the per-module docs layout.
+- Moved `src/robotsix_chat/notification/skill.md` to `docs/notification/skill.md` to align with per-module docs layout convention.
+- Move `src/robotsix_chat/lifecycle/skill.md` → `docs/lifecycle/skill.md` to align with per-module docs layout.
+- Added unit tests for ``FeedbackRunner`` and its helpers (``_build_feedback_prompt``, ``_parse_tickets``) — 52 tests covering pure functions, agent I/O (mocked), HTTP ingest (``respx``), subsession summarisation, error handling, and the full ``_run`` cycle.
+- FeedbackRunner now produces named Langfuse traces (`feedback-{trigger}`) tagged `feedback` and `{trigger}`, forwards the source `session_id` to the LLM call, and stamps trace metadata (trigger type, session id, filed ticket counts).  Feedback runs are filterable via `GET /api/public/traces?tags=feedback`.
+- Subsessions now survive service restarts: periodic monitors are re-armed automatically on startup (with one immediate tick if the scheduled run elapsed during downtime), and a restart notice is injected into each affected conversation listing which subsessions were resumed or interrupted — so the model can reconcile on its next turn.
 - Pin liblzma5 to `5.8.*` (was `5.*`) in the Dockerfile runtime stage to ensure
   the patched `5.8.1-1+deb13u1` is resolved instead of the vulnerable `5.8.1-1`
   (CVE-2026-34743).
@@ -7,6 +63,7 @@
 - Fix release-image `Verify CI is green` job timing out waiting on itself: use `actions.getWorkflowRun` to discover the check-suite id directly instead of matching against check-run `details_url` (which uses check-run ids, not workflow-run ids). Also handles the edge case where no non-self CI checks exist for a commit (break immediately).
 - Document feature-flag activation rule in `AGENT.md`: any flag-gated feature must include activation config, live-proof, and post-deploy follow-up in its definition of done.
 - Chat UI: queued (not-yet-processed) user messages now show a cancel button. Users can cancel individual queued messages (per-message ✕) or bulk-cancel all queued messages. Cancelled messages are removed from the processing queue server-side; messages already in processing are rejected gracefully.
+- Config loader now coerces legacy ``""`` placeholders to proper empty arrays/objects for ``cors_allow_origins``, ``allowed_image_media_types``, ``refdocs.repos``, ``memory.llm``/``langfuse``/``embedding``, and ``component_client.components``, so partial config updates via the deploy API no longer fail on untouched legacy keys.
 - Added "one subsession per subject" rule to the agent system prompt, instructing the agent to spawn separate subsessions for distinct subjects rather than consolidating unrelated ticket batches or decision groups into a single subsession lifecycle.
 - Chat UI now renders suggested answer options as clickable chips when the assistant includes a `` ```suggestions `` fenced block in its reply. Clicking a chip submits it as a user reply; the free-text input remains available. Applies to both the main conversation and user_chat subsession panels.
 - Add ``render_url(url)`` agent tool (Playwright headless Chromium) — captures a full-page screenshot and accessibility tree for UI verification. Gated behind ``render_url.enabled`` in config; requires the ``render-url`` extra (``playwright``).

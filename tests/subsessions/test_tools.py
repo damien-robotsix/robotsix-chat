@@ -355,7 +355,9 @@ async def test_close_tool_cancels_worker_and_delivers_summary() -> None:
     assert result.startswith(f"Closed subsession {info.id}.")
     assert info.status is SubsessionStatus.CLOSED
     assert info.close_reason == "no longer needed"
-    # The summary was delivered to the owning session's history.
+    # The summary was delivered to the owning session's history via a
+    # background task (fire-and-forget) — yield so it can complete.
+    await asyncio.sleep(0)
     history = env.conversation_store.history(OWNER)
     assert len(history) == 1
     assert "no longer needed" in history[0][0]

@@ -36,7 +36,7 @@ def load_lifecycle_skill() -> str:
     never prevents the agent from starting.
 
     """
-    skill_path = Path(__file__).parent / "skill.md"
+    skill_path = Path(__file__).parents[3] / "docs" / "lifecycle" / "skill.md"
     try:
         return skill_path.read_text(encoding="utf-8")
     except FileNotFoundError:

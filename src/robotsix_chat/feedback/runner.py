@@ -9,6 +9,12 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+try:
+    from robotsix_llmio.core.tracing import get_recording_span, start_trace
+except ImportError:  # pragma: no cover — tracing extra absent in minimal installs
+    start_trace = None  # type: ignore[assignment]
+    get_recording_span = None  # type: ignore[assignment]
+
 if TYPE_CHECKING:
     from robotsix_chat.config.models import FeedbackSettings
     from robotsix_chat.llm import LlmioChatAgent
@@ -134,7 +140,7 @@ class FeedbackRunner:
         Errors are logged; the task is never awaited by the caller.
         """
         if not self._board_url:
-            logger.debug(
+            logger.warning(
                 "Feedback run skipped — no board_url configured (session=%s)",
                 session_id,
             )
@@ -168,37 +174,50 @@ class FeedbackRunner:
             session_id,
             len(turns),
         )
+        trace_name = f"feedback-{trigger_type}"
+        trace_metadata: dict[str, str] = {
+            "trigger_type": trigger_type,
+            "session_id": session_id,
+        }
         try:
-            # 1. Collect subsession summaries.
-            subsession_summaries = self._collect_subsession_summaries(session_id)
+            with self._trace_context(trace_name, session_id):
+                self._stamp_tags(trigger_type)
 
-            # 2. Build prompt and call the feedback agent.
-            prompt = _build_feedback_prompt(
-                trigger_type, session_id, turns, subsession_summaries
-            )
-            analysis = await self._call_agent(prompt)
-            if analysis is None:
-                return
+                # 1. Collect subsession summaries.
+                subsession_summaries = self._collect_subsession_summaries(session_id)
 
-            # 3. Parse the JSON response.
-            tickets = self._parse_tickets(analysis)
-            if not tickets:
-                logger.info(
-                    "Feedback run: no actionable tickets (session=%s)", session_id
+                # 2. Build prompt and call the feedback agent.
+                prompt = _build_feedback_prompt(
+                    trigger_type, session_id, turns, subsession_summaries
                 )
-                return
+                analysis = await self._call_agent(
+                    prompt, session_id=session_id, trace_metadata=trace_metadata
+                )
+                if analysis is None:
+                    return
 
-            # 4. File each ticket.
-            filed = await self._file_tickets(
-                tickets, trigger_type=trigger_type, session_id=session_id
-            )
-            logger.info(
-                "Feedback run complete: trigger=%s session=%s filed=%d/%d",
-                trigger_type,
-                session_id,
-                filed,
-                len(tickets),
-            )
+                # 3. Parse the JSON response.
+                tickets = self._parse_tickets(analysis)
+                if not tickets:
+                    logger.info(
+                        "Feedback run: no actionable tickets (session=%s)", session_id
+                    )
+                    return
+
+                # 4. File each ticket.
+                filed = await self._file_tickets(
+                    tickets, trigger_type=trigger_type, session_id=session_id
+                )
+                logger.info(
+                    "Feedback run complete: trigger=%s session=%s filed=%d/%d",
+                    trigger_type,
+                    session_id,
+                    filed,
+                    len(tickets),
+                )
+
+                # 5. Stamp outcome metadata on the trace root span.
+                self._stamp_outcome(filed, len(tickets))
         except Exception:
             logger.exception(
                 "Feedback run failed: trigger=%s session=%s",
@@ -228,21 +247,79 @@ class FeedbackRunner:
             )
         return result
 
-    async def _call_agent(self, prompt: str) -> str | None:
-        """Call the feedback agent with *prompt*; return the full reply text."""
+    async def _call_agent(
+        self,
+        prompt: str,
+        *,
+        session_id: str,
+        trace_metadata: dict[str, str] | None = None,
+    ) -> str | None:
+        """Call the feedback agent with *prompt*; return the full reply text.
+
+        *session_id* groups the agent run under the originating chat session
+        in Langfuse.  *trace_metadata* is stamped as span attributes for
+        observability.
+        """
         reply_parts: list[str] = []
         try:
             async for token in self._agent.stream(
                 prompt,
                 history=None,
-                session_id=None,
+                session_id=session_id,
                 client_id=None,
+                trace_metadata=trace_metadata,
             ):
                 reply_parts.append(token)
         except Exception:
             logger.exception("Feedback agent call failed")
             return None
         return "".join(reply_parts).strip()
+
+    # ------------------------------------------------------------------
+    # Trace helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _trace_context(
+        trace_name: str,
+        session_id: str,
+    ) -> Any:  # contextlib.AbstractContextManager[Any]
+        """Return a context manager that wraps the run in a named Langfuse trace.
+
+        Returns a no-op ``nullcontext`` when the ``tracing`` extra is absent.
+        When active the trace is named *trace_name* and grouped under
+        *session_id*.  Tags must be stamped separately via :meth:`_stamp_tags`
+        inside the context so they land on the active root span.
+        """
+        if start_trace is None:
+            import contextlib
+
+            return contextlib.nullcontext()
+        return start_trace(trace_name, session_id=session_id)
+
+    @staticmethod
+    def _stamp_tags(trigger_type: str) -> None:
+        """Stamp Langfuse trace tags on the current recording span.
+
+        No-op when OTel is absent.
+        """
+        if get_recording_span is None:
+            return
+        span = get_recording_span()
+        if span is not None:
+            span.set_attribute(
+                "langfuse.trace.tags", json.dumps(["feedback", trigger_type])
+            )
+
+    @staticmethod
+    def _stamp_outcome(filed: int, total: int) -> None:
+        """Stamp feedback outcome metadata on the current recording span."""
+        if get_recording_span is None:
+            return
+        span = get_recording_span()
+        if span is not None:
+            span.set_attribute("feedback.filed_tickets", filed)
+            span.set_attribute("feedback.total_tickets", total)
 
     @staticmethod
     def _parse_tickets(analysis_text: str) -> list[dict[str, Any]]:

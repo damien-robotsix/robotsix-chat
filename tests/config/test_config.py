@@ -560,3 +560,71 @@ def test_memory_langfuse_settings_defaults() -> None:
     assert settings.memory.langfuse.public_key.get_secret_value() == ""
     assert settings.memory.langfuse.secret_key.get_secret_value() == ""
     assert settings.memory.langfuse.host == "https://cloud.langfuse.com"
+
+
+# ---------------------------------------------------------------------------
+# Legacy empty-string coercion
+# ---------------------------------------------------------------------------
+
+
+def test_coerce_cors_allow_origins_empty_string_to_list() -> None:
+    """``cors_allow_origins=""`` is coerced to ``[]``."""
+    settings = Settings(cors_allow_origins="")  # type: ignore[arg-type]
+    assert settings.cors_allow_origins == []
+
+
+def test_coerce_allowed_image_media_types_empty_string_to_list() -> None:
+    """``allowed_image_media_types=""`` is coerced to ``[]``."""
+    settings = Settings(allowed_image_media_types="")  # type: ignore[arg-type]
+    assert settings.allowed_image_media_types == []
+
+
+def test_coerce_top_level_object_empty_string_to_dict() -> None:
+    """Top-level object fields like ``memory=""`` fall back to defaults."""
+    settings = Settings(memory="")  # type: ignore[arg-type]
+    assert settings.memory.enabled is False
+    assert settings.memory.data_dir == "/data/cognee"
+
+
+def test_coerce_refdocs_empty_string_to_dict() -> None:
+    """``refdocs=""`` is coerced to ``{}`` → defaults."""
+    settings = Settings(refdocs="")  # type: ignore[arg-type]
+    assert settings.refdocs.enabled is False
+    assert settings.refdocs.repos == []
+
+
+def test_coerce_component_client_empty_string_to_dict() -> None:
+    """``component_client=""`` is coerced to ``{}`` → defaults."""
+    settings = Settings(component_client="")  # type: ignore[arg-type]
+    assert settings.component_client.enabled is False
+    assert settings.component_client.components == []
+
+
+def test_coerce_refdocs_repos_empty_string_to_list() -> None:
+    """``refdocs.repos=""`` inside a valid refdocs dict is coerced to ``[]``."""
+    settings = Settings(refdocs={"repos": ""})  # type: ignore[arg-type]
+    assert settings.refdocs.repos == []
+
+
+def test_coerce_component_client_components_empty_string_to_list() -> None:
+    """``component_client.components=""`` is coerced to ``[]``."""
+    settings = Settings(component_client={"components": ""})  # type: ignore[arg-type]
+    assert settings.component_client.components == []
+
+
+def test_coerce_memory_nested_empty_string_to_dict() -> None:
+    """Coerce ``memory.llm=""`` and friends to ``{}`` → defaults.
+
+    ``memory.llm=""``, ``memory.langfuse=""``, and ``memory.embedding=""``
+    are each coerced to ``{}`` → defaults.
+    """
+    settings = Settings(
+        memory={
+            "llm": "",
+            "langfuse": "",
+            "embedding": "",
+        }  # type: ignore[arg-type]
+    )
+    assert settings.memory.llm.model == "openrouter/anthropic/claude-haiku-4.5"
+    assert settings.memory.langfuse.host == "https://cloud.langfuse.com"
+    assert settings.memory.embedding.model == "bge-m3"

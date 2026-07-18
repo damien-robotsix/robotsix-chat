@@ -15,7 +15,7 @@ import pytest
 import respx
 
 from robotsix_chat.config import DirectRepoSettings, GitHubSecuritySettings
-from robotsix_chat.github import build_github_security_tools
+from robotsix_chat.repo.security import build_github_security_tools
 
 # ---------------------------------------------------------------------------
 # helpers

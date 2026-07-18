@@ -112,6 +112,7 @@ class SubsessionRegistry:
         include_previous_result: bool = False,
         max_runs: int | None = None,
         sub_id: str | None = None,
+        runs: int = 0,
         completed_runs: set[int] | None = None,
         turn_history: list[tuple[str, str]] | None = None,
     ) -> SubsessionInfo:
@@ -123,12 +124,15 @@ class SubsessionRegistry:
         no frame is published — the caller must not launch a duplicate
         worker.
 
-        *completed_runs* seeds the run guard for periodic subsessions
-        resumed after a restart, so already-executed run numbers are
-        persisted atomically from the first write. *turn_history* seeds
-        the agent-visible replay window the same way, so a resumed
-        periodic worker picks up with the context it had before the
-        restart instead of starting blank.
+        *runs* and *completed_runs* seed the run counter and run guard
+        for periodic subsessions resumed after a restart, so already-
+        executed run numbers are persisted atomically from the first
+        write and the worker's ``runs + 1`` lands on the first
+        unexecuted run instead of replaying (and skip-sleeping through)
+        every historical one. *turn_history* seeds the agent-visible
+        replay window the same way, so a resumed periodic worker picks
+        up with the context it had before the restart instead of
+        starting blank.
         """
         if sub_id is not None and sub_id in self._subs:
             return self._subs[sub_id]
@@ -148,6 +152,7 @@ class SubsessionRegistry:
             interval_seconds=interval_seconds,
             include_previous_result=include_previous_result,
             max_runs=max_runs,
+            runs=runs,
             completed_runs=completed_runs or set(),
             turn_history=turn_history or [],
         )
@@ -605,8 +610,12 @@ class SubsessionRegistry:
             logger.warning("Could not create parent dir for %s", self._store_path)
             return
         entries = [info.snapshot(with_transcript=True) for info in self._subs.values()]
+        # Write-then-rename so a crash or container kill mid-write can never
+        # truncate the store.
+        tmp_path = self._store_path.with_suffix(self._store_path.suffix + ".tmp")
         try:
-            self._store_path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
+            tmp_path.write_text(json.dumps(entries, indent=2), encoding="utf-8")
+            tmp_path.replace(self._store_path)
         except OSError:
             logger.exception("Failed to persist subsessions to %s", self._store_path)
 

@@ -1,0 +1,1 @@
+../../../src/robotsix_chat/repo/security/skill.md

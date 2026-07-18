@@ -1,0 +1,2 @@
+Session sidebar: open by default, auto-refresh session list, highlight sessions with new agent
+messages

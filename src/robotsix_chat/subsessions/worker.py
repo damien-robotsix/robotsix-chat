@@ -22,15 +22,14 @@ from __future__ import annotations
 import asyncio
 import contextvars
 import logging
-from collections.abc import Callable, Mapping
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import TYPE_CHECKING, TypedDict
+from typing import TYPE_CHECKING
 
 from robotsix_chat.chat.events import subsession_result_frame
 
 from .delivery import ParentDelivery
 from .models import (
-    ACTIVE_STATUSES,
     InboxMessage,
     SubsessionCapacityError,
     SubsessionDepthError,
@@ -40,7 +39,6 @@ from .models import (
     SubsessionLevelError,
     SubsessionPeriodicSpawnError,
     SubsessionStatus,
-    TranscriptEntry,
 )
 from .registry import SubsessionRegistry
 
@@ -128,6 +126,7 @@ def spawn_subsession(
     max_runs: int | None = None,
     inherit_context: bool = False,
     sub_id: str | None = None,
+    runs: int = 0,
     completed_runs: set[int] | None = None,
     turn_history: list[tuple[str, str]] | None = None,
 ) -> str:
@@ -187,6 +186,7 @@ def spawn_subsession(
         include_previous_result=include_previous_result,
         max_runs=max_runs,
         sub_id=sub_id,
+        runs=runs,
         completed_runs=completed_runs,
         turn_history=turn_history,
     )
@@ -323,6 +323,57 @@ async def _run_turn(
         )
     ]
     return "".join(parts)
+
+
+_RUN_TIMEOUT_GRACE = 5.0
+"""Seconds of grace added to the configured run timeout for the
+asyncio.timeout context so the warning + status update have time to
+execute before the CancelledError propagates."""
+
+
+async def _run_turn_with_timeout(
+    env: SubsessionEnv,
+    agent: ChatAgent,
+    turn_input: str,
+    history: list[tuple[str, str]],
+    sub_id: str,
+    info: SubsessionInfo,
+) -> str:
+    """Run one agent turn with a hard timeout guard.
+
+    On timeout the run is marked failed for TASK/USER_CHAT kinds, or the
+    schedule continues with the failure recorded for PERIODIC kinds.
+    """
+    timeout = env.settings.subsessions.run_timeout_seconds
+    try:
+        async with asyncio.timeout(timeout + _RUN_TIMEOUT_GRACE):
+            return await _run_turn(
+                agent,
+                turn_input,
+                history,
+                sub_id,
+                trace_metadata={
+                    "owner_session_id": info.owner_session_id,
+                    "parent_session_id": info.parent_id or info.owner_session_id,
+                },
+            )
+    except TimeoutError:
+        logger.warning(
+            "Subsession %s run timed out after %.0fs; marking run as failed",
+            sub_id,
+            timeout,
+        )
+        raise _RunTimeoutError(
+            f"subsession run exceeded {timeout:.0f}s timeout"
+        ) from None
+
+
+class _RunTimeoutError(Exception):
+    """Raised when a single subsession turn exceeds the run timeout.
+
+    Internal sentinel — caught by the worker loop to trigger kind-specific
+    failure handling without conflating with other CancelledError sources.
+    """
 
 
 async def _run_task_turn(
@@ -475,20 +526,16 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                         next_run,
                         sub_id,
                     )
-                    # Advance the run counter so we don't loop forever
-                    # on the same run number.
+                    # Advance the run counter and retry immediately.  A
+                    # collision means the counter is behind completed_runs
+                    # (a pre-fix persisted store); sleeping an interval per
+                    # historical run number starves the schedule — with
+                    # regular restarts the subsession never runs again.
                     registry.set_status(
                         sub_id,
-                        SubsessionStatus.SLEEPING,
+                        SubsessionStatus.RUNNING,
                         runs=next_run,
-                        next_run_at=(registry.now() + (info.interval_seconds or 60.0)),
-                        last_result=info.last_result,
                     )
-                    # Sleep until the next tick (or a steering message).
-                    woke = await registry.wait_for_inbox(
-                        sub_id, timeout=info.interval_seconds
-                    )
-                    pending = registry.drain_inbox(sub_id) if woke else []
                     continue
 
                 steering = [] if first_turn else pending
@@ -499,16 +546,66 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                 turn_input = _render_turn_input(pending)
             first_turn = False
 
-            reply = await _run_turn(
-                agent,
-                turn_input,
-                history,
-                sub_id,
-                trace_metadata={
-                    "owner_session_id": info.owner_session_id,
-                    "parent_session_id": info.parent_id or info.owner_session_id,
-                },
-            )
+            try:
+                reply = await _run_turn_with_timeout(
+                    env,
+                    agent,
+                    turn_input,
+                    history,
+                    sub_id,
+                    info,
+                )
+            except _RunTimeoutError:
+                # Periodic runs continue the schedule after a timeout;
+                # task / user_chat runs fail the whole subsession.
+                if info.kind is SubsessionKind.PERIODIC:
+                    logger.warning(
+                        "Periodic subsession %s run %d timed out; continuing schedule.",
+                        sub_id,
+                        info.runs + 1,
+                    )
+                    registry.append_transcript(
+                        sub_id,
+                        "system",
+                        "Run timed out — the agent turn exceeded the per-run timeout.",
+                    )
+                    # Advance the run counter so the schedule moves on.
+                    runs = info.runs + 1
+                    registry.set_status(
+                        sub_id,
+                        SubsessionStatus.SLEEPING,
+                        runs=runs,
+                        next_run_at=registry.now() + (info.interval_seconds or 60.0),
+                        last_result="TIMEOUT",
+                    )
+                    # Deliver a timeout result so the parent isn't left
+                    # wondering.
+                    if env.event_sink is not None:
+                        env.event_sink.publish(
+                            info.owner_session_id,
+                            subsession_result_frame(
+                                sub_id,
+                                info.kind.value,
+                                info.title,
+                                runs,
+                                "TIMEOUT",
+                                info.parent_id,
+                            ),
+                        )
+                    if not info.include_previous_result:
+                        previous_result = None
+                    consecutive_no_change += 1
+                    # Sleep until next tick, waking early on steering.
+                    woke = await registry.wait_for_inbox(
+                        sub_id,
+                        timeout=info.interval_seconds or 60.0,
+                    )
+                    pending = registry.drain_inbox(sub_id) if woke else []
+                    env.registry.reap_orphans()
+                    continue
+                # TASK / USER_CHAT: let the outer handler fail the subsession.
+                raise
+
             history.append((turn_input, reply))
             registry.append_turn_history(sub_id, turn_input, reply)
             # Inbox messages were transcripted at enqueue time; only the
@@ -535,25 +632,12 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                 return
 
             # -- kind-specific continuation --------------------------------
-            if info.kind is SubsessionKind.TASK:
-                pending = await _run_task_turn(env, sub_id, reply)
-                if pending:
-                    continue
-                return
-
-            if info.kind is SubsessionKind.USER_CHAT:
-                pending = await _run_user_chat_turn(env, sub_id)
-                continue
-
-            # -- PERIODIC ---------------------------------------------------
-            result = await _run_periodic_turn(
+            continuation = await _handle_kind_continuation(
                 env, info, sub_id, reply, previous_result, consecutive_no_change
             )
-            if result is None:
+            if continuation is None:
                 return
-            pending, previous_result, consecutive_no_change = result
-            # Reap any orphaned timers on each scheduler tick.
-            env.registry.reap_orphans()
+            pending, previous_result, consecutive_no_change = continuation
 
     except asyncio.CancelledError:
         # External close already set the terminal state and (if wanted)
@@ -568,255 +652,36 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
             )
 
 
-def resume_subsessions(env: SubsessionEnv) -> None:
-    """Startup hook: resume periodic subsessions, report interrupted ones.
+async def _handle_kind_continuation(
+    env: SubsessionEnv,
+    info: SubsessionInfo,
+    sub_id: str,
+    reply: str,
+    previous_result: str | None,
+    consecutive_no_change: int,
+) -> tuple[list[InboxMessage], str | None, int] | None:
+    """Dispatch kind-specific post-turn logic.
 
-    * ``periodic`` entries that were active at shutdown are respawned
-      under their original id with the remaining run budget.
-    * active ``task`` / ``user_chat`` entries cannot be resumed (their
-      in-flight agent state is gone) — they are re-registered as
-      ``INTERRUPTED`` and a summary is delivered to the owning main
-      session (a nested parent's worker is also gone pre-resume).
-    * terminal entries are re-registered as-is so the UI keeps its
-      recent-history view after a restart.
+    Returns ``(pending, previous_result, consecutive_no_change)`` to
+    continue, or ``None`` to stop (the subsession reached a terminal
+    state).
     """
-    for entry in env.registry.load_persisted():
-        try:
-            _resume_entry(env, entry)
-        except Exception:
-            logger.exception("Could not resume subsession entry %r", entry)
+    if info.kind is SubsessionKind.TASK:
+        pending = await _run_task_turn(env, sub_id, reply)
+        if not pending:
+            return None
+        return (pending, None, 0)
 
+    if info.kind is SubsessionKind.USER_CHAT:
+        pending = await _run_user_chat_turn(env, sub_id)
+        return (pending, None, 0)
 
-def _entry_str(entry: Mapping[str, object], key: str, default: str = "") -> str:
-    """Coerce a persisted-entry field to ``str`` (typed JSON accessor)."""
-    value = entry.get(key, default)
-    return value if isinstance(value, str) else default
-
-
-def _entry_int(entry: Mapping[str, object], key: str, default: int = 0) -> int:
-    """Coerce a persisted-entry field to ``int``."""
-    value = entry.get(key)
-    return int(value) if isinstance(value, (int, float)) else default
-
-
-def _entry_float(entry: Mapping[str, object], key: str, default: float = 0.0) -> float:
-    """Coerce a persisted-entry field to ``float``."""
-    value = entry.get(key)
-    return float(value) if isinstance(value, (int, float)) else default
-
-
-def _entry_opt_int(entry: Mapping[str, object], key: str) -> int | None:
-    """Coerce a persisted-entry field to ``int | None``."""
-    value = entry.get(key)
-    return int(value) if isinstance(value, (int, float)) else None
-
-
-def _entry_opt_float(entry: Mapping[str, object], key: str) -> float | None:
-    """Coerce a persisted-entry field to ``float | None``."""
-    value = entry.get(key)
-    return float(value) if isinstance(value, (int, float)) else None
-
-
-def _entry_opt_str(entry: Mapping[str, object], key: str) -> str | None:
-    """Coerce a persisted-entry field to ``str | None``."""
-    value = entry.get(key)
-    return value if isinstance(value, str) else None
-
-
-def _rebuild_completed_runs(entry: Mapping[str, object]) -> set[int]:
-    """Reconstruct the ``completed_runs`` set from a persisted entry."""
-    raw = entry.get("completed_runs")
-    if isinstance(raw, list):
-        return {int(v) for v in raw if isinstance(v, (int, float))}
-    return set()
-
-
-def _rebuild_turn_history(entry: Mapping[str, object]) -> list[tuple[str, str]]:
-    """Reconstruct the ``turn_history`` replay window from a persisted entry."""
-    raw = entry.get("turn_history")
-    if not isinstance(raw, list):
-        return []
-    pairs: list[tuple[str, str]] = []
-    for item in raw:
-        if (
-            isinstance(item, list)
-            and len(item) == 2
-            and isinstance(item[0], str)
-            and isinstance(item[1], str)
-        ):
-            pairs.append((item[0], item[1]))
-    return pairs
-
-
-class _CommonEntryKwargs(TypedDict):
-    """Typed dict for the common fields extracted from a persisted entry."""
-
-    parent_id: str | None
-    depth: int
-    title: str
-    prompt: str
-    model_level: int
-    interval_seconds: float | None
-    include_previous_result: bool
-
-
-def _entry_to_common_kwargs(entry: Mapping[str, object]) -> _CommonEntryKwargs:
-    """Extract common SubsessionInfo/spawn_subsession fields from a persisted entry."""
-    return {
-        "parent_id": _entry_opt_str(entry, "parent_id"),
-        "depth": _entry_int(entry, "depth", 1),
-        "title": _entry_str(entry, "title"),
-        "prompt": _entry_str(entry, "prompt"),
-        "model_level": _entry_int(entry, "model_level", 3),
-        "interval_seconds": _entry_opt_float(entry, "interval_seconds"),
-        "include_previous_result": bool(entry.get("include_previous_result")),
-    }
-
-
-def _entry_last_assistant_text(entry: Mapping[str, object]) -> str:
-    """Extract the most recent assistant reply from a persisted entry's transcript.
-
-    ``user_chat`` subsessions never write to ``last_result`` (only periodic
-    does), but the transcript is always persisted.  This helper falls back
-    through the transcript when the direct field is empty.
-    """
-    last_result = _entry_opt_str(entry, "last_result")
-    if last_result:
-        return last_result
-    transcript_raw = entry.get("transcript")
-    if isinstance(transcript_raw, list):
-        for item in reversed(transcript_raw):
-            if isinstance(item, dict) and item.get("role") == "assistant":
-                text = item.get("text")
-                if isinstance(text, str):
-                    return text
-    return ""
-
-
-def _resume_entry(env: SubsessionEnv, entry: Mapping[str, object]) -> None:
-    """Resume a single persisted registry entry (see resume_subsessions)."""
-    status = _entry_str(entry, "status")
-    kind = SubsessionKind(_entry_str(entry, "kind", "task"))
-    sub_id = _entry_str(entry, "subsession_id")
-    owner = _entry_str(entry, "owner_session_id")
-    if not sub_id or not owner:
-        return
-    if status not in {s.value for s in ACTIVE_STATUSES}:
-        _restore_entry(env.registry, entry)
-        return
-
-    if kind is SubsessionKind.PERIODIC:
-        max_runs = _entry_opt_int(entry, "max_runs")
-        runs = _entry_int(entry, "runs")
-        remaining = None if max_runs is None else max(1, max_runs - runs)
-        spawn_subsession(
-            env=env,
-            kind=kind,
-            owner_session_id=owner,
-            **_entry_to_common_kwargs(entry),
-            max_runs=remaining,
-            sub_id=sub_id,
-            completed_runs=_rebuild_completed_runs(entry),
-            turn_history=_rebuild_turn_history(entry),
-        )
-        return
-
-    # task / user_chat: recoverable kinds are respawned; others are
-    # marked interrupted and reported to the main session.
-    if kind is SubsessionKind.USER_CHAT:
-        # Re-open a user_chat under its original id — the worker starts
-        # fresh with an augmented prompt (the original instructions +
-        # the last assistant state) so the user can continue the
-        # conversation after a restart instead of the chat dying
-        # mid-question.
-        common = _entry_to_common_kwargs(entry)
-        last_text = _entry_last_assistant_text(entry)
-        if last_text:
-            common["prompt"] = (
-                f"{common['prompt']}\n\n"
-                f"[System note: this subsession was restarted after a "
-                f"server restart. The assistant's last delivered state "
-                f"was:]\n\n{last_text[:2000]}"
-            )
-        spawn_subsession(
-            env=env,
-            kind=kind,
-            owner_session_id=owner,
-            **common,
-            sub_id=sub_id,
-        )
-        return
-
-    # task: cannot be resumed (in-flight agent state is gone).
-    info = _restore_entry(env.registry, entry, force_active=True)
-    if info is None:
-        return
-    last = SubsessionRegistry.last_assistant_text(info)
-    summary = "Interrupted by a server restart."
-    if last:
-        summary += f" Last state: {last[:500]}"
-    env.registry.mark_interrupted(sub_id, summary=summary)
-    # Deliver to the owning main session — a nested parent's worker did
-    # not survive the restart either, so main-chat delivery is the only
-    # reliable destination.
-    env.conversation_store.record_for_session(
-        owner,
-        f"[Subsession {sub_id[:8]} ({kind.value}) '{info.title}' interrupted]",
-        summary,
+    # PERIODIC
+    result = await _run_periodic_turn(
+        env, info, sub_id, reply, previous_result, consecutive_no_change
     )
-
-
-def _restore_entry(
-    registry: SubsessionRegistry,
-    entry: Mapping[str, object],
-    *,
-    force_active: bool = False,
-) -> SubsessionInfo | None:
-    """Re-register a persisted entry without launching a worker.
-
-    Rebuilds the ``SubsessionInfo`` (including its transcript tail) via
-    :meth:`SubsessionRegistry.restore`.  With *force_active* the entry is
-    restored as RUNNING so a subsequent ``mark_interrupted`` transition
-    is valid.
-    """
-    sub_id = _entry_str(entry, "subsession_id")
-    if not sub_id or registry.get(sub_id) is not None:
+    if result is None:
         return None
-    try:
-        status = (
-            SubsessionStatus.RUNNING
-            if force_active
-            else SubsessionStatus(_entry_str(entry, "status"))
-        )
-        info = SubsessionInfo(
-            id=sub_id,
-            kind=SubsessionKind(_entry_str(entry, "kind", "task")),
-            owner_session_id=_entry_str(entry, "owner_session_id"),
-            **_entry_to_common_kwargs(entry),
-            status=status,
-            created_at=_entry_float(entry, "created_at"),
-            last_activity_at=_entry_float(entry, "last_activity_at"),
-            runs=_entry_int(entry, "runs"),
-            max_runs=_entry_opt_int(entry, "max_runs"),
-            last_result=_entry_opt_str(entry, "last_result"),
-            summary=_entry_opt_str(entry, "summary"),
-            close_reason=_entry_opt_str(entry, "close_reason"),
-            error=_entry_opt_str(entry, "error"),
-            completed_runs=_rebuild_completed_runs(entry),
-        )
-    except ValueError:
-        logger.warning("Skipping malformed persisted subsession %r", sub_id)
-        return None
-    transcript = entry.get("transcript")
-    if isinstance(transcript, list):
-        for item in transcript:
-            if isinstance(item, dict):
-                info.transcript.append(
-                    TranscriptEntry(
-                        role=_entry_str(item, "role"),
-                        text=_entry_str(item, "text"),
-                        timestamp=_entry_float(item, "timestamp"),
-                    )
-                )
-    registry.restore(info)
-    return info
+    pending, previous_result, consecutive_no_change = result
+    env.registry.reap_orphans()
+    return (pending, previous_result, consecutive_no_change)

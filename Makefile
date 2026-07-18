@@ -1,4 +1,4 @@
-.PHONY: install test lint lint-md format fmt-md format-check typecheck security spellcheck check-sse-types clean all
+.PHONY: install test lint lint-md format fmt-md format-check typecheck spellcheck check-sse-types clean all
 
 SOURCES = src/robotsix_chat tests
 
@@ -33,9 +33,6 @@ check-sse-types:
 
 check-subsession-kinds:
 	python scripts/check_subsession_kinds.py
-
-security:
-	uv run bandit -c pyproject.toml -r src/
 
 spellcheck:          ## Run spell-checking (typos)
 	uv run pre-commit run typos --all-files

@@ -1,0 +1,29 @@
+name: module_curator
+prompt_overlay: |
+  ## Premise verification: runtime references before file relocation
+
+  Before you file a ticket that proposes `git mv` of a file from
+  `src/robotsix_chat/<module>/` to `docs/<module>/` (or any out-of-source-tree
+  relocation), grep the `src/robotsix_chat/` tree for runtime references to
+  that filename.  Specifically:
+
+  - Search for the literal filename (e.g. `"skill.md"`) and for
+    `Path(__file__).parent / "<filename>"` patterns in all `.py` files under
+    `src/robotsix_chat/`.
+  - Pay special attention to `__init__.py` files — these are the most common
+    place where a module loads a companion file at import time.
+
+  If you find a runtime reference to the file you are about to move:
+
+  1. **Exclude the file from the relocation** and document in the ticket body
+     why it was excluded (cite the file + line number of the runtime
+     reference).
+  2. Alternatively, if the relocation is still desired, **include the
+     runtime-path update in the ticket scope** — the ticket must also update
+     the `Path(__file__).parent / "…"` reference to point to the new location
+     (e.g. `Path(__file__).parents[2] / "docs" / "<module>" / "<filename>"`).
+
+  This check prevents silently broken runtime loads: when a file is moved
+  out of the source tree but a `Path(__file__).parent` reference still
+  points to the old location, the module will load an empty/missing file at
+  runtime with no error.

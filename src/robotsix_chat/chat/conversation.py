@@ -55,6 +55,18 @@ def _derive_title(first_user_message: str) -> str:
     return single_line[:_MAX_TITLE_CHARS].rstrip() + "\u2026"
 
 
+def _parse_turns(turns_raw: object, max_history_turns: int) -> list[Turn]:
+    """Parse raw turns list and enforce max history truncation."""
+    turns: list[Turn] = []
+    if isinstance(turns_raw, list):
+        for t in turns_raw:
+            if isinstance(t, list) and len(t) == 2:
+                turns.append((str(t[0]), str(t[1])))
+    if len(turns) > max_history_turns:
+        turns = turns[-max_history_turns:]
+    return turns
+
+
 @dataclass
 class Session:
     """One session: id, metadata, and turn history."""
@@ -119,8 +131,29 @@ class ConversationStoreSerializer:
             raw = json.loads(self._persist_path.read_text(encoding="utf-8"))
         except FileNotFoundError:
             return  # first run — no saved state yet
-        except OSError, json.JSONDecodeError:
+        except OSError:
             logger.exception("Failed to load conversations from %s", self._persist_path)
+            return
+        except json.JSONDecodeError:
+            # Preserve the corrupt file instead of silently starting empty —
+            # the next persist() would otherwise overwrite it and every
+            # session would be unrecoverable.
+            backup = self._persist_path.with_suffix(
+                self._persist_path.suffix + f".corrupt-{int(time.time())}"
+            )
+            try:
+                self._persist_path.replace(backup)
+                logger.exception(
+                    "Corrupt conversations file %s preserved as %s; starting empty",
+                    self._persist_path,
+                    backup,
+                )
+            except OSError:
+                logger.exception(
+                    "Failed to load conversations from %s (and could not "
+                    "preserve the corrupt file)",
+                    self._persist_path,
+                )
             return
 
         if not isinstance(raw, dict):
@@ -162,15 +195,9 @@ class ConversationStoreSerializer:
             turns_raw = entry.get("turns")
             if not isinstance(turns_raw, list):
                 continue
-            turns: list[Turn] = []
-            for t in turns_raw:
-                if isinstance(t, list) and len(t) == 2:
-                    turns.append((str(t[0]), str(t[1])))
+            turns = _parse_turns(turns_raw, max_history_turns)
             if not turns:
                 continue
-
-            if len(turns) > max_history_turns:
-                turns = turns[-max_history_turns:]
 
             session_id = str(entry.get("session_id", client_id))
             title = _DEFAULT_TITLE
@@ -230,13 +257,7 @@ class ConversationStoreSerializer:
                 if not isinstance(sid, str):
                     continue
                 turns_raw = sraw.get("turns")
-                turns: list[Turn] = []
-                if isinstance(turns_raw, list):
-                    for t in turns_raw:
-                        if isinstance(t, list) and len(t) == 2:
-                            turns.append((str(t[0]), str(t[1])))
-                if len(turns) > max_history_turns:
-                    turns = turns[-max_history_turns:]
+                turns = _parse_turns(turns_raw, max_history_turns)
 
                 title = str(sraw.get("title", _DEFAULT_TITLE))
                 last_active = sraw.get("last_active")
@@ -325,8 +346,12 @@ class ConversationStoreSerializer:
                     "sessions": sessions_list,
                 }
 
+        # Write-then-rename so a crash or container kill mid-write can never
+        # truncate the store — a torn write here loses every session.
+        tmp_path = self._persist_path.with_suffix(self._persist_path.suffix + ".tmp")
         try:
-            self._persist_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            tmp_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
+            tmp_path.replace(self._persist_path)
         except OSError:
             logger.exception(
                 "Failed to persist conversations to %s", self._persist_path
@@ -542,6 +567,19 @@ class ConversationStore:
         Read-only: does not update any metadata or LRU order.
         """
         return self._sessions.get(session_id)
+
+    def set_title(self, session_id: str, title: str) -> bool:
+        """Update the title of *session_id* and persist.
+
+        Returns ``True`` if the session was found and updated, ``False``
+        if the session does not exist.
+        """
+        session = self._sessions.get(session_id)
+        if session is None:
+            return False
+        session.title = title
+        self._persist()
+        return True
 
     def list_sessions(self, owner_id: str) -> tuple[list[dict[str, object]], str]:
         """Return ``(sessions, active_session_id)`` for *owner_id*.

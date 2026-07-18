@@ -317,6 +317,11 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # -- feedback runner ---------------------------------------------------
     feedback_runner = None
     if settings.feedback.enabled:
+        if not settings.feedback.board_url:
+            logger.warning(
+                "Feedback runner enabled but feedback.board_url is empty — "
+                "all feedback runs will be skipped until a board URL is configured"
+            )
         feedback_model_level = settings.feedback.model_level
         if (
             level_needs_api_key(feedback_model_level)
@@ -344,6 +349,8 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             subsession_registry=subsession_registry,
         )
         logger.info("Feedback runner enabled (model_level=%d)", feedback_model_level)
+    else:
+        logger.info("Feedback runner disabled (feedback.enabled=false)")
 
     # -- resume persisted subsessions after redeploy -----------------------
     def _resume() -> None:

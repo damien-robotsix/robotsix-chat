@@ -49,6 +49,8 @@ modules:
       - .github/**/*
       - .robotsix-mill/**/*
       - _stubs/**/*
+      - src/robotsix_mill/__init__.py
+      - src/robotsix_mill/stages/towncrier.py
       - changelog.d/**/*
       - config/**/*
       - deploy/**/*
@@ -69,6 +71,7 @@ modules:
       - Dockerfile
       - LICENSE
       - Makefile
+      - memory-ledger.json
       - README.md
       - SECURITY.md
       - docker-compose.yml
@@ -168,14 +171,15 @@ modules:
       - tests/repo/study/__init__.py
       - tests/repo/study/test_repo_study.py
 
-  - id: github
+  - id: repo-security
     description: "GitHub repository security-feature tools — enable/disable dependency graph, advanced security, secret scanning, and push protection on repos under the configured GitHub organisation. Auth delegates to the direct-repo GitHub App installation."
     paths:
-      - src/robotsix_chat/github/__init__.py
-      - src/robotsix_chat/github/skill.md
-      - tests/github/__init__.py
-      - tests/github/test_security_tools.py
-      - tests/github/test_settings_endpoint.py
+      - src/robotsix_chat/repo/security/__init__.py
+      - src/robotsix_chat/repo/security/skill.md
+      - docs/repo/security/skill.md
+      - tests/repo/security/__init__.py
+      - tests/repo/security/test_security_tools.py
+      - tests/repo/security/test_settings_endpoint.py
 
   - id: diagnostics
     description: "Diagnostics tools for the agent — exposes build_diagnostics_tools() that returns tools for listing diagnostic events, checking recurring failure categories, and managing fix proposals. Returns no tools when diagnostics is disabled."
@@ -230,6 +234,7 @@ modules:
       - src/robotsix_chat/subsessions/registry.py
       - src/robotsix_chat/subsessions/delivery.py
       - src/robotsix_chat/subsessions/worker.py
+      - src/robotsix_chat/subsessions/resume.py
       - src/robotsix_chat/subsessions/tools.py
       - tests/subsessions/__init__.py
       - tests/subsessions/test_models.py
@@ -265,6 +270,8 @@ modules:
     paths:
       - src/robotsix_chat/feedback/__init__.py
       - src/robotsix_chat/feedback/runner.py
+      - tests/feedback/__init__.py
+      - tests/feedback/test_runner.py
 
   - id: ui
     description: "Browser chat UI — self-contained HTML frontend served at /."
@@ -272,13 +279,17 @@ modules:
       - src/robotsix_chat/ui/index.html
       - src/robotsix_chat/ui/static/chat.css
       - src/robotsix_chat/ui/static/chat.js
+      - tests/ui/__init__.py
+      - tests/ui/conftest.py
+      - tests/ui/test_chat_integration.py
+      - tests/ui/test_smoke.py
 
   - id: lifecycle
     description: "Read-only deploy-lifecycle API tools for the agent — exposes build_lifecycle_tools() returning tools to list services, check status/health, and read config/env (secrets masked server-side), plus load_lifecycle_skill() for the component skill document."
     paths:
       - src/robotsix_chat/lifecycle/__init__.py
       - src/robotsix_chat/lifecycle/client.py
-      - src/robotsix_chat/lifecycle/skill.md
+      - docs/lifecycle/skill.md
       - tests/lifecycle/__init__.py
       - tests/lifecycle/test_lifecycle.py
 
@@ -295,5 +306,6 @@ modules:
     paths:
       - src/robotsix_chat/notification/__init__.py
       - src/robotsix_chat/notification/skill.md
+      - docs/notification/skill.md
       - tests/notification/__init__.py
       - tests/notification/test_notification.py

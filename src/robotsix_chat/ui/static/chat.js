@@ -34,6 +34,21 @@
   // (currentRequestSessionId removed — unused; cross-session guard uses
   //  the requestSessionId captured inside doPost instead.)
 
+  // ---- Summary overlay: keep chat padding in sync with summary height ---
+  // Uses a ResizeObserver so the absolutely-positioned summary never
+  // participates in layout — the chat's scroll offset is stable regardless
+  // of summary visibility or size changes.
+  if (summaryContainerEl && chatEl) {
+    var summaryResizeObserver = new ResizeObserver(function (entries) {
+      var h = 0;
+      for (var i = 0; i < entries.length; i++) {
+        h = entries[i].contentRect.height;
+      }
+      chatEl.style.setProperty("--summary-height", h + "px");
+    });
+    summaryResizeObserver.observe(summaryContainerEl);
+  }
+
   // ---- Image attachments -----------------------------------------------
   var MAX_IMAGES = 8;
   var MAX_FILE_BYTES = 5 * 1024 * 1024;  // 5 MiB
@@ -228,6 +243,8 @@
   // ---- Session management (localStorage-backed) -----------------------
   var ACTIVE_SESSION_KEY = PROJECT_TITLE + "-active-session-id";
   var SUBS_PANEL_KEY = PROJECT_TITLE + "-subsessions-panel-visible";
+  var SESSIONS_PANEL_KEY = PROJECT_TITLE + "-sessions-panel-visible";
+  var UNREAD_SESSION_KEY = PROJECT_TITLE + "-unread-sessions";
   var activeSessionId = null;
   var sessionsList = [];        // cached session list from server
 
@@ -252,6 +269,85 @@
 
   function restoreSubsPanelState() {
     if (getSubsPanelVisible()) { openSubsessionsPanel(); }
+  }
+
+  // ---- Sessions panel visibility (localStorage-backed) ----------------
+  function getSessionsPanelVisible() {
+    try { return localStorage.getItem(SESSIONS_PANEL_KEY) !== "false"; }
+    catch (_) { return true; }
+  }
+
+  function setSessionsPanelVisible(visible) {
+    try { localStorage.setItem(SESSIONS_PANEL_KEY, visible ? "true" : "false"); } catch (_) {}
+  }
+
+  function restoreSessionsPanelState() {
+    if (getSessionsPanelVisible()) {
+      openSessionsPanel();
+    } else {
+      sessionsPanel.classList.remove("visible");
+      hideSessionsResizeHandle();
+    }
+  }
+
+  function openSessionsPanel() {
+    sessionsPanel.classList.add("visible");
+    positionSessionsResizeHandle();
+    document.documentElement.style.setProperty('--sessions-width', sessionsPanel.getBoundingClientRect().width + 'px');
+  }
+
+  // ---- Unread session tracking (localStorage-backed) ------------------
+  function getUnreadState() {
+    try {
+      var raw = localStorage.getItem(UNREAD_SESSION_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch (_) { return {}; }
+  }
+
+  function setUnreadState(state) {
+    try { localStorage.setItem(UNREAD_SESSION_KEY, JSON.stringify(state)); } catch (_) {}
+  }
+
+  function markSessionRead(sessionId) {
+    // Reset the unread baseline for this session to its current turn_count,
+    // clearing any highlight. Future increases will re-trigger highlighting.
+    if (!sessionId) return;
+    var state = getUnreadState();
+    for (var i = 0; i < sessionsList.length; i++) {
+      if (sessionsList[i].session_id === sessionId) {
+        state[sessionId] = sessionsList[i].turn_count || 0;
+        setUnreadState(state);
+        return;
+      }
+    }
+  }
+
+  function updateUnreadFromList(sessions) {
+    // Ensure every server-side session has a baseline entry so future
+    // turn_count increases are detected. Sessions missing from the stored
+    // state (new sessions, or sessions from a previous browsing session)
+    // get their current turn_count as baseline; existing sessions keep
+    // their stored (possibly lower) baseline so the unread highlight fires.
+    var state = getUnreadState();
+    var changed = false;
+    for (var i = 0; i < sessions.length; i++) {
+      var s = sessions[i];
+      var sid = s.session_id;
+      if (!(sid in state)) {
+        state[sid] = s.turn_count || 0;
+        changed = true;
+      }
+    }
+    if (changed) { setUnreadState(state); }
+  }
+
+  function isSessionUnread(sessionId, turnCount) {
+    if (sessionId === activeSessionId) return false;
+    var state = getUnreadState();
+    var lastSeen = state[sessionId];
+    // Not tracked yet — treat as read (no prior baseline).
+    if (lastSeen === undefined) return false;
+    return turnCount > lastSeen;
   }
 
   // ---- Session API helpers --------------------------------------------
@@ -284,6 +380,7 @@
     if (!data || !Array.isArray(data.sessions)) return;
     sessionsList = data.sessions;
     var listEl = document.getElementById("sessions-list");
+    var scrollTop = listEl.scrollTop;
     listEl.innerHTML = "";
 
     for (var i = 0; i < sessionsList.length; i++) {
@@ -292,6 +389,9 @@
       row.className = "session-row";
       if (s.session_id === activeSessionId) {
         row.classList.add("active");
+      }
+      if (isSessionUnread(s.session_id, s.turn_count || 0)) {
+        row.classList.add("session-row-unread");
       }
 
       var titleDiv = document.createElement("div");
@@ -343,6 +443,9 @@
 
       listEl.appendChild(row);
     }
+
+    // Restore scroll position (preserved across auto-refresh re-renders).
+    listEl.scrollTop = scrollTop;
   }
 
   function deleteSession(sid) {
@@ -364,11 +467,18 @@
     });
   }
 
-  function relativeTime(iso) {
+  function relativeTime(raw) {
     // Return a human-readable relative time string (e.g. "2m ago", "1h ago").
-    var then = new Date(iso).getTime();
-    var now = Date.now();
-    var diffSec = Math.floor((now - then) / 1000);
+    // Accepts Unix timestamps in seconds (number) or ISO 8601 strings.
+    var ms;
+    if (typeof raw === "number") {
+      ms = raw * 1000;  // seconds → milliseconds
+    } else {
+      ms = new Date(raw).getTime();
+    }
+    if (!ms || ms <= 0) return "";
+    var diffSec = Math.floor((Date.now() - ms) / 1000);
+    if (diffSec < 0) return "";
     if (diffSec < 60) return "just now";
     var mins = Math.floor(diffSec / 60);
     if (mins < 60) return mins + "m ago";
@@ -387,6 +497,8 @@
 
   function refreshSessions() {
     fetchSessions().then(function (data) {
+      updateUnreadFromList(data.sessions || []);
+      markSessionRead(activeSessionId);
       renderSessionList(data);
       // NOTE: we purposely do NOT update activeSessionId from the server's
       // active_session_id here — that would silently clobber the user's choice
@@ -402,6 +514,9 @@
 
     // 1. Persist the new active session_id.
     setActiveSessionId(sessionId);
+
+    // 1b. Clear unread highlight for this session.
+    markSessionRead(sessionId);
 
     // 2. Clear the chat DOM bubbles.
     clearChatBubbles();
@@ -446,12 +561,27 @@
   var eventStreamAbortController = null;
   var eventsStreamIntentionallyClosed = false;
   var eventStreamReconnectTimer = null;
+  // Monotonic stream generation. Callbacks captured by an older
+  // openEventStream() compare their generation against this and no-op when
+  // stale. Without it, aborting the previous stream fires its pump catch
+  // with AbortError AFTER eventsStreamIntentionallyClosed was reset to
+  // false, so the stale stream scheduled a reconnect that aborted the new
+  // healthy stream 5s later — a self-sustaining reconnect loop that left
+  // /events effectively dead (subsession echo frames published to a key
+  // with no subscriber are silently dropped).
+  var eventStreamGeneration = 0;
+  var eventStreamWatchdogTimer = null;
 
   function closeEventStream() {
     eventsStreamIntentionallyClosed = true;
+    eventStreamGeneration++;
     if (eventStreamReconnectTimer) {
       clearTimeout(eventStreamReconnectTimer);
       eventStreamReconnectTimer = null;
+    }
+    if (eventStreamWatchdogTimer) {
+      clearInterval(eventStreamWatchdogTimer);
+      eventStreamWatchdogTimer = null;
     }
     if (eventStreamAbortController) {
       eventStreamAbortController.abort();
@@ -998,10 +1128,16 @@
       } else if (!resp.ok) {
         showError("Failed to send message (HTTP " + resp.status + ")");
       } else {
-        // Accepted (202) — do NOT append locally; the echoed
-        // subsession_message SSE frame renders it.
+        // Accepted (202) — don't append a local bubble directly; re-sync
+        // the transcript from the server instead so the message renders
+        // even when the /events SSE channel is down (the echoed
+        // subsession_message frame is published fire-and-forget and is
+        // silently dropped if this tab holds no live subscription for the
+        // owner session). loadSubsTranscript dedupes by exact
+        // timestamp+role+text, so an SSE echo arriving too is harmless.
         sub._draft = "";
         if (sub._msgInput) sub._msgInput.value = "";
+        loadSubsTranscript(sub);
       }
     }).catch(function (err) {
       showError("Failed to send message: " + (err.message || "Network error"));
@@ -1132,7 +1268,12 @@
 
   // ---- Helpers ---------------------------------------------------------
   function scrollToBottom() {
-    chatEl.scrollTop = chatEl.scrollHeight;
+    // Only auto-scroll if the user is already near the bottom —
+    // don't hijack the viewport when they've scrolled up to read history.
+    var threshold = 50; // px from bottom
+    if ((chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight) < threshold) {
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
   }
 
   function setConnectionStatus(ok) {
@@ -1538,6 +1679,7 @@
           // Ignore lines with "event:", "id:", "retry:", or comments.
         }
 
+        if (controller.onActivity) controller.onActivity();
         return pump();
       }).catch(function (err) {
         controller.error(err);
@@ -1553,9 +1695,16 @@
     // Abort any prior stream before opening a new one so we never run two
     // /events fetches at once (each would hold its own server-side EventBus
     // subscription → duplicate frames). Also cancel a pending reconnect.
+    // Bumping the generation first makes every callback captured by the
+    // prior stream (including its pump's AbortError catch) a stale no-op.
+    var gen = ++eventStreamGeneration;
     if (eventStreamReconnectTimer) {
       clearTimeout(eventStreamReconnectTimer);
       eventStreamReconnectTimer = null;
+    }
+    if (eventStreamWatchdogTimer) {
+      clearInterval(eventStreamWatchdogTimer);
+      eventStreamWatchdogTimer = null;
     }
     if (eventStreamAbortController) {
       try { eventStreamAbortController.abort(); } catch (_) {}
@@ -1565,8 +1714,19 @@
                     "?session_id=" + encodeURIComponent(activeSessionId) +
                     "&owner_id=" + encodeURIComponent(clientId);
 
+    // Read-liveness watchdog: the server writes a keepalive comment every
+    // 5s, so a healthy stream always produces reads. A silently-dead TCP
+    // connection (laptop sleep, network change) leaves reader.read()
+    // pending forever with no error — without this, the tab keeps a
+    // zombie /events subscription until reload.
+    var lastActivity = Date.now();
+
     var eventsController = {
+      onActivity: function () {
+        lastActivity = Date.now();
+      },
       onData: function (raw) {
+        if (gen !== eventStreamGeneration) return;  // stale stream
         var frame;
         try { frame = JSON.parse(raw); }
         catch (_) { return; /* skip unparsable frames */ }
@@ -1623,12 +1783,18 @@
       },
       onDone: function () {
         // Stream closed by server — reconnect after a short delay,
-        // unless the stream was intentionally closed (session switch).
+        // unless the stream was intentionally closed (session switch)
+        // or superseded by a newer stream.
+        if (gen !== eventStreamGeneration) return;  // stale stream
         if (eventsStreamIntentionallyClosed) return;
         scheduleEventReconnect();
       },
       error: function (_err) {
         // Network error or stream failure — reconnect after a short delay.
+        // A stale stream's pump lands here with AbortError when a newer
+        // openEventStream() aborted it; it must NOT schedule a reconnect
+        // (that reconnect would abort the healthy new stream, forever).
+        if (gen !== eventStreamGeneration) return;  // stale stream
         if (eventsStreamIntentionallyClosed) return;
         scheduleEventReconnect();
       }
@@ -1636,11 +1802,13 @@
 
     // Create a new AbortController so closeEventStream() can abort this fetch.
     eventStreamAbortController = new AbortController();
+    var abortController = eventStreamAbortController;
 
     fetch(eventsUrl, {
       method: "GET",
-      signal: eventStreamAbortController.signal
+      signal: abortController.signal
     }).then(function (response) {
+      if (gen !== eventStreamGeneration) return;  // stale stream
       if (!response.ok) {
         scheduleEventReconnect();
         return;
@@ -1653,10 +1821,24 @@
       // (Re)connected — re-sync the subsessions snapshot so any frames
       // missed while disconnected are reflected in the panel.
       fetchSubsessions();
+      lastActivity = Date.now();
+      eventStreamWatchdogTimer = setInterval(function () {
+        if (gen !== eventStreamGeneration) return;  // cleared by successor
+        if (Date.now() - lastActivity > 20000) {
+          // No bytes (not even the 5s keepalive) for 20s — the connection
+          // is dead even though reader.read() never rejected. Tear it
+          // down and reconnect.
+          clearInterval(eventStreamWatchdogTimer);
+          eventStreamWatchdogTimer = null;
+          try { abortController.abort(); } catch (_) {}
+          scheduleEventReconnect();
+        }
+      }, 5000);
       var parser = processSSEStream(response.body, eventsController);
       parser.start();
     }).catch(function (err) {
-      // Don't reconnect if aborted (session switch).
+      // Don't reconnect if aborted (session switch) or superseded.
+      if (gen !== eventStreamGeneration) return;
       if (err && err.name === "AbortError") return;
       scheduleEventReconnect();
     });
@@ -2053,6 +2235,7 @@
     e.stopPropagation();
     var opening = !sessionsPanel.classList.contains("visible");
     sessionsPanel.classList.toggle("visible");
+    setSessionsPanelVisible(sessionsPanel.classList.contains("visible"));
     if (opening) {
       positionSessionsResizeHandle();
       // Refresh session list from server when opening.
@@ -2067,6 +2250,7 @@
   sessionsDismiss.addEventListener("click", function (e) {
     e.stopPropagation();
     sessionsPanel.classList.remove("visible");
+    setSessionsPanelVisible(false);
     hideSessionsResizeHandle();
   });
 
@@ -2077,6 +2261,7 @@
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && sessionsPanel.classList.contains("visible")) {
       sessionsPanel.classList.remove("visible");
+      setSessionsPanelVisible(false);
       hideSessionsResizeHandle();
     }
   });
@@ -2298,10 +2483,12 @@
     if (sid) {
       setActiveSessionId(sid);
     }
+    updateUnreadFromList(data.sessions || []);
     renderSessionList(data);
     loadHistory();
     fetchSubsessions();
     restoreSubsPanelState();
+    restoreSessionsPanelState();
     openEventStream();
     resetIdleTimer();
   }).catch(function () {
@@ -2316,7 +2503,23 @@
     loadHistory();
     fetchSubsessions();
     restoreSubsPanelState();
+    restoreSessionsPanelState();
     openEventStream();
     resetIdleTimer();
+  });
+
+  // ---- Periodic session-list refresh -----------------------------------
+  var SESSION_REFRESH_INTERVAL_MS = 20000;  // 20 seconds
+  var sessionRefreshTimer = setInterval(function () {
+    // Only refresh when the page is visible to avoid wasted fetches.
+    if (document.hidden) return;
+    refreshSessions();
+  }, SESSION_REFRESH_INTERVAL_MS);
+
+  window.addEventListener("beforeunload", function () {
+    if (sessionRefreshTimer) {
+      clearInterval(sessionRefreshTimer);
+      sessionRefreshTimer = null;
+    }
   });
 })();

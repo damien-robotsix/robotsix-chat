@@ -15,9 +15,11 @@ from robotsix_chat.subsessions import (
     SubsessionStatus,
     resume_subsessions,
 )
+from robotsix_chat.subsessions.resume import (
+    _entry_last_assistant_text,
+)
 from robotsix_chat.subsessions.worker import (
     _build_ancestor_context,
-    _entry_last_assistant_text,
 )
 from tests.common.subsession_fakes import FakeAgent, build_env, make_settings
 
@@ -91,8 +93,11 @@ async def test_resume_subsessions_full_scenario(tmp_path: Path) -> None:
     assert periodic.kind is SubsessionKind.PERIODIC
     assert periodic.status in (SubsessionStatus.RUNNING, SubsessionStatus.SLEEPING)
     assert periodic.interval_seconds == 0.05
-    # Remaining run budget: max_runs(5) - runs(2) = 3.
-    assert periodic.max_runs == 3
+    # The budget and the executed-run counter both survive the restart —
+    # the effective remaining budget (5 - 2 = 3) falls out of the
+    # ``runs >= max_runs`` check instead of a rebudget.
+    assert periodic.max_runs == 5
+    assert periodic.runs == 2
     worker = registry._running.get(ids["periodic"])
     assert worker is not None
 
@@ -113,6 +118,21 @@ async def test_resume_subsessions_full_scenario(tmp_path: Path) -> None:
         for label in labels
     )
 
+    # -- restart notice: injected into the conversation ---------------------
+    restart_notices = [
+        label for label, _ in history if "the chat service was restarted" in label
+    ]
+    assert len(restart_notices) == 1, (
+        "expected exactly one restart notice per affected conversation"
+    )
+    notice = restart_notices[0]
+    assert f'Periodic "watch CI" ({ids["periodic"][:8]})' in notice
+    assert "resumed" in notice
+    assert f'Task "one shot" ({ids["task"][:8]})' in notice
+    assert "interrupted" in notice
+    # Terminal entries are not listed.
+    assert ids["closed"][:8] not in notice
+
     # -- closed: restored as-is, no worker, no new report -------------------
     closed = registry.get(ids["closed"])
     assert closed is not None
@@ -128,8 +148,14 @@ async def test_resume_subsessions_full_scenario(tmp_path: Path) -> None:
 
 
 @pytest.mark.asyncio
-async def test_resume_periodic_run_budget_never_below_one(tmp_path: Path) -> None:
-    """An exhausted persisted run budget still allows one resumed run."""
+async def test_resume_periodic_restores_run_counter_and_budget(
+    tmp_path: Path,
+) -> None:
+    """The run counter and original ``max_runs`` both survive a restart.
+
+    An exhausted budget still allows exactly one resumed run: the
+    ``runs >= max_runs`` check fires after that run completes.
+    """
     store_path = tmp_path / "subsessions.json"
     registry1 = SubsessionRegistry(store_path=store_path)
     periodic = registry1.create(
@@ -156,7 +182,67 @@ async def test_resume_periodic_run_budget_never_below_one(tmp_path: Path) -> Non
 
     resumed = registry2.get(periodic.id)
     assert resumed is not None
-    assert resumed.max_runs == 1
+    assert resumed.max_runs == 3
+    assert resumed.runs == 3
+
+    worker = registry2._running.get(periodic.id)
+    registry2.cancel_and_close(periodic.id, reason="teardown", closed_by="system")
+    if worker is not None:
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(worker, 2.0)
+
+
+@pytest.mark.asyncio
+async def test_resume_periodic_does_not_replay_completed_runs(
+    tmp_path: Path,
+) -> None:
+    """A resumed periodic worker executes the NEXT run immediately.
+
+    Regression: resume used to seed ``completed_runs`` but restart the
+    counter at 0, so the worker collided with every historical run
+    number and slept one full interval per collision — with a long
+    interval and regular restarts the subsession never ran again.  The
+    60 s interval here makes any such sleep fail the test's 2 s wait.
+    """
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    periodic = registry1.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="long watch",
+        prompt="check the board",
+        model_level=3,
+        interval_seconds=60.0,
+        max_runs=10,
+    )
+    for run_n in (1, 2, 3):
+        assert registry1.claim_run(periodic.id, run_n)
+    registry1.set_status(periodic.id, SubsessionStatus.SLEEPING, runs=3)
+
+    agent = FakeAgent(["run 4 result"], gate=asyncio.Event())
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=agent,
+        registry=registry2,
+        settings=make_settings(min_interval_seconds=0.01),
+    )
+    resume_subsessions(env)
+
+    resumed = registry2.get(periodic.id)
+    assert resumed is not None
+    assert resumed.runs == 3
+    assert resumed.completed_runs == {1, 2, 3}
+
+    # The first turn (run 4) must start promptly — a worker that
+    # replays runs 1..3 sleeps 60 s per replay and never gets here.
+    for _ in range(200):
+        if agent.calls:
+            break
+        await asyncio.sleep(0.01)
+    assert agent.calls, "resumed worker never reached its next run"
+    assert 4 in resumed.completed_runs
 
     worker = registry2._running.get(periodic.id)
     registry2.cancel_and_close(periodic.id, reason="teardown", closed_by="system")
@@ -532,3 +618,130 @@ async def test_resume_user_chat_no_augmentation_when_no_transcript(
         registry2.cancel_and_close(user_chat.id, reason="teardown", closed_by="system")
         with contextlib.suppress(asyncio.CancelledError):
             await asyncio.wait_for(worker, 2.0)
+
+
+# ---------------------------------------------------------------------------
+# restart notice injection
+# ---------------------------------------------------------------------------
+
+
+def test_restart_notice_not_injected_when_no_active_subsessions(
+    tmp_path: Path,
+) -> None:
+    """No restart notice when all persisted entries are already terminal."""
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    closed = registry1.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="done job",
+        prompt="already finished",
+        model_level=3,
+    )
+    registry1.mark_closed(closed.id, summary="done", reason="completed")
+
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(registry=registry2)
+    resume_subsessions(env)
+
+    history = env.conversation_store.history(OWNER)
+    restart_notices = [
+        label for label, _ in history if "the chat service was restarted" in label
+    ]
+    assert restart_notices == []
+
+
+@pytest.mark.asyncio
+async def test_restart_notice_includes_user_chat_as_resumed(
+    tmp_path: Path,
+) -> None:
+    """User_chat subsessions appear as 'resumed' in the restart notice."""
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    uc = registry1.create(
+        kind=SubsessionKind.USER_CHAT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="side chat",
+        prompt="discuss the plan",
+        model_level=3,
+    )
+    registry1.set_status(uc.id, SubsessionStatus.WAITING)
+
+    gate = asyncio.Event()
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=FakeAgent(["ok"], gate=gate),
+        registry=registry2,
+        settings=make_settings(),
+    )
+    resume_subsessions(env)
+
+    history = env.conversation_store.history(OWNER)
+    notices = [
+        label for label, _ in history if "the chat service was restarted" in label
+    ]
+    assert len(notices) == 1
+    notice = notices[0]
+    assert f'User_chat "side chat" ({uc.id[:8]})' in notice
+    assert "resumed" in notice
+
+    worker = registry2._running.get(uc.id)
+    if worker is not None:
+        registry2.cancel_and_close(uc.id, reason="teardown", closed_by="system")
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(worker, 2.0)
+
+
+def test_restart_notice_multiple_owners_each_get_own_notice(
+    tmp_path: Path,
+) -> None:
+    """Each affected owner gets a restart notice scoped to its subsessions."""
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    owner_a = "sess-a"
+    owner_b = "sess-b"
+
+    task_a = registry1.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id=owner_a,
+        parent_id=None,
+        depth=1,
+        title="task A",
+        prompt="do A",
+        model_level=3,
+    )
+    task_b = registry1.create(
+        kind=SubsessionKind.TASK,
+        owner_session_id=owner_b,
+        parent_id=None,
+        depth=1,
+        title="task B",
+        prompt="do B",
+        model_level=3,
+    )
+
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(registry=registry2)
+    resume_subsessions(env)
+
+    # Owner A's notice mentions only task A.
+    history_a = env.conversation_store.history(owner_a)
+    notices_a = [
+        label for label, _ in history_a if "the chat service was restarted" in label
+    ]
+    assert len(notices_a) == 1
+    assert f'Task "task A" ({task_a.id[:8]})' in notices_a[0]
+    assert task_b.id[:8] not in notices_a[0]
+
+    # Owner B's notice mentions only task B.
+    history_b = env.conversation_store.history(owner_b)
+    notices_b = [
+        label for label, _ in history_b if "the chat service was restarted" in label
+    ]
+    assert len(notices_b) == 1
+    assert f'Task "task B" ({task_b.id[:8]})' in notices_b[0]
+    assert task_a.id[:8] not in notices_b[0]

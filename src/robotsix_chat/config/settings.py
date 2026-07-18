@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from pydantic import BaseModel, Field, SecretStr
+from pydantic import BaseModel, Field, SecretStr, model_validator
 from robotsix_config import load_config
 from robotsix_llmio.config import TierLevel
 
@@ -336,6 +336,76 @@ class Settings(BaseModel):
                 "version_check.repo is required when version_check.enabled is true — "
                 "provide it via the `version_check.repo` config field"
             )
+        if self.feedback.enabled and not self.feedback.board_url:
+            raise ValueError(
+                "feedback.board_url must be non-empty when feedback.enabled is "
+                "true — provide it via the `feedback.board_url` config field"
+            )
+
+    # ------------------------------------------------------------------
+    # Legacy config normalisation
+    # ------------------------------------------------------------------
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_legacy_empty_strings(cls, data: Any) -> Any:
+        """Coerce legacy ``""`` placeholders to proper empty containers.
+
+        Older deployed configs used ``""`` for optional array/object
+        fields that were never configured.  Pydantic rejects those, which
+        blocks partial config updates via the deploy API.  Normalize them
+        here so validation passes on the untouched legacy keys.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        # Top-level list fields that tolerate "" → []
+        for key in ("cors_allow_origins", "allowed_image_media_types"):
+            if data.get(key) == "":
+                data[key] = []
+
+        # Top-level object fields that tolerate "" → {}
+        _object_keys = (
+            "langfuse",
+            "memory",
+            "central_deploy",
+            "mail",
+            "conversation",
+            "diagnostics",
+            "refdocs",
+            "render_url",
+            "knowledge",
+            "self_review",
+            "version_check",
+            "component_client",
+            "subsessions",
+            "direct_repo",
+            "github_security",
+            "repo_study",
+            "lifecycle",
+            "notification",
+            "feedback",
+        )
+        for key in _object_keys:
+            if data.get(key) == "":
+                data[key] = {}
+
+        # Nested list fields inside object sub-models
+        if isinstance(data.get("refdocs"), dict) and data["refdocs"].get("repos") == "":
+            data["refdocs"]["repos"] = []
+        if (
+            isinstance(data.get("component_client"), dict)
+            and data["component_client"].get("components") == ""
+        ):
+            data["component_client"]["components"] = []
+
+        # Nested object fields inside MemorySettings
+        if isinstance(data.get("memory"), dict):
+            for key in ("llm", "langfuse", "embedding"):
+                if data["memory"].get(key) == "":
+                    data["memory"][key] = {}
+
+        return data
 
     # ------------------------------------------------------------------
     # Factories
