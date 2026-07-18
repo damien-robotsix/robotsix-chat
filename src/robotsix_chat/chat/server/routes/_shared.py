@@ -6,10 +6,27 @@ These are small, standalone utilities that multiple endpoint files depend on.
 from __future__ import annotations
 
 import json
+from collections.abc import Iterable
 from typing import Any
 
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
+
+
+def build_transcript(turns: Iterable[tuple[str, str]], *, max_len: int = 2000) -> str:
+    """Build a compact conversation transcript from (user, assistant) pairs.
+
+    Assistant replies longer than *max_len* are truncated with an ellipsis.
+    """
+    parts: list[str] = []
+    for user_msg, asst_msg in turns:
+        parts.append(f"User: {user_msg}")
+        if asst_msg:
+            truncated = (
+                asst_msg[:max_len] + "\u2026" if len(asst_msg) > max_len else asst_msg
+            )
+            parts.append(f"Assistant: {truncated}")
+    return "\n".join(parts)
 
 
 def _sse_frame(payload: object) -> bytes:

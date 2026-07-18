@@ -1,0 +1,1 @@
+Extract build_transcript utility from duplicated transcript loop in chat/sessions routes
