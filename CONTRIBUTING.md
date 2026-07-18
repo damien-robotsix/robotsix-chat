@@ -29,7 +29,6 @@ commands below; the Makefile targets are simple wrappers with no hidden logic.
 | ruff (lint)         | `make lint`                     | `uv run ruff check src/robotsix_chat tests`                                                       | Code style, lint, and docstring rules |
 | ruff (format check) | `make format-check`             | `uv run ruff format --check src/robotsix_chat tests && uv run ruff check src/robotsix_chat tests` | Code formatting                       |
 | mypy                | `make typecheck`                | `uv run mypy src/robotsix_chat tests`                                                             | Static type checking (strict mode)    |
-
 | uv audit            | *(no target — use raw command)* | `uv audit`                                                                                        | Known vulnerabilities in dependencies |
 | pytest              | `make test`                     | `uv run pytest`                                                                                   | Test suite                            |
 | all of the above    | `make all`                      | *(runs lint, format-check, typecheck, test)*                                                      | Pre-PR validation                     |
