@@ -313,6 +313,10 @@ body {
   border-color: var(--btn-primary-bg);
   background: rgba(59, 130, 246, 0.12);
 }
+.session-row.session-row-unread {
+  border-color: #f59e0b;
+  background: rgba(245, 158, 11, 0.10);
+}
 .session-row .session-title {
   font-weight: 600; margin-bottom: 0.15rem;
   white-space: nowrap; overflow: hidden; text-overflow: ellipsis;

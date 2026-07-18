@@ -228,6 +228,8 @@
   // ---- Session management (localStorage-backed) -----------------------
   var ACTIVE_SESSION_KEY = PROJECT_TITLE + "-active-session-id";
   var SUBS_PANEL_KEY = PROJECT_TITLE + "-subsessions-panel-visible";
+  var SESSIONS_PANEL_KEY = PROJECT_TITLE + "-sessions-panel-visible";
+  var UNREAD_SESSION_KEY = PROJECT_TITLE + "-unread-sessions";
   var activeSessionId = null;
   var sessionsList = [];        // cached session list from server
 
@@ -252,6 +254,85 @@
 
   function restoreSubsPanelState() {
     if (getSubsPanelVisible()) { openSubsessionsPanel(); }
+  }
+
+  // ---- Sessions panel visibility (localStorage-backed) ----------------
+  function getSessionsPanelVisible() {
+    try { return localStorage.getItem(SESSIONS_PANEL_KEY) !== "false"; }
+    catch (_) { return true; }
+  }
+
+  function setSessionsPanelVisible(visible) {
+    try { localStorage.setItem(SESSIONS_PANEL_KEY, visible ? "true" : "false"); } catch (_) {}
+  }
+
+  function restoreSessionsPanelState() {
+    if (getSessionsPanelVisible()) {
+      openSessionsPanel();
+    } else {
+      sessionsPanel.classList.remove("visible");
+      hideSessionsResizeHandle();
+    }
+  }
+
+  function openSessionsPanel() {
+    sessionsPanel.classList.add("visible");
+    positionSessionsResizeHandle();
+    document.documentElement.style.setProperty('--sessions-width', sessionsPanel.getBoundingClientRect().width + 'px');
+  }
+
+  // ---- Unread session tracking (localStorage-backed) ------------------
+  function getUnreadState() {
+    try {
+      var raw = localStorage.getItem(UNREAD_SESSION_KEY);
+      return raw ? JSON.parse(raw) : {};
+    } catch (_) { return {}; }
+  }
+
+  function setUnreadState(state) {
+    try { localStorage.setItem(UNREAD_SESSION_KEY, JSON.stringify(state)); } catch (_) {}
+  }
+
+  function markSessionRead(sessionId) {
+    // Reset the unread baseline for this session to its current turn_count,
+    // clearing any highlight. Future increases will re-trigger highlighting.
+    if (!sessionId) return;
+    var state = getUnreadState();
+    for (var i = 0; i < sessionsList.length; i++) {
+      if (sessionsList[i].session_id === sessionId) {
+        state[sessionId] = sessionsList[i].turn_count || 0;
+        setUnreadState(state);
+        return;
+      }
+    }
+  }
+
+  function updateUnreadFromList(sessions) {
+    // Ensure every server-side session has a baseline entry so future
+    // turn_count increases are detected. Sessions missing from the stored
+    // state (new sessions, or sessions from a previous browsing session)
+    // get their current turn_count as baseline; existing sessions keep
+    // their stored (possibly lower) baseline so the unread highlight fires.
+    var state = getUnreadState();
+    var changed = false;
+    for (var i = 0; i < sessions.length; i++) {
+      var s = sessions[i];
+      var sid = s.session_id;
+      if (!(sid in state)) {
+        state[sid] = s.turn_count || 0;
+        changed = true;
+      }
+    }
+    if (changed) { setUnreadState(state); }
+  }
+
+  function isSessionUnread(sessionId, turnCount) {
+    if (sessionId === activeSessionId) return false;
+    var state = getUnreadState();
+    var lastSeen = state[sessionId];
+    // Not tracked yet — treat as read (no prior baseline).
+    if (lastSeen === undefined) return false;
+    return turnCount > lastSeen;
   }
 
   // ---- Session API helpers --------------------------------------------
@@ -284,6 +365,7 @@
     if (!data || !Array.isArray(data.sessions)) return;
     sessionsList = data.sessions;
     var listEl = document.getElementById("sessions-list");
+    var scrollTop = listEl.scrollTop;
     listEl.innerHTML = "";
 
     for (var i = 0; i < sessionsList.length; i++) {
@@ -292,6 +374,9 @@
       row.className = "session-row";
       if (s.session_id === activeSessionId) {
         row.classList.add("active");
+      }
+      if (isSessionUnread(s.session_id, s.turn_count || 0)) {
+        row.classList.add("session-row-unread");
       }
 
       var titleDiv = document.createElement("div");
@@ -343,6 +428,9 @@
 
       listEl.appendChild(row);
     }
+
+    // Restore scroll position (preserved across auto-refresh re-renders).
+    listEl.scrollTop = scrollTop;
   }
 
   function deleteSession(sid) {
@@ -394,6 +482,7 @@
 
   function refreshSessions() {
     fetchSessions().then(function (data) {
+      updateUnreadFromList(data.sessions || []);
       renderSessionList(data);
       // NOTE: we purposely do NOT update activeSessionId from the server's
       // active_session_id here — that would silently clobber the user's choice
@@ -409,6 +498,9 @@
 
     // 1. Persist the new active session_id.
     setActiveSessionId(sessionId);
+
+    // 1b. Clear unread highlight for this session.
+    markSessionRead(sessionId);
 
     // 2. Clear the chat DOM bubbles.
     clearChatBubbles();
@@ -2122,6 +2214,7 @@
     e.stopPropagation();
     var opening = !sessionsPanel.classList.contains("visible");
     sessionsPanel.classList.toggle("visible");
+    setSessionsPanelVisible(sessionsPanel.classList.contains("visible"));
     if (opening) {
       positionSessionsResizeHandle();
       // Refresh session list from server when opening.
@@ -2136,6 +2229,7 @@
   sessionsDismiss.addEventListener("click", function (e) {
     e.stopPropagation();
     sessionsPanel.classList.remove("visible");
+    setSessionsPanelVisible(false);
     hideSessionsResizeHandle();
   });
 
@@ -2146,6 +2240,7 @@
   document.addEventListener("keydown", function (e) {
     if (e.key === "Escape" && sessionsPanel.classList.contains("visible")) {
       sessionsPanel.classList.remove("visible");
+      setSessionsPanelVisible(false);
       hideSessionsResizeHandle();
     }
   });
@@ -2367,10 +2462,12 @@
     if (sid) {
       setActiveSessionId(sid);
     }
+    updateUnreadFromList(data.sessions || []);
     renderSessionList(data);
     loadHistory();
     fetchSubsessions();
     restoreSubsPanelState();
+    restoreSessionsPanelState();
     openEventStream();
     resetIdleTimer();
   }).catch(function () {
@@ -2385,7 +2482,23 @@
     loadHistory();
     fetchSubsessions();
     restoreSubsPanelState();
+    restoreSessionsPanelState();
     openEventStream();
     resetIdleTimer();
+  });
+
+  // ---- Periodic session-list refresh -----------------------------------
+  var SESSION_REFRESH_INTERVAL_MS = 20000;  // 20 seconds
+  var sessionRefreshTimer = setInterval(function () {
+    // Only refresh when the page is visible to avoid wasted fetches.
+    if (document.hidden) return;
+    refreshSessions();
+  }, SESSION_REFRESH_INTERVAL_MS);
+
+  window.addEventListener("beforeunload", function () {
+    if (sessionRefreshTimer) {
+      clearInterval(sessionRefreshTimer);
+      sessionRefreshTimer = null;
+    }
   });
 })();
