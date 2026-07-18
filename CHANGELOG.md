@@ -3,6 +3,7 @@
 - Fix summary panel layout shift: render summary as an absolute overlay
   outside the conversation's flex flow so appearing/resizing the summary
   no longer changes the chat scroll position.
+- Conversation auto-scroll now preserves user scroll position: only scrolls to bottom when the user is already near the bottom (≤50px threshold), preventing viewport hijacking when reading history.
 - Extract `build_transcript()` utility into `_shared.py` to deduplicate a conversation transcript assembly loop shared between `chat.py` and `sessions.py`.
 - Fix: ensure changelog fragment files (``changelog.d/*.misc.md``) end with a trailing newline, eliminating a ~7 min wasted CI ``fixing_ci`` cycle per ticket.  The fix overrides ``robotsix_mill.stages.towncrier`` via a local shadow package in ``src/robotsix_mill/``.
 - Extract shared `_request_json(method, path, body)` from near-identical `_post_json` and `_patch_json` in `GitHubDirectClient` to eliminate 9 duplicated lines.

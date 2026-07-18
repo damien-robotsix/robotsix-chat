@@ -1268,7 +1268,12 @@
 
   // ---- Helpers ---------------------------------------------------------
   function scrollToBottom() {
-    chatEl.scrollTop = chatEl.scrollHeight;
+    // Only auto-scroll if the user is already near the bottom —
+    // don't hijack the viewport when they've scrolled up to read history.
+    var threshold = 50; // px from bottom
+    if ((chatEl.scrollHeight - chatEl.scrollTop - chatEl.clientHeight) < threshold) {
+      chatEl.scrollTop = chatEl.scrollHeight;
+    }
   }
 
   function setConnectionStatus(ok) {
