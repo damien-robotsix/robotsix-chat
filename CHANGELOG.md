@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Fix false unread highlight on the previously-active session: `refreshSessions()` now calls `markSessionRead(activeSessionId)` to keep the active session's unread baseline current on every auto-refresh cycle.
+- Enable `state_sync` periodic check (`.robotsix-mill/periodic/state_sync.yaml`) to cross-reference enum members against string-literal reference sites across the codebase.
 - Chat UI: LLM-generated session titles after the first assistant reply (uses the summary model tier). Fix sidebar "X days ago" timestamps by handling Unix-second timestamps correctly.
 - Subsessions closing now trigger an immediate (fire-and-forget) reaction
   turn in the parent chat so the main agent sees and acts on the summary
