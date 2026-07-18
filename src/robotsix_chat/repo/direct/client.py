@@ -178,11 +178,11 @@ class DirectRepoClient:
         except json.JSONDecodeError as exc:
             raise RuntimeError(f"GitHub API GET {path}: invalid JSON: {exc}") from exc
 
-    async def _post_json(self, path: str, body: dict[str, Any]) -> Any:
-        """POST *path* on the GitHub API and return the parsed JSON body."""
+    async def _request_json(self, method: str, path: str, body: dict[str, Any]) -> Any:
+        """Issue *method* on the GitHub API and return the parsed JSON body."""
         url = f"{self._base_url}{path}"
         result = await safe_http_request(
-            "POST",
+            method,
             url,
             headers=await self._gh_headers(),
             timeout=self._s.timeout,
@@ -190,29 +190,21 @@ class DirectRepoClient:
             label="GitHub API",
         )
         if result.error:
-            raise RuntimeError(f"GitHub API POST {path}: {result.error}")
+            raise RuntimeError(f"GitHub API {method} {path}: {result.error}")
         try:
             return json.loads(result.text or "")
         except json.JSONDecodeError as exc:
-            raise RuntimeError(f"GitHub API POST {path}: invalid JSON: {exc}") from exc
+            raise RuntimeError(
+                f"GitHub API {method} {path}: invalid JSON: {exc}"
+            ) from exc
+
+    async def _post_json(self, path: str, body: dict[str, Any]) -> Any:
+        """POST *path* on the GitHub API and return the parsed JSON body."""
+        return await self._request_json("POST", path, body)
 
     async def _patch_json(self, path: str, body: dict[str, Any]) -> Any:
         """PATCH *path* on the GitHub API and return the parsed JSON body."""
-        url = f"{self._base_url}{path}"
-        result = await safe_http_request(
-            "PATCH",
-            url,
-            headers=await self._gh_headers(),
-            timeout=self._s.timeout,
-            json_body=body,
-            label="GitHub API",
-        )
-        if result.error:
-            raise RuntimeError(f"GitHub API PATCH {path}: {result.error}")
-        try:
-            return json.loads(result.text or "")
-        except json.JSONDecodeError as exc:
-            raise RuntimeError(f"GitHub API PATCH {path}: invalid JSON: {exc}") from exc
+        return await self._request_json("PATCH", path, body)
 
     # -- public API --------------------------------------------------------
 
