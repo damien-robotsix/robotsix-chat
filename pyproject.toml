@@ -238,7 +238,7 @@ DEP002 = ["transformers"]
 # this transitive import (DEP003) is deliberate.
 # `opentelemetry` is the OTLP exporter (``tracing`` extra); guarded by a
 # try/except ImportError in cognee's Langfuse callback registration.
-DEP003 = ["pydantic_ai", "opentelemetry"]
+DEP003 = ["pydantic_ai", "opentelemetry", "robotsix_mill"]
 
 [tool.bandit]
 exclude_dirs = ["tests", ".local_pkgs"]
