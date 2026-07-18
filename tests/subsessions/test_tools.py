@@ -481,3 +481,118 @@ async def test_complete_subsession_sets_close_state() -> None:
     assert close_state.requested is True
     assert close_state.summary == "all objectives met"
     assert "Close requested" in result
+
+
+# ---------------------------------------------------------------------------
+# set_checkpoint tool
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_set_checkpoint_stores_data():
+    """A valid dict is persisted in the registry checkpoint."""
+    env = build_env()
+    sub_id = _register(env, kind=SubsessionKind.TASK, sub_id="cp-1").id
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=sub_id, depth=1), close_state=close_state
+    )
+    set_cp = _by_name(tools, "set_checkpoint")
+
+    result = await set_cp({"ticket_id": "TICK-42", "last_known_state": "open"})
+
+    assert "Checkpoint updated" in result
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.checkpoint == {"ticket_id": "TICK-42", "last_known_state": "open"}
+
+
+@pytest.mark.asyncio
+async def test_set_checkpoint_invalid_data_rejected():
+    """Passing a non-dict value returns an error message."""
+    env = build_env()
+    sub_id = _register(env, kind=SubsessionKind.TASK, sub_id="cp-2").id
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=sub_id, depth=1), close_state=close_state
+    )
+    set_cp = _by_name(tools, "set_checkpoint")
+
+    result = await set_cp("not a dict")  # type: ignore[arg-type]
+
+    assert "must be a dict" in result
+
+
+@pytest.mark.asyncio
+async def test_set_checkpoint_inactive_subsession_returns_error():
+    """Calling set_checkpoint on a non-existent subsession returns an error."""
+    env = build_env()
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env,
+        ctx=_ctx(subsession_id="nonexistent-id", depth=1),
+        close_state=close_state,
+    )
+    set_cp = _by_name(tools, "set_checkpoint")
+
+    result = await set_cp({"x": 1})
+    assert "no longer active" in result
+
+
+@pytest.mark.asyncio
+async def test_set_checkpoint_replaces_entire_checkpoint():
+    """Each call REPLACES the entire checkpoint — old keys are dropped."""
+    env = build_env()
+    sub_id = _register(env, kind=SubsessionKind.TASK, sub_id="cp-4").id
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=sub_id, depth=1), close_state=close_state
+    )
+    set_cp = _by_name(tools, "set_checkpoint")
+
+    await set_cp({"ticket_id": "TICK-1", "last_known_state": "open", "retries": 0})
+    await set_cp({"ticket_id": "TICK-2", "last_known_state": "closed"})
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # Only the second call's data is present — "retries" is gone.
+    assert info.checkpoint == {
+        "ticket_id": "TICK-2",
+        "last_known_state": "closed",
+    }
+
+
+@pytest.mark.asyncio
+async def test_set_checkpoint_empty_dict_clears():
+    """Passing an empty dict clears the checkpoint."""
+    env = build_env()
+    sub_id = _register(env, kind=SubsessionKind.TASK, sub_id="cp-5").id
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=sub_id, depth=1), close_state=close_state
+    )
+    set_cp = _by_name(tools, "set_checkpoint")
+
+    await set_cp({"ticket_id": "TICK-1"})
+    result = await set_cp({})
+    assert "Checkpoint updated" in result
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.checkpoint is None  # empty dict → None in registry
+
+
+@pytest.mark.asyncio
+async def test_set_checkpoint_non_string_key_rejected():
+    """Non-string keys produce an error message."""
+    env = build_env()
+    sub_id = _register(env, kind=SubsessionKind.TASK, sub_id="cp-6").id
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=sub_id, depth=1), close_state=close_state
+    )
+    set_cp = _by_name(tools, "set_checkpoint")
+
+    result = await set_cp({1: "value"})  # non-string key
+
+    assert "is not a string" in result

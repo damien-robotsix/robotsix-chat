@@ -66,7 +66,6 @@ _MAX_MILL_FAILURES = 2
 # Ticket states recognised by the resume status check.
 _TICKET_STATE_TERMINAL = frozenset({"closed", "done"})
 _TICKET_STATE_BLOCKED = frozenset({"blocked"})
-_TICKET_STATE_OPEN = frozenset({"open", "in_progress", "pending"})
 
 
 def _is_no_change(reply: str) -> bool:
@@ -528,7 +527,8 @@ async def _check_resume_status(
         ticket_url = base.copy_with(path=f"/tickets/{ticket_id}")
     except Exception:
         logger.exception("Could not construct ticket URL for subsession %s", sub_id)
-        return (_handle_mill_unreachable(env, info, sub_id), None)
+        should_continue = await _handle_mill_unreachable(env, info, sub_id)
+        return (should_continue, None)
 
     # Query the mill.
     try:
@@ -537,13 +537,44 @@ async def _check_resume_status(
             response.raise_for_status()
             ticket_data: dict[str, object] = response.json()
     except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code
         logger.warning(
             "Mill returned %d for ticket %s (subsession %s)",
-            exc.response.status_code,
+            status_code,
             ticket_id,
             sub_id,
         )
-        return (_handle_mill_unreachable(env, info, sub_id), None)
+        # 4xx errors are permanent — close immediately with the reason.
+        if 400 <= status_code < 500:
+            if status_code == 404:
+                reason = f"Ticket {ticket_id} was deleted during the outage."
+            elif status_code in (401, 403):
+                reason = (
+                    f"Authentication error ({status_code}) for ticket "
+                    f"{ticket_id} — check API credentials."
+                )
+            else:
+                reason = (
+                    f"HTTP {status_code} for ticket {ticket_id} — "
+                    f"closing subsession."
+                )
+            summary = (
+                f"Ticket {ticket_id} is no longer reachable: {reason}"
+            )
+            closed = env.registry.mark_closed(
+                sub_id,
+                summary=summary,
+                reason="ticket_unreachable",
+                closed_by="system",
+            )
+            if closed is not None:
+                await env.delivery.deliver_summary(
+                    closed, summary, "ticket_unreachable"
+                )
+            return (False, summary)
+        # 5xx errors are transient — count toward the failure cap.
+        should_continue = await _handle_mill_unreachable(env, info, sub_id)
+        return (should_continue, None)
     except (httpx.TimeoutException, httpx.ConnectError, OSError) as exc:
         logger.warning(
             "Mill unreachable for ticket %s (subsession %s): %s",
@@ -551,14 +582,16 @@ async def _check_resume_status(
             sub_id,
             exc,
         )
-        return (_handle_mill_unreachable(env, info, sub_id), None)
+        should_continue = await _handle_mill_unreachable(env, info, sub_id)
+        return (should_continue, None)
     except Exception:
         logger.exception(
             "Unexpected error querying mill for ticket %s (subsession %s)",
             ticket_id,
             sub_id,
         )
-        return (_handle_mill_unreachable(env, info, sub_id), None)
+        should_continue = await _handle_mill_unreachable(env, info, sub_id)
+        return (should_continue, None)
 
     # Reset the consecutive-failures counter on success.
     _reset_mill_failure_counter(env, info, sub_id)
@@ -630,7 +663,7 @@ async def _check_resume_status(
     return (True, context)
 
 
-def _handle_mill_unreachable(
+async def _handle_mill_unreachable(
     env: SubsessionEnv,
     info: SubsessionInfo,
     sub_id: str,
@@ -638,7 +671,8 @@ def _handle_mill_unreachable(
     """Increment the mill-failure counter; close the subsession at the cap.
 
     Returns ``True`` when the subsession should continue, ``False`` when
-    the failure cap was reached and the subsession was closed.
+    the failure cap was reached and the subsession was closed (summary
+    delivered to the parent conversation).
     """
     checkpoint = info.checkpoint or {}
     failures = checkpoint.get("consecutive_mill_failures")
@@ -659,7 +693,9 @@ def _handle_mill_unreachable(
             closed_by="system",
         )
         if closed is not None:
-            pass  # delivery handled by caller
+            await env.delivery.deliver_summary(
+                closed, summary, "mill_unreachable"
+            )
         logger.warning(
             "Subsession %s: mill unreachable %d times — closed.",
             sub_id,

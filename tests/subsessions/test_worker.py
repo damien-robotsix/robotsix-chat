@@ -8,7 +8,9 @@ import contextvars
 import threading
 from collections.abc import AsyncIterator
 from typing import Any
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import httpx
 import pytest
 
 from robotsix_chat.chat.events import SSE_SUBSESSION_RESULT_TYPE
@@ -26,6 +28,9 @@ from robotsix_chat.subsessions.worker import (
     CloseState,
     SubsessionContext,
     SubsessionEnv,
+    _check_resume_status,
+    _handle_mill_unreachable,
+    _reset_mill_failure_counter,
 )
 from tests.common.subsession_fakes import (
     CapturingAgentFactory,
@@ -890,3 +895,426 @@ def test_rebuild_turn_history_missing_field_returns_empty() -> None:
     from robotsix_chat.subsessions.resume import _rebuild_turn_history
 
     assert _rebuild_turn_history({}) == []
+
+
+# ============================================================================
+# resume status check (_check_resume_status, _handle_mill_unreachable,
+# _reset_mill_failure_counter)
+# ============================================================================
+
+# _MAX_MILL_FAILURES = 2 in the worker module (private constant).
+
+
+# -- helpers ----------------------------------------------------------------
+
+
+def _make_checkpoint_info(env, **checkpoint_kwargs):
+    """Register a periodic subsession with a checkpoint and return info."""
+    sub_id = env.registry.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="ticket monitor",
+        prompt="monitor TICKET-1",
+        model_level=3,
+        interval_seconds=60.0,
+        checkpoint=checkpoint_kwargs or None,
+    ).id
+    return env.registry.get(sub_id)
+
+
+def _env_with_board(board_url="https://mill.example.com"):
+    """Build an env with ``board_api_base_url`` configured.
+
+    The resume status check actually makes HTTP calls instead of
+    short-circuiting on a missing/empty URL.
+    """
+    settings = make_settings()
+    settings.direct_repo = type("_ns", (), {"board_api_base_url": board_url})()
+    return build_env(settings=settings)
+
+
+def _mock_async_client(response_json=None, side_effect=None):
+    """Build a mock ``httpx.AsyncClient`` that returns a controlled response.
+
+    Returns a MagicMock suitable for ``patch("httpx.AsyncClient", ...)``.
+    The mock client is an async context manager whose ``__aenter__``
+    returns a mock with ``.get`` returning either *response_json* (via a
+    mock response) or raising *side_effect*.
+    """
+    # Use MagicMock (NOT AsyncMock) for the response — raise_for_status()
+    # and json() are sync methods on httpx.Response.
+    mock_response = MagicMock()
+    mock_response.json.return_value = response_json or {}
+    mock_response.raise_for_status.return_value = None
+
+    # mock_client holds the async get method.
+    mock_client = MagicMock()
+    get_mock = AsyncMock()
+    if side_effect is not None:
+        get_mock.side_effect = side_effect
+    else:
+        get_mock.return_value = mock_response
+    mock_client.get = get_mock
+
+    # mock_instance is the async context manager (returned by AsyncClient()).
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    return MagicMock(return_value=mock_instance)
+
+
+# -- no-checkpoint / no-ticket-id / no-board-url paths -----------------------
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_no_checkpoint_continues():
+    """When info.checkpoint is None, return (True, None) — normal resume."""
+    env = build_env()
+    info = _make_checkpoint_info(env)  # no checkpoint
+    info.checkpoint = None
+
+    should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is True
+    assert context_msg is None
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_no_ticket_id_continues():
+    """Checkpoint without 'ticket_id' key → continue."""
+    env = build_env()
+    info = _make_checkpoint_info(env, other_field="value")
+
+    should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is True
+    assert context_msg is None
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_no_board_url_continues():
+    """When board_api_base_url is not configured, skip the check."""
+    settings = make_settings()
+    settings.direct_repo = type("_ns", (), {"board_api_base_url": ""})()
+    env = build_env(settings=settings)
+    info = _make_checkpoint_info(env, ticket_id="TICKET-1")
+
+    should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is True
+    assert context_msg is None
+
+
+# -- terminal / blocked / open state branches --------------------------------
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_terminal_closes_and_delivers():
+    """A ticket in a terminal state closes the subsession and delivers summary."""
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+    )
+
+    mock = _mock_async_client(response_json={"state": "closed"})
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is False
+    assert context_msg is not None
+    assert "terminal" in context_msg
+    assert "TICKET-1" in context_msg
+
+    # Delivery is fire-and-forget — let the background task run.
+    await asyncio.sleep(0)
+
+    # Registry is now closed.
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.status is SubsessionStatus.CLOSED
+    assert updated.close_reason == "ticket_terminal_on_resume"
+
+    # Summary was delivered to the conversation store.
+    history = env.conversation_store.history(OWNER)
+    assert len(history) == 1
+    label, reply = history[0]
+    assert "ticket_terminal" in label
+    assert "TICKET-1" in reply
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_blocked_injects_context():
+    """A blocked ticket returns (True, context_message)."""
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+    )
+
+    mock = _mock_async_client(response_json={"state": "blocked"})
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is True
+    assert context_msg is not None
+    assert "BLOCKED" in context_msg
+    assert "TICKET-1" in context_msg
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_open_injects_context():
+    """An open/in_progress/pending ticket continues with a context note."""
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="in_progress",
+    )
+
+    mock = _mock_async_client(response_json={"state": "open"})
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is True
+    assert context_msg is not None
+    assert "Continue monitoring" in context_msg
+    assert "TICKET-1" in context_msg
+
+
+# -- HTTP error handling -----------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_http_404_closes_immediately():
+    """A 404 response closes the subsession immediately (not counted as unreachable)."""
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+    )
+
+    error_response = AsyncMock()
+    error_response.status_code = 404
+    http_error = httpx.HTTPStatusError(
+        "not found", request=AsyncMock(), response=error_response
+    )
+
+    mock = _mock_async_client(side_effect=http_error)
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is False
+    assert "deleted" in (context_msg or "")
+    # Check that checkpoint was NOT updated with a failure counter (404 is not
+    # counted as unreachable).
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.status is SubsessionStatus.CLOSED
+    assert updated.close_reason == "ticket_unreachable"
+
+    # Delivery is fire-and-forget — let the background task run.
+    await asyncio.sleep(0)
+
+    # Summary was delivered.
+    history = env.conversation_store.history(OWNER)
+    assert len(history) == 1
+    assert "deleted" in history[0][1]
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_http_401_closes_immediately():
+    """A 401/403 closes immediately with an auth-error message."""
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+    )
+
+    error_response = AsyncMock()
+    error_response.status_code = 401
+    http_error = httpx.HTTPStatusError(
+        "unauthorized", request=AsyncMock(), response=error_response
+    )
+
+    mock = _mock_async_client(side_effect=http_error)
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is False
+    assert "Authentication error" in (context_msg or "")
+
+    # Delivery is fire-and-forget — let the background task run.
+    await asyncio.sleep(0)
+
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.status is SubsessionStatus.CLOSED
+
+    # Delivery is fire-and-forget — let the background task run.
+    await asyncio.sleep(0)
+
+    history = env.conversation_store.history(OWNER)
+    assert len(history) == 1
+    assert "Authentication" in history[0][1]
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_http_5xx_counts_as_unreachable():
+    """A 5xx response is treated as transient — increments the failure counter."""
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+    )
+
+    error_response = AsyncMock()
+    error_response.status_code = 503
+    http_error = httpx.HTTPStatusError(
+        "server error", request=AsyncMock(), response=error_response
+    )
+
+    mock = _mock_async_client(side_effect=http_error)
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    # Should still continue (first failure, below cap).
+    assert should_continue is True
+    assert context_msg is None
+
+    # Checkpoint was updated with failure counter = 1.
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.checkpoint is not None
+    assert updated.checkpoint.get("consecutive_mill_failures") == 1
+
+
+# -- network errors ----------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_connect_error_counts_as_unreachable():
+    """A ConnectError is treated as transient (same as 5xx)."""
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+    )
+
+    mock = _mock_async_client(side_effect=httpx.ConnectError("refused"))
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is True
+    assert context_msg is None
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.checkpoint is not None
+    assert updated.checkpoint.get("consecutive_mill_failures") == 1
+
+
+# -- _handle_mill_unreachable unit tests -------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_handle_mill_unreachable_increments_counter():
+    """Each call increments consecutive_mill_failures by 1."""
+    env = build_env()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        consecutive_mill_failures=0,
+    )
+
+    should_continue = await _handle_mill_unreachable(env, info, info.id)
+
+    assert should_continue is True
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.checkpoint is not None
+    assert updated.checkpoint.get("consecutive_mill_failures") == 1
+
+
+@pytest.mark.asyncio
+async def test_handle_mill_unreachable_cap_closes_and_delivers():
+    """When the counter reaches the cap the subsession is closed.
+
+    Summary delivered to the parent conversation.
+    """
+    env = build_env()
+    # _MAX_MILL_FAILURES is 2, so one below the cap is 1.
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        consecutive_mill_failures=1,
+    )
+
+    should_continue = await _handle_mill_unreachable(env, info, info.id)
+
+    assert should_continue is False
+    # Let the fire-and-forget delivery background task run.
+    await asyncio.sleep(0)
+
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.status is SubsessionStatus.CLOSED
+    assert updated.close_reason == "mill_unreachable"
+    assert updated.summary is not None
+    assert "Mill unreachable" in updated.summary
+
+    # Summary was delivered to the conversation store.
+    history = env.conversation_store.history(OWNER)
+    assert len(history) == 1
+    label, reply = history[0]
+    assert "mill_unreachable" in label
+    assert "Mill unreachable" in reply
+
+
+# -- _reset_mill_failure_counter ---------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_reset_mill_failure_counter_clears_on_success():
+    """After a successful mill query the failure counter is reset to 0."""
+    env = build_env()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        consecutive_mill_failures=1,
+    )
+
+    _reset_mill_failure_counter(env, info, info.id)
+
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.checkpoint is not None
+    assert updated.checkpoint.get("consecutive_mill_failures") == 0
+
+
+@pytest.mark.asyncio
+async def test_reset_mill_failure_counter_noop_when_already_zero():
+    """Calling reset when counter is already 0 is harmless (no error)."""
+    env = build_env()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        consecutive_mill_failures=0,
+    )
+
+    # Should not raise.
+    _reset_mill_failure_counter(env, info, info.id)
+
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    # Counter stays 0 (or is absent from checkpoint if already 0/absent).
+    ck = updated.checkpoint or {}
+    assert ck.get("consecutive_mill_failures", 0) == 0

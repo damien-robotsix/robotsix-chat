@@ -745,3 +745,52 @@ def test_restart_notice_multiple_owners_each_get_own_notice(
     assert len(notices_b) == 1
     assert f'Task "task B" ({task_b.id[:8]})' in notices_b[0]
     assert task_a.id[:8] not in notices_b[0]
+
+
+# ---------------------------------------------------------------------------
+# _rebuild_checkpoint
+# ---------------------------------------------------------------------------
+
+
+def test_rebuild_checkpoint_valid_dict():
+    """A valid dict checkpoint is reconstructed with string keys."""
+    from robotsix_chat.subsessions.resume import _rebuild_checkpoint
+
+    entry = {"checkpoint": {"ticket_id": "TICK-1", "last_known_state": "open"}}
+    result = _rebuild_checkpoint(entry)
+    assert result == {"ticket_id": "TICK-1", "last_known_state": "open"}
+
+
+def test_rebuild_checkpoint_non_dict_returns_none():
+    """Non-dict values (list, string, None) return None."""
+    from robotsix_chat.subsessions.resume import _rebuild_checkpoint
+
+    assert _rebuild_checkpoint({"checkpoint": [1, 2, 3]}) is None
+    assert _rebuild_checkpoint({"checkpoint": "not a dict"}) is None
+    assert _rebuild_checkpoint({"checkpoint": None}) is None
+
+
+def test_rebuild_checkpoint_missing_field_returns_none():
+    """A persisted entry without 'checkpoint' returns None."""
+    from robotsix_chat.subsessions.resume import _rebuild_checkpoint
+
+    assert _rebuild_checkpoint({}) is None
+
+
+def test_rebuild_checkpoint_empty_dict():
+    """An empty dict checkpoint is preserved as empty dict."""
+    from robotsix_chat.subsessions.resume import _rebuild_checkpoint
+
+    result = _rebuild_checkpoint({"checkpoint": {}})
+    assert result == {}
+
+
+def test_rebuild_checkpoint_coerces_keys_to_strings():
+    """Integer keys (from loose JSON parsing) are coerced to strings."""
+    from robotsix_chat.subsessions.resume import _rebuild_checkpoint
+
+    # Python's json module never produces non-string keys, but _rebuild_checkpoint
+    # defensively coerces them anyway.
+    entry = {"checkpoint": {"ticket_id": "TICK-1", 42: "answer"}}
+    result = _rebuild_checkpoint(entry)
+    assert result == {"ticket_id": "TICK-1", "42": "answer"}
