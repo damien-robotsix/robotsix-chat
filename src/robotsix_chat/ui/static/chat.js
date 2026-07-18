@@ -34,6 +34,21 @@
   // (currentRequestSessionId removed — unused; cross-session guard uses
   //  the requestSessionId captured inside doPost instead.)
 
+  // ---- Summary overlay: keep chat padding in sync with summary height ---
+  // Uses a ResizeObserver so the absolutely-positioned summary never
+  // participates in layout — the chat's scroll offset is stable regardless
+  // of summary visibility or size changes.
+  if (summaryContainerEl && chatEl) {
+    var summaryResizeObserver = new ResizeObserver(function (entries) {
+      var h = 0;
+      for (var i = 0; i < entries.length; i++) {
+        h = entries[i].contentRect.height;
+      }
+      chatEl.style.setProperty("--summary-height", h + "px");
+    });
+    summaryResizeObserver.observe(summaryContainerEl);
+  }
+
   // ---- Image attachments -----------------------------------------------
   var MAX_IMAGES = 8;
   var MAX_FILE_BYTES = 5 * 1024 * 1024;  // 5 MiB
