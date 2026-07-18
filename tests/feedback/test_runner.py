@@ -390,6 +390,12 @@ class TestFeedbackRunnerConstructor:
         runner = _make_runner(settings)
         assert runner._board_token == "secret-token"
 
+    def test_repo_id_stored(self) -> None:
+        """The repo_id from settings is stored on the runner."""
+        settings = _settings(repo_id="my-custom-repo")
+        runner = _make_runner(settings)
+        assert runner._repo_id == "my-custom-repo"
+
 
 # ---------------------------------------------------------------------------
 # FeedbackRunner — schedule
@@ -576,7 +582,12 @@ class TestFileTickets:
     async def test_payload_includes_metadata(
         self, respx_mock: respx.MockRouter
     ) -> None:
-        """Each POST body carries source_tag, session_id, and trigger_type."""
+        """Each POST body carries repo_id, title, body, source_tag.
+
+        Runner-level metadata (kind, session_id, trigger_type) is folded
+        into the body text, not exposed as top-level keys — mill's
+        TicketIngest schema only accepts repo_id/title/body/source_tag.
+        """
         route = respx_mock.post("http://test-board/tickets/ingest").mock(
             return_value=httpx.Response(201)
         )
@@ -588,11 +599,18 @@ class TestFileTickets:
         )
         body = json.loads(route.calls.last.request.content)
         assert body["title"] == "T"
-        assert body["description"] == "D"
-        assert body["kind"] == "config"
+        assert body["repo_id"] == "robotsix-chat"
         assert body["source_tag"] == "robotsix-chat-feedback"
-        assert body["source_session_id"] == "abc-123"
-        assert body["trigger_type"] == "session_end"
+        # Mill ingest contract: must send 'body', never 'description'.
+        assert "body" in body
+        assert "description" not in body
+        # Runner metadata folded into body, not top-level keys.
+        assert "kind" not in body
+        assert "source_session_id" not in body
+        assert "trigger_type" not in body
+        assert "kind: config" in body["body"]
+        assert "session: abc-123" in body["body"]
+        assert "trigger: session_end" in body["body"]
 
     @pytest.mark.asyncio
     async def test_includes_bearer_token(self, respx_mock: respx.MockRouter) -> None:

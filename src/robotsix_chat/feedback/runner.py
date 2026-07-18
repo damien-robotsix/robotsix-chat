@@ -122,6 +122,7 @@ class FeedbackRunner:
         self._registry = subsession_registry
         self._board_url = settings.board_url.rstrip("/") if settings.board_url else ""
         self._board_token = settings.board_api_token.get_secret_value()
+        self._repo_id = settings.repo_id
         self._timeout = settings.timeout
 
     # ------------------------------------------------------------------
@@ -392,13 +393,22 @@ class FeedbackRunner:
 
         filed = 0
         for ticket in tickets:
+            # Fold runner-level metadata into the body so it survives
+            # the mill ingest round-trip even though mill's TicketIngest
+            # only carries repo_id / title / body / source_tag.
+            body_lines: list[str] = [ticket["description"]]
+            body_lines.append("")
+            body_lines.append(
+                "---"
+                f" kind: {ticket['kind']}"
+                f" | session: {session_id}"
+                f" | trigger: {trigger_type}"
+            )
             payload: dict[str, Any] = {
+                "repo_id": self._repo_id,
                 "title": ticket["title"],
-                "description": ticket["description"],
-                "kind": ticket["kind"],
+                "body": "\n".join(body_lines),
                 "source_tag": "robotsix-chat-feedback",
-                "source_session_id": session_id,
-                "trigger_type": trigger_type,
             }
             try:
                 async with httpx.AsyncClient(timeout=self._timeout) as client:

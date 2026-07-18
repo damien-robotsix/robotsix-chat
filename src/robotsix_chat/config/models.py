@@ -556,6 +556,8 @@ class FeedbackSettings(BaseModel):
             Required when *enabled* — the runner POSTs to
             ``{board_url}/tickets/ingest``.
         board_api_token: Optional Bearer token for the board API.
+        repo_id: Repository identifier sent in the ``repo_id`` field of
+            the mill ingest payload.  Default ``"robotsix-chat"``.
         timeout: Per-request HTTP timeout in seconds for ingest calls.
 
     """
@@ -564,6 +566,7 @@ class FeedbackSettings(BaseModel):
     model_level: int = 1
     board_url: str = ""
     board_api_token: SecretStr = SecretStr("")
+    repo_id: str = "robotsix-chat"
     timeout: float = 60.0
 
 
