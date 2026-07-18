@@ -225,9 +225,28 @@ jobs:
               sys.exit(1)
           EOF
 
+  deptry:
+    name: Dependency hygiene (deptry)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read  # checkout the repo
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
+      - name: Install
+        run: uv sync --frozen
+      - name: Run deptry
+        run: uv run deptry src/ --known-first-party robotsix_chat
+
   check:
     name: All CI checks passed
-    needs: [lockfile, ci, security, pre-commit, check-sse-types, check-subsession-kinds, image-scan, check-config-schema]
+    needs: [lockfile, ci, security, pre-commit, check-sse-types, check-subsession-kinds, image-scan, check-config-schema, deptry]
     runs-on: ubuntu-latest
     steps:
       - run: echo "All CI checks passed"
