@@ -1,3 +1,40 @@
+/**
+ * Retry an async operation with exponential backoff on transient errors.
+ *
+ * Transient errors include network timeouts, DNS failures, and 5xx responses
+ * from the GitHub API.  Non-retryable errors (4xx, permission denials) are
+ * re-thrown immediately.
+ *
+ * @param {() => Promise<any>} fn — async operation to retry
+ * @param {{maxRetries?: number, baseDelayMs?: number}} opts
+ * @returns {Promise<any>} — resolved value of fn
+ */
+async function retryWithBackoff(fn, {maxRetries = 3, baseDelayMs = 2000} = {}) {
+  for (let attempt = 0; attempt <= maxRetries; attempt++) {
+    try {
+      return await fn();
+    } catch (err) {
+      const isTransient =
+        err.status >= 500 ||
+        err.message?.includes('Connect Timeout') ||
+        err.message?.includes('ETIMEDOUT') ||
+        err.message?.includes('ENOTFOUND') ||
+        err.message?.includes('socket hang up') ||
+        err.message?.includes('ECONNRESET') ||
+        (err.cause && (
+          err.cause.code === 'UND_ERR_CONNECT_TIMEOUT' ||
+          err.cause.code === 'ECONNRESET' ||
+          err.cause.code === 'ETIMEDOUT'
+        ));
+
+      if (!isTransient || attempt === maxRetries) throw err;
+
+      const delay = baseDelayMs * Math.pow(2, attempt);
+      await new Promise((res) => setTimeout(res, delay));
+    }
+  }
+}
+
 module.exports = async ({github, context, core}) => {
   const deadlineMs = 20 * 60 * 1000;
   const start = Date.now();
@@ -15,10 +52,12 @@ module.exports = async ({github, context, core}) => {
   //      fragile when a check run hasn't been indexed yet on first poll.
   let currentSuiteId;
   try {
-    const {data: wfRun} = await github.rest.actions.getWorkflowRun({
-      ...context.repo,
-      run_id: context.runId,
-    });
+    const {data: wfRun} = await retryWithBackoff(() =>
+      github.rest.actions.getWorkflowRun({
+        ...context.repo,
+        run_id: context.runId,
+      })
+    );
     currentSuiteId = wfRun.check_suite_id;
   } catch {
     // If we can't determine our check suite (permissions, API error),
@@ -31,11 +70,13 @@ module.exports = async ({github, context, core}) => {
 
   let others = [];
   while (true) {
-    const runs = await github.paginate(github.rest.checks.listForRef, {
-      ...context.repo,
-      ref: context.sha,
-      per_page: 100,
-    });
+    const runs = await retryWithBackoff(() =>
+      github.paginate(github.rest.checks.listForRef, {
+        ...context.repo,
+        ref: context.sha,
+        per_page: 100,
+      })
+    );
 
     // Deploy jobs (e.g. GitHub Pages) can fail for infrastructure reasons
     // outside the codebase (repo settings, environment config).  Exclude them
