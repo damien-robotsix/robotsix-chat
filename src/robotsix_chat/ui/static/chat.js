@@ -1276,6 +1276,12 @@
     }
   }
 
+  function forceScrollToBottom() {
+    // Unconditionally scroll to the bottom — used on session switch/load
+    // so the latest messages are always visible.
+    chatEl.scrollTop = chatEl.scrollHeight;
+  }
+
   function setConnectionStatus(ok) {
     if (ok) { connDot.classList.remove("error"); }
     else    { connDot.classList.add("error"); }
@@ -1863,7 +1869,7 @@
           addAssistantBubble(turn[1]);
         }
       }
-      scrollToBottom();
+      forceScrollToBottom();
       // Refresh the conversation summary once history is loaded.
       refreshSummary();
     }).catch(function () {
