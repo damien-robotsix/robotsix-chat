@@ -319,32 +319,53 @@ class MessageCoalescer:
                 if session_id:
                     store.record(session_id, owner_id, concatenated, full_reply)
                     # Generate an LLM title after the first turn.
-                    if (
-                        summary_agent is not None
-                        and concatenated.strip()
-                        and full_reply.strip()
-                    ):
-                        session = store.get_session(session_id)
-                        if session is not None and session.turn_count == 1:
-                            title = await _generate_title(
-                                summary_agent, concatenated, full_reply
-                            )
-                            if title:
-                                store.set_title(session_id, title)
+                    await self._maybe_generate_title(
+                        session_id, summary_agent, concatenated, full_reply, store
+                    )
                     for p in pending:
                         if p.message_id:
                             msg_id_store.mark_completed(
                                 session_id, p.message_id, full_reply
                             )
 
-                for p in pending:
-                    await p.response_queue.put((SSE_DONE_TYPE, None))
+                await self._fan_out(pending, SSE_DONE_TYPE)
             except asyncio.CancelledError:
                 raise
             except Exception as exc:
                 logger.exception("Agent stream error")
-                for p in pending:
-                    await p.response_queue.put((SSE_ERROR_TYPE, str(exc)))
+                await self._fan_out(pending, SSE_ERROR_TYPE, str(exc))
+
+    async def _maybe_generate_title(
+        self,
+        session_id: str,
+        summary_agent: ChatAgent | None,
+        concatenated: str,
+        full_reply: str,
+        store: ConversationStore,
+    ) -> str:
+        """Generate an LLM title after the first turn, if conditions are met.
+
+        Returns the title string, or empty if generation is skipped or fails.
+        """
+        if summary_agent is None or not concatenated.strip() or not full_reply.strip():
+            return ""
+        session = store.get_session(session_id)
+        if session is None or session.turn_count != 1:
+            return ""
+        title = await _generate_title(summary_agent, concatenated, full_reply)
+        if title:
+            store.set_title(session_id, title)
+        return title
+
+    @staticmethod
+    async def _fan_out(
+        pending: list[_PendingMessage],
+        event_type: str,
+        payload: str | None = None,
+    ) -> None:
+        """Put an SSE frame onto every pending response queue."""
+        for p in pending:
+            await p.response_queue.put((event_type, payload))
 
 
 def _parse_and_validate_images(
