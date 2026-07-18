@@ -1,0 +1,1 @@
+Remove orphaned bandit config from pyproject.toml and Makefile

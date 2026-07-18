@@ -240,9 +240,6 @@ DEP002 = ["transformers"]
 # try/except ImportError in cognee's Langfuse callback registration.
 DEP003 = ["pydantic_ai", "opentelemetry", "robotsix_mill"]
 
-[tool.bandit]
-exclude_dirs = ["tests", ".local_pkgs"]
-
 [tool.pytest.ini_options]
 # Default run is offline and credential-free (robotsix-standards python page):
 # network/credential tests carry the `live` marker and run only via
