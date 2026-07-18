@@ -16,7 +16,7 @@ from starlette.responses import JSONResponse, StreamingResponse
 
 from robotsix_chat.chat.conversation import ConversationStore
 
-from ._shared import _parse_json_body, _sse_frame
+from ._shared import _parse_json_body, _sse_frame, build_transcript
 from .constants import (
     SSE_CONTENT_TYPE,
     SSE_DONE_TYPE,
@@ -488,13 +488,7 @@ async def _generate_idle_summary(
     if not turns:
         return ""
 
-    transcript_parts: list[str] = []
-    for user_msg, asst_msg in turns:
-        transcript_parts.append(f"User: {user_msg}")
-        if asst_msg:
-            truncated = asst_msg[:2000] + "\u2026" if len(asst_msg) > 2000 else asst_msg
-            transcript_parts.append(f"Assistant: {truncated}")
-    transcript = "\n".join(transcript_parts)
+    transcript = build_transcript(turns)
 
     prompt = (
         "Write a brief, plain-text summary of the conversation below — "

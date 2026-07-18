@@ -11,7 +11,7 @@ from starlette.responses import JSONResponse
 
 from robotsix_chat.chat.conversation import ConversationStore
 
-from ._shared import _get_session_id, _parse_json_body
+from ._shared import _get_session_id, _parse_json_body, build_transcript
 from .chat import ChatAgent
 
 logger = logging.getLogger(__name__)
@@ -259,15 +259,7 @@ async def summary_endpoint(request: Request) -> JSONResponse:
     if not turns:
         return JSONResponse({"summary": ""})
 
-    # Build a compact transcript.  Long assistant replies are truncated
-    # to keep the prompt within reasonable bounds.
-    transcript_parts: list[str] = []
-    for user_msg, asst_msg in turns:
-        transcript_parts.append(f"User: {user_msg}")
-        if asst_msg:
-            truncated = asst_msg[:2000] + "…" if len(asst_msg) > 2000 else asst_msg
-            transcript_parts.append(f"Assistant: {truncated}")
-    transcript = "\n".join(transcript_parts)
+    transcript = build_transcript(turns)
 
     _summary_prompt = (
         "Write a brief, plain-text summary of the conversation below — "
