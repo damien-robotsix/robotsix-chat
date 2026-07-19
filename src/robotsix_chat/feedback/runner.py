@@ -41,8 +41,8 @@ logger = logging.getLogger(__name__)
 # Allowed-repo resolution (dynamic — no static config)
 # ---------------------------------------------------------------------------
 
-# In-memory cache: (fetched_at_monotonic, list_of_repo_ids).
-_repo_cache: tuple[float, list[str]] | None = None
+# In-memory cache keyed by "repos": (fetched_at_monotonic, list_of_repo_ids).
+_repo_cache: dict[str, tuple[float, list[str]]] = {}
 _REPO_CACHE_TTL: float = 60.0  # seconds — short enough to pick up access changes
 
 
@@ -57,13 +57,13 @@ async def _resolve_allowed_repos() -> list[str]:
     Falls back to ``["robotsix-chat"]`` when deploy is unreachable and logs
     a warning.
     """
-    global _repo_cache
     now = time.monotonic()
-    if _repo_cache is not None and (now - _repo_cache[0]) < _REPO_CACHE_TTL:
-        return _repo_cache[1]
+    entry = _repo_cache.get("repos")
+    if entry is not None and (now - entry[0]) < _REPO_CACHE_TTL:
+        return entry[1]
 
     result = await _do_resolve_allowed_repos()
-    _repo_cache = (now, result)
+    _repo_cache["repos"] = (now, result)
     return result
 
 
