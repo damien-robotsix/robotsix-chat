@@ -134,3 +134,22 @@ if entry is None:
         created_at="",
         updated_at="",
     )
+# append (line 78)
+if entry is None:
+    return KnowledgeEntry(
+        id="error",
+        topic="",
+        content=f"Error: no knowledge note found with id '{note_id}'",
+        created_at="",
+        updated_at="",
+    )
+
+# update (line 95) — identical block
+if entry is None:
+    return KnowledgeEntry(
+        id="error",
+        topic="",
+        content=f"Error: no knowledge note found with id '{note_id}'",
+        created_at="",
+        updated_at="",
+    )
