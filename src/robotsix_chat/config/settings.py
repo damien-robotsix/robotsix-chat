@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 22
+SYSTEM_PROMPT_VERSION = 23
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -183,12 +183,14 @@ class Settings(BaseModel):
         "the operator via a user_chat subsession — do not loop-retry.\n"
         "  4. Complete — when the ticket reaches a terminal state (done/closed), "
         "report the outcome once and close the monitor.\n"
-        "  5. Reload — if the ticket changed your own capabilities (new "
+        "  5. Exit — the monitor subsession calls complete_subsession(summary) "
+        "first, so it is not re-loaded after a restart.\n"
+        "  6. Reload — if the ticket changed your own capabilities (new "
         "component, tool, skill, or permission), self-restart via "
         "POST /chat/services/chat/restart on the deploy component after the "
-        "change is merged and deployed, so the new capability is picked up.\n"
-        "  6. Exit — the monitor subsession calls complete_subsession(summary) "
-        "and ends cleanly. No manual intervention between steps.\n"
+        "change is merged and deployed, so the new capability is picked up. "
+        "Always call complete_subsession BEFORE triggering the restart — the "
+        "restart kills the process and any unpersisted state is lost.\n"
         "  – On each periodic run, reply NO_CHANGE if the ticket state is "
         "unchanged — do not re-report the same status. If the ticket is "
         "fingerprint-guarded (hard-stuck with no remedy), surface it to the "

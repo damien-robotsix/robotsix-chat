@@ -261,6 +261,10 @@ def _build_complete_tool(
         concise, self-contained account of the outcome — it is the only
         thing your parent conversation is guaranteed to see. The
         subsession ends after your current reply.
+
+        The close is persisted to disk immediately so the subsession is
+        not re-loaded after a restart — always call this BEFORE any
+        action that might kill the process (e.g. a self-restart).
         """
         info = registry.get(sub_id)
         if info is None or not info.is_active:
@@ -268,6 +272,14 @@ def _build_complete_tool(
                 f"Error: subsession {sub_id} is no longer active — its tree "
                 "record may have been lost. Cannot complete."
             )
+        # Persist the closed state immediately so the subsession is not
+        # re-loaded on restart.  The return value is intentionally ignored:
+        # the pre-check guarantees success (info is active), and the worker's
+        # post-turn check calls mark_closed again (idempotent — returns None
+        # for an already-closed subsession) and handles delivery.
+        registry.mark_closed(
+            sub_id, summary=summary, reason="completed", closed_by="agent"
+        )
         close_state.requested = True
         close_state.summary = summary
         return (

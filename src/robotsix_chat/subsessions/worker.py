@@ -880,14 +880,15 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                 if closed is not None:
                     await env.delivery.deliver_summary(closed, summary, "completed")
                 else:
-                    # Parent link is gone — the close failed.  Append a
-                    # transcript message so the agent learns the truth.
-                    registry.append_transcript(
-                        sub_id,
-                        "system",
-                        "complete_subsession failed: this subsession is no "
-                        "longer active (its tree record may have been lost).",
-                    )
+                    # Already closed by the complete_subsession tool (which
+                    # persists immediately to survive a process restart).
+                    # Still deliver the summary so the parent agent reacts
+                    # and the outcome is recorded in the conversation.
+                    closed_info = registry.get(sub_id)
+                    if closed_info is not None:
+                        await env.delivery.deliver_summary(
+                            closed_info, summary, "completed"
+                        )
                 return
 
             # -- kind-specific continuation --------------------------------
