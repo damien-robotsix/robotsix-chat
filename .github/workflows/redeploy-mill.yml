@@ -1,0 +1,96 @@
+name: Redeploy mill services
+
+# Triggers a redeploy of the mill and mill-sandbox-proxy services through
+# central-deploy's lifecycle API after a merge to robotsix-mill/main.
+#
+# Three trigger paths:
+#   1. workflow_call — the mill repo's post-merge CI can call this as a
+#      reusable workflow (requires passing central_deploy_url +
+#      CENTRAL_DEPLOY_API_KEY secret).
+#   2. repository_dispatch — the mill repo can POST a
+#      "mill-merged" event to trigger a redeploy without modifying its
+#      own workflow file (requires an access token with repo scope on
+#      this repo).
+#   3. workflow_dispatch — manual operator trigger from the Actions UI.
+#
+# Caller reference (pin a full 40-char commit SHA, never a branch/tag):
+#   uses: damien-robotsix/robotsix-chat/.github/workflows/redeploy-mill.yml@<sha>
+on:
+  workflow_call:
+    inputs:
+      services:
+        required: false
+        default: 'robotsix-mill mill-sandbox-proxy'
+        type: string
+        description: 'Space-separated service names to redeploy'
+      central_deploy_url:
+        required: true
+        type: string
+        description: 'Base URL of the central-deploy lifecycle API'
+    secrets:
+      CENTRAL_DEPLOY_API_KEY:
+        required: true
+        description: 'X-API-Key for the lifecycle API'
+  workflow_dispatch:
+    inputs:
+      services:
+        description: 'Space-separated service names to redeploy'
+        required: false
+        default: 'robotsix-mill mill-sandbox-proxy'
+        type: string
+  repository_dispatch:
+    types: [mill-merged]
+
+concurrency:
+  group: redeploy-mill-${{ github.ref }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  redeploy:
+    name: Redeploy services
+    runs-on: ubuntu-latest
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
+
+      - name: Redeploy services
+        env:
+          CENTRAL_DEPLOY_URL: ${{ inputs.central_deploy_url || vars.CENTRAL_DEPLOY_URL }}
+          CENTRAL_DEPLOY_API_KEY: ${{ secrets.CENTRAL_DEPLOY_API_KEY }}
+          SERVICES: ${{ inputs.services || 'robotsix-mill mill-sandbox-proxy' }}
+        run: |
+          set -euo pipefail
+
+          if [ -z "${CENTRAL_DEPLOY_URL:-}" ]; then
+            echo "::error::CENTRAL_DEPLOY_URL is required but not set"
+            exit 1
+          fi
+          if [ -z "${CENTRAL_DEPLOY_API_KEY:-}" ]; then
+            echo "::error::CENTRAL_DEPLOY_API_KEY is required but not set"
+            exit 1
+          fi
+
+          echo "Redeploying services: ${SERVICES}"
+
+          for svc in ${SERVICES}; do
+            echo "::group::Redeploying ${svc}"
+            http_code=$(curl -sS -o /tmp/redeploy_resp.txt -w '%{http_code}' \
+              -X POST \
+              -H "X-API-Key: ${CENTRAL_DEPLOY_API_KEY}" \
+              -H "Accept: application/json" \
+              "${CENTRAL_DEPLOY_URL%/}/services/${svc}/redeploy")
+            echo "HTTP ${http_code}"
+            python -m json.tool /tmp/redeploy_resp.txt 2>/dev/null || cat /tmp/redeploy_resp.txt
+            echo "::endgroup::"
+            if [ "${http_code}" -ge 400 ]; then
+              echo "::warning::Redeploy of ${svc} returned HTTP ${http_code}"
+            fi
+            sleep 2
+          done
+
+          echo "Redeploy complete."
