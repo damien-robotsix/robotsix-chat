@@ -64,10 +64,7 @@ class LifecycleClient:
 
         Args:
             service_name: The lifecycle-registered service to watch.
-            max_wait_seconds: Maximum time to wait before giving up
-                (clamped to the configured client timeout as a lower
-                bound so the tool always reports before the HTTP client
-                itself would time out).
+            max_wait_seconds: Maximum time to wait before giving up.
             poll_interval_seconds: Seconds between poll attempts (minimum
                 5 s — lower values are clamped).
 
@@ -97,9 +94,9 @@ class LifecycleClient:
         attempts = 0
 
         while True:
-            elapsed = time.monotonic() - started_at
             remaining = deadline - time.monotonic()
             if remaining <= 0:
+                elapsed = time.monotonic() - started_at
                 return (
                     f"Timeout after {elapsed:.0f}s ({attempts} polls) — "
                     f"{service_name} config has not changed.  The service "
@@ -121,6 +118,7 @@ class LifecycleClient:
                 continue
 
             if current_config != initial_config:
+                elapsed = time.monotonic() - started_at
                 current_status = await self._get_raw(status_path)
                 status_text = (
                     json.dumps(json.loads(current_status), indent=2)
