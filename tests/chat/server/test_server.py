@@ -25,7 +25,11 @@ from robotsix_chat.chat.server import (
 )
 from robotsix_chat.chat.server.cli import _export_langfuse_env
 from robotsix_chat.config import LangfuseSettings, Settings
-from robotsix_chat.config.models import DirectRepoSettings, GitHubActionsSettings, GitHubSecuritySettings
+from robotsix_chat.config.models import (
+    DirectRepoSettings,
+    GitHubActionsSettings,
+    GitHubSecuritySettings,
+)
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.memory import NullMemory
 from robotsix_chat.subsessions import (

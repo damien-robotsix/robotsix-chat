@@ -143,9 +143,7 @@ def build_github_actions_tools(
                         f"Error: inputs must be a JSON object, "
                         f"got {type(parsed).__name__}"
                     )
-                parsed_inputs = {
-                    str(k): str(v) for k, v in parsed.items()
-                }
+                parsed_inputs = {str(k): str(v) for k, v in parsed.items()}
             except json.JSONDecodeError as exc:
                 return f"Error parsing inputs JSON: {exc}"
 

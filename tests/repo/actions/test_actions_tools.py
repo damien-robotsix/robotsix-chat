@@ -5,6 +5,7 @@ from __future__ import annotations
 import time
 
 import pytest
+import respx
 
 from robotsix_chat.config import DirectRepoSettings, GitHubActionsSettings
 from robotsix_chat.repo.actions import (
@@ -19,7 +20,7 @@ def _actions_settings(**kw: object) -> GitHubActionsSettings:
         "github_org": "damien-robotsix",
     }
     base.update(kw)
-    return GitHubActionsSettings(**base)
+    return GitHubActionsSettings(**base)  # type: ignore[arg-type]
 
 
 def _direct_repo_settings(**kw: object) -> DirectRepoSettings:
@@ -31,7 +32,7 @@ def _direct_repo_settings(**kw: object) -> DirectRepoSettings:
         "board_api_base_url": "http://127.0.0.1:8077",
     }
     base.update(kw)
-    return DirectRepoSettings(**base)
+    return DirectRepoSettings(**base)  # type: ignore[arg-type]
 
 
 def _prepopulate_installation_token(settings: DirectRepoSettings) -> str:
@@ -70,16 +71,17 @@ def _clear_token_cache(monkeypatch: pytest.MonkeyPatch) -> None:
 
 def test_build_github_actions_tools_disabled() -> None:
     """Disabled github_actions returns no tools."""
-    assert build_github_actions_tools(
-        GitHubActionsSettings(enabled=False), _direct_repo_settings()
-    ) == []
+    assert (
+        build_github_actions_tools(
+            GitHubActionsSettings(enabled=False), _direct_repo_settings()
+        )
+        == []
+    )
 
 
 def test_build_github_actions_tools_returns_two_tools() -> None:
     """Enabled github_actions returns set_actions_secret and dispatch_workflow."""
-    tools = build_github_actions_tools(
-        _actions_settings(), _direct_repo_settings()
-    )
+    tools = build_github_actions_tools(_actions_settings(), _direct_repo_settings())
     assert len(tools) == 2
     names = {getattr(f, "__name__", str(f)) for f in tools}
     assert names == {"set_actions_secret", "dispatch_workflow"}
@@ -91,20 +93,16 @@ def test_build_github_actions_tools_returns_two_tools() -> None:
 
 
 @pytest.mark.asyncio
-async def test_set_actions_secret_refuses_out_of_scope_repo(respx_mock) -> None:
+async def test_set_actions_secret_refuses_out_of_scope_repo(
+    respx_mock: respx.MockRouter,
+) -> None:
     """Repo not in installation scope → refused message."""
     dr = _direct_repo_settings()
     _prepopulate_installation_token(dr)
 
     # Mock list-installation-repos to return only one repo
-    respx_mock.get(
-        f"{dr.github_api_base_url}/installation/repositories"
-    ).respond(
-        json={
-            "repositories": [
-                {"full_name": "damien-robotsix/allowed-repo"}
-            ]
-        }
+    respx_mock.get(f"{dr.github_api_base_url}/installation/repositories").respond(
+        json={"repositories": [{"full_name": "damien-robotsix/allowed-repo"}]}
     )
 
     tools = build_github_actions_tools(_actions_settings(), dr)
@@ -116,19 +114,15 @@ async def test_set_actions_secret_refuses_out_of_scope_repo(respx_mock) -> None:
 
 
 @pytest.mark.asyncio
-async def test_dispatch_workflow_refuses_out_of_scope_repo(respx_mock) -> None:
+async def test_dispatch_workflow_refuses_out_of_scope_repo(
+    respx_mock: respx.MockRouter,
+) -> None:
     """Repo not in installation scope → refused message."""
     dr = _direct_repo_settings()
     _prepopulate_installation_token(dr)
 
-    respx_mock.get(
-        f"{dr.github_api_base_url}/installation/repositories"
-    ).respond(
-        json={
-            "repositories": [
-                {"full_name": "damien-robotsix/allowed-repo"}
-            ]
-        }
+    respx_mock.get(f"{dr.github_api_base_url}/installation/repositories").respond(
+        json={"repositories": [{"full_name": "damien-robotsix/allowed-repo"}]}
     )
 
     tools = build_github_actions_tools(_actions_settings(), dr)
@@ -146,20 +140,14 @@ async def test_dispatch_workflow_refuses_out_of_scope_repo(respx_mock) -> None:
 
 @pytest.mark.asyncio
 async def test_dispatch_workflow_rejects_invalid_inputs_json(
-    respx_mock,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Non-JSON inputs string → error message."""
     dr = _direct_repo_settings()
     _prepopulate_installation_token(dr)
 
-    respx_mock.get(
-        f"{dr.github_api_base_url}/installation/repositories"
-    ).respond(
-        json={
-            "repositories": [
-                {"full_name": "damien-robotsix/test-repo"}
-            ]
-        }
+    respx_mock.get(f"{dr.github_api_base_url}/installation/repositories").respond(
+        json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]}
     )
 
     tools = build_github_actions_tools(_actions_settings(), dr)
@@ -172,20 +160,14 @@ async def test_dispatch_workflow_rejects_invalid_inputs_json(
 
 @pytest.mark.asyncio
 async def test_dispatch_workflow_rejects_non_object_inputs(
-    respx_mock,
+    respx_mock: respx.MockRouter,
 ) -> None:
     """Inputs that parse but are not a dict → error message."""
     dr = _direct_repo_settings()
     _prepopulate_installation_token(dr)
 
-    respx_mock.get(
-        f"{dr.github_api_base_url}/installation/repositories"
-    ).respond(
-        json={
-            "repositories": [
-                {"full_name": "damien-robotsix/test-repo"}
-            ]
-        }
+    respx_mock.get(f"{dr.github_api_base_url}/installation/repositories").respond(
+        json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]}
     )
 
     tools = build_github_actions_tools(_actions_settings(), dr)

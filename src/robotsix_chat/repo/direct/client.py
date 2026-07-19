@@ -30,6 +30,7 @@ def _b64encode(data: bytes) -> str:
     """Encode bytes as a base64 string without padding (GitHub API convention)."""
     return base64.b64encode(data).decode("ascii").rstrip("=")
 
+
 # ---------------------------------------------------------------------------
 # GitHub App authentication helpers
 # ---------------------------------------------------------------------------
@@ -730,7 +731,10 @@ class DirectRepoClient:
         Never raises — returns a success/error message string.
         """
         try:
-            from nacl.public import PublicKey, SealedBox
+            from nacl.public import (  # type: ignore[import-not-found]
+                PublicKey,
+                SealedBox,
+            )
         except ImportError:
             return (
                 "Error: PyNaCl is required for Actions secret encryption. "
@@ -739,9 +743,7 @@ class DirectRepoClient:
             )
 
         try:
-            key_id, public_key_b64 = await self._get_repo_public_key(
-                repo_full_name
-            )
+            key_id, public_key_b64 = await self._get_repo_public_key(repo_full_name)
         except RuntimeError as exc:
             return f"Error fetching repo public key: {exc}"
         except Exception as exc:
@@ -764,9 +766,7 @@ class DirectRepoClient:
                     "key_id": key_id,
                 },
             )
-            return (
-                f"Secret '{secret_name}' set successfully on {repo_full_name}."
-            )
+            return f"Secret '{secret_name}' set successfully on {repo_full_name}."
         except RuntimeError as exc:
             return f"Error setting secret: {exc}"
         except Exception as exc:

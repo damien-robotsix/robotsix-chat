@@ -5,6 +5,8 @@ from __future__ import annotations
 import time
 
 import pytest
+import respx
+from pydantic import SecretStr
 
 from robotsix_chat.config import DirectRepoSettings, GitHubActionsSettings
 from robotsix_chat.repo.direct.client import (
@@ -19,7 +21,7 @@ def _actions_settings(**kw: object) -> GitHubActionsSettings:
         "deploy_api_key": "test-api-key",  # pragma: allowlist secret
     }
     base.update(kw)
-    return GitHubActionsSettings(**base)
+    return GitHubActionsSettings(**base)  # type: ignore[arg-type]
 
 
 def _direct_repo_settings(**kw: object) -> DirectRepoSettings:
@@ -31,7 +33,7 @@ def _direct_repo_settings(**kw: object) -> DirectRepoSettings:
         "board_api_base_url": "http://127.0.0.1:8077",
     }
     base.update(kw)
-    return DirectRepoSettings(**base)
+    return DirectRepoSettings(**base)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
@@ -46,7 +48,7 @@ async def test_secret_endpoint_503_when_disabled() -> None:
 
     gh = GitHubActionsSettings(
         enabled=False,
-        deploy_api_key="test-key",  # pragma: allowlist secret
+        deploy_api_key=SecretStr("test-key"),  # pragma: allowlist secret
     )
     dr = _direct_repo_settings()
 
@@ -70,7 +72,7 @@ async def test_workflow_endpoint_503_when_disabled() -> None:
 
     gh = GitHubActionsSettings(
         enabled=False,
-        deploy_api_key="test-key",  # pragma: allowlist secret
+        deploy_api_key=SecretStr("test-key"),  # pragma: allowlist secret
     )
     dr = _direct_repo_settings()
 
@@ -203,7 +205,9 @@ async def test_workflow_endpoint_400_missing_ref() -> None:
 
 
 @pytest.mark.asyncio
-async def test_secret_endpoint_404_repo_not_in_scope(respx_mock) -> None:
+async def test_secret_endpoint_404_repo_not_in_scope(
+    respx_mock: respx.MockRouter,
+) -> None:
     """Repo not in installation scope → 404."""
     from tests.conftest import mock_app
 
@@ -215,14 +219,8 @@ async def test_secret_endpoint_404_repo_not_in_scope(respx_mock) -> None:
         "ghs_test_token",
     )
 
-    respx_mock.get(
-        f"{dr.github_api_base_url}/installation/repositories"
-    ).respond(
-        json={
-            "repositories": [
-                {"full_name": "damien-robotsix/allowed-repo"}
-            ]
-        }
+    respx_mock.get(f"{dr.github_api_base_url}/installation/repositories").respond(
+        json={"repositories": [{"full_name": "damien-robotsix/allowed-repo"}]}
     )
 
     async with mock_app(

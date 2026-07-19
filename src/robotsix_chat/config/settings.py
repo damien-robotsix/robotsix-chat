@@ -424,9 +424,7 @@ class Settings(BaseModel):
     github_security: GitHubSecuritySettings = Field(
         default_factory=GitHubSecuritySettings
     )
-    github_actions: GitHubActionsSettings = Field(
-        default_factory=GitHubActionsSettings
-    )
+    github_actions: GitHubActionsSettings = Field(default_factory=GitHubActionsSettings)
     repo_study: RepoStudySettings = Field(default_factory=RepoStudySettings)
     lifecycle: LifecycleSettings = Field(default_factory=LifecycleSettings)
     notification: NotificationSettings = Field(default_factory=NotificationSettings)
