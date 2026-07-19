@@ -246,6 +246,24 @@ the feedback run never auto-approves. Disabled by default.
 | `feedback.board_api_token` | `string` (secret) | `""`    | Optional Bearer token for the board API.                                   |
 | `feedback.timeout`         | `number`          | `60.0`  | Per-request HTTP timeout (seconds) for ingest calls.                       |
 
+#### Target repo resolution
+
+Feedback tickets are filed against a set of allowed target repos. The set is resolved
+**dynamically** at each feedback run (cached for 60 s) — there is no static `repo_ids` config key:
+
+1. **Deploy roster** — `GET http://central-deploy:8100/chat/components` fetches the list of
+   currently deployed chat components. Each component's `id` becomes a candidate target repo.
+2. **Mill repo registry** — `GET http://mill:8077/repos` fetches the list of registered repos from
+   the mill board.
+3. **Intersection** — only repos present in *both* the deploy roster *and* the mill repo registry
+   are allowed. A repo that is registered but not deployed (or vice versa) cannot receive tickets.
+4. **Fallback** — if either service is unreachable, returns an empty response, or the intersection
+   is empty, the runner falls back to `["robotsix-chat"]` and logs a warning so the feedback
+   pipeline continues to function in a degraded state.
+
+The `DEPLOY_API_KEY` environment variable may be set to pass an `X-API-Key` header to the
+central-deploy API (optional; needed only when the deploy server requires authentication).
+
 ### Direct Repo (GitHub App)
 
 Push-branch and open-PR as the robotsix-mill GitHub App. Disabled by default.
