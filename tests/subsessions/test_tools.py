@@ -623,7 +623,7 @@ async def test_spawn_tool_dedup_key_fresh_spawn_returns_started_message() -> Non
 
 @pytest.mark.asyncio
 async def test_spawn_tool_dedup_key_duplicate_returns_deduplicated_message() -> None:
-    """When a user_chat with the same dedup_key already exists, returns dedup message."""
+    """When a user_chat with same dedup_key already exists, returns dedup message."""
     agent = FakeAgent(["ok"])
     env = build_env(agent=agent)
     spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
@@ -668,7 +668,7 @@ async def test_spawn_tool_dedup_key_without_key_returns_normal_started() -> None
 
 @pytest.mark.asyncio
 async def test_spawn_tool_dedup_key_non_user_chat_always_started() -> None:
-    """A task spawn with a dedup_key always returns 'Started' (dedup only for user_chat)."""
+    """Task spawn with dedup_key always returns 'Started' (dedup only for user_chat)."""
     env = build_env()
     spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
 

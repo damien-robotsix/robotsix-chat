@@ -804,8 +804,9 @@ def test_cancel_and_close_clears_dedup_key_from_active_map() -> None:
 
 
 def test_dedup_key_on_task_is_tracked_but_spawn_filtered() -> None:
-    """The registry tracks dedup keys for all kinds, but spawn_subsession
-    only checks the dedup guard for user_chat kinds.
+    """The registry tracks dedup keys for all subsession kinds.
+
+    However, spawn_subsession only checks the dedup guard for user_chat kinds.
 
     ``is_dedup_key_active`` is a low-level lookup that returns whatever
     is in the map — kind filtering happens at the spawn_subsession layer.
