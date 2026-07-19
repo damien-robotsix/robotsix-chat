@@ -352,6 +352,95 @@ async def test_periodic_auto_stops_after_consecutive_no_change_runs() -> None:
 
 
 @pytest.mark.asyncio
+async def test_periodic_human_approval_timeout_auto_escalates() -> None:
+    """human_issue_approval checkpoint triggers human_approval_timeout close."""
+    agent = FakeAgent(["NO_CHANGE", "NO_CHANGE", "NO_CHANGE"])
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            auto_stop_no_change_runs=5,
+            human_approval_timeout_runs=3,
+        ),
+    )
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+        checkpoint={
+            "last_known_state": "human_issue_approval",
+        },
+    )
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "human_approval_timeout"
+    assert "human_issue_approval" in (info.summary or "")
+    assert len(agent.calls) == 3
+
+
+@pytest.mark.asyncio
+async def test_periodic_human_approval_timeout_ignored_without_checkpoint() -> None:
+    """Without human_issue_approval checkpoint, generic auto_stop applies."""
+    agent = FakeAgent(["NO_CHANGE", "NO_CHANGE", "NO_CHANGE"])
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            auto_stop_no_change_runs=3,
+            human_approval_timeout_runs=2,
+        ),
+    )
+
+    # Checkpoint has no last_known_state — human-approval timeout should
+    # not trigger.
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+        checkpoint={"other_field": "value"},
+    )
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    # Falls through to the generic auto-stop, not human_approval_timeout.
+    assert info.close_reason == "no_change_auto_stop"
+    assert len(agent.calls) == 3
+
+
+@pytest.mark.asyncio
+async def test_periodic_human_approval_timeout_uses_own_threshold() -> None:
+    """human_approval_timeout_runs is independent of auto_stop_no_change_runs."""
+    agent = FakeAgent(["NO_CHANGE", "NO_CHANGE"])
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            auto_stop_no_change_runs=10,
+            human_approval_timeout_runs=2,
+        ),
+    )
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+        checkpoint={
+            "last_known_state": "human_issue_approval",
+        },
+    )
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "human_approval_timeout"
+    assert len(agent.calls) == 2
+
+
+@pytest.mark.asyncio
 async def test_periodic_steering_message_wakes_the_sleep_early() -> None:
     """A queued message interrupts the inter-run sleep and feeds the run."""
     agent = FakeAgent(["baseline", "focused report"])
@@ -1463,6 +1552,32 @@ async def test_get_mill_started_at_connect_error_returns_none():
     with patch("httpx.AsyncClient", mock):
         result = await _get_mill_started_at("https://mill.example.com")
     assert result is None
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_human_issue_approval_injects_context():
+    """human_issue_approval ticket injects context and updates checkpoint."""
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+    )
+
+    mock = _mock_async_client(response_json={"state": "human_issue_approval"})
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is True
+    assert context_msg is not None
+    assert "HUMAN_ISSUE_APPROVAL" in context_msg
+    assert "TICKET-1" in context_msg
+
+    # Checkpoint was updated with the current state.
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.checkpoint is not None
+    assert updated.checkpoint.get("last_known_state") == "human_issue_approval"
 
 
 @pytest.mark.asyncio

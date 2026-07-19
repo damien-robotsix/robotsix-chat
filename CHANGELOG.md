@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Periodic subsessions now auto-escalate when a monitored ticket is stuck at `human_issue_approval`: a new config key `subsessions.human_approval_timeout_runs` (default 5) controls how many consecutive `NO_CHANGE` runs trigger an auto-escalation close with reason `human_approval_timeout`.  The subsession's parent agent receives the summary and can act on it (re-open, notify, etc.).  The resume status check also detects `human_issue_approval` state and updates the checkpoint so the periodic loop can enforce the timeout without re-polling the board.
 - Enable `changelog_autofill` periodic task for auto-committing changelog entries on PRs with failing changelog CI checks.
 - Add `watch_service_redeploy` lifecycle tool that polls a service config until a redeploy is detected or a timeout expires, helping the agent break redraft-loops after mill fixes are merged but not yet deployed.
 - Convert subsession error helpers and inline `JSONResponse` sites to raise `HTTPException` so they flow through the centralized error envelope and include `correlation_id`.

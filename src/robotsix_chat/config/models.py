@@ -413,6 +413,12 @@ class SubsessionsSettings(BaseModel):
         auto_stop_no_change_runs: A periodic subsession auto-closes after
             this many consecutive ``NO_CHANGE`` runs.
             Env override: ``SUBSESSIONS_AUTO_STOP_NO_CHANGE_RUNS``.
+        human_approval_timeout_runs: When a periodic subsession's checkpoint
+            indicates the monitored ticket is in ``human_issue_approval``
+            state, auto-escalate (close with reason
+            ``human_approval_timeout``) after this many consecutive
+            ``NO_CHANGE`` runs.  Default ``5``.
+            Env override: ``SUBSESSIONS_HUMAN_APPROVAL_TIMEOUT_RUNS``.
         run_timeout_seconds: Hard per-run timeout for a single subsession
             agent turn (recall + LLM call + delivery).  On expiry the run
             is marked failed and the schedule continues instead of staying
@@ -430,6 +436,7 @@ class SubsessionsSettings(BaseModel):
     default_model_level: int = 2
     min_interval_seconds: float = 60.0
     auto_stop_no_change_runs: int = 5
+    human_approval_timeout_runs: int = 5
     run_timeout_seconds: float = 600.0
     store_path: str = "/data/subsessions.json"
     transcript_max_entries: int = 200

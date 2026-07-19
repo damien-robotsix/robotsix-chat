@@ -139,6 +139,7 @@ def make_settings(
     default_model_level: int = 2,
     min_interval_seconds: float = 0.01,
     auto_stop_no_change_runs: int = 3,
+    human_approval_timeout_runs: int = 3,
     run_timeout_seconds: float = 600.0,
     llmio_api_key: str = "",
 ) -> SimpleNamespace:
@@ -157,6 +158,7 @@ def make_settings(
             default_model_level=default_model_level,
             min_interval_seconds=min_interval_seconds,
             auto_stop_no_change_runs=auto_stop_no_change_runs,
+            human_approval_timeout_runs=human_approval_timeout_runs,
             run_timeout_seconds=run_timeout_seconds,
         ),
         llmio_api_key=SecretStr(llmio_api_key),
