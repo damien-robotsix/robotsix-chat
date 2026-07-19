@@ -89,6 +89,10 @@ jobs:
         with:
           persist-credentials: false
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
+      - name: Install
+        run: uv sync --frozen
+        env:
+          UV_MALWARE_CHECK: "1"
       - name: Run pre-commit
         # mypy resolves from the project's dev group via `uv run`; vulture is
         # not a declared dependency (only a system-hook tool), so provision it
@@ -210,6 +214,8 @@ jobs:
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
       - name: Install
         run: uv sync --frozen
+        env:
+          UV_MALWARE_CHECK: "1"
       - name: Verify config/config.schema.json in sync
         run: |
           uv run python - <<'EOF'
@@ -241,6 +247,8 @@ jobs:
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
       - name: Install
         run: uv sync --frozen
+        env:
+          UV_MALWARE_CHECK: "1"
       - name: Run deptry
         run: uv run deptry src/ --known-first-party robotsix_chat
 
