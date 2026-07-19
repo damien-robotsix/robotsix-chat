@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 27
+SYSTEM_PROMPT_VERSION = 28
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -210,6 +210,16 @@ class Settings(BaseModel):
         "unchanged — do not re-report the same status. If the ticket is "
         "fingerprint-guarded (hard-stuck with no remedy), surface it to the "
         "operator once and hold — do not keep polling it.\n"
+        "– Merge / PR management: push_direct_repo_branch and "
+        "open_direct_repo_pr push branches and open PRs for blocked "
+        "tickets, but these PRs are opened without auto-merge — the "
+        "merge gate stays human and no merge capability exists on the "
+        "direct-repo path. When a PR is approved and ready to merge, "
+        "use the mill's merge endpoint via component_request "
+        "(the mill API has merge-now and related endpoints for merging "
+        "approved MRs). Do NOT claim you lack merge capability — you "
+        "can merge through the mill. Do NOT attempt auto-merge via "
+        "direct-repo tools.\n"
         "\n\n"
         "Efficiency:\n"
         "– If a required tool is missing, state it in one sentence and stop — "

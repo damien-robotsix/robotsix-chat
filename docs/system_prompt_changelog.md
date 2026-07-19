@@ -5,6 +5,24 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v28 — 2026-07-19 — document-merge-capability-via-mill-api-d1a3
+
+**Summary:** Add a "Merge / PR management" bullet to the Autonomy section documenting that
+direct-repo tools (push_direct_repo_branch, open_direct_repo_pr) push branches and open PRs without
+auto-merge (the merge gate stays human), and that merge capability exists through the mill API via
+component_request (merge-now and related endpoints). Instructs the agent not to claim it lacks merge
+capability and not to attempt auto-merge via direct-repo tools.
+
+**Rationale:** The agent was generalising "no merge capability on the direct-repo path" to "I cannot
+merge at all," causing it to falsely claim inability when approved MRs were ready to merge. The
+agent bounced approved MRs through waiting_auto_merge 4 times before discovering the mill's
+merge-now endpoint. This change closes the knowledge gap so the agent uses the mill's merge
+endpoints first.
+
+**SHA256:** `436be0c1a8683984e7dc721d039bf3d4bd3dfa108d462f3f8542617fdd2939e8`
+
+______________________________________________________________________
+
 ## v27 — 2026-07-19 — deduplicate-known-broken-asyncio-run-err-54ea
 
 **Summary:** Add dedup_key guidance to the agent_instruction default. When spawning a user_chat to
