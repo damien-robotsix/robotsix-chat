@@ -10,10 +10,21 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 try:
-    from robotsix_llmio.core.tracing import get_recording_span, start_trace
+    from robotsix_llmio.core.tracing import (
+        GEN_AI_TOOL_NAME,
+        OP_EXECUTE_TOOL,
+        get_recording_span,
+        get_tracer,
+        start_span,
+        start_trace,
+    )
 except ImportError:  # pragma: no cover — tracing extra absent in minimal installs
     start_trace = None  # type: ignore[assignment]
     get_recording_span = None  # type: ignore[assignment]
+    start_span = None  # type: ignore[assignment]
+    get_tracer = None  # type: ignore[assignment]
+    GEN_AI_TOOL_NAME = None  # type: ignore[assignment]
+    OP_EXECUTE_TOOL = None  # type: ignore[assignment]
 
 if TYPE_CHECKING:
     from robotsix_chat.config.models import FeedbackSettings
@@ -391,6 +402,11 @@ class FeedbackRunner:
         if self._board_token:
             headers["Authorization"] = f"Bearer {self._board_token}"
 
+        _tracer = (
+            get_tracer("robotsix-chat.feedback") if get_tracer is not None else None
+        )
+        _span_name = OP_EXECUTE_TOOL if OP_EXECUTE_TOOL is not None else "mill_ingest"
+
         filed = 0
         for ticket in tickets:
             # Fold runner-level metadata into the body so it survives
@@ -410,9 +426,28 @@ class FeedbackRunner:
                 "body": "\n".join(body_lines),
                 "source_tag": "robotsix-chat-feedback",
             }
+            _span_attrs: dict[str, Any] = {
+                "http.method": "POST",
+                "http.url": ingest_url,
+            }
+            if GEN_AI_TOOL_NAME is not None:
+                _span_attrs[GEN_AI_TOOL_NAME] = "mill_ingest"
+
+            if start_span is not None:
+                _span_ctx = start_span(_tracer, _span_name, _span_attrs)
+            else:
+                import contextlib
+
+                _span_ctx = contextlib.nullcontext()
+
             try:
-                async with httpx.AsyncClient(timeout=self._timeout) as client:
-                    resp = await client.post(ingest_url, headers=headers, json=payload)
+                with _span_ctx as _span:
+                    async with httpx.AsyncClient(timeout=self._timeout) as client:
+                        resp = await client.post(
+                            ingest_url, headers=headers, json=payload
+                        )
+                    if _span is not None:
+                        _span.set_attribute("http.status_code", resp.status_code)
                 if 200 <= resp.status_code < 300:
                     filed += 1
                     logger.debug(
