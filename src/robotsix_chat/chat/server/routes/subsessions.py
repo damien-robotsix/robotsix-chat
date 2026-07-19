@@ -63,8 +63,6 @@ async def subsessions_list_endpoint(request: Request) -> JSONResponse:
     subsession feature is not wired.
     """
     session_id = _get_session_id(request)
-    if isinstance(session_id, JSONResponse):
-        return session_id
     registry = _get_subsession_registry(request)
     if isinstance(registry, JSONResponse):
         return registry
@@ -127,8 +125,6 @@ async def subsessions_message_endpoint(request: Request) -> JSONResponse:
     registry, info = result
 
     body = await _parse_json_body(request)
-    if isinstance(body, JSONResponse):
-        return body
     text = body.get("text")
     if not text or not isinstance(text, str):
         return JSONResponse(

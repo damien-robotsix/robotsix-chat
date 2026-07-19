@@ -54,8 +54,6 @@ async def history_endpoint(request: Request) -> JSONResponse:
     Also tolerates ``client_id`` as a legacy fallback (treated as ``session_id``).
     """
     session_id = _get_session_id(request)
-    if isinstance(session_id, JSONResponse):
-        return session_id
 
     store: ConversationStore = request.app.state.conversation_store
     turns = store.history(session_id)
@@ -99,14 +97,12 @@ async def sessions_create_endpoint(request: Request) -> JSONResponse:
     The new session is marked as the owner's active session.
     """
     body = await _parse_json_body(request)
-    if isinstance(body, JSONResponse):
-        return body
 
     owner_id = body.get("owner_id")
     if not owner_id or not isinstance(owner_id, str):
-        return JSONResponse(
-            {"error": "'owner_id' field is required and must be a string"},
+        raise HTTPException(
             status_code=400,
+            detail="'owner_id' field is required and must be a string",
         )
 
     store: ConversationStore = request.app.state.conversation_store
@@ -248,12 +244,10 @@ async def summary_endpoint(request: Request) -> JSONResponse:
     store: ConversationStore = request.app.state.conversation_store
 
     body = await _parse_json_body(request)
-    if isinstance(body, JSONResponse):
-        return body
 
     session_id = body.get("session_id")
     if not session_id or not isinstance(session_id, str):
-        return JSONResponse({"error": "session_id is required"}, status_code=400)
+        raise HTTPException(status_code=400, detail="session_id is required")
 
     turns = store.history(session_id)
     if not turns:
@@ -281,6 +275,8 @@ async def summary_endpoint(request: Request) -> JSONResponse:
             reply_parts.append(token)
     except Exception:
         logger.exception("Summary generation failed")
-        return JSONResponse({"error": "summary generation failed"}, status_code=500)
+        raise HTTPException(
+            status_code=500, detail="summary generation failed"
+        ) from None
 
     return JSONResponse({"summary": "".join(reply_parts).strip()})

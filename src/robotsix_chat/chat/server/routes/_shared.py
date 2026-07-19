@@ -9,6 +9,7 @@ import json
 from collections.abc import Iterable
 from typing import Any
 
+from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 
@@ -34,35 +35,35 @@ def _sse_frame(payload: object) -> bytes:
     return f"data: {json.dumps(payload)}\n\n".encode()
 
 
-async def _parse_json_body(request: Request) -> dict[str, Any] | JSONResponse:
+async def _parse_json_body(request: Request) -> dict[str, Any]:
     """Parse and type-guard a request's JSON body.
 
-    Returns the parsed ``dict`` on success, or a ``JSONResponse`` error
-    ready to return directly from an endpoint.
+    Returns the parsed ``dict`` on success, or raises ``HTTPException``
+    with status 400 on parse or type errors.
     """
     try:
         body = await request.json()
     except json.JSONDecodeError, ValueError:
-        return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+        raise HTTPException(status_code=400, detail="invalid JSON body") from None
 
     if not isinstance(body, dict):
-        return JSONResponse({"error": "expected a JSON object"}, status_code=400)
+        raise HTTPException(status_code=400, detail="expected a JSON object")
 
     return body
 
 
-def _get_session_id(request: Request) -> str | JSONResponse:
+def _get_session_id(request: Request) -> str:
     """Extract ``session_id`` from query params with ``client_id`` fallback.
 
-    Returns the session id string on success, or a ``JSONResponse`` error
-    ready to return directly from an endpoint.
+    Returns the session id string on success, or raises ``HTTPException``
+    with status 400 when neither param is present.
     """
     session_id = request.query_params.get("session_id")
     if not session_id:
         session_id = request.query_params.get("client_id")
     if not session_id:
-        return JSONResponse(
-            {"error": "session_id query parameter is required"}, status_code=400
+        raise HTTPException(
+            status_code=400, detail="session_id query parameter is required"
         )
     return session_id
 

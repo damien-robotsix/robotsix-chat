@@ -27,6 +27,7 @@ from .errors import (
     http_exception_handler,
     not_found_handler,
     server_error_handler,
+    unhandled_exception_handler,
 )
 from .events import (
     events_endpoint,
@@ -90,4 +91,5 @@ __all__ = [
     "subsessions_transcript_endpoint",
     "summary_endpoint",
     "ui_endpoint",
+    "unhandled_exception_handler",
 ]

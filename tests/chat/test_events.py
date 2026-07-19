@@ -342,7 +342,9 @@ async def test_events_endpoint_missing_client_id() -> None:
         response = await f.client.get("/events")
 
     assert response.status_code == 400
-    assert response.json() == {"error": "session_id query parameter is required"}
+    data = response.json()
+    assert data["error"] == "session_id query parameter is required"
+    assert "correlation_id" in data
 
 
 @pytest.mark.asyncio
@@ -352,7 +354,9 @@ async def test_events_endpoint_empty_client_id() -> None:
         response = await f.client.get("/events", params={"session_id": ""})
 
     assert response.status_code == 400
-    assert response.json() == {"error": "session_id query parameter is required"}
+    data = response.json()
+    assert data["error"] == "session_id query parameter is required"
+    assert "correlation_id" in data
 
 
 @pytest.mark.asyncio

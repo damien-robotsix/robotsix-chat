@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Unify error response envelope: all error handlers and inline validation errors now emit ``{"error": "...", "correlation_id": "..."}`` instead of mixing ``{"detail": ...}`` and ``{"error": ...}`` shapes. Added catch-all ``Exception`` handler for graceful 500s.
 - Periodic subsession `NO_CHANGE` suppression now covers minor, low-value
   state transitions (draft→ready, waiting_for_ci→in_progress, label changes,
   routine CI runs) — only substantive changes (first-time blocking, completion,

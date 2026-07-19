@@ -11,6 +11,7 @@ import time
 from collections.abc import AsyncIterator
 from typing import Any, Protocol
 
+from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 
@@ -373,84 +374,70 @@ def _parse_and_validate_images(
     max_per_msg: int,
     max_bytes: int,
     allowed_types: list[str],
-) -> tuple[list[tuple[str, bytes]] | None, JSONResponse | None]:
+) -> list[tuple[str, bytes]] | None:
     """Parse and validate the ``images`` field from a chat request body.
 
-    Returns ``(images, error_response)`` where exactly one is ``None``:
-    - On success: ``(list_of_tuples, None)`` — each tuple is
-      ``(media_type, raw_bytes)``.
-    - On validation failure: ``(None, JSONResponse)`` — an HTTP 400 error
-      ready to return to the client.
-
-    When the body has no ``images`` key, returns ``(None, None)``.
+    Returns the list of ``(media_type, raw_bytes)`` tuples on success,
+    or ``None`` when the body has no ``images`` key.  Raises
+    ``HTTPException(400)`` on any validation failure.
     """
     raw_images = body.get("images")
     if raw_images is None:
-        return None, None
+        return None
 
     if not isinstance(raw_images, list):
-        return None, JSONResponse(
-            {"error": "'images' must be a JSON array"}, status_code=400
-        )
+        raise HTTPException(status_code=400, detail="'images' must be a JSON array")
     if len(raw_images) > max_per_msg:
-        return None, JSONResponse(
-            {
-                "error": (
-                    f"too many images: got {len(raw_images)}, maximum {max_per_msg}"
-                )
-            },
+        raise HTTPException(
             status_code=400,
+            detail=f"too many images: got {len(raw_images)}, maximum {max_per_msg}",
         )
 
     images: list[tuple[str, bytes]] = []
     for idx, img in enumerate(raw_images):
         if not isinstance(img, dict):
-            return None, JSONResponse(
-                {"error": f"images[{idx}]: expected a JSON object"},
+            raise HTTPException(
                 status_code=400,
+                detail=f"images[{idx}]: expected a JSON object",
             )
         media_type = img.get("media_type")
         if not isinstance(media_type, str) or not media_type:
-            return None, JSONResponse(
-                {"error": f"images[{idx}]: missing or invalid 'media_type'"},
+            raise HTTPException(
                 status_code=400,
+                detail=f"images[{idx}]: missing or invalid 'media_type'",
             )
         if media_type not in allowed_types:
-            return None, JSONResponse(
-                {
-                    "error": (
-                        f"images[{idx}]: media_type {media_type!r} not "
-                        f"allowed (allowed: {allowed_types})"
-                    )
-                },
+            raise HTTPException(
                 status_code=400,
+                detail=(
+                    f"images[{idx}]: media_type {media_type!r} not "
+                    f"allowed (allowed: {allowed_types})"
+                ),
             )
         data_b64 = img.get("data")
         if not isinstance(data_b64, str) or not data_b64:
-            return None, JSONResponse(
-                {"error": f"images[{idx}]: missing or invalid 'data'"},
+            raise HTTPException(
                 status_code=400,
+                detail=f"images[{idx}]: missing or invalid 'data'",
             )
         try:
             raw_bytes = base64.b64decode(data_b64, validate=True)
         except Exception:
-            return None, JSONResponse(
-                {"error": f"images[{idx}]: 'data' is not valid base64"},
+            raise HTTPException(
                 status_code=400,
-            )
+                detail=f"images[{idx}]: 'data' is not valid base64",
+            ) from None
         if len(raw_bytes) > max_bytes:
-            return None, JSONResponse(
-                {
-                    "error": (
-                        f"images[{idx}]: decoded size {len(raw_bytes)} "
-                        f"exceeds maximum {max_bytes}"
-                    )
-                },
+            raise HTTPException(
                 status_code=400,
+                detail=(
+                    f"images[{idx}]: decoded size {len(raw_bytes)} "
+                    f"exceeds maximum {max_bytes}"
+                ),
             )
         images.append((media_type, raw_bytes))
 
-    return images, None
+    return images
 
 
 async def _generate_title(
@@ -544,39 +531,35 @@ async def chat_endpoint(
 
     # -- parse & validate JSON body ---------------------------------------
     body = await _parse_json_body(request)
-    if isinstance(body, JSONResponse):
-        return body
 
     message = body.get("message")
     if message is not None and not isinstance(message, str):
-        return JSONResponse(
-            {"error": "message must be a string when present"}, status_code=400
+        raise HTTPException(
+            status_code=400, detail="message must be a string when present"
         )
 
     # -- parse & validate message_id (optional) ---------------------------
     message_id = body.get("message_id")
     if message_id is not None and not isinstance(message_id, str):
-        return JSONResponse({"error": "invalid 'message_id' field"}, status_code=400)
+        raise HTTPException(status_code=400, detail="invalid 'message_id' field")
     if message_id is not None and len(message_id) > 128:
-        return JSONResponse(
-            {"error": "'message_id' exceeds maximum length"}, status_code=400
+        raise HTTPException(
+            status_code=400, detail="'message_id' exceeds maximum length"
         )
 
     # -- parse & validate images (optional) -------------------------------
-    images, err_resp = _parse_and_validate_images(
+    images = _parse_and_validate_images(
         body,
         max_per_msg=request.app.state.max_images_per_message,
         max_bytes=request.app.state.max_image_bytes,
         allowed_types=request.app.state.allowed_image_media_types,
     )
-    if err_resp is not None:
-        return err_resp
 
     # -- require at least one of message or images -----------------------
     if not message and not images:
-        return JSONResponse(
-            {"error": "either 'message' or at least one image is required"},
+        raise HTTPException(
             status_code=400,
+            detail="either 'message' or at least one image is required",
         )
     if not message:
         message = ""
@@ -588,11 +571,11 @@ async def chat_endpoint(
     client_id = body.get("client_id")
 
     if client_id is not None and not isinstance(client_id, str):
-        return JSONResponse({"error": "invalid 'client_id' field"}, status_code=400)
+        raise HTTPException(status_code=400, detail="invalid 'client_id' field")
     if session_id is not None and not isinstance(session_id, str):
-        return JSONResponse({"error": "invalid 'session_id' field"}, status_code=400)
+        raise HTTPException(status_code=400, detail="invalid 'session_id' field")
     if owner_id is not None and not isinstance(owner_id, str):
-        return JSONResponse({"error": "invalid 'owner_id' field"}, status_code=400)
+        raise HTTPException(status_code=400, detail="invalid 'owner_id' field")
 
     # Backward compat: client_id alone → both owner and session.
     if not session_id and client_id:
@@ -763,20 +746,16 @@ async def cancel_queued_endpoint(request: Request) -> JSONResponse:
 
     """
     body = await _parse_json_body(request)
-    if isinstance(body, JSONResponse):
-        return body
 
     session_id = body.get("session_id")
     if not session_id or not isinstance(session_id, str):
-        return JSONResponse(
-            {"error": "session_id (string) is required"}, status_code=400
-        )
+        raise HTTPException(status_code=400, detail="session_id (string) is required")
 
     message_id = body.get("message_id")
     if message_id is not None and not isinstance(message_id, str):
-        return JSONResponse(
-            {"error": "message_id must be a string when present"},
+        raise HTTPException(
             status_code=400,
+            detail="message_id must be a string when present",
         )
 
     coalescer: MessageCoalescer = request.app.state.message_coalescer

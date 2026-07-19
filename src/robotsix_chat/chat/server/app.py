@@ -69,6 +69,7 @@ from .routes import (
     subsessions_transcript_endpoint,
     summary_endpoint,
     ui_endpoint,
+    unhandled_exception_handler,
 )
 
 if TYPE_CHECKING:
@@ -382,6 +383,7 @@ def create_app(
             HTTPException: http_exception_handler,
             404: not_found_handler,
             500: server_error_handler,
+            Exception: unhandled_exception_handler,
         },
         lifespan=lambda _app: _make_lifespan(
             on_startup,
