@@ -72,6 +72,7 @@ _MAX_STALE_WORKER_RESUMES = 2
 # Ticket states recognised by the resume status check.
 _TICKET_STATE_TERMINAL = frozenset({"closed", "done"})
 _TICKET_STATE_BLOCKED = frozenset({"blocked"})
+_TICKET_STATE_HUMAN_APPROVAL = frozenset({"human_issue_approval"})
 
 
 def _is_no_change(reply: str) -> bool:
@@ -493,6 +494,32 @@ async def _run_periodic_turn(
             await env.delivery.deliver_summary(closed, summary, "max_runs")
         return None
 
+    # Human-approval timeout: when the checkpoint's last_known_state is
+    # human_issue_approval and the subsession has produced enough
+    # consecutive NO_CHANGE runs, auto-escalate by closing with a
+    # distinct reason so the parent agent can act on it.
+    checkpoint = info.checkpoint or {}
+    last_known = checkpoint.get("last_known_state", "")
+    if isinstance(last_known, str) and last_known.lower() == "human_issue_approval":
+        human_approval_cap = env.settings.subsessions.human_approval_timeout_runs
+        if consecutive_no_change >= human_approval_cap:
+            summary = (
+                f"Ticket has been stuck at human_issue_approval for "
+                f"{human_approval_cap} consecutive no-change runs — "
+                f"auto-escalating."
+            )
+            closed = registry.mark_closed(
+                sub_id,
+                summary=summary,
+                reason="human_approval_timeout",
+                closed_by="system",
+            )
+            if closed is not None:
+                await env.delivery.deliver_summary(
+                    closed, summary, "human_approval_timeout"
+                )
+            return None
+
     no_change_cap = env.settings.subsessions.auto_stop_no_change_runs
     if consecutive_no_change >= no_change_cap:
         summary = f"Auto-stopped after {no_change_cap} consecutive no-change runs."
@@ -564,7 +591,12 @@ async def _check_resume_status(
         return (True, None)
 
     ticket_id = ticket_id_raw
-    board_url = env.settings.direct_repo.board_api_base_url
+    direct_repo = getattr(env.settings, "direct_repo", None)
+    board_url = (
+        getattr(direct_repo, "board_api_base_url", "")
+        if direct_repo is not None
+        else ""
+    )
     if not board_url:
         logger.debug(
             "Subsession %s has ticket checkpoint but board_api_base_url "
@@ -782,6 +814,29 @@ async def _check_resume_status(
         )
         logger.info(
             "Subsession %s (ticket %s): blocked on resume — injecting context.",
+            sub_id,
+            ticket_id,
+        )
+        return (True, context)
+
+    # Human-issue-approval → inject context and update checkpoint so the
+    # periodic loop can detect the stuck state and auto-escalate.
+    if current_state_str.lower() in _TICKET_STATE_HUMAN_APPROVAL:
+        context = (
+            f"[System note: this ticket monitor was restarted after a "
+            f"service restart.  Ticket {ticket_id} is currently "
+            f"HUMAN_ISSUE_APPROVAL (previous known state: {last_known_str}). "
+            f"Update the checkpoint via set_checkpoint with "
+            f"last_known_state='human_issue_approval' so the system can "
+            f"auto-escalate after a configurable number of consecutive "
+            f"NO_CHANGE runs while the ticket is stuck awaiting human "
+            f"approval.]"
+        )
+        checkpoint["last_known_state"] = current_state_str
+        env.registry.update_checkpoint(sub_id, checkpoint)
+        logger.info(
+            "Subsession %s (ticket %s): human_issue_approval on resume "
+            "— injecting context and updating checkpoint.",
             sub_id,
             ticket_id,
         )
