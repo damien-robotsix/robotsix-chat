@@ -456,7 +456,7 @@ class TestParseTickets:
         with caplog.at_level(logging.WARNING):
             tickets = FeedbackRunner._parse_tickets(text, repo_ids=["robotsix-chat"])
         assert tickets == []
-        assert "not in configured repo_ids" in caplog.text
+        assert "not in allowed repos" in caplog.text
 
     def test_multiple_repo_ids_accepted(self) -> None:
         """Tickets targeting any configured repo are accepted."""

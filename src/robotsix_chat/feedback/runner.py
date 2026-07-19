@@ -516,7 +516,7 @@ class FeedbackRunner:
                 if target_repo not in valid_repos:
                     logger.warning(
                         "Skipping ticket %r — target_repo %r not in "
-                        "configured repo_ids %s",
+                        "allowed repos %s",
                         title,
                         target_repo,
                         sorted(valid_repos),
