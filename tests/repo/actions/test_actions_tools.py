@@ -41,7 +41,7 @@ def _prepopulate_installation_token(settings: DirectRepoSettings) -> str:
         _INSTALLATION_TOKEN_CACHE as _cache,
     )
 
-    token = "ghs_test_installation_token"
+    token = "ghs_test_installation_token"  # pragma: allowlist secret
     _cache[settings.github_app_installation_id] = (time.monotonic(), token)
     return token
 

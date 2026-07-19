@@ -216,7 +216,7 @@ async def test_secret_endpoint_404_repo_not_in_scope(
     dr_obj = dr
     _token_cache[dr_obj.github_app_installation_id] = (
         time.monotonic(),
-        "ghs_test_token",
+        "ghs_test_token",  # pragma: allowlist secret
     )
 
     respx_mock.get(f"{dr.github_api_base_url}/installation/repositories").respond(
