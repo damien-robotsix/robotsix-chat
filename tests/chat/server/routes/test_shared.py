@@ -6,6 +6,7 @@ import json
 from unittest.mock import patch
 
 import pytest
+from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 
@@ -109,7 +110,7 @@ async def test_parse_json_body_empty_dict() -> None:
 
 @pytest.mark.asyncio
 async def test_parse_json_body_malformed() -> None:
-    """Malformed JSON returns a 400 JSONResponse error."""
+    """Malformed JSON raises a 400 HTTPException."""
     scope: dict[str, object] = {
         "type": "http",
         "http_version": "1.1",
@@ -130,40 +131,40 @@ async def test_parse_json_body_malformed() -> None:
         }
 
     request = Request(scope, receive)
-    result = await _parse_json_body(request)
-    assert isinstance(result, JSONResponse)
-    assert result.status_code == 400
-    assert json.loads(result.body) == {"error": "invalid JSON body"}  # type: ignore[arg-type]
+    with pytest.raises(HTTPException) as exc_info:
+        await _parse_json_body(request)
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "invalid JSON body"
 
 
 @pytest.mark.asyncio
 async def test_parse_json_body_array() -> None:
-    """A JSON array body returns a 400 JSONResponse (expected object)."""
+    """A JSON array body raises a 400 HTTPException (expected object)."""
     request = _make_json_request([1, 2, 3])
-    result = await _parse_json_body(request)
-    assert isinstance(result, JSONResponse)
-    assert result.status_code == 400
-    assert json.loads(result.body) == {"error": "expected a JSON object"}  # type: ignore[arg-type]
+    with pytest.raises(HTTPException) as exc_info:
+        await _parse_json_body(request)
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "expected a JSON object"
 
 
 @pytest.mark.asyncio
 async def test_parse_json_body_string() -> None:
-    """A JSON string body returns a 400 JSONResponse (expected object)."""
+    """A JSON string body raises a 400 HTTPException (expected object)."""
     request = _make_json_request("just a string")
-    result = await _parse_json_body(request)
-    assert isinstance(result, JSONResponse)
-    assert result.status_code == 400
-    assert json.loads(result.body) == {"error": "expected a JSON object"}  # type: ignore[arg-type]
+    with pytest.raises(HTTPException) as exc_info:
+        await _parse_json_body(request)
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "expected a JSON object"
 
 
 @pytest.mark.asyncio
 async def test_parse_json_body_number() -> None:
-    """A JSON number body returns a 400 JSONResponse (expected object)."""
+    """A JSON number body raises a 400 HTTPException (expected object)."""
     request = _make_json_request(42)
-    result = await _parse_json_body(request)
-    assert isinstance(result, JSONResponse)
-    assert result.status_code == 400
-    assert json.loads(result.body) == {"error": "expected a JSON object"}  # type: ignore[arg-type]
+    with pytest.raises(HTTPException) as exc_info:
+        await _parse_json_body(request)
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "expected a JSON object"
 
 
 # ---------------------------------------------------------------------------
@@ -220,14 +221,12 @@ def test_get_session_id_empty_session_id_falls_back() -> None:
 
 
 def test_get_session_id_missing_both() -> None:
-    """When both params are missing, returns a 400 JSONResponse."""
+    """When both params are missing, raises a 400 HTTPException."""
     request = _make_query_request("")
-    result = _get_session_id(request)
-    assert isinstance(result, JSONResponse)
-    assert result.status_code == 400
-    assert json.loads(result.body) == {  # type: ignore[arg-type]
-        "error": "session_id query parameter is required"
-    }
+    with pytest.raises(HTTPException) as exc_info:
+        _get_session_id(request)
+    assert exc_info.value.status_code == 400
+    assert exc_info.value.detail == "session_id query parameter is required"
 
 
 # ---------------------------------------------------------------------------

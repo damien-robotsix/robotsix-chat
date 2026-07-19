@@ -30,8 +30,6 @@ async def events_endpoint(request: Request) -> JSONResponse | StreamingResponse:
     Tolerates ``client_id`` as a legacy fallback (treated as ``session_id``).
     """
     session_id = _get_session_id(request)
-    if isinstance(session_id, JSONResponse):
-        return session_id
 
     async def event_stream() -> AsyncIterator[bytes]:
         queue = request.app.state.event_bus.subscribe(session_id)

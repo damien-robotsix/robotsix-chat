@@ -10,6 +10,7 @@ from __future__ import annotations
 import json
 import logging
 
+from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -47,32 +48,26 @@ async def github_settings_endpoint(request: Request) -> JSONResponse:
 
     # -- 503: unconfigured -------------------------------------------------
     if not settings.enabled or not direct_repo.enabled:
-        return JSONResponse(
-            {"error": "github_security is not enabled"},
-            status_code=503,
-        )
+        raise HTTPException(status_code=503, detail="github_security is not enabled")
     api_key = settings.deploy_api_key.get_secret_value()
     if not api_key:
-        return JSONResponse(
-            {"error": "github_security.deploy_api_key is not configured"},
+        raise HTTPException(
             status_code=503,
+            detail="github_security.deploy_api_key is not configured",
         )
 
     # -- 403: auth ---------------------------------------------------------
     presented = request.headers.get("X-API-Key", "")
     if not presented or presented != api_key:
-        return JSONResponse(
-            {"error": "invalid or missing X-API-Key"},
-            status_code=403,
-        )
+        raise HTTPException(status_code=403, detail="invalid or missing X-API-Key")
 
     # -- path params -------------------------------------------------------
     owner = request.path_params.get("owner", "").strip()
     repo = request.path_params.get("repo", "").strip()
     if not owner or not repo:
-        return JSONResponse(
-            {"error": "owner and repo path parameters are required"},
+        raise HTTPException(
             status_code=400,
+            detail="owner and repo path parameters are required",
         )
     repo_full_name = f"{owner}/{repo}"
 
@@ -80,9 +75,9 @@ async def github_settings_endpoint(request: Request) -> JSONResponse:
     try:
         body = await request.json()
     except json.JSONDecodeError, ValueError:
-        return JSONResponse({"error": "invalid JSON body"}, status_code=400)
+        raise HTTPException(status_code=400, detail="invalid JSON body") from None
     if not isinstance(body, dict):
-        return JSONResponse({"error": "expected a JSON object"}, status_code=400)
+        raise HTTPException(status_code=400, detail="expected a JSON object")
 
     valid = frozenset({"enabled", "disabled"})
     feature_keys = (
@@ -99,17 +94,17 @@ async def github_settings_endpoint(request: Request) -> JSONResponse:
         elif isinstance(val, str) and val in valid:
             kwargs[key] = val
         elif key in body:  # present but invalid
-            return JSONResponse(
-                {"error": (f"{key} must be 'enabled' or 'disabled', got {val!r}")},
+            raise HTTPException(
                 status_code=400,
+                detail=f"{key} must be 'enabled' or 'disabled', got {val!r}",
             )
         else:
             kwargs[key] = None
 
     if not any(v is not None for v in kwargs.values()):
-        return JSONResponse(
-            {"error": "at least one security feature must be specified"},
+        raise HTTPException(
             status_code=400,
+            detail="at least one security feature must be specified",
         )
 
     # -- call --------------------------------------------------------------
@@ -120,21 +115,16 @@ async def github_settings_endpoint(request: Request) -> JSONResponse:
         allowed = await client.list_installation_repos()
     except Exception as exc:
         logger.exception("Failed to list installation repos")
-        return JSONResponse(
-            {"error": f"GitHub API error: {exc}"},
-            status_code=502,
-        )
+        raise HTTPException(
+            status_code=502, detail=f"GitHub API error: {exc}"
+        ) from None
 
     if repo_full_name not in allowed:
-        return JSONResponse(
-            {
-                "error": (
-                    f"repo '{repo_full_name}' is not in the GitHub App "
-                    f"installation scope"
-                ),
-                "allowed_repos": sorted(allowed),
-            },
+        raise HTTPException(
             status_code=404,
+            detail=(
+                f"repo '{repo_full_name}' is not in the GitHub App installation scope"
+            ),
         )
 
     result = await client.set_security_and_analysis(
@@ -146,7 +136,7 @@ async def github_settings_endpoint(request: Request) -> JSONResponse:
     )
 
     if result.startswith("Error"):
-        return JSONResponse({"error": result}, status_code=502)
+        raise HTTPException(status_code=502, detail=result)
 
     return JSONResponse(
         {

@@ -460,7 +460,7 @@ async def test_sessions_list_missing_owner_id_returns_400() -> None:
         response = await f.client.get("/sessions")
 
     assert response.status_code == 400
-    assert "owner_id" in response.json()["detail"]
+    assert "owner_id" in response.json()["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -1359,7 +1359,8 @@ async def test_server_error_handler_returns_json_500() -> None:
 
     assert response.status_code == 500
     data = response.json()
-    assert data == {"error": "internal server error"}
+    assert data["error"] == "internal server error"
+    assert "correlation_id" in data
 
 
 # ---------------------------------------------------------------------------
@@ -1375,7 +1376,8 @@ async def test_unknown_route_returns_404_json() -> None:
 
     assert response.status_code == 404
     data = response.json()
-    assert data == {"error": "not found"}
+    assert data["error"] == "not found"
+    assert "correlation_id" in data
 
 
 @pytest.mark.asyncio
@@ -1386,6 +1388,52 @@ async def test_wrong_method_on_known_route_returns_405() -> None:
         response = await f.client.post("/health")
 
     assert response.status_code == 405
+
+
+# ---------------------------------------------------------------------------
+# Error envelope consistency
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_error_envelope_top_level_keys_consistent() -> None:
+    """A 400, 404, forced 500, and validation error all share the same top-level keys.
+
+    The error envelope must always contain ``error`` (a string message) and
+    ``correlation_id`` (a string, possibly empty in tests) so API clients
+    never have to branch on which key appeared.
+    """
+    expected_keys = {"error", "correlation_id"}
+
+    async with mock_app(raise_app_exceptions=False) as f:
+        # -- 400: invalid JSON body ---------------------------------------
+        r400 = await f.client.post(
+            "/chat",
+            content=b"not json",
+            headers={"Content-Type": "application/json"},
+        )
+        assert r400.status_code == 400
+        d400 = r400.json()
+        assert set(d400.keys()) == expected_keys
+        assert isinstance(d400["error"], str)
+
+        # -- 404: unknown route -------------------------------------------
+        r404 = await f.client.get("/nonexistent")
+        assert r404.status_code == 404
+        d404 = r404.json()
+        assert set(d404.keys()) == expected_keys
+        assert isinstance(d404["error"], str)
+
+        # -- 500: forced internal error -----------------------------------
+        with patch(
+            "robotsix_chat.chat.server._load_ui_html",
+            side_effect=RuntimeError("boom"),
+        ):
+            r500 = await f.client.get("/")
+        assert r500.status_code == 500
+        d500 = r500.json()
+        assert set(d500.keys()) == expected_keys
+        assert isinstance(d500["error"], str)
 
 
 # ---------------------------------------------------------------------------
@@ -1574,7 +1622,9 @@ async def test_subsessions_list_missing_session_id_returns_400() -> None:
         response = await f.client.get("/subsessions")
 
     assert response.status_code == 400
-    assert response.json() == {"error": "session_id query parameter is required"}
+    data = response.json()
+    assert data["error"] == "session_id query parameter is required"
+    assert "correlation_id" in data
 
 
 @pytest.mark.asyncio
@@ -1584,7 +1634,9 @@ async def test_subsessions_list_no_registry_returns_503() -> None:
         response = await f.client.get("/subsessions?session_id=s1")
 
     assert response.status_code == 503
-    assert response.json() == {"error": "subsessions feature not enabled"}
+    data = response.json()
+    assert data["error"] == "subsessions feature not enabled"
+    assert "correlation_id" in data
 
 
 @pytest.mark.asyncio
@@ -1651,8 +1703,9 @@ async def test_subsessions_get_unknown_returns_404() -> None:
 
     assert response.status_code == 404
     data = response.json()
-    assert data["error"] == "unknown subsession"
-    assert data["subsession_id"] == "ghost"
+    assert "unknown subsession" in data["error"]
+    assert "ghost" in data["error"]
+    assert "correlation_id" in data
 
 
 @pytest.mark.asyncio
@@ -1729,7 +1782,9 @@ async def test_subsessions_message_unknown_returns_404() -> None:
         )
 
     assert response.status_code == 404
-    assert response.json()["subsession_id"] == "ghost"
+    data = response.json()
+    assert "unknown subsession" in data["error"]
+    assert "ghost" in data["error"]
 
 
 @pytest.mark.asyncio
@@ -1745,7 +1800,9 @@ async def test_subsessions_message_terminal_returns_409() -> None:
         )
 
     assert response.status_code == 409
-    assert response.json()["error"] == "subsession is not active"
+    data = response.json()
+    assert "not active" in data["error"]
+    assert info.id in data["error"]
 
 
 @pytest.mark.asyncio

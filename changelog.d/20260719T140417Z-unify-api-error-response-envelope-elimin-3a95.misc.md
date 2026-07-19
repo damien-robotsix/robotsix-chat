@@ -1,0 +1,2 @@
+Unify API error-response envelope — eliminate mixed {"detail"}/{"error"} shapes across handlers and
+routes
