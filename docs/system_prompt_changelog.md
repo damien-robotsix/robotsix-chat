@@ -5,6 +5,18 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v24 — 2026-07-19 — improve-clarity-of-system-notices-for-re-1d76
+
+**Summary:** Add an Efficiency rule instructing the assistant to condense repeated service-restart
+system notices into a single summary rather than repeating each one verbatim. Restart notices are
+for the assistant's awareness only; when referencing them (e.g. answering a user question about
+background tasks), the assistant should collapse identical notices — e.g. 'The monitor for ticket
+42e0 has been resumed X times after restarts.'
+
+**SHA256:** `0ff36699044112f2b0e9623715b6a172233bb672f2359adc3d8fc9e2c676d81d`
+
+______________________________________________________________________
+
 ## v23 — 2026-07-19 — prevent-infinite-restart-loops-from-moni-45f4
 
 **Summary:** Reorder ticket-lifecycle steps 5 (Exit) and 6 (Reload) so the monitor subsession calls
