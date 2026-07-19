@@ -327,8 +327,8 @@ class SubsessionRegistry:
         self._wake_events: dict[str, asyncio.Event] = {}
         # owner_session_id → set of sub_ids (whole tree, incl. terminal).
         self._by_owner: dict[str, set[str]] = defaultdict(set)
-        # dedup_key → sub_id for active user_chat subsessions — prevents
-        # duplicate side-chats for the same known global issue.
+        # dedup_key → sub_id for active subsessions — prevents duplicate
+        # side-chats or periodic monitors for the same known global issue.
         self._active_dedup_keys: dict[str, str] = {}
 
         # Extracted collaborators.
