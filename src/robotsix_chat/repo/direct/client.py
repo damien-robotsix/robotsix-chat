@@ -7,6 +7,7 @@ gracefully: all errors become short strings the assistant can relay.
 
 from __future__ import annotations
 
+import base64
 import json
 import logging
 import time
@@ -18,6 +19,16 @@ if TYPE_CHECKING:
     from robotsix_chat.config import DirectRepoSettings
 
 logger = logging.getLogger(__name__)
+
+
+def _b64decode(data: str) -> bytes:
+    """Decode a base64 string, adding padding if necessary."""
+    return base64.b64decode(data + "=" * (-len(data) % 4))
+
+
+def _b64encode(data: bytes) -> str:
+    """Encode bytes as a base64 string without padding (GitHub API convention)."""
+    return base64.b64encode(data).decode("ascii").rstrip("=")
 
 # ---------------------------------------------------------------------------
 # GitHub App authentication helpers
@@ -685,3 +696,104 @@ class DirectRepoClient:
             return f"Error updating security settings: {exc}"
         except Exception as exc:
             return f"Error updating security settings: {exc}"
+
+    # -- GitHub Actions helpers --------------------------------------------
+
+    async def _get_repo_public_key(self, repo_full_name: str) -> tuple[str, str]:
+        """Return ``(key_id, public_key_b64)`` for Actions secret encryption.
+
+        Calls ``GET /repos/{owner}/{repo}/actions/secrets/public-key``.
+        """
+        data = await self._get_json(
+            f"/repos/{repo_full_name}/actions/secrets/public-key"
+        )
+        return str(data["key_id"]), str(data["key"])
+
+    async def set_actions_secret(
+        self,
+        repo_full_name: str,
+        secret_name: str,
+        secret_value: str,
+    ) -> str:
+        """Create or update a repository Actions secret.
+
+        Encrypts *secret_value* with the repo's public key using libsodium
+        sealed-box encryption (requires ``pynacl``), then sends it via
+        ``PUT /repos/{owner}/{repo}/actions/secrets/{secret_name}``.
+
+        Never raises — returns a success/error message string.
+        """
+        try:
+            from nacl.public import PublicKey, SealedBox
+        except ImportError:
+            return (
+                "Error: PyNaCl is required for Actions secret encryption. "
+                "Install it with: uv sync --extra github-actions  or  "
+                "pip install pynacl"
+            )
+
+        try:
+            key_id, public_key_b64 = await self._get_repo_public_key(
+                repo_full_name
+            )
+        except RuntimeError as exc:
+            return f"Error fetching repo public key: {exc}"
+        except Exception as exc:
+            return f"Error fetching repo public key: {exc}"
+
+        try:
+            public_key_bytes = _b64decode(public_key_b64)
+            sealed_box = SealedBox(PublicKey(public_key_bytes))
+            encrypted = sealed_box.encrypt(secret_value.encode("utf-8"))
+            encrypted_b64 = _b64encode(encrypted)
+        except Exception as exc:
+            return f"Error encrypting secret: {exc}"
+
+        try:
+            await self._request_json(
+                "PUT",
+                f"/repos/{repo_full_name}/actions/secrets/{secret_name}",
+                {
+                    "encrypted_value": encrypted_b64,
+                    "key_id": key_id,
+                },
+            )
+            return (
+                f"Secret '{secret_name}' set successfully on {repo_full_name}."
+            )
+        except RuntimeError as exc:
+            return f"Error setting secret: {exc}"
+        except Exception as exc:
+            return f"Error setting secret: {exc}"
+
+    async def dispatch_workflow(
+        self,
+        repo_full_name: str,
+        workflow_id: str,
+        ref: str,
+        inputs: dict[str, str] | None = None,
+    ) -> str:
+        """Trigger a workflow_dispatch event.
+
+        Calls ``POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches``.
+
+        Never raises — returns a success/error message string.
+        """
+        body: dict[str, Any] = {"ref": ref}
+        if inputs:
+            body["inputs"] = inputs
+
+        try:
+            await self._request_json(
+                "POST",
+                f"/repos/{repo_full_name}/actions/workflows/{workflow_id}/dispatches",
+                body,
+            )
+            return (
+                f"Workflow '{workflow_id}' dispatched successfully "
+                f"on {repo_full_name} (ref: {ref})."
+            )
+        except RuntimeError as exc:
+            return f"Error dispatching workflow: {exc}"
+        except Exception as exc:
+            return f"Error dispatching workflow: {exc}"

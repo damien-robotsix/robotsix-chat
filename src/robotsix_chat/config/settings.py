@@ -22,6 +22,7 @@ from robotsix_chat.config.models import (
     DiagnosticsSettings,
     DirectRepoSettings,
     FeedbackSettings,
+    GitHubActionsSettings,
     GitHubSecuritySettings,
     HttpProbeSettings,
     KnowledgeSettings,
@@ -423,6 +424,9 @@ class Settings(BaseModel):
     github_security: GitHubSecuritySettings = Field(
         default_factory=GitHubSecuritySettings
     )
+    github_actions: GitHubActionsSettings = Field(
+        default_factory=GitHubActionsSettings
+    )
     repo_study: RepoStudySettings = Field(default_factory=RepoStudySettings)
     lifecycle: LifecycleSettings = Field(default_factory=LifecycleSettings)
     notification: NotificationSettings = Field(default_factory=NotificationSettings)
@@ -574,6 +578,7 @@ class Settings(BaseModel):
             "subsessions",
             "direct_repo",
             "github_security",
+            "github_actions",
             "repo_study",
             "lifecycle",
             "notification",

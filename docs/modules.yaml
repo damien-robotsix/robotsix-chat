@@ -199,6 +199,15 @@ modules:
       - tests/repo/security/test_security_tools.py
       - tests/repo/security/test_settings_endpoint.py
 
+  - id: repo-actions
+    description: "GitHub Actions tools — set repository Actions secrets and dispatch workflow_dispatch events on repos under the configured GitHub organisation. Auth delegates to the direct-repo GitHub App installation."
+    paths:
+      - src/robotsix_chat/repo/actions/__init__.py
+      - src/robotsix_chat/repo/actions/skill.md
+      - tests/repo/actions/__init__.py
+      - tests/repo/actions/test_actions_tools.py
+      - tests/repo/actions/test_actions_endpoints.py
+
   - id: diagnostics
     description: "Diagnostics tools for the agent — exposes build_diagnostics_tools() that returns tools for listing diagnostic events, checking recurring failure categories, and managing fix proposals. Returns no tools when diagnostics is disabled."
     paths:

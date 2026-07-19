@@ -39,6 +39,7 @@ from robotsix_chat.memory import NullMemory, build_memory
 from robotsix_chat.notification import build_notification_tools
 from robotsix_chat.refdocs import build_refdocs_tools
 from robotsix_chat.render_url import build_render_url_tools
+from robotsix_chat.repo.actions import build_github_actions_tools
 from robotsix_chat.repo.direct import build_direct_repo_tools
 from robotsix_chat.repo.security import build_github_security_tools
 from robotsix_chat.repo.study import build_repo_study_tools
@@ -55,6 +56,8 @@ from .routes import (
     config_get_endpoint,
     config_save_endpoint,
     events_endpoint,
+    github_actions_secret_endpoint,
+    github_actions_workflow_endpoint,
     github_settings_endpoint,
     health_endpoint,
     history_endpoint,
@@ -79,7 +82,11 @@ from .routes import (
 
 if TYPE_CHECKING:
     from robotsix_chat.autonomous import AutonomousRunner
-    from robotsix_chat.config.models import DirectRepoSettings, GitHubSecuritySettings
+    from robotsix_chat.config.models import (
+        DirectRepoSettings,
+        GitHubActionsSettings,
+        GitHubSecuritySettings,
+    )
     from robotsix_chat.subsessions import (
         CloseState,
         ParentDelivery,
@@ -196,6 +203,7 @@ SHARED_PARAMS: frozenset[str] = frozenset(
         "on_shutdown",
         "direct_repo_settings",
         "github_security_settings",
+        "github_actions_settings",
         "config_path",
     }
 )
@@ -228,6 +236,7 @@ def create_app(
     on_shutdown: Callable[[], Any] | None = None,
     direct_repo_settings: DirectRepoSettings | None = None,
     github_security_settings: GitHubSecuritySettings | None = None,
+    github_actions_settings: GitHubActionsSettings | None = None,
     config_path: str | None = None,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
@@ -319,6 +328,9 @@ def create_app(
             (org, deploy API key) used by the
             ``PATCH /chat/github/repos/{owner}/{repo}/settings`` endpoint.
             When ``None``, the endpoint returns 503.
+        github_actions_settings: GitHub Actions config (org, deploy API key)
+            used by the Actions secrets and workflow dispatch endpoints.
+            When ``None``, the endpoints return 503.
         config_path: Path to the config JSON file, used by the
             ``GET /config`` and ``PUT /config`` endpoints.  When ``None``
             (default), the path is resolved from the
@@ -376,6 +388,16 @@ def create_app(
             "/chat/github/repos/{owner}/{repo}/settings",
             github_settings_endpoint,
             methods=["PATCH"],
+        ),
+        Route(
+            "/chat/github/repos/{owner}/{repo}/actions/secrets/{secret_name}",
+            github_actions_secret_endpoint,
+            methods=["PUT"],
+        ),
+        Route(
+            "/chat/github/repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches",
+            github_actions_workflow_endpoint,
+            methods=["POST"],
         ),
         Route("/config", config_get_endpoint, methods=["GET"]),
         Route("/config", config_save_endpoint, methods=["PUT"]),
@@ -444,6 +466,7 @@ def create_app(
     app.state.subsession_delivery = subsession_delivery  # may be None
     app.state.direct_repo_settings = direct_repo_settings
     app.state.github_security_settings = github_security_settings
+    app.state.github_actions_settings = github_actions_settings
     app.state.feedback_runner = feedback_runner  # may be None
     app.state.autonomous_runner = autonomous_runner  # may be None
     if config_path is not None:
@@ -524,6 +547,14 @@ def _inject_skills(
         if github_skill:
             instruction = f"{instruction}\n\n{github_skill}"
 
+    # GitHub Actions skill.
+    if settings.github_actions.enabled:
+        from robotsix_chat.repo.actions import load_github_actions_skill
+
+        github_actions_skill = load_github_actions_skill()
+        if github_actions_skill:
+            instruction = f"{instruction}\n\n{github_actions_skill}"
+
     return instruction
 
 
@@ -548,6 +579,7 @@ def _build_static_tools(
         *build_repo_study_tools(settings.repo_study, settings.direct_repo),
         *build_direct_repo_tools(settings.direct_repo),
         *build_github_security_tools(settings.github_security, settings.direct_repo),
+        *build_github_actions_tools(settings.github_actions, settings.direct_repo),
         *build_knowledge_tools(settings.knowledge),
         *build_diagnostics_tools(settings.diagnostics),
         *build_recent_activity_tools(settings.self_review, conversation_store),
