@@ -797,7 +797,7 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                     )
                     continue
 
-                steering = [] if first_turn else pending
+                steering = pending
                 turn_input = _build_periodic_input(info, previous_result, steering)
             elif first_turn:
                 turn_input = info.prompt
