@@ -22,9 +22,7 @@ def _get_subsession_registry(request: Request) -> SubsessionRegistry:
     """Return the wired registry, or raise HTTPException 503."""
     registry: SubsessionRegistry | None = request.app.state.subsession_registry
     if registry is None:
-        raise HTTPException(
-            status_code=503, detail="subsessions feature not enabled"
-        )
+        raise HTTPException(status_code=503, detail="subsessions feature not enabled")
     return registry
 
 
