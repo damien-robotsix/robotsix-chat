@@ -994,7 +994,7 @@ def test_rebuild_turn_history_missing_field_returns_empty() -> None:
 
 @pytest.mark.asyncio
 async def test_spawn_dedup_guard_returns_existing_id_for_active_key() -> None:
-    """When a user_chat with the same dedup_key is active, spawn returns its id."""
+    """When a subsession with the same dedup_key is active, spawn returns its id."""
     env = build_env()
     first_id = spawn_subsession(
         env=env,
@@ -1031,8 +1031,8 @@ async def test_spawn_dedup_guard_returns_existing_id_for_active_key() -> None:
 
 
 @pytest.mark.asyncio
-async def test_spawn_dedup_guard_ignored_for_non_user_chat_kinds() -> None:
-    """A dedup_key on a TASK subsession is ignored — each spawn creates a new one."""
+async def test_spawn_dedup_guard_works_for_all_kinds() -> None:
+    """A dedup_key on any subsession kind prevents duplicate spawns."""
     env = build_env()
     first_id = spawn_subsession(
         env=env,
@@ -1058,12 +1058,51 @@ async def test_spawn_dedup_guard_ignored_for_non_user_chat_kinds() -> None:
         dedup_key="some-key",
     )
 
-    assert first_id != second_id
-    assert len(env.registry.list_for_owner(OWNER)) == 2
+    assert first_id == second_id
+    assert len(env.registry.list_for_owner(OWNER)) == 1
 
-    # Clean up spawned workers.
+    # Clean up spawned worker.
     env.registry.cancel_and_close(first_id, reason="teardown", closed_by="system")
-    env.registry.cancel_and_close(second_id, reason="teardown", closed_by="system")
+
+
+@pytest.mark.asyncio
+async def test_spawn_dedup_guard_periodic_monitor_dedup() -> None:
+    """A periodic monitor with a ticket-id dedup_key prevents duplicate monitors."""
+    env = build_env()
+    first_id = spawn_subsession(
+        env=env,
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="monitor ticket 5f1c",
+        prompt="track ticket 5f1c state",
+        model_level=3,
+        interval_seconds=1800,
+        max_runs=60,
+        dedup_key="5f1c",
+    )
+
+    # Second periodic monitor for the same ticket — must return the first id.
+    second_id = spawn_subsession(
+        env=env,
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="monitor ticket 5f1c (duplicate)",
+        prompt="track ticket 5f1c state again",
+        model_level=3,
+        interval_seconds=1800,
+        max_runs=60,
+        dedup_key="5f1c",
+    )
+
+    assert first_id == second_id
+    assert len(env.registry.list_for_owner(OWNER)) == 1
+
+    # Clean up spawned worker.
+    env.registry.cancel_and_close(first_id, reason="teardown", closed_by="system")
 
 
 @pytest.mark.asyncio
