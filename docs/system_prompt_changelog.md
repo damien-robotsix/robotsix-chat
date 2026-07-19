@@ -5,28 +5,18 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
-## v24 — 2026-07-19 — improve-clarity-of-system-notices-for-re-1d76
+## v25 — 2026-07-19 — prevent-redundant-ticket-creation-when-a-652b
 
-**Summary:** Add an Efficiency rule instructing the assistant to condense repeated service-restart
-system notices into a single summary rather than repeating each one verbatim. Restart notices are
-for the assistant's awareness only; when referencing them (e.g. answering a user question about
-background tasks), the assistant should collapse identical notices — e.g. 'The monitor for ticket
-42e0 has been resumed X times after restarts.'
+**Summary:** Extend the Initiate step in the Ticket lifecycle with deduplication guidance: before
+filing a new ticket, check `list_tickets` for an active ticket with the same scope to avoid creating
+duplicates. When a new ticket supersedes an older one, mention the predecessor's id in the spec and
+cancel the predecessor's monitor subsession so only one monitor runs for the same work.
 
-**SHA256:** `0ff36699044112f2b0e9623715b6a172233bb672f2359adc3d8fc9e2c676d81d`
+**SHA256:** `31388ebb20a25bf9c9a70c5ace06bbab39700f4f6c5e26831cc7559a91e462f2`
 
 ______________________________________________________________________
 
-## v23 — 2026-07-19 — prevent-infinite-restart-loops-from-moni-45f4
-
-**Summary:** Reorder ticket-lifecycle steps 5 (Exit) and 6 (Reload) so the monitor subsession calls
-`complete_subsession` BEFORE triggering a self-restart. Add an explicit instruction that the restart
-kills the process and any unpersisted state is lost, so `complete_subsession` must always be called
-first. This prevents infinite restart loops where a periodic monitor detects a terminal state,
-triggers a restart, and is killed before persisting its CLOSED state — causing it to be recreated on
-next start and immediately re-trigger the restart.
-
-**SHA256:** `d3f8e9c768af9fd23613633c4b7163c9715e398ea39979dfefbc7cb18d6f4b00`
+## v24 — 2026-07-19 — improve-clarity-of-system-notices-for-re-1d76
 
 ______________________________________________________________________
 

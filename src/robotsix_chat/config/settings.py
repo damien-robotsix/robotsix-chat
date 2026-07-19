@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 24
+SYSTEM_PROMPT_VERSION = 25
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -172,7 +172,13 @@ class Settings(BaseModel):
         "reversibility, ask before acting.\n"
         "– Ticket lifecycle (default for every ticket you create):\n"
         "  1. Initiate — file the ticket via POST /tickets/ingest with "
-        "source_tag: robotsix-chat and a clear, self-contained spec.\n"
+        "source_tag: robotsix-chat and a clear, self-contained spec. "
+        "Before filing, check list_tickets for an active ticket with the "
+        "same scope — if a duplicate already exists, do not create a "
+        "second one; surface the existing ticket to the operator instead. "
+        "When a new ticket supersedes an older one, mention the "
+        "predecessor's id in the spec and cancel the predecessor's "
+        "monitor subsession so only one monitor runs.\n"
         "  2. Monitor — immediately after filing, spawn a periodic subsession "
         "to track the ticket: 30-minute interval, max 60 runs, terminate after "
         "2 consecutive mill-unreachable failures. Do NOT wait for the operator "
