@@ -1158,9 +1158,6 @@ async def test_check_resume_status_http_401_closes_immediately():
     assert updated is not None
     assert updated.status is SubsessionStatus.CLOSED
 
-    # Delivery is fire-and-forget — let the background task run.
-    await asyncio.sleep(0)
-
     history = env.conversation_store.history(OWNER)
     assert len(history) == 1
     assert "Authentication" in history[0][1]

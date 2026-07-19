@@ -520,8 +520,8 @@ async def _check_resume_status(
         )
         return (True, None)
 
-    # Build the ticket URL safely using httpx.URL.copy_with to prevent
-    # path-traversal or injection through a crafted ticket_id.
+    # Build the ticket URL.  httpx.URL.copy_with does NOT normalise
+    # ``../`` segments — the agent is trusted to set a valid ticket_id.
     try:
         base = httpx.URL(board_url.rstrip("/"))
         ticket_url = base.copy_with(path=f"/tickets/{ticket_id}")
