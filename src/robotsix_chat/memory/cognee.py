@@ -116,6 +116,14 @@ class CogneeMemory:
             self._setup_done = True
 
     def _configure(self) -> None:
+        """Configure cognee's global state from the stored settings.
+
+        Sets environment variables for single-user posture, hides Langfuse
+        credentials during cognee's import (to avoid a missing-SDK crash),
+        resolves and creates data/system directories, self-heals stale kuzu
+        shadows, and configures the extraction LLM and embedding providers.
+        Must be called once before any recall/remember operations.
+        """
         s = self._settings
         # Embedded, single-user posture (cognee defaults to multi-tenant auth).
         os.environ.setdefault("ENABLE_BACKEND_ACCESS_CONTROL", "false")
