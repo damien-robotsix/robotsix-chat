@@ -62,6 +62,13 @@ async def _resolve_allowed_repos() -> list[str]:
     if _repo_cache is not None and (now - _repo_cache[0]) < _REPO_CACHE_TTL:
         return _repo_cache[1]
 
+    result = await _do_resolve_allowed_repos()
+    _repo_cache = (now, result)
+    return result
+
+
+async def _do_resolve_allowed_repos() -> list[str]:
+    """Resolve allowed repos by querying deploy and mill (no caching)."""
     deploy_api_key = os.environ.get("DEPLOY_API_KEY", "")
 
     # 1. Fetch components from deploy.
@@ -78,14 +85,12 @@ async def _resolve_allowed_repos() -> list[str]:
             "Deploy roster unreachable (%s) — falling back to [robotsix-chat] only",
             deploy_result.error,
         )
-        _repo_cache = (now, ["robotsix-chat"])
         return ["robotsix-chat"]
 
     try:
         deploy_entries: list[dict[str, Any]] = json.loads(deploy_result.text or "[]")
     except json.JSONDecodeError:
         logger.warning("Deploy roster response is not valid JSON — falling back")
-        _repo_cache = (now, ["robotsix-chat"])
         return ["robotsix-chat"]
 
     deploy_ids: set[str] = {
@@ -93,7 +98,6 @@ async def _resolve_allowed_repos() -> list[str]:
     }
     if not deploy_ids:
         logger.warning("Deploy roster is empty — falling back to [robotsix-chat] only")
-        _repo_cache = (now, ["robotsix-chat"])
         return ["robotsix-chat"]
 
     # 2. Fetch repos from mill board.
@@ -104,14 +108,12 @@ async def _resolve_allowed_repos() -> list[str]:
             "Mill repos unreachable (%s) — falling back to [robotsix-chat] only",
             mill_result.error,
         )
-        _repo_cache = (now, ["robotsix-chat"])
         return ["robotsix-chat"]
 
     try:
         mill_repos: list[dict[str, Any]] = json.loads(mill_result.text or "[]")
     except json.JSONDecodeError:
         logger.warning("Mill repos response is not valid JSON — falling back")
-        _repo_cache = (now, ["robotsix-chat"])
         return ["robotsix-chat"]
 
     mill_ids: set[str] = {
@@ -130,7 +132,6 @@ async def _resolve_allowed_repos() -> list[str]:
         )
         allowed = ["robotsix-chat"]
 
-    _repo_cache = (now, allowed)
     return allowed
 
 
@@ -515,8 +516,7 @@ class FeedbackRunner:
                     continue
                 if target_repo not in valid_repos:
                     logger.warning(
-                        "Skipping ticket %r — target_repo %r not in "
-                        "allowed repos %s",
+                        "Skipping ticket %r — target_repo %r not in allowed repos %s",
                         title,
                         target_repo,
                         sorted(valid_repos),
