@@ -178,6 +178,7 @@ def _resume_periodic_entry(
     """Respawn a periodic subsession under its original id."""
     completed_runs = _rebuild_completed_runs(entry)
     runs = max(completed_runs) if completed_runs else _entry_int(entry, "runs")
+    dedup_key = _entry_opt_str(entry, "dedup_key")
     spawn_subsession(
         env=env,
         kind=SubsessionKind.PERIODIC,
@@ -189,6 +190,7 @@ def _resume_periodic_entry(
         completed_runs=completed_runs,
         turn_history=_rebuild_turn_history(entry),
         checkpoint=_rebuild_checkpoint(entry),
+        dedup_key=dedup_key,
     )
     return _ResumeFate(
         owner_session_id=owner,
