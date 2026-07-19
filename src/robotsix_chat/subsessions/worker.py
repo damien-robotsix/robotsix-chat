@@ -610,6 +610,107 @@ async def _get_mill_started_at(board_url: str) -> str | None:
     return None
 
 
+async def _check_stale_worker_resume(
+    env: SubsessionEnv,
+    _info: SubsessionInfo,
+    sub_id: str,
+    checkpoint: dict[str, object],
+    worker_started_at: str | None,
+    ticket_id: str,
+    last_known_str: str,
+) -> tuple[bool, str | None]:
+    """Check for stale-worker resumption when a ticket is BLOCKED.
+
+    Returns ``(should_close, context_message)``:
+    * ``(False, summary)`` — stale cap exceeded; subsession was closed.
+    * ``(True, context_msg)`` — under the stale cap; return with warning.
+    * ``(True, None)`` — worker was redeployed (counter reset) or health
+      probe failed; continue with the normal blocked-context message.
+    """
+    if worker_started_at is not None:
+        previous_started_at = checkpoint.get("worker_started_at")
+        previous_started_at_str = (
+            previous_started_at if isinstance(previous_started_at, str) else None
+        )
+        if (
+            previous_started_at_str is not None
+            and worker_started_at == previous_started_at_str
+        ):
+            # Worker unchanged — count this as a stale resume.
+            raw_count = checkpoint.get("stale_worker_resume_count")
+            count = int(raw_count) if isinstance(raw_count, (int, float)) else 0
+            count += 1
+            checkpoint["stale_worker_resume_count"] = count
+            env.registry.update_checkpoint(sub_id, checkpoint)
+
+            if count >= _MAX_STALE_WORKER_RESUMES:
+                summary = (
+                    f"Ticket {ticket_id} is still blocked after "
+                    f"{count} resume attempts, but the mill worker "
+                    f"has not been redeployed (started_at unchanged "
+                    f"at {worker_started_at}).  A fix merged since "
+                    f"the ticket was blocked cannot be present on "
+                    f"this worker — closing subsession to prevent "
+                    f"futile retries on a stale image."
+                )
+                closed = env.registry.mark_closed(
+                    sub_id,
+                    summary=summary,
+                    reason="stale_worker",
+                    closed_by="system",
+                )
+                if closed is not None:
+                    await env.delivery.deliver_summary(closed, summary, "stale_worker")
+                logger.warning(
+                    "Subsession %s (ticket %s): stale worker %d times — closed.",
+                    sub_id,
+                    ticket_id,
+                    count,
+                )
+                return (False, summary)
+
+            # Under the cap — warn the agent strongly.
+            remaining = _MAX_STALE_WORKER_RESUMES - count
+            context = (
+                f"[System note: this ticket monitor was restarted after a "
+                f"service restart.  Ticket {ticket_id} is currently BLOCKED "
+                f"(previous known state: {last_known_str}).  "
+                f"IMPORTANT: the mill worker has NOT been redeployed since "
+                f"the last resume attempt (started_at: {worker_started_at}) — "
+                f"this is stale-resume attempt {count}/{_MAX_STALE_WORKER_RESUMES} "
+                f"({remaining} remaining before auto-close).  "
+                f"Fetch the ticket history and comments.  If fix PRs have been "
+                f"merged but the worker was never redeployed, do NOT auto-resume "
+                f"— escalate to the operator for a redeploy instead.  "
+                f"If the block is a transient failure (provider timeout, "
+                f"sandbox 503), auto-resume is acceptable.]"
+            )
+            logger.info(
+                "Subsession %s (ticket %s): stale worker, attempt %d/%d.",
+                sub_id,
+                ticket_id,
+                count,
+                _MAX_STALE_WORKER_RESUMES,
+            )
+            return (True, context)
+
+        # Worker was redeployed (or this is the first resume) —
+        # store the new started_at and reset the stale counter.
+        checkpoint["worker_started_at"] = worker_started_at
+        checkpoint.pop("stale_worker_resume_count", None)
+        env.registry.update_checkpoint(sub_id, checkpoint)
+    else:
+        # Health probe failed — cannot verify freshness; note it.
+        logger.debug(
+            "Subsession %s (ticket %s): mill health probe failed — "
+            "cannot verify worker freshness.",
+            sub_id,
+            ticket_id,
+        )
+
+    return (True, None)
+
+
 async def _check_resume_status(
     env: SubsessionEnv,
     info: SubsessionInfo,
@@ -761,90 +862,17 @@ async def _check_resume_status(
         # the meantime cannot be present — auto-resuming would just hit
         # the same failure on a stale image.
         worker_started_at = await _get_mill_started_at(board_url)
-
-        if worker_started_at is not None:
-            previous_started_at = checkpoint.get("worker_started_at")
-            previous_started_at_str = (
-                previous_started_at if isinstance(previous_started_at, str) else None
-            )
-            if (
-                previous_started_at_str is not None
-                and worker_started_at == previous_started_at_str
-            ):
-                # Worker unchanged — count this as a stale resume.
-                raw_count = checkpoint.get("stale_worker_resume_count")
-                count = int(raw_count) if isinstance(raw_count, (int, float)) else 0
-                count += 1
-                checkpoint["stale_worker_resume_count"] = count
-                env.registry.update_checkpoint(sub_id, checkpoint)
-
-                if count >= _MAX_STALE_WORKER_RESUMES:
-                    summary = (
-                        f"Ticket {ticket_id} is still blocked after "
-                        f"{count} resume attempts, but the mill worker "
-                        f"has not been redeployed (started_at unchanged "
-                        f"at {worker_started_at}).  A fix merged since "
-                        f"the ticket was blocked cannot be present on "
-                        f"this worker — closing subsession to prevent "
-                        f"futile retries on a stale image."
-                    )
-                    closed = env.registry.mark_closed(
-                        sub_id,
-                        summary=summary,
-                        reason="stale_worker",
-                        closed_by="system",
-                    )
-                    if closed is not None:
-                        await env.delivery.deliver_summary(
-                            closed, summary, "stale_worker"
-                        )
-                    logger.warning(
-                        "Subsession %s (ticket %s): stale worker %d times — closed.",
-                        sub_id,
-                        ticket_id,
-                        count,
-                    )
-                    return (False, summary)
-
-                # Under the cap — warn the agent strongly.
-                remaining = _MAX_STALE_WORKER_RESUMES - count
-                context = (
-                    f"[System note: this ticket monitor was restarted after a "
-                    f"service restart.  Ticket {ticket_id} is currently BLOCKED "
-                    f"(previous known state: {last_known_str}).  "
-                    f"IMPORTANT: the mill worker has NOT been redeployed since "
-                    f"the last resume attempt (started_at: {worker_started_at}) — "
-                    f"this is stale-resume attempt {count}/{_MAX_STALE_WORKER_RESUMES} "
-                    f"({remaining} remaining before auto-close).  "
-                    f"Fetch the ticket history and comments.  If fix PRs have been "
-                    f"merged but the worker was never redeployed, do NOT auto-resume "
-                    f"— escalate to the operator for a redeploy instead.  "
-                    f"If the block is a transient failure (provider timeout, "
-                    f"sandbox 503), auto-resume is acceptable.]"
-                )
-                logger.info(
-                    "Subsession %s (ticket %s): stale worker, attempt %d/%d.",
-                    sub_id,
-                    ticket_id,
-                    count,
-                    _MAX_STALE_WORKER_RESUMES,
-                )
-                return (True, context)
-
-            # Worker was redeployed (or this is the first resume) —
-            # store the new started_at and reset the stale counter.
-            checkpoint["worker_started_at"] = worker_started_at
-            if "stale_worker_resume_count" in checkpoint:
-                del checkpoint["stale_worker_resume_count"]
-            env.registry.update_checkpoint(sub_id, checkpoint)
-        else:
-            # Health probe failed — cannot verify freshness; note it.
-            logger.debug(
-                "Subsession %s (ticket %s): mill health probe failed — "
-                "cannot verify worker freshness.",
-                sub_id,
-                ticket_id,
-            )
+        stale_decision, stale_context = await _check_stale_worker_resume(
+            env,
+            info,
+            sub_id,
+            checkpoint,
+            worker_started_at,
+            ticket_id,
+            last_known_str,
+        )
+        if not stale_decision or stale_context is not None:
+            return (stale_decision, stale_context)
 
         context = (
             f"[System note: this ticket monitor was restarted after a "
