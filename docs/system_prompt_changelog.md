@@ -53,7 +53,7 @@ immediately rather than doubling down on a memory-based assertion. Prefer timest
 container) damage trust and require additional verification steps. The agent must treat live system
 state as the source of truth and distrust memory when it conflicts with live observation.
 
-**SHA256:** `127e75f254fd71639a11b0958679da3f8c6b8ce1458443fb6717c5dcd902ea`
+**SHA256:** `127e75f254fd71639a11b0958679da3f8c6b8ce1458443fb6717c5dcd902ea90`
 
 ______________________________________________________________________
 
