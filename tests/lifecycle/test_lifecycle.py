@@ -385,3 +385,32 @@ async def test_watch_service_redeploy_clamps_poll_interval(
         "mill", max_wait_seconds=30.0, poll_interval_seconds=0.1
     )
     assert "Redeploy detected" in out
+
+
+@pytest.mark.asyncio
+async def test_watch_service_redeploy_non_json_status_is_raw_text(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A non-JSON status response on redeploy detection is returned as-is."""
+    call_count = 0
+
+    def config_response(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return httpx.Response(200, json={"image": "digest-aaa"})
+        return httpx.Response(200, json={"image": "digest-bbb"})
+
+    respx_mock.get("http://lifecycle:9000/services/mill/config").mock(
+        side_effect=config_response
+    )
+    respx_mock.get("http://lifecycle:9000/services/mill/status").mock(
+        return_value=httpx.Response(200, text="status: healthy (plain text)")
+    )
+
+    client = LifecycleClient(_settings())
+    out = await client.watch_service_redeploy(
+        "mill", max_wait_seconds=30.0, poll_interval_seconds=5.0
+    )
+    assert "Redeploy detected" in out
+    assert "status: healthy (plain text)" in out

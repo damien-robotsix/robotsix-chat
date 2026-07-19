@@ -120,11 +120,15 @@ class LifecycleClient:
             if current_config != initial_config:
                 elapsed = time.monotonic() - started_at
                 current_status = await self._get_raw(status_path)
-                status_text = (
-                    json.dumps(json.loads(current_status), indent=2)
-                    if current_status
-                    else "(unavailable)"
-                )
+                if current_status:
+                    try:
+                        status_text = json.dumps(
+                            json.loads(current_status), indent=2
+                        )
+                    except Exception:
+                        status_text = current_status
+                else:
+                    status_text = "(unavailable)"
                 return (
                     f"Redeploy detected for {service_name} after "
                     f"{elapsed:.0f}s ({attempts} polls).\n\n"
