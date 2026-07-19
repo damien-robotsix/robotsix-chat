@@ -28,8 +28,17 @@ async def http_exception_handler(_request: Request, exc: Exception) -> JSONRespo
     return JSONResponse(_error_body(str(exc)), status_code=500)
 
 
-async def not_found_handler(_request: Request, _exc: Exception) -> JSONResponse:
-    """Return JSON for unmatched routes instead of plain text."""
+async def not_found_handler(_request: Request, exc: Exception) -> JSONResponse:
+    """Return JSON for unmatched routes instead of plain text.
+
+    When an endpoint explicitly raises ``HTTPException(404)`` with a
+    custom detail (e.g.  "unknown subsession 'xyz'"), forward that
+    detail.  Starlette dispatches by status code before exception
+    class, so this handler sees both genuine unmatched-route 404s and
+    explicit raises.
+    """
+    if isinstance(exc, HTTPException) and str(exc.detail) != "Not Found":
+        return JSONResponse(_error_body(str(exc.detail)), status_code=404)
     return JSONResponse(_error_body("not found"), status_code=404)
 
 

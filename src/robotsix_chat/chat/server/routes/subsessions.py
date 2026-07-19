@@ -4,6 +4,7 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
+from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
@@ -17,35 +18,31 @@ if TYPE_CHECKING:
     )
 
 
-def _get_subsession_registry(
-    request: Request,
-) -> SubsessionRegistry | JSONResponse:
-    """Return the wired registry, or a ready-to-return 503 error response."""
+def _get_subsession_registry(request: Request) -> SubsessionRegistry:
+    """Return the wired registry, or raise HTTPException 503."""
     registry: SubsessionRegistry | None = request.app.state.subsession_registry
     if registry is None:
-        return JSONResponse(
-            {"error": "subsessions feature not enabled"}, status_code=503
+        raise HTTPException(
+            status_code=503, detail="subsessions feature not enabled"
         )
     return registry
 
 
 def _resolve_subsession(
     request: Request,
-) -> tuple[SubsessionRegistry, SubsessionInfo] | JSONResponse:
+) -> tuple[SubsessionRegistry, SubsessionInfo]:
     """Resolve the subsession registry and look up the requested subsession.
 
-    Returns ``(registry, info)`` on success, or a ready-to-return
-    ``JSONResponse`` (503 or 404) when the lookup fails.
+    Returns ``(registry, info)`` on success, or raises HTTPException
+    (503 or 404) when the lookup fails.
     """
     registry = _get_subsession_registry(request)
-    if isinstance(registry, JSONResponse):
-        return registry
     sub_id = request.path_params["sub_id"]
     info = registry.get(sub_id)
     if info is None:
-        return JSONResponse(
-            {"error": "unknown subsession", "subsession_id": sub_id},
+        raise HTTPException(
             status_code=404,
+            detail=f"unknown subsession '{sub_id}'",
         )
     return (registry, info)
 
@@ -64,8 +61,6 @@ async def subsessions_list_endpoint(request: Request) -> JSONResponse:
     """
     session_id = _get_session_id(request)
     registry = _get_subsession_registry(request)
-    if isinstance(registry, JSONResponse):
-        return registry
 
     return JSONResponse(
         {
@@ -82,10 +77,7 @@ async def subsessions_get_endpoint(request: Request) -> JSONResponse:
     ``GET /subsessions/{sub_id}`` returns the snapshot dict plus a
     ``"transcript"`` list.  404 when the id is unknown.
     """
-    result = _resolve_subsession(request)
-    if isinstance(result, JSONResponse):
-        return result
-    _registry, info = result
+    _registry, info = _resolve_subsession(request)
     return JSONResponse(info.snapshot(with_transcript=True))
 
 
@@ -96,10 +88,7 @@ async def subsessions_transcript_endpoint(request: Request) -> JSONResponse:
     ``{"subsession_id": ..., "transcript": [{role, text, timestamp}, ...]}``.
     404 when the id is unknown.
     """
-    result = _resolve_subsession(request)
-    if isinstance(result, JSONResponse):
-        return result
-    _registry, info = result
+    _registry, info = _resolve_subsession(request)
     return JSONResponse(
         {
             "subsession_id": info.id,
@@ -119,23 +108,20 @@ async def subsessions_message_endpoint(request: Request) -> JSONResponse:
     Returns 400 for a missing/empty ``text``, 404 for an unknown id, and
     409 when the subsession is no longer active.
     """
-    result = _resolve_subsession(request)
-    if isinstance(result, JSONResponse):
-        return result
-    registry, info = result
+    registry, info = _resolve_subsession(request)
 
     body = await _parse_json_body(request)
     text = body.get("text")
     if not text or not isinstance(text, str):
-        return JSONResponse(
-            {"error": "'text' field is required and must be a non-empty string"},
+        raise HTTPException(
             status_code=400,
+            detail="'text' field is required and must be a non-empty string",
         )
 
     if not registry.enqueue_message(info.id, "user", text):
-        return JSONResponse(
-            {"error": "subsession is not active", "subsession_id": info.id},
+        raise HTTPException(
             status_code=409,
+            detail=f"subsession '{info.id}' is not active",
         )
     return JSONResponse({"subsession_id": info.id, "status": "queued"}, status_code=202)
 
@@ -151,10 +137,7 @@ async def subsessions_close_endpoint(request: Request) -> JSONResponse:
     Idempotent: an already-terminal subsession returns 200 with
     ``"closed": false`` and its current status.  404 for an unknown id.
     """
-    result = _resolve_subsession(request)
-    if isinstance(result, JSONResponse):
-        return result
-    registry, info = result
+    registry, info = _resolve_subsession(request)
 
     closed = registry.cancel_and_close(
         info.id, reason="closed by user", closed_by="user"

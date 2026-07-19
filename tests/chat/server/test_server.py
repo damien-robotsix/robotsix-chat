@@ -1636,6 +1636,7 @@ async def test_subsessions_list_no_registry_returns_503() -> None:
     assert response.status_code == 503
     data = response.json()
     assert data["error"] == "subsessions feature not enabled"
+    assert "correlation_id" in data
 
 
 @pytest.mark.asyncio
@@ -1702,8 +1703,9 @@ async def test_subsessions_get_unknown_returns_404() -> None:
 
     assert response.status_code == 404
     data = response.json()
-    assert data["error"] == "unknown subsession"
-    assert data["subsession_id"] == "ghost"
+    assert "unknown subsession" in data["error"]
+    assert "ghost" in data["error"]
+    assert "correlation_id" in data
 
 
 @pytest.mark.asyncio
@@ -1780,7 +1782,9 @@ async def test_subsessions_message_unknown_returns_404() -> None:
         )
 
     assert response.status_code == 404
-    assert response.json()["subsession_id"] == "ghost"
+    data = response.json()
+    assert "unknown subsession" in data["error"]
+    assert "ghost" in data["error"]
 
 
 @pytest.mark.asyncio
@@ -1796,7 +1800,9 @@ async def test_subsessions_message_terminal_returns_409() -> None:
         )
 
     assert response.status_code == 409
-    assert response.json()["error"] == "subsession is not active"
+    data = response.json()
+    assert "not active" in data["error"]
+    assert info.id in data["error"]
 
 
 @pytest.mark.asyncio

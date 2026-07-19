@@ -238,7 +238,7 @@ async def test_endpoint_404_when_repo_not_in_scope(
     assert response.status_code == 404
     data = response.json()
     assert "not in the GitHub App installation scope" in data["error"]
-    assert "allowed_repos" in data
+    assert "correlation_id" in data
 
 
 # ---------------------------------------------------------------------------
