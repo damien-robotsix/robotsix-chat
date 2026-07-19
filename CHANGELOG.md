@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- System prompt v24: add Efficiency rule instructing the assistant to condense repeated service-restart notices into a single summary rather than repeating each one verbatim.
 - Deduplicate repetitive restart notice entries: when a chat restart affects multiple subsessions with the same title and kind, the restart notice now collapses them into a single line with a count rather than repeating the same message verbatim.
 - Bump `SYSTEM_PROMPT_VERSION` to 23 and add v23 changelog entry for the reordered ticket-lifecycle steps (complete_subsession before restart) to satisfy system prompt governance.
 - Prevent infinite restart loop from periodic monitor subsessions: `complete_subsession` now persists the closed state to the registry immediately (before the worker's post-turn check), so a subsession that triggers a self-restart is not re-loaded when the process comes back up. The prompt instructions now direct the agent to call `complete_subsession` *before* triggering a restart.

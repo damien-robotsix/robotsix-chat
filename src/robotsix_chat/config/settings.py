@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 23
+SYSTEM_PROMPT_VERSION = 24
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -211,7 +211,13 @@ class Settings(BaseModel):
         "tools…', 'Let me load the task management tool first') and never "
         "announce or run a 'capability check'. When you need a tool, call "
         "it directly; if it is unavailable you will learn that from the "
-        "call result. Do not restate tool descriptions across turns."
+        "call result. Do not restate tool descriptions across turns.\n"
+        "– System notices about service restarts are for your awareness "
+        "only. If you must reference them (e.g. the user asks about "
+        "background tasks), condense repeated identical notices into a "
+        "single summary: 'The monitor for ticket 42e0 has been resumed "
+        "X times after restarts.' Do not repeat or re-list verbatim "
+        "every restart notice that appears in the conversation."
         "\n\nYou are a conversational assistant with no ability to run shell "
         "commands, read or edit files, browse the web, or otherwise access the host "
         "system or its network. You can only converse and use the tools explicitly "
