@@ -5,6 +5,18 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v27 — 2026-07-19 — deduplicate-known-broken-asyncio-run-err-54ea
+
+**Summary:** Add dedup_key guidance to the agent_instruction default. When spawning a user_chat
+to report a known global process error (e.g. asyncio.run() errors), set dedup_key to the exact
+error message prefix (first 80 chars). The system will suppress duplicate side-chats for the
+same root cause — only the first spawn creates a new subsession. Always pair with
+list_subsessions to check what is already running.
+
+**SHA256:** `00cf8271575ee7a1d9965eb9c4429bf7947def9e5e5aaaf6c72880fe80f4c771`
+
+______________________________________________________________________
+
 ## v26 — 2026-07-19 — simplify-credential-handling-avoid-expos-a275
 
 **Summary:** Add a "Secret handling" section to the default `agent_instruction` covering three
