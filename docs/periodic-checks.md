@@ -14,15 +14,16 @@ Tell the assistant something like:
 
 The assistant calls `spawn_subsession` with:
 
-| Parameter                 | Value                                                                                                       |
-| ------------------------- | ----------------------------------------------------------------------------------------------------------- |
-| `kind`                    | `"periodic"`                                                                                                |
-| `title`                   | Short human-readable label shown in the UI panel, e.g. "Monitor ticket T-42 status"                         |
-| `instructions`            | A self-contained prompt for the sub-agent: what to check, which tickets to watch, what constitutes a change |
-| `model_level`             | Capability level 1–4 picked by difficulty (cheap tiers for simple polling)                                  |
-| `interval_seconds`        | How often to re-run, in seconds. Minimum is 60 seconds; 1800 (30 minutes) is a common choice                |
-| `max_runs`                | (optional) Cap on the number of runs; omitted means run until closed                                        |
-| `include_previous_result` | Set to `true` so each run can compare against the prior state                                               |
+| Parameter                 | Value                                                                                                            |
+| ------------------------- | ---------------------------------------------------------------------------------------------------------------- |
+| `kind`                    | `"periodic"`                                                                                                     |
+| `title`                   | Short human-readable label shown in the UI panel, e.g. "Monitor ticket T-42 status"                              |
+| `instructions`            | A self-contained prompt for the sub-agent: what to check, which tickets to watch, what constitutes a change      |
+| `model_level`             | Capability level 1–4 picked by difficulty (cheap tiers for simple polling)                                       |
+| `interval_seconds`        | How often to re-run, in seconds. Minimum is 60 seconds; 1800 (30 minutes) is a common choice                     |
+| `max_runs`                | (optional) Cap on the number of runs; omitted means run until closed                                             |
+| `include_previous_result` | Set to `true` so each run can compare against the prior state                                                    |
+| `dedup_key`               | When monitoring a ticket, set to the ticket id (e.g. `"5f1c"`) — prevents duplicate monitors for the same ticket |
 
 ### Change-detection convention
 

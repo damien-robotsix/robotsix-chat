@@ -667,8 +667,8 @@ async def test_spawn_tool_dedup_key_without_key_returns_normal_started() -> None
 
 
 @pytest.mark.asyncio
-async def test_spawn_tool_dedup_key_non_user_chat_always_started() -> None:
-    """Task spawn with dedup_key always returns 'Started' (dedup only for user_chat)."""
+async def test_spawn_tool_dedup_key_non_user_chat_deduplicated() -> None:
+    """Task spawn with dedup_key returns deduplicated message when key is active."""
     env = build_env()
     spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
 
@@ -688,4 +688,4 @@ async def test_spawn_tool_dedup_key_non_user_chat_always_started() -> None:
         dedup_key="some-key",
         model_level=3,
     )
-    assert second.startswith("Started task subsession ")
+    assert second.startswith("Deduplicated: ")

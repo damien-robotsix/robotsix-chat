@@ -144,15 +144,17 @@ def _build_spawn_and_control_tools(
         interval_seconds (minimum applies) and max_runs are
         for kind="periodic" only.
 
-        dedup_key is for kind="user_chat" only: a short, stable string
-        that identifies a known global issue (e.g. the exact error
-        message prefix, like "asyncio.run() cannot be called"). When set
-        and a user_chat with the same dedup_key is already active, no
-        new subsession is created — the existing id is returned instead.
-        Use this to prevent duplicate side-chats for a single root cause
-        (e.g. a process-wide asyncio.run crash affecting many ticket
-        monitors). Always check list_subsessions first to see if a
-        side-chat for the same issue is already running.
+        dedup_key is for kind="user_chat" and kind="periodic": a short,
+        stable string that identifies a known issue or ticket (e.g. the
+        exact error message prefix, like "asyncio.run() cannot be called",
+        or a ticket id like "5f1c"). When set and a subsession with the
+        same dedup_key is already active, no new subsession is created —
+        the existing id is returned instead. Use this to prevent duplicate
+        side-chats for a single root cause (e.g. a process-wide
+        asyncio.run crash affecting many ticket monitors) and duplicate
+        periodic monitors for the same ticket. For monitors, pass the
+        ticket id returned by the filing endpoint as dedup_key. Always
+        check list_subsessions first to see what is already running.
 
         The subsession runs in the background; you will receive its
         summary in this conversation when it closes. Use
@@ -169,7 +171,7 @@ def _build_spawn_and_control_tools(
         # always matches its own dedup_key, so a post-hoc check cannot
         # tell whether the spawn was fresh or deduplicated.
         was_dedup = False
-        if dedup_key is not None and kind_enum is SubsessionKind.USER_CHAT:
+        if dedup_key is not None:
             was_dedup = env.registry.is_dedup_key_active(dedup_key) is not None
 
         try:
@@ -198,9 +200,9 @@ def _build_spawn_and_control_tools(
             return f"Could not start the subsession: {exc}"
         if was_dedup:
             return (
-                f"Deduplicated: an active user_chat for issue "
-                f"'{dedup_key}' already exists ({sub_id}) — delivering "
-                f"your message to the existing side-chat instead."
+                f"Deduplicated: an active subsession for key "
+                f"'{dedup_key}' already exists ({sub_id}) — returning "
+                f"the existing id instead of spawning a duplicate."
             )
         return f"Started {kind} subsession {sub_id} ('{title}')."
 

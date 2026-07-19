@@ -158,12 +158,12 @@ def spawn_subsession(
     duplicate resume), the existing worker is left alone and the id is
     returned immediately — no second worker is launched.
 
-    *dedup_key* is an optional global-issue deduplication key.  When set
-    on a ``user_chat`` spawn and an active user_chat with the same key
-    already exists, returns the existing subsession's id instead of
-    launching a duplicate — this prevents a single root-cause error
-    (e.g. an ``asyncio.run`` crash affecting multiple ticket monitors)
-    from flooding the user with duplicate side-chats.
+    *dedup_key* is an optional deduplication key.  When set and an
+    active subsession with the same key already exists (of any kind),
+    returns the existing subsession's id instead of launching a
+    duplicate — this prevents a single root-cause event (e.g. filing
+    the same ticket twice, or an ``asyncio.run`` crash affecting
+    multiple ticket monitors) from spawning redundant workers.
     """
     # Idempotency guard: if the subsession already exists (duplicate
     # spawn / resume race), return the existing id without launching
@@ -172,9 +172,9 @@ def spawn_subsession(
     if sub_id is not None and env.registry.get(sub_id) is not None:
         return sub_id
 
-    # Deduplication guard: when a user_chat with a dedup_key already
+    # Deduplication guard: when a subsession with a dedup_key already
     # exists and is active, return its id instead of spawning a duplicate.
-    if dedup_key is not None and kind is SubsessionKind.USER_CHAT:
+    if dedup_key is not None:
         existing_id = env.registry.is_dedup_key_active(dedup_key)
         if existing_id is not None:
             return existing_id

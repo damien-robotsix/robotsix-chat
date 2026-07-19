@@ -772,7 +772,7 @@ class SubsessionRegistry:
     def is_dedup_key_active(self, dedup_key: str) -> str | None:
         """Return the active subsession id for *dedup_key*, or ``None``.
 
-        Only user_chat subsessions with a matching dedup_key are tracked.
+        Subsessions of any kind with a matching dedup_key are tracked.
         Returns ``None`` when the key is unknown or the tracked subsession
         has become terminal (the close/fail path cleans up proactively,
         but this is a safety net for races).
