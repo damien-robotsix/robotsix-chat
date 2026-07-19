@@ -326,20 +326,34 @@ def _inject_restart_notice(
     Lists every affected subsession and whether it was resumed or lost,
     so the model can reconcile on its next turn (re-open unresumable
     tasks, rebuild owed decisions).
+
+    Duplicate fates (same kind, title, and detail) are collapsed into a
+    single line with a count to avoid repetitive system notices.
     """
     lines = [
         "[System notice: the chat service was restarted. "
         + "The following background tasks were affected:]",
         "",
     ]
+    # Group fates by (kind, title, fate, detail) to collapse duplicates.
+    groups: dict[tuple[str, str, str, str], list[_ResumeFate]] = {}
     for fate in fates:
-        short_id = fate["sub_id"][:8]
-        kind_label = fate["kind"]
-        display_title = fate["title"] or "(untitled)"
-        verb = "resumed" if fate["fate"] == "resumed" else "interrupted"
+        key = (fate["kind"], fate["title"], fate["fate"], fate["detail"])
+        groups.setdefault(key, []).append(fate)
+
+    for (kind_label, title, fate_verb, detail), group in groups.items():
+        short_ids = [f["sub_id"][:8] for f in group]
+        display_title = title or "(untitled)"
+        verb = "resumed" if fate_verb == "resumed" else "interrupted"
+
+        if len(group) == 1:
+            id_str = short_ids[0]
+        else:
+            id_str = f"{len(group)} instances: {', '.join(short_ids)}"
+
         lines.append(
-            f'- {kind_label.capitalize()} "{display_title}" ({short_id}): '
-            f"{verb} — {fate['detail']}"
+            f'- {kind_label.capitalize()} "{display_title}" ({id_str}): '
+            f"{verb} — {detail}"
         )
     notice = "\n".join(lines)
     env.conversation_store.record_for_session(owner_id, notice, "")
