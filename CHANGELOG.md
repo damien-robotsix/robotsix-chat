@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Fix feedback ticket filing: align ingest payload with mill's `TicketIngest` schema (`repo_id`, `title`, `body`, `source_tag`). Previously sent `description` instead of `body` and omitted required `repo_id`, causing 100% 422 rejection. Runner metadata (`kind`, `session_id`, `trigger_type`) is now folded into the body text. Added `feedback.repo_id` config field (default `"robotsix-chat"`).
+- Subsession checkpoint persistence and automatic resume status check for ticket monitors: periodic subsessions can now store a `checkpoint` dict (e.g. watched ticket id, last-known state) that survives restarts. On service restart, recovered ticket monitors query the mill for current ticket state before resuming the monitoring loop — terminal tickets auto-close the subsession, blocked tickets get context injected for the agent to handle, and mill-unreachable errors trigger a consecutive-failures counter (capped at 2). A new `set_checkpoint` tool lets subsession agents update their own checkpoint data.
 - Fix auto-scroll on session switch and page load: conversation view now reliably scrolls to the latest message after DOM layout completes.
 - Refactor `MessageCoalescer._process_batch`: extract title-generation into `_maybe_generate_title` and SSE fan-out into `_fan_out` helper, reducing nesting depth from 7 to 5.
 - Refactor `SubsessionRegistry` into three classes: extract `RegistryStore` (JSON persistence) and `RegistryIndex` (owner-scoped queries and tree operations), with `SubsessionRegistry` retaining core lifecycle and delegating to both.

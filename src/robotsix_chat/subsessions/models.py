@@ -138,6 +138,11 @@ class SubsessionInfo:
     # from `transcript` (UI-facing, role-tagged, may omit the composed
     # periodic turn_input) since this needs the exact text the model saw.
     turn_history: list[tuple[str, str]] = field(default_factory=list)
+    # Task-specific checkpoint data persisted across restarts — for ticket
+    # monitors this carries the watched ticket_id, last-known state, and a
+    # consecutive-failures counter so recovery can decide whether to resume
+    # the monitoring loop or close the subsession.
+    checkpoint: dict[str, object] | None = None
 
     def snapshot(self, *, with_transcript: bool = False) -> dict[str, object]:
         """Return a JSON-serialisable snapshot for SSE frames and REST bodies.
@@ -168,6 +173,7 @@ class SubsessionInfo:
             "error": self.error,
             "completed_runs": sorted(self.completed_runs),
             "turn_history": [list(pair) for pair in self.turn_history],
+            "checkpoint": self.checkpoint,
         }
         if with_transcript:
             data["transcript"] = [entry.as_dict() for entry in self.transcript]

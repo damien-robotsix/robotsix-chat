@@ -66,6 +66,7 @@ def test_snapshot_round_trips_every_field() -> None:
         "error": None,
         "completed_runs": [],
         "turn_history": [],
+        "checkpoint": None,
     }
 
 

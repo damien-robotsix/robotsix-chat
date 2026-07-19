@@ -26,6 +26,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+import httpx
+
 from robotsix_chat.chat.events import subsession_result_frame
 
 from .delivery import ParentDelivery
@@ -57,6 +59,13 @@ _MAX_WORKER_HISTORY_TURNS = 20
 
 # Reply sentinel a periodic subsession uses to report "nothing changed".
 _NO_CHANGE_SENTINEL = "NO_CHANGE"
+
+# Consecutive mill-unreachable failures before the subsession is closed.
+_MAX_MILL_FAILURES = 2
+
+# Ticket states recognised by the resume status check.
+_TICKET_STATE_TERMINAL = frozenset({"closed", "done"})
+_TICKET_STATE_BLOCKED = frozenset({"blocked"})
 
 
 def _is_no_change(reply: str) -> bool:
@@ -129,6 +138,7 @@ def spawn_subsession(
     runs: int = 0,
     completed_runs: set[int] | None = None,
     turn_history: list[tuple[str, str]] | None = None,
+    checkpoint: dict[str, object] | None = None,
 ) -> str:
     """Validate, register, and launch a subsession worker; return its id.
 
@@ -189,6 +199,7 @@ def spawn_subsession(
         runs=runs,
         completed_runs=completed_runs,
         turn_history=turn_history,
+        checkpoint=checkpoint,
     )
     # spawn_subsession runs inside the parent agent's turn, so a plain
     # create_task would snapshot that turn's context — including the active
@@ -474,6 +485,240 @@ async def _run_periodic_turn(
     return pending, previous_result, consecutive_no_change
 
 
+# -- resume status check --------------------------------------------------
+
+
+async def _check_resume_status(
+    env: SubsessionEnv,
+    info: SubsessionInfo,
+    sub_id: str,
+) -> tuple[bool, str | None]:
+    """Query the mill for a ticket monitor's current state on resume.
+
+    Returns ``(should_continue, context_message)``:
+    * ``(True, None)`` — normal resume; continue to the monitoring loop.
+    * ``(True, msg)`` — continue, but inject *msg* as first-turn context.
+    * ``(False, summary)`` — subsession closed; *summary* is the reason.
+
+    Only called when *info.checkpoint* has a ``ticket_id`` key and the
+    mill base URL is configured.
+    """
+    checkpoint = info.checkpoint
+    if checkpoint is None:
+        return (True, None)
+    ticket_id_raw = checkpoint.get("ticket_id")
+    if not isinstance(ticket_id_raw, str) or not ticket_id_raw:
+        return (True, None)
+
+    ticket_id = ticket_id_raw
+    board_url = env.settings.direct_repo.board_api_base_url
+    if not board_url:
+        logger.debug(
+            "Subsession %s has ticket checkpoint but board_api_base_url "
+            "is not configured — skipping status check.",
+            sub_id,
+        )
+        return (True, None)
+
+    # Build the ticket URL.  httpx.URL.copy_with does NOT normalise
+    # ``../`` segments — the agent is trusted to set a valid ticket_id.
+    try:
+        base = httpx.URL(board_url.rstrip("/"))
+        ticket_url = base.copy_with(path=f"/tickets/{ticket_id}")
+    except Exception:
+        logger.exception("Could not construct ticket URL for subsession %s", sub_id)
+        should_continue = await _handle_mill_unreachable(env, info, sub_id)
+        return (should_continue, None)
+
+    # Query the mill.
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+            response = await client.get(str(ticket_url))
+            response.raise_for_status()
+            ticket_data: dict[str, object] = response.json()
+    except httpx.HTTPStatusError as exc:
+        status_code = exc.response.status_code
+        logger.warning(
+            "Mill returned %d for ticket %s (subsession %s)",
+            status_code,
+            ticket_id,
+            sub_id,
+        )
+        # 4xx errors are permanent — close immediately with the reason.
+        if 400 <= status_code < 500:
+            if status_code == 404:
+                reason = f"Ticket {ticket_id} was deleted during the outage."
+            elif status_code in (401, 403):
+                reason = (
+                    f"Authentication error ({status_code}) for ticket "
+                    f"{ticket_id} — check API credentials."
+                )
+            else:
+                reason = (
+                    f"HTTP {status_code} for ticket {ticket_id} — closing subsession."
+                )
+            summary = f"Ticket {ticket_id} is no longer reachable: {reason}"
+            closed = env.registry.mark_closed(
+                sub_id,
+                summary=summary,
+                reason="ticket_unreachable",
+                closed_by="system",
+            )
+            if closed is not None:
+                await env.delivery.deliver_summary(
+                    closed, summary, "ticket_unreachable"
+                )
+            return (False, summary)
+        # 5xx errors are transient — count toward the failure cap.
+        should_continue = await _handle_mill_unreachable(env, info, sub_id)
+        return (should_continue, None)
+    except (httpx.TimeoutException, httpx.ConnectError, OSError) as exc:
+        logger.warning(
+            "Mill unreachable for ticket %s (subsession %s): %s",
+            ticket_id,
+            sub_id,
+            exc,
+        )
+        should_continue = await _handle_mill_unreachable(env, info, sub_id)
+        return (should_continue, None)
+    except Exception:
+        logger.exception(
+            "Unexpected error querying mill for ticket %s (subsession %s)",
+            ticket_id,
+            sub_id,
+        )
+        should_continue = await _handle_mill_unreachable(env, info, sub_id)
+        return (should_continue, None)
+
+    # Reset the consecutive-failures counter on success.
+    _reset_mill_failure_counter(env, info, sub_id)
+
+    # Compare with the last-known state.
+    last_known = checkpoint.get("last_known_state")
+    current_state = ticket_data.get("state")
+    current_state_str = (
+        current_state if isinstance(current_state, str) else str(current_state)
+    )
+    last_known_str = (
+        (last_known if isinstance(last_known, str) else str(last_known))
+        if last_known is not None
+        else "unknown"
+    )
+
+    # Terminal → close the subsession.
+    if current_state_str.lower() in _TICKET_STATE_TERMINAL:
+        summary = (
+            f"Ticket {ticket_id} reached terminal state "
+            f"'{current_state_str}' during the outage. "
+            f"Previous state was '{last_known_str}'."
+        )
+        closed = env.registry.mark_closed(
+            sub_id,
+            summary=summary,
+            reason="ticket_terminal_on_resume",
+            closed_by="system",
+        )
+        if closed is not None:
+            await env.delivery.deliver_summary(closed, summary, "ticket_terminal")
+        logger.info(
+            "Subsession %s (ticket %s): terminal on resume — closed.",
+            sub_id,
+            ticket_id,
+        )
+        return (False, summary)
+
+    # Blocked → inject context for the agent to handle.
+    if current_state_str.lower() in _TICKET_STATE_BLOCKED:
+        context = (
+            f"[System note: this ticket monitor was restarted after a "
+            f"service restart.  Ticket {ticket_id} is currently BLOCKED "
+            f"(previous known state: {last_known_str}).  Fetch the ticket "
+            f"history and comments before deciding whether to auto-resume "
+            f"transient failures (provider timeouts, sandbox 503s) or "
+            f"escalate substantive blockers to the operator.]"
+        )
+        logger.info(
+            "Subsession %s (ticket %s): blocked on resume — injecting context.",
+            sub_id,
+            ticket_id,
+        )
+        return (True, context)
+
+    # Unchanged / open / in_progress → continue normally.
+    context = (
+        f"[System note: this ticket monitor was restarted after a "
+        f"service restart.  Ticket {ticket_id} state is "
+        f"'{current_state_str}' (was '{last_known_str}' before restart). "
+        f"Continue monitoring normally.]"
+    )
+    logger.info(
+        "Subsession %s (ticket %s): state %s on resume — continuing.",
+        sub_id,
+        ticket_id,
+        current_state_str,
+    )
+    return (True, context)
+
+
+async def _handle_mill_unreachable(
+    env: SubsessionEnv,
+    info: SubsessionInfo,
+    sub_id: str,
+) -> bool:
+    """Increment the mill-failure counter; close the subsession at the cap.
+
+    Returns ``True`` when the subsession should continue, ``False`` when
+    the failure cap was reached and the subsession was closed (summary
+    delivered to the parent conversation).
+    """
+    checkpoint = info.checkpoint or {}
+    failures = checkpoint.get("consecutive_mill_failures")
+    count = int(failures) if isinstance(failures, (int, float)) else 0
+    count += 1
+    checkpoint["consecutive_mill_failures"] = count
+    env.registry.update_checkpoint(sub_id, checkpoint)
+
+    if count >= _MAX_MILL_FAILURES:
+        summary = (
+            f"Mill unreachable for {count} consecutive status checks "
+            f"after restart — closing subsession."
+        )
+        closed = env.registry.mark_closed(
+            sub_id,
+            summary=summary,
+            reason="mill_unreachable",
+            closed_by="system",
+        )
+        if closed is not None:
+            await env.delivery.deliver_summary(closed, summary, "mill_unreachable")
+        logger.warning(
+            "Subsession %s: mill unreachable %d times — closed.",
+            sub_id,
+            count,
+        )
+        return False
+
+    logger.warning(
+        "Subsession %s: mill unreachable (%d/%d) — will retry on next run.",
+        sub_id,
+        count,
+        _MAX_MILL_FAILURES,
+    )
+    return True
+
+
+def _reset_mill_failure_counter(
+    env: SubsessionEnv,
+    info: SubsessionInfo,
+    sub_id: str,
+) -> None:
+    """Reset the consecutive-mill-failures counter to zero on success."""
+    checkpoint = info.checkpoint or {}
+    if checkpoint.get("consecutive_mill_failures"):
+        checkpoint["consecutive_mill_failures"] = 0
+        env.registry.update_checkpoint(sub_id, checkpoint)
+
+
 async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
     """Drive one subsession to a terminal state (see module docstring)."""
     registry = env.registry
@@ -505,6 +750,20 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
         consecutive_no_change = 0
         first_turn = True
         pending: list[InboxMessage] = []
+
+        # -- resume status check for ticket monitors -------------------
+        if info.kind is SubsessionKind.PERIODIC and info.checkpoint is not None:
+            should_continue, context_msg = await _check_resume_status(env, info, sub_id)
+            if not should_continue:
+                return
+            if context_msg is not None:
+                pending = [
+                    InboxMessage(
+                        role="system",
+                        text=context_msg,
+                        timestamp=env.registry.now(),
+                    )
+                ]
 
         while True:
             # -- verify the subsession is still alive --------------------
