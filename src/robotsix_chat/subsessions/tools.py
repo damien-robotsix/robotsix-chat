@@ -273,9 +273,10 @@ def _build_complete_tool(
                 "record may have been lost. Cannot complete."
             )
         # Persist the closed state immediately so the subsession is not
-        # re-loaded on restart.  The worker's post-turn check will see
-        # close_state.requested and call mark_closed again (idempotent —
-        # returns None for an already-closed subsession).
+        # re-loaded on restart.  The return value is intentionally ignored:
+        # the pre-check guarantees success (info is active), and the worker's
+        # post-turn check calls mark_closed again (idempotent — returns None
+        # for an already-closed subsession) and handles delivery.
         registry.mark_closed(
             sub_id, summary=summary, reason="completed", closed_by="agent"
         )

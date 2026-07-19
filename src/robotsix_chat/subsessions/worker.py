@@ -879,9 +879,16 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                 )
                 if closed is not None:
                     await env.delivery.deliver_summary(closed, summary, "completed")
-                # Else: the subsession was already closed by the
-                # complete_subsession tool (which persists immediately to
-                # survive a process restart).  Nothing further to do.
+                else:
+                    # Already closed by the complete_subsession tool (which
+                    # persists immediately to survive a process restart).
+                    # Still deliver the summary so the parent agent reacts
+                    # and the outcome is recorded in the conversation.
+                    closed_info = registry.get(sub_id)
+                    if closed_info is not None:
+                        await env.delivery.deliver_summary(
+                            closed_info, summary, "completed"
+                        )
                 return
 
             # -- kind-specific continuation --------------------------------
