@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Periodic monitor prompt: narrow `NO_CHANGE` to only when the observed state is truly identical to the prior run. Any state transition (e.g. draft → implement_complete) now produces a concise acknowledgment with an optional next-step offer instead of being silently suppressed.
 - Add "Merge / PR management" bullet to agent system prompt (v28) documenting
   that direct-repo tools push branches and open PRs without auto-merge, and
   that merge capability exists through the mill API via component_request
