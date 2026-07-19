@@ -121,9 +121,49 @@ def build_lifecycle_tools(
         """
         return await client.service_env(service_name)
 
+    async def watch_service_redeploy(
+        service_name: str,
+        max_wait_seconds: float = 300.0,
+        poll_interval_seconds: float = 15.0,
+    ) -> str:
+        """Watch a lifecycle-managed service until a redeploy is detected.
+
+        Takes a snapshot of the service configuration and polls every
+        *poll_interval_seconds* until the config changes (indicating a
+        redeploy) or *max_wait_seconds* elapses.  Use this after a fix
+        is merged into a component's repo — call it to block until the
+        redeploy completes so you do not keep retrying against the stale
+        deployment.
+
+        This tool will block the agent's turn for up to
+        *max_wait_seconds* — only call it when waiting for a redeploy is
+        the right next action.  If the timeout expires without a change,
+        the tool returns a message suggesting the operator trigger a
+        manual redeploy via the central-deploy dashboard.
+
+        Args:
+            service_name: The lifecycle-registered service to watch
+                (e.g. ``"robotsix-mill"``).
+            max_wait_seconds: Maximum time to wait (default 300 s).
+                The tool returns early as soon as a redeploy is detected.
+            poll_interval_seconds: Seconds between config polls
+                (default 15 s, minimum 5 s).
+
+        Returns:
+            A summary: redeploy detected (with current status), or a
+            timeout message with the recommended next action.
+
+        """
+        return await client.watch_service_redeploy(
+            service_name,
+            max_wait_seconds=max_wait_seconds,
+            poll_interval_seconds=poll_interval_seconds,
+        )
+
     return [
         list_lifecycle_services,
         get_lifecycle_service_status,
         get_lifecycle_service_config,
         get_lifecycle_service_env,
+        watch_service_redeploy,
     ]

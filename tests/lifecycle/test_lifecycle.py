@@ -37,8 +37,8 @@ def test_build_lifecycle_tools_disabled() -> None:
     assert build_lifecycle_tools(LifecycleSettings(enabled=False)) == []
 
 
-def test_build_lifecycle_tools_returns_four_read_only_tools() -> None:
-    """Enabled lifecycle returns four read-only callables, no mutation tools."""
+def test_build_lifecycle_tools_returns_five_tools_including_watch() -> None:
+    """Enabled lifecycle returns five tools including the watch utility."""
     tools = build_lifecycle_tools(_settings())
     names = {t.__name__ for t in tools}
     assert names == {
@@ -46,6 +46,7 @@ def test_build_lifecycle_tools_returns_four_read_only_tools() -> None:
         "get_lifecycle_service_status",
         "get_lifecycle_service_config",
         "get_lifecycle_service_env",
+        "watch_service_redeploy",
     }
 
 
@@ -240,3 +241,147 @@ async def test_non_json_response_returns_raw_text(
     client = LifecycleClient(_settings())
     out = await client.list_services()
     assert "plain text response" in out
+
+
+# ---------------------------------------------------------------------------
+# watch_service_redeploy
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_watch_service_redeploy_detects_config_change(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Config change is detected and returned as a success summary."""
+    call_count = 0
+
+    def config_response(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return httpx.Response(200, json={"image": "digest-aaa"})
+        if call_count == 2:
+            return httpx.Response(200, json={"image": "digest-aaa"})
+        # Third call — config changed (redeploy rolled out).
+        return httpx.Response(200, json={"image": "digest-bbb"})
+
+    def status_response(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(200, json={"status": "running"})
+
+    respx_mock.get("http://lifecycle:9000/services/mill/config").mock(
+        side_effect=config_response
+    )
+    respx_mock.get("http://lifecycle:9000/services/mill/status").mock(
+        side_effect=status_response
+    )
+
+    client = LifecycleClient(_settings())
+    out = await client.watch_service_redeploy(
+        "mill", max_wait_seconds=30.0, poll_interval_seconds=5.0
+    )
+    assert "Redeploy detected" in out
+    assert "mill" in out
+    assert '"status": "running"' in out
+
+
+@pytest.mark.asyncio
+async def test_watch_service_redeploy_times_out(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When config never changes, the tool times out with a helpful message."""
+    respx_mock.get("http://lifecycle:9000/services/mill/config").mock(
+        return_value=httpx.Response(200, json={"image": "digest-aaa"})
+    )
+    respx_mock.get("http://lifecycle:9000/services/mill/status").mock(
+        return_value=httpx.Response(200, json={"status": "running"})
+    )
+
+    client = LifecycleClient(_settings())
+    out = await client.watch_service_redeploy(
+        "mill", max_wait_seconds=0.1, poll_interval_seconds=5.0
+    )
+    assert "Timeout" in out
+    assert "mill" in out
+    assert "manual redeploy" in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_watch_service_redeploy_initial_failure_returns_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When the initial config fetch fails, an error message is returned."""
+    respx_mock.get("http://lifecycle:9000/services/mill/config").mock(
+        return_value=httpx.Response(500, json={"error": "internal"})
+    )
+    respx_mock.get("http://lifecycle:9000/services/mill/status").mock(
+        return_value=httpx.Response(200, json={"status": "running"})
+    )
+
+    client = LifecycleClient(_settings())
+    out = await client.watch_service_redeploy(
+        "mill", max_wait_seconds=30.0, poll_interval_seconds=5.0
+    )
+    assert "Could not reach" in out
+    assert "mill" in out
+
+
+@pytest.mark.asyncio
+async def test_watch_service_redeploy_recovers_from_intermittent_failure(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A transient poll failure is logged and retried — the tool continues."""
+    call_count = 0
+
+    def config_response(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return httpx.Response(200, json={"image": "digest-aaa"})
+        if call_count == 2:
+            # Transient failure — should be retried.
+            return httpx.Response(503)
+        # Third call — redeploy detected.
+        return httpx.Response(200, json={"image": "digest-bbb"})
+
+    respx_mock.get("http://lifecycle:9000/services/mill/config").mock(
+        side_effect=config_response
+    )
+    respx_mock.get("http://lifecycle:9000/services/mill/status").mock(
+        return_value=httpx.Response(200, json={"status": "running"})
+    )
+
+    client = LifecycleClient(_settings())
+    out = await client.watch_service_redeploy(
+        "mill", max_wait_seconds=30.0, poll_interval_seconds=5.0
+    )
+    assert "Redeploy detected" in out
+
+
+@pytest.mark.asyncio
+async def test_watch_service_redeploy_clamps_poll_interval(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """poll_interval_seconds below the minimum is clamped to 5 s."""
+    call_count = 0
+
+    def config_response(request: httpx.Request) -> httpx.Response:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            return httpx.Response(200, json={"image": "digest-aaa"})
+        return httpx.Response(200, json={"image": "digest-bbb"})
+
+    respx_mock.get("http://lifecycle:9000/services/mill/config").mock(
+        side_effect=config_response
+    )
+    respx_mock.get("http://lifecycle:9000/services/mill/status").mock(
+        return_value=httpx.Response(200, json={"status": "running"})
+    )
+
+    client = LifecycleClient(_settings())
+    # A sub-minimum interval should not break anything — the tool clamps
+    # it internally and still detects the redeploy.
+    out = await client.watch_service_redeploy(
+        "mill", max_wait_seconds=30.0, poll_interval_seconds=0.1
+    )
+    assert "Redeploy detected" in out
