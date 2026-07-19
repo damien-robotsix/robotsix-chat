@@ -9,7 +9,7 @@
   final URL (after redirects), response time, Content-Type, body size, and a body
   snippet with optional content assertions (`expect_status`, `expect_contains`,
   `expect_absent`). Gated behind `http_probe.enabled`, hostname-allowlisted,
-  size-capped, and timeout-limited — safe for autonomous use.)
+  size-capped, and timeout-limited — safe for autonomous use.
 - Periodic monitor prompt: narrow `NO_CHANGE` to only when the observed state is truly identical to the prior run. Any state transition (e.g. draft → implement_complete) now produces a concise acknowledgment with an optional next-step offer instead of being silently suppressed.
 - Add "Merge / PR management" bullet to agent system prompt (v28) documenting
   that direct-repo tools push branches and open PRs without auto-merge, and
