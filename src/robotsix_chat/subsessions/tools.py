@@ -113,6 +113,7 @@ def _build_spawn_and_control_tools(
         max_runs: int | None = None,
         include_previous_result: bool = False,
         inherit_context: bool = False,
+        dedup_key: str | None = None,
     ) -> str:
         """Start a background subsession and return its id immediately.
 
@@ -143,6 +144,16 @@ def _build_spawn_and_control_tools(
         interval_seconds (minimum applies) and max_runs are
         for kind="periodic" only.
 
+        dedup_key is for kind="user_chat" only: a short, stable string
+        that identifies a known global issue (e.g. the exact error
+        message prefix, like "asyncio.run() cannot be called"). When set
+        and a user_chat with the same dedup_key is already active, no
+        new subsession is created — the existing id is returned instead.
+        Use this to prevent duplicate side-chats for a single root cause
+        (e.g. a process-wide asyncio.run crash affecting many ticket
+        monitors). Always check list_subsessions first to see if a
+        side-chat for the same issue is already running.
+
         The subsession runs in the background; you will receive its
         summary in this conversation when it closes. Use
         message_subsession to steer it while it runs.
@@ -167,6 +178,7 @@ def _build_spawn_and_control_tools(
                 include_previous_result=include_previous_result,
                 max_runs=max_runs,
                 inherit_context=inherit_context,
+                dedup_key=dedup_key,
             )
         except (
             SubsessionCapacityError,
@@ -176,6 +188,16 @@ def _build_spawn_and_control_tools(
             SubsessionPeriodicSpawnError,
         ) as exc:
             return f"Could not start the subsession: {exc}"
+        # Distinguish a fresh spawn from a deduplicated return so the
+        # agent knows it landed on an existing side-chat.
+        if dedup_key is not None and kind_enum is SubsessionKind.USER_CHAT:
+            existing = env.registry.get(sub_id)
+            if existing is not None and existing.dedup_key == dedup_key:
+                return (
+                    f"Deduplicated: an active user_chat for issue "
+                    f"'{dedup_key}' already exists ({sub_id}) — delivering "
+                    f"your message to the existing side-chat instead."
+                )
         return f"Started {kind} subsession {sub_id} ('{title}')."
 
     spawn_subsession_tool.__name__ = "spawn_subsession"

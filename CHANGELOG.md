@@ -4,6 +4,7 @@
 - Add `watch_service_redeploy` lifecycle tool that polls a service config until a redeploy is detected or a timeout expires, helping the agent break redraft-loops after mill fixes are merged but not yet deployed.
 - Convert subsession error helpers and inline `JSONResponse` sites to raise `HTTPException` so they flow through the centralized error envelope and include `correlation_id`.
 - Unify error response envelope: all error handlers and inline validation errors now emit ``{"error": "...", "correlation_id": "..."}`` instead of mixing ``{"detail": ...}`` and ``{"error": ...}`` shapes. Added catch-all ``Exception`` handler for graceful 500s.
+- Subsessions: add `dedup_key` parameter to `spawn_subsession` for global-issue deduplication. When spawning a `user_chat` with a `dedup_key` that matches an already-active user_chat, the spawn returns the existing subsession id instead of creating a duplicate — preventing redundant side-chats for a single root-cause error (e.g. an `asyncio.run` crash affecting multiple ticket monitors).
 - Periodic subsession `NO_CHANGE` suppression now covers minor, low-value
   state transitions (draft→ready, waiting_for_ci→in_progress, label changes,
   routine CI runs) — only substantive changes (first-time blocking, completion,

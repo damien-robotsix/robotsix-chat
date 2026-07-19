@@ -217,6 +217,7 @@ def _resume_user_chat_entry(
             f"server restart. The assistant's last delivered state "
             f"was:]\n\n{last_text[:2000]}"
         )
+    dedup_key = _entry_opt_str(entry, "dedup_key")
     spawn_subsession(
         env=env,
         kind=SubsessionKind.USER_CHAT,
@@ -224,6 +225,7 @@ def _resume_user_chat_entry(
         **common,
         sub_id=sub_id,
         checkpoint=_rebuild_checkpoint(entry),
+        dedup_key=dedup_key,
     )
     return _ResumeFate(
         owner_session_id=owner,
@@ -400,6 +402,7 @@ def _restore_entry(
             error=_entry_opt_str(entry, "error"),
             completed_runs=_rebuild_completed_runs(entry),
             checkpoint=_rebuild_checkpoint(entry),
+            dedup_key=_entry_opt_str(entry, "dedup_key"),
         )
     except ValueError:
         logger.warning("Skipping malformed persisted subsession %r", sub_id)

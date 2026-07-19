@@ -143,6 +143,12 @@ class SubsessionInfo:
     # consecutive-failures counter so recovery can decide whether to resume
     # the monitoring loop or close the subsession.
     checkpoint: dict[str, object] | None = None
+    # Global-issue deduplication key — when set on a user_chat subsession,
+    # spawn_subsession refuses to create another user_chat with the same key
+    # while this one is active, so a single root-cause error (e.g. an
+    # asyncio.run crash affecting multiple ticket monitors) produces only
+    # one side-chat instead of a flood of duplicate notifications.
+    dedup_key: str | None = None
 
     def snapshot(self, *, with_transcript: bool = False) -> dict[str, object]:
         """Return a JSON-serialisable snapshot for SSE frames and REST bodies.
@@ -174,6 +180,7 @@ class SubsessionInfo:
             "completed_runs": sorted(self.completed_runs),
             "turn_history": [list(pair) for pair in self.turn_history],
             "checkpoint": self.checkpoint,
+            "dedup_key": self.dedup_key,
         }
         if with_transcript:
             data["transcript"] = [entry.as_dict() for entry in self.transcript]
