@@ -5,6 +5,19 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v23 — 2026-07-19 — prevent-infinite-restart-loops-from-moni-45f4
+
+**Summary:** Reorder ticket-lifecycle steps 5 (Exit) and 6 (Reload) so the monitor subsession calls
+`complete_subsession` BEFORE triggering a self-restart. Add an explicit instruction that the restart
+kills the process and any unpersisted state is lost, so `complete_subsession` must always be called
+first. This prevents infinite restart loops where a periodic monitor detects a terminal state,
+triggers a restart, and is killed before persisting its CLOSED state — causing it to be recreated on
+next start and immediately re-trigger the restart.
+
+**SHA256:** `d3f8e9c768af9fd23613633c4b7163c9715e398ea39979dfefbc7cb18d6f4b00`
+
+______________________________________________________________________
+
 ## v22 — 2026-07-12 — add-one-subsession-per-subject-rule-to-s-efab
 
 **Summary:** Add a "one subsession per subject" rule to the subsession guidance in the default
