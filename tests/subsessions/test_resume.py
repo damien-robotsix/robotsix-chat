@@ -696,6 +696,83 @@ async def test_restart_notice_includes_user_chat_as_resumed(
             await asyncio.wait_for(worker, 2.0)
 
 
+@pytest.mark.asyncio
+async def test_restart_notice_deduplicates_identical_periodic_entries(
+    tmp_path: Path,
+) -> None:
+    """Identical periodic entries for the same owner are collapsed into one line.
+
+    When a monitor has multiple periodic subsessions with the same title,
+    the restart notice should group them into a single line with a count
+    instead of repeating the same message verbatim.
+    """
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+
+    # Create 5 periodic entries with the same title.
+    ids = []
+    for _ in range(5):
+        periodic = registry1.create(
+            kind=SubsessionKind.PERIODIC,
+            owner_session_id=OWNER,
+            parent_id=None,
+            depth=1,
+            title="Monitor 42e0",
+            prompt="check the build",
+            model_level=3,
+            interval_seconds=0.05,
+            max_runs=10,
+        )
+        registry1.set_status(periodic.id, SubsessionStatus.SLEEPING, runs=1)
+        ids.append(periodic.id)
+
+    # Also create one periodic with a *different* title.
+    other = registry1.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="Monitor abc1",
+        prompt="check the deploy",
+        model_level=3,
+        interval_seconds=0.05,
+        max_runs=10,
+    )
+    registry1.set_status(other.id, SubsessionStatus.SLEEPING, runs=1)
+
+    gate = asyncio.Event()
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=FakeAgent(["ok"], gate=gate),
+        registry=registry2,
+        settings=make_settings(min_interval_seconds=0.01),
+    )
+    resume_subsessions(env)
+
+    history = env.conversation_store.history(OWNER)
+    notices = [
+        label for label, _ in history if "the chat service was restarted" in label
+    ]
+    assert len(notices) == 1
+    notice = notices[0]
+
+    # The 5 identical "Monitor 42e0" entries should be collapsed into one
+    # line showing "5 instances".
+    assert "5 instances" in notice
+    assert "Monitor 42e0" in notice
+    # The distinct "Monitor abc1" should still appear as a separate entry.
+    assert "Monitor abc1" in notice
+    assert other.id[:8] in notice
+
+    # Cleanup.
+    for sub_id in [*ids, other.id]:
+        worker = registry2._running.get(sub_id)
+        if worker is not None:
+            registry2.cancel_and_close(sub_id, reason="teardown", closed_by="system")
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.wait_for(worker, 2.0)
+
+
 def test_restart_notice_multiple_owners_each_get_own_notice(
     tmp_path: Path,
 ) -> None:
