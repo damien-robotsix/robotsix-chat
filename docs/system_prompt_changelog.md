@@ -20,6 +20,21 @@ when an agent re-files the same ticket, reducing noise and cognitive load.
 
 **SHA256:** `95aaf72c2f3712613268708002fb7184570d1dde1b85a08cf953112cedfe3be0`
 
+## v29 — 2026-07-19 — cross-reference-historical-claims-with-live-state-11ec
+
+**Summary:** Add a "Verification" section to the default `agent_instruction`. When reporting the
+state of an external system (repository contents, deployment status, ticket resolution), the agent
+must verify through available tools rather than relying on memory alone. When the user directly
+challenges a claim with contradictory observable evidence, re-verify against the live system
+immediately rather than doubling down on a memory-based assertion. Prefer timestamped evidence
+(commit SHA, deployment timestamp, tool call result) over recollection.
+
+**Rationale:** Memory-based claims that contradict user-observable reality (empty repo, stale
+container) damage trust and require additional verification steps. The agent must treat live system
+state as the source of truth and distrust memory when it conflicts with live observation.
+
+**SHA256:** `d8abc681dfd9de968e6dece0e1d6a51bc8ad2f8c7f2351b5a65ce4a2be1c9610`
+
 ______________________________________________________________________
 
 ## v28 — 2026-07-19 — document-merge-capability-via-mill-api-d1a3
@@ -37,23 +52,6 @@ merge-now endpoint. This change closes the knowledge gap so the agent uses the m
 endpoints first.
 
 **SHA256:** `436be0c1a8683984e7dc721d039bf3d4bd3dfa108d462f3f8542617fdd2939e8`
-
-______________________________________________________________________
-
-## v28 — 2026-07-19 — cross-reference-historical-claims-with-live-state-11ec
-
-**Summary:** Add a "Verification" section to the default `agent_instruction`. When reporting the
-state of an external system (repository contents, deployment status, ticket resolution), the agent
-must verify through available tools rather than relying on memory alone. When the user directly
-challenges a claim with contradictory observable evidence, re-verify against the live system
-immediately rather than doubling down on a memory-based assertion. Prefer timestamped evidence
-(commit SHA, deployment timestamp, tool call result) over recollection.
-
-**Rationale:** Memory-based claims that contradict user-observable reality (empty repo, stale
-container) damage trust and require additional verification steps. The agent must treat live system
-state as the source of truth and distrust memory when it conflicts with live observation.
-
-**SHA256:** `127e75f254fd71639a11b0958679da3f8c6b8ce1458443fb6717c5dcd902ea90`
 
 ______________________________________________________________________
 
