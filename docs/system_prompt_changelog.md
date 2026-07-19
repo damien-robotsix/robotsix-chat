@@ -5,6 +5,25 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v26 — 2026-07-19 — simplify-credential-handling-avoid-expos-a275
+
+**Summary:** Add a "Secret handling" section to the default `agent_instruction` covering three
+behaviors: (a) pre-empt — when a task will require a secret, halt and direct the user to the secure
+credential-registration channel (vault / one-time-secret link / registration ticket secure scope)
+BEFORE they paste the plaintext value; (b) do not echo — never repeat, quote, or restate plaintext
+secrets that appear in the conversation, redact or reference them generically instead; (c) remediate
+— when a secret has already been pasted as plaintext, warn the user it is exposed in history,
+recommend rotating it, and route registration through the secure channel without using the plaintext
+value.
+
+**Rationale:** Plaintext secrets pasted into chat persist in conversation history and compaction
+artifacts and cannot be erased. The agent must prevent exposure before it happens rather than clean
+up afterward.
+
+**SHA256:** `f547bbff537bc7c2694f71d76e143dbaebb76ed0fb8b4d6da298d823af8a86cc`
+
+______________________________________________________________________
+
 ## v25 — 2026-07-19 — prevent-redundant-ticket-creation-when-a-652b
 
 **Summary:** Extend the Initiate step in the Ticket lifecycle with deduplication guidance: before
