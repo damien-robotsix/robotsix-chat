@@ -330,14 +330,19 @@ def _build_periodic_input(
             + _render_turn_input(steering)
         )
     parts.append(
-        f"Reply exactly {_NO_CHANGE_SENTINEL} if nothing changed since the "
-        "previous run, or if only minor, low-value state transitions "
-        "occurred (e.g. draft→ready, waiting_for_ci→in_progress, label "
-        "changes, routine CI runs). Reserve full reports for substantive "
-        "changes: first-time blocking, completion, failure, or transitions "
-        "requiring user action. For minor but notable changes, reply with "
-        "a single concise line (≤80 chars). Call complete_subsession when "
-        "the monitored condition reaches a terminal state."
+        f"Reply exactly {_NO_CHANGE_SENTINEL} only if genuinely nothing "
+        "changed since the previous run — the observed state is identical "
+        "to the prior run. If any state transition occurred (e.g. draft → "
+        "implement_complete, in_progress → done, ready → in_progress), "
+        "DO NOT reply NO_CHANGE. Instead, acknowledge the change with a "
+        "concise line summarising what changed and, when appropriate, "
+        'offer a next step (e.g. "Ticket 5f1c has moved to '
+        "implement_complete; PR #654 is open. Let me know if you'd like "
+        'me to check on the review status."). Reserve multi-paragraph '
+        "reports for substantive changes: first-time blocking, completion, "
+        "failure, or transitions requiring user action. Call "
+        "complete_subsession when the monitored condition reaches a "
+        "terminal state."
     )
     return "\n\n".join(parts)
 
