@@ -601,6 +601,36 @@ class RenderUrlSettings(BaseModel):
     viewport_height: int = 720
 
 
+class HttpProbeSettings(BaseModel):
+    """Read-only HTTP uptime/render-probe tool for the agent.
+
+    When enabled, the agent gains an ``http_probe`` tool that performs a
+    plain HTTPS GET to a public URL (follows redirects, short timeout)
+    and returns the HTTP status, final URL, response time, Content-Type,
+    response size, and a snippet of the body text with optional content
+    assertions.
+
+    Attributes:
+        enabled: Master switch.  When ``False``, no http_probe tool is offered.
+        timeout: Per-request HTTP timeout in seconds (default 10 s).
+        allowlist: Hostnames (no protocol, no path) that the tool is permitted to
+            probe.  At minimum must include ``www.robotsix.net`` and
+            ``robotsix.net``.  When empty, the tool permits any public hostname.
+        max_body_bytes: Maximum bytes of the response body to read and
+            return to the agent (default 2048 — ~2 KB).
+        max_redirects: Maximum number of redirects to follow (default 5).
+
+    """
+
+    enabled: bool = False
+    timeout: float = 10.0
+    allowlist: list[str] = Field(
+        default_factory=lambda: ["www.robotsix.net", "robotsix.net"]
+    )
+    max_body_bytes: int = 2048
+    max_redirects: int = 5
+
+
 class CentralDeploySettings(BaseModel):
     """Central-deploy roster and component-access settings.
 

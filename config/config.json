@@ -139,6 +139,13 @@
   "notification": {
     "enabled": false
   },
+  "http_probe": {
+    "enabled": false,
+    "timeout": 10.0,
+    "allowlist": ["www.robotsix.net", "robotsix.net"],
+    "max_body_bytes": 2048,
+    "max_redirects": 5
+  },
   "render_url": {
     "enabled": false,
     "timeout": 30.0,

@@ -22,6 +22,7 @@ from robotsix_chat.config.models import (
     DirectRepoSettings,
     FeedbackSettings,
     GitHubSecuritySettings,
+    HttpProbeSettings,
     KnowledgeSettings,
     LangfuseSettings,
     LifecycleSettings,
@@ -308,6 +309,7 @@ class Settings(BaseModel):
     repo_study: RepoStudySettings = Field(default_factory=RepoStudySettings)
     lifecycle: LifecycleSettings = Field(default_factory=LifecycleSettings)
     notification: NotificationSettings = Field(default_factory=NotificationSettings)
+    http_probe: HttpProbeSettings = Field(default_factory=HttpProbeSettings)
     feedback: FeedbackSettings = Field(default_factory=FeedbackSettings)
     max_images_per_message: int = 8
     max_image_bytes: int = 5_242_880
@@ -455,6 +457,7 @@ class Settings(BaseModel):
             "repo_study",
             "lifecycle",
             "notification",
+            "http_probe",
             "feedback",
         )
         for key in _object_keys:

@@ -4,6 +4,12 @@
 - Fix: periodic subsessions (ticket monitors) now correctly restore their `dedup_key` after server restart, preventing duplicate monitors from spawning for the same ticket.
 - Document dynamic feedback target-repo resolution in `docs/configuration.md`: allowed repos are derived from the deploy roster intersected with the mill repo registry, with a fallback to `["robotsix-chat"]`.
 - Extend subsession `dedup_key` deduplication from `user_chat` only to all subsession kinds, preventing duplicate periodic ticket monitors when an agent re-files the same ticket.
+- New `http_probe` tool: the chat agent can now perform read-only HTTPS GET requests
+  against public URLs to verify uptime and content. The tool returns HTTP status,
+  final URL (after redirects), response time, Content-Type, body size, and a body
+  snippet with optional content assertions (`expect_status`, `expect_contains`,
+  `expect_absent`). Gated behind `http_probe.enabled`, hostname-allowlisted,
+  size-capped, and timeout-limited — safe for autonomous use.)
 - Periodic monitor prompt: narrow `NO_CHANGE` to only when the observed state is truly identical to the prior run. Any state transition (e.g. draft → implement_complete) now produces a concise acknowledgment with an optional next-step offer instead of being silently suppressed.
 - Add "Merge / PR management" bullet to agent system prompt (v28) documenting
   that direct-repo tools push branches and open PRs without auto-merge, and

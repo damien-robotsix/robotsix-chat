@@ -30,6 +30,7 @@ from robotsix_chat.component_access import build_component_access_tools
 from robotsix_chat.component_client import build_component_tools
 from robotsix_chat.config import Settings, level_needs_api_key
 from robotsix_chat.diagnostics import build_diagnostics_tools
+from robotsix_chat.http_probe import build_http_probe_tools
 from robotsix_chat.knowledge import build_knowledge_tools
 from robotsix_chat.lifecycle import build_lifecycle_tools
 from robotsix_chat.llm import LlmioChatAgent
@@ -474,6 +475,14 @@ def _inject_skills(
         if notification_skill:
             instruction = f"{instruction}\n\n{notification_skill}"
 
+    # HTTP probe skill.
+    if settings.http_probe.enabled:
+        from robotsix_chat.http_probe import load_http_probe_skill
+
+        http_probe_skill = load_http_probe_skill()
+        if http_probe_skill:
+            instruction = f"{instruction}\n\n{http_probe_skill}"
+
     # GitHub skill.
     if settings.github_security.enabled:
         from robotsix_chat.repo.security import load_github_skill
@@ -512,6 +521,7 @@ def _build_static_tools(
         *build_version_check_tools(settings.version_check),
         *build_lifecycle_tools(settings.lifecycle),
         *build_render_url_tools(settings.render_url),
+        *build_http_probe_tools(settings.http_probe),
     ]
 
 

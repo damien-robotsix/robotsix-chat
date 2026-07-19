@@ -284,6 +284,14 @@ modules:
       - tests/ui/test_chat_integration.py
       - tests/ui/test_smoke.py
 
+  - id: http-probe
+    description: "Read-only HTTP uptime/render-probe tool for the agent — exposes build_http_probe_tools() returning an http_probe tool for HTTPS GET health checks with optional content assertions (status, expect_contains, expect_absent), plus load_http_probe_skill() for the component skill document."
+    paths:
+      - src/robotsix_chat/http_probe/__init__.py
+      - src/robotsix_chat/http_probe/skill.md
+      - tests/http_probe/__init__.py
+      - tests/http_probe/test_http_probe.py
+
   - id: lifecycle
     description: "Read-only deploy-lifecycle API tools for the agent — exposes build_lifecycle_tools() returning tools to list services, check status/health, and read config/env (secrets masked server-side), plus load_lifecycle_skill() for the component skill document."
     paths:
