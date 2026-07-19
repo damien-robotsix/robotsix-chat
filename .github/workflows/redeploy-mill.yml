@@ -41,6 +41,10 @@ on:
   repository_dispatch:
     types: [mill-merged]
 
+concurrency:
+  group: redeploy-mill-${{ github.ref }}
+  cancel-in-progress: false
+
 permissions:
   contents: read
 
