@@ -21,7 +21,7 @@ redirects (up to the configured limit), and returns a structured health report.
 
 The tool signature is:
 
-```
+```python
 http_probe(
     url: str,
     expect_status: int = 200,
@@ -77,7 +77,7 @@ Common `expect_absent` patterns:
 
 ## Example calls
 
-```
+```python
 # Basic health check — is the site up?
 http_probe("https://www.robotsix.net")
 
