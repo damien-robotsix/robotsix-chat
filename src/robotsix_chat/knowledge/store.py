@@ -48,6 +48,20 @@ class KnowledgeStore(JsonStoreBase[KnowledgeEntry]):
     _default_path = "/data/knowledge.json"
 
     # ------------------------------------------------------------------
+    # internal helpers
+    # ------------------------------------------------------------------
+
+    def _missing_note_error(self, note_id: str) -> KnowledgeEntry:
+        """Return an error entry for an unknown note_id."""
+        return KnowledgeEntry(
+            id="error",
+            topic="",
+            content=f"Error: no knowledge note found with id '{note_id}'",
+            created_at="",
+            updated_at="",
+        )
+
+    # ------------------------------------------------------------------
     # public API
     # ------------------------------------------------------------------
 
@@ -74,13 +88,7 @@ class KnowledgeStore(JsonStoreBase[KnowledgeEntry]):
         """
         entry = self._items.get(note_id)
         if entry is None:
-            return KnowledgeEntry(
-                id="error",
-                topic="",
-                content=f"Error: no knowledge note found with id '{note_id}'",
-                created_at="",
-                updated_at="",
-            )
+            return self._missing_note_error(note_id)
         entry.content = entry.content + content
         entry.updated_at = self._clock().isoformat()
         self._persist()
@@ -93,13 +101,7 @@ class KnowledgeStore(JsonStoreBase[KnowledgeEntry]):
         """
         entry = self._items.get(note_id)
         if entry is None:
-            return KnowledgeEntry(
-                id="error",
-                topic="",
-                content=f"Error: no knowledge note found with id '{note_id}'",
-                created_at="",
-                updated_at="",
-            )
+            return self._missing_note_error(note_id)
         entry.content = content
         entry.updated_at = self._clock().isoformat()
         self._persist()
