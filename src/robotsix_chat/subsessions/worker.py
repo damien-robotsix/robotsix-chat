@@ -308,8 +308,13 @@ def _build_periodic_input(
         )
     parts.append(
         f"Reply exactly {_NO_CHANGE_SENTINEL} if nothing changed since the "
-        "previous run. Call complete_subsession when the monitored "
-        "condition reaches a terminal state."
+        "previous run, or if only minor, low-value state transitions "
+        "occurred (e.g. draft→ready, waiting_for_ci→in_progress, label "
+        "changes, routine CI runs). Reserve full reports for substantive "
+        "changes: first-time blocking, completion, failure, or transitions "
+        "requiring user action. For minor but notable changes, reply with "
+        "a single concise line (≤80 chars). Call complete_subsession when "
+        "the monitored condition reaches a terminal state."
     )
     return "\n\n".join(parts)
 

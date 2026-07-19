@@ -1,5 +1,10 @@
 ## 0.0.0 (unreleased)
 
+- Periodic subsession `NO_CHANGE` suppression now covers minor, low-value
+  state transitions (draft→ready, waiting_for_ci→in_progress, label changes,
+  routine CI runs) — only substantive changes (first-time blocking, completion,
+  failure, user-action transitions) produce full reports. Minor but notable
+  changes surface as a concise one-liner.
 - Add "Secret handling" section to the agent system prompt (v26) covering three
   rules: pre-empt secrets before they are pasted, never echo plaintext secrets,
   and remediate already-exposed credentials with a rotation warning.
