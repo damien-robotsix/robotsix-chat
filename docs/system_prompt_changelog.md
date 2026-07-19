@@ -7,12 +7,12 @@ ______________________________________________________________________
 
 ## v29 — 2026-07-19 — prevent-creation-of-duplicate-monitors-f-8af3
 
-**Summary:** Extend `dedup_key` deduplication from `user_chat`-only to all subsession kinds. The
-old guidance only mentioned `user_chat` for global error dedup; the new text covers periodic
-ticket monitors too — set `dedup_key` to the ticket id when spawning a monitor (e.g. `'5f1c'`).
-The Monitor lifecycle step also now specifies `dedup_key` usage. The dedup guard in
-`spawn_subsession` no longer filters by `SubsessionKind.USER_CHAT`, so any subsession with an
-active dedup_key returns the existing id instead of spawning a duplicate.
+**Summary:** Extend `dedup_key` deduplication from `user_chat`-only to all subsession kinds. The old
+guidance only mentioned `user_chat` for global error dedup; the new text covers periodic ticket
+monitors too — set `dedup_key` to the ticket id when spawning a monitor (e.g. `'5f1c'`). The Monitor
+lifecycle step also now specifies `dedup_key` usage. The dedup guard in `spawn_subsession` no longer
+filters by `SubsessionKind.USER_CHAT`, so any subsession with an active dedup_key returns the
+existing id instead of spawning a duplicate.
 
 **Rationale:** Two periodic monitors were spawned for the same ticket, causing double reports and
 manual cleanup. Extending the dedup guard to all kinds prevents duplicate periodic ticket monitors
