@@ -134,7 +134,12 @@ def _ticket_json(tickets: list[dict[str, Any]] | None = None) -> str:
     """Return a valid feedback JSON string with optional ticket list."""
     if tickets is None:
         tickets = [
-            {"title": "Fix X", "description": "X is broken because Y.", "kind": "code"}
+            {
+                "title": "Fix X",
+                "description": "X is broken because Y.",
+                "kind": "code",
+                "target_repo": "robotsix-chat",
+            }
         ]
     return json.dumps({"analysis": "some analysis", "tickets": tickets})
 
@@ -149,16 +154,19 @@ class TestBuildFeedbackPrompt:
 
     def test_empty_turns(self) -> None:
         """Empty transcript produces the expected skeleton."""
-        result = _build_feedback_prompt("compaction", "s1", [], [])
+        result = _build_feedback_prompt("compaction", "s1", [], [], ["robotsix-chat"])
         assert "Trigger: compaction" in result
         assert "Session ID: s1" in result
         assert "(empty)" in result
         assert "Subsession summaries: (none)" in result
+        assert "Valid target repos: robotsix-chat" in result
 
     def test_with_turns(self) -> None:
         """Each turn appears in the transcript."""
         turns = [("hello", "hi there"), ("what's up?", "not much")]
-        result = _build_feedback_prompt("session_end", "s2", turns, [])
+        result = _build_feedback_prompt(
+            "session_end", "s2", turns, [], ["robotsix-chat"]
+        )
         assert "Trigger: session_end" in result
         assert "Session ID: s2" in result
         assert "User: hello" in result
@@ -169,7 +177,9 @@ class TestBuildFeedbackPrompt:
     def test_long_assistant_truncated(self) -> None:
         """Assistant messages longer than 3000 chars are truncated."""
         long_msg = "x" * 4000
-        result = _build_feedback_prompt("compaction", "s3", [("q", long_msg)], [])
+        result = _build_feedback_prompt(
+            "compaction", "s3", [("q", long_msg)], [], ["robotsix-chat"]
+        )
         assert "x" * 3000 + "\u2026" in result
         assert "x" * 3001 not in result
 
@@ -179,7 +189,9 @@ class TestBuildFeedbackPrompt:
             {"kind": "task", "status": "closed", "summary": "did work"},
             {"kind": "periodic", "status": "failed", "summary": "timeout"},
         ]
-        result = _build_feedback_prompt("compaction", "s4", [], summaries)
+        result = _build_feedback_prompt(
+            "compaction", "s4", [], summaries, ["robotsix-chat"]
+        )
         assert "Subsession summaries:" in result
         assert "[0] kind=task status=closed" in result
         assert "did work" in result
@@ -189,7 +201,9 @@ class TestBuildFeedbackPrompt:
     def test_subsession_missing_fields(self) -> None:
         """Missing kind/status/summary get sensible defaults."""
         summaries: list[dict[str, Any]] = [{}]
-        result = _build_feedback_prompt("compaction", "s5", [], summaries)
+        result = _build_feedback_prompt(
+            "compaction", "s5", [], summaries, ["robotsix-chat"]
+        )
         assert "kind=unknown" in result
         assert "status=unknown" in result
         assert "(no summary)" in result
@@ -197,8 +211,15 @@ class TestBuildFeedbackPrompt:
     def test_trigger_types(self) -> None:
         """Both ``compaction`` and ``session_end`` triggers are accepted."""
         for trigger in ("compaction", "session_end"):
-            result = _build_feedback_prompt(trigger, "s", [], [])
+            result = _build_feedback_prompt(trigger, "s", [], [], ["robotsix-chat"])
             assert f"Trigger: {trigger}" in result
+
+    def test_multiple_repo_ids_in_prompt(self) -> None:
+        """Multiple repo ids are listed in the prompt."""
+        result = _build_feedback_prompt(
+            "compaction", "s1", [], [], ["robotsix-chat", "robotsix-mill"]
+        )
+        assert "Valid target repos: robotsix-chat, robotsix-mill" in result
 
 
 # ---------------------------------------------------------------------------
@@ -215,55 +236,76 @@ class TestParseTickets:
         """Well-formed JSON with valid tickets is parsed correctly."""
         text = _ticket_json(
             [
-                {"title": "Fix A", "description": "desc A", "kind": "code"},
-                {"title": "Improve B", "description": "desc B", "kind": "prompt"},
+                {
+                    "title": "Fix A",
+                    "description": "desc A",
+                    "kind": "code",
+                    "target_repo": "robotsix-chat",
+                },
+                {
+                    "title": "Improve B",
+                    "description": "desc B",
+                    "kind": "prompt",
+                    "target_repo": "robotsix-chat",
+                },
             ]
         )
-        tickets = FeedbackRunner._parse_tickets(text)
+        tickets = FeedbackRunner._parse_tickets(text, repo_ids=["robotsix-chat"])
         assert len(tickets) == 2
         assert tickets[0] == {
             "title": "Fix A",
             "description": "desc A",
             "kind": "code",
+            "target_repo": "robotsix-chat",
         }
         assert tickets[1] == {
             "title": "Improve B",
             "description": "desc B",
             "kind": "prompt",
+            "target_repo": "robotsix-chat",
         }
 
     def test_empty_tickets_list(self) -> None:
         """An empty tickets list returns an empty result."""
         text = _ticket_json([])
-        tickets = FeedbackRunner._parse_tickets(text)
+        tickets = FeedbackRunner._parse_tickets(text, repo_ids=["robotsix-chat"])
         assert tickets == []
 
     def test_markdown_fenced_json(self) -> None:
         """Markdown-fenced JSON (`` ```json ```) is stripped and parsed."""
         inner = _ticket_json()
         text = f"```json\n{inner}\n```"
-        tickets = FeedbackRunner._parse_tickets(text)
+        tickets = FeedbackRunner._parse_tickets(text, repo_ids=["robotsix-chat"])
         assert len(tickets) == 1
 
     def test_markdown_fenced_no_lang(self) -> None:
         """Plain markdown fences (no language tag) are stripped."""
         inner = _ticket_json()
         text = f"```\n{inner}\n```"
-        tickets = FeedbackRunner._parse_tickets(text)
+        tickets = FeedbackRunner._parse_tickets(text, repo_ids=["robotsix-chat"])
         assert len(tickets) == 1
 
     def test_markdown_fenced_trailing_newline(self) -> None:
         """Fence with a trailing newline after closing backticks."""
         inner = _ticket_json()
         text = f"```\n{inner}\n```\n"
-        tickets = FeedbackRunner._parse_tickets(text)
+        tickets = FeedbackRunner._parse_tickets(text, repo_ids=["robotsix-chat"])
         assert len(tickets) == 1
 
     def test_all_valid_kinds(self) -> None:
         """All four valid ticket kinds are accepted."""
         for kind in ("prompt", "tool", "config", "code"):
-            text = _ticket_json([{"title": "T", "description": "D", "kind": kind}])
-            tickets = FeedbackRunner._parse_tickets(text)
+            text = _ticket_json(
+                [
+                    {
+                        "title": "T",
+                        "description": "D",
+                        "kind": kind,
+                        "target_repo": "robotsix-chat",
+                    }
+                ]
+            )
+            tickets = FeedbackRunner._parse_tickets(text, repo_ids=["robotsix-chat"])
             assert len(tickets) == 1
             assert tickets[0]["kind"] == kind
 
@@ -271,54 +313,91 @@ class TestParseTickets:
 
     def test_non_json(self) -> None:
         """Non-JSON text returns an empty list."""
-        tickets = FeedbackRunner._parse_tickets("just some text, no json here")
+        tickets = FeedbackRunner._parse_tickets(
+            "just some text, no json here", repo_ids=["robotsix-chat"]
+        )
         assert tickets == []
 
     def test_json_array_not_object(self) -> None:
         """A JSON array (not an object) returns empty."""
-        tickets = FeedbackRunner._parse_tickets("[1, 2, 3]")
+        tickets = FeedbackRunner._parse_tickets("[1, 2, 3]", repo_ids=["robotsix-chat"])
         assert tickets == []
 
     def test_missing_tickets_field(self) -> None:
         """JSON object without a ``tickets`` key returns empty."""
         text = json.dumps({"analysis": "ok"})
-        tickets = FeedbackRunner._parse_tickets(text)
+        tickets = FeedbackRunner._parse_tickets(text, repo_ids=["robotsix-chat"])
         assert tickets == []
 
     def test_tickets_not_a_list(self) -> None:
         """``tickets`` field that is not a list returns empty."""
         text = json.dumps({"tickets": "not a list"})
-        tickets = FeedbackRunner._parse_tickets(text)
+        tickets = FeedbackRunner._parse_tickets(text, repo_ids=["robotsix-chat"])
         assert tickets == []
 
     def test_invalid_kind(self) -> None:
         """Tickets with an unknown ``kind`` are filtered out."""
-        text = _ticket_json([{"title": "T", "description": "D", "kind": "unknown"}])
-        tickets = FeedbackRunner._parse_tickets(text)
+        text = _ticket_json(
+            [
+                {
+                    "title": "T",
+                    "description": "D",
+                    "kind": "unknown",
+                    "target_repo": "robotsix-chat",
+                }
+            ]
+        )
+        tickets = FeedbackRunner._parse_tickets(text, repo_ids=["robotsix-chat"])
         assert tickets == []
 
     def test_missing_title(self) -> None:
         """Tickets without a title are filtered out."""
-        text = _ticket_json([{"description": "D", "kind": "code"}])
-        tickets = FeedbackRunner._parse_tickets(text)
+        text = _ticket_json(
+            [
+                {
+                    "description": "D",
+                    "kind": "code",
+                    "target_repo": "robotsix-chat",
+                }
+            ]
+        )
+        tickets = FeedbackRunner._parse_tickets(text, repo_ids=["robotsix-chat"])
         assert tickets == []
 
     def test_missing_description(self) -> None:
         """Tickets without a description are filtered out."""
-        text = _ticket_json([{"title": "T", "kind": "code"}])
-        tickets = FeedbackRunner._parse_tickets(text)
+        text = _ticket_json(
+            [
+                {
+                    "title": "T",
+                    "kind": "code",
+                    "target_repo": "robotsix-chat",
+                }
+            ]
+        )
+        tickets = FeedbackRunner._parse_tickets(text, repo_ids=["robotsix-chat"])
         assert tickets == []
 
     def test_mixed_valid_invalid(self) -> None:
         """Only valid tickets are kept from a mixed list."""
         mixed: list[Any] = [
-            {"title": "Good", "description": "desc", "kind": "code"},
+            {
+                "title": "Good",
+                "description": "desc",
+                "kind": "code",
+                "target_repo": "robotsix-chat",
+            },
             {"title": "", "description": "no title", "kind": "code"},
-            {"title": "Bad Kind", "description": "desc", "kind": "nope"},
+            {
+                "title": "Bad Kind",
+                "description": "desc",
+                "kind": "nope",
+                "target_repo": "robotsix-chat",
+            },
             "not a dict at all",
         ]
         text = _ticket_json(mixed)
-        tickets = FeedbackRunner._parse_tickets(text)
+        tickets = FeedbackRunner._parse_tickets(text, repo_ids=["robotsix-chat"])
         assert len(tickets) == 1
         assert tickets[0]["title"] == "Good"
 
@@ -327,7 +406,7 @@ class TestParseTickets:
     ) -> None:
         """A JSON decode error emits a warning log message."""
         with caplog.at_level(logging.WARNING):
-            FeedbackRunner._parse_tickets("not json {{{")
+            FeedbackRunner._parse_tickets("not json {{{", repo_ids=["robotsix-chat"])
         assert "non-JSON output" in caplog.text
 
     # -- markdown-edge cases --------------------------------------------------
@@ -335,18 +414,83 @@ class TestParseTickets:
     def test_markdown_open_no_close(self) -> None:
         """Opening fence with no closing fence still parses the body."""
         text = "```\n" + _ticket_json()
-        tickets = FeedbackRunner._parse_tickets(text)
+        tickets = FeedbackRunner._parse_tickets(text, repo_ids=["robotsix-chat"])
         assert len(tickets) == 1
 
     def test_empty_string(self) -> None:
         """Empty string returns an empty list."""
-        tickets = FeedbackRunner._parse_tickets("")
+        tickets = FeedbackRunner._parse_tickets("", repo_ids=["robotsix-chat"])
         assert tickets == []
 
     def test_whitespace_only(self) -> None:
         """Whitespace-only string returns an empty list."""
-        tickets = FeedbackRunner._parse_tickets("   \n\t  ")
+        tickets = FeedbackRunner._parse_tickets("   \n\t  ", repo_ids=["robotsix-chat"])
         assert tickets == []
+
+    # -- target_repo validation -----------------------------------------------
+
+    def test_missing_target_repo_logs_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Tickets without a target_repo are skipped when repo_ids provided."""
+        text = _ticket_json([{"title": "T", "description": "D", "kind": "code"}])
+        with caplog.at_level(logging.WARNING):
+            tickets = FeedbackRunner._parse_tickets(text, repo_ids=["robotsix-chat"])
+        assert tickets == []
+        assert "missing target_repo" in caplog.text
+
+    def test_invalid_target_repo_logs_warning(
+        self, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """Tickets with an unregistered target_repo are skipped."""
+        text = _ticket_json(
+            [
+                {
+                    "title": "T",
+                    "description": "D",
+                    "kind": "code",
+                    "target_repo": "nonexistent-repo",
+                }
+            ]
+        )
+        with caplog.at_level(logging.WARNING):
+            tickets = FeedbackRunner._parse_tickets(text, repo_ids=["robotsix-chat"])
+        assert tickets == []
+        assert "not in configured repo_ids" in caplog.text
+
+    def test_multiple_repo_ids_accepted(self) -> None:
+        """Tickets targeting any configured repo are accepted."""
+        text = _ticket_json(
+            [
+                {
+                    "title": "Fix mill",
+                    "description": "desc",
+                    "kind": "code",
+                    "target_repo": "robotsix-mill",
+                }
+            ]
+        )
+        tickets = FeedbackRunner._parse_tickets(
+            text, repo_ids=["robotsix-chat", "robotsix-mill"]
+        )
+        assert len(tickets) == 1
+        assert tickets[0]["target_repo"] == "robotsix-mill"
+
+    def test_no_repo_ids_skips_validation(self) -> None:
+        """When repo_ids is None, target_repo validation is skipped."""
+        text = _ticket_json(
+            [
+                {
+                    "title": "T",
+                    "description": "D",
+                    "kind": "code",
+                    "target_repo": "anything",
+                }
+            ]
+        )
+        tickets = FeedbackRunner._parse_tickets(text, repo_ids=None)
+        assert len(tickets) == 1
+        assert tickets[0]["target_repo"] == "anything"
 
 
 # ---------------------------------------------------------------------------
@@ -390,11 +534,11 @@ class TestFeedbackRunnerConstructor:
         runner = _make_runner(settings)
         assert runner._board_token == "secret-token"
 
-    def test_repo_id_stored(self) -> None:
-        """The repo_id from settings is stored on the runner."""
-        settings = _settings(repo_id="my-custom-repo")
+    def test_repo_ids_stored(self) -> None:
+        """The repo_ids from settings is stored on the runner."""
+        settings = _settings(repo_ids=["my-custom-repo", "other-repo"])
         runner = _make_runner(settings)
-        assert runner._repo_id == "my-custom-repo"
+        assert runner._repo_ids == ["my-custom-repo", "other-repo"]
 
 
 # ---------------------------------------------------------------------------
@@ -553,7 +697,14 @@ class TestFileTickets:
         """An empty board URL short-circuits and returns 0."""
         runner = _make_runner(_settings(board_url=""))
         filed = await runner._file_tickets(
-            [{"title": "T", "description": "D", "kind": "code"}],
+            [
+                {
+                    "title": "T",
+                    "description": "D",
+                    "kind": "code",
+                    "target_repo": "robotsix-chat",
+                }
+            ],
             trigger_type="compaction",
             session_id="s1",
         )
@@ -569,8 +720,18 @@ class TestFileTickets:
         )
         runner = _make_runner()
         tickets = [
-            {"title": "Fix X", "description": "X is broken", "kind": "code"},
-            {"title": "Improve Y", "description": "Y needs work", "kind": "prompt"},
+            {
+                "title": "Fix X",
+                "description": "X is broken",
+                "kind": "code",
+                "target_repo": "robotsix-chat",
+            },
+            {
+                "title": "Improve Y",
+                "description": "Y needs work",
+                "kind": "prompt",
+                "target_repo": "robotsix-chat",
+            },
         ]
         filed = await runner._file_tickets(
             tickets, trigger_type="compaction", session_id="sess-1"
@@ -584,7 +745,7 @@ class TestFileTickets:
     ) -> None:
         """Each POST body carries repo_id, title, body, source_tag.
 
-        Runner-level metadata (kind, session_id, trigger_type) is folded
+        Runner-level metadata (kind, session_id, trigger_type, origin) is folded
         into the body text, not exposed as top-level keys — mill's
         TicketIngest schema only accepts repo_id/title/body/source_tag.
         """
@@ -593,7 +754,14 @@ class TestFileTickets:
         )
         runner = _make_runner()
         await runner._file_tickets(
-            [{"title": "T", "description": "D", "kind": "config"}],
+            [
+                {
+                    "title": "T",
+                    "description": "D",
+                    "kind": "config",
+                    "target_repo": "robotsix-chat",
+                }
+            ],
             trigger_type="session_end",
             session_id="abc-123",
         )
@@ -611,6 +779,7 @@ class TestFileTickets:
         assert "kind: config" in body["body"]
         assert "session: abc-123" in body["body"]
         assert "trigger: session_end" in body["body"]
+        assert "origin: robotsix-chat" in body["body"]
 
     @pytest.mark.asyncio
     async def test_includes_bearer_token(self, respx_mock: respx.MockRouter) -> None:
@@ -621,7 +790,14 @@ class TestFileTickets:
         settings = _settings(board_api_token=SecretStr("my-token"))
         runner = _make_runner(settings)
         await runner._file_tickets(
-            [{"title": "T", "description": "D", "kind": "code"}],
+            [
+                {
+                    "title": "T",
+                    "description": "D",
+                    "kind": "code",
+                    "target_repo": "robotsix-chat",
+                }
+            ],
             trigger_type="compaction",
             session_id="s1",
         )
@@ -638,7 +814,14 @@ class TestFileTickets:
         runner = _make_runner()
         with caplog.at_level(logging.WARNING):
             filed = await runner._file_tickets(
-                [{"title": "T", "description": "D", "kind": "code"}],
+                [
+                    {
+                        "title": "T",
+                        "description": "D",
+                        "kind": "code",
+                        "target_repo": "robotsix-chat",
+                    }
+                ],
                 trigger_type="compaction",
                 session_id="s1",
             )
@@ -656,12 +839,46 @@ class TestFileTickets:
         runner = _make_runner()
         with caplog.at_level(logging.ERROR):
             filed = await runner._file_tickets(
-                [{"title": "T", "description": "D", "kind": "code"}],
+                [
+                    {
+                        "title": "T",
+                        "description": "D",
+                        "kind": "code",
+                        "target_repo": "robotsix-chat",
+                    }
+                ],
                 trigger_type="compaction",
                 session_id="s1",
             )
         assert filed == 0
         assert "Failed to file feedback ticket" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_filing_targets_cross_repo(
+        self, respx_mock: respx.MockRouter
+    ) -> None:
+        """A ticket targeted at robotsix-mill uses repo_id=robotsix-mill."""
+        route = respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(201)
+        )
+        runner = _make_runner(_settings(repo_ids=["robotsix-chat", "robotsix-mill"]))
+        await runner._file_tickets(
+            [
+                {
+                    "title": "Fix mill bug",
+                    "description": "Mill is broken",
+                    "kind": "code",
+                    "target_repo": "robotsix-mill",
+                }
+            ],
+            trigger_type="compaction",
+            session_id="sess-mill",
+        )
+        body = json.loads(route.calls.last.request.content)
+        assert body["repo_id"] == "robotsix-mill"
+        assert body["title"] == "Fix mill bug"
+        assert body["source_tag"] == "robotsix-chat-feedback"
+        assert "origin: robotsix-chat" in body["body"]
 
 
 # ---------------------------------------------------------------------------
@@ -760,6 +977,61 @@ class TestRun:
         runner = _make_runner(agent=agent, subsession_registry=registry)
         await runner._run("compaction", "sess-1", [("q", "a")])
         assert "work done" in (agent.called_with or "")
+
+
+# ===========================================================================
+# Cross-repo / multi-target tests
+# ===========================================================================
+
+
+class TestMultiRepoConfig:
+    """Tests for multi-repo feedback configuration."""
+
+    def test_default_single_repo_unchanged(self) -> None:
+        """Default FeedbackSettings has robotsix-chat as the only target."""
+        settings = FeedbackSettings()
+        assert settings.repo_ids == ["robotsix-chat"]
+
+    def test_multi_repo_config_parsing(self) -> None:
+        """Multiple repo_ids are stored as a list."""
+        settings = FeedbackSettings(repo_ids=["robotsix-chat", "robotsix-mill"])
+        assert settings.repo_ids == ["robotsix-chat", "robotsix-mill"]
+
+    def test_runner_stores_multi_repo_ids(self) -> None:
+        """FeedbackRunner stores multiple repo_ids from settings."""
+        settings = _settings(repo_ids=["robotsix-chat", "robotsix-mill"])
+        runner = _make_runner(settings)
+        assert runner._repo_ids == ["robotsix-chat", "robotsix-mill"]
+
+    def test_env_var_override_repo_ids(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """FEEDBACK_TARGET_REPOS env var overrides config-file repo_ids."""
+        monkeypatch.setenv("FEEDBACK_TARGET_REPOS", "robotsix-chat, robotsix-mill")
+        settings = FeedbackSettings(repo_ids=["robotsix-chat"])
+        assert settings.repo_ids == ["robotsix-chat", "robotsix-mill"]
+
+    def test_env_var_empty_yields_default(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        """When FEEDBACK_TARGET_REPOS is not set, config value is used."""
+        monkeypatch.delenv("FEEDBACK_TARGET_REPOS", raising=False)
+        settings = FeedbackSettings()
+        assert settings.repo_ids == ["robotsix-chat"]
+
+    @pytest.mark.asyncio
+    async def test_run_passes_repo_ids_to_prompt(self) -> None:
+        """_run includes valid target repos in the agent prompt."""
+        respx_mock = pytest.importorskip("respx")
+        agent = _FakeAgent(tokens=[_ticket_json()])
+        settings = _settings(repo_ids=["robotsix-chat", "robotsix-mill"])
+        runner = _make_runner(settings, agent=agent)
+        with respx_mock.mock:
+            respx_mock.mock.post("http://test-board/tickets/ingest").mock(
+                return_value=httpx.Response(201)
+            )
+            await runner._run("compaction", "sess-multi", [("q", "a")])
+        assert "Valid target repos: robotsix-chat, robotsix-mill" in (
+            agent.called_with or ""
+        )
 
 
 # ===========================================================================

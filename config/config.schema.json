@@ -189,7 +189,7 @@
       "type": "object"
     },
     "FeedbackSettings": {
-      "description": "Automated feedback analysis for continuous self-improvement.\n\nWhen enabled, a feedback run analyses the conversation at compaction\nand session-end boundaries, then files improvement tickets via the\nboard's ``POST /tickets/ingest`` endpoint.  Tickets flow through the\nnormal human-approval workflow \u2014 the feedback run never auto-approves.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no feedback runs occur.\n    model_level: llmio capability level for the feedback-analysis\n        agent (a cheap, single-turn extraction call).  Default ``1``.\n    board_url: Base URL of the board HTTP API (no trailing slash).\n        Required when *enabled* \u2014 the runner POSTs to\n        ``{board_url}/tickets/ingest``.\n    board_api_token: Optional Bearer token for the board API.\n    repo_id: Repository identifier sent in the ``repo_id`` field of\n        the mill ingest payload.  Default ``\"robotsix-chat\"``.\n    timeout: Per-request HTTP timeout in seconds for ingest calls.",
+      "description": "Automated feedback analysis for continuous self-improvement.\n\nWhen enabled, a feedback run analyses the conversation at compaction\nand session-end boundaries, then files improvement tickets via the\nboard's ``POST /tickets/ingest`` endpoint.  Tickets flow through the\nnormal human-approval workflow \u2014 the feedback run never auto-approves.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no feedback runs occur.\n    model_level: llmio capability level for the feedback-analysis\n        agent (a cheap, single-turn extraction call).  Default ``1``.\n    board_url: Base URL of the board HTTP API (no trailing slash).\n        Required when *enabled* \u2014 the runner POSTs to\n        ``{board_url}/tickets/ingest``.\n    board_api_token: Optional Bearer token for the board API.\n    repo_ids: Repository identifiers the feedback runner is allowed to\n        target.  The analysis agent picks one per ticket; the runner\n        validates it against this list.  Default ``[\"robotsix-chat\"]``.\n        Env override: ``FEEDBACK_TARGET_REPOS`` (comma-separated).\n    timeout: Per-request HTTP timeout in seconds for ingest calls.",
       "properties": {
         "enabled": {
           "default": false,
@@ -213,10 +213,12 @@
           "type": "string",
           "writeOnly": true
         },
-        "repo_id": {
-          "default": "robotsix-chat",
-          "title": "Repo Id",
-          "type": "string"
+        "repo_ids": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Repo Ids",
+          "type": "array"
         },
         "timeout": {
           "default": 60.0,
