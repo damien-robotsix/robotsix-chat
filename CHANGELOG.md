@@ -14,6 +14,7 @@
   and remediate already-exposed credentials with a rotation warning.
   The section names the concrete secure channel (vault / one-time-secret link /
   registration ticket secure scope) for credential registration.
+- Blocked-ticket resume now verifies worker freshness before auto-resuming. The resume logic queries the mill's ``/health`` endpoint for ``started_at`` and compares it against a stored checkpoint value. If the worker has not been redeployed after two consecutive blocked-ticket resumes, the subsession is closed with reason ``stale_worker`` to prevent futile retries on a stale image.
 - Add docstring to `CogneeMemory._configure()` documenting its purpose and key side-effects.
 - Fix: resume context messages ("Ticket TICKET-1 is BLOCKED", etc.) are no longer silently discarded on the first turn of a recovered periodic subsession.
 - System prompt v24: add Efficiency rule instructing the assistant to condense repeated service-restart notices into a single summary rather than repeating each one verbatim.
