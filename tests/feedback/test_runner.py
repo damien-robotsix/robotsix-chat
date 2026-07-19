@@ -534,12 +534,6 @@ class TestFeedbackRunnerConstructor:
         runner = _make_runner(settings)
         assert runner._board_token == "secret-token"
 
-    def test_repo_ids_stored(self) -> None:
-        """The repo_ids from settings is stored on the runner."""
-        settings = _settings(repo_ids=["my-custom-repo", "other-repo"])
-        runner = _make_runner(settings)
-        assert runner._repo_ids == ["my-custom-repo", "other-repo"]
-
 
 # ---------------------------------------------------------------------------
 # FeedbackRunner — schedule
@@ -984,51 +978,29 @@ class TestRun:
 # ===========================================================================
 
 
-class TestMultiRepoConfig:
-    """Tests for multi-repo feedback configuration."""
-
-    def test_default_single_repo_unchanged(self) -> None:
-        """Default FeedbackSettings has robotsix-chat as the only target."""
-        settings = FeedbackSettings()
-        assert settings.repo_ids == ["robotsix-chat"]
-
-    def test_multi_repo_config_parsing(self) -> None:
-        """Multiple repo_ids are stored as a list."""
-        settings = FeedbackSettings(repo_ids=["robotsix-chat", "robotsix-mill"])
-        assert settings.repo_ids == ["robotsix-chat", "robotsix-mill"]
-
-    def test_runner_stores_multi_repo_ids(self) -> None:
-        """FeedbackRunner stores multiple repo_ids from settings."""
-        settings = _settings(repo_ids=["robotsix-chat", "robotsix-mill"])
-        runner = _make_runner(settings)
-        assert runner._repo_ids == ["robotsix-chat", "robotsix-mill"]
-
-    def test_env_var_override_repo_ids(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """FEEDBACK_TARGET_REPOS env var overrides config-file repo_ids."""
-        monkeypatch.setenv("FEEDBACK_TARGET_REPOS", "robotsix-chat, robotsix-mill")
-        settings = FeedbackSettings(repo_ids=["robotsix-chat"])
-        assert settings.repo_ids == ["robotsix-chat", "robotsix-mill"]
-
-    def test_env_var_empty_yields_default(
-        self, monkeypatch: pytest.MonkeyPatch
-    ) -> None:
-        """When FEEDBACK_TARGET_REPOS is not set, config value is used."""
-        monkeypatch.delenv("FEEDBACK_TARGET_REPOS", raising=False)
-        settings = FeedbackSettings()
-        assert settings.repo_ids == ["robotsix-chat"]
+class TestDynamicRepoResolution:
+    """Tests for dynamic allowed-repo resolution at run time."""
 
     @pytest.mark.asyncio
-    async def test_run_passes_repo_ids_to_prompt(self) -> None:
-        """_run includes valid target repos in the agent prompt."""
+    async def test_run_passes_resolved_repos_to_prompt(self) -> None:
+        """_run includes dynamically-resolved target repos in the agent prompt."""
         respx_mock = pytest.importorskip("respx")
         agent = _FakeAgent(tokens=[_ticket_json()])
-        settings = _settings(repo_ids=["robotsix-chat", "robotsix-mill"])
-        runner = _make_runner(settings, agent=agent)
-        with respx_mock.mock:
+        runner = _make_runner(agent=agent)
+        from robotsix_chat.feedback import runner as target_module
+
+        with (
+            respx_mock.mock,
+            patch.object(
+                target_module,
+                "_resolve_allowed_repos",
+                return_value=["robotsix-chat", "robotsix-mill"],
+            ),
+        ):
             respx_mock.mock.post("http://test-board/tickets/ingest").mock(
                 return_value=httpx.Response(201)
             )
-            await runner._run("compaction", "sess-multi", [("q", "a")])
+            await runner._run("compaction", "sess-dynamic", [("q", "a")])
         assert "Valid target repos: robotsix-chat, robotsix-mill" in (
             agent.called_with or ""
         )

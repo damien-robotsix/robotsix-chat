@@ -6,9 +6,7 @@ be imported directly without pulling in the full Settings cascade.
 
 from __future__ import annotations
 
-from typing import Any
-
-from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr
 
 
 class LangfuseSettings(BaseModel):
@@ -565,11 +563,11 @@ class FeedbackSettings(BaseModel):
             Required when *enabled* — the runner POSTs to
             ``{board_url}/tickets/ingest``.
         board_api_token: Optional Bearer token for the board API.
-        repo_ids: Repository identifiers the feedback runner is allowed to
-            target.  The analysis agent picks one per ticket; the runner
-            validates it against this list.  Default ``["robotsix-chat"]``.
-            Env override: ``FEEDBACK_TARGET_REPOS`` (comma-separated).
         timeout: Per-request HTTP timeout in seconds for ingest calls.
+            The set of allowed target repos is resolved dynamically at
+            run-time from the deploy server's chat-component roster
+            (``DEPLOY_API_KEY`` env var) intersected with the mill board's
+            repo registry — no static allowlist is needed.
 
     """
 
@@ -577,26 +575,7 @@ class FeedbackSettings(BaseModel):
     model_level: int = 1
     board_url: str = ""
     board_api_token: SecretStr = SecretStr("")
-    repo_ids: list[str] = Field(default_factory=lambda: ["robotsix-chat"])
     timeout: float = 60.0
-
-    @model_validator(mode="before")
-    @classmethod
-    def _resolve_repo_ids(cls, data: Any) -> Any:
-        """Resolve *repo_ids* from config or ``FEEDBACK_TARGET_REPOS`` env var.
-
-        When the env var is set it takes precedence over the config-file
-        value.  Commas delimit multiple ids; whitespace is stripped.
-        """
-        import os
-
-        if not isinstance(data, dict):
-            return data
-        env = os.environ.get("FEEDBACK_TARGET_REPOS")
-        if env:
-            data = dict(data)
-            data["repo_ids"] = [r.strip() for r in env.split(",") if r.strip()]
-        return data
 
 
 class RenderUrlSettings(BaseModel):

@@ -5,9 +5,13 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import os
+import time
 from typing import TYPE_CHECKING, Any
 
 import httpx
+
+from robotsix_chat.common.http import safe_http_request
 
 try:
     from robotsix_llmio.core.tracing import (
@@ -32,6 +36,103 @@ if TYPE_CHECKING:
     from robotsix_chat.subsessions import SubsessionRegistry
 
 logger = logging.getLogger(__name__)
+
+# ---------------------------------------------------------------------------
+# Allowed-repo resolution (dynamic — no static config)
+# ---------------------------------------------------------------------------
+
+# In-memory cache: (fetched_at_monotonic, list_of_repo_ids).
+_repo_cache: tuple[float, list[str]] | None = None
+_REPO_CACHE_TTL: float = 60.0  # seconds — short enough to pick up access changes
+
+
+async def _resolve_allowed_repos() -> list[str]:
+    """Resolve the set of allowed feedback target repos dynamically.
+
+    Queries the deploy server's chat-component roster and the mill board's
+    repo registry, then intersects the two on component/repo id.  The result
+    is cached briefly (``_REPO_CACHE_TTL``) to avoid hammering deploy on
+    every feedback run.
+
+    Falls back to ``["robotsix-chat"]`` when deploy is unreachable and logs
+    a warning.
+    """
+    global _repo_cache
+    now = time.monotonic()
+    if _repo_cache is not None and (now - _repo_cache[0]) < _REPO_CACHE_TTL:
+        return _repo_cache[1]
+
+    deploy_api_key = os.environ.get("DEPLOY_API_KEY", "")
+
+    # 1. Fetch components from deploy.
+    deploy_url = "http://central-deploy:8100/chat/components"
+    deploy_headers: dict[str, str] = {}
+    if deploy_api_key:
+        deploy_headers["X-API-Key"] = deploy_api_key
+
+    deploy_result = await safe_http_request(
+        "GET", deploy_url, headers=deploy_headers, label="Deploy roster"
+    )
+    if deploy_result.error:
+        logger.warning(
+            "Deploy roster unreachable (%s) — falling back to [robotsix-chat] only",
+            deploy_result.error,
+        )
+        _repo_cache = (now, ["robotsix-chat"])
+        return ["robotsix-chat"]
+
+    try:
+        deploy_entries: list[dict[str, Any]] = json.loads(deploy_result.text or "[]")
+    except json.JSONDecodeError:
+        logger.warning("Deploy roster response is not valid JSON — falling back")
+        _repo_cache = (now, ["robotsix-chat"])
+        return ["robotsix-chat"]
+
+    deploy_ids: set[str] = {
+        e["id"] for e in deploy_entries if isinstance(e, dict) and "id" in e
+    }
+    if not deploy_ids:
+        logger.warning("Deploy roster is empty — falling back to [robotsix-chat] only")
+        _repo_cache = (now, ["robotsix-chat"])
+        return ["robotsix-chat"]
+
+    # 2. Fetch repos from mill board.
+    mill_url = "http://mill:8077/repos"
+    mill_result = await safe_http_request("GET", mill_url, label="Mill repos")
+    if mill_result.error:
+        logger.warning(
+            "Mill repos unreachable (%s) — falling back to [robotsix-chat] only",
+            mill_result.error,
+        )
+        _repo_cache = (now, ["robotsix-chat"])
+        return ["robotsix-chat"]
+
+    try:
+        mill_repos: list[dict[str, Any]] = json.loads(mill_result.text or "[]")
+    except json.JSONDecodeError:
+        logger.warning("Mill repos response is not valid JSON — falling back")
+        _repo_cache = (now, ["robotsix-chat"])
+        return ["robotsix-chat"]
+
+    mill_ids: set[str] = {
+        r["id"] for r in mill_repos if isinstance(r, dict) and "id" in r
+    }
+
+    # 3. Intersect — only repos that are both in the deploy roster AND
+    #    registered on the mill board are valid targets.
+    allowed = sorted(deploy_ids & mill_ids)
+    if not allowed:
+        logger.warning(
+            "No repos in deploy/mill intersection (deploy=%s, mill=%s) — "
+            "falling back to [robotsix-chat] only",
+            sorted(deploy_ids),
+            sorted(mill_ids),
+        )
+        allowed = ["robotsix-chat"]
+
+    _repo_cache = (now, allowed)
+    return allowed
+
 
 # ---------------------------------------------------------------------------
 # Prompt template
@@ -142,7 +243,6 @@ class FeedbackRunner:
         self._registry = subsession_registry
         self._board_url = settings.board_url.rstrip("/") if settings.board_url else ""
         self._board_token = settings.board_api_token.get_secret_value()
-        self._repo_ids = settings.repo_ids
         self._timeout = settings.timeout
 
     # ------------------------------------------------------------------
@@ -207,13 +307,16 @@ class FeedbackRunner:
                 # 1. Collect subsession summaries.
                 subsession_summaries = self._collect_subsession_summaries(session_id)
 
-                # 2. Build prompt and call the feedback agent.
+                # 2. Resolve allowed target repos dynamically.
+                allowed_repos = await _resolve_allowed_repos()
+
+                # 3. Build prompt and call the feedback agent.
                 prompt = _build_feedback_prompt(
                     trigger_type,
                     session_id,
                     turns,
                     subsession_summaries,
-                    self._repo_ids,
+                    allowed_repos,
                 )
                 analysis = await self._call_agent(
                     prompt, session_id=session_id, trace_metadata=trace_metadata
@@ -221,15 +324,15 @@ class FeedbackRunner:
                 if analysis is None:
                     return
 
-                # 3. Parse the JSON response.
-                tickets = self._parse_tickets(analysis, repo_ids=self._repo_ids)
+                # 4. Parse the JSON response.
+                tickets = self._parse_tickets(analysis, repo_ids=allowed_repos)
                 if not tickets:
                     logger.info(
                         "Feedback run: no actionable tickets (session=%s)", session_id
                     )
                     return
 
-                # 4. File each ticket.
+                # 5. File each ticket.
                 filed = await self._file_tickets(
                     tickets, trigger_type=trigger_type, session_id=session_id
                 )
@@ -241,7 +344,7 @@ class FeedbackRunner:
                     len(tickets),
                 )
 
-                # 5. Stamp outcome metadata on the trace root span.
+                # 6. Stamp outcome metadata on the trace root span.
                 self._stamp_outcome(filed, len(tickets))
         except Exception:
             logger.exception(
