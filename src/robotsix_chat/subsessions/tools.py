@@ -164,6 +164,14 @@ def _build_spawn_and_control_tools(
             return f"Unknown kind {kind!r} — expected one of: {_KIND_VALUES}."
         if env.conversation_store.is_session_closed(ctx.owner_session_id):
             return "This session is closed — no new subsessions can be started."
+        # Check whether a dedup hit is expected before calling
+        # spawn_subsession — after a fresh create the new record
+        # always matches its own dedup_key, so a post-hoc check cannot
+        # tell whether the spawn was fresh or deduplicated.
+        was_dedup = False
+        if dedup_key is not None and kind_enum is SubsessionKind.USER_CHAT:
+            was_dedup = env.registry.is_dedup_key_active(dedup_key) is not None
+
         try:
             sub_id = spawn_subsession(
                 env=env,
@@ -188,16 +196,12 @@ def _build_spawn_and_control_tools(
             SubsessionPeriodicSpawnError,
         ) as exc:
             return f"Could not start the subsession: {exc}"
-        # Distinguish a fresh spawn from a deduplicated return so the
-        # agent knows it landed on an existing side-chat.
-        if dedup_key is not None and kind_enum is SubsessionKind.USER_CHAT:
-            existing = env.registry.get(sub_id)
-            if existing is not None and existing.dedup_key == dedup_key:
-                return (
-                    f"Deduplicated: an active user_chat for issue "
-                    f"'{dedup_key}' already exists ({sub_id}) — delivering "
-                    f"your message to the existing side-chat instead."
-                )
+        if was_dedup:
+            return (
+                f"Deduplicated: an active user_chat for issue "
+                f"'{dedup_key}' already exists ({sub_id}) — delivering "
+                f"your message to the existing side-chat instead."
+            )
         return f"Started {kind} subsession {sub_id} ('{title}')."
 
     spawn_subsession_tool.__name__ = "spawn_subsession"

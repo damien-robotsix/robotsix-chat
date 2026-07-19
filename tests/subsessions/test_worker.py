@@ -897,6 +897,155 @@ def test_rebuild_turn_history_missing_field_returns_empty() -> None:
     assert _rebuild_turn_history({}) == []
 
 
+# ---------------------------------------------------------------------------
+# dedup key spawn guard
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_spawn_dedup_guard_returns_existing_id_for_active_key() -> None:
+    """When a user_chat with the same dedup_key is active, spawn returns its id."""
+    env = build_env()
+    first_id = spawn_subsession(
+        env=env,
+        kind=SubsessionKind.USER_CHAT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="first side-chat",
+        prompt="ask user about X",
+        model_level=3,
+        dedup_key="asyncio.run-crash",
+    )
+
+    # Second spawn with the same dedup_key — must return the first id,
+    # not create a new subsession.
+    second_id = spawn_subsession(
+        env=env,
+        kind=SubsessionKind.USER_CHAT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="duplicate side-chat",
+        prompt="ask user about X again",
+        model_level=3,
+        dedup_key="asyncio.run-crash",
+    )
+
+    assert first_id == second_id
+    # Only one subsession exists in the registry.
+    assert len(env.registry.list_for_owner(OWNER)) == 1
+
+    # Clean up the spawned worker.
+    env.registry.cancel_and_close(first_id, reason="teardown", closed_by="system")
+
+
+@pytest.mark.asyncio
+async def test_spawn_dedup_guard_ignored_for_non_user_chat_kinds() -> None:
+    """A dedup_key on a TASK subsession is ignored — each spawn creates a new one."""
+    env = build_env()
+    first_id = spawn_subsession(
+        env=env,
+        kind=SubsessionKind.TASK,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="first task",
+        prompt="do work",
+        model_level=3,
+        dedup_key="some-key",
+    )
+
+    second_id = spawn_subsession(
+        env=env,
+        kind=SubsessionKind.TASK,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="second task",
+        prompt="do more work",
+        model_level=3,
+        dedup_key="some-key",
+    )
+
+    assert first_id != second_id
+    assert len(env.registry.list_for_owner(OWNER)) == 2
+
+    # Clean up spawned workers.
+    env.registry.cancel_and_close(first_id, reason="teardown", closed_by="system")
+    env.registry.cancel_and_close(second_id, reason="teardown", closed_by="system")
+
+
+@pytest.mark.asyncio
+async def test_spawn_dedup_guard_no_key_creates_fresh() -> None:
+    """When no dedup_key is provided, each spawn creates a fresh subsession."""
+    env = build_env()
+    first_id = spawn_subsession(
+        env=env,
+        kind=SubsessionKind.USER_CHAT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="chat 1",
+        prompt="ask something",
+        model_level=3,
+    )
+
+    second_id = spawn_subsession(
+        env=env,
+        kind=SubsessionKind.USER_CHAT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="chat 2",
+        prompt="ask something else",
+        model_level=3,
+    )
+
+    assert first_id != second_id
+    assert len(env.registry.list_for_owner(OWNER)) == 2
+
+    # Clean up spawned workers.
+    env.registry.cancel_and_close(first_id, reason="teardown", closed_by="system")
+    env.registry.cancel_and_close(second_id, reason="teardown", closed_by="system")
+
+
+@pytest.mark.asyncio
+async def test_spawn_dedup_guard_different_keys_dont_collide() -> None:
+    """Different dedup_key values are tracked independently."""
+    env = build_env()
+    first_id = spawn_subsession(
+        env=env,
+        kind=SubsessionKind.USER_CHAT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="crash chat",
+        prompt="about crash",
+        model_level=3,
+        dedup_key="crash-error",
+    )
+
+    second_id = spawn_subsession(
+        env=env,
+        kind=SubsessionKind.USER_CHAT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="timeout chat",
+        prompt="about timeout",
+        model_level=3,
+        dedup_key="timeout-error",
+    )
+
+    assert first_id != second_id
+    assert len(env.registry.list_for_owner(OWNER)) == 2
+
+    # Clean up spawned workers.
+    env.registry.cancel_and_close(first_id, reason="teardown", closed_by="system")
+    env.registry.cancel_and_close(second_id, reason="teardown", closed_by="system")
+
+
 # ============================================================================
 # resume status check (_check_resume_status, _handle_mill_unreachable,
 # _reset_mill_failure_counter)

@@ -596,3 +596,96 @@ async def test_set_checkpoint_non_string_key_rejected():
     result = await set_cp({1: "value"})  # non-string key
 
     assert "is not a string" in result
+
+
+# ---------------------------------------------------------------------------
+# dedup key tool output differentiation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_spawn_tool_dedup_key_fresh_spawn_returns_started_message() -> None:
+    """A fresh spawn with a dedup_key returns the normal 'Started' message."""
+    env = build_env()
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    result = await spawn(
+        "user_chat",
+        "crash investigation",
+        "investigate the asyncio.run crash",
+        dedup_key="asyncio.run-crash",
+        model_level=3,
+    )
+
+    assert result.startswith("Started user_chat subsession ")
+    assert "'crash investigation'" in result
+
+
+@pytest.mark.asyncio
+async def test_spawn_tool_dedup_key_duplicate_returns_deduplicated_message() -> None:
+    """When a user_chat with the same dedup_key already exists, returns dedup message."""
+    agent = FakeAgent(["ok"])
+    env = build_env(agent=agent)
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    # First spawn — should be fresh.
+    first_result = await spawn(
+        "user_chat",
+        "crash investigation",
+        "investigate the asyncio.run crash",
+        dedup_key="asyncio.run-crash",
+        model_level=3,
+    )
+    assert first_result.startswith("Started user_chat subsession ")
+
+    # Second spawn with the same key — should be deduplicated.
+    second_result = await spawn(
+        "user_chat",
+        "crash investigation (retry)",
+        "investigate again",
+        dedup_key="asyncio.run-crash",
+        model_level=3,
+    )
+    assert second_result.startswith("Deduplicated:")
+    assert "asyncio.run-crash" in second_result
+
+
+@pytest.mark.asyncio
+async def test_spawn_tool_dedup_key_without_key_returns_normal_started() -> None:
+    """A spawn without a dedup_key always returns the normal 'Started' message."""
+    env = build_env()
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    result = await spawn(
+        "user_chat",
+        "some question",
+        "ask user about deploy",
+        model_level=3,
+    )
+
+    assert result.startswith("Started user_chat subsession ")
+
+
+@pytest.mark.asyncio
+async def test_spawn_tool_dedup_key_non_user_chat_always_started() -> None:
+    """A task spawn with a dedup_key always returns 'Started' (dedup only for user_chat)."""
+    env = build_env()
+    spawn = _by_name(build_subsession_tools(env, ctx=_ctx()), "spawn_subsession")
+
+    first = await spawn(
+        "task",
+        "task 1",
+        "do work",
+        dedup_key="some-key",
+        model_level=3,
+    )
+    assert first.startswith("Started task subsession ")
+
+    second = await spawn(
+        "task",
+        "task 2",
+        "do more work",
+        dedup_key="some-key",
+        model_level=3,
+    )
+    assert second.startswith("Started task subsession ")
