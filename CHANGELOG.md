@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Enable `changelog_autofill` periodic task for auto-committing changelog entries on PRs with failing changelog CI checks.
 - Add `watch_service_redeploy` lifecycle tool that polls a service config until a redeploy is detected or a timeout expires, helping the agent break redraft-loops after mill fixes are merged but not yet deployed.
 - Convert subsession error helpers and inline `JSONResponse` sites to raise `HTTPException` so they flow through the centralized error envelope and include `correlation_id`.
 - Unify error response envelope: all error handlers and inline validation errors now emit ``{"error": "...", "correlation_id": "..."}`` instead of mixing ``{"detail": ...}`` and ``{"error": ...}`` shapes. Added catch-all ``Exception`` handler for graceful 500s.
