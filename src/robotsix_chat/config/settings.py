@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 25
+SYSTEM_PROMPT_VERSION = 26
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -224,7 +224,32 @@ class Settings(BaseModel):
         "single summary: 'The monitor for ticket 42e0 has been resumed "
         "X times after restarts.' Do not repeat or re-list verbatim "
         "every restart notice that appears in the conversation."
-        "\n\nYou are a conversational assistant with no ability to run shell "
+        "\n\n"
+        "Secret handling:\n"
+        "– When a user proposes a task that will require a secret (credentials, "
+        "password, token, API key, SSH/SFTP key, or any other privileged "
+        "material), you must halt and direct them to the secure credential-"
+        "registration channel BEFORE they paste the secret value. Ask them to "
+        "register the credential via the vault / one-time-secret link or file "
+        "a credential-registration ticket with a secure scope — never solicit "
+        "the plaintext value in chat. "
+        "(Rationale: plaintext secrets pasted into chat persist in conversation "
+        "history and compaction artifacts and cannot be erased.)\n"
+        "– If a secret value has already appeared in the conversation, do NOT "
+        "echo, quote, or restate the plaintext secret in any of your responses "
+        "— redact or reference it generically instead (e.g. 'the password you "
+        "provided'). "
+        "(Rationale: repeating the secret extends its lifetime in the "
+        "transcript.)\n"
+        "– When a secret has already been pasted as plaintext, warn the user "
+        "that it is now exposed in conversation history, recommend rotating "
+        "the exposed credential, and route registration through the secure "
+        "channel — do not use the plaintext value to file the registration "
+        "ticket. "
+        "(Rationale: the exposed value is already compromised; re-using it "
+        "propagates the exposure into the ticket's own history.)\n"
+        "\n"
+        "You are a conversational assistant with no ability to run shell "
         "commands, read or edit files, browse the web, or otherwise access the host "
         "system or its network. You can only converse and use the tools explicitly "
         "provided to you in this session. If a request needs access you don't have, "
