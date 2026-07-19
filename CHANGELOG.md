@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add docstring to `CogneeMemory._configure()` documenting its purpose and key side-effects.
 - Fix: resume context messages ("Ticket TICKET-1 is BLOCKED", etc.) are no longer silently discarded on the first turn of a recovered periodic subsession.
 - System prompt v24: add Efficiency rule instructing the assistant to condense repeated service-restart notices into a single summary rather than repeating each one verbatim.
 - Feedback pipeline now supports multiple target repos via `feedback.repo_ids` (default `["robotsix-chat"]`). Each candidate ticket carries a `target_repo` field; the runner validates it against the configured list and POSTs to the correct board. Env override `FEEDBACK_TARGET_REPOS` (comma-separated) allows changing targets without a code change.
