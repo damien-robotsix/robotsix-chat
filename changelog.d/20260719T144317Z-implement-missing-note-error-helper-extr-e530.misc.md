@@ -1,1 +1,1 @@
-Implement \_missing\_note\_error helper extraction in knowledge/store.py (3rd attempt)
+Implement \_missing_note_error helper extraction in knowledge/store.py (3rd attempt)
