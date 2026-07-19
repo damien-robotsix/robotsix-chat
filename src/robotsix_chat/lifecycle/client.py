@@ -122,9 +122,7 @@ class LifecycleClient:
                 current_status = await self._get_raw(status_path)
                 if current_status:
                     try:
-                        status_text = json.dumps(
-                            json.loads(current_status), indent=2
-                        )
+                        status_text = json.dumps(json.loads(current_status), indent=2)
                     except Exception:
                         status_text = current_status
                 else:
