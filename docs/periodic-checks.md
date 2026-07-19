@@ -23,6 +23,7 @@ The assistant calls `spawn_subsession` with:
 | `interval_seconds`        | How often to re-run, in seconds. Minimum is 60 seconds; 1800 (30 minutes) is a common choice                |
 | `max_runs`                | (optional) Cap on the number of runs; omitted means run until closed                                        |
 | `include_previous_result` | Set to `true` so each run can compare against the prior state                                               |
+| `dedup_key`               | When monitoring a ticket, set to the ticket id (e.g. `"5f1c"`) — prevents duplicate monitors for the same ticket |
 
 ### Change-detection convention
 
