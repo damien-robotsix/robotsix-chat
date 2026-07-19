@@ -40,6 +40,23 @@ endpoints first.
 
 ______________________________________________________________________
 
+## v28 — 2026-07-19 — cross-reference-historical-claims-with-live-state-11ec
+
+**Summary:** Add a "Verification" section to the default `agent_instruction`. When reporting the
+state of an external system (repository contents, deployment status, ticket resolution), the agent
+must verify through available tools rather than relying on memory alone. When the user directly
+challenges a claim with contradictory observable evidence, re-verify against the live system
+immediately rather than doubling down on a memory-based assertion. Prefer timestamped evidence
+(commit SHA, deployment timestamp, tool call result) over recollection.
+
+**Rationale:** Memory-based claims that contradict user-observable reality (empty repo, stale
+container) damage trust and require additional verification steps. The agent must treat live system
+state as the source of truth and distrust memory when it conflicts with live observation.
+
+**SHA256:** `127e75f254fd71639a11b0958679da3f8c6b8ce1458443fb6717c5dcd902ea`
+
+______________________________________________________________________
+
 ## v27 — 2026-07-19 — deduplicate-known-broken-asyncio-run-err-54ea
 
 **Summary:** Add dedup_key guidance to the agent_instruction default. When spawning a user_chat to
