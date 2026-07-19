@@ -51,12 +51,14 @@ The JSON must have exactly this structure:
       "title": "Short, specific title",
       "description": "Detailed description with context — include what happened, \
 why it matters, and a concrete suggestion.",
-      "kind": "prompt"
+      "kind": "prompt",
+      "target_repo": "robotsix-chat"
     }
   ]
 }
 
 ``kind`` must be one of: ``prompt``, ``tool``, ``config``, ``code``.
+``target_repo`` must be one of the valid target repos listed in the prompt.
 
 Rules:
 - Only include a ticket when there is a **concrete, actionable** \
@@ -68,7 +70,10 @@ unclear guidance, slow paths, config gaps.
 gaps were exposed, return an empty ``tickets`` list.
 - The ``description`` must be self-contained and actionable — someone \
 reading it later should understand the problem and have a clear idea \
-of what to change."""
+of what to change.
+- Choose ``target_repo`` based on which codebase the improvement \
+concerns — if the issue is about the chat system itself, use the chat \
+repo; if it is about a downstream component, use that component's repo."""
 
 
 def _build_feedback_prompt(
@@ -76,6 +81,7 @@ def _build_feedback_prompt(
     session_id: str,
     turns: list[tuple[str, str]],
     subsession_summaries: list[dict[str, Any]],
+    repo_ids: list[str],
 ) -> str:
     """Build the feedback analysis prompt from session data."""
     transcript_parts: list[str] = []
@@ -98,11 +104,14 @@ def _build_feedback_prompt(
     else:
         subsession_text = "Subsession summaries: (none)"
 
+    valid_repos = ", ".join(repo_ids)
+
     return (
         f"Trigger: {trigger_type}\n"
         f"Session ID: {session_id}\n\n"
         f"Conversation transcript:\n{transcript}\n\n"
         f"{subsession_text}\n\n"
+        f"Valid target repos: {valid_repos}\n\n"
         "Output the JSON analysis now."
     )
 
@@ -133,7 +142,7 @@ class FeedbackRunner:
         self._registry = subsession_registry
         self._board_url = settings.board_url.rstrip("/") if settings.board_url else ""
         self._board_token = settings.board_api_token.get_secret_value()
-        self._repo_id = settings.repo_id
+        self._repo_ids = settings.repo_ids
         self._timeout = settings.timeout
 
     # ------------------------------------------------------------------
@@ -200,7 +209,11 @@ class FeedbackRunner:
 
                 # 2. Build prompt and call the feedback agent.
                 prompt = _build_feedback_prompt(
-                    trigger_type, session_id, turns, subsession_summaries
+                    trigger_type,
+                    session_id,
+                    turns,
+                    subsession_summaries,
+                    self._repo_ids,
                 )
                 analysis = await self._call_agent(
                     prompt, session_id=session_id, trace_metadata=trace_metadata
@@ -209,7 +222,7 @@ class FeedbackRunner:
                     return
 
                 # 3. Parse the JSON response.
-                tickets = self._parse_tickets(analysis)
+                tickets = self._parse_tickets(analysis, repo_ids=self._repo_ids)
                 if not tickets:
                     logger.info(
                         "Feedback run: no actionable tickets (session=%s)", session_id
@@ -334,10 +347,17 @@ class FeedbackRunner:
             span.set_attribute("feedback.total_tickets", total)
 
     @staticmethod
-    def _parse_tickets(analysis_text: str) -> list[dict[str, Any]]:
+    def _parse_tickets(
+        analysis_text: str,
+        *,
+        repo_ids: list[str] | None = None,
+    ) -> list[dict[str, Any]]:
         """Parse the agent's JSON output; return the ``tickets`` list.
 
         Returns an empty list on any parse failure (logged).
+        When *repo_ids* is provided, each ticket's ``target_repo`` is
+        validated against it; invalid or missing values are logged and
+        the ticket is skipped.
         """
         # Strip markdown fences if present.
         text = analysis_text.strip()
@@ -370,6 +390,7 @@ class FeedbackRunner:
             return []
 
         valid_kinds = frozenset({"prompt", "tool", "config", "code"})
+        valid_repos = frozenset(repo_ids) if repo_ids else None
         result: list[dict[str, Any]] = []
         for t in tickets:
             if not isinstance(t, dict):
@@ -380,7 +401,32 @@ class FeedbackRunner:
             if not title or not description or kind not in valid_kinds:
                 logger.debug("Skipping invalid ticket entry: %s", t)
                 continue
-            result.append({"title": title, "description": description, "kind": kind})
+            target_repo = t.get("target_repo", "")
+            if valid_repos is not None:
+                if not target_repo:
+                    logger.warning(
+                        "Skipping ticket %r — missing target_repo; valid repos: %s",
+                        title,
+                        sorted(valid_repos),
+                    )
+                    continue
+                if target_repo not in valid_repos:
+                    logger.warning(
+                        "Skipping ticket %r — target_repo %r not in "
+                        "configured repo_ids %s",
+                        title,
+                        target_repo,
+                        sorted(valid_repos),
+                    )
+                    continue
+            result.append(
+                {
+                    "title": title,
+                    "description": description,
+                    "kind": kind,
+                    "target_repo": target_repo,
+                }
+            )
         return result
 
     async def _file_tickets(
@@ -419,9 +465,10 @@ class FeedbackRunner:
                 f" kind: {ticket['kind']}"
                 f" | session: {session_id}"
                 f" | trigger: {trigger_type}"
+                f" | origin: robotsix-chat"
             )
             payload: dict[str, Any] = {
-                "repo_id": self._repo_id,
+                "repo_id": ticket["target_repo"],
                 "title": ticket["title"],
                 "body": "\n".join(body_lines),
                 "source_tag": "robotsix-chat-feedback",
