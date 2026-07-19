@@ -555,12 +555,9 @@ async def _check_resume_status(
                 )
             else:
                 reason = (
-                    f"HTTP {status_code} for ticket {ticket_id} — "
-                    f"closing subsession."
+                    f"HTTP {status_code} for ticket {ticket_id} — closing subsession."
                 )
-            summary = (
-                f"Ticket {ticket_id} is no longer reachable: {reason}"
-            )
+            summary = f"Ticket {ticket_id} is no longer reachable: {reason}"
             closed = env.registry.mark_closed(
                 sub_id,
                 summary=summary,
@@ -693,9 +690,7 @@ async def _handle_mill_unreachable(
             closed_by="system",
         )
         if closed is not None:
-            await env.delivery.deliver_summary(
-                closed, summary, "mill_unreachable"
-            )
+            await env.delivery.deliver_summary(closed, summary, "mill_unreachable")
         logger.warning(
             "Subsession %s: mill unreachable %d times — closed.",
             sub_id,
