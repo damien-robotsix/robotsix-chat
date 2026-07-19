@@ -15,6 +15,7 @@ from robotsix_chat.config.models import (
     ConversationSettings,
     DiagnosticsSettings,
     DirectRepoSettings,
+    FeedbackSettings,
     GitHubSecuritySettings,
     KnowledgeSettings,
     LangfuseSettings,
@@ -25,6 +26,7 @@ from robotsix_chat.config.models import (
     MemorySettings,
     NotificationSettings,
     RefDocsSettings,
+    RenderUrlSettings,
     RepoStudySettings,
     SelfReviewSettings,
     SubsessionsSettings,
@@ -33,23 +35,8 @@ from robotsix_chat.config.models import (
 from robotsix_chat.config.settings import (
     SYSTEM_PROMPT_VERSION,
     Settings,
-# In the import block from models.py:
-from robotsix_chat.config.models import (
-    ...
-    FeedbackSettings,
-    ...
-    RenderUrlSettings,
-    ...
 )
 
-# In __all__:
-__all__ = [
-    ...
-    "FeedbackSettings",
-    ...
-    "RenderUrlSettings",
-    ...
-]
 __all__ = [
     "SYSTEM_PROMPT_VERSION",
     "CentralDeploySettings",
@@ -59,6 +46,7 @@ __all__ = [
     "ConversationSettings",
     "DiagnosticsSettings",
     "DirectRepoSettings",
+    "FeedbackSettings",
     "GitHubSecuritySettings",
     "KnowledgeSettings",
     "LangfuseSettings",
@@ -69,6 +57,7 @@ __all__ = [
     "MemorySettings",
     "NotificationSettings",
     "RefDocsSettings",
+    "RenderUrlSettings",
     "RepoStudySettings",
     "SelfReviewSettings",
     "Settings",
