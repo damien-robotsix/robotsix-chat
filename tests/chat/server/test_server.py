@@ -25,7 +25,7 @@ from robotsix_chat.chat.server import (
 )
 from robotsix_chat.chat.server.cli import _export_langfuse_env
 from robotsix_chat.config import LangfuseSettings, Settings
-from robotsix_chat.config.models import DirectRepoSettings, GitHubSecuritySettings
+from robotsix_chat.config.models import DirectRepoSettings, GitHubActionsSettings, GitHubSecuritySettings
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.memory import NullMemory
 from robotsix_chat.subsessions import (
@@ -1299,6 +1299,8 @@ async def test_run_server_from_config_creates_agent_from_settings(
         assert isinstance(direct_repo_settings, DirectRepoSettings)
         github_security_settings = call_args[1].pop("github_security_settings")
         assert isinstance(github_security_settings, GitHubSecuritySettings)
+        github_actions_settings = call_args[1].pop("github_actions_settings")
+        assert isinstance(github_actions_settings, GitHubActionsSettings)
         feedback_runner = call_args[1].pop("feedback_runner")
         assert feedback_runner is None
         autonomous_runner = call_args[1].pop("autonomous_runner")

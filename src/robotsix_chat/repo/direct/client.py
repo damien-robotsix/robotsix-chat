@@ -190,7 +190,11 @@ class DirectRepoClient:
             raise RuntimeError(f"GitHub API GET {path}: invalid JSON: {exc}") from exc
 
     async def _request_json(self, method: str, path: str, body: dict[str, Any]) -> Any:
-        """Issue *method* on the GitHub API and return the parsed JSON body."""
+        """Issue *method* on the GitHub API and return the parsed JSON body.
+
+        Returns an empty dict for HTTP 204 No Content (used by
+        ``set_actions_secret`` and ``dispatch_workflow``).
+        """
         url = f"{self._base_url}{path}"
         result = await safe_http_request(
             method,
@@ -202,6 +206,8 @@ class DirectRepoClient:
         )
         if result.error:
             raise RuntimeError(f"GitHub API {method} {path}: {result.error}")
+        if result.status_code == 204:
+            return {}
         try:
             return json.loads(result.text or "")
         except json.JSONDecodeError as exc:
