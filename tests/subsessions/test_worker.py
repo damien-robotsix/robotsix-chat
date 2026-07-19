@@ -29,6 +29,7 @@ from robotsix_chat.subsessions.worker import (
     SubsessionContext,
     SubsessionEnv,
     _check_resume_status,
+    _get_mill_started_at,
     _handle_mill_unreachable,
     _reset_mill_failure_counter,
 )
@@ -966,6 +967,41 @@ def _mock_async_client(response_json=None, side_effect=None):
     return MagicMock(return_value=mock_instance)
 
 
+def _make_response(json_body):
+    """Build a MagicMock httpx.Response with the given JSON body."""
+    resp = MagicMock()
+    resp.json.return_value = json_body
+    resp.raise_for_status.return_value = None
+    return resp
+
+
+def _mock_async_client_dual(*, ticket_json=None, health_json=None):
+    """Build a mock AsyncClient dispatching on URL path.
+
+    ``mock_client.get(url)`` inspects the URL path and returns:
+    - *ticket_json* for URLs containing ``/tickets/``
+    - *health_json* for URLs containing ``/health``
+    - An empty dict otherwise.
+    """
+
+    async def _dispatch(url, **kwargs):
+        url_str = str(url)
+        if "/health" in url_str:
+            return _make_response(health_json or {})
+        if "/tickets/" in url_str:
+            return _make_response(ticket_json or {})
+        return _make_response({})
+
+    mock_client = MagicMock()
+    mock_client.get = _dispatch
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    return MagicMock(return_value=mock_instance)
+
+
 # -- no-checkpoint / no-ticket-id / no-board-url paths -----------------------
 
 
@@ -1065,6 +1101,219 @@ async def test_check_resume_status_blocked_injects_context():
     assert context_msg is not None
     assert "BLOCKED" in context_msg
     assert "TICKET-1" in context_msg
+
+
+# -- stale worker detection on blocked resume ---------------------------------
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_blocked_stale_worker_first_attempt():
+    """First stale-worker resume: injects strong warning context."""
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+        worker_started_at="2024-01-01T00:00:00Z",
+    )
+
+    mock = _mock_async_client_dual(
+        ticket_json={"state": "blocked"},
+        health_json={"status": "alive", "started_at": "2024-01-01T00:00:00Z"},
+    )
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is True
+    assert context_msg is not None
+    assert "BLOCKED" in context_msg
+    assert "NOT been redeployed" in context_msg
+    assert "1/2" in context_msg
+    assert "TICKET-1" in context_msg
+
+    # Checkpoint should have been updated with stale_worker_resume_count.
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.checkpoint is not None
+    assert updated.checkpoint.get("stale_worker_resume_count") == 1
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_blocked_stale_worker_at_cap_closes():
+    """Second stale-worker resume: closes the subsession."""
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+        worker_started_at="2024-01-01T00:00:00Z",
+        stale_worker_resume_count=1,
+    )
+
+    mock = _mock_async_client_dual(
+        ticket_json={"state": "blocked"},
+        health_json={"status": "alive", "started_at": "2024-01-01T00:00:00Z"},
+    )
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is False
+    assert context_msg is not None
+    assert "not been redeployed" in context_msg
+    assert "TICKET-1" in context_msg
+
+    await asyncio.sleep(0)
+
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.status is SubsessionStatus.CLOSED
+    assert updated.close_reason == "stale_worker"
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_blocked_worker_redeployed_resets_counter():
+    """Worker redeployed (different started_at): resets counter, normal context."""
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+        worker_started_at="2024-01-01T00:00:00Z",
+        stale_worker_resume_count=1,
+    )
+
+    mock = _mock_async_client_dual(
+        ticket_json={"state": "blocked"},
+        health_json={"status": "alive", "started_at": "2024-06-15T12:00:00Z"},
+    )
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is True
+    assert context_msg is not None
+    assert "BLOCKED" in context_msg
+    # Should NOT contain the stale-worker warning.
+    assert "NOT been redeployed" not in context_msg
+
+    # Checkpoint should have new started_at and NO stale counter.
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.checkpoint is not None
+    assert updated.checkpoint.get("worker_started_at") == "2024-06-15T12:00:00Z"
+    assert "stale_worker_resume_count" not in updated.checkpoint
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_blocked_health_probe_fails_graceful():
+    """When the health probe fails, proceed with normal blocked context."""
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+    )
+
+    # Health endpoint returns 503; ticket endpoint returns blocked.
+    async def _dispatch(url, **kwargs):
+        url_str = str(url)
+        if "/health" in url_str:
+            resp = MagicMock()
+            resp.raise_for_status.side_effect = httpx.HTTPStatusError(
+                "boom", request=MagicMock(), response=MagicMock(status_code=503)
+            )
+            return resp
+        return _make_response({"state": "blocked"})
+
+    mock_client = MagicMock()
+    mock_client.get = _dispatch
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+    mock = MagicMock(return_value=mock_instance)
+
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is True
+    assert context_msg is not None
+    assert "BLOCKED" in context_msg
+    # Should be the normal context, not the stale-worker variant.
+    assert "NOT been redeployed" not in context_msg
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_blocked_no_previous_started_at_stores_it():
+    """First resume with no stored worker_started_at: stores it, normal context."""
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+        # No worker_started_at key.
+    )
+
+    mock = _mock_async_client_dual(
+        ticket_json={"state": "blocked"},
+        health_json={"status": "alive", "started_at": "2024-01-01T00:00:00Z"},
+    )
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is True
+    assert context_msg is not None
+    assert "BLOCKED" in context_msg
+    assert "NOT been redeployed" not in context_msg
+
+    # worker_started_at should be stored for next time.
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.checkpoint is not None
+    assert updated.checkpoint.get("worker_started_at") == "2024-01-01T00:00:00Z"
+
+
+# -- _get_mill_started_at ----------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_get_mill_started_at_returns_timestamp():
+    """When health returns started_at, it is returned as a string."""
+    mock = _mock_async_client(
+        response_json={"status": "alive", "started_at": "2024-06-15T12:00:00Z"}
+    )
+    with patch("httpx.AsyncClient", mock):
+        result = await _get_mill_started_at("https://mill.example.com")
+    assert result == "2024-06-15T12:00:00Z"
+
+
+@pytest.mark.asyncio
+async def test_get_mill_started_at_missing_key_returns_none():
+    """When health response lacks started_at, returns None."""
+    mock = _mock_async_client(response_json={"status": "alive"})
+    with patch("httpx.AsyncClient", mock):
+        result = await _get_mill_started_at("https://mill.example.com")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_mill_started_at_http_error_returns_none():
+    """When health endpoint errors, returns None."""
+    mock = _mock_async_client(
+        side_effect=httpx.HTTPStatusError(
+            "boom", request=MagicMock(), response=MagicMock(status_code=500)
+        )
+    )
+    with patch("httpx.AsyncClient", mock):
+        result = await _get_mill_started_at("https://mill.example.com")
+    assert result is None
+
+
+@pytest.mark.asyncio
+async def test_get_mill_started_at_connect_error_returns_none():
+    """When health endpoint is unreachable, returns None."""
+    mock = _mock_async_client(side_effect=httpx.ConnectError("refused"))
+    with patch("httpx.AsyncClient", mock):
+        result = await _get_mill_started_at("https://mill.example.com")
+    assert result is None
 
 
 @pytest.mark.asyncio
