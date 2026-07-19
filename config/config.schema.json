@@ -214,7 +214,6 @@
           "writeOnly": true
         },
         "repo_ids": {
-          "default": ["robotsix-chat"],
           "items": {
             "type": "string"
           },
