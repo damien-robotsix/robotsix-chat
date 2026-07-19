@@ -182,4 +182,117 @@ def build_direct_repo_tools(
             body=pr_body,
         )
 
-    return [push_direct_repo_branch, open_direct_repo_pr]
+    async def update_pr_branch(
+        ticket_id: str,
+        repo_full_name: str,
+        pr_number: int,
+    ) -> str:
+        """Attempt to rebase a PR branch onto the latest base branch.
+
+        Calls GitHub's update-branch API, which tries to rebase the PR's head
+        branch onto the current tip of the base branch.  If the rebase succeeds,
+        the PR is updated.  If merge conflicts are detected, the tool returns
+        the conflict details so the agent can decide next steps.
+
+        **Precondition:** The ticket identified by *ticket_id* MUST be in
+        BLOCKED state.  This tool will verify that and refuse otherwise.
+
+        **Scope:** The *repo_full_name* must be within the robotsix-mill
+        GitHub App's current installation scope (checked dynamically at
+        call time).
+
+        Args:
+            ticket_id: The blocked ticket the PR belongs to (e.g.
+                ``"20250624T020652Z-my-ticket-a1b2"``).
+            repo_full_name: GitHub ``owner/name``.
+            pr_number: The PR number to update.
+
+        Returns:
+            A status message — success with a note that the update is queued,
+            or an error describing merge conflicts or other failures.
+
+        """
+        if error := await _assert_blocked_and_scoped(client, ticket_id, repo_full_name):
+            return error
+
+        return await client.update_pr_branch(
+            repo_full_name=repo_full_name,
+            pr_number=pr_number,
+        )
+
+    async def check_pr_merge_conflict(
+        ticket_id: str,
+        repo_full_name: str,
+        pr_number: int,
+    ) -> str:
+        """Check whether a PR has merge conflicts.
+
+        Fetches the PR's mergeability status from GitHub and returns a
+        human-readable summary including the mergeable state and, when
+        available, the specific conflict reason.
+
+        **Precondition:** The ticket identified by *ticket_id* MUST be in
+        BLOCKED state.  This tool will verify that and refuse otherwise.
+
+        **Scope:** The *repo_full_name* must be within the robotsix-mill
+        GitHub App's current installation scope (checked dynamically at
+        call time).
+
+        Args:
+            ticket_id: The blocked ticket the PR belongs to.
+            repo_full_name: GitHub ``owner/name``.
+            pr_number: The PR number to inspect.
+
+        Returns:
+            A status message with mergeability details, or an error message.
+
+        """
+        if error := await _assert_blocked_and_scoped(client, ticket_id, repo_full_name):
+            return error
+
+        try:
+            pr = await client.get_pr(
+                repo_full_name=repo_full_name,
+                pr_number=pr_number,
+            )
+        except Exception as exc:
+            return f"Error fetching PR #{pr_number}: {exc}"
+
+        mergeable = pr.get("mergeable")
+        mergeable_state = pr.get("mergeable_state", "unknown")
+        title = pr.get("title", "(no title)")
+        html_url = pr.get("html_url", "")
+
+        lines = [
+            f"PR #{pr_number} in {repo_full_name}: {title}",
+            f"URL: {html_url}",
+            f"Mergeable state: {mergeable_state}",
+        ]
+
+        if mergeable is None:
+            lines.append(
+                "Mergeability is still being computed by GitHub — "
+                "try again in a few seconds."
+            )
+        elif mergeable is True:
+            lines.append("No merge conflicts detected — PR is mergeable.")
+        elif mergeable is False:
+            lines.append(
+                "Merge conflicts detected — the PR cannot be merged as-is. "
+                "Consider rebasing the branch or resolving conflicts manually."
+            )
+
+        # Include additional fields that may carry useful conflict info
+        for field in ("merged", "merged_at", "merge_commit_sha", "draft"):
+            val = pr.get(field)
+            if val is not None:
+                lines.append(f"{field}: {val}")
+
+        return "\n".join(lines)
+
+    return [
+        push_direct_repo_branch,
+        open_direct_repo_pr,
+        update_pr_branch,
+        check_pr_merge_conflict,
+    ]

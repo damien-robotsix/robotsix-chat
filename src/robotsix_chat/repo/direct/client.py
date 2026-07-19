@@ -387,6 +387,63 @@ class DirectRepoClient:
         except Exception as exc:
             return f"Error opening PR: {exc}"
 
+    async def update_pr_branch(
+        self,
+        *,
+        repo_full_name: str,
+        pr_number: int,
+    ) -> str:
+        """Update a PR branch with the latest base-branch changes (rebase).
+
+        Calls ``PUT /repos/{owner}/{repo}/pulls/{pull_number}/update-branch``
+        which is equivalent to clicking the "Update branch" button on a GitHub
+        PR.  GitHub attempts a rebase by default; if conflicts are detected the
+        endpoint returns 422 with the conflict reason.
+
+        Never raises — returns a success/error message string.
+        """
+        try:
+            url = (
+                f"{self._base_url}/repos/{repo_full_name}"
+                f"/pulls/{pr_number}/update-branch"
+            )
+            result = await safe_http_request(
+                "PUT",
+                url,
+                headers=await self._gh_headers(),
+                timeout=self._s.timeout,
+                label="GitHub API (update-branch)",
+            )
+            if result.ok:
+                return (
+                    f"PR #{pr_number} in {repo_full_name} has been queued for "
+                    f"branch update (rebase).  The update is in progress."
+                )
+            # 422 = unprocessable (typically merge conflict)
+            if result.status_code == 422:
+                detail = result.error or "(no detail)"
+                return (
+                    f"PR #{pr_number} in {repo_full_name} could not be updated: "
+                    f"merge conflict detected.  The branch has conflicts that "
+                    f"must be resolved manually.\n"
+                    f"GitHub response: {detail}"
+                )
+            return f"Error updating PR branch: {result.error or 'unknown error'}"
+        except Exception as exc:
+            return f"Error updating PR branch: {exc}"
+
+    async def get_pr(
+        self,
+        *,
+        repo_full_name: str,
+        pr_number: int,
+    ) -> Any:
+        """Return the PR object from the GitHub API.
+
+        Raises RuntimeError on failure (callers catch and format).
+        """
+        return await self._get_json(f"/repos/{repo_full_name}/pulls/{pr_number}")
+
     async def set_security_and_analysis(
         self,
         repo_full_name: str,
