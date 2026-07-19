@@ -122,4 +122,11 @@ class KnowledgeStore(JsonStoreBase[KnowledgeEntry]):
        created_at="",
        updated_at="",
    )
+      return KnowledgeEntry(
+       id="error",
+       topic="",
+       content=f"Error: no knowledge note found with id '{note_id}'",
+       created_at="",
+       updated_at="",
+   )
    
