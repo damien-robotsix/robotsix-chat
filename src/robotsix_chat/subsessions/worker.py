@@ -145,6 +145,7 @@ def spawn_subsession(
     completed_runs: set[int] | None = None,
     turn_history: list[tuple[str, str]] | None = None,
     checkpoint: dict[str, object] | None = None,
+    dedup_key: str | None = None,
 ) -> str:
     """Validate, register, and launch a subsession worker; return its id.
 
@@ -155,6 +156,13 @@ def spawn_subsession(
     Idempotent: when *sub_id* is given and already registered (e.g. a
     duplicate resume), the existing worker is left alone and the id is
     returned immediately — no second worker is launched.
+
+    *dedup_key* is an optional global-issue deduplication key.  When set
+    on a ``user_chat`` spawn and an active user_chat with the same key
+    already exists, returns the existing subsession's id instead of
+    launching a duplicate — this prevents a single root-cause error
+    (e.g. an ``asyncio.run`` crash affecting multiple ticket monitors)
+    from flooding the user with duplicate side-chats.
     """
     # Idempotency guard: if the subsession already exists (duplicate
     # spawn / resume race), return the existing id without launching
@@ -162,6 +170,13 @@ def spawn_subsession(
     # never fails on capacity / depth / level checks.
     if sub_id is not None and env.registry.get(sub_id) is not None:
         return sub_id
+
+    # Deduplication guard: when a user_chat with a dedup_key already
+    # exists and is active, return its id instead of spawning a duplicate.
+    if dedup_key is not None and kind is SubsessionKind.USER_CHAT:
+        existing_id = env.registry.is_dedup_key_active(dedup_key)
+        if existing_id is not None:
+            return existing_id
 
     cfg = env.settings.subsessions
     if env.registry.count_active() >= cfg.max_concurrent:
@@ -206,6 +221,7 @@ def spawn_subsession(
         completed_runs=completed_runs,
         turn_history=turn_history,
         checkpoint=checkpoint,
+        dedup_key=dedup_key,
     )
     # spawn_subsession runs inside the parent agent's turn, so a plain
     # create_task would snapshot that turn's context — including the active

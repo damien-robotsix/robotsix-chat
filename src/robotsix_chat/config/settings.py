@@ -41,7 +41,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 26
+SYSTEM_PROMPT_VERSION = 27
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -159,6 +159,15 @@ class Settings(BaseModel):
         "limited) — split genuinely independent subtasks, do not chain "
         "for its own sake. Check list_subsessions before spawning to "
         "avoid duplicating running work.\n"
+        "– When spawning a user_chat to report a known global process error "
+        "(e.g. 'asyncio.run() cannot be called from a running event loop', "
+        "or any error that affects multiple tickets/subsessions at once), "
+        "set dedup_key to the exact error message prefix (first 80 chars). "
+        "The system will suppress duplicate side-chats for the same root "
+        "cause — only the first spawn creates a new subsession; subsequent "
+        "spawns return the existing id. This prevents flooding the user "
+        "with redundant notifications. Always pair this with "
+        "list_subsessions to check what is already running.\n"
         "\n"
         "Autonomy:\n"
         "– Proactively perform actions that are clearly safe and reversible "

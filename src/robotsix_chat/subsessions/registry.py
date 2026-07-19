@@ -326,6 +326,9 @@ class SubsessionRegistry:
         self._wake_events: dict[str, asyncio.Event] = {}
         # owner_session_id → set of sub_ids (whole tree, incl. terminal).
         self._by_owner: dict[str, set[str]] = defaultdict(set)
+        # dedup_key → sub_id for active user_chat subsessions — prevents
+        # duplicate side-chats for the same known global issue.
+        self._active_dedup_keys: dict[str, str] = {}
 
         # Extracted collaborators.
         self._store = RegistryStore(
@@ -355,6 +358,7 @@ class SubsessionRegistry:
         completed_runs: set[int] | None = None,
         turn_history: list[tuple[str, str]] | None = None,
         checkpoint: dict[str, object] | None = None,
+        dedup_key: str | None = None,
     ) -> SubsessionInfo:
         """Register a new subsession and publish ``subsession_started``.
 
@@ -398,11 +402,14 @@ class SubsessionRegistry:
             completed_runs=completed_runs or set(),
             turn_history=turn_history or [],
             checkpoint=checkpoint,
+            dedup_key=dedup_key,
         )
         self._subs[info.id] = info
         self._inboxes[info.id] = deque()
         self._wake_events[info.id] = asyncio.Event()
         self._by_owner[owner_session_id].add(info.id)
+        if dedup_key is not None:
+            self._active_dedup_keys[dedup_key] = info.id
         self._store.prune_terminal()
         self._publish(owner_session_id, subsession_started_frame(info.snapshot()))
         self._store.persist()
@@ -558,6 +565,11 @@ class SubsessionRegistry:
         info.status = status
         info.summary = summary
         info.last_activity_at = self._clock()
+
+        # Clean up the dedup key so a new side-chat for the same issue can
+        # be spawned after this one closes.
+        if info.dedup_key is not None:
+            self._active_dedup_keys.pop(info.dedup_key, None)
 
         if status is SubsessionStatus.FAILED:
             info.error = error
@@ -756,6 +768,24 @@ class SubsessionRegistry:
         info.checkpoint = checkpoint
         self._store.persist()
         return True
+
+    def is_dedup_key_active(self, dedup_key: str) -> str | None:
+        """Return the active subsession id for *dedup_key*, or ``None``.
+
+        Only user_chat subsessions with a matching dedup_key are tracked.
+        Returns ``None`` when the key is unknown or the tracked subsession
+        has become terminal (the close/fail path cleans up proactively,
+        but this is a safety net for races).
+        """
+        sub_id = self._active_dedup_keys.get(dedup_key)
+        if sub_id is None:
+            return None
+        info = self._subs.get(sub_id)
+        if info is None or not info.is_active:
+            # Stale entry — clean up proactively.
+            self._active_dedup_keys.pop(dedup_key, None)
+            return None
+        return sub_id
 
     # ------------------------------------------------------------------
     # helpers

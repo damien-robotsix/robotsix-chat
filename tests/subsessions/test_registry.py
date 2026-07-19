@@ -705,3 +705,153 @@ def test_reassign_owner_persists_new_owner(tmp_path: Path) -> None:
     ]
     assert stored, f"subsession {info.id} not found in store: {raw!r}"
     assert stored[0]["owner_session_id"] == "sess-new"
+
+
+# ---------------------------------------------------------------------------
+# dedup key tracking
+# ---------------------------------------------------------------------------
+
+
+def test_is_dedup_key_active_returns_sub_id_when_key_active() -> None:
+    """``is_dedup_key_active`` returns the active subsession id for a known key."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.USER_CHAT,
+        dedup_key="asyncio.run-crash",
+    )
+
+    active_id = registry.is_dedup_key_active("asyncio.run-crash")
+
+    assert active_id == info.id
+
+
+def test_is_dedup_key_active_returns_none_for_unknown_key() -> None:
+    """``is_dedup_key_active`` returns None when the key is not tracked."""
+    registry = SubsessionRegistry(store_path=None)
+
+    assert registry.is_dedup_key_active("nonexistent") is None
+
+
+def test_is_dedup_key_active_returns_none_when_subsession_is_terminal() -> None:
+    """When the tracked subsession is terminal, ``is_dedup_key_active`` returns None.
+
+    Additionally, the stale key is proactively cleaned from the internal map.
+    """
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.USER_CHAT,
+        dedup_key="stale-key",
+    )
+    # Manually close the subsession outside the normal close path that
+    # would clean up the dedup key (simulates a race or direct mutation).
+    registry.mark_closed(info.id, summary="done", reason="completed")
+
+    active_id = registry.is_dedup_key_active("stale-key")
+
+    assert active_id is None
+    # The stale key should have been cleaned up.
+    assert "stale-key" not in registry._active_dedup_keys
+
+
+def test_close_clears_dedup_key_from_active_map() -> None:
+    """``mark_closed`` removes the dedup key so a new side-chat can be spawned."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.USER_CHAT,
+        dedup_key="reboot-required",
+    )
+
+    assert registry.is_dedup_key_active("reboot-required") == info.id
+
+    registry.mark_closed(info.id, summary="resolved", reason="completed")
+
+    assert registry.is_dedup_key_active("reboot-required") is None
+
+
+def test_fail_clears_dedup_key_from_active_map() -> None:
+    """``fail`` removes the dedup key so a new side-chat can be spawned."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.USER_CHAT,
+        dedup_key="crash-loop",
+    )
+
+    assert registry.is_dedup_key_active("crash-loop") == info.id
+
+    registry.fail(info.id, error="something went wrong")
+
+    assert registry.is_dedup_key_active("crash-loop") is None
+
+
+def test_cancel_and_close_clears_dedup_key_from_active_map() -> None:
+    """``cancel_and_close`` removes the dedup key from the active map."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.USER_CHAT,
+        dedup_key="external-close",
+    )
+
+    assert registry.is_dedup_key_active("external-close") == info.id
+
+    registry.cancel_and_close(info.id, reason="parent override", closed_by="parent")
+
+    assert registry.is_dedup_key_active("external-close") is None
+
+
+def test_dedup_key_on_task_is_tracked_but_spawn_filtered() -> None:
+    """The registry tracks dedup keys for all subsession kinds.
+
+    However, spawn_subsession only checks the dedup guard for user_chat kinds.
+
+    ``is_dedup_key_active`` is a low-level lookup that returns whatever
+    is in the map — kind filtering happens at the spawn_subsession layer.
+    """
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.TASK,
+        dedup_key="task-dedup",
+    )
+
+    # is_dedup_key_active does NOT filter by kind — it returns the id.
+    assert registry.is_dedup_key_active("task-dedup") == info.id
+
+
+def test_dedup_key_not_tracked_when_none() -> None:
+    """When dedup_key is None (default), no entry is added to _active_dedup_keys."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.USER_CHAT)
+
+    assert info.dedup_key is None
+    # No key is added to the active map.
+    assert len(registry._active_dedup_keys) == 0
+
+
+def test_new_spawn_with_same_dedup_key_after_close_succeeds() -> None:
+    """After the original subsession closes, a new spawn with the same key works."""
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(
+        registry,
+        kind=SubsessionKind.USER_CHAT,
+        dedup_key="unique-issue",
+        title="first",
+    )
+
+    assert registry.is_dedup_key_active("unique-issue") == first.id
+
+    registry.mark_closed(first.id, summary="done", reason="completed")
+
+    # The key is now free — a second create should succeed.
+    second = _create(
+        registry,
+        kind=SubsessionKind.USER_CHAT,
+        dedup_key="unique-issue",
+        title="second",
+    )
+    assert second.id != first.id
+    assert registry.is_dedup_key_active("unique-issue") == second.id
