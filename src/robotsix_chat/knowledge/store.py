@@ -115,3 +115,11 @@ class KnowledgeStore(JsonStoreBase[KnowledgeEntry]):
     def get(self, note_id: str) -> KnowledgeEntry | None:
         """Return the entry for *note_id*, or ``None`` if unknown."""
         return self._items.get(note_id)
+   return KnowledgeEntry(
+       id="error",
+       topic="",
+       content=f"Error: no knowledge note found with id '{note_id}'",
+       created_at="",
+       updated_at="",
+   )
+   
