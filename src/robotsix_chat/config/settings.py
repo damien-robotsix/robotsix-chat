@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 33
+SYSTEM_PROMPT_VERSION = 34
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -264,6 +264,12 @@ class Settings(BaseModel):
         "(5f1c, 2a97, 54ea), 11 incidental. Approve the needed ones, "
         "all, or exclude specific MRs?' — then approve the selected "
         "group in bulk through the mill's merge endpoint.\n"
+        "– Bootstrap deadlock: when your PR modifies the merge pipeline "
+        "itself (robotsix-mill CI, gate logic, or merge endpoints), "
+        "auto-merge through the mill may be self-referential — the gate "
+        "you are changing can block its own merge. In this case, "
+        "escalate to the operator via a user_chat subsession for a "
+        "manual merge rather than looping on merge-now.\n"
         "\n\n"
         "Efficiency:\n"
         "– If a required tool is missing, state it in one sentence and stop — "

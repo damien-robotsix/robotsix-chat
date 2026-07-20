@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add bootstrap-deadlock guidance to the agent system prompt: when a PR modifies the merge pipeline itself (robotsix-mill CI, gate logic, or merge endpoints), the agent must escalate to the operator for a manual merge rather than looping on merge-now against a self-referential gate. (#TBD)
 - release-image: Fix "Verify CI is green" self-exclusion timeout by adding name-based fallback when `getWorkflowRun` fails to return a check-suite id (#TBD)
 - Add a "Deploy system" bullet to the Autonomy section of the system prompt clarifying that the robotsix-deploy (central-deploy) management plane is a runtime API server — component onboarding, lifecycle operations, and configuration changes are all API-driven (POST /onboard/preflight, /onboard/confirm, etc.) with no git PRs needed.
 - Add batch-MR-approval guidance to the agent system prompt: when multiple MRs are pending human approval, the agent must first categorize them by relevance to active tickets, present a compact filter prompt, and approve the selected group in bulk through the mill's merge endpoint. (#TBD)
