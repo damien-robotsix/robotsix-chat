@@ -56,8 +56,7 @@ calling service from the `X-API-Key` header, so the agent does not pass a servic
 restarts the service that made the call. Use this after a deploy that changed the agent's own
 capabilities (new component, tool, skill, or permission) so the new capability is picked up.
 
-This endpoint cannot restart other managed services — for those, use
-`restart_lifecycle_service`.
+This endpoint cannot restart other managed services — for those, use `restart_lifecycle_service`.
 
 The following endpoints remain forbidden — no tool exists for them and the agent must not attempt to
 reach them through any other path:
@@ -69,7 +68,7 @@ reach them through any other path:
 
 The five read-only tools are pure reads — they make no state changes and can be called freely for
 diagnostics and investigation. The three mutation tools (restart, config-write, env-write) make real
-state changes and are gated by the deploy server's per-repo access toggle.  The `self_restart` tool
+state changes and are gated by the deploy server's per-repo access toggle. The `self_restart` tool
 is a mutation that restarts the agent's own service unconditionally (no toggle required) — it should
 only be called when the agent needs to pick up a new capability after a deploy. Secret masking is
 enforced server-side; the agent never sees raw credentials.
