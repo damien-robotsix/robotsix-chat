@@ -22,6 +22,11 @@
   (merge-now and related endpoints). Prevents the agent from falsely claiming
   it cannot merge approved MRs.
 - Added ``update_pr_branch`` and ``check_pr_merge_conflict`` agent tools to the direct-repo capability. The tools let the agent rebase a PR branch via the GitHub update-branch API and inspect mergeability state, enabling autonomous conflict detection and resolution for blocked tickets.
+- System prompt v28: Add "Verification" section instructing the agent to cross-reference
+  memory-based claims against live system state through available tools. When the user
+  challenges a claim with contradictory observable evidence, re-verify immediately rather
+  than doubling down on memory. Prefer timestamped evidence (commit SHA, deployment
+  timestamp, tool call result) over recollection.
 - Periodic subsessions now auto-escalate when a monitored ticket is stuck at `human_issue_approval`: a new config key `subsessions.human_approval_timeout_runs` (default 5) controls how many consecutive `NO_CHANGE` runs trigger an auto-escalation close with reason `human_approval_timeout`.  The subsession's parent agent receives the summary and can act on it (re-open, notify, etc.).  The resume status check also detects `human_issue_approval` state and updates the checkpoint so the periodic loop can enforce the timeout without re-polling the board.
 - Enable `changelog_autofill` periodic task for auto-committing changelog entries on PRs with failing changelog CI checks.
 - **Breaking:** Remove static `feedback.repo_ids` config key and `FEEDBACK_TARGET_REPOS` env override.  Allowed feedback target repos are now resolved dynamically at run-time from the deploy server's chat-component roster (``DEPLOY_API_KEY`` env var) intersected with the mill board's repo registry.  Falls back to ``["robotsix-chat"]`` when deploy is unreachable.  No chat-side config change or redeploy is needed to add/remove target repos — granting or revoking access in robotsix-deploy is sufficient.

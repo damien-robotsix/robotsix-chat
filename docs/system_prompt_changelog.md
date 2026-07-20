@@ -18,7 +18,22 @@ existing id instead of spawning a duplicate.
 manual cleanup. Extending the dedup guard to all kinds prevents duplicate periodic ticket monitors
 when an agent re-files the same ticket, reducing noise and cognitive load.
 
-**SHA256:** `95aaf72c2f3712613268708002fb7184570d1dde1b85a08cf953112cedfe3be0`
+**SHA256:** `ea1236db91d830f86dfc401efeb61a7ba8603a4e6f096bac982855d89763bfe2`
+
+## v29 — 2026-07-19 — cross-reference-historical-claims-with-live-state-11ec
+
+**Summary:** Add a "Verification" section to the default `agent_instruction`. When reporting the
+state of an external system (repository contents, deployment status, ticket resolution), the agent
+must verify through available tools rather than relying on memory alone. When the user directly
+challenges a claim with contradictory observable evidence, re-verify against the live system
+immediately rather than doubling down on a memory-based assertion. Prefer timestamped evidence
+(commit SHA, deployment timestamp, tool call result) over recollection.
+
+**Rationale:** Memory-based claims that contradict user-observable reality (empty repo, stale
+container) damage trust and require additional verification steps. The agent must treat live system
+state as the source of truth and distrust memory when it conflicts with live observation.
+
+**SHA256:** `d8abc681dfd9de968e6dece0e1d6a51bc8ad2f8c7f2351b5a65ce4a2be1c9610`
 
 ______________________________________________________________________
 
