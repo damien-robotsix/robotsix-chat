@@ -6,8 +6,7 @@ approve/reject endpoints, and AutonomousRunner wiring.
 
 from __future__ import annotations
 
-from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import MagicMock
 
 import pytest
 
@@ -15,12 +14,10 @@ from robotsix_chat.autonomous import (
     AutonomousRunner,
     AutonomousState,
 )
-from robotsix_chat.autonomous.models import AUTONOMOUS_KIND
 from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus
 from robotsix_chat.config.models import AutonomousSettings
 from tests.conftest import MockAgent, mock_app
-
 
 # ---------------------------------------------------------------------------
 # Fixtures
@@ -514,7 +511,7 @@ def test_resume_autonomous_sessions(
 
     # Create a regular chat session (should be ignored).
     s3 = conv_store.create_session(owner_id, kind="chat")
-    sid3: str = str(s3["session_id"])
+    _sid3: str = str(s3["session_id"])
 
     # resume_autonomous_sessions should not raise.
     runner.resume_autonomous_sessions()

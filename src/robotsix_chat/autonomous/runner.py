@@ -9,14 +9,15 @@ from typing import TYPE_CHECKING
 
 from robotsix_chat.autonomous.models import AutonomousState
 from robotsix_chat.chat.events import (
+    agent_message_frame,
     autonomous_approval_required_frame,
     autonomous_respawned_frame,
     autonomous_state_changed_frame,
-    agent_message_frame,
 )
 
 if TYPE_CHECKING:
     from collections.abc import Callable
+    from typing import Any
 
     from robotsix_chat.chat.conversation import ConversationStore
     from robotsix_chat.chat.events import EventBus
