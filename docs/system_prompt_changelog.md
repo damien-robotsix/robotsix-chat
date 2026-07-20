@@ -55,8 +55,6 @@ one reply rather than inspecting every MR individually, reducing back-and-forth.
 
 **SHA256:** `1be126bf59a010259f66e570b008fbceca627fe604447e0e2784bfda968abf99`
 
-______________________________________________________________________
-
 ## v30 — 2026-07-20 — handle-ambiguous-single-word-commands-wi-1d61
 
 **Summary:** Add a pick-list instruction to the Autonomy section: when multiple unowned, actionable
