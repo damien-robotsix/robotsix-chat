@@ -34,6 +34,10 @@ of values; model field defaults fill the gaps.
 - The server binds `server_host:server_port` from the config file (template default
   `127.0.0.1:8000`; containers need `0.0.0.0:8080` in their mounted config).
 
+**Rule:** All new Pydantic config sub-models must include
+`model_config = ConfigDict(extra="forbid")` to reject unknown JSON keys at load time rather than
+silently ignoring them.
+
 ## Deploy stack structure
 
 Two compose files with different jobs (component standard):
