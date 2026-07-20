@@ -190,6 +190,18 @@ When enabled, the agent gains cross-conversation memory:
   persistence across container redeploys.
 - **Dependencies**: a remote embedding server (OpenAI-compatible, e.g. Ollama with `bge-m3`) and an
   extraction LLM (OpenRouter DeepSeek). Neither runs on the chat host.
+- **Resilience features**:
+  - **Write throttling** (`write_throttle_seconds`): a configurable delay between serialised
+    writes prevents bursts of concurrent `merge_insert` calls from OOM-killing the LanceDB worker
+    subprocess.
+  - **Memory budget** (`datafusion_runtime_memory_limit`): the DataFusion memory pool is capped
+    so a single large `merge_insert` cannot exhaust the container's memory.
+  - **Durable backlog** (`write_backlog_path`): exchanges that fail after retries are written
+    to a JSONL backlog and replayed opportunistically on the next successful write — no
+    memories are silently dropped.
+  - **Frozen-store detection** (`frozen_store_alert_minutes`): consecutive write failures
+    lasting longer than the threshold emit a `WARNING` diagnostic so a silently frozen vector
+    store cannot go unnoticed for days.
 
 ______________________________________________________________________
 
