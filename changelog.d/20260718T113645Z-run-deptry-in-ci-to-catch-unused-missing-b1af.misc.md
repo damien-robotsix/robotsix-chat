@@ -1,1 +1,0 @@
-Run deptry in CI to catch unused/missing dependencies

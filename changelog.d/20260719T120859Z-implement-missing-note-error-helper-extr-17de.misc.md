@@ -1,1 +1,0 @@
-Implement \_missing_note_error helper extraction in knowledge/store.py (abandoned from PR #642)

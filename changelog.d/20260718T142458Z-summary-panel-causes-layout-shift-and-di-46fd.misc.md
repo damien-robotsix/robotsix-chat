@@ -1,1 +1,0 @@
-Summary panel causes layout shift and disrupts conversation scroll position

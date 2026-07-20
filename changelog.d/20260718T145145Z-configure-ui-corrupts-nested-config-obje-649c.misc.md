@@ -1,1 +1,0 @@
-Configure UI corrupts nested config objects on save ("[object Object]" / empty-string flattening)

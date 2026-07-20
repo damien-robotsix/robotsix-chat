@@ -1,1 +1,0 @@
-Avoid posting repetitive 'resumed' system notifications for the same background task

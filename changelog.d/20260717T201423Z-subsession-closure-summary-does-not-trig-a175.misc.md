@@ -1,1 +1,0 @@
-Subsession closure summary does not trigger a main-agent run

@@ -1,1 +1,0 @@
-module_curator: verify runtime references before filing reorg tickets that move skill.md

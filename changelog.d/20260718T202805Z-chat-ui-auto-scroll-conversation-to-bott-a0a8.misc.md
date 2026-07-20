@@ -1,1 +1,0 @@
-Chat UI: auto-scroll conversation to bottom when switching sessions

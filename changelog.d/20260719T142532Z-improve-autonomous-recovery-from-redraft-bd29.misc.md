@@ -1,1 +1,0 @@
-Improve autonomous recovery from redraft-loop state-machine bug
