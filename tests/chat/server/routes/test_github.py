@@ -304,7 +304,7 @@ async def test_404_repo_not_in_installation_scope() -> None:
     ) as mock_client_cls:
         mock_client = mock_client_cls.return_value
         mock_client.list_installation_repos = AsyncMock(
-            return_value=["other-org/other-repo"]
+            return_value=["other-org/other-repo"],
         )
         with pytest.raises(HTTPException) as exc_info:
             await github_settings_endpoint(request)
@@ -327,7 +327,7 @@ async def test_502_list_installation_repos_failure() -> None:
     ) as mock_client_cls:
         mock_client = mock_client_cls.return_value
         mock_client.list_installation_repos = AsyncMock(
-            side_effect=RuntimeError("API down")
+            side_effect=RuntimeError("API down"),
         )
         with pytest.raises(HTTPException) as exc_info:
             await github_settings_endpoint(request)
@@ -346,10 +346,10 @@ async def test_502_set_security_and_analysis_returns_error() -> None:
     ) as mock_client_cls:
         mock_client = mock_client_cls.return_value
         mock_client.list_installation_repos = AsyncMock(
-            return_value=["test-org/test-repo"]
+            return_value=["test-org/test-repo"],
         )
         mock_client.set_security_and_analysis = AsyncMock(
-            return_value="Error: something went wrong"
+            return_value="Error: something went wrong",
         )
         with pytest.raises(HTTPException) as exc_info:
             await github_settings_endpoint(request)
@@ -372,10 +372,10 @@ async def test_200_single_feature() -> None:
     ) as mock_client_cls:
         mock_client = mock_client_cls.return_value
         mock_client.list_installation_repos = AsyncMock(
-            return_value=["test-org/test-repo"]
+            return_value=["test-org/test-repo"],
         )
         mock_client.set_security_and_analysis = AsyncMock(
-            return_value="settings applied"
+            return_value="settings applied",
         )
         response = await github_settings_endpoint(request)
 
@@ -405,7 +405,7 @@ async def test_200_multiple_features() -> None:
             "advanced_security": "disabled",
             "secret_scanning": "enabled",  # pragma: allowlist secret
             "secret_scanning_push_protection": "disabled",  # pragma: allowlist secret
-        }
+        },
     )
     with patch(
         "robotsix_chat.chat.server.routes.github.DirectRepoClient",
@@ -413,10 +413,10 @@ async def test_200_multiple_features() -> None:
     ) as mock_client_cls:
         mock_client = mock_client_cls.return_value
         mock_client.list_installation_repos = AsyncMock(
-            return_value=["test-org/test-repo"]
+            return_value=["test-org/test-repo"],
         )
         mock_client.set_security_and_analysis = AsyncMock(
-            return_value="settings applied"
+            return_value="settings applied",
         )
         response = await github_settings_endpoint(request)
 
@@ -444,10 +444,10 @@ async def test_200_disabled_feature() -> None:
     ) as mock_client_cls:
         mock_client = mock_client_cls.return_value
         mock_client.list_installation_repos = AsyncMock(
-            return_value=["test-org/test-repo"]
+            return_value=["test-org/test-repo"],
         )
         mock_client.set_security_and_analysis = AsyncMock(
-            return_value="settings applied"
+            return_value="settings applied",
         )
         response = await github_settings_endpoint(request)
 
