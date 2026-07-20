@@ -195,6 +195,8 @@ SHARED_PARAMS: frozenset[str] = frozenset(
         "direct_repo_settings",
         "github_security_settings",
         "config_path",
+        "autonomous_enabled",
+        "autonomous_runner",
     }
 )
 
@@ -227,6 +229,7 @@ def create_app(
     github_security_settings: GitHubSecuritySettings | None = None,
     config_path: str | None = None,
     autonomous_enabled: bool = False,
+    autonomous_runner: Any = None,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -321,6 +324,12 @@ def create_app(
         autonomous_enabled: When ``True``, autonomous session creation is
             allowed.  When ``False`` (default), ``POST /sessions`` with
             ``kind="autonomous"`` silently falls back to ``"chat"``.
+        autonomous_runner: The
+            :class:`~robotsix_chat.autonomous.AutonomousRunner` that manages
+            autonomous session lifecycle (marker detection, auto-continue,
+            auto-respawn).  When ``None`` and *autonomous_enabled* is
+            ``True``, autonomous sessions can be created but the lifecycle
+            won't be managed (no marker detection, no auto-continue).
 
     """
     routes: list[Route | Mount] = [
@@ -445,6 +454,7 @@ def create_app(
     if config_path is not None:
         app.state.config_path = config_path
     app.state.autonomous_enabled = autonomous_enabled
+    app.state.autonomous_runner = autonomous_runner
     return app
 
 

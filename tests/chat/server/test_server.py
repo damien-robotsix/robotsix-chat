@@ -1303,6 +1303,8 @@ async def test_run_server_from_config_creates_agent_from_settings(
         assert feedback_runner is None
         autonomous_enabled = call_args[1].pop("autonomous_enabled")
         assert autonomous_enabled is False
+        autonomous_runner = call_args[1].pop("autonomous_runner")
+        assert autonomous_runner is None
         assert call_args[1] == {
             "host": "127.0.0.1",
             "port": 8080,

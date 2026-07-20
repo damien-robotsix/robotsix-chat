@@ -275,6 +275,7 @@ class TestRunServer:
             github_security_settings=None,
             config_path=None,
             autonomous_enabled=False,
+            autonomous_runner=None,
         )
 
 

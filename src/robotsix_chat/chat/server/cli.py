@@ -56,6 +56,7 @@ def run_server(
     github_security_settings: Any = None,
     config_path: str | None = None,
     autonomous_enabled: bool = False,
+    autonomous_runner: Any = None,
 ) -> None:
     """Start the chat SSE server on ``host:port``.
 
@@ -88,6 +89,7 @@ def run_server(
         github_security_settings=github_security_settings,
         config_path=config_path,
         autonomous_enabled=autonomous_enabled,
+        autonomous_runner=autonomous_runner,
     )
     uvicorn.run(app, host=host, port=port)
 
@@ -361,6 +363,30 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         """Resume periodic subsessions; report interrupted one-shot work."""
         resume_subsessions(env)
 
+    # -- autonomous session runner -----------------------------------------
+    autonomous_runner = None
+    if settings.autonomous.enabled:
+        from robotsix_chat.autonomous import AutonomousRunner
+
+        # The agent factory closure for auto-continue / auto-respawn.
+        def _autonomous_agent_factory() -> LlmioChatAgent:
+            return create_agent_from_settings(
+                settings=settings,
+                conversation_store=conversation_store,
+                subsession_env=env,
+                event_sink=event_bus,
+            )
+
+        autonomous_runner = AutonomousRunner(
+            conversation_store=conversation_store,
+            event_bus=event_bus,
+            agent_factory=_autonomous_agent_factory,
+            settings=settings.autonomous,
+            run_serializer=run_serializer,
+        )
+        # Resume any persisted autonomous sessions on startup.
+        autonomous_runner.resume_autonomous_sessions()
+
     logger.info(
         "Resolved persistence paths: conversation=%s, knowledge=%s, "
         "memory_data=%s, diagnostics=%s, subsessions=%s",
@@ -393,4 +419,5 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         direct_repo_settings=settings.direct_repo,
         github_security_settings=settings.github_security,
         autonomous_enabled=settings.autonomous.enabled,
+        autonomous_runner=autonomous_runner,
     )

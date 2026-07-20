@@ -166,6 +166,7 @@ class MessageCoalescer:
         owner_id: str,
         had_session: bool,
         summary_agent: ChatAgent | None = None,
+        autonomous_runner: Any = None,
     ) -> asyncio.Queue[tuple[str, str | None]]:
         """Submit a message for batching; return a queue of SSE frames.
 
@@ -197,6 +198,7 @@ class MessageCoalescer:
                         owner_id,
                         had_session,
                         summary_agent,
+                        autonomous_runner,
                     )
                 )
                 self._background_tasks.add(task)
@@ -258,6 +260,7 @@ class MessageCoalescer:
         owner_id: str,
         had_session: bool,
         summary_agent: ChatAgent | None = None,
+        autonomous_runner: Any = None,
     ) -> None:
         """Wait for the debounce window, drain, lock, run agent, fan out."""
         await asyncio.sleep(self._debounce_seconds)
@@ -328,6 +331,13 @@ class MessageCoalescer:
                             msg_id_store.mark_completed(
                                 session_id, p.message_id, full_reply
                             )
+
+                    # Autonomous marker detection and turn counting.
+                    if autonomous_runner is not None:
+                        autonomous_runner.check_reply_for_markers(
+                            session_id, full_reply
+                        )
+                        autonomous_runner.count_execution_turn(session_id)
 
                 await self._fan_out(pending, SSE_DONE_TYPE)
             except asyncio.CancelledError:
@@ -649,6 +659,24 @@ async def chat_endpoint(
 
     lock_key = client_id or session_id
 
+    # -- Autonomous approval gate -----------------------------------------
+    # If the session is autonomous and awaiting approval, reject user
+    # messages — the agent must wait for explicit approval before executing.
+    autonomous_runner = getattr(request.app.state, "autonomous_runner", None)
+    if had_session and autonomous_runner is not None:
+        idle_session = store.get_session(session_id)
+        if idle_session is not None:
+            session_kind = getattr(idle_session, "kind", "chat")
+            session_state = getattr(idle_session, "autonomous_state", None)
+            if session_kind == "autonomous" and session_state == "awaiting_approval":
+                raise HTTPException(
+                    status_code=409,
+                    detail=(
+                        "This autonomous session is awaiting plan approval. "
+                        "Approve or reject the plan before sending messages."
+                    ),
+                )
+
     # -- Submit to the message coalescer ----------------------------------
 
     coalescer: MessageCoalescer = request.app.state.message_coalescer
@@ -671,6 +699,7 @@ async def chat_endpoint(
         owner_id=owner_id or "",
         had_session=had_session,
         summary_agent=title_agent,
+        autonomous_runner=autonomous_runner,
     )
 
     # -- SSE async generator ----------------------------------------------

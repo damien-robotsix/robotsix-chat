@@ -882,6 +882,23 @@ class ConversationStore:
             for owner_state in self._owners.values():
                 owner_state.session_ids.discard(evicted_sid)
 
+    def owner_for_session(self, session_id: str) -> str | None:
+        """Return the ``owner_id`` that owns *session_id*, or ``None``.
+
+        Read-only O(n) scan of owners — cheap for typical owner counts.
+        """
+        for oid, ostate in self._owners.items():
+            if session_id in ostate.session_ids:
+                return oid
+        return None
+
+    def iter_sessions(self) -> list[Session]:
+        """Return a snapshot list of every tracked session.
+
+        The returned list is a copy — mutating it does not affect the store.
+        """
+        return list(self._sessions.values())
+
     def recent_activity(
         self, *, limit: int = 20, max_turns: int = 6
     ) -> list[dict[str, Any]]:
