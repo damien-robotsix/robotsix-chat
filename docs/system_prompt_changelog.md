@@ -107,35 +107,33 @@ back-and-forth and cognitive load.
 
 ______________________________________________________________________
 
-## v29 — 2026-07-19 — prevent-creation-of-duplicate-monitors-f-8af3
+## v29 — 2026-07-19 — prevent-creation-of-duplicate-monitors-f-8af3 & cross-reference-historical-claims-with-live-state-11ec
 
-**Summary:** Extend `dedup_key` deduplication from `user_chat`-only to all subsession kinds. The old
-guidance only mentioned `user_chat` for global error dedup; the new text covers periodic ticket
-monitors too — set `dedup_key` to the ticket id when spawning a monitor (e.g. `'5f1c'`). The Monitor
-lifecycle step also now specifies `dedup_key` usage. The dedup guard in `spawn_subsession` no longer
-filters by `SubsessionKind.USER_CHAT`, so any subsession with an active dedup_key returns the
-existing id instead of spawning a duplicate.
+**Summary (dedup_key):** Extend `dedup_key` deduplication from `user_chat`-only to all subsession
+kinds. The old guidance only mentioned `user_chat` for global error dedup; the new text covers
+periodic ticket monitors too — set `dedup_key` to the ticket id when spawning a monitor (e.g.
+`'5f1c'`). The Monitor lifecycle step also now specifies `dedup_key` usage. The dedup guard in
+`spawn_subsession` no longer filters by `SubsessionKind.USER_CHAT`, so any subsession with an active
+dedup_key returns the existing id instead of spawning a duplicate.
 
 **Rationale:** Two periodic monitors were spawned for the same ticket, causing double reports and
 manual cleanup. Extending the dedup guard to all kinds prevents duplicate periodic ticket monitors
 when an agent re-files the same ticket, reducing noise and cognitive load.
 
-**SHA256:** `ea1236db91d830f86dfc401efeb61a7ba8603a4e6f096bac982855d89763bfe2`
+**SHA256 (dedup_key):** `ea1236db91d830f86dfc401efeb61a7ba8603a4e6f096bac982855d89763bfe2`
 
-## v29 — 2026-07-19 — cross-reference-historical-claims-with-live-state-11ec
-
-**Summary:** Add a "Verification" section to the default `agent_instruction`. When reporting the
-state of an external system (repository contents, deployment status, ticket resolution), the agent
-must verify through available tools rather than relying on memory alone. When the user directly
-challenges a claim with contradictory observable evidence, re-verify against the live system
-immediately rather than doubling down on a memory-based assertion. Prefer timestamped evidence
-(commit SHA, deployment timestamp, tool call result) over recollection.
+**Summary (Verification):** Add a "Verification" section to the default `agent_instruction`. When
+reporting the state of an external system (repository contents, deployment status, ticket
+resolution), the agent must verify through available tools rather than relying on memory alone. When
+the user directly challenges a claim with contradictory observable evidence, re-verify against the
+live system immediately rather than doubling down on a memory-based assertion. Prefer timestamped
+evidence (commit SHA, deployment timestamp, tool call result) over recollection.
 
 **Rationale:** Memory-based claims that contradict user-observable reality (empty repo, stale
 container) damage trust and require additional verification steps. The agent must treat live system
 state as the source of truth and distrust memory when it conflicts with live observation.
 
-**SHA256:** `d8abc681dfd9de968e6dece0e1d6a51bc8ad2f8c7f2351b5a65ce4a2be1c9610`
+**SHA256 (Verification):** `d8abc681dfd9de968e6dece0e1d6a51bc8ad2f8f7c2351b5a65ce4a2be1c9610`
 
 ______________________________________________________________________
 
