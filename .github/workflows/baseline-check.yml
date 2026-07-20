@@ -18,7 +18,7 @@ concurrency:
 jobs:
   baseline:
     name: Baseline (shared)
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/baseline-check.yml@44f210c7429969be62eb8cc4f53bfbd3b744da16  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/baseline-check.yml@43309967ea8011400212a8995d33ca900ee2afed  # main
     with:
       has-docker: true
       has-board: true

@@ -12,6 +12,7 @@
   listing all key mill and deploy endpoints with paths, methods, and descriptions
   so the agent can reliably reference available endpoints without trial-and-error
   discovery.
+- CI: update all shared-workflow pins to match the current robotsix-github-workflows HEAD (43309967…), fixing startup_failure on main caused by a garbage-collected prior SHA.
 - Added defense-in-depth dedup guard in ``SubsessionRegistry.create()``: raises ``SubsessionDedupError`` when a ``dedup_key`` is already active, preventing duplicate monitors even if the ``spawn_subsession`` pre-check is bypassed.
 - Feedback runner: record OTel span error status (`StatusCode.ERROR`) and
   exception details on each ingest POST span when filing fails (non-2xx or

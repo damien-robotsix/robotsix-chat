@@ -15,4 +15,4 @@ jobs:
     name: Weekly Trivy rescan (shared)
     permissions:
       security-events: write  # upload Trivy SARIF to Code Scanning
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/scan-container.yml@44f210c7429969be62eb8cc4f53bfbd3b744da16  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/scan-container.yml@43309967ea8011400212a8995d33ca900ee2afed  # main
