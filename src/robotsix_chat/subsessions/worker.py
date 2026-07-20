@@ -246,10 +246,12 @@ def spawn_subsession(
 
 def _validate_model_level(settings: Settings, model_level: int) -> None:
     """Reject invalid levels and key-bearing levels without a key."""
-    from robotsix_chat.config import level_needs_api_key
+    from robotsix_chat.config import VALID_MODEL_LEVELS, level_needs_api_key
 
-    if model_level not in (1, 2, 3, 4):
-        raise SubsessionLevelError("model_level must be between 1 and 4")
+    if model_level not in VALID_MODEL_LEVELS:
+        raise SubsessionLevelError(
+            f"model_level must be one of {sorted(VALID_MODEL_LEVELS)}"
+        )
     if (
         level_needs_api_key(model_level)
         and not settings.llmio_api_key.get_secret_value()

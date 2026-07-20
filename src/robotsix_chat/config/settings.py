@@ -46,7 +46,7 @@ SYSTEM_PROMPT_VERSION = 34
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
-_VALID_MODEL_LEVELS = frozenset(
+VALID_MODEL_LEVELS = frozenset(
     int(level.value.removeprefix("level")) for level in TierLevel
 )
 
@@ -391,9 +391,9 @@ class Settings(BaseModel):
 
     def model_post_init(self, __context: Any) -> None:
         """Validate fields that cannot be expressed via simple type annotations."""
-        if self.llmio_model_level not in _VALID_MODEL_LEVELS:
+        if self.llmio_model_level not in VALID_MODEL_LEVELS:
             raise ValueError(
-                f"llmio.model_level must be one of {sorted(_VALID_MODEL_LEVELS)}, "
+                f"llmio.model_level must be one of {sorted(VALID_MODEL_LEVELS)}, "
                 f"got {self.llmio_model_level!r}"
             )
         # The keyless Claude SDK provider (level 3) needs no API key;
@@ -408,9 +408,9 @@ class Settings(BaseModel):
                 "it via the `llmio.api_key` field of your config file "
                 "(or use model_level 3, which is keyless)"
             )
-        if self.summary_model_level not in _VALID_MODEL_LEVELS:
+        if self.summary_model_level not in VALID_MODEL_LEVELS:
             raise ValueError(
-                f"summary_model_level must be one of {sorted(_VALID_MODEL_LEVELS)}, "
+                f"summary_model_level must be one of {sorted(VALID_MODEL_LEVELS)}, "
                 f"got {self.summary_model_level!r}"
             )
         # Unlike llmio_model_level, a missing key here is not fatal at config
@@ -436,10 +436,10 @@ class Settings(BaseModel):
             self.subsessions.max_concurrent, 1, "subsessions.max_concurrent"
         )
         self._require_min(self.subsessions.max_depth, 1, "subsessions.max_depth")
-        if self.subsessions.default_model_level not in _VALID_MODEL_LEVELS:
+        if self.subsessions.default_model_level not in VALID_MODEL_LEVELS:
             raise ValueError(
                 f"subsessions.default_model_level must be one of "
-                f"{sorted(_VALID_MODEL_LEVELS)}, "
+                f"{sorted(VALID_MODEL_LEVELS)}, "
                 f"got {self.subsessions.default_model_level!r}"
             )
         self._require_min(
