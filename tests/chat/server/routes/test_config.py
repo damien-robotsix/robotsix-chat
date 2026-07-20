@@ -118,9 +118,9 @@ def test_deep_merge_does_not_mutate_existing() -> None:
 
 def test_mask_secrets_masks_api_key() -> None:
     """Secret keys are replaced with ``***``."""
-    data = {"memory": {"llm": {"api_key": "sk-secret"}}}
+    data = {"memory": {"llm": {"api_key": "sk-secret"}}}  # pragma: allowlist secret
     result = _mask_secrets(data)
-    assert result["memory"]["llm"]["api_key"] == "***"
+    assert result["memory"]["llm"]["api_key"] == "***"  # pragma: allowlist secret
 
 
 def test_mask_secrets_preserves_non_secret() -> None:
@@ -141,20 +141,22 @@ def test_mask_secrets_empty_string_not_masked() -> None:
 def test_mask_secrets_masks_multiple_keys() -> None:
     """Multiple secret keys at different nesting levels are all masked."""
     data = {
-        "llmio_api_key": "sk-abc",
+        "llmio_api_key": "sk-abc",  # pragma: allowlist secret
         "memory": {
-            "llm": {"api_key": "sk-def"},
-            "embedding": {"api_key": "sk-ghi"},
+            "llm": {"api_key": "sk-def"},  # pragma: allowlist secret
+            "embedding": {"api_key": "sk-ghi"},  # pragma: allowlist secret
         },
-        "langfuse": {"secret_key": "sk-lf"},
-        "direct_repo": {"github_app_private_key": "pk"},
+        "langfuse": {"secret_key": "sk-lf"},  # pragma: allowlist secret
+        "direct_repo": {"github_app_private_key": "pk"},  # pragma: allowlist secret
     }
     result = _mask_secrets(data)
     assert result["llmio_api_key"] == "***"
-    assert result["memory"]["llm"]["api_key"] == "***"
-    assert result["memory"]["embedding"]["api_key"] == "***"
-    assert result["langfuse"]["secret_key"] == "***"
-    assert result["direct_repo"]["github_app_private_key"] == "***"
+    assert result["memory"]["llm"]["api_key"] == "***"  # pragma: allowlist secret
+    assert result["memory"]["embedding"]["api_key"] == "***"  # pragma: allowlist secret
+    assert result["langfuse"]["secret_key"] == "***"  # pragma: allowlist secret
+    assert (
+        result["direct_repo"]["github_app_private_key"] == "***"
+    )  # pragma: allowlist secret
 
 
 # ---------------------------------------------------------------------------
@@ -164,20 +166,20 @@ def test_mask_secrets_masks_multiple_keys() -> None:
 
 def test_preserve_masked_secrets_restores_original() -> None:
     """When update has ``***`` for a secret, the existing value is restored."""
-    existing = {"memory": {"llm": {"api_key": "sk-real"}}}
-    update = {"memory": {"llm": {"api_key": "***"}}}
+    existing = {"memory": {"llm": {"api_key": "sk-real"}}}  # pragma: allowlist secret
+    update = {"memory": {"llm": {"api_key": "***"}}}  # pragma: allowlist secret
     merged = _deep_merge(existing, update)
     result = _preserve_masked_secrets(merged, existing, update)
-    assert result["memory"]["llm"]["api_key"] == "sk-real"
+    assert result["memory"]["llm"]["api_key"] == "sk-real"  # pragma: allowlist secret
 
 
 def test_preserve_masked_secrets_lets_new_value_through() -> None:
     """When update supplies a real (non-masked) secret, it is kept."""
-    existing = {"memory": {"llm": {"api_key": "sk-old"}}}
-    update = {"memory": {"llm": {"api_key": "sk-new"}}}
+    existing = {"memory": {"llm": {"api_key": "sk-old"}}}  # pragma: allowlist secret
+    update = {"memory": {"llm": {"api_key": "sk-new"}}}  # pragma: allowlist secret
     merged = _deep_merge(existing, update)
     result = _preserve_masked_secrets(merged, existing, update)
-    assert result["memory"]["llm"]["api_key"] == "sk-new"
+    assert result["memory"]["llm"]["api_key"] == "sk-new"  # pragma: allowlist secret
 
 
 def test_preserve_masked_secrets_non_secret_not_affected() -> None:
@@ -239,10 +241,10 @@ def test_get_config_returns_masked_data(tmp_path: Path) -> None:
         config_path,
         {
             "llmio_model_level": 3,
-            "llmio_api_key": "sk-real",
+            "llmio_api_key": "sk-real",  # pragma: allowlist secret
             "server_port": 8080,
             "memory": {
-                "llm": {"api_key": "sk-mem"},
+                "llm": {"api_key": "sk-mem"},  # pragma: allowlist secret
                 "embedding": {"endpoint": "http://box:11434/v1"},
             },
         },
@@ -254,7 +256,7 @@ def test_get_config_returns_masked_data(tmp_path: Path) -> None:
     assert data["llmio_model_level"] == 3
     assert data["llmio_api_key"] == "***"
     assert data["server_port"] == 8080
-    assert data["memory"]["llm"]["api_key"] == "***"
+    assert data["memory"]["llm"]["api_key"] == "***"  # pragma: allowlist secret
     assert data["memory"]["embedding"]["endpoint"] == "http://box:11434/v1"
 
 
@@ -307,7 +309,7 @@ def test_put_preserves_nested_object_keys(tmp_path: Path) -> None:
         {
             "memory": {
                 "enabled": True,
-                "llm": {"api_key": "sk-llm"},
+                "llm": {"api_key": "sk-llm"},  # pragma: allowlist secret
                 "embedding": {"endpoint": "http://box:11434/v1", "dimensions": 1024},
             },
         },
@@ -320,7 +322,9 @@ def test_put_preserves_nested_object_keys(tmp_path: Path) -> None:
 
     on_disk = _read_config_json(config_path)
     assert on_disk["memory"]["enabled"] is False  # updated
-    assert on_disk["memory"]["llm"]["api_key"] == "sk-llm"  # preserved
+    assert (
+        on_disk["memory"]["llm"]["api_key"] == "sk-llm"
+    )  # preserved  # pragma: allowlist secret
     # preserved (partial save did not touch these)
     assert on_disk["memory"]["embedding"]["endpoint"] == "http://box:11434/v1"
     assert on_disk["memory"]["embedding"]["dimensions"] == 1024  # preserved
@@ -340,7 +344,7 @@ def test_put_rejects_invalid_config(tmp_path: Path) -> None:
             "llmio_model_level": 3,
             "memory": {
                 "enabled": True,
-                "llm": {"api_key": "sk-llm"},
+                "llm": {"api_key": "sk-llm"},  # pragma: allowlist secret
                 "embedding": {"endpoint": "http://box:11434/v1"},
             },
         },
@@ -387,7 +391,7 @@ def test_put_masked_secret_preserves_original(tmp_path: Path) -> None:
         config_path,
         {
             "llmio_model_level": 3,
-            "llmio_api_key": "sk-real-key",
+            "llmio_api_key": "sk-real-key",  # pragma: allowlist secret
         },
     )
     client = _make_app(config_path)
@@ -396,7 +400,7 @@ def test_put_masked_secret_preserves_original(tmp_path: Path) -> None:
     assert resp.status_code == 200
 
     on_disk = _read_config_json(config_path)
-    assert on_disk["llmio_api_key"] == "sk-real-key"
+    assert on_disk["llmio_api_key"] == "sk-real-key"  # pragma: allowlist secret
 
 
 def test_put_new_secret_overwrites_existing(tmp_path: Path) -> None:
@@ -406,16 +410,18 @@ def test_put_new_secret_overwrites_existing(tmp_path: Path) -> None:
         config_path,
         {
             "llmio_model_level": 3,
-            "llmio_api_key": "sk-old",
+            "llmio_api_key": "sk-old",  # pragma: allowlist secret
         },
     )
     client = _make_app(config_path)
 
-    resp = client.put("/config", json={"llmio_api_key": "sk-new"})
+    resp = client.put(
+        "/config", json={"llmio_api_key": "sk-new"}
+    )  # pragma: allowlist secret
     assert resp.status_code == 200
 
     on_disk = _read_config_json(config_path)
-    assert on_disk["llmio_api_key"] == "sk-new"
+    assert on_disk["llmio_api_key"] == "sk-new"  # pragma: allowlist secret
 
 
 # ---------------------------------------------------------------------------
