@@ -129,8 +129,15 @@ def _build_spawn_and_control_tools(
         dedicated panel and a summary comes back here when it closes).
 
         instructions must be complete and self-contained — the subsession
-        agent starts with NO conversation history. title is a short
-        human-readable label shown in the UI panel. Set inherit_context
+        agent starts with NO conversation history. For user_chat decision
+        subsessions, every option presented to the operator (Option A,
+        Option B, …) MUST include a one-line self-contained definition in
+        the instructions, e.g. "Option A: deploy immediately with no grace
+        period. Option B: phased rollout with a 7-day warning gate." The
+        subsession agent is instructed to restate these definitions inline
+        on every operator-facing turn — but it can only do that if you
+        provide them. title is a short human-readable label shown in the
+        UI panel. Set inherit_context
         to True to automatically prepend an ancestor context block (the
         root task and each ancestor's title/prompt summary) so a nested
         child does not start from scratch — useful when spawning from a

@@ -234,7 +234,13 @@ async def test_user_chat_waits_between_turns_and_closes_via_close_state() -> Non
     env.registry.enqueue_message(sub_id, "user", "tell me more")
     await wait_until(lambda: len(agent.calls) == 2)
     assert agent.calls[1]["message"] == "tell me more"
-    assert agent.calls[1]["history"] == [("ask about deploys", "hi there")]
+    # The first turn input includes the user_chat system note prepended
+    # by the worker, so the history entry is (note + prompt, reply).
+    from robotsix_chat.subsessions.worker import _USER_CHAT_FIRST_TURN_NOTE
+
+    assert agent.calls[1]["history"] == [
+        (_USER_CHAT_FIRST_TURN_NOTE + "\n\n" + "ask about deploys", "hi there")
+    ]
     await wait_until(
         lambda: env.registry.get(sub_id).status is SubsessionStatus.WAITING  # type: ignore[union-attr]
     )
