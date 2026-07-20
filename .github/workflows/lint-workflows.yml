@@ -25,7 +25,10 @@ concurrency:
 
 jobs:
   lint-workflows:
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/lint-workflows.yml@43309967ea8011400212a8995d33ca900ee2afed  # main
+    permissions:
+      contents: read       # checkout the repo
+      checks: write        # reviewdog creates check runs via Checks API
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/lint-workflows.yml@44f210c7429969be62eb8cc4f53bfbd3b744da16  # main
     with:
       run-actionlint: false
       run-zizmor: true
