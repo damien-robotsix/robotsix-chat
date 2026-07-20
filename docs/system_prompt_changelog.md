@@ -5,6 +5,24 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v31 — 2026-07-20 — explicit-operator-approval-gate-for-batc-fd34
+
+**Summary:** Add a batch-MR-approval bullet to the Merge / PR management guidance in the Autonomy
+section. When multiple MRs are pending human approval, the agent must first assess which are
+strictly needed for active tickets versus incidental, present a categorized prompt that lets the
+operator filter in one reply (e.g. "14 MRs pending: 3 needed for active tickets, 11 incidental.
+Approve the needed ones, all, or exclude specific MRs?"), and then approve the selected group in
+bulk through the mill's merge endpoint.
+
+**Rationale:** After a gate fix left 14 MRs at the human-approval stage, the assistant lacked
+guidance on which to approve. The operator had to manually check each MR before replying "approve
+only the one you need." The new instruction adds a categorization step so the operator can filter in
+one reply rather than inspecting every MR individually, reducing back-and-forth.
+
+**SHA256:** `1be126bf59a010259f66e570b008fbceca627fe604447e0e2784bfda968abf99`
+
+______________________________________________________________________
+
 ## v30 — 2026-07-20 — handle-ambiguous-single-word-commands-wi-1d61
 
 **Summary:** Add a pick-list instruction to the Autonomy section: when multiple unowned, actionable
