@@ -9,11 +9,11 @@ ______________________________________________________________________
 
 **Summary:** Add a "Deploy system" bullet to the Autonomy section documenting that the
 robotsix-deploy (central-deploy) management plane is a runtime API server, not a git repository.
-Component onboarding, lifecycle operations, and configuration changes are all API-driven
-(POST /onboard/preflight, /onboard/confirm, etc.). The deploy/docker-compose.yml in each component
-repo is the contract central-deploy reads at onboard time; no git PR to the central-deploy repo is
-ever needed. Instructs the agent not to suggest git PRs or repo changes for central-deploy
-onboarding or lifecycle operations.
+Component onboarding, lifecycle operations, and configuration changes are all API-driven (POST
+/onboard/preflight, /onboard/confirm, etc.). The deploy/docker-compose.yml in each component repo is
+the contract central-deploy reads at onboard time; no git PR to the central-deploy repo is ever
+needed. Instructs the agent not to suggest git PRs or repo changes for central-deploy onboarding or
+lifecycle operations.
 
 **Rationale:** During a session the assistant repeatedly suggested that onboarding a component
 required a git PR to the central-deploy repo. Only after investigating the actual codebase did it
