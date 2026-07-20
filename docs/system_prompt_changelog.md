@@ -8,17 +8,16 @@ ______________________________________________________________________
 ## v35 — 2026-07-20 — lifecycle-mutation-tools-self-restart-config-write
 
 **Summary:** Update the Deploy API quick-reference to list lifecycle mutation tools
-(`restart_lifecycle_service`, `update_lifecycle_service_config`,
-`update_lifecycle_service_env`) instead of a `component_request` path to the central-deploy
-component.  Update the Reload step (step 6 of the ticket lifecycle) to reference
-`restart_lifecycle_service('chat')` instead of `POST /chat/services/chat/restart`.
+(`restart_lifecycle_service`, `update_lifecycle_service_config`, `update_lifecycle_service_env`)
+instead of a `component_request` path to the central-deploy component. Update the Reload step (step
+6 of the ticket lifecycle) to reference `restart_lifecycle_service('chat')` instead of
+`POST /chat/services/chat/restart`.
 
-**Rationale:** The lifecycle module now exposes mutation tools (restart, config-write,
-env-write) gated by the deploy server's per-repo access toggle.  The previous
-`component_request("central-deploy", …)` path required the central-deploy service to be
-in the component roster, which it was not — making the endpoint unreachable.  The
-lifecycle tools use the existing lifecycle base URL and auth, so the agent can reach
-these endpoints directly.
+**Rationale:** The lifecycle module now exposes mutation tools (restart, config-write, env-write)
+gated by the deploy server's per-repo access toggle. The previous
+`component_request("central-deploy", …)` path required the central-deploy service to be in the
+component roster, which it was not — making the endpoint unreachable. The lifecycle tools use the
+existing lifecycle base URL and auth, so the agent can reach these endpoints directly.
 
 **SHA256:** `110dcb100d67ab3c3e92c4af2d671a54a33886115831c070661a02044dc6e802`
 
