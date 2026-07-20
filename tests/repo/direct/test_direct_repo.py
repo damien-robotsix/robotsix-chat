@@ -76,13 +76,15 @@ def test_build_direct_repo_tools_disabled() -> None:
     assert build_direct_repo_tools(DirectRepoSettings(enabled=False)) == []
 
 
-def test_build_direct_repo_tools_returns_two_tools() -> None:
-    """Verify that enabled direct_repo returns push_branch and open_pr tools."""
+def test_build_direct_repo_tools_returns_four_tools() -> None:
+    """Verify that enabled direct_repo returns the four expected tools."""
     tools = build_direct_repo_tools(_settings())
-    assert len(tools) == 2
+    assert len(tools) == 4
     names = [t.__name__ for t in tools]
     assert "push_direct_repo_branch" in names
     assert "open_direct_repo_pr" in names
+    assert "update_pr_branch" in names
+    assert "check_pr_merge_conflict" in names
 
 
 # ---------------------------------------------------------------------------
@@ -285,13 +287,26 @@ def test_no_merge_method_on_client() -> None:
 
 
 def test_no_merge_tool_returned() -> None:
-    """Verify that build_direct_repo_tools returns no merge-related tools."""
+    """Verify that build_direct_repo_tools returns no merge-performing tools.
+
+    Tools may reference "merge" in the context of *checking* mergeability
+    (e.g. ``check_pr_merge_conflict``), but never to perform an actual merge.
+    """
     tools = build_direct_repo_tools(_settings())
     names = [t.__name__ for t in tools]
-    for name in names:
-        assert "merge" not in name.lower(), f"Tool '{name}' hints at merge capability"
-    # Only push_branch and open_pr
-    assert sorted(names) == ["open_direct_repo_pr", "push_direct_repo_branch"]
+    # The only tool with "merge" in the name is the *check* tool — verify it
+    # is not a merge-performing tool.
+    merge_named = [n for n in names if "merge" in n.lower()]
+    assert merge_named == ["check_pr_merge_conflict"], (
+        f"Unexpected merge-named tools: {merge_named}"
+    )
+    # Expected set: push, open_pr, update_branch, check_merge_conflict
+    assert sorted(names) == [
+        "check_pr_merge_conflict",
+        "open_direct_repo_pr",
+        "push_direct_repo_branch",
+        "update_pr_branch",
+    ]
 
 
 # ---------------------------------------------------------------------------
@@ -456,6 +471,307 @@ async def test_open_pr_default_body_links_ticket_id(
     body = json.loads(pr_route.calls.last.request.content.decode()).get("body", "")
     assert "t-3" in body
     assert "human review required" in body.lower()
+
+
+# ---------------------------------------------------------------------------
+# update_pr_branch
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_update_pr_branch_success(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """202 response → success message."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-up").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-up", "state": "blocked"})
+        )
+    )
+    respx_mock.get("https://api.github.com/installation/repositories").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.put("https://api.github.com/repos/org/repo/pulls/42/update-branch").mock(
+        return_value=httpx.Response(202, text=json.dumps({"message": "queued"}))
+    )
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "update_pr_branch"][0]
+
+    out = await fn(
+        ticket_id="t-up",
+        repo_full_name="org/repo",
+        pr_number=42,
+    )
+    assert "queued" in out.lower()
+    assert "42" in out
+
+
+@pytest.mark.asyncio
+async def test_update_pr_branch_conflict(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """422 response → conflict message returned."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-conflict").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-conflict", "state": "blocked"})
+        )
+    )
+    respx_mock.get("https://api.github.com/installation/repositories").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.put("https://api.github.com/repos/org/repo/pulls/99/update-branch").mock(
+        return_value=httpx.Response(
+            422,
+            text=json.dumps(
+                {"message": "Update is not possible. Pull request is not mergeable."}
+            ),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "update_pr_branch"][0]
+
+    out = await fn(
+        ticket_id="t-conflict",
+        repo_full_name="org/repo",
+        pr_number=99,
+    )
+    assert "conflict" in out.lower()
+    assert "99" in out
+    assert "not mergeable" in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_update_pr_branch_rejects_non_blocked(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """BLOCKED guard applies to update_pr_branch."""
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-nb").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-nb", "state": "draft"})
+        )
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "update_pr_branch"][0]
+
+    out = await fn(
+        ticket_id="t-nb",
+        repo_full_name="org/repo",
+        pr_number=1,
+    )
+    assert "Refused" in out
+    assert "BLOCKED" in out
+
+
+@pytest.mark.asyncio
+async def test_update_pr_branch_rejects_out_of_scope(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Scope guard applies to update_pr_branch."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-scope").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-scope", "state": "blocked"})
+        )
+    )
+    respx_mock.get("https://api.github.com/installation/repositories").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/other"}]}),
+        )
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "update_pr_branch"][0]
+
+    out = await fn(
+        ticket_id="t-scope",
+        repo_full_name="org/repo",
+        pr_number=1,
+    )
+    assert "Refused" in out
+    assert "scope" in out.lower()
+
+
+# ---------------------------------------------------------------------------
+# check_pr_merge_conflict
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_check_pr_merge_conflict_clean(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """mergeable=True → no-conflict message."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-clean").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-clean", "state": "blocked"})
+        )
+    )
+    respx_mock.get("https://api.github.com/installation/repositories").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/7").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "title": "Fix the thing",
+                    "html_url": "https://github.com/org/repo/pull/7",
+                    "mergeable": True,
+                    "mergeable_state": "clean",
+                    "merged": False,
+                    "draft": False,
+                }
+            ),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "check_pr_merge_conflict"][0]
+
+    out = await fn(
+        ticket_id="t-clean",
+        repo_full_name="org/repo",
+        pr_number=7,
+    )
+    assert "No merge conflicts" in out
+    assert "clean" in out
+
+
+@pytest.mark.asyncio
+async def test_check_pr_merge_conflict_dirty(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """mergeable=False → conflict message."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-dirty").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-dirty", "state": "blocked"})
+        )
+    )
+    respx_mock.get("https://api.github.com/installation/repositories").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/8").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "title": "Breaks the thing",
+                    "html_url": "https://github.com/org/repo/pull/8",
+                    "mergeable": False,
+                    "mergeable_state": "dirty",
+                    "merged": False,
+                }
+            ),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "check_pr_merge_conflict"][0]
+
+    out = await fn(
+        ticket_id="t-dirty",
+        repo_full_name="org/repo",
+        pr_number=8,
+    )
+    assert "Merge conflicts detected" in out
+    assert "dirty" in out
+
+
+@pytest.mark.asyncio
+async def test_check_pr_merge_conflict_unknown(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """mergeable=None → still-computing message."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-unk").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-unk", "state": "blocked"})
+        )
+    )
+    respx_mock.get("https://api.github.com/installation/repositories").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/9").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "title": "Maybe works",
+                    "html_url": "https://github.com/org/repo/pull/9",
+                    "mergeable": None,
+                    "mergeable_state": "unknown",
+                }
+            ),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    fn = [t for t in tools if t.__name__ == "check_pr_merge_conflict"][0]
+
+    out = await fn(
+        ticket_id="t-unk",
+        repo_full_name="org/repo",
+        pr_number=9,
+    )
+    assert "still being computed" in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_check_pr_merge_conflict_rejects_non_blocked(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """BLOCKED guard applies to check_pr_merge_conflict."""
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-nb2").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-nb2", "state": "ready"})
+        )
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "check_pr_merge_conflict"][0]
+
+    out = await fn(
+        ticket_id="t-nb2",
+        repo_full_name="org/repo",
+        pr_number=1,
+    )
+    assert "Refused" in out
+    assert "BLOCKED" in out
 
 
 # ---------------------------------------------------------------------------
@@ -809,7 +1125,12 @@ async def test_list_installation_repos_parses_response(
 
 
 def test_tool_docstrings_forbid_merge() -> None:
-    """Tool docstrings must not suggest merge capability, only deny it."""
+    """Tool docstrings must not suggest merge capability.
+
+    Only denial or descriptive checking of state is allowed.
+    Descriptive uses of "merge" (e.g. "merge conflicts",
+    "mergeable") are fine — they describe state, not a merge action.
+    """
     tools = build_direct_repo_tools(_settings())
     for tool in tools:
         doc = (tool.__doc__ or "").lower()
@@ -821,9 +1142,10 @@ def test_tool_docstrings_forbid_merge() -> None:
         assert "blocked" in doc, (
             f"Tool {tool.__name__} docstring missing BLOCKED mention"
         )
-        # If "merge" appears it must be in a denial context
+        # If "merge" appears it must be descriptive (conflicts, state) OR denial.
+        # Performative merge language is forbidden.
+        performative = ("perform merge", "execute merge", "merge pr", "merge pull")
         if "merge" in doc:
-            assert "not" in doc or "no" in doc, (
-                f"Tool {tool.__name__} docstring"
-                " mentions 'merge' outside denial context"
+            assert not any(p in doc for p in performative), (
+                f"Tool {tool.__name__} docstring uses performative merge language"
             )
