@@ -5,7 +5,7 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
-## v38 — 2026-07-20 — decision-chat-subsessions-must-embed-ful-77c1
+## v38 — 2026-07-20 — decision-chat-subsessions-must-embed-full-77c1
 
 **Summary:** Add an option-label restatement rule to the user_chat subsession guidance. When
 presenting a decision to the operator, the agent must always restate the full definition of each

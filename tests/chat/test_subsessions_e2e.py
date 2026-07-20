@@ -33,6 +33,7 @@ from robotsix_chat.subsessions import (
     SubsessionRegistry,
     spawn_subsession,
 )
+from robotsix_chat.subsessions.worker import _USER_CHAT_FIRST_TURN_NOTE
 from tests.common.subsession_fakes import (
     CapturingAgentFactory,
     FakeAgent,
@@ -150,9 +151,11 @@ async def test_user_chat_subsession_full_lifecycle_over_http() -> None:
 
         # The FakeAgent saw the grown history on its second turn.
         await wait_until(lambda: len(agent.calls) == 2)
-        assert agent.calls[1]["history"] == [
-            ("ask the user about the deploy window", "hello, what do you need?")
-        ]
+        expected_first_turn = (
+            _USER_CHAT_FIRST_TURN_NOTE + "\n\nask the user about the deploy window",
+            "hello, what do you need?",
+        )
+        assert agent.calls[1]["history"] == [expected_first_turn]
 
         # -- transcript grew (assistant, user, assistant) --------------------
         detail = await client.get(f"/subsessions/{sub_id}")
