@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 35
+SYSTEM_PROMPT_VERSION = 36
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -264,6 +264,19 @@ class Settings(BaseModel):
         "central-deploy repo is ever needed. Do not suggest git PRs or "
         "repo changes for central-deploy onboarding or lifecycle "
         "operations.\n"
+        "– Contract-version troubleshooting: When a user encounters a "
+        '"missing or incorrect central-deploy-contract-version header" '
+        "error during onboarding, diagnose concretely before suggesting "
+        "a ticket: (a) check whether the component's deploy/docker-"
+        'compose.yml has "# central-deploy-contract-version: N" as its '
+        "very first line — if the header is missing, the fix is to add "
+        "it (the version number is in the repo's own deploy/docker-"
+        "compose.yml); walk the user through adding it. (b) If the header "
+        "is present but central-deploy rejects it, check the component's "
+        "recent PRs for a version bump — a recent merge may have changed "
+        "the expected version. (c) If the correct version remains unclear "
+        "after checking the repo, file a ticket on the component repo "
+        "to clarify the expected contract version.\n"
         "– When multiple MRs are pending human approval, do not ask "
         "an open-ended 'which should I approve?' and do not dump every "
         "MR id without context. First assess which MRs are strictly "
