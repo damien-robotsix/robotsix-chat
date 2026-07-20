@@ -513,7 +513,13 @@ class CogneeMemory:
             # Write succeeded → reset failure tracking and drain backlog.
             self._write_failure_start = None
             self._consecutive_write_failures = 0
-            await self._drain_backlog()
+            try:
+                await self._drain_backlog()
+            except Exception:
+                logger.exception(
+                    "Backlog drain failed after successful write — "
+                    "backlogged entries preserved for next drain"
+                )
         except TimeoutError:
             logger.warning(
                 "memory write timed out after %.0fs; queued to backlog",
@@ -638,17 +644,39 @@ class CogneeMemory:
         ``_record_write_failure``).
 
         Serialised by ``_drain_lock`` so overlapping calls cannot silently
-        drop entries or replay duplicates.
+        drop entries or replay duplicates.  To eliminate a TOCTOU race with
+        ``_append_to_backlog``, the backlog file is atomically *renamed* to a
+        snapshot before processing; still-failing entries are then appended
+        (not overwritten) to the original path, so entries queued by
+        concurrent failing writes while this drain is in flight are preserved.
+
+        Note: the ``write_throttle_seconds`` delay inside ``_remember_core``
+        applies to every successful drain replay, so a large backlog can take
+        minutes to drain.  This matches the opportunistic design intent:
+        backlog recovery is paced so it does not overwhelm the worker.
         """
         async with self._drain_lock:
             path = Path(self._settings.write_backlog_path)
             if not path.exists():
                 return
+
+            # Atomically consume the backlog so concurrent _append_to_backlog
+            # calls never have their entries clobbered by this drain's final
+            # write.
+            snapshot = path.with_suffix(path.suffix + ".drain")
             try:
-                lines = path.read_text(encoding="utf-8").splitlines()
+                path.rename(snapshot)
             except OSError:
                 return
+
+            try:
+                lines = snapshot.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                snapshot.unlink(missing_ok=True)
+                return
+
             if not lines:
+                snapshot.unlink(missing_ok=True)
                 return
 
             remaining: list[str] = []
@@ -662,9 +690,7 @@ class CogneeMemory:
                 except json.JSONDecodeError:
                     continue
                 try:
-                    async with asyncio.timeout(
-                        self._settings.remember_timeout_seconds
-                    ):
+                    async with asyncio.timeout(self._settings.remember_timeout_seconds):
                         await self._remember_core(
                             entry["user_message"],
                             entry["assistant_message"],
@@ -672,22 +698,32 @@ class CogneeMemory:
                         )
                     drained += 1
                 except Exception:
-                    # Re-append so it is retried on the next drain.
+                    # Track the failure for frozen-store detection so
+                    # permanently-unwritable backlog entries eventually
+                    # trigger the alert (not just live write failures).
+                    self._record_write_failure()
                     remaining.append(line)
 
             if drained:
                 logger.info("Backlog drain: %d exchanges recovered", drained)
 
-            # Rewrite the file with only the remaining (still-failing) entries.
+            # Append still-failing entries back to the (possibly recreated)
+            # backlog file.  We append rather than overwrite so entries
+            # queued by concurrent failing writes while this drain was in
+            # flight are preserved.  The append+fsync is safe for line-
+            # oriented JSONL.
             try:
                 if remaining:
-                    path.write_text(
-                        "\n".join(remaining) + "\n", encoding="utf-8"
-                    )
-                else:
-                    path.unlink(missing_ok=True)
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    with path.open("a", encoding="utf-8") as fh:
+                        for line in remaining:
+                            fh.write(line + "\n")
+                        fh.flush()
+                        os.fsync(fh.fileno())
             except OSError:
                 logger.exception("Failed to update backlog file %s", path)
+            finally:
+                snapshot.unlink(missing_ok=True)
 
 
 def _format_results(results: Any) -> str:

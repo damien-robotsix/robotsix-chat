@@ -3,6 +3,11 @@
 - Document the Pydantic `extra="forbid"` convention as a config-standard rule in AGENT.md
 - Add ``extra="forbid"`` to all Pydantic config models (20 sub-models + top-level ``Settings``). Unknown JSON keys now raise a ``ValidationError`` instead of being silently ignored — a typo like ``"memry"`` for ``"memory"`` is caught at config load rather than causing the operator to wonder why a feature is disabled.
 - Add "CI Failure on Main" triage boilerplate to `docs/triage-boilerplate.md`, with ACKNOWLEDGE decision for main-branch infrastructure failures distinct from the existing OUT-OF-SCOPE boilerplate for PR failures.
+- Fix race condition in durable backlog drain that could silently drop entries
+  queued by concurrent failing writes. Backlog file is now atomically renamed to
+  a snapshot before processing; still-failing entries are appended (not
+  overwritten) to the original path. Drain failures no longer masquerade as
+  write failures, and backlog-entry failures now feed frozen-store detection.
 - Fix race condition in ``_drain_backlog``: add ``_drain_lock`` to prevent
   overlapping drain calls from silently dropping backlog entries or replaying
   duplicates.  Also correct the docstring ghost reference to
