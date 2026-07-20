@@ -6,7 +6,7 @@ import json
 from pathlib import Path
 
 import pytest
-from pydantic import SecretStr
+from pydantic import SecretStr, ValidationError
 
 from robotsix_chat.config import (
     ComponentClientSettings,
@@ -741,3 +741,27 @@ def test_roundtrip_empty_object_field_preserves_structure() -> None:
     )
     # Verify it's not a string
     assert not isinstance(dumped.get("memory", {}).get("langfuse"), str)
+
+
+# ---------------------------------------------------------------------------
+# Unknown-key rejection (extra="forbid")
+# ---------------------------------------------------------------------------
+
+
+class TestUnknownKeys:
+    """Unknown keys in any model raise a ``ValidationError`` (extra="forbid")."""
+
+    def test_top_level_settings_rejects_unknown(self) -> None:
+        """Typo in a top-level key (e.g. ``memry`` for ``memory``) is rejected."""
+        with pytest.raises(ValidationError, match="memry"):
+            Settings(memry={"enabled": True})  # type: ignore[call-arg]
+
+    def test_nested_submodel_rejects_unknown(self) -> None:
+        """Unknown key inside a nested sub-model is rejected."""
+        with pytest.raises(ValidationError, match="typo_key"):
+            MemorySettings(enabled=True, typo_key="value")  # type: ignore[call-arg]
+
+    def test_list_field_model_rejects_unknown(self) -> None:
+        """Unknown key inside a list-field sub-model is rejected."""
+        with pytest.raises(ValidationError, match="unknown_field"):
+            ComponentClientSettings(enabled=True, unknown_field=[])  # type: ignore[call-arg]

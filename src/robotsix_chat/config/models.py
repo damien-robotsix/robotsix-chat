@@ -33,6 +33,7 @@ class MemoryLlmSettings(BaseModel):
     model: str = "openrouter/anthropic/claude-haiku-4.5"
     endpoint: str = "https://openrouter.ai/api/v1"
     api_key: SecretStr = SecretStr("")
+    model_config = ConfigDict(extra="forbid")
 
 
 class MemoryEmbeddingSettings(BaseModel):
@@ -51,6 +52,7 @@ class MemoryEmbeddingSettings(BaseModel):
     dimensions: int = 1024
     api_key: SecretStr = SecretStr("ollama")
     huggingface_tokenizer: str = "BAAI/bge-m3"
+    model_config = ConfigDict(extra="forbid")
 
 
 class MemorySettings(BaseModel):
@@ -90,6 +92,7 @@ class MemorySettings(BaseModel):
     llm: MemoryLlmSettings = Field(default_factory=MemoryLlmSettings)
     embedding: MemoryEmbeddingSettings = Field(default_factory=MemoryEmbeddingSettings)
     langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)
+    model_config = ConfigDict(extra="forbid")
 
 
 class RefDocsSettings(BaseModel):
@@ -120,6 +123,7 @@ class RefDocsSettings(BaseModel):
     github_token: SecretStr = SecretStr("")
     base_url: str = "https://api.github.com"
     timeout: float = 30.0
+    model_config = ConfigDict(extra="forbid")
 
 
 class VersionCheckSettings(BaseModel):
@@ -149,6 +153,7 @@ class VersionCheckSettings(BaseModel):
     base_url: str = "https://api.github.com"
     timeout: float = 30.0
     cache_ttl: float = 300.0
+    model_config = ConfigDict(extra="forbid")
 
 
 class MailSettings(BaseModel):
@@ -174,7 +179,7 @@ class MailSettings(BaseModel):
     api_token: SecretStr = SecretStr("")
     timeout: float = 30.0
 
-    model_config = {"extra": "forbid"}
+    model_config = ConfigDict(extra="forbid")
 
 
 class DiagnosticsSettings(BaseModel):
@@ -214,6 +219,7 @@ class DiagnosticsSettings(BaseModel):
     recurrence_threshold: int = 3
     recurrence_window_days: int = 30
     observation_window_days: int = 30
+    model_config = ConfigDict(extra="forbid")
 
 
 class DirectRepoSettings(BaseModel):
@@ -259,6 +265,7 @@ class DirectRepoSettings(BaseModel):
     board_api_base_url: str = "http://127.0.0.1:8077"
     board_api_token: SecretStr = SecretStr("")
     timeout: float = 30.0
+    model_config = ConfigDict(extra="forbid")
 
 
 class RepoStudySettings(BaseModel):
@@ -299,6 +306,7 @@ class RepoStudySettings(BaseModel):
     max_extracted_bytes: int = 268_435_456
     max_read_bytes: int = 204_800
     timeout: float = 60.0
+    model_config = ConfigDict(extra="forbid")
 
 
 class KnowledgeSettings(BaseModel):
@@ -327,6 +335,7 @@ class KnowledgeSettings(BaseModel):
 
     enabled: bool = True
     path: str = "/data/knowledge.json"
+    model_config = ConfigDict(extra="forbid")
 
 
 class SelfReviewSettings(BaseModel):
@@ -351,6 +360,7 @@ class SelfReviewSettings(BaseModel):
 
     enabled: bool = False
     recent_activity_limit: int = 20
+    model_config = ConfigDict(extra="forbid")
 
 
 class ComponentTarget(BaseModel):
@@ -365,6 +375,7 @@ class ComponentTarget(BaseModel):
 
     base_url: str
     label: str = ""
+    model_config = ConfigDict(extra="forbid")
 
 
 class ComponentClientSettings(BaseModel):
@@ -387,6 +398,7 @@ class ComponentClientSettings(BaseModel):
     enabled: bool = False
     timeout: float = 240.0
     components: list[ComponentTarget] = Field(default_factory=list)
+    model_config = ConfigDict(extra="forbid")
 
 
 class SubsessionsSettings(BaseModel):
@@ -438,6 +450,7 @@ class SubsessionsSettings(BaseModel):
     run_timeout_seconds: float = 600.0
     store_path: str = "/data/subsessions.json"
     transcript_max_entries: int = 200
+    model_config = ConfigDict(extra="forbid")
 
 
 class ConversationSettings(BaseModel):
@@ -461,6 +474,7 @@ class ConversationSettings(BaseModel):
     max_history_turns: int = 50
     max_conversations: int = 1000
     persist_path: str = "/data/conversations.json"
+    model_config = ConfigDict(extra="forbid")
 
 
 class LifecycleSettings(BaseModel):
@@ -486,6 +500,7 @@ class LifecycleSettings(BaseModel):
     base_url: str = ""
     api_key: SecretStr = SecretStr("")
     timeout: float = 30.0
+    model_config = ConfigDict(extra="forbid")
 
 
 class GitHubSecuritySettings(BaseModel):
@@ -525,6 +540,7 @@ class GitHubSecuritySettings(BaseModel):
     github_org: str = "damien-robotsix"
     deploy_api_key: SecretStr = SecretStr("")
     timeout: float = 30.0
+    model_config = ConfigDict(extra="forbid")
 
 
 class NotificationSettings(BaseModel):
@@ -545,6 +561,7 @@ class NotificationSettings(BaseModel):
     """
 
     enabled: bool = False
+    model_config = ConfigDict(extra="forbid")
 
 
 class FeedbackSettings(BaseModel):
@@ -576,6 +593,7 @@ class FeedbackSettings(BaseModel):
     board_url: str = ""
     board_api_token: SecretStr = SecretStr("")
     timeout: float = 60.0
+    model_config = ConfigDict(extra="forbid")
 
 
 class RenderUrlSettings(BaseModel):
@@ -599,6 +617,7 @@ class RenderUrlSettings(BaseModel):
     timeout: float = 30.0
     viewport_width: int = 1280
     viewport_height: int = 720
+    model_config = ConfigDict(extra="forbid")
 
 
 class HttpProbeSettings(BaseModel):
@@ -629,6 +648,7 @@ class HttpProbeSettings(BaseModel):
     )
     max_body_bytes: int = 2048
     max_redirects: int = 5
+    model_config = ConfigDict(extra="forbid")
 
 
 class CentralDeploySettings(BaseModel):
@@ -649,7 +669,7 @@ class CentralDeploySettings(BaseModel):
 
     """
 
-    model_config = {"extra": "forbid"}
+    model_config = ConfigDict(extra="forbid")
 
     url: str = ""
     api_token: SecretStr = SecretStr("")
