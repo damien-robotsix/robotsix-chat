@@ -7,17 +7,15 @@ ______________________________________________________________________
 
 ## v32 — 2026-07-20 — document-mill-merge-now-endpoint-and-add-feda
 
-**Summary:** Add a dedicated "Mill & Deploy Endpoints" section to the default
-`agent_instruction`. Lists all key mill endpoints (ingest, list, get, merge-now,
-resume-blocked, health) and deploy endpoints (self-restart) with paths, HTTP methods,
-component IDs, and descriptions. Instructs the agent to create a knowledge note
-cataloguing these endpoints for cross-session reference.
+**Summary:** Add a dedicated "Mill & Deploy Endpoints" section to the default `agent_instruction`.
+Lists all key mill endpoints (ingest, list, get, merge-now, resume-blocked, health) and deploy
+endpoints (self-restart) with paths, HTTP methods, component IDs, and descriptions. Instructs the
+agent to create a knowledge note cataloguing these endpoints for cross-session reference.
 
-**Rationale:** Despite v28's merge-capability guidance, the agent still failed to
-discover the merge-now endpoint during a session, attempting auto-merge transitions
-that failed repeatedly. A comprehensive, searchable endpoint catalog in the system
-prompt ensures the agent can reference available endpoints reliably without needing
-to discover them through trial and error.
+**Rationale:** Despite v28's merge-capability guidance, the agent still failed to discover the
+merge-now endpoint during a session, attempting auto-merge transitions that failed repeatedly. A
+comprehensive, searchable endpoint catalog in the system prompt ensures the agent can reference
+available endpoints reliably without needing to discover them through trial and error.
 
 **SHA256:** `9bd858c8e09e4828fa636c4a2c849a010819c1ce0acc6aaa863113a576b5aeb8`
 
