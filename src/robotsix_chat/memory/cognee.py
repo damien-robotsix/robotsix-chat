@@ -657,17 +657,23 @@ class CogneeMemory:
         """
         async with self._drain_lock:
             path = Path(self._settings.write_backlog_path)
-            if not path.exists():
-                return
-
-            # Atomically consume the backlog so concurrent _append_to_backlog
-            # calls never have their entries clobbered by this drain's final
-            # write.
             snapshot = path.with_suffix(path.suffix + ".drain")
-            try:
-                path.rename(snapshot)
-            except OSError:
-                return
+
+            if not path.exists():
+                # Recover an orphaned .drain snapshot from a prior crash
+                # mid-drain (the backlog was already renamed away).
+                if not snapshot.exists():
+                    return
+                # Fall through to process the recovered snapshot — skip the
+                # rename because the snapshot already exists.
+            else:
+                # Atomically consume the backlog so concurrent
+                # _append_to_backlog calls never have their entries
+                # clobbered by this drain's final write.
+                try:
+                    path.rename(snapshot)
+                except OSError:
+                    return
 
             try:
                 lines = snapshot.read_text(encoding="utf-8").splitlines()
