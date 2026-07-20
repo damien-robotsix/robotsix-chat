@@ -516,7 +516,7 @@ async def _run_periodic_turn(
                 "Subsession %s: auto-escalating after %d consecutive "
                 "no-change runs in human_issue_approval state.",
                 sub_id,
-                human_approval_cap,
+                consecutive_no_change,
             )
             summary = (
                 f"Ticket has been stuck at human_issue_approval for "

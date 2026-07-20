@@ -1,1 +1,1 @@
-Prevent auto-stopping of monitors on no-change without resolution
+Periodic subsession auto-stop (no_change_auto_stop and human_approval_timeout) now logs a WARNING-level message so operators can see when a monitor ceases watching and decide whether to restart it.
