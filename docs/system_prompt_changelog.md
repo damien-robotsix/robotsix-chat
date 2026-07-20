@@ -5,6 +5,26 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v36 — 2026-07-20 — contract-version-troubleshooting-guide
+
+**Summary:** Add a "Contract-version troubleshooting" bullet to the Deploy system guidance in the
+Autonomy section. When a user encounters a "missing or incorrect central-deploy-contract-version
+header" error during onboarding, the agent must diagnose concretely: (a) check whether the
+component's deploy/docker-compose.yml has the header as its first line and walk the user through
+adding it if missing; (b) if present but rejected, check recent PRs for a version bump; (c) if the
+correct version remains unclear after checking the repo, file a ticket on the component repo to
+clarify the expected contract version. Never just suggest filing a follow-up ticket without first
+checking the header's presence and version.
+
+**Rationale:** During a session the assistant recognized a contract-version error as a lockstep
+mismatch but only offered vague options (file a ticket or redeploy). The user had to debug
+repeatedly. The new guidance gives concrete diagnostic steps so the agent can resolve the error
+directly or pinpoint the exact gap before escalating.
+
+**SHA256:** `ecc395d422b34d30c73f2814f3aaaaaf9c483116869b34ec8ac71ba5153d6287`
+
+______________________________________________________________________
+
 ## v35 — 2026-07-20 — lifecycle-mutation-tools-self-restart-config-write
 
 **Summary:** Update the Deploy API quick-reference to list lifecycle mutation tools
