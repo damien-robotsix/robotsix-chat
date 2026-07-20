@@ -5,6 +5,11 @@
 - Move `lifecycle/skill.md` from `docs/` into the packaged source tree at `src/robotsix_chat/lifecycle/` so the lifecycle skill instructions reach the agent in production (previously the `docs/`-relative path resolved nowhere in the Docker image; `load_lifecycle_skill()` silently returned `""`).
   `docs/lifecycle/skill.md` is now a symlink to the canonical copy.
 - Add contract-version troubleshooting guidance to the system prompt: when users encounter "missing or incorrect central-deploy-contract-version header" errors during onboarding, the assistant now provides concrete diagnostic steps (check for the header, check recent PRs, file a targeted ticket) instead of offering vague workarounds.
+- Add `direct_fix` tool to the direct-repo capability: pushes a commit
+  directly to a target branch as a last-resort escape hatch for blocked
+  tickets that have exhausted the mill's implement cycle limit (≥3 cycles).
+  Gated behind `direct_repo.direct_fix_enabled` (default `false`). Every
+  invocation is audited at WARNING level.
 - Lifecycle module now exposes self-service mutation tools (`restart_lifecycle_service`, `update_lifecycle_service_config`, `update_lifecycle_service_env`) alongside the existing read-only tools.  These succeed or fail based on the deploy server's per-repo access toggle — no new client-side toggle is introduced.  The system prompt now references the lifecycle tools for self-restart instead of the unreachable `component_request("central-deploy", …)` path.
 - Use `VALID_MODEL_LEVELS` (derived from llmio's `TierLevel` enum) instead of a hardcoded `(1, 2, 3, 4)` tuple in subsession model-level validation, so the valid range stays in sync with llmio.
 - Register the `agent_check` periodic workflow (`.robotsix-mill/periodic/agent_check.yaml`) for automated agent/tool integrity checks.

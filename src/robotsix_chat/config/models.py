@@ -223,14 +223,17 @@ class DiagnosticsSettings(BaseModel):
 
 
 class DirectRepoSettings(BaseModel):
-    """Direct-repo push-branch + open-PR capability as the robotsix-mill GitHub App.
+    """Direct-repo push-branch, open-PR, and direct-fix capability.
 
-    When enabled, the chat agent gains two tools: ``push_direct_repo_branch``
-    (create/push a branch with file changes) and ``open_direct_repo_pr``
-    (open a PR from a branch).  Both authenticate as the configured GitHub App
-    installation (JWT → short-lived installation token) and dynamically resolve
-    the allowed repo set from the installation at action time — no static
-    allowlist.
+    Authenticates as the robotsix-mill GitHub App.  When enabled, the chat
+    agent gains tools: ``push_direct_repo_branch``
+    (create/push a branch with file changes), ``open_direct_repo_pr``
+    (open a PR from a branch), and — when *direct_fix_enabled* is also
+    ``True`` — ``direct_fix`` (push a commit directly to a target branch,
+    bypassing the PR flow).  All authenticate as the configured GitHub App
+    installation (JWT → short-lived installation token) and dynamically
+    resolve the allowed repo set from the installation at action time —
+    no static allowlist.
 
     **Guardrails built into the tools (not configurable):**
     - Actions are ONLY permitted for tickets in BLOCKED state.
@@ -238,9 +241,17 @@ class DirectRepoSettings(BaseModel):
     - PRs are opened in a reviewable state with no auto-merge.
     - No merge capability exists on this path.
 
+    **Additional guardrails for ``direct_fix``:**
+    - Ticket must have exhausted its spawn limit (≥3 implement cycles)
+      verified against the board API.
+    - Every direct-fix action is logged at WARNING level for auditability.
+
     Attributes:
         enabled: Master switch.  When ``False``, no direct-repo tools are
             offered.
+        direct_fix_enabled: When ``True`` (and *enabled* is ``True``), the
+            ``direct_fix`` tool is available for pushing commits directly
+            to a target branch after mill exhaustion.  Default ``False``.
         github_app_id: The GitHub App's numeric or slug id.  Required when
             *enabled*.
         github_app_private_key: The app's RSA private key in PEM format.
@@ -258,6 +269,7 @@ class DirectRepoSettings(BaseModel):
     """
 
     enabled: bool = False
+    direct_fix_enabled: bool = False
     github_app_id: str = ""
     github_app_private_key: SecretStr = SecretStr("")
     github_app_installation_id: str = ""

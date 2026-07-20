@@ -5,6 +5,28 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v37 — 2026-07-20 — direct-fix-capability-chat-agent-can-push-validated-fixes
+
+**Summary:** Add a `direct_fix` tool to the system prompt's direct-repo section: when a ticket has
+exhausted the mill's implement cycle limit (≥3 failed implement attempts), the agent may push a
+commit directly to the target branch, bypassing the PR flow. The tool is a last-resort escape hatch
+for mechanically simple, validated-correct fixes (e.g. stale-SHA replacements, file deletions,
+find-replace) that are blocked on rebase churn. Before calling direct_fix the agent must: (a)
+confirm ≥3 implement cycles; (b) verify the fix is deterministic, reviewable, and low-risk; (c) get
+explicit human operator approval via a user_chat subsession. Every invocation is audited at WARNING
+level.
+
+**Rationale:** The direct-repo module now exposes a `direct_fix` tool gated behind
+`direct_repo.direct_fix_enabled`. The system prompt must document the tool and its guardrails so the
+agent knows when and how to use it, including the required pre-conditions and the audit trail
+requirement.
+
+**SHA256:** `ae8151436ae1c006268f845d6713b7031ff49ae5032406a993abac6e009451d9`
+
+______________________________________________________________________
+
+______________________________________________________________________
+
 ## v36 — 2026-07-20 — contract-version-troubleshooting-guide
 
 **Summary:** Add a "Contract-version troubleshooting" bullet to the Deploy system guidance in the
@@ -22,8 +44,6 @@ repeatedly. The new guidance gives concrete diagnostic steps so the agent can re
 directly or pinpoint the exact gap before escalating.
 
 **SHA256:** `ecc395d422b34d30c73f2814f3aaaaaf9c483116869b34ec8ac71ba5153d6287`
-
-______________________________________________________________________
 
 ## v35 — 2026-07-20 — lifecycle-mutation-tools-self-restart-config-write
 

@@ -1,9 +1,10 @@
 """Direct-repository-capability tools for the chat agent.
 
 Exposes :func:`build_direct_repo_tools` — a factory returning the LLM tools
-that let the agent push branches and open PRs against repositories in the
-robotsix-mill GitHub App's installation scope, authenticating as the app.
-Returns no tools when the direct-repo capability is disabled.
+that let the agent push branches, open PRs, and (when enabled) push direct
+fixes against repositories in the robotsix-mill GitHub App's installation
+scope, authenticating as the app.  Returns no tools when the direct-repo
+capability is disabled.
 
 **Guardrails enforced by the tools:**
 - Actions are ONLY permitted for tickets currently in BLOCKED state.
@@ -12,6 +13,12 @@ Returns no tools when the direct-repo capability is disabled.
 - PRs are opened in a reviewable state with no auto-merge; the merge gate
   stays human.
 - No merge capability exists on this path.
+
+**Additional guardrails for ``direct_fix``:**
+- Ticket must have exhausted its spawn limit (≥3 implement cycles),
+  verified against the board API.
+- Every direct-fix action is audited at WARNING log level.
+- The tool is only available when ``direct_fix_enabled`` is ``True``.
 """
 
 from __future__ import annotations
@@ -290,9 +297,139 @@ def build_direct_repo_tools(
 
         return "\n".join(lines)
 
-    return [
+    tools: list[Callable[..., Any]] = [
         push_direct_repo_branch,
         open_direct_repo_pr,
         update_pr_branch,
         check_pr_merge_conflict,
     ]
+
+    # ------------------------------------------------------------------
+    # direct_fix — push directly to target branch (gated on mill exhaustion)
+    # ------------------------------------------------------------------
+
+    if settings.direct_fix_enabled:
+
+        async def direct_fix(
+            ticket_id: str,
+            repo_full_name: str,
+            target_branch: str,
+            files_json: str,
+            commit_message: str = "",
+        ) -> str:
+            """Push a commit directly to a target branch, bypassing the PR flow.
+
+            **DANGER ZONE — last-resort escape hatch.**  This tool pushes a
+            commit directly to *target_branch* (e.g. ``"main"``) without
+            creating a pull request.  It is only available when the ticket
+            has exhausted the mill's implement cycle limit.
+
+            **Preconditions (all enforced by the tool):**
+            1. Ticket MUST be in BLOCKED state.
+            2. Ticket MUST have ≥3 implement cycles (verified via board API).
+            3. *repo_full_name* MUST be in the GitHub App installation scope.
+
+            **Auditability:** Every invocation is logged at WARNING level
+            with the ticket id, repo, branch, and file paths.
+
+            Args:
+                ticket_id: The blocked, mill-exhausted ticket this fix
+                    addresses (e.g. ``"20250624T020652Z-my-ticket-a1b2"``).
+                repo_full_name: GitHub ``owner/name`` (e.g.
+                    ``"robotsix/robotsix-chat"``).
+                target_branch: Branch to push directly to (e.g. ``"main"``).
+                files_json: JSON array of ``{"path": "...", "content": "..."}``
+                    objects describing the files to create or overwrite.
+                    Paths are relative to the repo root.
+                commit_message: Commit message.  Defaults to a message that
+                    references the *ticket_id* and marks it as a direct fix.
+
+            Returns:
+                A status message with the commit SHA on success, or an error
+                message describing why the push was refused or failed.
+
+            """
+            import json
+            import logging
+
+            _logger = logging.getLogger(__name__)
+
+            # --- validate files_json ---
+            try:
+                files: list[dict[str, str]] = json.loads(files_json)
+            except json.JSONDecodeError, TypeError:
+                return (
+                    "Error: files_json must be a valid JSON array "
+                    "of {path, content} objects."
+                )
+
+            if not isinstance(files, list):
+                return "Error: files_json must be a JSON array."
+
+            # --- ensure changelog fragments end with a newline ---
+            for f in files:
+                if (
+                    f.get("path", "").startswith("changelog.d/")
+                    and f["path"].endswith(".md")
+                    and not f.get("content", "").endswith("\n")
+                ):
+                    f["content"] = f["content"] + "\n"
+
+            # --- guard 1+2: BLOCKED + scope ---
+            if error := await _assert_blocked_and_scoped(
+                client, ticket_id, repo_full_name
+            ):
+                return error
+
+            # --- guard 3: ≥3 implement cycles ---
+            cycles = await client.count_implement_cycles(ticket_id)
+            if cycles is None:
+                return (
+                    f"Error: could not fetch ticket data for {ticket_id}. "
+                    "Verify the ticket id and board API connectivity."
+                )
+            if cycles < 3:
+                return (
+                    f"Refused: ticket {ticket_id} has only {cycles} implement "
+                    f"cycle(s).  direct_fix requires ≥3 implement cycles "
+                    "(mill exhaustion).  Use push_direct_repo_branch + "
+                    "open_direct_repo_pr for the standard PR flow."
+                )
+
+            # --- audit log ---
+            file_paths = [f.get("path", "?") for f in files]
+            _logger.warning(
+                "direct_fix: ticket=%s repo=%s branch=%s files=%s",
+                ticket_id,
+                repo_full_name,
+                target_branch,
+                file_paths,
+            )
+
+            # --- push the commit ---
+            msg = commit_message or (
+                f"fix: direct fix for blocked ticket {ticket_id} "
+                f"(mill exhausted after {cycles} implement cycles)"
+            )
+            result = await client.push_commit_to_branch(
+                repo_full_name=repo_full_name,
+                branch_name=target_branch,
+                files=files,
+                commit_message=msg,
+                ticket_id=ticket_id,
+            )
+
+            if "Error" in result or "error" in result.lower():
+                _logger.error(
+                    "direct_fix FAILED: ticket=%s repo=%s branch=%s: %s",
+                    ticket_id,
+                    repo_full_name,
+                    target_branch,
+                    result,
+                )
+
+            return result
+
+        tools.append(direct_fix)
+
+    return tools
