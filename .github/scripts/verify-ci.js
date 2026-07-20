@@ -59,14 +59,25 @@ module.exports = async ({github, context, core}) => {
       })
     );
     currentSuiteId = wfRun.check_suite_id;
-  } catch {
+  } catch (err) {
     // If we can't determine our check suite (permissions, API error),
-    // fall through — the loop will wait on itself and eventually time out
-    // rather than silently passing. This is the safe default.
+    // log the error and fall through to the name-based fallback.
+    core.warning(
+      `Could not determine check suite id: ${err.message}. ` +
+        'Falling back to name-based self-exclusion.'
+    );
   }
 
+  // Two-layer self-exclusion:
+  //   1. Check-suite match (precise, handles re-runs).
+  //   2. Job display-name match (fallback).  context.job is the YAML key
+  //      (e.g. "verify"), not the display name.  We hard-code the display
+  //      names of all jobs in *this* workflow so the exclusion works even
+  //      when getWorkflowRun fails or returns a null check_suite_id.
+  const selfNames = new Set(['Verify CI is green']);
   const isSelf = (r) =>
-    currentSuiteId != null && r.check_suite?.id === currentSuiteId;
+    (currentSuiteId != null && r.check_suite?.id === currentSuiteId) ||
+    selfNames.has(r.name);
 
   let others = [];
   while (true) {
