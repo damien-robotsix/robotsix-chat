@@ -5,6 +5,23 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v34 — 2026-07-20 — improve-handling-of-rebase-conflicts-avo-8b37
+
+**Summary:** Enhance the Remediate step of the Ticket lifecycle with explicit merge/rebase
+conflict handling: the agent must never auto-retry merge/rebase conflicts (they are not
+auto-retryable since the assistant has no conflict-resolution tools), must open a user_chat
+subsession with a specific diagnostic message, and must not loop-retry. Also adds explicit
+categories for substantive blockers (merge/rebase conflicts, missing dependencies, design
+deadlocks) vs transient failures.
+
+**Rationale:** The agent previously loop-retried merge-conflict-blocked tickets, wasting cycles
+and generating noise. This guidance gives the agent a clear branching path: auto-resume only
+transient failures, surface substantive blockers with a specific diagnosis.
+
+**SHA256:** `28625c3b503d2496e6bb56372fdf94d8ebe7bbdb24de179831ec35e376710c53`
+
+______________________________________________________________________
+
 ## v33 — 2026-07-20 — correct-mistaken-understanding-of-centra-0b5b
 
 **Summary:** Add a "Deploy system" bullet to the Autonomy section documenting that the
