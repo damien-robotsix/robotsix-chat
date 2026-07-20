@@ -5,6 +5,7 @@
   service restart — the resume hook now checks the checkpoint before
   spawning a worker and closes the subsession instead, preventing
   re-polling of tickets whose monitors had already been cleanly stopped.
+- Updated the built-in `health` periodic check to use live HTTP probes (`http_probe`) as the primary health signal instead of relying on deploy-run status alone. A green deploy pipeline no longer counts as "healthy" — the probe must confirm the site is actually serving content.
 - Periodic monitor no-change suppression is now more robust: catches common
   LLM paraphrases of "nothing changed" and suppresses verbatim duplicate
   replies, reducing noise when long-running background tasks are tracked.
