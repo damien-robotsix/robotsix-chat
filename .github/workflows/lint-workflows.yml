@@ -19,6 +19,10 @@ on:
 permissions:
   contents: read
 
+concurrency:
+  group: lint-workflows-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
 jobs:
   lint-workflows:
     uses: damien-robotsix/robotsix-github-workflows/.github/workflows/lint-workflows.yml@43309967ea8011400212a8995d33ca900ee2afed  # main
