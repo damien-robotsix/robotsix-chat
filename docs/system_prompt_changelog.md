@@ -16,8 +16,8 @@ bulk through the mill's merge endpoint.
 
 **Rationale:** After a gate fix left 14 MRs at the human-approval stage, the assistant lacked
 guidance on which to approve. The operator had to manually check each MR before replying "approve
-only the one you need." The new instruction adds a categorization step so the operator can filter
-in one reply rather than inspecting every MR individually, reducing back-and-forth.
+only the one you need." The new instruction adds a categorization step so the operator can filter in
+one reply rather than inspecting every MR individually, reducing back-and-forth.
 
 **SHA256:** `1be126bf59a010259f66e570b008fbceca627fe604447e0e2784bfda968abf99`
 
