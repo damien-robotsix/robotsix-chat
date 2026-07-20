@@ -1279,6 +1279,44 @@ async def test_drain_backlog_no_file_is_noop(
     await mem._drain_backlog()
 
 
+@pytest.mark.asyncio
+async def test_drain_backlog_recovers_orphaned_snapshot(
+    cognee_memory: tuple[CogneeMemory, Any],
+    tmp_path: Any,
+) -> None:
+    """_drain_backlog recovers an orphaned .drain snapshot from a prior crash."""
+    import json
+
+    mem, fake = cognee_memory
+    backlog = tmp_path / "backlog.jsonl"
+    mem._settings.write_backlog_path = str(backlog)
+
+    # Simulate a crash mid-drain: write entries into the .drain snapshot
+    # directly (as if the backlog was renamed away and processing never
+    # finished), leaving no primary backlog file.
+    snapshot = backlog.with_suffix(backlog.suffix + ".drain")
+    entries = [
+        {
+            "user_message": "u1",
+            "assistant_message": "a1",
+            "session_id": "s1",
+            "timestamp": 1.0,
+        },
+    ]
+    snapshot.write_text(
+        "\n".join(json.dumps(e) for e in entries) + "\n", encoding="utf-8"
+    )
+
+    await mem._drain_backlog()
+
+    # The orphaned entries should have been replayed.
+    assert fake.add.call_count >= 1
+    # The snapshot should be cleaned up.
+    assert not snapshot.exists()
+    # No backlog file should have been created (all entries succeeded).
+    assert not backlog.exists()
+
+
 # ---------------------------------------------------------------------------
 # Frozen-store detection
 # ---------------------------------------------------------------------------

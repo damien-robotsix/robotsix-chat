@@ -1,5 +1,9 @@
 ## 0.0.0 (unreleased)
 
+- Fix orphaned `.drain` snapshot recovery in cognee backlog drain: if a prior drain
+  crashed mid-processing (after renaming the backlog but before completing the drain),
+  the orphaned snapshot is now detected and replayed instead of being silently
+  overwritten on the next drain cycle.
 - Document the Pydantic `extra="forbid"` convention as a config-standard rule in AGENT.md
 - Add ``extra="forbid"`` to all Pydantic config models (20 sub-models + top-level ``Settings``). Unknown JSON keys now raise a ``ValidationError`` instead of being silently ignored — a typo like ``"memry"`` for ``"memory"`` is caught at config load rather than causing the operator to wonder why a feature is disabled.
 - Add "CI Failure on Main" triage boilerplate to `docs/triage-boilerplate.md`, with ACKNOWLEDGE decision for main-branch infrastructure failures distinct from the existing OUT-OF-SCOPE boilerplate for PR failures.
