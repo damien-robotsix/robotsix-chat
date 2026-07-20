@@ -104,6 +104,9 @@ class CogneeMemory:
         # Serialise writes: concurrent cognify() runs would contend on cognee's
         # shared stores. Recalls stay parallel.
         self._write_lock = asyncio.Lock()
+        # Serialise backlog drains so overlapping drain calls cannot silently
+        # drop entries or replay duplicates.
+        self._drain_lock = asyncio.Lock()
         # Frozen-store detection: track when consecutive write failures began
         # (monotonic seconds since an arbitrary point) so we can alert when the
         # vector store has been failing for longer than the configured threshold.
@@ -632,51 +635,59 @@ class CogneeMemory:
         rewrites each entry through ``_remember_core``, and trims consumed
         entries.  If a backlog entry fails again it stays in the file (the
         drain is best-effort — a persistent-failure freeze is surfaced via
-        ``_record_write_failure`` / ``_check_frozen_store``).
+        ``_record_write_failure``).
+
+        Serialised by ``_drain_lock`` so overlapping calls cannot silently
+        drop entries or replay duplicates.
         """
-        path = Path(self._settings.write_backlog_path)
-        if not path.exists():
-            return
-        try:
-            lines = path.read_text(encoding="utf-8").splitlines()
-        except OSError:
-            return
-        if not lines:
-            return
+        async with self._drain_lock:
+            path = Path(self._settings.write_backlog_path)
+            if not path.exists():
+                return
+            try:
+                lines = path.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                return
+            if not lines:
+                return
 
-        remaining: list[str] = []
-        drained = 0
-        for line in lines:
-            line = line.strip()
-            if not line:
-                continue
+            remaining: list[str] = []
+            drained = 0
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                try:
+                    async with asyncio.timeout(
+                        self._settings.remember_timeout_seconds
+                    ):
+                        await self._remember_core(
+                            entry["user_message"],
+                            entry["assistant_message"],
+                            session_id=entry.get("session_id"),
+                        )
+                    drained += 1
+                except Exception:
+                    # Re-append so it is retried on the next drain.
+                    remaining.append(line)
+
+            if drained:
+                logger.info("Backlog drain: %d exchanges recovered", drained)
+
+            # Rewrite the file with only the remaining (still-failing) entries.
             try:
-                entry = json.loads(line)
-            except json.JSONDecodeError:
-                continue
-            try:
-                async with asyncio.timeout(self._settings.remember_timeout_seconds):
-                    await self._remember_core(
-                        entry["user_message"],
-                        entry["assistant_message"],
-                        session_id=entry.get("session_id"),
+                if remaining:
+                    path.write_text(
+                        "\n".join(remaining) + "\n", encoding="utf-8"
                     )
-                drained += 1
-            except Exception:
-                # Re-append so it is retried on the next drain.
-                remaining.append(line)
-
-        if drained:
-            logger.info("Backlog drain: %d exchanges recovered", drained)
-
-        # Rewrite the file with only the remaining (still-failing) entries.
-        try:
-            if remaining:
-                path.write_text("\n".join(remaining) + "\n", encoding="utf-8")
-            else:
-                path.unlink(missing_ok=True)
-        except OSError:
-            logger.exception("Failed to update backlog file %s", path)
+                else:
+                    path.unlink(missing_ok=True)
+            except OSError:
+                logger.exception("Failed to update backlog file %s", path)
 
 
 def _format_results(results: Any) -> str:
