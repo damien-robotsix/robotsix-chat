@@ -36,7 +36,7 @@ jobs:
 
   ci:
     name: Python CI (shared)
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-ci.yml@44f210c7429969be62eb8cc4f53bfbd3b744da16  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-ci.yml@43309967ea8011400212a8995d33ca900ee2afed  # main
     with:
       python-version: "3.14"
       cov-package: "robotsix_chat"
@@ -58,7 +58,7 @@ jobs:
 
   security:
     name: Security scan (shared)
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-security.yml@44f210c7429969be62eb8cc4f53bfbd3b744da16  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-security.yml@43309967ea8011400212a8995d33ca900ee2afed  # main
     with:
       install-extras: ""
       trufflehog-pr-diff: true
@@ -72,7 +72,7 @@ jobs:
     # Shared reusable gate (repo baseline); the skip-changelog label
     # exemption is handled inside the reusable workflow.
     if: github.event_name == 'pull_request'
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/changelog-check.yml@44f210c7429969be62eb8cc4f53bfbd3b744da16  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/changelog-check.yml@43309967ea8011400212a8995d33ca900ee2afed  # main
     permissions:
       contents: read  # checkout the repo with full history
 
@@ -98,7 +98,7 @@ jobs:
         # mypy resolves from the project's dev group via `uv run`; vulture is
         # not a declared dependency (only a system-hook tool), so provision it
         # — and the pre-commit runner — explicitly with `--with`.
-        run: uv run --with pre-commit --with vulture --with pyright pre-commit run --all-files --show-diff-on-failure
+        run: uv run --frozen --with pre-commit --with vulture --with pyright pre-commit run --all-files --show-diff-on-failure
 
   check-sse-types:
     name: SSE event type audit
