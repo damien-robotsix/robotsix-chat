@@ -20,7 +20,7 @@ in the component roster, which it was not — making the endpoint unreachable.  
 lifecycle tools use the existing lifecycle base URL and auth, so the agent can reach
 these endpoints directly.
 
-**SHA256:** (to be filled by the pipeline)
+**SHA256:** `110dcb100d67ab3c3e92c4af2d671a54a33886115831c070661a02044dc6e802`
 
 ______________________________________________________________________
 
