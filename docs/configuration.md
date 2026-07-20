@@ -246,6 +246,24 @@ the feedback run never auto-approves. Disabled by default.
 | `feedback.board_api_token` | `string` (secret) | `""`    | Optional Bearer token for the board API.                                   |
 | `feedback.timeout`         | `number`          | `60.0`  | Per-request HTTP timeout (seconds) for ingest calls.                       |
 
+#### Observability (Langfuse traces)
+
+Each feedback run produces a named Langfuse trace (`feedback-{trigger}`) tagged `feedback` and
+`{trigger}`. The trace **root span** carries three ticket-count attributes:
+
+| Attribute                 | Description                                 |
+| ------------------------- | ------------------------------------------- |
+| `feedback.total_tickets`  | Total tickets the runner attempted to file. |
+| `feedback.filed_tickets`  | Tickets that received a 2xx response.       |
+| `feedback.failed_tickets` | Tickets that received a non-2xx response or |
+|                           | raised an HTTP exception.                   |
+
+Individual `POST /tickets/ingest` spans set the OTel span status to `StatusCode.ERROR` on failure
+(non-2xx or exception), include an `error.type` attribute (e.g. `http_503`), and call
+`record_exception()` for HTTP exceptions — making filing failures immediately visible in Langfuse
+without requiring log inspection. Span instrumentation errors are caught and never break the filing
+loop.
+
 #### Target repo resolution
 
 Feedback tickets are filed against a set of allowed target repos. The set is resolved

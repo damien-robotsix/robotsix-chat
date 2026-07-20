@@ -30,6 +30,12 @@ except ImportError:  # pragma: no cover — tracing extra absent in minimal inst
     GEN_AI_TOOL_NAME = None  # type: ignore[assignment]
     OP_EXECUTE_TOOL = None  # type: ignore[assignment]
 
+try:
+    from opentelemetry.trace import Status, StatusCode
+except ImportError:  # pragma: no cover — tracing extra absent in minimal installs
+    Status = None  # type: ignore[assignment, misc]
+    StatusCode = None  # type: ignore[assignment, misc]
+
 if TYPE_CHECKING:
     from robotsix_chat.config.models import FeedbackSettings
     from robotsix_chat.llm import LlmioChatAgent
@@ -334,19 +340,21 @@ class FeedbackRunner:
                     return
 
                 # 5. File each ticket.
-                filed = await self._file_tickets(
+                filed, failed = await self._file_tickets(
                     tickets, trigger_type=trigger_type, session_id=session_id
                 )
                 logger.info(
-                    "Feedback run complete: trigger=%s session=%s filed=%d/%d",
+                    "Feedback run complete: trigger=%s session=%s filed=%d/%d"
+                    " failed=%d",
                     trigger_type,
                     session_id,
                     filed,
                     len(tickets),
+                    failed,
                 )
 
                 # 6. Stamp outcome metadata on the trace root span.
-                self._stamp_outcome(filed, len(tickets))
+                self._stamp_outcome(filed, len(tickets), failed=failed)
         except Exception:
             logger.exception(
                 "Feedback run failed: trigger=%s session=%s",
@@ -441,13 +449,14 @@ class FeedbackRunner:
             )
 
     @staticmethod
-    def _stamp_outcome(filed: int, total: int) -> None:
+    def _stamp_outcome(filed: int, total: int, *, failed: int = 0) -> None:
         """Stamp feedback outcome metadata on the current recording span."""
         if get_recording_span is None:
             return
         span = get_recording_span()
         if span is not None:
             span.set_attribute("feedback.filed_tickets", filed)
+            span.set_attribute("feedback.failed_tickets", failed)
             span.set_attribute("feedback.total_tickets", total)
 
     @staticmethod
@@ -538,10 +547,10 @@ class FeedbackRunner:
         *,
         trigger_type: str,
         session_id: str,
-    ) -> int:
-        """POST each ticket to ``/tickets/ingest``; return the count filed."""
+    ) -> tuple[int, int]:
+        """POST each ticket to ``/tickets/ingest``; return (filed, failed)."""
         if not self._board_url:
-            return 0
+            return (0, 0)
 
         ingest_url = f"{self._board_url}/tickets/ingest"
         headers: dict[str, str] = {
@@ -557,6 +566,7 @@ class FeedbackRunner:
         _span_name = OP_EXECUTE_TOOL if OP_EXECUTE_TOOL is not None else "mill_ingest"
 
         filed = 0
+        failed = 0
         for ticket in tickets:
             # Fold runner-level metadata into the body so it survives
             # the mill ingest round-trip even though mill's TicketIngest
@@ -590,6 +600,7 @@ class FeedbackRunner:
 
                 _span_ctx = contextlib.nullcontext()
 
+            _span: Any = None
             try:
                 with _span_ctx as _span:
                     async with httpx.AsyncClient(timeout=self._timeout) as client:
@@ -598,20 +609,42 @@ class FeedbackRunner:
                         )
                     if _span is not None:
                         _span.set_attribute("http.status_code", resp.status_code)
-                if 200 <= resp.status_code < 300:
-                    filed += 1
-                    logger.debug(
-                        "Feedback ticket filed: %s (HTTP %d)",
-                        ticket["title"],
-                        resp.status_code,
-                    )
-                else:
-                    logger.warning(
-                        "Feedback ticket ingest returned %d for %r: %s",
-                        resp.status_code,
-                        ticket["title"],
-                        resp.text[:200],
-                    )
-            except Exception:
+                    if 200 <= resp.status_code < 300:
+                        filed += 1
+                        logger.debug(
+                            "Feedback ticket filed: %s (HTTP %d)",
+                            ticket["title"],
+                            resp.status_code,
+                        )
+                    else:
+                        failed += 1
+                        logger.warning(
+                            "Feedback ticket ingest returned %d for %r: %s",
+                            resp.status_code,
+                            ticket["title"],
+                            resp.text[:200],
+                        )
+                        if _span is not None and StatusCode is not None:
+                            _span.set_status(
+                                Status(StatusCode.ERROR, f"HTTP {resp.status_code}")
+                            )
+                            _span.set_attribute(
+                                "error.type", f"http_{resp.status_code}"
+                            )
+            except Exception as exc:
+                failed += 1
                 logger.exception("Failed to file feedback ticket: %s", ticket["title"])
-        return filed
+                if _span is not None:
+                    try:
+                        if StatusCode is not None:
+                            _span.set_status(Status(StatusCode.ERROR, str(exc)))
+                        _span.record_exception(exc)
+                    except Exception:
+                        # Never let span instrumentation break the filing loop.
+                        logger.debug(
+                            "Span instrumentation failed for ticket %r: %s",
+                            ticket["title"],
+                            exc,
+                            exc_info=True,
+                        )
+        return (filed, failed)
