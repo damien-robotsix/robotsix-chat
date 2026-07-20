@@ -30,6 +30,7 @@
   var currentAssistantBubble = null;  // the <div> receiving tokens
   var rawAssistantText       = "";    // accumulated raw text for markdown rendering
   var typingIndicatorEl      = null;  // the animated dots element
+  var lastModelTimestampEl   = null;  // timestamp element for last model message
   var messageQueue = [];       // FIFO queue of { text, el } for busy-state
   // (currentRequestSessionId removed — unused; cross-session guard uses
   //  the requestSessionId captured inside doPost instead.)
@@ -486,6 +487,23 @@
     if (hours < 24) return hours + "h ago";
     var days = Math.floor(hours / 24);
     return days + "d ago";
+  }
+
+  function updateLastModelTimestamp(ts) {
+    // Show a relative timestamp for the last model message at the bottom
+    // of the chat area.  `ts` is a Unix timestamp in seconds.
+    if (lastModelTimestampEl) {
+      lastModelTimestampEl.remove();
+      lastModelTimestampEl = null;
+    }
+    if (!ts) return;
+    var el = document.createElement("div");
+    el.id = "last-model-timestamp";
+    el.textContent = relativeTime(ts);
+    el.title = new Date(ts * 1000).toLocaleString();
+    chatEl.appendChild(el);
+    lastModelTimestampEl = el;
+    scrollToBottom();
   }
 
   function updateActiveHighlight() {
@@ -1452,6 +1470,7 @@
     currentAssistantBubble = null;
     rawAssistantText = "";
     typingIndicatorEl = null;
+    if (lastModelTimestampEl) { lastModelTimestampEl.remove(); lastModelTimestampEl = null; }
     // Also clear queued messages — they belong to the old session.
     messageQueue = [];
     // Reset state so the composer is not blocked.
@@ -2094,6 +2113,8 @@
           if (state === "sending") {
             hideTypingIndicator();
             state = "streaming";
+            // Remove the previous model-message timestamp.
+            if (lastModelTimestampEl) { lastModelTimestampEl.remove(); lastModelTimestampEl = null; }
           }
           var content = frame.content;
           if (typeof content === "string") {
@@ -2105,6 +2126,8 @@
           setConnectionStatus(true);
           state = "idle";
           updateSendBusy();
+          // Show the timestamp of the last model message.
+          updateLastModelTimestamp(frame.timestamp);
           // The server may have rerouted this turn into a continuation
           // session (idle-timeout compaction) — adopt it before anything
           // below reads activeSessionId, so the summary refresh and any
