@@ -10,6 +10,7 @@
   tickets that have exhausted the mill's implement cycle limit (≥3 cycles).
   Gated behind `direct_repo.direct_fix_enabled` (default `false`). Every
   invocation is audited at WARNING level.
+- Remove stale `agent_instruction` field from `config/config.json` so the code default in `Settings.agent_instruction` (v35) applies automatically. The committed config file is no longer a second source of truth for the system prompt — it drifts from the code default by ~10 sections and no automated CI check validated it. Now the code default is the single source of truth; operators who need a custom prompt can still add `"agent_instruction"` to their local or deployed config.
 - Lifecycle module now exposes self-service mutation tools (`restart_lifecycle_service`, `update_lifecycle_service_config`, `update_lifecycle_service_env`) alongside the existing read-only tools.  These succeed or fail based on the deploy server's per-repo access toggle — no new client-side toggle is introduced.  The system prompt now references the lifecycle tools for self-restart instead of the unreachable `component_request("central-deploy", …)` path.
 - Use `VALID_MODEL_LEVELS` (derived from llmio's `TierLevel` enum) instead of a hardcoded `(1, 2, 3, 4)` tuple in subsession model-level validation, so the valid range stays in sync with llmio.
 - Register the `agent_check` periodic workflow (`.robotsix-mill/periodic/agent_check.yaml`) for automated agent/tool integrity checks.
