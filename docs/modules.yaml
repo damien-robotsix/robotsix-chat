@@ -144,6 +144,7 @@ modules:
       - tests/chat/server/routes/__init__.py
       - tests/chat/server/routes/test_shared.py
       - tests/chat/server/routes/test_config.py
+      - tests/chat/server/routes/test_github.py
 
   - id: common
     description: "Shared utilities — provides safe_http_request() for consistent httpx error handling across HTTP clients, and JsonStoreBase for JSON-persisted dataclass stores."
