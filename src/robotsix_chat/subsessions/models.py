@@ -80,6 +80,18 @@ class SubsessionPeriodicSpawnError(RuntimeError):
     """Raised when a periodic subsession attempts to spawn a periodic child."""
 
 
+class SubsessionDedupError(RuntimeError):
+    """Raised by ``SubsessionRegistry.create`` when *dedup_key* is already active.
+
+    Carries the *existing_id* of the active subsession so the caller can
+    return it instead of creating a duplicate.
+    """
+
+    def __init__(self, existing_id: str) -> None:
+        super().__init__(f"dedup_key already active for subsession {existing_id}")
+        self.existing_id = existing_id
+
+
 @dataclass
 class TranscriptEntry:
     """One rendered line of a subsession's conversation transcript."""

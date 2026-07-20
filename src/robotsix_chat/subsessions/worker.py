@@ -34,6 +34,7 @@ from .delivery import ParentDelivery
 from .models import (
     InboxMessage,
     SubsessionCapacityError,
+    SubsessionDedupError,
     SubsessionDepthError,
     SubsessionInfo,
     SubsessionIntervalError,
@@ -206,24 +207,27 @@ def spawn_subsession(
     if inherit_context and parent_id is not None:
         prompt = _build_ancestor_context(env.registry, parent_id) + prompt
 
-    info = env.registry.create(
-        kind=kind,
-        owner_session_id=owner_session_id,
-        parent_id=parent_id,
-        depth=depth,
-        title=title,
-        prompt=prompt,
-        model_level=model_level,
-        interval_seconds=interval_seconds,
-        include_previous_result=include_previous_result,
-        max_runs=max_runs,
-        sub_id=sub_id,
-        runs=runs,
-        completed_runs=completed_runs,
-        turn_history=turn_history,
-        checkpoint=checkpoint,
-        dedup_key=dedup_key,
-    )
+    try:
+        info = env.registry.create(
+            kind=kind,
+            owner_session_id=owner_session_id,
+            parent_id=parent_id,
+            depth=depth,
+            title=title,
+            prompt=prompt,
+            model_level=model_level,
+            interval_seconds=interval_seconds,
+            include_previous_result=include_previous_result,
+            max_runs=max_runs,
+            sub_id=sub_id,
+            runs=runs,
+            completed_runs=completed_runs,
+            turn_history=turn_history,
+            checkpoint=checkpoint,
+            dedup_key=dedup_key,
+        )
+    except SubsessionDedupError as exc:
+        return exc.existing_id
     # spawn_subsession runs inside the parent agent's turn, so a plain
     # create_task would snapshot that turn's context — including the active
     # OTEL span — and every span the subsession opens would nest inside the

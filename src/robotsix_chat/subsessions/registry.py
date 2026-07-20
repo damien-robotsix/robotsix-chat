@@ -41,6 +41,7 @@ from robotsix_chat.chat.events import (
 from .models import (
     ACTIVE_STATUSES,
     InboxMessage,
+    SubsessionDedupError,
     SubsessionInfo,
     SubsessionKind,
     SubsessionStatus,
@@ -409,6 +410,13 @@ class SubsessionRegistry:
         self._wake_events[info.id] = asyncio.Event()
         self._by_owner[owner_session_id].add(info.id)
         if dedup_key is not None:
+            existing_id = self._active_dedup_keys.get(dedup_key)
+            if existing_id is not None:
+                existing_info = self._subs.get(existing_id)
+                if existing_info is not None and existing_info.is_active:
+                    raise SubsessionDedupError(existing_id)
+                # Stale entry — clean up proactively.
+                self._active_dedup_keys.pop(dedup_key, None)
             self._active_dedup_keys[dedup_key] = info.id
         self._store.prune_terminal()
         self._publish(owner_session_id, subsession_started_frame(info.snapshot()))

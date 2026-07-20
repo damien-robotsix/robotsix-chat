@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Added defense-in-depth dedup guard in ``SubsessionRegistry.create()``: raises ``SubsessionDedupError`` when a ``dedup_key`` is already active, preventing duplicate monitors even if the ``spawn_subsession`` pre-check is bypassed.
 - Fix: periodic subsessions (ticket monitors) now correctly restore their `dedup_key` after server restart, preventing duplicate monitors from spawning for the same ticket.
 - Document dynamic feedback target-repo resolution in `docs/configuration.md`: allowed repos are derived from the deploy roster intersected with the mill repo registry, with a fallback to `["robotsix-chat"]`.
 - Extend subsession `dedup_key` deduplication from `user_chat` only to all subsession kinds, preventing duplicate periodic ticket monitors when an agent re-files the same ticket.
