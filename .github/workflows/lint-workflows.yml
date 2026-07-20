@@ -4,6 +4,12 @@ name: Lint workflows
 # from robotsix-github-workflows.  Kept SEPARATE from ci.yml so the
 # workflow-permissions check can run even when ci.yml itself would be
 # rejected by GitHub (0-second startup_failure).
+#
+# The reusable workflow's actionlint job (reviewdog/action-actionlint
+# v1.65.0) uses the deprecated fail_on_error input, which causes a
+# hard failure.  We disable it here (run-actionlint: false) and run
+# actionlint directly in a local job with the replacement fail_level
+# parameter.
 
 on:
   push:
@@ -17,6 +23,19 @@ jobs:
   lint-workflows:
     uses: damien-robotsix/robotsix-github-workflows/.github/workflows/lint-workflows.yml@43309967ea8011400212a8995d33ca900ee2afed  # main
     with:
-      run-actionlint: true
+      run-actionlint: false
       run-zizmor: true
       sarif-workflows: "python-ci.yml scan-container.yml"
+
+  actionlint:
+    name: actionlint
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: reviewdog/action-actionlint@6fb7acc99f4a1008869fa8a0f09cfca740837d9d  # v1.72.0
+        with:
+          fail_level: error
