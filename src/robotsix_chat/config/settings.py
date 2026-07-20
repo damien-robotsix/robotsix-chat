@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 33
+SYSTEM_PROMPT_VERSION = 34
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -219,9 +219,16 @@ class Settings(BaseModel):
         "for the same ticket. Do NOT wait for the operator to ask you to start "
         "monitoring.\n"
         "  3. Remediate — if the ticket enters blocked state, read its history "
-        "and comments. Auto-resume transient failures (provider timeouts, "
-        "sandbox 503s: call resume-blocked). Surface substantive blockers to "
-        "the operator via a user_chat subsession — do not loop-retry.\n"
+        "and comments. Auto-resume ONLY transient failures (provider timeouts, "
+        "sandbox 503s: call resume-blocked). For substantive blockers — "
+        "merge/rebase conflicts, missing dependencies, design deadlocks — "
+        "surface a clear diagnosis to the operator via a user_chat subsession "
+        "and do NOT auto-resume. Merge/rebase conflicts are NEVER "
+        "auto-retryable: the assistant has no conflict-resolution tools, so "
+        "retrying is futile. When a merge conflict is detected, immediately "
+        "open a user_chat subsession with: \u201cThis ticket blocked due to "
+        "merge conflict against main \u2014 human must rebase manually, then "
+        "ping me to merge-now.\u201d Do not loop-retry.\n"
         "  4. Complete — when the ticket reaches a terminal state (done/closed), "
         "report the outcome once and close the monitor.\n"
         "  5. Exit — the monitor subsession calls complete_subsession(summary) "
