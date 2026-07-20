@@ -688,9 +688,9 @@ class TestFileTickets:
 
     @pytest.mark.asyncio
     async def test_returns_zero_when_board_url_empty(self) -> None:
-        """An empty board URL short-circuits and returns 0."""
+        """An empty board URL short-circuits and returns (0, 0)."""
         runner = _make_runner(_settings(board_url=""))
-        filed = await runner._file_tickets(
+        filed, failed = await runner._file_tickets(
             [
                 {
                     "title": "T",
@@ -703,6 +703,7 @@ class TestFileTickets:
             session_id="s1",
         )
         assert filed == 0
+        assert failed == 0
 
     @pytest.mark.asyncio
     async def test_posts_tickets_successfully(
@@ -727,10 +728,11 @@ class TestFileTickets:
                 "target_repo": "robotsix-chat",
             },
         ]
-        filed = await runner._file_tickets(
+        filed, failed = await runner._file_tickets(
             tickets, trigger_type="compaction", session_id="sess-1"
         )
         assert filed == 2
+        assert failed == 0
         assert route.call_count == 2
 
     @pytest.mark.asyncio
@@ -807,7 +809,7 @@ class TestFileTickets:
         )
         runner = _make_runner()
         with caplog.at_level(logging.WARNING):
-            filed = await runner._file_tickets(
+            filed, failed = await runner._file_tickets(
                 [
                     {
                         "title": "T",
@@ -820,6 +822,7 @@ class TestFileTickets:
                 session_id="s1",
             )
         assert filed == 0
+        assert failed == 1
         assert "returned 400" in caplog.text
 
     @pytest.mark.asyncio
@@ -832,7 +835,7 @@ class TestFileTickets:
         )
         runner = _make_runner()
         with caplog.at_level(logging.ERROR):
-            filed = await runner._file_tickets(
+            filed, failed = await runner._file_tickets(
                 [
                     {
                         "title": "T",
@@ -845,6 +848,7 @@ class TestFileTickets:
                 session_id="s1",
             )
         assert filed == 0
+        assert failed == 1
         assert "Failed to file feedback ticket" in caplog.text
 
     @pytest.mark.asyncio
@@ -856,7 +860,7 @@ class TestFileTickets:
             return_value=httpx.Response(201)
         )
         runner = _make_runner(_settings(repo_ids=["robotsix-chat", "robotsix-mill"]))
-        await runner._file_tickets(
+        filed, failed = await runner._file_tickets(
             [
                 {
                     "title": "Fix mill bug",
@@ -868,14 +872,121 @@ class TestFileTickets:
             trigger_type="compaction",
             session_id="sess-mill",
         )
+        assert filed == 1
+        assert failed == 0
         body = json.loads(route.calls.last.request.content)
         assert body["repo_id"] == "robotsix-mill"
         assert body["title"] == "Fix mill bug"
         assert body["source_tag"] == "robotsix-chat-feedback"
         assert "origin: robotsix-chat" in body["body"]
 
+    @pytest.mark.asyncio
+    async def test_non_2xx_records_span_error(
+        self, respx_mock: respx.MockRouter
+    ) -> None:
+        """Non-2xx responses set span status to ERROR with the HTTP code."""
+        respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(503, text="Service Unavailable")
+        )
+        runner = _make_runner()
 
-# ---------------------------------------------------------------------------
+        fake_span = MagicMock()
+        fake_span.__enter__.return_value = fake_span
+        with patch(
+            "robotsix_chat.feedback.runner.start_span",
+            return_value=fake_span,
+        ):
+            filed, failed = await runner._file_tickets(
+                [
+                    {
+                        "title": "T",
+                        "description": "D",
+                        "kind": "code",
+                        "target_repo": "robotsix-chat",
+                    }
+                ],
+                trigger_type="compaction",
+                session_id="s1",
+            )
+        assert filed == 0
+        assert failed == 1
+        # Span should have http.status_code, error.type, and ERROR status.
+        fake_span.set_attribute.assert_any_call("http.status_code", 503)
+        fake_span.set_attribute.assert_any_call("error.type", "http_503")
+        fake_span.set_status.assert_called_once()
+        # Don't assert exact Status object (depends on OTel version); just
+        # verify it was called with an ERROR status code.
+        status_arg = fake_span.set_status.call_args[0][0]
+        assert status_arg.status_code.name == "ERROR"
+
+    @pytest.mark.asyncio
+    async def test_exception_records_span_error(
+        self, respx_mock: respx.MockRouter
+    ) -> None:
+        """HTTP exceptions record the error on the span and set ERROR status."""
+        exc = httpx.ReadTimeout("timed out")
+        respx_mock.post("http://test-board/tickets/ingest").mock(side_effect=exc)
+        runner = _make_runner()
+
+        fake_span = MagicMock()
+        fake_span.__enter__.return_value = fake_span
+        with patch(
+            "robotsix_chat.feedback.runner.start_span",
+            return_value=fake_span,
+        ):
+            filed, failed = await runner._file_tickets(
+                [
+                    {
+                        "title": "T",
+                        "description": "D",
+                        "kind": "code",
+                        "target_repo": "robotsix-chat",
+                    }
+                ],
+                trigger_type="compaction",
+                session_id="s1",
+            )
+        assert filed == 0
+        assert failed == 1
+        fake_span.record_exception.assert_called_once_with(exc)
+        fake_span.set_status.assert_called_once()
+        status_arg = fake_span.set_status.call_args[0][0]
+        assert status_arg.status_code.name == "ERROR"
+
+    @pytest.mark.asyncio
+    async def test_span_error_instrumentation_never_breaks_loop(
+        self, respx_mock: respx.MockRouter
+    ) -> None:
+        """A broken span (raising on record_exception) does not abort filing."""
+        respx_mock.post("http://test-board/tickets/ingest").mock(
+            side_effect=httpx.ReadTimeout("timed out")
+        )
+        runner = _make_runner()
+
+        fake_span = MagicMock()
+        fake_span.__enter__.return_value = fake_span
+        fake_span.record_exception.side_effect = RuntimeError("span broken")
+        with patch(
+            "robotsix_chat.feedback.runner.start_span",
+            return_value=fake_span,
+        ):
+            filed, failed = await runner._file_tickets(
+                [
+                    {
+                        "title": "T",
+                        "description": "D",
+                        "kind": "code",
+                        "target_repo": "robotsix-chat",
+                    }
+                ],
+                trigger_type="compaction",
+                session_id="s1",
+            )
+        # Loop completed; the ticket was counted as failed.
+        assert filed == 0
+        assert failed == 1
+
+
 # FeedbackRunner — _run (integration-style)
 # ---------------------------------------------------------------------------
 
@@ -897,7 +1008,7 @@ class TestRun:
             await runner._run("compaction", "sess-1", [("hi", "hello")])
         assert route.call_count == 1
         assert "Feedback run complete" in caplog.text
-        assert "filed=1/1" in caplog.text
+        assert "filed=1/1 failed=0" in caplog.text
 
     @pytest.mark.asyncio
     async def test_agent_returns_non_json(self, respx_mock: respx.MockRouter) -> None:
@@ -1157,20 +1268,21 @@ def test_stamp_tags_noop_when_span_is_none() -> None:
 
 
 def test_stamp_outcome_sets_attributes() -> None:
-    """_stamp_outcome sets feedback.filed_tickets and feedback.total_tickets."""
+    """_stamp_outcome sets feedback attributes for filed, failed, and total."""
     fake_span = MagicMock()
     with patch(
         "robotsix_chat.feedback.runner.get_recording_span",
         return_value=fake_span,
     ):
-        FeedbackRunner._stamp_outcome(filed=3, total=5)
+        FeedbackRunner._stamp_outcome(filed=3, total=5, failed=2)
 
-    assert fake_span.set_attribute.call_count == 2
+    assert fake_span.set_attribute.call_count == 3
     fake_span.set_attribute.assert_any_call("feedback.filed_tickets", 3)
+    fake_span.set_attribute.assert_any_call("feedback.failed_tickets", 2)
     fake_span.set_attribute.assert_any_call("feedback.total_tickets", 5)
 
 
 def test_stamp_outcome_noop_when_get_recording_span_is_none() -> None:
     """_stamp_outcome is a no-op when get_recording_span is None."""
     with patch("robotsix_chat.feedback.runner.get_recording_span", None):
-        FeedbackRunner._stamp_outcome(filed=0, total=0)
+        FeedbackRunner._stamp_outcome(filed=0, total=0, failed=0)

@@ -1,6 +1,11 @@
 ## 0.0.0 (unreleased)
 
 - Added defense-in-depth dedup guard in ``SubsessionRegistry.create()``: raises ``SubsessionDedupError`` when a ``dedup_key`` is already active, preventing duplicate monitors even if the ``spawn_subsession`` pre-check is bypassed.
+- Feedback runner: record OTel span error status (`StatusCode.ERROR`) and
+  exception details on each ingest POST span when filing fails (non-2xx or
+  HTTP exception).  The trace root span now carries `feedback.failed_tickets`
+  alongside the existing `feedback.filed_tickets` and `feedback.total_tickets`,
+  making filing failures immediately visible in Langfuse traces.
 - Fix: periodic subsessions (ticket monitors) now correctly restore their `dedup_key` after server restart, preventing duplicate monitors from spawning for the same ticket.
 - Document dynamic feedback target-repo resolution in `docs/configuration.md`: allowed repos are derived from the deploy roster intersected with the mill repo registry, with a fallback to `["robotsix-chat"]`.
 - Extend subsession `dedup_key` deduplication from `user_chat` only to all subsession kinds, preventing duplicate periodic ticket monitors when an agent re-files the same ticket.
