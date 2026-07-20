@@ -11,6 +11,7 @@ import asyncio
 import json
 import logging
 import time
+from typing import Any
 
 from robotsix_chat.common.http import safe_http_request
 from robotsix_chat.config import LifecycleSettings
@@ -24,7 +25,12 @@ _MIN_POLL_INTERVAL_SECONDS = 5.0
 
 
 class LifecycleClient:
-    """Read-only HTTP client for the deploy-lifecycle API."""
+    """HTTP client for the deploy-lifecycle API.
+
+    Provides read-only inspection and (when permitted by the deploy
+    server's per-repo access toggle) mutation operations: restart,
+    config-write, and env-write for the agent's own service.
+    """
 
     def __init__(self, settings: LifecycleSettings) -> None:
         """Initialise with lifecycle settings."""
@@ -133,6 +139,20 @@ class LifecycleClient:
                     f"Current status:\n{status_text}"
                 )
 
+    async def restart_service(self, service_name: str) -> str:
+        """``POST /services/{name}/restart`` — restart a service."""
+        return await self._post(f"/services/{service_name}/restart")
+
+    async def update_service_config(
+        self, service_name: str, config: dict[str, Any]
+    ) -> str:
+        """``PUT /services/{name}/config`` — update service configuration."""
+        return await self._put(f"/services/{service_name}/config", config)
+
+    async def update_service_env(self, service_name: str, env: dict[str, Any]) -> str:
+        """``PUT /services/{name}/env`` — update service environment."""
+        return await self._put(f"/services/{service_name}/env", env)
+
     # -- internals --------------------------------------------------------
 
     def _headers(self) -> dict[str, str]:
@@ -173,3 +193,39 @@ class LifecycleClient:
         if result.error:
             return None
         return result.text
+
+    async def _post(self, path: str, json_body: dict[str, Any] | None = None) -> str:
+        url = f"{self._base_url}{path}"
+        result = await safe_http_request(
+            "POST",
+            url,
+            headers=self._headers(),
+            timeout=self._s.timeout,
+            json_body=json_body,
+            label="Lifecycle",
+        )
+        if result.error:
+            return result.error
+        try:
+            parsed = json.loads(str(result.text))
+            return json.dumps(parsed, indent=2)
+        except Exception:
+            return str(result.text)
+
+    async def _put(self, path: str, json_body: dict[str, Any]) -> str:
+        url = f"{self._base_url}{path}"
+        result = await safe_http_request(
+            "PUT",
+            url,
+            headers=self._headers(),
+            timeout=self._s.timeout,
+            json_body=json_body,
+            label="Lifecycle",
+        )
+        if result.error:
+            return result.error
+        try:
+            parsed = json.loads(str(result.text))
+            return json.dumps(parsed, indent=2)
+        except Exception:
+            return str(result.text)

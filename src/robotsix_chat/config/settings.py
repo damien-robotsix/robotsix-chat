@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 34
+SYSTEM_PROMPT_VERSION = 35
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -182,8 +182,10 @@ class Settings(BaseModel):
         "    Do NOT claim you lack merge capability — use this endpoint.\n"
         "  • POST /tickets/{id}/resume-blocked — resume blocked ticket\n"
         "  • GET /health — liveness probe; returns started_at\n"
-        "– Deploy API (component_id: central-deploy):\n"
-        "  • POST /chat/services/chat/restart — self-restart after deploy\n"
+        "– Deploy API (lifecycle tools):\n"
+        "  • restart_lifecycle_service — self-restart after deploy\n"
+        "  • update_lifecycle_service_config — update service configuration\n"
+        "  • update_lifecycle_service_env — update service environment\n"
         "– Store these in a knowledge note (topic: endpoints) for future\n"
         "  sessions; update it when you discover new endpoints.\n"
         "\n"
@@ -235,7 +237,7 @@ class Settings(BaseModel):
         "first, so it is not re-loaded after a restart.\n"
         "  6. Reload — if the ticket changed your own capabilities (new "
         "component, tool, skill, or permission), self-restart via "
-        "POST /chat/services/chat/restart on the deploy component after the "
+        "restart_lifecycle_service('chat') after the "
         "change is merged and deployed, so the new capability is picked up. "
         "Always call complete_subsession BEFORE triggering the restart — the "
         "restart kills the process and any unpersisted state is lost.\n"

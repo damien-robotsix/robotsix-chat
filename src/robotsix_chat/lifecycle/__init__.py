@@ -1,18 +1,22 @@
-"""Read-only deploy-lifecycle API tools for the agent.
+"""Deploy-lifecycle API tools for the agent.
 
-Exposes :func:`build_lifecycle_tools` — a factory returning read-only LLM
-tools that let the chat agent inspect the central-deploy lifecycle server:
-list services, check service status and health, and read configuration and
-environment (secrets are masked server-side).  Returns no tools when the
-lifecycle integration is disabled, so the chat runs exactly as before.
+Exposes :func:`build_lifecycle_tools` — a factory returning LLM tools
+that let the chat agent inspect and (when permitted) mutate the
+central-deploy lifecycle server: list services, check service status and
+health, read configuration and environment, restart services, and update
+service configuration and environment (secrets are masked server-side on
+reads).  Returns no tools when the lifecycle integration is disabled, so
+the chat runs exactly as before.
 
 Also exposes :func:`load_lifecycle_skill` which returns the component skill
 markdown — a description of the lifecycle API surface, allowed operations,
-and mutation endpoints that are deliberately excluded.  Inject this into the
-agent's system prompt so the LLM knows what the tools can and cannot do.
+and mutation endpoints that require the deploy server's per-repo access
+toggle.  Inject this into the agent's system prompt so the LLM knows what
+the tools can and cannot do.
 
-Mutation endpoints (restart, redeploy, config/env write) are deliberately
-absent from this tool set — the lifecycle component is read-only by design.
+Mutation endpoints (restart, config/env write) are available as tools
+and succeed or fail based on the deploy server's per-repo access toggle
+for the calling component.
 """
 
 from __future__ import annotations
@@ -160,10 +164,82 @@ def build_lifecycle_tools(
             poll_interval_seconds=poll_interval_seconds,
         )
 
+    async def restart_lifecycle_service(service_name: str) -> str:
+        """Restart a lifecycle-managed service.
+
+        Sends a restart request to the deploy server.  The restart is
+        permitted only when the deploy server's per-repo access toggle
+        is enabled for this component — otherwise the call returns a
+        403 error.
+
+        Args:
+            service_name: The service identifier as returned by
+                ``list_lifecycle_services`` (e.g. ``"chat"``).
+
+        Returns:
+            The restart result or an error message (including 403 when
+            the per-repo access toggle is not enabled).
+
+        """
+        return await client.restart_service(service_name)
+
+    async def update_lifecycle_service_config(
+        service_name: str, config: dict[str, Any]
+    ) -> str:
+        """Update the configuration of a lifecycle-managed service.
+
+        Sends new configuration values to the deploy server.  Secrets
+        are handled server-side — never pass plaintext credentials.
+        The update is permitted only when the deploy server's per-repo
+        access toggle is enabled for this component — otherwise the
+        call returns a 403 error.
+
+        Args:
+            service_name: The service identifier as returned by
+                ``list_lifecycle_services`` (e.g. ``"chat"``).
+            config: A dictionary of configuration key/value pairs to
+                update (not a full replacement — only the provided
+                keys are changed).
+
+        Returns:
+            The update result or an error message (including 403 when
+            the per-repo access toggle is not enabled).
+
+        """
+        return await client.update_service_config(service_name, config)
+
+    async def update_lifecycle_service_env(
+        service_name: str, env: dict[str, Any]
+    ) -> str:
+        """Update the environment variables of a lifecycle-managed service.
+
+        Sends new environment values to the deploy server.  Secrets are
+        handled server-side — never pass plaintext credentials.  The
+        update is permitted only when the deploy server's per-repo
+        access toggle is enabled for this component — otherwise the
+        call returns a 403 error.
+
+        Args:
+            service_name: The service identifier as returned by
+                ``list_lifecycle_services`` (e.g. ``"chat"``).
+            env: A dictionary of environment variable key/value pairs
+                to update (not a full replacement — only the provided
+                keys are changed).
+
+        Returns:
+            The update result or an error message (including 403 when
+            the per-repo access toggle is not enabled).
+
+        """
+        return await client.update_service_env(service_name, env)
+
     return [
         list_lifecycle_services,
         get_lifecycle_service_status,
         get_lifecycle_service_config,
         get_lifecycle_service_env,
         watch_service_redeploy,
+        restart_lifecycle_service,
+        update_lifecycle_service_config,
+        update_lifecycle_service_env,
     ]

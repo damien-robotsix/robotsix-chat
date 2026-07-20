@@ -5,6 +5,25 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v35 — 2026-07-20 — lifecycle-mutation-tools-self-restart-config-write
+
+**Summary:** Update the Deploy API quick-reference to list lifecycle mutation tools
+(`restart_lifecycle_service`, `update_lifecycle_service_config`,
+`update_lifecycle_service_env`) instead of a `component_request` path to the central-deploy
+component.  Update the Reload step (step 6 of the ticket lifecycle) to reference
+`restart_lifecycle_service('chat')` instead of `POST /chat/services/chat/restart`.
+
+**Rationale:** The lifecycle module now exposes mutation tools (restart, config-write,
+env-write) gated by the deploy server's per-repo access toggle.  The previous
+`component_request("central-deploy", …)` path required the central-deploy service to be
+in the component roster, which it was not — making the endpoint unreachable.  The
+lifecycle tools use the existing lifecycle base URL and auth, so the agent can reach
+these endpoints directly.
+
+**SHA256:** (to be filled by the pipeline)
+
+______________________________________________________________________
+
 ## v34 — 2026-07-20 — improve-handling-of-rebase-conflicts-avo-8b37
 
 **Summary:** Enhance the Remediate step of the Ticket lifecycle with explicit merge/rebase conflict

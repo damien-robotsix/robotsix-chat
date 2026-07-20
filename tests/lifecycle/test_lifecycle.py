@@ -37,8 +37,8 @@ def test_build_lifecycle_tools_disabled() -> None:
     assert build_lifecycle_tools(LifecycleSettings(enabled=False)) == []
 
 
-def test_build_lifecycle_tools_returns_five_tools_including_watch() -> None:
-    """Enabled lifecycle returns five tools including the watch utility."""
+def test_build_lifecycle_tools_returns_eight_tools_including_mutations() -> None:
+    """Enabled lifecycle returns eight tools including mutation tools."""
     tools = build_lifecycle_tools(_settings())
     names = {t.__name__ for t in tools}
     assert names == {
@@ -47,6 +47,9 @@ def test_build_lifecycle_tools_returns_five_tools_including_watch() -> None:
         "get_lifecycle_service_config",
         "get_lifecycle_service_env",
         "watch_service_redeploy",
+        "restart_lifecycle_service",
+        "update_lifecycle_service_config",
+        "update_lifecycle_service_env",
     }
 
 
@@ -56,13 +59,13 @@ def test_build_lifecycle_tools_returns_five_tools_including_watch() -> None:
 
 
 def test_load_lifecycle_skill_returns_non_empty_markdown() -> None:
-    """The shipped skill.md is loadable and contains allowed/forbidden ops."""
+    """The shipped skill.md is loadable and contains allowed/restricted ops."""
     skill = load_lifecycle_skill()
     assert len(skill) > 100
-    assert "read-only" in skill.lower()
-    assert "Forbidden operations" in skill
+    assert "inspection and mutation" in skill.lower()
+    assert "Restricted operations" in skill
     assert "list_lifecycle_services" in skill
-    assert "POST /services/{name}/restart" in skill
+    assert "restart_lifecycle_service" in skill
 
 
 # ---------------------------------------------------------------------------
@@ -241,6 +244,94 @@ async def test_non_json_response_returns_raw_text(
     client = LifecycleClient(_settings())
     out = await client.list_services()
     assert "plain text response" in out
+
+
+# ---------------------------------------------------------------------------
+# LifecycleClient — mutation methods (restart, config-write, env-write)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_restart_service_success(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """restart_service sends POST and returns formatted response."""
+    route = respx_mock.post("http://lifecycle:9000/services/chat/restart").mock(
+        return_value=httpx.Response(200, json={"status": "restarting"})
+    )
+
+    client = LifecycleClient(_settings())
+    out = await client.restart_service("chat")
+    assert '"status": "restarting"' in out
+    assert route.calls.last.request.headers["x-api-key"] == "test-api-key"
+
+
+@pytest.mark.asyncio
+async def test_restart_service_403_returns_error_string(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A 403 (toggle disabled) is returned as an error string, not raised."""
+    respx_mock.post("http://lifecycle:9000/services/chat/restart").mock(
+        return_value=httpx.Response(
+            403,
+            json={"error": 'Chat agent is not permitted to mutate service "chat".'},
+        )
+    )
+
+    client = LifecycleClient(_settings())
+    out = await client.restart_service("chat")
+    assert "Lifecycle" in out
+    assert "403" in out
+
+
+@pytest.mark.asyncio
+async def test_update_service_config_success(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """update_service_config sends PUT with JSON body and returns response."""
+    route = respx_mock.put("http://lifecycle:9000/services/chat/config").mock(
+        return_value=httpx.Response(200, json={"updated": ["log_level"]})
+    )
+
+    client = LifecycleClient(_settings())
+    out = await client.update_service_config("chat", {"log_level": "DEBUG"})
+    assert "log_level" in out
+    assert "updated" in out
+    assert route.calls.last.request.headers["x-api-key"] == "test-api-key"
+
+
+@pytest.mark.asyncio
+async def test_update_service_env_success(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """update_service_env sends PUT with JSON body and returns response."""
+    route = respx_mock.put("http://lifecycle:9000/services/chat/env").mock(
+        return_value=httpx.Response(200, json={"updated": ["MY_VAR"]})
+    )
+
+    client = LifecycleClient(_settings())
+    out = await client.update_service_env("chat", {"MY_VAR": "new_value"})
+    assert "MY_VAR" in out
+    assert "updated" in out
+    assert route.calls.last.request.headers["x-api-key"] == "test-api-key"
+
+
+@pytest.mark.asyncio
+async def test_update_service_config_403_returns_error_string(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A 403 on config-write is returned as an error string."""
+    respx_mock.put("http://lifecycle:9000/services/chat/config").mock(
+        return_value=httpx.Response(
+            403,
+            json={"error": 'Chat agent is not permitted to mutate service "chat".'},
+        )
+    )
+
+    client = LifecycleClient(_settings())
+    out = await client.update_service_config("chat", {"log_level": "DEBUG"})
+    assert "Lifecycle" in out
+    assert "403" in out
 
 
 # ---------------------------------------------------------------------------
