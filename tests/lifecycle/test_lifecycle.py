@@ -37,8 +37,8 @@ def test_build_lifecycle_tools_disabled() -> None:
     assert build_lifecycle_tools(LifecycleSettings(enabled=False)) == []
 
 
-def test_build_lifecycle_tools_returns_eight_tools_including_mutations() -> None:
-    """Enabled lifecycle returns eight tools including mutation tools."""
+def test_build_lifecycle_tools_returns_nine_tools_including_mutations() -> None:
+    """Enabled lifecycle returns nine tools including mutation tools."""
     tools = build_lifecycle_tools(_settings())
     names = {t.__name__ for t in tools}
     assert names == {
@@ -50,6 +50,7 @@ def test_build_lifecycle_tools_returns_eight_tools_including_mutations() -> None
         "restart_lifecycle_service",
         "update_lifecycle_service_config",
         "update_lifecycle_service_env",
+        "self_restart",
     }
 
 
@@ -66,6 +67,8 @@ def test_load_lifecycle_skill_returns_non_empty_markdown() -> None:
     assert "Restricted operations" in skill
     assert "list_lifecycle_services" in skill
     assert "restart_lifecycle_service" in skill
+    assert "self_restart" in skill
+    assert "Self-restart" in skill
 
 
 # ---------------------------------------------------------------------------
@@ -282,6 +285,68 @@ async def test_restart_service_403_returns_error_string(
     out = await client.restart_service("chat")
     assert "Lifecycle" in out
     assert "403" in out
+
+
+# ---------------------------------------------------------------------------
+# LifecycleClient — self_restart
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_self_restart_success(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """self_restart sends POST /self/restart and returns formatted response."""
+    route = respx_mock.post("http://lifecycle:9000/self/restart").mock(
+        return_value=httpx.Response(200, json={"status": "restarting"})
+    )
+
+    client = LifecycleClient(_settings())
+    out = await client.self_restart()
+    assert '"status": "restarting"' in out
+    assert route.calls.last.request.headers["x-api-key"] == "test-api-key"
+
+
+@pytest.mark.asyncio
+async def test_self_restart_error_returns_string(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A server error on self_restart is returned as a string, not raised."""
+    respx_mock.post("http://lifecycle:9000/self/restart").mock(
+        return_value=httpx.Response(
+            500,
+            json={"error": "internal server error"},
+        )
+    )
+
+    client = LifecycleClient(_settings())
+    out = await client.self_restart()
+    assert "Lifecycle" in out
+    assert "500" in out
+
+
+@pytest.mark.asyncio
+async def test_self_restart_tool_is_registered() -> None:
+    """The self_restart tool is returned by build_lifecycle_tools."""
+    tools = build_lifecycle_tools(_settings())
+    names = {t.__name__ for t in tools}
+    assert "self_restart" in names
+
+
+@pytest.mark.asyncio
+async def test_self_restart_tool_calls_client_self_restart(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Calling the self_restart tool invokes the client's self_restart method."""
+    route = respx_mock.post("http://lifecycle:9000/self/restart").mock(
+        return_value=httpx.Response(200, json={"status": "restarting"})
+    )
+
+    tools = build_lifecycle_tools(_settings())
+    self_restart_tool = next(t for t in tools if t.__name__ == "self_restart")
+    out = await self_restart_tool()
+    assert '"status": "restarting"' in out
+    assert route.calls.last.request.headers["x-api-key"] == "test-api-key"
 
 
 @pytest.mark.asyncio

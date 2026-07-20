@@ -170,7 +170,8 @@ def build_lifecycle_tools(
         Sends a restart request to the deploy server.  The restart is
         permitted only when the deploy server's per-repo access toggle
         is enabled for this component — otherwise the call returns a
-        403 error.
+        403 error.  For restarting the agent's own service when the
+        toggle is not enabled, use ``self_restart`` instead.
 
         Args:
             service_name: The service identifier as returned by
@@ -182,6 +183,26 @@ def build_lifecycle_tools(
 
         """
         return await client.restart_service(service_name)
+
+    async def self_restart() -> str:
+        """Restart the agent's own service (no per-repo toggle required).
+
+        Sends a self-restart request to the deploy server.  Unlike
+        ``restart_lifecycle_service``, this endpoint identifies the calling
+        service from the API key and permits the restart unconditionally —
+        no per-repo access toggle is required.  Use this after a deploy
+        that changed the agent's own capabilities (new component, tool,
+        skill, or permission) so the new capability is picked up.
+
+        Only call this for the agent's own service — it cannot restart
+        other managed services.  For restarting other services, use
+        ``restart_lifecycle_service``.
+
+        Returns:
+            The restart result or an error message.
+
+        """
+        return await client.self_restart()
 
     async def update_lifecycle_service_config(
         service_name: str, config: dict[str, Any]
@@ -242,4 +263,5 @@ def build_lifecycle_tools(
         restart_lifecycle_service,
         update_lifecycle_service_config,
         update_lifecycle_service_env,
+        self_restart,
     ]

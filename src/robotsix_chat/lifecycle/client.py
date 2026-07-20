@@ -143,6 +143,18 @@ class LifecycleClient:
         """``POST /services/{name}/restart`` — restart a service."""
         return await self._post(f"/services/{service_name}/restart")
 
+    async def self_restart(self) -> str:
+        """``POST /self/restart`` — restart the calling service.
+
+        Unlike ``restart_service`` this endpoint does **not** require the
+        deploy server's per-repo access toggle — the server identifies the
+        calling service from the ``X-API-Key`` header and permits the
+        self-restart unconditionally.  Use this when the agent needs to
+        restart its own service (e.g. to pick up a new config or image)
+        and the per-repo toggle is not enabled.
+        """
+        return await self._post("/self/restart")
+
     async def update_service_config(
         self, service_name: str, config: dict[str, Any]
     ) -> str:

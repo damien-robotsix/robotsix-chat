@@ -5,6 +5,25 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v39 — 2026-07-20 — add-deploy-server-restart-capability-for-144c
+
+**Summary:** Add `self_restart` to the Deploy API quick-reference bullet list and update the Reload
+step (step 6 of the ticket lifecycle) to reference `self_restart()` instead of
+`restart_lifecycle_service('chat')` for self-restart.  The Deploy API list now includes both
+`restart_lifecycle_service` (restart any service, requires per-repo toggle) and `self_restart`
+(restart the agent's own service, no toggle required).  This gives the agent a clear path for
+self-restart even when the per-repo access toggle is not enabled.
+
+**Rationale:** The existing `restart_lifecycle_service('chat')` path required the deploy server's
+per-repo access toggle to be enabled, which is typically off for the agent's own service.  The new
+`self_restart` tool calls `POST /self/restart` — a privileged endpoint that identifies the calling
+service from the API key and permits the restart unconditionally.  This unblocks the agent when it
+needs to self-restart after picking up new capabilities.
+
+**SHA256:** `a3dcab48d87f5235fb66ee928961604dc2d47fd6ab357c047bfe4807ef634d62`
+
+______________________________________________________________________
+
 ## v38 — 2026-07-20 — decision-chat-subsessions-must-embed-full-77c1
 
 **Summary:** Add an option-label restatement rule to the user_chat subsession guidance. When
