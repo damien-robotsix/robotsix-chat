@@ -1,323 +1,358 @@
 # docs/modules.yaml — module manifest for the robotsix-chat repository.
+
 #
-# This file is maintained by the module_curator periodic workflow.  It maps
-# every importable Python namespace under ``src/robotsix_chat/`` to its
+
+# This file is maintained by the module_curator periodic workflow. It maps
+
+# every importable Python namespace under `src/robotsix_chat/` to its
+
 # purpose (sourced from the module docstring) and the repo-relative file
+
 # paths that belong to it.
+
 #
+
 # Format (robotsix-modules schema — validated by the shared baseline-check
+
 # workflow):
-#   modules:
-#     - id: <kebab-case module id>
-#       description: <one-line summary from the module docstring>
-#       paths:
-#         - <repo-relative path>
+
+# modules:
+
+# - id: <kebab-case module id>
+
+# description: <one-line summary from the module docstring>
+
+# paths:
+
+# - <repo-relative path>
+
 #
-# Non-Python resources that ship inside a package (e.g. ``ui/index.html``)
+
+# Non-Python resources that ship inside a package (e.g. `ui/index.html`)
+
 # are listed under the owning module so the curator does not flag them as
+
 # unclassified orphans.
 
 modules:
-  - id: robotsix-chat
-    description: "Top-level package — browser + SSE chat server for an LLM agent."
-    paths:
-      - src/robotsix_chat/__init__.py
-      - src/robotsix_chat/py.typed
-      - tests/__init__.py
-      - tests/conftest.py
-      - tests/common/test_smoke.py
-      - docs/index.md
-      - docs/architecture.md
-      - docs/getting-started.md
-      - docs/configuration.md
-      - docs/contributing.md
-      - docs/changelog.md
-      - docs/triage-boilerplate.md
-      - docs/system_prompt_changelog.md
-      - docs/periodic-checks.md
-      - docs/user-guide/deployment.md
-      - docs/_snippets/nginx-reverse-proxy.md
-      - docs/api/robotsix_chat.md
 
-  - id: housekeeping
-    description: >-
-      Top-level project housekeeping — repo metadata, CI workflows, packaging,
-      container/deploy files, changelog fragments, and tooling configuration.
-      Claimed here so the fleet modules-drift gate (robotsix-modules
-      check-registration) sees no orphan files.
-    paths:
-      - .github/**/*
-      - .robotsix-mill/**/*
-      - _stubs/**/*
-      - src/robotsix_mill/__init__.py
-      - src/robotsix_mill/stages/towncrier.py
-      - changelog.d/**/*
-      - config/**/*
-      - deploy/**/*
-      - scripts/*
-      - tasks/*.md
-      - docs/modules.yaml
-      - .dockerignore
-      - .editorconfig
-      - .gitignore
-      - .markdownlint-cli2.jsonc
-      - .markdownlintignore
-      - .pre-commit-config.yaml
-      - .python-version
-      - .secrets.baseline
-      - AGENT.md
-      - CHANGELOG.md
-      - CONTRIBUTING.md
-      - Dockerfile
-      - LICENSE
-      - Makefile
-      - memory-ledger.json
-      - README.md
-      - SECURITY.md
-      - docker-compose.yml
-      - mkdocs.yml
-      - pyproject.toml
-      - typos.toml
-      - uv.lock
-      - vulture_whitelist.py
+- id: robotsix-chat description: "Top-level package — browser + SSE chat server for an LLM agent."
+  paths:
 
-  - id: component-client
-    description: "Component agent client tools for the chat LLM — exposes build_component_tools(), a factory returning LLM tools that let the chat agent enumerate, inspect, and configure remote component agents via direct HTTP."
-    paths:
-      - src/robotsix_chat/component_client/__init__.py
-      - src/robotsix_chat/component_client/client.py
-      - tests/component_client/__init__.py
-      - tests/component_client/test_component_client.py
+  - src/robotsix_chat/__init__.py
+  - src/robotsix_chat/py.typed
+  - tests/__init__.py
+  - tests/conftest.py
+  - tests/common/test_smoke.py
+  - docs/index.md
+  - docs/architecture.md
+  - docs/getting-started.md
+  - docs/configuration.md
+  - docs/contributing.md
+  - docs/changelog.md
+  - docs/triage-boilerplate.md
+  - docs/system_prompt_changelog.md
+  - docs/periodic-checks.md
+  - docs/user-guide/deployment.md
+  - docs/\_snippets/nginx-reverse-proxy.md
+  - docs/api/robotsix_chat.md
 
-  - id: component-access
-    description: "Generic component access via central-deploy roster — fetches the allowed-chat-components list, loads each component's skill into the agent, and returns a single generic component_request tool."
-    paths:
-      - src/robotsix_chat/component_access/__init__.py
-      - src/robotsix_chat/component_access/roster.py
-      - src/robotsix_chat/component_access/tools.py
-      - tests/component_access/__init__.py
-      - tests/component_access/test_component_access.py
+- id: housekeeping description: >- Top-level project housekeeping — repo metadata, CI workflows,
+  packaging, container/deploy files, changelog fragments, and tooling configuration. Claimed here so
+  the fleet modules-drift gate (robotsix-modules check-registration) sees no orphan files. paths:
 
-  - id: config
-    description: "Typed configuration — pydantic Settings model loaded from the one JSON config file via robotsix-config."
-    paths:
-      - src/robotsix_chat/config/__init__.py
-      - src/robotsix_chat/config/constants.py
-      - src/robotsix_chat/config/models.py
-      - src/robotsix_chat/config/settings.py
-      - docs/config/api.md
-      - tests/config/__init__.py
-      - tests/config/test_config.py
-      - tests/config/test_system_prompt_governance.py
-      - tests/config/test_config_hypothesis.py
+  - .github/\*\*/\*
+  - .robotsix-mill/\*\*/\*
+  - \_stubs/\*\*/\*
+  - src/robotsix_mill/__init__.py
+  - src/robotsix_mill/stages/towncrier.py
+  - changelog.d/\*\*/\*
+  - config/\*\*/\*
+  - deploy/\*\*/\*
+  - scripts/\*
+  - tasks/\*.md
+  - docs/modules.yaml
+  - .dockerignore
+  - .editorconfig
+  - .gitignore
+  - .markdownlint-cli2.jsonc
+  - .markdownlintignore
+  - .pre-commit-config.yaml
+  - .python-version
+  - .secrets.baseline
+  - AGENT.md
+  - CHANGELOG.md
+  - CONTRIBUTING.md
+  - Dockerfile
+  - LICENSE
+  - Makefile
+  - memory-ledger.json
+  - README.md
+  - SECURITY.md
+  - docker-compose.yml
+  - mkdocs.yml
+  - pyproject.toml
+  - typos.toml
+  - uv.lock
+  - vulture_whitelist.py
 
-  - id: chat
-    description: "Chat SSE server — HTTP + Server-Sent Events bridge for human-to-agent chat."
-    paths:
-      - src/robotsix_chat/chat/__init__.py
-      - src/robotsix_chat/chat/conversation.py
-      - src/robotsix_chat/chat/events.py
-      - src/robotsix_chat/chat/server/__init__.py
-      - src/robotsix_chat/chat/server/app.py
-      - src/robotsix_chat/chat/server/cli.py
-      - src/robotsix_chat/chat/server/idempotency.py
-      - src/robotsix_chat/chat/server/routes/__init__.py
-      - src/robotsix_chat/chat/server/routes/_shared.py
-      - src/robotsix_chat/chat/server/routes/chat.py
-      - src/robotsix_chat/chat/server/routes/config.py
-      - src/robotsix_chat/chat/server/routes/constants.py
-      - src/robotsix_chat/chat/server/routes/errors.py
-      - src/robotsix_chat/chat/server/routes/events.py
-      - src/robotsix_chat/chat/server/routes/github.py
-      - src/robotsix_chat/chat/server/routes/sessions.py
-      - src/robotsix_chat/chat/server/routes/subsessions.py
-      - docs/chat/server.md
-      - tests/chat/__init__.py
-      - tests/chat/test_cli.py
-      - tests/chat/test_conversation.py
-      - tests/chat/test_events.py
-      - tests/chat/test_subsessions_e2e.py
-      - tests/chat/server/__init__.py
-      - tests/chat/server/test_server.py
-      - tests/chat/server/test_idempotency.py
-      - tests/chat/server/test_message_coalescer_gc.py
-      - tests/chat/server/routes/__init__.py
-      - tests/chat/server/routes/test_config.py
-      - tests/chat/server/routes/test_shared.py
+- id: component-client description: "Component agent client tools for the chat LLM — exposes
+  build_component_tools(), a factory returning LLM tools that let the chat agent enumerate, inspect,
+  and configure remote component agents via direct HTTP." paths:
 
-  - id: common
-    description: "Shared utilities — provides safe_http_request() for consistent httpx error handling across HTTP clients, and JsonStoreBase for JSON-persisted dataclass stores."
-    paths:
-      - src/robotsix_chat/common/__init__.py
-      - src/robotsix_chat/common/http.py
-      - src/robotsix_chat/common/json_store.py
-      - tests/common/__init__.py
-      - tests/common/subsession_fakes.py
-      - tests/common/test_http.py
-      - tests/common/test_json_store.py
-      - tests/common/test_hypothesis_json_store.py
+  - src/robotsix_chat/component_client/__init__.py
+  - src/robotsix_chat/component_client/client.py
+  - tests/component_client/__init__.py
+  - tests/component_client/test_component_client.py
 
-  - id: direct-repo
-    description: "Direct-repository-capability tools — push branches and open PRs as the robotsix-mill GitHub App installation for BLOCKED tickets."
-    paths:
-      - src/robotsix_chat/repo/__init__.py
-      - src/robotsix_chat/repo/direct/__init__.py
-      - src/robotsix_chat/repo/direct/client.py
-      - tests/repo/direct/__init__.py
-      - tests/repo/direct/test_direct_repo.py
-  - id: repo-study
-    description: "Repo-study tools — temporary local repo snapshots (GitHub tarball, no git binary) the agent can list, read, and regex-search before they expire; auth reuses the direct_repo GitHub App credentials."
-    paths:
-      - src/robotsix_chat/repo/study/__init__.py
-      - src/robotsix_chat/repo/study/workspace.py
-      - tests/repo/study/__init__.py
-      - tests/repo/study/test_repo_study.py
+- id: component-access description: "Generic component access via central-deploy roster — fetches
+  the allowed-chat-components list, loads each component's skill into the agent, and returns a
+  single generic component_request tool." paths:
 
-  - id: repo-security
-    description: "GitHub repository security-feature tools — enable/disable dependency graph, advanced security, secret scanning, and push protection on repos under the configured GitHub organisation. Auth delegates to the direct-repo GitHub App installation."
-    paths:
-      - src/robotsix_chat/repo/security/__init__.py
-      - src/robotsix_chat/repo/security/skill.md
-      - docs/repo/security/skill.md
-      - tests/repo/security/__init__.py
-      - tests/repo/security/test_security_tools.py
-      - tests/repo/security/test_settings_endpoint.py
+  - src/robotsix_chat/component_access/__init__.py
+  - src/robotsix_chat/component_access/roster.py
+  - src/robotsix_chat/component_access/tools.py
+  - tests/component_access/__init__.py
+  - tests/component_access/test_component_access.py
 
-  - id: diagnostics
-    description: "Diagnostics tools for the agent — exposes build_diagnostics_tools() that returns tools for listing diagnostic events, checking recurring failure categories, and managing fix proposals. Returns no tools when diagnostics is disabled."
-    paths:
-      - src/robotsix_chat/diagnostics/__init__.py
-      - src/robotsix_chat/diagnostics/fixes.py
-      - src/robotsix_chat/diagnostics/store.py
-      - src/robotsix_chat/diagnostics/verification.py
-      - tests/diagnostics/__init__.py
-      - tests/diagnostics/test_fixes.py
-      - tests/diagnostics/test_verification.py
-  - id: knowledge
-    description: "Writable knowledge-base tools for the agent — exposes build_knowledge_tools(), a factory that returns five tools the agent can call to add, append, update, list, and read durable notes across sessions. Entirely local JSON storage, no embeddings."
-    paths:
-      - src/robotsix_chat/knowledge/__init__.py
-      - src/robotsix_chat/knowledge/store.py
-      - tests/knowledge/__init__.py
-      - tests/knowledge/test_knowledge.py
+- id: config description: "Typed configuration — pydantic Settings model loaded from the one JSON
+  config file via robotsix-config." paths:
 
-  - id: llm
-    description: "LLM-powered agent — streaming wrapper around llmio.Agent."
-    paths:
-      - src/robotsix_chat/llm/__init__.py
-      - src/robotsix_chat/llm/agent.py
-      - docs/llm/agent.md
-      - tests/llm/__init__.py
-      - tests/llm/test_agent.py
+  - src/robotsix_chat/config/__init__.py
+  - src/robotsix_chat/config/constants.py
+  - src/robotsix_chat/config/models.py
+  - src/robotsix_chat/config/settings.py
+  - docs/config/api.md
+  - tests/config/__init__.py
+  - tests/config/test_config.py
+  - tests/config/test_system_prompt_governance.py
+  - tests/config/test_config_hypothesis.py
 
-  - id: memory
-    description: "Long-term memory backend — Cognee-based persistent storage for cross-conversation continuity."
-    paths:
-      - src/robotsix_chat/memory/__init__.py
-      - src/robotsix_chat/memory/base.py
-      - src/robotsix_chat/memory/cognee.py
-      - docs/memory/api.md
-      - tests/memory/__init__.py
-      - tests/memory/test_memory.py
+- id: chat description: "Chat SSE server — HTTP + Server-Sent Events bridge for human-to-agent
+  chat." paths:
 
-  - id: mail
-    description: "Mail integration — consult robotsix-auto-mail's board manager via direct HTTP."
-    paths:
-      - src/robotsix_chat/mail/__init__.py
-      - src/robotsix_chat/mail/client.py
-      - tests/mail/__init__.py
-      - tests/mail/test_build_mail_tools.py
+  - src/robotsix_chat/chat/__init__.py
+  - src/robotsix_chat/chat/conversation.py
+  - src/robotsix_chat/chat/events.py
+  - src/robotsix_chat/chat/server/__init__.py
+  - src/robotsix_chat/chat/server/app.py
+  - src/robotsix_chat/chat/server/cli.py
+  - src/robotsix_chat/chat/server/idempotency.py
+  - src/robotsix_chat/chat/server/routes/__init__.py
+  - src/robotsix_chat/chat/server/routes/\_shared.py
+  - src/robotsix_chat/chat/server/routes/chat.py
+  - src/robotsix_chat/chat/server/routes/config.py
+  - src/robotsix_chat/chat/server/routes/constants.py
+  - src/robotsix_chat/chat/server/routes/errors.py
+  - src/robotsix_chat/chat/server/routes/events.py
+  - src/robotsix_chat/chat/server/routes/github.py
+  - src/robotsix_chat/chat/server/routes/sessions.py
+  - src/robotsix_chat/chat/server/routes/subsessions.py
+  - docs/chat/server.md
+  - tests/chat/__init__.py
+  - tests/chat/test_cli.py
+  - tests/chat/test_conversation.py
+  - tests/chat/test_events.py
+  - tests/chat/test_subsessions_e2e.py
+  - tests/chat/server/__init__.py
+  - tests/chat/server/test_server.py
+  - tests/chat/server/test_idempotency.py
+  - tests/chat/server/test_message_coalescer_gc.py
+  - tests/chat/server/routes/__init__.py
+  - tests/chat/server/routes/test_config.py
+  - tests/chat/server/routes/test_shared.py
 
-  - id: subsessions
-    description: "Unified subsession system — background agents (task / periodic / user_chat) spawned from chat sessions, with per-subsession model levels, depth-limited nesting, inbox steering, and parent summary delivery."
-    paths:
-      - src/robotsix_chat/subsessions/__init__.py
-      - src/robotsix_chat/subsessions/models.py
-      - src/robotsix_chat/subsessions/registry.py
-      - src/robotsix_chat/subsessions/delivery.py
-      - src/robotsix_chat/subsessions/worker.py
-      - src/robotsix_chat/subsessions/resume.py
-      - src/robotsix_chat/subsessions/tools.py
-      - tests/subsessions/__init__.py
-      - tests/subsessions/test_models.py
-      - tests/subsessions/test_registry.py
-      - tests/subsessions/test_worker.py
-      - tests/subsessions/test_tools.py
-      - tests/subsessions/test_resume.py
-      - tests/subsessions/test_delivery.py
+- id: common description: "Shared utilities — provides safe_http_request() for consistent httpx
+  error handling across HTTP clients, and JsonStoreBase for JSON-persisted dataclass stores." paths:
 
-  - id: refdocs
-    description: "Read-only reference-docs tool — lets the chat agent read team repos."
-    paths:
-      - src/robotsix_chat/refdocs/__init__.py
-      - src/robotsix_chat/refdocs/client.py
-      - tests/refdocs/__init__.py
-      - tests/refdocs/test_refdocs.py
-  - id: render-url
-    description: "Read-only URL rendering tool — headless Chromium (Playwright) that captures full-page screenshots and accessibility trees for UI verification. Exposes build_render_url_tools(), a factory returning a single render_url async tool."
-    paths:
-      - src/robotsix_chat/render_url/__init__.py
-      - tests/render_url/__init__.py
-      - tests/render_url/test_render_url.py
-  - id: selfreview
-    description: "Self-review tools — a read-only digest of live conversation activity. Exposes build_recent_activity_tools(), a factory that returns a single read_recent_activity tool that reads from the in-process ConversationStore."
-    paths:
-      - src/robotsix_chat/selfreview/__init__.py
-      - src/robotsix_chat/selfreview/read.py
-      - tests/selfreview/__init__.py
-      - tests/selfreview/test_read.py
+  - src/robotsix_chat/common/__init__.py
+  - src/robotsix_chat/common/http.py
+  - src/robotsix_chat/common/json_store.py
+  - tests/common/__init__.py
+  - tests/common/subsession_fakes.py
+  - tests/common/test_http.py
+  - tests/common/test_json_store.py
+  - tests/common/test_hypothesis_json_store.py
 
-  - id: feedback
-    description: "Automated feedback analysis — runs at compaction and session-end boundaries, analyses the conversation, and files improvement tickets via POST /tickets/ingest."
-    paths:
-      - src/robotsix_chat/feedback/__init__.py
-      - src/robotsix_chat/feedback/runner.py
-      - tests/feedback/__init__.py
-      - tests/feedback/test_runner.py
+- id: direct-repo description: "Direct-repository-capability tools — push branches and open PRs as
+  the robotsix-mill GitHub App installation for BLOCKED tickets." paths:
 
-  - id: ui
-    description: "Browser chat UI — self-contained HTML frontend served at /."
-    paths:
-      - src/robotsix_chat/ui/index.html
-      - src/robotsix_chat/ui/static/chat.css
-      - src/robotsix_chat/ui/static/chat.js
-      - docs/user-guide/settings-ui.md
-      - tests/ui/__init__.py
-      - tests/ui/conftest.py
-      - tests/ui/test_chat_integration.py
-      - tests/ui/test_smoke.py
+  - src/robotsix_chat/repo/__init__.py
+  - src/robotsix_chat/repo/direct/__init__.py
+  - src/robotsix_chat/repo/direct/client.py
+  - tests/repo/direct/__init__.py
+  - tests/repo/direct/test_direct_repo.py
 
-  - id: http-probe
-    description: "Read-only HTTP uptime/render-probe tool for the agent — exposes build_http_probe_tools() returning an http_probe tool for HTTPS GET health checks with optional content assertions (status, expect_contains, expect_absent), plus load_http_probe_skill() for the component skill document."
-    paths:
-      - src/robotsix_chat/http_probe/__init__.py
-      - src/robotsix_chat/http_probe/skill.md
-      - tests/http_probe/__init__.py
-      - tests/http_probe/test_http_probe.py
+- id: repo-study description: "Repo-study tools — temporary local repo snapshots (GitHub tarball, no
+  git binary) the agent can list, read, and regex-search before they expire; auth reuses the
+  direct_repo GitHub App credentials." paths:
 
-  - id: lifecycle
-    description: "Read-only deploy-lifecycle API tools for the agent — exposes build_lifecycle_tools() returning tools to list services, check status/health, and read config/env (secrets masked server-side), plus load_lifecycle_skill() for the component skill document."
-    paths:
-      - src/robotsix_chat/lifecycle/__init__.py
-      - src/robotsix_chat/lifecycle/client.py
-      - src/robotsix_chat/lifecycle/skill.md
-      - docs/lifecycle/skill.md
-      - tests/lifecycle/__init__.py
-      - tests/lifecycle/test_lifecycle.py
+  - src/robotsix_chat/repo/study/__init__.py
+  - src/robotsix_chat/repo/study/workspace.py
+  - tests/repo/study/__init__.py
+  - tests/repo/study/test_repo_study.py
 
-  - id: version-check
-    description: "Self-version-check tool for the agent — compares the running robotsix_chat.__version__ against the latest published GitHub release and warns the user when the deployment is behind."
-    paths:
-      - src/robotsix_chat/version_check/__init__.py
-      - src/robotsix_chat/version_check/client.py
-      - tests/version_check/__init__.py
-      - tests/version_check/test_version_check.py
+- id: repo-security description: "GitHub repository security-feature tools — enable/disable
+  dependency graph, advanced security, secret scanning, and push protection on repos under the
+  configured GitHub organisation. Auth delegates to the direct-repo GitHub App installation." paths:
 
-  - id: notification
-    description: "Browser notification tool for the agent — exposes build_notification_tools(), a factory returning a notify_user LLM tool that publishes concise alerts (title, body, urgency, optional link) as notification events to connected clients over the SSE channel. The browser renders them via the Notifications API. No external push-provider infrastructure is needed."
-    paths:
-      - src/robotsix_chat/notification/__init__.py
-      - src/robotsix_chat/notification/skill.md
-      - docs/notification/skill.md
-      - tests/notification/__init__.py
-      - tests/notification/test_notification.py
+  - src/robotsix_chat/repo/security/__init__.py
+  - src/robotsix_chat/repo/security/skill.md
+  - docs/repo/security/skill.md
+  - tests/repo/security/__init__.py
+  - tests/repo/security/test_security_tools.py
+  - tests/repo/security/test_settings_endpoint.py
+
+- id: diagnostics description: "Diagnostics tools for the agent — exposes build_diagnostics_tools()
+  that returns tools for listing diagnostic events, checking recurring failure categories, and
+  managing fix proposals. Returns no tools when diagnostics is disabled." paths:
+
+  - src/robotsix_chat/diagnostics/__init__.py
+  - src/robotsix_chat/diagnostics/fixes.py
+  - src/robotsix_chat/diagnostics/store.py
+  - src/robotsix_chat/diagnostics/verification.py
+  - tests/diagnostics/__init__.py
+  - tests/diagnostics/test_fixes.py
+  - tests/diagnostics/test_verification.py
+
+- id: knowledge description: "Writable knowledge-base tools for the agent — exposes
+  build_knowledge_tools(), a factory that returns five tools the agent can call to add, append,
+  update, list, and read durable notes across sessions. Entirely local JSON storage, no embeddings."
+  paths:
+
+  - src/robotsix_chat/knowledge/__init__.py
+  - src/robotsix_chat/knowledge/store.py
+  - tests/knowledge/__init__.py
+  - tests/knowledge/test_knowledge.py
+
+- id: llm description: "LLM-powered agent — streaming wrapper around llmio.Agent." paths:
+
+  - src/robotsix_chat/llm/__init__.py
+  - src/robotsix_chat/llm/agent.py
+  - docs/llm/agent.md
+  - tests/llm/__init__.py
+  - tests/llm/test_agent.py
+
+- id: memory description: "Long-term memory backend — Cognee-based persistent storage for
+  cross-conversation continuity." paths:
+
+  - src/robotsix_chat/memory/__init__.py
+  - src/robotsix_chat/memory/base.py
+  - src/robotsix_chat/memory/cognee.py
+  - docs/memory/api.md
+  - tests/memory/__init__.py
+  - tests/memory/test_memory.py
+
+- id: mail description: "Mail integration — consult robotsix-auto-mail's board manager via direct
+  HTTP." paths:
+
+  - src/robotsix_chat/mail/__init__.py
+  - src/robotsix_chat/mail/client.py
+  - tests/mail/__init__.py
+  - tests/mail/test_build_mail_tools.py
+
+- id: subsessions description: "Unified subsession system — background agents (task / periodic /
+  user_chat) spawned from chat sessions, with per-subsession model levels, depth-limited nesting,
+  inbox steering, and parent summary delivery." paths:
+
+  - src/robotsix_chat/subsessions/__init__.py
+  - src/robotsix_chat/subsessions/models.py
+  - src/robotsix_chat/subsessions/registry.py
+  - src/robotsix_chat/subsessions/delivery.py
+  - src/robotsix_chat/subsessions/worker.py
+  - src/robotsix_chat/subsessions/resume.py
+  - src/robotsix_chat/subsessions/tools.py
+  - tests/subsessions/__init__.py
+  - tests/subsessions/test_models.py
+  - tests/subsessions/test_registry.py
+  - tests/subsessions/test_worker.py
+  - tests/subsessions/test_tools.py
+  - tests/subsessions/test_resume.py
+  - tests/subsessions/test_delivery.py
+
+- id: refdocs description: "Read-only reference-docs tool — lets the chat agent read team repos."
+  paths:
+
+  - src/robotsix_chat/refdocs/__init__.py
+  - src/robotsix_chat/refdocs/client.py
+  - tests/refdocs/__init__.py
+  - tests/refdocs/test_refdocs.py
+
+- id: render-url description: "Read-only URL rendering tool — headless Chromium (Playwright) that
+  captures full-page screenshots and accessibility trees for UI verification. Exposes
+  build_render_url_tools(), a factory returning a single render_url async tool." paths:
+
+  - src/robotsix_chat/render_url/__init__.py
+  - tests/render_url/__init__.py
+  - tests/render_url/test_render_url.py
+
+- id: selfreview description: "Self-review tools — a read-only digest of live conversation activity.
+  Exposes build_recent_activity_tools(), a factory that returns a single read_recent_activity tool
+  that reads from the in-process ConversationStore." paths:
+
+  - src/robotsix_chat/selfreview/__init__.py
+  - src/robotsix_chat/selfreview/read.py
+  - tests/selfreview/__init__.py
+  - tests/selfreview/test_read.py
+
+- id: feedback description: "Automated feedback analysis — runs at compaction and session-end
+  boundaries, analyses the conversation, and files improvement tickets via POST /tickets/ingest."
+  paths:
+
+  - src/robotsix_chat/feedback/__init__.py
+  - src/robotsix_chat/feedback/runner.py
+  - tests/feedback/__init__.py
+  - tests/feedback/test_runner.py
+
+- id: ui description: "Browser chat UI — self-contained HTML frontend served at /." paths:
+
+  - src/robotsix_chat/ui/index.html
+  - src/robotsix_chat/ui/static/chat.css
+  - src/robotsix_chat/ui/static/chat.js
+  - docs/user-guide/settings-ui.md
+  - tests/ui/__init__.py
+  - tests/ui/conftest.py
+  - tests/ui/test_chat_integration.py
+  - tests/ui/test_smoke.py
+
+- id: http-probe description: "Read-only HTTP uptime/render-probe tool for the agent — exposes
+  build_http_probe_tools() returning an http_probe tool for HTTPS GET health checks with optional
+  content assertions (status, expect_contains, expect_absent), plus load_http_probe_skill() for the
+  component skill document." paths:
+
+  - src/robotsix_chat/http_probe/__init__.py
+  - src/robotsix_chat/http_probe/skill.md
+  - tests/http_probe/__init__.py
+  - tests/http_probe/test_http_probe.py
+
+- id: lifecycle description: "Read-only deploy-lifecycle API tools for the agent — exposes
+  build_lifecycle_tools() returning tools to list services, check status/health, and read config/env
+  (secrets masked server-side), plus load_lifecycle_skill() for the component skill document."
+  paths:
+
+  - src/robotsix_chat/lifecycle/__init__.py
+  - src/robotsix_chat/lifecycle/client.py
+  - docs/lifecycle/skill.md
+  - tests/lifecycle/__init__.py
+  - tests/lifecycle/test_lifecycle.py
+
+- id: version-check description: "Self-version-check tool for the agent — compares the running
+  robotsix_chat.__version__ against the latest published GitHub release and warns the user when the
+  deployment is behind." paths:
+
+  - src/robotsix_chat/version_check/__init__.py
+  - src/robotsix_chat/version_check/client.py
+  - tests/version_check/__init__.py
+  - tests/version_check/test_version_check.py
+
+- id: notification description: "Browser notification tool for the agent — exposes
+  build_notification_tools(), a factory returning a notify_user LLM tool that publishes concise
+  alerts (title, body, urgency, optional link) as notification events to connected clients over the
+  SSE channel. The browser renders them via the Notifications API. No external push-provider
+  infrastructure is needed." paths:
+
+  - src/robotsix_chat/notification/__init__.py
+  - src/robotsix_chat/notification/skill.md
+  - docs/notification/skill.md
+  - tests/notification/__init__.py
+  - tests/notification/test_notification.py

@@ -11,19 +11,19 @@ dragging its left edge.
 
 The settings panel is backed by two HTTP endpoints on the chat server:
 
-- **`GET /config`** — returns the current on-disk config with secret field values masked as
-  `"***"`. This prevents secrets from being exposed to the browser.
-- **`PUT /config`** — accepts a JSON object with the fields to change, **deep-merges** it over
-  the existing on-disk config, validates the result through the `Settings` pydantic model, and
-  only persists if validation passes.
+- **`GET /config`** — returns the current on-disk config with secret field values masked as `"***"`.
+  This prevents secrets from being exposed to the browser.
+- **`PUT /config`** — accepts a JSON object with the fields to change, **deep-merges** it over the
+  existing on-disk config, validates the result through the `Settings` pydantic model, and only
+  persists if validation passes.
 
 ### Deep-merge (non-destructive save)
 
 The most important design property: **the save handler never blanks a field the UI doesn't render.**
 
 When the operator submits the form, the server takes the submitted JSON object and recursively
-merges it into the existing config file — it does **not** replace the entire file. Any key that
-is absent from the submitted payload is preserved unchanged from the on-disk file.
+merges it into the existing config file — it does **not** replace the entire file. Any key that is
+absent from the submitted payload is preserved unchanged from the on-disk file.
 
 For example, if the on-disk config contains:
 
@@ -85,8 +85,8 @@ value into a secret field, that new value is persisted.
    - **Number fields** — numeric input (step "1" for integers, "any" for floats).
    - **Boolean fields** — checkbox.
    - **Array fields** — text area containing JSON; edit the JSON directly.
-   - **Secret fields** — password input; value shows as `"***"`; leave unchanged to keep the
-     current secret.
+   - **Secret fields** — password input; value shows as `"***"`; leave unchanged to keep the current
+     secret.
 4. Click **Save**.
    - **Success** — the panel shows "Saved." and reloads the form from the server.
    - **Validation failure** — the panel displays the pydantic validation error and highlights
@@ -103,6 +103,7 @@ The panel remembers its open/closed state in `localStorage` across page reloads.
 Returns the current on-disk config with secrets masked as `"***"`.
 
 **Response** `200 OK`:
+
 ```json
 {
   "server_port": 8000,
@@ -123,6 +124,7 @@ When no config file exists yet, returns `{}`.
 Deep-merges the submitted JSON over the existing config, validates, and persists.
 
 **Request body** (JSON object with fields to update):
+
 ```json
 {
   "server_port": 9000,
@@ -133,6 +135,7 @@ Deep-merges the submitted JSON over the existing config, validates, and persists
 ```
 
 **Response** `200 OK`:
+
 ```json
 {
   "status": "ok"
@@ -140,6 +143,7 @@ Deep-merges the submitted JSON over the existing config, validates, and persists
 ```
 
 **Response** `422 Unprocessable Entity` (validation failed):
+
 ```json
 {
   "error": "config validation failed",
@@ -148,6 +152,7 @@ Deep-merges the submitted JSON over the existing config, validates, and persists
 ```
 
 **Response** `500 Internal Server Error` (I/O failure):
+
 ```json
 {
   "error": "failed to write config: ..."
