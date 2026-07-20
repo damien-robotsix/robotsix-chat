@@ -859,7 +859,7 @@ class TestFileTickets:
         route = respx_mock.post("http://test-board/tickets/ingest").mock(
             return_value=httpx.Response(201)
         )
-        runner = _make_runner(_settings(repo_ids=["robotsix-chat", "robotsix-mill"]))
+        runner = _make_runner(_settings())
         filed, failed = await runner._file_tickets(
             [
                 {
