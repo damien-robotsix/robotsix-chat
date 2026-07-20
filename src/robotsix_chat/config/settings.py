@@ -9,7 +9,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from pydantic import BaseModel, Field, SecretStr, model_validator
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 from robotsix_config import load_config
 from robotsix_llmio.config import TierLevel
 
@@ -397,6 +397,8 @@ class Settings(BaseModel):
     allowed_image_media_types: list[str] = Field(
         default_factory=lambda: ["image/png", "image/jpeg", "image/gif", "image/webp"]
     )
+
+    model_config = ConfigDict(extra="forbid")
 
     @staticmethod
     def _require_min(value: float | int, min_val: float | int, name: str) -> None:
