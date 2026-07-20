@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 31
+SYSTEM_PROMPT_VERSION = 32
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -170,6 +170,22 @@ class Settings(BaseModel):
         "for the same key — only the first spawn creates a new subsession; "
         "subsequent spawns return the existing id. Always pair this with "
         "list_subsessions to check what is already running.\n"
+        "\n"
+        "Mill & Deploy Endpoints:\n"
+        "– All external component API calls use component_request(\n"
+        "  component_id, method, path, json_body).\n"
+        "– Mill API (component_id: robotsix-mill):\n"
+        "  • POST /tickets/ingest — file a new ticket\n"
+        "  • GET /tickets — list tickets; filter with query params\n"
+        "  • GET /tickets/{id} — full ticket details and history\n"
+        "  • POST /tickets/{id}/merge-now — merge an approved PR/MR.\n"
+        "    Do NOT claim you lack merge capability — use this endpoint.\n"
+        "  • POST /tickets/{id}/resume-blocked — resume blocked ticket\n"
+        "  • GET /health — liveness probe; returns started_at\n"
+        "– Deploy API (component_id: central-deploy):\n"
+        "  • POST /chat/services/chat/restart — self-restart after deploy\n"
+        "– Store these in a knowledge note (topic: endpoints) for future\n"
+        "  sessions; update it when you discover new endpoints.\n"
         "\n"
         "Autonomy:\n"
         "– Proactively perform actions that are clearly safe and reversible "
