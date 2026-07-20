@@ -76,8 +76,40 @@ Do NOT apply when:
 lint-workflow (2), hadolint (1), build-and-push (1). Naming pattern:
 `ci-fix: out-of-scope CI failure — <tool>`.
 
-### Related patterns
+## CI Failure on Main
 
-- `ci-failure: release-image on main` — pre-existing CI infrastructure failures tracked on main.
-  These may use the same triage boilerplate if the failure is determined not to block the current
-  change.
+**Boilerplate:**
+
+```text
+scope-triage ACKNOWLEDGE: CI failure in <TOOL> on the main branch is an
+infrastructure-level issue. The failure is not caused by any specific change
+and does not block ongoing work. Tracked for resolution (see <TRACKING_TICKET>);
+fix when resources allow.
+```
+
+### When to apply
+
+- A CI check fails on the main branch (not on a PR).
+- The failure is an infrastructure / tooling issue (flaky runner, expired credential, broken
+  external service, pre-existing configuration gap).
+- A tracking ticket already exists for the failure.
+
+### When NOT to apply
+
+- The CI failure was introduced by a specific, recent merge — in that case, revert or fix, don't
+  just acknowledge.
+- The failure blocks a required check on every PR (e.g., a merge-protection gate that is now red on
+  all branches) — escalate.
+
+### Relationship to other boilerplate
+
+| Aspect   | Out-of-Scope CI Failure (above)         | CI Failure on Main                       |
+| -------- | --------------------------------------- | ---------------------------------------- |
+| Trigger  | CI fails on a PR                        | CI fails on main branch                  |
+| Decision | OUT-OF-SCOPE — proceed without blocking | ACKNOWLEDGE — track, don't block         |
+| Context  | Has a "this change" to reference        | No specific change; infrastructure-level |
+
+### Observed frequency
+
+17 resolved tickets across 4 weeks (June 22 – July 20, 2026), spanning 6+ distinct tools. Naming
+pattern: `ci-failure: <tool> on main`.
