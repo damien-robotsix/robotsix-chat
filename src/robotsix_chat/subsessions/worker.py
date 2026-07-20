@@ -61,6 +61,24 @@ _MAX_WORKER_HISTORY_TURNS = 20
 # Reply sentinel a periodic subsession uses to report "nothing changed".
 _NO_CHANGE_SENTINEL = "NO_CHANGE"
 
+# System note prepended to the first turn of every user_chat subsession so
+# the agent always restates option definitions inline instead of surfacing
+# bare labels ("Option B") the operator cannot disambiguate.
+_USER_CHAT_FIRST_TURN_NOTE = (
+    "[System note: this is a side-chat with the operator. "
+    "Your instructions may define a menu of options (Option A, Option B, …). "
+    "The operator sees ONLY what you write in this panel — they do NOT see "
+    "your instructions.  Every time you reference an option label you MUST "
+    "restate its full definition inline so the operator can understand it "
+    "without switching context.  For example, instead of writing "
+    '"Option B is the right call," write '
+    '"Option B (phased: cleanup now, warning-first gate, fail-closed only '
+    'after auto-mail migrates) is the right call."  This applies to every '
+    "turn — the initial recommendation and any follow-up confirmation-gate "
+    "turns.  If you present multiple options, show ALL of them with their "
+    "definitions so the operator can compare.]"
+)
+
 # Consecutive mill-unreachable failures before the subsession is closed.
 _MAX_MILL_FAILURES = 2
 
@@ -1027,6 +1045,8 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                 turn_input = _build_periodic_input(info, previous_result, steering)
             elif first_turn:
                 turn_input = info.prompt
+                if info.kind is SubsessionKind.USER_CHAT:
+                    turn_input = _USER_CHAT_FIRST_TURN_NOTE + "\n\n" + turn_input
             else:
                 turn_input = _render_turn_input(pending)
             first_turn = False

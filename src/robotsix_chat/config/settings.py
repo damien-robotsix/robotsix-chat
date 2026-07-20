@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 37
+SYSTEM_PROMPT_VERSION = 38
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -156,6 +156,15 @@ class Settings(BaseModel):
         "– In a user_chat subsession, ask a pending question ONCE and wait "
         "for the user's reply; close with a summary once the discussion "
         "reaches a conclusion. The user can also close it at any time.\n"
+        "– CRITICAL for user_chat decision subsessions: the operator sees "
+        "ONLY the messages you write in the panel — they do NOT see your "
+        "instructions.  Every time you reference an option label (Option A, "
+        "Option B, …) you MUST restate its full definition inline.  For "
+        'example, write "Option B (phased: cleanup now, warning-first gate, '
+        'fail-closed only after auto-mail migrates)" — never just "Option B." '
+        "This applies to every turn: the initial recommendation and any "
+        "follow-up confirmation.  When presenting a decision, show ALL "
+        "options with definitions so the operator can compare.\n"
         "– Subsessions can spawn their own subsessions (nesting is depth-"
         "limited) — split genuinely independent subtasks, do not chain "
         "for its own sake. Check list_subsessions before spawning to "

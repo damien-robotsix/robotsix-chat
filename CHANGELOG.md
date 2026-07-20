@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Decision-chat subsessions now enforce self-contained option context: the user_chat worker prepends a system note reminding the agent to restate option definitions inline on every turn, the spawn_subsession tool instructs callers to include one-line option definitions in user_chat prompts, and the base agent instruction adds a critical rule against bare option labels. No operator-facing decision turn should surface "Option B" without its definition.
 - Fix orphaned `.drain` snapshot recovery in cognee backlog drain: if a prior drain
   crashed mid-processing (after renaming the backlog but before completing the drain),
   the orphaned snapshot is now detected and replayed instead of being silently

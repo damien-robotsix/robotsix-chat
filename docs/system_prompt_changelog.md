@@ -5,6 +5,25 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v38 — 2026-07-20 — decision-chat-subsessions-must-embed-ful-77c1
+
+**Summary:** Add an option-label restatement rule to the user_chat subsession guidance. When
+presenting a decision to the operator, the agent must always restate the full definition of each
+option inline — never surface a bare label like "Option B" without its definition. This applies to
+every turn (initial recommendation and follow-up confirmation gates) and covers all options present
+in the menu. The operator sees only the panel output, not the subsession's instructions, so the
+definitions must travel with every reference.
+
+**Rationale:** Decision subsessions were surfacing recommendations as bare labels ("Option B is the
+right call") while the option definitions lived only in the spawn instruction. The operator had no
+way to disambiguate labels without switching context, and this was a recurring failure across
+multiple decision chats. The new rule extends the self-contained-instructions principle to outbound
+operator-facing turns.
+
+**SHA256:** `501a7f57365d705c6bbf7b250196da279c238c2a31977017df4cfc60a6e38e6d`
+
+______________________________________________________________________
+
 ## v37 — 2026-07-20 — direct-fix-capability-chat-agent-can-push-validated-fixes
 
 **Summary:** Add a `direct_fix` tool to the system prompt's direct-repo section: when a ticket has
