@@ -2,6 +2,7 @@
 
 - Add `workflow_dispatch` trigger to `release.yml` for manual recovery deploys.
 - Added `workflow_dispatch` trigger to `.github/workflows/docs.yml` to allow manual deploy of docs from the Actions UI.
+- Fix stale comment on `_active_dedup_keys` in `Registry` — remove `user_chat` qualifier and `or periodic monitors`, matching the dedup scope after the kind guard removal in PR #662.
 - Added defense-in-depth dedup guard in ``SubsessionRegistry.create()``: raises ``SubsessionDedupError`` when a ``dedup_key`` is already active, preventing duplicate monitors even if the ``spawn_subsession`` pre-check is bypassed.
 - Feedback runner: record OTel span error status (`StatusCode.ERROR`) and
   exception details on each ingest POST span when filing fails (non-2xx or
