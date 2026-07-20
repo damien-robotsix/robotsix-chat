@@ -273,6 +273,7 @@ class TestRunServer:
             on_shutdown=None,
             direct_repo_settings=None,
             github_security_settings=None,
+            config_path=None,
         )
 
 
