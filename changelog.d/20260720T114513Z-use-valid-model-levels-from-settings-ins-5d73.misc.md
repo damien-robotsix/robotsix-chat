@@ -1,0 +1,1 @@
+Use `_VALID_MODEL_LEVELS` from settings instead of hardcoded (1,2,3,4) in worker.py

@@ -35,11 +35,13 @@ from robotsix_chat.config.models import (
 )
 from robotsix_chat.config.settings import (
     SYSTEM_PROMPT_VERSION,
+    VALID_MODEL_LEVELS,
     Settings,
 )
 
 __all__ = [
     "SYSTEM_PROMPT_VERSION",
+    "VALID_MODEL_LEVELS",
     "CentralDeploySettings",
     "ComponentClientSettings",
     "ComponentTarget",
