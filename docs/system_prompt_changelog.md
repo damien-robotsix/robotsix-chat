@@ -21,7 +21,7 @@ discover that onboarding is a runtime API operation. This caused lengthy, confus
 with the user. The new instruction closes this knowledge gap by explicitly distinguishing the
 API-driven deploy system from git-driven workflows.
 
-**SHA256:** `c6dc9b3a581929d16c933734e2d3f62016e9c6ead71f6a3191cfd4ac14ef2ff8`
+**SHA256:** `50aa4a754a18b4a2de813a876a73923a73c179966687a32514be46c68e8a05a9`
 
 ______________________________________________________________________
 
