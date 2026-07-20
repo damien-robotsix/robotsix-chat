@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Document the Pydantic `extra="forbid"` convention as a config-standard rule in AGENT.md
 - Add ``extra="forbid"`` to all Pydantic config models (20 sub-models + top-level ``Settings``). Unknown JSON keys now raise a ``ValidationError`` instead of being silently ignored — a typo like ``"memry"`` for ``"memory"`` is caught at config load rather than causing the operator to wonder why a feature is disabled.
 - Move `lifecycle/skill.md` from `docs/` into the packaged source tree at `src/robotsix_chat/lifecycle/` so the lifecycle skill instructions reach the agent in production (previously the `docs/`-relative path resolved nowhere in the Docker image; `load_lifecycle_skill()` silently returned `""`).
   `docs/lifecycle/skill.md` is now a symlink to the canonical copy.
