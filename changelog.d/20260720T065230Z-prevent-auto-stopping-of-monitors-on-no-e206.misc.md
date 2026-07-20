@@ -1,0 +1,1 @@
+Prevent auto-stopping of monitors on no-change without resolution

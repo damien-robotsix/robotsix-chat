@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Periodic subsession auto-stop (``no_change_auto_stop`` and ``human_approval_timeout``) now logs a ``WARNING``-level message so operators can see when a monitor ceases watching and decide whether to restart it.
 - Show a relative timestamp ("2m ago") at the bottom of each chat session for the last model-generated message, with the absolute server time on hover.
 - Add `workflow_dispatch` trigger to `release.yml` for manual recovery deploys.
 - Added `workflow_dispatch` trigger to `.github/workflows/docs.yml` to allow manual deploy of docs from the Actions UI.

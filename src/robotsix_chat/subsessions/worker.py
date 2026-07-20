@@ -512,6 +512,12 @@ async def _run_periodic_turn(
     if isinstance(last_known, str) and last_known.lower() == "human_issue_approval":
         human_approval_cap = env.settings.subsessions.human_approval_timeout_runs
         if consecutive_no_change >= human_approval_cap:
+            logger.warning(
+                "Subsession %s: auto-escalating after %d consecutive "
+                "no-change runs in human_issue_approval state.",
+                sub_id,
+                human_approval_cap,
+            )
             summary = (
                 f"Ticket has been stuck at human_issue_approval for "
                 f"{human_approval_cap} consecutive no-change runs — "
@@ -531,6 +537,13 @@ async def _run_periodic_turn(
 
     no_change_cap = env.settings.subsessions.auto_stop_no_change_runs
     if consecutive_no_change >= no_change_cap:
+        logger.warning(
+            "Subsession %s: auto-stopping after %d consecutive no-change runs. "
+            "The monitor will no longer watch for changes — restart it if "
+            "continued monitoring is needed.",
+            sub_id,
+            no_change_cap,
+        )
         summary = f"Auto-stopped after {no_change_cap} consecutive no-change runs."
         closed = registry.mark_closed(
             sub_id,
