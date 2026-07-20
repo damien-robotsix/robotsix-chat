@@ -281,6 +281,7 @@ modules:
       - src/robotsix_chat/ui/index.html
       - src/robotsix_chat/ui/static/chat.css
       - src/robotsix_chat/ui/static/chat.js
+      - docs/user-guide/settings-ui.md
       - tests/ui/__init__.py
       - tests/ui/conftest.py
       - tests/ui/test_chat_integration.py
