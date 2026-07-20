@@ -542,7 +542,7 @@ async def _run_periodic_turn(
             "The monitor will no longer watch for changes — restart it if "
             "continued monitoring is needed.",
             sub_id,
-            no_change_cap,
+            consecutive_no_change,
         )
         summary = f"Auto-stopped after {no_change_cap} consecutive no-change runs."
         closed = registry.mark_closed(
