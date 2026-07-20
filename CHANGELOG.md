@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add `workflow_dispatch` trigger to `release.yml` for manual recovery deploys.
 - Added `workflow_dispatch` trigger to `.github/workflows/docs.yml` to allow manual deploy of docs from the Actions UI.
 - Added defense-in-depth dedup guard in ``SubsessionRegistry.create()``: raises ``SubsessionDedupError`` when a ``dedup_key`` is already active, preventing duplicate monitors even if the ``spawn_subsession`` pre-check is bypassed.
 - Feedback runner: record OTel span error status (`StatusCode.ERROR`) and
