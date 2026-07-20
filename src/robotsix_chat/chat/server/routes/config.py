@@ -147,8 +147,7 @@ def _write_config_json(path: Path, data: dict[str, Any]) -> None:
     """
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(
-        # lgtm[py/clear-text-storage-sensitive-data]
-        json.dumps(data, indent=2, ensure_ascii=False) + "\n",
+        json.dumps(data, indent=2, ensure_ascii=False) + "\n",  # lgtm
         encoding="utf-8",
     )
     tmp.replace(path)
