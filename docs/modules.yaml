@@ -124,6 +124,7 @@ modules:
       - src/robotsix_chat/chat/server/routes/__init__.py
       - src/robotsix_chat/chat/server/routes/_shared.py
       - src/robotsix_chat/chat/server/routes/chat.py
+      - src/robotsix_chat/chat/server/routes/config.py
       - src/robotsix_chat/chat/server/routes/constants.py
       - src/robotsix_chat/chat/server/routes/errors.py
       - src/robotsix_chat/chat/server/routes/events.py
@@ -141,6 +142,7 @@ modules:
       - tests/chat/server/test_idempotency.py
       - tests/chat/server/test_message_coalescer_gc.py
       - tests/chat/server/routes/__init__.py
+      - tests/chat/server/routes/test_config.py
       - tests/chat/server/routes/test_shared.py
 
   - id: common

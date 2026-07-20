@@ -52,6 +52,8 @@ from .routes import (
     RunSerializer,
     cancel_queued_endpoint,
     chat_endpoint,
+    config_get_endpoint,
+    config_save_endpoint,
     events_endpoint,
     github_settings_endpoint,
     health_endpoint,
@@ -190,6 +192,7 @@ SHARED_PARAMS: frozenset[str] = frozenset(
         "on_shutdown",
         "direct_repo_settings",
         "github_security_settings",
+        "config_path",
     }
 )
 
@@ -220,6 +223,7 @@ def create_app(
     on_shutdown: Callable[[], Any] | None = None,
     direct_repo_settings: DirectRepoSettings | None = None,
     github_security_settings: GitHubSecuritySettings | None = None,
+    config_path: str | None = None,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -306,6 +310,11 @@ def create_app(
             (org, deploy API key) used by the
             ``PATCH /chat/github/repos/{owner}/{repo}/settings`` endpoint.
             When ``None``, the endpoint returns 503.
+        config_path: Path to the config JSON file, used by the
+            ``GET /config`` and ``PUT /config`` endpoints.  When ``None``
+            (default), the path is resolved from the
+            ``ROBOTSIX_CONFIG_FILE`` environment variable or the default
+            ``config/config.json``.
 
     """
     routes: list[Route | Mount] = [
@@ -349,6 +358,8 @@ def create_app(
             github_settings_endpoint,
             methods=["PATCH"],
         ),
+        Route("/config", config_get_endpoint, methods=["GET"]),
+        Route("/config", config_save_endpoint, methods=["PUT"]),
     ]
     if serve_ui:
         routes.append(Route("/", ui_endpoint, methods=["GET"]))
@@ -415,6 +426,8 @@ def create_app(
     app.state.direct_repo_settings = direct_repo_settings
     app.state.github_security_settings = github_security_settings
     app.state.feedback_runner = feedback_runner  # may be None
+    if config_path is not None:
+        app.state.config_path = config_path
     return app
 
 

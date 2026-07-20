@@ -1,5 +1,11 @@
 ## 0.0.0 (unreleased)
 
+- Settings UI: new settings panel (⚙ button in header) with config editor,
+  ``GET /config`` (returns config with secrets masked), and ``PUT /config``
+  (deep-merges submitted form over existing config, validates through Settings
+  before persisting).  Prevents partial saves from blanking unrendered fields
+  like ``memory.embedding.endpoint``, and rejects invalid configs with inline
+  validation errors.
 - Reuse a single `httpx.AsyncClient` across all tickets in `FeedbackRunner._file_tickets` instead of creating one per ticket.
 - Add ``self_restart`` tool to the lifecycle module — a privileged endpoint
   (``POST /self/restart``) that restarts the agent's own service without requiring
@@ -49,6 +55,7 @@
   uses `typeCheckingMode = "basic"` with the most valuable diagnostics enabled
   as warnings for gradual adoption; only `reportMatchNotExhaustive` and
   `reportUnnecessaryContains` are errors.
+
 - release-image: Fix "Verify CI is green" self-exclusion timeout by adding name-based fallback when `getWorkflowRun` fails to return a check-suite id (#TBD)
 - Add a "Deploy system" bullet to the Autonomy section of the system prompt clarifying that the robotsix-deploy (central-deploy) management plane is a runtime API server — component onboarding, lifecycle operations, and configuration changes are all API-driven (POST /onboard/preflight, /onboard/confirm, etc.) with no git PRs needed.
 - Add batch-MR-approval guidance to the agent system prompt: when multiple MRs are pending human approval, the agent must first categorize them by relevance to active tickets, present a compact filter prompt, and approve the selected group in bulk through the mill's merge endpoint. (#TBD)
