@@ -1,0 +1,1 @@
+Native autonomous session support (subject → plan → approval → execution → auto-cycle)

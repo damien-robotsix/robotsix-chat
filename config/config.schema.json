@@ -1,5 +1,32 @@
 {
   "$defs": {
+    "AutonomousSettings": {
+      "description": "Autonomous session settings.\n\nAn autonomous session runs a self-directed loop on the operator's\nbehalf: it picks a subject, drafts a plan, waits for explicit operator\napproval, executes the plan, and auto-cycles to the next subject.\n\nAttributes:\n    enabled: Master switch.  When ``False``, autonomous sessions\n        cannot be created and the ``kind`` parameter on\n        ``POST /sessions`` is ignored (falls back to ``\"chat\"``).\n    max_auto_turns: Maximum number of autonomous agent turns per\n        execution phase before requiring re-approval.  Default 20.\n    completion_marker: The exact string the agent must emit to\n        signal completion.  Default ``---AUTONOMOUS COMPLETE---``.\n    approval_marker: The exact string the agent must emit to\n        signal it is awaiting approval.  Default\n        ``---AWAITING APPROVAL---``.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "max_auto_turns": {
+          "default": 20,
+          "title": "Max Auto Turns",
+          "type": "integer"
+        },
+        "completion_marker": {
+          "default": "---AUTONOMOUS COMPLETE---",
+          "title": "Completion Marker",
+          "type": "string"
+        },
+        "approval_marker": {
+          "default": "---AWAITING APPROVAL---",
+          "title": "Approval Marker",
+          "type": "string"
+        }
+      },
+      "title": "AutonomousSettings",
+      "type": "object"
+    },
     "CentralDeploySettings": {
       "additionalProperties": false,
       "description": "Central-deploy roster and component-access settings.\n\nProvides the base URL and bearer token for the central-deploy\nmanagement-plane API.  At session start the agent fetches the\n``GET /chat/components`` roster (a list of component agents the chat\nis allowed to call), caches it with a short TTL, and loads each\ncomponent's declared skill into the agent.\n\nAttributes:\n    url: Base URL of the central-deploy API (no trailing slash).\n    api_token: Bearer token for authenticating to the central-deploy\n        API.  Required when any component access is expected.\n    roster_cache_ttl: Seconds to cache the roster before re-fetching.\n        Default 300 (5 min).",
@@ -854,6 +881,9 @@
     },
     "conversation": {
       "$ref": "#/$defs/ConversationSettings"
+    },
+    "autonomous": {
+      "$ref": "#/$defs/AutonomousSettings"
     },
     "diagnostics": {
       "$ref": "#/$defs/DiagnosticsSettings"

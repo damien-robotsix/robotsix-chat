@@ -487,6 +487,33 @@ class SubsessionsSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class AutonomousSettings(BaseModel):
+    """Autonomous session settings.
+
+    An autonomous session runs a self-directed loop on the operator's
+    behalf: it picks a subject, drafts a plan, waits for explicit operator
+    approval, executes the plan, and auto-cycles to the next subject.
+
+    Attributes:
+        enabled: Master switch.  When ``False``, autonomous sessions
+            cannot be created and the ``kind`` parameter on
+            ``POST /sessions`` is ignored (falls back to ``"chat"``).
+        max_auto_turns: Maximum number of autonomous agent turns per
+            execution phase before requiring re-approval.  Default 20.
+        completion_marker: The exact string the agent must emit to
+            signal completion.  Default ``---AUTONOMOUS COMPLETE---``.
+        approval_marker: The exact string the agent must emit to
+            signal it is awaiting approval.  Default
+            ``---AWAITING APPROVAL---``.
+
+    """
+
+    enabled: bool = False
+    max_auto_turns: int = 20
+    completion_marker: str = "---AUTONOMOUS COMPLETE---"
+    approval_marker: str = "---AWAITING APPROVAL---"
+
+
 class ConversationSettings(BaseModel):
     """Multi-session conversation continuity for the browser chat.
 

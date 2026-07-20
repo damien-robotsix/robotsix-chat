@@ -77,6 +77,12 @@ class Session:
     turns: list[Turn] = field(default_factory=list)
     turn_count: int = 0
     closed: bool = False
+    # Session kind: ``"chat"`` (default) or ``"autonomous"``.
+    kind: str = "chat"
+    # Autonomous lifecycle state (``None`` for non-autonomous sessions).
+    autonomous_state: str | None = None
+    # The plan text produced by the autonomous agent (for UI display).
+    autonomous_plan: str | None = None
     # Summary of the turns before ``compacted_turn_index`` — replayed to the
     # agent in place of those turns.  The full ``turns`` list is untouched, so
     # the UI transcript stays complete.
@@ -283,6 +289,21 @@ class ConversationStoreSerializer:
                     else 0
                 )
 
+                kind_raw = sraw.get("kind", "chat")
+                kind = str(kind_raw) if isinstance(kind_raw, str) else "chat"
+                autonomous_state_raw = sraw.get("autonomous_state")
+                autonomous_state = (
+                    str(autonomous_state_raw)
+                    if isinstance(autonomous_state_raw, str)
+                    else None
+                )
+                autonomous_plan_raw = sraw.get("autonomous_plan")
+                autonomous_plan = (
+                    str(autonomous_plan_raw)
+                    if isinstance(autonomous_plan_raw, str)
+                    else None
+                )
+
                 session = Session(
                     session_id=sid,
                     title=title,
@@ -290,6 +311,9 @@ class ConversationStoreSerializer:
                     turns=turns,
                     turn_count=int(sraw.get("turn_count", len(turns))),
                     closed=bool(sraw.get("closed", False)),
+                    kind=kind,
+                    autonomous_state=autonomous_state,
+                    autonomous_plan=autonomous_plan,
                     compacted_summary=compacted_summary,
                     compacted_turn_index=min(compacted_turn_index, len(turns)),
                     compacted_into=compacted_into,
@@ -333,6 +357,12 @@ class ConversationStoreSerializer:
                     "turns": [list(t) for t in session.turns],
                     "closed": session.closed,
                 }
+                if session.kind != "chat":
+                    session_dict["kind"] = session.kind
+                if session.autonomous_state is not None:
+                    session_dict["autonomous_state"] = session.autonomous_state
+                if session.autonomous_plan is not None:
+                    session_dict["autonomous_plan"] = session.autonomous_plan
                 if session.compacted_summary is not None:
                     session_dict["compacted_summary"] = session.compacted_summary
                 if session.compacted_turn_index:
@@ -616,6 +646,7 @@ class ConversationStore:
                         "last_active": new_session.wall_last_active,
                         "turn_count": 0,
                         "closed": False,
+                        "kind": "chat",
                     }
                 ],
                 sid,
@@ -632,20 +663,24 @@ class ConversationStore:
                         "last_active": sess.wall_last_active,
                         "turn_count": sess.turn_count,
                         "closed": sess.closed,
+                        "kind": sess.kind,
                     }
                 )
         # Sort by last_active descending.
         result.sort(key=lambda s: s["last_active"], reverse=True)  # type: ignore[arg-type,return-value]
         return result, owner.active_session_id
 
-    def create_session(self, owner_id: str) -> dict[str, object]:
+    def create_session(
+        self, owner_id: str, *, kind: str = "chat"
+    ) -> dict[str, object]:
         """Create a new empty session for *owner_id*, mark it active.
 
+        *kind* may be ``"chat"`` (default) or ``"autonomous"``.
         Returns the session metadata dict.
         """
         sid = self._session_factory()
         now = self._wall_clock()
-        session = Session(session_id=sid, wall_last_active=now)
+        session = Session(session_id=sid, wall_last_active=now, kind=kind)
         self._sessions[sid] = session
 
         owner = self._owners.get(owner_id)
@@ -668,6 +703,7 @@ class ConversationStore:
             "last_active": now,
             "turn_count": 0,
             "closed": False,
+            "kind": kind,
         }
 
     def delete_session(self, owner_id: str, session_id: str) -> dict[str, object]:

@@ -90,9 +90,14 @@ async def sessions_list_endpoint(request: Request) -> JSONResponse:
 async def sessions_create_endpoint(request: Request) -> JSONResponse:
     """Create a new empty session for an owner.
 
-    ``POST /sessions`` with body ``{"owner_id": "..."}`` returns::
+    ``POST /sessions`` with body ``{"owner_id": "...", "kind": "chat"}`` returns::
 
         {"session_id": "...", "title": "New chat", "last_active": 1.0, "turn_count": 0}
+
+    *kind* may be ``"chat"`` (default) or ``"autonomous"``.  Autonomous
+    sessions are only created when ``autonomous.enabled`` is ``true`` in
+    the server config — otherwise *kind* is silently ignored and falls
+    back to ``"chat"``.
 
     The new session is marked as the owner's active session.
     """
@@ -105,8 +110,22 @@ async def sessions_create_endpoint(request: Request) -> JSONResponse:
             detail="'owner_id' field is required and must be a string",
         )
 
+    kind = body.get("kind", "chat")
+    if not isinstance(kind, str):
+        kind = "chat"
+    if kind not in ("chat", "autonomous"):
+        kind = "chat"
+
+    # Gate autonomous session creation behind the config flag.
+    if kind == "autonomous":
+        autonomous_enabled = getattr(
+            request.app.state, "autonomous_enabled", False
+        )
+        if not autonomous_enabled:
+            kind = "chat"
+
     store: ConversationStore = request.app.state.conversation_store
-    session = store.create_session(owner_id)
+    session = store.create_session(owner_id, kind=kind)
     return JSONResponse(session)
 
 
@@ -280,3 +299,109 @@ async def summary_endpoint(request: Request) -> JSONResponse:
         ) from None
 
     return JSONResponse({"summary": "".join(reply_parts).strip()})
+
+
+async def sessions_approve_endpoint(request: Request) -> JSONResponse:
+    """Approve an autonomous session's plan so execution can begin.
+
+    ``POST /sessions/{session_id}/approve`` with optional JSON body
+    ``{"feedback": "..."}`` transitions the autonomous session from
+    ``awaiting_approval`` to ``executing``.  Returns::
+
+        {
+          "approved": true,
+          "session_id": "...",
+          "new_state": "executing"
+        }
+
+    Returns 409 Conflict if the session is not in ``awaiting_approval``
+    state.  Returns 404 if the session is not found or is not autonomous.
+    """
+    from robotsix_chat.autonomous.models import AutonomousState
+
+    session_id = request.path_params["session_id"]
+
+    store: ConversationStore = request.app.state.conversation_store
+    session = store.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    if getattr(session, "kind", "chat") != "autonomous":
+        raise HTTPException(
+            status_code=404, detail="session is not autonomous"
+        )
+
+    current_state = getattr(session, "autonomous_state", None)
+    if current_state != AutonomousState.AWAITING_APPROVAL.value:
+        raise HTTPException(
+            status_code=409,
+            detail=f"session is in state {current_state!r}, "
+            f"expected {AutonomousState.AWAITING_APPROVAL.value!r}",
+        )
+
+    # Transition to executing.
+    runner = getattr(request.app.state, "autonomous_runner", None)
+    if runner is not None:
+        runner.transition_state(session_id, AutonomousState.EXECUTING)
+    else:
+        session.autonomous_state = AutonomousState.EXECUTING.value
+
+    return JSONResponse(
+        {
+            "approved": True,
+            "session_id": session_id,
+            "new_state": AutonomousState.EXECUTING.value,
+        }
+    )
+
+
+async def sessions_reject_endpoint(request: Request) -> JSONResponse:
+    """Reject an autonomous session's plan.
+
+    ``POST /sessions/{session_id}/reject`` with optional JSON body
+    ``{"feedback": "..."}`` transitions the autonomous session back to
+    ``selecting_subject`` so the agent can revise its plan.  Returns::
+
+        {
+          "rejected": true,
+          "session_id": "...",
+          "new_state": "selecting_subject"
+        }
+
+    Returns 409 Conflict if the session is not in ``awaiting_approval``
+    state.  Returns 404 if the session is not found or is not autonomous.
+    """
+    from robotsix_chat.autonomous.models import AutonomousState
+
+    session_id = request.path_params["session_id"]
+
+    store: ConversationStore = request.app.state.conversation_store
+    session = store.get_session(session_id)
+    if session is None:
+        raise HTTPException(status_code=404, detail="session not found")
+    if getattr(session, "kind", "chat") != "autonomous":
+        raise HTTPException(
+            status_code=404, detail="session is not autonomous"
+        )
+
+    current_state = getattr(session, "autonomous_state", None)
+    if current_state != AutonomousState.AWAITING_APPROVAL.value:
+        raise HTTPException(
+            status_code=409,
+            detail=f"session is in state {current_state!r}, "
+            f"expected {AutonomousState.AWAITING_APPROVAL.value!r}",
+        )
+
+    # Transition back to selecting subject.
+    runner = getattr(request.app.state, "autonomous_runner", None)
+    if runner is not None:
+        runner.transition_state(session_id, AutonomousState.SELECTING_SUBJECT)
+    else:
+        session.autonomous_state = AutonomousState.SELECTING_SUBJECT.value
+
+    return JSONResponse(
+        {
+            "rejected": True,
+            "session_id": session_id,
+            "new_state": AutonomousState.SELECTING_SUBJECT.value,
+        }
+    )

@@ -1301,6 +1301,8 @@ async def test_run_server_from_config_creates_agent_from_settings(
         assert isinstance(github_security_settings, GitHubSecuritySettings)
         feedback_runner = call_args[1].pop("feedback_runner")
         assert feedback_runner is None
+        autonomous_enabled = call_args[1].pop("autonomous_enabled")
+        assert autonomous_enabled is False
         assert call_args[1] == {
             "host": "127.0.0.1",
             "port": 8080,

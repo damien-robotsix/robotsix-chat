@@ -15,6 +15,7 @@ from robotsix_llmio.config import TierLevel
 
 from robotsix_chat.config.constants import level_needs_api_key
 from robotsix_chat.config.models import (
+    AutonomousSettings,
     CentralDeploySettings,
     ComponentClientSettings,
     ConversationSettings,
@@ -395,6 +396,7 @@ class Settings(BaseModel):
     central_deploy: CentralDeploySettings = Field(default_factory=CentralDeploySettings)
     mail: MailSettings = Field(default_factory=MailSettings)
     conversation: ConversationSettings = Field(default_factory=ConversationSettings)
+    autonomous: AutonomousSettings = Field(default_factory=AutonomousSettings)
     diagnostics: DiagnosticsSettings = Field(default_factory=DiagnosticsSettings)
     refdocs: RefDocsSettings = Field(default_factory=RefDocsSettings)
     render_url: RenderUrlSettings = Field(default_factory=RenderUrlSettings)
@@ -549,6 +551,7 @@ class Settings(BaseModel):
             "central_deploy",
             "mail",
             "conversation",
+            "autonomous",
             "diagnostics",
             "refdocs",
             "render_url",

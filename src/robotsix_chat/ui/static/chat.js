@@ -364,12 +364,13 @@
     });
   }
 
-  function createNewSession() {
+  function createNewSession(kind) {
+    kind = kind || "chat";
     var url = apiBase() + "/sessions";
     return fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ owner_id: clientId })
+      body: JSON.stringify({ owner_id: clientId, kind: kind })
     }).then(function (r) {
       if (!r.ok) throw new Error("Failed to create session");
       return r.json();
@@ -391,13 +392,20 @@
       if (s.session_id === activeSessionId) {
         row.classList.add("active");
       }
+      if (s.kind === "autonomous") {
+        row.classList.add("session-kind-autonomous");
+      }
       if (isSessionUnread(s.session_id, s.turn_count || 0)) {
         row.classList.add("session-row-unread");
       }
 
       var titleDiv = document.createElement("div");
       titleDiv.className = "session-title";
-      titleDiv.textContent = s.title || "Untitled";
+      var displayTitle = s.title || "Untitled";
+      if (s.kind === "autonomous" && displayTitle.indexOf("[AUTONOMOUS]") !== 0) {
+        displayTitle = "[AUTONOMOUS] " + displayTitle;
+      }
+      titleDiv.textContent = displayTitle;
       row.appendChild(titleDiv);
 
       var metaDiv = document.createElement("div");
@@ -2331,6 +2339,34 @@
       showError(err.message || "Failed to create session");
     });
   });
+
+  // "New autonomous" button
+  var newAutonomousBtn = document.getElementById("new-autonomous-btn");
+  if (newAutonomousBtn) {
+    newAutonomousBtn.addEventListener("click", function () {
+      newAutonomousBtn.disabled = true;
+      newAutonomousBtn.textContent = "Creating\u2026";
+      createNewSession("autonomous").then(function (data) {
+        newAutonomousBtn.disabled = false;
+        newAutonomousBtn.textContent = "\u{1F916} + New autonomous";
+        if (data && data.session_id) {
+          setActiveSessionId(data.session_id);
+          clearChatBubbles();
+          clearSubsessions();
+          closeEventStream();
+          openEventStream();
+          loadHistory();
+          fetchSubsessions();
+          refreshSessions();
+          resetIdleTimer();
+        }
+      }).catch(function (err) {
+        newAutonomousBtn.disabled = false;
+        newAutonomousBtn.textContent = "\u{1F916} + New autonomous";
+        showError(err.message || "Failed to create autonomous session");
+      });
+    });
+  }
 
   // ---- Sessions panel resize ------------------------------------------
   var sessionsResizeDragging = false;

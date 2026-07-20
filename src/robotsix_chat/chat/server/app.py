@@ -61,10 +61,12 @@ from .routes import (
     http_exception_handler,
     not_found_handler,
     server_error_handler,
+    sessions_approve_endpoint,
     sessions_close_endpoint,
     sessions_create_endpoint,
     sessions_delete_endpoint,
     sessions_list_endpoint,
+    sessions_reject_endpoint,
     subsessions_close_endpoint,
     subsessions_get_endpoint,
     subsessions_list_endpoint,
@@ -224,6 +226,7 @@ def create_app(
     direct_repo_settings: DirectRepoSettings | None = None,
     github_security_settings: GitHubSecuritySettings | None = None,
     config_path: str | None = None,
+    autonomous_enabled: bool = False,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -315,6 +318,9 @@ def create_app(
             (default), the path is resolved from the
             ``ROBOTSIX_CONFIG_FILE`` environment variable or the default
             ``config/config.json``.
+        autonomous_enabled: When ``True``, autonomous session creation is
+            allowed.  When ``False`` (default), ``POST /sessions`` with
+            ``kind="autonomous"`` silently falls back to ``"chat"``.
 
     """
     routes: list[Route | Mount] = [
@@ -334,6 +340,16 @@ def create_app(
         Route(
             "/sessions/{session_id}/close",
             sessions_close_endpoint,
+            methods=["POST"],
+        ),
+        Route(
+            "/sessions/{session_id}/approve",
+            sessions_approve_endpoint,
+            methods=["POST"],
+        ),
+        Route(
+            "/sessions/{session_id}/reject",
+            sessions_reject_endpoint,
             methods=["POST"],
         ),
         Route("/subsessions", subsessions_list_endpoint, methods=["GET"]),
@@ -428,6 +444,7 @@ def create_app(
     app.state.feedback_runner = feedback_runner  # may be None
     if config_path is not None:
         app.state.config_path = config_path
+    app.state.autonomous_enabled = autonomous_enabled
     return app
 
 

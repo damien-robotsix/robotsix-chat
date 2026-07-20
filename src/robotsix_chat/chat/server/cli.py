@@ -55,6 +55,7 @@ def run_server(
     direct_repo_settings: Any = None,
     github_security_settings: Any = None,
     config_path: str | None = None,
+    autonomous_enabled: bool = False,
 ) -> None:
     """Start the chat SSE server on ``host:port``.
 
@@ -86,6 +87,7 @@ def run_server(
         direct_repo_settings=direct_repo_settings,
         github_security_settings=github_security_settings,
         config_path=config_path,
+        autonomous_enabled=autonomous_enabled,
     )
     uvicorn.run(app, host=host, port=port)
 
@@ -390,4 +392,5 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         on_startup=_resume,
         direct_repo_settings=settings.direct_repo,
         github_security_settings=settings.github_security,
+        autonomous_enabled=settings.autonomous.enabled,
     )

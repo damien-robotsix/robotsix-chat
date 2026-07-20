@@ -274,6 +274,7 @@ class TestRunServer:
             direct_repo_settings=None,
             github_security_settings=None,
             config_path=None,
+            autonomous_enabled=False,
         )
 
 

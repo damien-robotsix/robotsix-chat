@@ -24,6 +24,9 @@
   --error-banner-bg: #450a0a;
   --error-banner-fg: #fca5a5;
   --error-banner-border: #7f1d1d;
+  /* Autonomous session accent — override to change badge color.
+     Default: purple (#a855f7). */
+  --autonomous-accent: #a855f7;
   --dot-green: #22c55e;
   --dot-red: #ef4444;
   /* Panel widths (kept in sync by JS when panels are resized) */
@@ -316,6 +319,14 @@ body {
 .session-row.session-row-unread {
   border-color: #f59e0b;
   background: rgba(245, 158, 11, 0.10);
+}
+/* Autonomous session — purple accent for visual distinction.
+   UI hook: override --autonomous-accent to change the badge color. */
+.session-row.session-kind-autonomous {
+  border-left: 3px solid var(--autonomous-accent, #a855f7);
+}
+.session-row.session-kind-autonomous .session-title {
+  color: var(--autonomous-accent, #a855f7);
 }
 .session-row .session-title {
   font-weight: 600; margin-bottom: 0.15rem;

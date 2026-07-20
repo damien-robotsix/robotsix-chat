@@ -59,6 +59,12 @@
     "max_conversations": 1000,
     "persist_path": "/data/conversations.json"
   },
+  "autonomous": {
+    "enabled": false,
+    "max_auto_turns": 20,
+    "completion_marker": "---AUTONOMOUS COMPLETE---",
+    "approval_marker": "---AWAITING APPROVAL---"
+  },
   "diagnostics": {
     "enabled": true,
     "store_path": "/data/diagnostics.json",

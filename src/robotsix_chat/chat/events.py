@@ -26,6 +26,11 @@ SSE_SUBSESSION_RESULT_TYPE = "subsession_result"
 SSE_SUBSESSION_CLOSED_TYPE = "subsession_closed"
 SSE_SUBSESSION_FAILED_TYPE = "subsession_failed"
 
+# Autonomous session lifecycle events.
+SSE_AUTONOMOUS_STATE_CHANGED = "autonomous_state_changed"
+SSE_AUTONOMOUS_RESPAWNED = "autonomous_respawned"
+SSE_AUTONOMOUS_APPROVAL_REQUIRED = "autonomous_approval_required"
+
 # Live claudeSDK activity (tool calls/results, thinking, intermediate text)
 # streamed during an in-flight /chat turn — see ``activity_frame``.
 SSE_ACTIVITY_TYPE = "activity"
@@ -294,6 +299,81 @@ def agent_message_frame(text: str, timestamp: float) -> dict[str, object]:
         }
     """
     return {"type": SSE_AGENT_MESSAGE_TYPE, "text": text, "timestamp": timestamp}
+
+
+def autonomous_state_changed_frame(
+    session_id: str,
+    old_state: str | None,
+    new_state: str,
+) -> dict[str, object]:
+    """Build an ``autonomous_state_changed`` frame.
+
+    Published when an autonomous session transitions between lifecycle
+    states (e.g. ``selecting_subject`` → ``awaiting_approval``).
+
+    Returns a dict with shape::
+
+        {
+            "type": "autonomous_state_changed",
+            "session_id": <str>,
+            "old_state": <str | null>,
+            "new_state": <str>,
+        }
+    """
+    return {
+        "type": SSE_AUTONOMOUS_STATE_CHANGED,
+        "session_id": session_id,
+        "old_state": old_state,
+        "new_state": new_state,
+    }
+
+
+def autonomous_respawned_frame(
+    session_id: str,
+    previous_session_id: str,
+) -> dict[str, object]:
+    """Build an ``autonomous_respawned`` frame.
+
+    Published when a completed autonomous session auto-closes and a new
+    autonomous session is spawned to continue the cycle.
+
+    Returns a dict with shape::
+
+        {
+            "type": "autonomous_respawned",
+            "session_id": <str>,
+            "previous_session_id": <str>,
+        }
+    """
+    return {
+        "type": SSE_AUTONOMOUS_RESPAWNED,
+        "session_id": session_id,
+        "previous_session_id": previous_session_id,
+    }
+
+
+def autonomous_approval_required_frame(
+    session_id: str,
+    plan_summary: str,
+) -> dict[str, object]:
+    """Build an ``autonomous_approval_required`` frame.
+
+    Published when an autonomous session has drafted a plan and is waiting
+    for explicit operator approval before executing.
+
+    Returns a dict with shape::
+
+        {
+            "type": "autonomous_approval_required",
+            "session_id": <str>,
+            "plan_summary": <str>,
+        }
+    """
+    return {
+        "type": SSE_AUTONOMOUS_APPROVAL_REQUIRED,
+        "session_id": session_id,
+        "plan_summary": plan_summary,
+    }
 
 
 # ---------------------------------------------------------------------------
