@@ -154,6 +154,7 @@ async def test_chat_endpoint_sends_done_at_end() -> None:
     done = json.loads(tail)
     assert done["type"] == SSE_DONE_TYPE
     assert isinstance(done["session_id"], str) and done["session_id"]
+    assert isinstance(done["timestamp"], int | float)
 
 
 # ---------------------------------------------------------------------------
