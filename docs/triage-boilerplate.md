@@ -103,11 +103,11 @@ fix when resources allow.
 
 ### Relationship to other boilerplate
 
-| Aspect | Out-of-Scope CI Failure (above) | CI Failure on Main |
-|---|---|---|
-| Trigger | CI fails on a PR | CI fails on main branch |
-| Decision | OUT-OF-SCOPE — proceed without blocking | ACKNOWLEDGE — track, don't block |
-| Context | Has a "this change" to reference | No specific change; infrastructure-level |
+| Aspect   | Out-of-Scope CI Failure (above)         | CI Failure on Main                       |
+| -------- | --------------------------------------- | ---------------------------------------- |
+| Trigger  | CI fails on a PR                        | CI fails on main branch                  |
+| Decision | OUT-OF-SCOPE — proceed without blocking | ACKNOWLEDGE — track, don't block         |
+| Context  | Has a "this change" to reference        | No specific change; infrastructure-level |
 
 ### Observed frequency
 
