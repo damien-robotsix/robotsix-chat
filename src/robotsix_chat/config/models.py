@@ -75,6 +75,24 @@ class MemorySettings(BaseModel):
         remember_timeout_seconds: Hard timeout (seconds) for a single
             ``remember`` call (cognify consolidation).  On expiry the write is
             skipped and a warning is logged.  Default 300 s.
+        write_backlog_path: Path to a durable JSONL backlog for exchanges that
+            could not be persisted after retries are exhausted.  The backlog is
+            drained opportunistically on subsequent successful writes.
+            Default ``/data/cognee/backlog.jsonl``.
+        datafusion_runtime_memory_limit: DataFusion memory-pool limit applied
+            via the ``DATAFUSION_RUNTIME_MEMORY_LIMIT`` env var before cognee
+            import.  Accepts human-readable sizes (``"256M"``, ``"1G"``, ...).
+            Bounds the LanceDB worker subprocess memory so a single large
+            ``merge_insert`` does not OOM the container.  Default ``"256M"``
+            (safe for a 2 GB container; raise for larger limits).
+        frozen_store_alert_minutes: Consecutive-write-failure duration (minutes)
+            after which a ``WARNING`` diagnostic is emitted so a silently
+            frozen vector store cannot go unnoticed for days.  Default ``10.0``.
+        write_throttle_seconds: Delay (seconds) between serialised writes so
+            the LanceDB worker subprocess can complete its ``merge_insert``
+            before the next write starts.  Prevents a burst of many concurrent
+            writes from collectively exhausting the worker's memory.
+            Default ``0.5``.
         llm: Extraction-LLM config (graph building / consolidation).
         embedding: Embedding-server config (semantic search).
         langfuse: Dedicated Langfuse credentials for the
@@ -89,6 +107,10 @@ class MemorySettings(BaseModel):
     recall_search_type: str = "GRAPH_COMPLETION"
     recall_timeout_seconds: float = 60.0
     remember_timeout_seconds: float = 300.0
+    write_backlog_path: str = "/data/cognee/backlog.jsonl"
+    datafusion_runtime_memory_limit: str = "256M"
+    frozen_store_alert_minutes: float = 10.0
+    write_throttle_seconds: float = 0.5
     llm: MemoryLlmSettings = Field(default_factory=MemoryLlmSettings)
     embedding: MemoryEmbeddingSettings = Field(default_factory=MemoryEmbeddingSettings)
     langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)

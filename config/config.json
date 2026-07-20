@@ -18,6 +18,10 @@
     "recall_search_type": "GRAPH_COMPLETION",
     "recall_timeout_seconds": 60.0,
     "remember_timeout_seconds": 300.0,
+    "write_backlog_path": "/data/cognee/backlog.jsonl",
+    "datafusion_runtime_memory_limit": "256M",
+    "frozen_store_alert_minutes": 10.0,
+    "write_throttle_seconds": 0.5,
     "llm": {
       "provider": "custom",
       "model": "openrouter/anthropic/claude-haiku-4.5",

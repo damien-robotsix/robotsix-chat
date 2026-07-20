@@ -18,10 +18,12 @@ from __future__ import annotations
 
 import asyncio
 import base64
+import json
 import logging
 import os
 import re
 import shutil
+import time
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
@@ -102,6 +104,16 @@ class CogneeMemory:
         # Serialise writes: concurrent cognify() runs would contend on cognee's
         # shared stores. Recalls stay parallel.
         self._write_lock = asyncio.Lock()
+        # Serialise backlog drains so overlapping drain calls cannot silently
+        # drop entries or replay duplicates.
+        self._drain_lock = asyncio.Lock()
+        # Frozen-store detection: track when consecutive write failures began
+        # (monotonic seconds since an arbitrary point) so we can alert when the
+        # vector store has been failing for longer than the configured threshold.
+        self._write_failure_start: float | None = None
+        # Count of exchanges lost since the last successful write (for
+        # diagnostics — only the last-failure timestamp drives the alert).
+        self._consecutive_write_failures: int = 0
 
     # -- lifecycle --------------------------------------------------------
 
@@ -129,6 +141,16 @@ class CogneeMemory:
         os.environ.setdefault("ENABLE_BACKEND_ACCESS_CONTROL", "false")
         os.environ.setdefault("TELEMETRY_DISABLED", "1")
         os.environ.setdefault("MONITORING_TOOL", "none")
+
+        # Bound LanceDB's DataFusion memory pool so a single large merge_insert
+        # cannot OOM the worker subprocess.  DataFusion reads
+        # ``DATAFUSION_RUNTIME_MEMORY_LIMIT`` from the env at session init time
+        # (before ``import cognee``, so set it now).
+        if s.datafusion_runtime_memory_limit:
+            os.environ.setdefault(
+                "DATAFUSION_RUNTIME_MEMORY_LIMIT",
+                s.datafusion_runtime_memory_limit,
+            )
 
         # cognee force-selects Langfuse as its monitoring tool when LANGFUSE_*
         # creds are present in the env (a model validator, overriding
@@ -477,19 +499,38 @@ class CogneeMemory:
         Wrapped in :func:`asyncio.timeout` so a hang in cognee's
         consolidation pipeline (e.g. orphaned LanceDB adapter lock)
         skips the write instead of leaking a stuck background task.
+
+        When the write ultimately fails (retries exhausted or timeout),
+        the exchange is appended to a durable JSONL backlog so it is not
+        silently lost — subsequent successful writes opportunistically
+        drain the backlog.
         """
         try:
             async with asyncio.timeout(self._settings.remember_timeout_seconds):
                 await self._remember_core(
                     user_message, assistant_message, session_id=session_id
                 )
+            # Write succeeded → reset failure tracking and drain backlog.
+            self._write_failure_start = None
+            self._consecutive_write_failures = 0
+            try:
+                await self._drain_backlog()
+            except Exception:
+                logger.exception(
+                    "Backlog drain failed after successful write — "
+                    "backlogged entries preserved for next drain"
+                )
         except TimeoutError:
             logger.warning(
-                "memory write timed out after %.0fs; exchange not persisted",
+                "memory write timed out after %.0fs; queued to backlog",
                 self._settings.remember_timeout_seconds,
             )
+            self._record_write_failure()
+            self._append_to_backlog(user_message, assistant_message, session_id)
         except Exception:
-            logger.exception("memory write failed; exchange not persisted")
+            logger.exception("memory write failed; queued to backlog")
+            self._record_write_failure()
+            self._append_to_backlog(user_message, assistant_message, session_id)
 
     async def _remember_core(
         self,
@@ -508,6 +549,11 @@ class CogneeMemory:
                 async with self._write_lock:
                     await cognee.add(text, session_id=session_id)
                     await cognee.cognify(session_id=session_id)
+                # Throttle: give the LanceDB worker subprocess time to complete
+                # its merge_insert before the next serialised write starts, so a
+                # burst of rapid remembers does not collectively OOM the worker.
+                if self._settings.write_throttle_seconds > 0:
+                    await asyncio.sleep(self._settings.write_throttle_seconds)
                 return
             except Exception as exc:
                 if attempt == 0 and _is_healable_kuzu_error(exc):
@@ -519,6 +565,165 @@ class CogneeMemory:
                     self._remove_stale_kuzu_shadows(data_dir / "system")
                     continue
                 raise
+
+    # -- write-failure tracking & self-heal -------------------------------
+
+    def _record_write_failure(self) -> None:
+        """Mark one write failure and emit a frozen-store diagnostic.
+
+        When the failure streak exceeds the configured alert threshold a
+        WARNING is emitted so a silently frozen vector store cannot go
+        unnoticed for days.
+        """
+        now = time.monotonic()
+        if self._write_failure_start is None:
+            self._write_failure_start = now
+        self._consecutive_write_failures += 1
+
+        elapsed_minutes = (now - self._write_failure_start) / 60.0
+        threshold = self._settings.frozen_store_alert_minutes
+        if elapsed_minutes >= threshold:
+            logger.warning(
+                "Vector store appears FROZEN: %d consecutive write failures "
+                "over the last %.1f minutes (alert threshold: %.1f min). "
+                "No new memories are being persisted — check the LanceDB "
+                "worker subprocess (cognee_db_workers/lancedb_worker.py) and "
+                "container memory budget.",
+                self._consecutive_write_failures,
+                elapsed_minutes,
+                threshold,
+            )
+            # Reset the start time so we do not spam the warning on every
+            # subsequent failure — re-alert only if the freeze persists
+            # through another full threshold window.  Add a tiny epsilon
+            # so a second call in the same tick does not re-fire.
+            self._write_failure_start = now + 0.001
+
+    # -- durable backlog --------------------------------------------------
+
+    def _append_to_backlog(
+        self,
+        user_message: str,
+        assistant_message: str,
+        session_id: str | None,
+    ) -> None:
+        """Persist a failed exchange to the durable JSONL backlog.
+
+        The entry is written atomically (append + fsync) so it survives a
+        process crash.  On success the caller must invoke ``_drain_backlog``
+        to re-process backlogged entries.
+        """
+        path = Path(self._settings.write_backlog_path)
+        entry = json.dumps(
+            {
+                "user_message": user_message,
+                "assistant_message": assistant_message,
+                "session_id": session_id,
+                "timestamp": time.time(),
+            },
+            ensure_ascii=False,
+        )
+        try:
+            path.parent.mkdir(parents=True, exist_ok=True)
+            with path.open("a", encoding="utf-8") as fh:
+                fh.write(entry + "\n")
+                fh.flush()
+                os.fsync(fh.fileno())
+        except OSError:
+            logger.exception(
+                "Failed to write backlog entry to %s — exchange lost", path
+            )
+
+    async def _drain_backlog(self) -> None:
+        """Re-process backlogged exchanges opportunistically.
+
+        Called after every successful write.  Reads the entire backlog,
+        rewrites each entry through ``_remember_core``, and trims consumed
+        entries.  If a backlog entry fails again it stays in the file (the
+        drain is best-effort — a persistent-failure freeze is surfaced via
+        ``_record_write_failure``).
+
+        Serialised by ``_drain_lock`` so overlapping calls cannot silently
+        drop entries or replay duplicates.  To eliminate a TOCTOU race with
+        ``_append_to_backlog``, the backlog file is atomically *renamed* to a
+        snapshot before processing; still-failing entries are then appended
+        (not overwritten) to the original path, so entries queued by
+        concurrent failing writes while this drain is in flight are preserved.
+
+        Note: the ``write_throttle_seconds`` delay inside ``_remember_core``
+        applies to every successful drain replay, so a large backlog can take
+        minutes to drain.  This matches the opportunistic design intent:
+        backlog recovery is paced so it does not overwhelm the worker.
+        """
+        async with self._drain_lock:
+            path = Path(self._settings.write_backlog_path)
+            if not path.exists():
+                return
+
+            # Atomically consume the backlog so concurrent _append_to_backlog
+            # calls never have their entries clobbered by this drain's final
+            # write.
+            snapshot = path.with_suffix(path.suffix + ".drain")
+            try:
+                path.rename(snapshot)
+            except OSError:
+                return
+
+            try:
+                lines = snapshot.read_text(encoding="utf-8").splitlines()
+            except OSError:
+                snapshot.unlink(missing_ok=True)
+                return
+
+            if not lines:
+                snapshot.unlink(missing_ok=True)
+                return
+
+            remaining: list[str] = []
+            drained = 0
+            for line in lines:
+                line = line.strip()
+                if not line:
+                    continue
+                try:
+                    entry = json.loads(line)
+                except json.JSONDecodeError:
+                    continue
+                try:
+                    async with asyncio.timeout(self._settings.remember_timeout_seconds):
+                        await self._remember_core(
+                            entry["user_message"],
+                            entry["assistant_message"],
+                            session_id=entry.get("session_id"),
+                        )
+                    drained += 1
+                except Exception:
+                    # Track the failure for frozen-store detection so
+                    # permanently-unwritable backlog entries eventually
+                    # trigger the alert (not just live write failures).
+                    self._record_write_failure()
+                    remaining.append(line)
+
+            if drained:
+                logger.info("Backlog drain: %d exchanges recovered", drained)
+
+            # Append still-failing entries back to the (possibly recreated)
+            # backlog file.  We append rather than overwrite so entries
+            # queued by concurrent failing writes while this drain was in
+            # flight are preserved.  The append+fsync is safe for line-
+            # oriented JSONL.
+            try:
+                if remaining:
+                    path.parent.mkdir(parents=True, exist_ok=True)
+                    with path.open("a", encoding="utf-8") as fh:
+                        for line in remaining:
+                            fh.write(line + "\n")
+                        fh.flush()
+                        os.fsync(fh.fileno())
+            except OSError:
+                logger.exception("Failed to update backlog file %s", path)
+            finally:
+                snapshot.unlink(missing_ok=True)
 
 
 def _format_results(results: Any) -> str:

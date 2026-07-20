@@ -6,6 +6,7 @@ graceful-degradation contract (cognee mocked, never imported for real).
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import sys
 import types
@@ -1050,3 +1051,347 @@ def test_is_healable_unrelated_error() -> None:
     """Unrelated RuntimeError is NOT healable."""
     exc = RuntimeError("disk full")
     assert _is_healable_kuzu_error(exc) is False
+
+
+# ---------------------------------------------------------------------------
+# DataFusion memory budget env-var
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_configure_sets_datafusion_memory_limit(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """_configure() sets DATAFUSION_RUNTIME_MEMORY_LIMIT before cognee import."""
+    import os
+
+    _install_fake_cognee(monkeypatch)
+    # Ensure no prior env value.
+    monkeypatch.delenv("DATAFUSION_RUNTIME_MEMORY_LIMIT", raising=False)
+
+    settings = _enabled_settings(str(tmp_path / "cognee"))
+    settings.datafusion_runtime_memory_limit = "512M"
+    mem = CogneeMemory(settings)
+    await mem.setup()
+
+    assert os.environ["DATAFUSION_RUNTIME_MEMORY_LIMIT"] == "512M"
+
+
+@pytest.mark.asyncio
+async def test_configure_skips_datafusion_limit_when_empty(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """When datafusion_runtime_memory_limit is empty, no env var is set."""
+    import os
+
+    _install_fake_cognee(monkeypatch)
+    monkeypatch.delenv("DATAFUSION_RUNTIME_MEMORY_LIMIT", raising=False)
+
+    settings = _enabled_settings(str(tmp_path / "cognee"))
+    settings.datafusion_runtime_memory_limit = ""
+    mem = CogneeMemory(settings)
+    await mem.setup()
+
+    assert "DATAFUSION_RUNTIME_MEMORY_LIMIT" not in os.environ
+
+
+# ---------------------------------------------------------------------------
+# Write-throttle delay
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_remember_core_sleeps_after_write(
+    cognee_memory: tuple[CogneeMemory, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """_remember_core calls asyncio.sleep with the configured throttle delay."""
+    mem, fake = cognee_memory
+    mem._settings.write_throttle_seconds = 0.25
+
+    slept: list[float] = []
+
+    async def _fake_sleep(delay: float) -> None:
+        slept.append(delay)
+
+    monkeypatch.setattr(asyncio, "sleep", _fake_sleep)
+
+    await mem.remember("hello", "hi")
+
+    assert len(slept) >= 1
+    assert slept[0] == 0.25
+
+
+@pytest.mark.asyncio
+async def test_remember_core_skips_sleep_when_zero(
+    cognee_memory: tuple[CogneeMemory, Any],
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When write_throttle_seconds is 0, no sleep is scheduled."""
+    mem, fake = cognee_memory
+    mem._settings.write_throttle_seconds = 0.0
+
+    slept: list[float] = []
+
+    async def _fake_sleep(delay: float) -> None:
+        slept.append(delay)
+
+    monkeypatch.setattr(asyncio, "sleep", _fake_sleep)
+
+    await mem.remember("hello", "hi")
+
+    assert len(slept) == 0
+
+
+# ---------------------------------------------------------------------------
+# Durable backlog
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_append_to_backlog_writes_jsonl(
+    cognee_memory: tuple[CogneeMemory, Any],
+    tmp_path: Any,
+) -> None:
+    """_append_to_backlog writes a JSONL entry to the configured path."""
+    import json
+
+    mem, _ = cognee_memory
+    backlog = tmp_path / "backlog.jsonl"
+    mem._settings.write_backlog_path = str(backlog)
+
+    mem._append_to_backlog("user msg", "assistant msg", "sess-1")
+
+    assert backlog.exists()
+    lines = backlog.read_text().splitlines()
+    assert len(lines) == 1
+    entry = json.loads(lines[0])
+    assert entry["user_message"] == "user msg"
+    assert entry["assistant_message"] == "assistant msg"
+    assert entry["session_id"] == "sess-1"
+    assert "timestamp" in entry
+
+
+@pytest.mark.asyncio
+async def test_remember_backlogs_on_failure(
+    cognee_memory: tuple[CogneeMemory, Any],
+    tmp_path: Any,
+) -> None:
+    """When remember() fails, the exchange is appended to the backlog."""
+    mem, fake = cognee_memory
+    backlog = tmp_path / "backlog.jsonl"
+    mem._settings.write_backlog_path = str(backlog)
+
+    fake.add = AsyncMock(side_effect=RuntimeError("backend down"))
+
+    await mem.remember("hello", "hi", session_id="sess-x")
+
+    assert backlog.exists()
+    lines = backlog.read_text().splitlines()
+    assert len(lines) == 1
+
+
+@pytest.mark.asyncio
+async def test_drain_backlog_replays_entries(
+    cognee_memory: tuple[CogneeMemory, Any],
+    tmp_path: Any,
+) -> None:
+    """_drain_backlog replays backlogged exchanges and removes them on success."""
+    import json
+
+    mem, fake = cognee_memory
+    backlog = tmp_path / "backlog.jsonl"
+    mem._settings.write_backlog_path = str(backlog)
+
+    # Pre-populate the backlog.
+    entries: list[dict[str, Any]] = [
+        {
+            "user_message": "u1",
+            "assistant_message": "a1",
+            "session_id": "s1",
+            "timestamp": 1.0,
+        },
+        {
+            "user_message": "u2",
+            "assistant_message": "a2",
+            "session_id": None,
+            "timestamp": 2.0,
+        },
+    ]
+    backlog.write_text(
+        "\n".join(json.dumps(e) for e in entries) + "\n", encoding="utf-8"
+    )
+
+    await mem._drain_backlog()
+
+    # Both entries should have been replayed via _remember_core.
+    assert fake.add.call_count >= 2
+
+    # The backlog file should be deleted (all entries succeeded).
+    assert not backlog.exists()
+
+
+@pytest.mark.asyncio
+async def test_drain_backlog_retains_failed_entries(
+    cognee_memory: tuple[CogneeMemory, Any],
+    tmp_path: Any,
+) -> None:
+    """Entries that still fail during drain stay in the backlog file."""
+    import json
+
+    mem, fake = cognee_memory
+    backlog = tmp_path / "backlog.jsonl"
+    mem._settings.write_backlog_path = str(backlog)
+
+    entries: list[dict[str, Any]] = [
+        {
+            "user_message": "u1",
+            "assistant_message": "a1",
+            "session_id": "s1",
+            "timestamp": 1.0,
+        },
+    ]
+    backlog.write_text(
+        "\n".join(json.dumps(e) for e in entries) + "\n", encoding="utf-8"
+    )
+
+    # Make cognee.add fail so the drain can't replay.
+    fake.add = AsyncMock(side_effect=RuntimeError("still down"))
+
+    await mem._drain_backlog()
+
+    # The entry should still be in the backlog.
+    assert backlog.exists()
+    remaining = backlog.read_text().splitlines()
+    assert len(remaining) == 1
+
+
+@pytest.mark.asyncio
+async def test_drain_backlog_no_file_is_noop(
+    cognee_memory: tuple[CogneeMemory, Any],
+    tmp_path: Any,
+) -> None:
+    """_drain_backlog is a no-op when the backlog file does not exist."""
+    mem, _ = cognee_memory
+    mem._settings.write_backlog_path = str(tmp_path / "nonexistent.jsonl")
+
+    # Must not raise.
+    await mem._drain_backlog()
+
+
+# ---------------------------------------------------------------------------
+# Frozen-store detection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_frozen_store_warning_emitted(
+    cognee_memory: tuple[CogneeMemory, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: Any,
+) -> None:
+    """_record_write_failure emits WARNING when failures exceed threshold."""
+    import logging
+
+    mem, _ = cognee_memory
+    mem._settings.frozen_store_alert_minutes = 0.0  # alert on first failure
+
+    caplog.set_level(logging.WARNING)
+    mem._record_write_failure()
+
+    assert mem._consecutive_write_failures == 1
+    assert "FROZEN" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_frozen_store_warning_not_spammy(
+    cognee_memory: tuple[CogneeMemory, Any],
+    monkeypatch: pytest.MonkeyPatch,
+    caplog: Any,
+) -> None:
+    """After the first frozen-store alert, the start time resets to avoid spam."""
+    import logging
+
+    mem, _ = cognee_memory
+    mem._settings.frozen_store_alert_minutes = 0.0
+
+    caplog.set_level(logging.WARNING)
+
+    # First failure → alert.
+    mem._record_write_failure()
+    assert caplog.text.count("FROZEN") == 1
+
+    # Second failure immediately → no alert (start time was reset).
+    mem._record_write_failure()
+    assert caplog.text.count("FROZEN") == 1
+
+
+@pytest.mark.asyncio
+async def test_successful_write_resets_failure_tracking(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """A successful write clears the failure start time and counter."""
+    mem, fake = cognee_memory
+
+    # Simulate a prior failure.
+    mem._write_failure_start = 100.0
+    mem._consecutive_write_failures = 5
+
+    await mem.remember("u", "a")
+
+    assert mem._write_failure_start is None
+    assert mem._consecutive_write_failures == 0
+
+
+# ---------------------------------------------------------------------------
+# Concurrent-write burst: serialisation + backlog
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_concurrent_writes_serialised_and_backlogged(
+    cognee_memory: tuple[CogneeMemory, Any],
+    tmp_path: Any,
+) -> None:
+    """A burst of concurrent remember() calls is serialised; failures back-logged.
+
+    Acceptance: >=20 rapid remembers must not silently drop any exchange.
+    """
+    mem, fake = cognee_memory
+    backlog = tmp_path / "backlog.jsonl"
+    mem._settings.write_backlog_path = str(backlog)
+    mem._settings.write_throttle_seconds = 0.001  # minimal delay for speed
+
+    # Track concurrency: the _write_lock must serialise, so at most one
+    # call to cognee.add is in-flight at any time.
+    in_flight = 0
+    max_in_flight = 0
+    add_call_count = 0
+
+    _original_add = fake.add
+
+    async def _tracked_add(*args: Any, **kwargs: Any) -> None:
+        nonlocal in_flight, max_in_flight, add_call_count
+        in_flight += 1
+        max_in_flight = max(max_in_flight, in_flight)
+        add_call_count += 1
+        try:
+            await _original_add(*args, **kwargs)
+        finally:
+            in_flight -= 1
+
+    fake.add = _tracked_add
+
+    # Fire 25 concurrent remembers.
+    tasks = [
+        asyncio.create_task(mem.remember(f"msg-{i}", f"reply-{i}")) for i in range(25)
+    ]
+    await asyncio.gather(*tasks)
+
+    # The write lock must have serialised: max_in_flight == 1.
+    assert max_in_flight == 1
+
+    # All 25 writes were attempted (cognee.add was called 25 times).
+    assert add_call_count == 25
+    # No backlog entries (all writes succeeded with the mock).
+    assert not backlog.exists() or backlog.read_text().strip() == ""
