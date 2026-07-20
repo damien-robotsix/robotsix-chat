@@ -832,7 +832,11 @@ async def _check_resume_status(
             f"(previous known state: {last_known_str}).  Fetch the ticket "
             f"history and comments before deciding whether to auto-resume "
             f"transient failures (provider timeouts, sandbox 503s) or "
-            f"escalate substantive blockers to the operator.]"
+            f"escalate substantive blockers to the operator.  "
+            f"IMPORTANT: merge/rebase conflicts are substantive blockers "
+            f"— do NOT auto-resume these; the assistant has no "
+            f"conflict-resolution tools so retrying is futile.  Surface "
+            f"them to the operator immediately via user_chat.]"
         )
         logger.info(
             "Subsession %s (ticket %s): blocked on resume — injecting context.",

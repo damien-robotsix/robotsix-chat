@@ -71,6 +71,28 @@ back-and-forth and cognitive load.
 
 **SHA256:** `f0aa4c393e144fffcbc9f053d9ac7937444ddf996beb373b0cdb3248f9e6d553`
 
+## v30 — 2026-07-20 — improve-handling-of-rebase-conflicts-avo-8b37
+
+**Summary:** Strengthen the Remediate step (step 3 of the ticket lifecycle) to explicitly call out
+merge/rebase conflicts as **never** auto-retryable substantive blockers. The old text listed
+"transient failures" for auto-resume but did not enumerate what counts as a substantive blocker,
+leading the agent to resume merge-conflict-blocked tickets in a futile retry loop. The new text:
+
+- Adds "ONLY" to auto-resume guidance (only transient failures).
+- Lists merge/rebase conflicts, missing dependencies, and design deadlocks as examples of
+  substantive blockers.
+- States merge/rebase conflicts are NEVER auto-retryable because the assistant has no
+  conflict-resolution tools.
+- Gives the agent a verbatim message template to surface via `user_chat`: "This ticket blocked
+  due to merge conflict against main — human must rebase manually, then ping me to merge-now."
+
+**Rationale:** Ticket 54ea was blocked on a rebase conflict (sibling PR merged first). The
+assistant resumed it twice without resolving the conflict, each time hitting the same block —
+a retry loop that wasted time and confused the output. The agent now has clear instructions
+to surface merge conflicts immediately rather than auto-retrying.
+
+**SHA256:** `47f5eadbb05fb73ffcca1a2308f403dee7b5f0a6774aba7b2522adfe53e4136f` (mill: Improve handling of rebase conflicts: avoid infinite retries and surface clear guidance (20260720T065229Z-improve-handling-of-rebase-conflicts-avo-8b37))
+
 ______________________________________________________________________
 
 ## v29 — 2026-07-19 — prevent-creation-of-duplicate-monitors-f-8af3

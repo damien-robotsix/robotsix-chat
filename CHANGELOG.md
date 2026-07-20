@@ -4,6 +4,7 @@
 - Add a "Deploy system" bullet to the Autonomy section of the system prompt clarifying that the robotsix-deploy (central-deploy) management plane is a runtime API server — component onboarding, lifecycle operations, and configuration changes are all API-driven (POST /onboard/preflight, /onboard/confirm, etc.) with no git PRs needed.
 - Add batch-MR-approval guidance to the agent system prompt: when multiple MRs are pending human approval, the agent must first categorize them by relevance to active tickets, present a compact filter prompt, and approve the selected group in bulk through the mill's merge endpoint. (#TBD)
 - Periodic subsession auto-stop (``no_change_auto_stop`` and ``human_approval_timeout``) now logs a ``WARNING``-level message so operators can see when a monitor ceases watching and decide whether to restart it.
+- System prompt v30: Explicitly classify merge/rebase conflicts as never-auto-retryable substantive blockers in the Remediate step. The assistant now surfaces a clear "human must rebase manually" message via user_chat instead of looping on resume-blocked. Worker blocked-resume context also warns about merge conflicts.
 - Show a relative timestamp ("2m ago") at the bottom of each chat session for the last model-generated message, with the absolute server time on hover.
 - Add `workflow_dispatch` trigger to `release.yml` for manual recovery deploys.
 - Added `workflow_dispatch` trigger to `.github/workflows/docs.yml` to allow manual deploy of docs from the Actions UI.
