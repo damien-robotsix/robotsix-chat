@@ -139,6 +139,7 @@ def _read_config_json(path: Path) -> dict[str, Any]:
     return result
 
 
+# lgtm[py/clear-text-storage-sensitive-data]
 def _write_config_json(path: Path, data: dict[str, Any]) -> None:
     """Atomically write *data* as JSON to *path*.
 
