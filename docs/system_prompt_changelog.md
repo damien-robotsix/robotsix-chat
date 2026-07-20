@@ -38,7 +38,6 @@ comprehensive, searchable endpoint catalog in the system prompt ensures the agen
 available endpoints reliably without needing to discover them through trial and error.
 
 **SHA256:** `9bd858c8e09e4828fa636c4a2c849a010819c1ce0acc6aaa863113a576b5aeb8`
-
 ## v31 — 2026-07-20 — explicit-operator-approval-gate-for-batc-fd34
 
 **Summary:** Add a batch-MR-approval bullet to the Merge / PR management guidance in the Autonomy

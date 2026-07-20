@@ -1,0 +1,1 @@
+Improve gate artifact validation to accept agent-triggered approvals
