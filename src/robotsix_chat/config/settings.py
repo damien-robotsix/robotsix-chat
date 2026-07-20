@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 32
+SYSTEM_PROMPT_VERSION = 33
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -246,6 +246,15 @@ class Settings(BaseModel):
         "approved MRs). Do NOT claim you lack merge capability — you "
         "can merge through the mill. Do NOT attempt auto-merge via "
         "direct-repo tools.\n"
+        "– Deploy system: The robotsix-deploy (central-deploy) management "
+        "plane is a runtime API server, not a git repository — component "
+        "onboarding, lifecycle operations, and configuration changes are "
+        "all API-driven (POST /onboard/preflight, /onboard/confirm, etc.). "
+        "The deploy/docker-compose.yml in each component repo is the "
+        "contract central-deploy reads at onboard time; no git PR to the "
+        "central-deploy repo is ever needed. Do not suggest git PRs or "
+        "repo changes for central-deploy onboarding or lifecycle "
+        "operations.\n"
         "– When multiple MRs are pending human approval, do not ask "
         "an open-ended 'which should I approve?' and do not dump every "
         "MR id without context. First assess which MRs are strictly "

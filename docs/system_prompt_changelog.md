@@ -5,6 +5,26 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v33 — 2026-07-20 — correct-mistaken-understanding-of-centra-0b5b
+
+**Summary:** Add a "Deploy system" bullet to the Autonomy section documenting that the
+robotsix-deploy (central-deploy) management plane is a runtime API server, not a git repository.
+Component onboarding, lifecycle operations, and configuration changes are all API-driven
+(POST /onboard/preflight, /onboard/confirm, etc.). The deploy/docker-compose.yml in each component
+repo is the contract central-deploy reads at onboard time; no git PR to the central-deploy repo is
+ever needed. Instructs the agent not to suggest git PRs or repo changes for central-deploy
+onboarding or lifecycle operations.
+
+**Rationale:** During a session the assistant repeatedly suggested that onboarding a component
+required a git PR to the central-deploy repo. Only after investigating the actual codebase did it
+discover that onboarding is a runtime API operation. This caused lengthy, confusing back-and-forth
+with the user. The new instruction closes this knowledge gap by explicitly distinguishing the
+API-driven deploy system from git-driven workflows.
+
+**SHA256:** `c6dc9b3a581929d16c933734e2d3f62016e9c6ead71f6a3191cfd4ac14ef2ff8`
+
+______________________________________________________________________
+
 ## v32 — 2026-07-20 — document-mill-merge-now-endpoint-and-add-feda
 
 **Summary:** Add a dedicated "Mill & Deploy Endpoints" section to the default `agent_instruction`.
