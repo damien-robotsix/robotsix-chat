@@ -107,6 +107,7 @@
   },
   "direct_repo": {
     "enabled": false,
+    "direct_fix_enabled": false,
     "github_app_id": "",
     "github_app_private_key": "",
     "github_app_installation_id": "",

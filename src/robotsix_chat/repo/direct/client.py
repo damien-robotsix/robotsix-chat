@@ -444,6 +444,188 @@ class DirectRepoClient:
         """
         return await self._get_json(f"/repos/{repo_full_name}/pulls/{pr_number}")
 
+    async def get_ticket_data(self, ticket_id: str) -> dict[str, Any] | None:
+        """Return the full ticket JSON from the board API, or None on failure.
+
+        Calls ``GET /tickets/{ticket_id}`` on the board API and returns the
+        parsed JSON body.  The response includes ``state``, ``events`` (state
+        transitions), and other ticket metadata.
+        """
+        board_url = self._s.board_api_base_url.rstrip("/")
+        url = f"{board_url}/tickets/{ticket_id}"
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if self._s.board_api_token.get_secret_value():
+            headers["Authorization"] = (
+                f"Bearer {self._s.board_api_token.get_secret_value()}"
+            )
+        result = await safe_http_request(
+            "GET",
+            url,
+            headers=headers,
+            timeout=self._s.timeout,
+            label="Board API (ticket data)",
+        )
+        if result.error:
+            logger.warning(
+                "Failed to fetch ticket %s data: %s", ticket_id, result.error
+            )
+            return None
+        try:
+            data: dict[str, Any] = json.loads(result.text or "")
+            return data
+        except json.JSONDecodeError, TypeError:
+            logger.warning(
+                "Non-JSON response for ticket %s: %s",
+                ticket_id,
+                (result.text or "")[:200],
+            )
+            return None
+
+    async def count_implement_cycles(self, ticket_id: str) -> int | None:
+        """Return the number of implement cycles for *ticket_id*, or None on failure.
+
+        Inspects the ticket's ``events`` array (from the board API) and counts
+        events whose ``type`` or ``action`` field contains the substring
+        ``"implement"`` (case-insensitive).  Falls back to counting state
+        transitions through ``"implement_complete"`` if no events array is
+        present.
+        """
+        data = await self.get_ticket_data(ticket_id)
+        if data is None:
+            return None
+
+        # 1. Try the events array
+        events: list[dict[str, Any]] = data.get("events", [])
+        if events:
+            count = 0
+            for ev in events:
+                if not isinstance(ev, dict):
+                    continue
+                event_type = str(ev.get("type", ev.get("action", ""))).lower()
+                if "implement" in event_type:
+                    count += 1
+            return count
+
+        # 2. Fall back to state-transition history
+        history: list[dict[str, Any]] = data.get("history", [])
+        if history:
+            count = 0
+            for entry in history:
+                if not isinstance(entry, dict):
+                    continue
+                state = str(entry.get("state", entry.get("to", ""))).lower()
+                action = str(entry.get("action", entry.get("type", ""))).lower()
+                if "implement_complete" in state or "implement" in action:
+                    count += 1
+            return count
+
+        # 3. No events/history — try a direct cycle_count field
+        cycle_count = data.get("cycle_count")
+        if isinstance(cycle_count, int):
+            return cycle_count
+
+        # 4. Can't determine — return 0 (not an error; the board may not
+        #    expose cycle counts)
+        logger.info(
+            "Ticket %s has no events/history/cycle_count — "
+            "assuming 0 implement cycles.",
+            ticket_id,
+        )
+        return 0
+
+    async def push_commit_to_branch(
+        self,
+        *,
+        repo_full_name: str,
+        branch_name: str,
+        files: list[dict[str, str]],
+        commit_message: str,
+        ticket_id: str,
+    ) -> str:
+        """Push a commit directly to an existing branch (no new branch created).
+
+        Uses the Git database API: get branch HEAD SHA → create blobs →
+        create tree → create commit → update ref to point to the new commit.
+
+        This is the underlying operation for ``direct_fix`` — it pushes
+        directly to the target branch, bypassing the PR flow.
+
+        Never raises — returns a success/error message string.
+        """
+        try:
+            # 1. Get the target branch HEAD SHA
+            ref_data = await self._get_json(
+                f"/repos/{repo_full_name}/git/ref/heads/{branch_name}"
+            )
+            base_sha: str = ref_data["object"]["sha"]
+
+            # 2. Create a blob for each file
+            tree_items: list[dict[str, Any]] = []
+            for f in files:
+                path = f.get("path", "")
+                content = f.get("content", "")
+                if not path:
+                    return "Error: each file entry must have a 'path' field."
+                blob_data = await self._post_json(
+                    f"/repos/{repo_full_name}/git/blobs",
+                    {
+                        "content": content,
+                        "encoding": "utf-8",
+                    },
+                )
+                tree_items.append(
+                    {
+                        "path": path,
+                        "mode": "100644",
+                        "type": "blob",
+                        "sha": blob_data["sha"],
+                    }
+                )
+
+            # 3. Create a tree from the blobs, based on the base tree
+            base_commit = await self._get_json(
+                f"/repos/{repo_full_name}/git/commits/{base_sha}"
+            )
+            base_tree_sha = base_commit["tree"]["sha"]
+            tree_data = await self._post_json(
+                f"/repos/{repo_full_name}/git/trees",
+                {
+                    "base_tree": base_tree_sha,
+                    "tree": tree_items,
+                },
+            )
+
+            # 4. Create a commit
+            commit_data = await self._post_json(
+                f"/repos/{repo_full_name}/git/commits",
+                {
+                    "message": commit_message,
+                    "tree": tree_data["sha"],
+                    "parents": [base_sha],
+                },
+            )
+
+            # 5. Update the branch ref to point to the new commit.
+            #    force=False means the update must be a fast-forward.
+            await self._patch_json(
+                f"/repos/{repo_full_name}/git/refs/heads/{branch_name}",
+                {
+                    "sha": commit_data["sha"],
+                    "force": False,
+                },
+            )
+
+            commit_sha = commit_data.get("sha", "")
+            return (
+                f"Commit pushed successfully to {repo_full_name}/{branch_name}.\n"
+                f"Commit SHA: {commit_sha}\n"
+                f"Ticket: {ticket_id}"
+            )
+        except RuntimeError as exc:
+            return f"Error pushing commit: {exc}"
+        except Exception as exc:
+            return f"Error pushing commit: {exc}"
+
     async def set_security_and_analysis(
         self,
         repo_full_name: str,
