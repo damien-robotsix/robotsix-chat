@@ -693,7 +693,13 @@ async def chat_endpoint(
                     # session_id lets the client adopt the continuation
                     # session when compaction (or a stale-id reroute)
                     # changed it mid-request.
-                    yield _sse_frame({"type": SSE_DONE_TYPE, "session_id": session_id})
+                    yield _sse_frame(
+                        {
+                            "type": SSE_DONE_TYPE,
+                            "session_id": session_id,
+                            "timestamp": time.time(),
+                        }
+                    )
                     finished_normally = True
                     break
                 else:  # SSE_ERROR_TYPE
