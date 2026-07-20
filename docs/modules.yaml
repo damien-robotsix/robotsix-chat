@@ -82,6 +82,8 @@ modules:
       - typos.toml
       - uv.lock
       - vulture_whitelist.py
+      - changelog.d/.gitkeep
+      - deploy/.env.example
 
   - id: autonomous
     description: "Autonomous chat sessions — self-directed agent loops with operator approval gates."
