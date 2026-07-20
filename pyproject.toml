@@ -214,6 +214,70 @@ ignore_missing_imports = true
 module = ["asgi_correlation_id", "asgi_correlation_id.*"]
 ignore_missing_imports = true
 
+[tool.pyright]
+typeCheckingMode = "basic"
+pythonVersion = "3.14"
+pythonPlatform = "Linux"
+
+# Enable valuable diagnostics as warnings for gradual adoption.
+# The default "basic" mode has several diagnostics at "error" level;
+# we downgrade them to "warning" so CI passes while still surfacing
+# the issues for developers.  Tighten to "error" incrementally.
+reportUnknownParameterType = "warning"
+reportUnknownArgumentType = "warning"
+reportUnknownMemberType = "warning"
+reportUnknownVariableType = "warning"
+reportUnknownLambdaType = "warning"
+reportMissingTypeStubs = "warning"
+reportMissingImports = "warning"
+reportOptionalMemberAccess = "warning"
+reportOptionalCall = "warning"
+reportArgumentType = "warning"
+reportAttributeAccessIssue = "warning"
+reportOperatorIssue = "warning"
+reportReturnType = "warning"
+reportUnsupportedDunderAll = "warning"
+
+# Unused-code diagnostics as warnings (too noisy for error initially)
+reportUnusedImport = "warning"
+reportUnusedVariable = "warning"
+reportUnusedClass = "warning"
+reportUnusedFunction = "warning"
+
+# Keep critical safety / correctness diagnostics as errors
+reportMatchNotExhaustive = "error"
+reportUnnecessaryContains = "error"
+
+# Initially warnings — tighten to "error" after human review
+reportUnnecessaryComparison = "warning"
+reportUnnecessaryIsInstance = "warning"
+
+# Opt-in diagnostics
+reportImplicitOverride = "warning"
+reportUninitializedInstanceVariable = "warning"
+reportDeprecated = "warning"
+
+# Suppress noisy rules (high false-positive rate or not actionable yet)
+reportPrivateUsage = "none"
+reportUntypedBaseClass = "none"
+reportUntypedClassDecorator = "none"
+reportUntypedFunctionDecorator = "none"
+reportUntypedNamedTuple = "none"
+reportConstantRedefinition = "none"
+reportTypeCommentUsage = "none"
+reportIncompleteStub = "none"
+reportInvalidStubStatement = "none"
+reportDuplicateImport = "none"
+
+exclude = [
+    "**/node_modules",
+    "**/__pycache__",
+    "**/.*",
+    ".local-deps",
+    ".local_pkgs",
+    "vulture_whitelist.py",
+]
+
 [tool.deptry]
 # `robotsix_chat` is this project's own package (built from src/robotsix_chat);
 # deptry otherwise misreads the intra-package absolute imports as a transitive

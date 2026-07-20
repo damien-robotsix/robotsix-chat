@@ -97,7 +97,7 @@ jobs:
         # mypy resolves from the project's dev group via `uv run`; vulture is
         # not a declared dependency (only a system-hook tool), so provision it
         # — and the pre-commit runner — explicitly with `--with`.
-        run: uv run --with pre-commit --with vulture pre-commit run --all-files --show-diff-on-failure
+        run: uv run --with pre-commit --with vulture --with pyright pre-commit run --all-files --show-diff-on-failure
 
   check-sse-types:
     name: SSE event type audit
@@ -252,9 +252,30 @@ jobs:
       - name: Run deptry
         run: uv run deptry src/ --known-first-party robotsix_chat
 
+  pyright:
+    name: Pyright type checker
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read  # checkout the repo
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
+      - name: Install
+        run: uv sync --frozen
+        env:
+          UV_MALWARE_CHECK: "1"
+      - name: Run pyright
+        run: uv run --with pyright pyright src/ tests/
+
   check:
     name: All CI checks passed
-    needs: [lockfile, ci, security, pre-commit, check-sse-types, check-subsession-kinds, image-scan, check-config-schema, deptry]
+    needs: [lockfile, ci, security, pre-commit, check-sse-types, check-subsession-kinds, image-scan, check-config-schema, deptry, pyright]
     runs-on: ubuntu-latest
     steps:
       - run: echo "All CI checks passed"
