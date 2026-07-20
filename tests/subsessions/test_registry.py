@@ -853,3 +853,32 @@ def test_new_spawn_with_same_dedup_key_after_close_succeeds() -> None:
     )
     assert second.id != first.id
     assert registry.is_dedup_key_active("unique-issue") == second.id
+
+
+def test_create_raises_dedup_error_for_active_dedup_key() -> None:
+    """``create`` raises ``SubsessionDedupError`` when dedup_key is already active.
+
+    The check in ``create`` is defense-in-depth — the primary guard lives
+    in ``spawn_subsession``, but a direct ``create`` call (or a future
+    code path that bypasses the pre-check) must still be prevented from
+    creating a duplicate.
+    """
+    from robotsix_chat.subsessions import SubsessionDedupError
+
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        dedup_key="ticket-5f1c",
+        title="monitor-5f1c",
+    )
+    assert registry.is_dedup_key_active("ticket-5f1c") == first.id
+
+    with pytest.raises(SubsessionDedupError) as exc_info:
+        _create(
+            registry,
+            kind=SubsessionKind.PERIODIC,
+            dedup_key="ticket-5f1c",
+            title="duplicate-monitor-5f1c",
+        )
+    assert exc_info.value.existing_id == first.id
