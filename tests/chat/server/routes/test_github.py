@@ -134,10 +134,10 @@ async def test_503_when_api_key_empty() -> None:
 @pytest.mark.asyncio
 async def test_403_when_api_key_missing() -> None:
     """Returns 403 when the ``X-API-Key`` header is absent."""
+    settings = _mock_settings(api_key="secret-key")  # pragma: allowlist secret
     request = _make_patch_request(
         api_key=None,
-        # pragma: allowlist secret
-        github_settings=_mock_settings(api_key="secret-key"),
+        github_settings=settings,
     )
     with pytest.raises(HTTPException) as exc_info:
         await github_settings_endpoint(request)
@@ -148,10 +148,10 @@ async def test_403_when_api_key_missing() -> None:
 @pytest.mark.asyncio
 async def test_403_when_api_key_mismatch() -> None:
     """Returns 403 when ``X-API-Key`` does not match the configured key."""
+    settings = _mock_settings(api_key="secret-key")  # pragma: allowlist secret
     request = _make_patch_request(
         api_key="wrong-key",
-        # pragma: allowlist secret
-        github_settings=_mock_settings(api_key="secret-key"),
+        github_settings=settings,
     )
     with pytest.raises(HTTPException) as exc_info:
         await github_settings_endpoint(request)
