@@ -3,6 +3,11 @@
 - Lifecycle module now exposes self-service mutation tools (`restart_lifecycle_service`, `update_lifecycle_service_config`, `update_lifecycle_service_env`) alongside the existing read-only tools.  These succeed or fail based on the deploy server's per-repo access toggle — no new client-side toggle is introduced.  The system prompt now references the lifecycle tools for self-restart instead of the unreachable `component_request("central-deploy", …)` path.
 - Use `VALID_MODEL_LEVELS` (derived from llmio's `TierLevel` enum) instead of a hardcoded `(1, 2, 3, 4)` tuple in subsession model-level validation, so the valid range stays in sync with llmio.
 - Register the `agent_check` periodic workflow (`.robotsix-mill/periodic/agent_check.yaml`) for automated agent/tool integrity checks.
+- Add pyright type checker to pre-commit and CI, alongside the existing mypy
+  `--strict` check.  The baseline config (`[tool.pyright]` in `pyproject.toml`)
+  uses `typeCheckingMode = "basic"` with the most valuable diagnostics enabled
+  as warnings for gradual adoption; only `reportMatchNotExhaustive` and
+  `reportUnnecessaryContains` are errors.
 - release-image: Fix "Verify CI is green" self-exclusion timeout by adding name-based fallback when `getWorkflowRun` fails to return a check-suite id (#TBD)
 - Add a "Deploy system" bullet to the Autonomy section of the system prompt clarifying that the robotsix-deploy (central-deploy) management plane is a runtime API server — component onboarding, lifecycle operations, and configuration changes are all API-driven (POST /onboard/preflight, /onboard/confirm, etc.) with no git PRs needed.
 - Add batch-MR-approval guidance to the agent system prompt: when multiple MRs are pending human approval, the agent must first categorize them by relevance to active tickets, present a compact filter prompt, and approve the selected group in bulk through the mill's merge endpoint. (#TBD)

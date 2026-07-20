@@ -39,6 +39,16 @@ repos:
         pass_filenames: false
         require_serial: true
 
+  - repo: local
+    hooks:
+      - id: pyright
+        name: pyright
+        entry: pyright src/ tests/
+        language: system
+        types: [python]
+        pass_filenames: false
+        require_serial: true
+
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.12
     hooks:
