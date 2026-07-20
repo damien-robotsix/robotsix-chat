@@ -35,14 +35,7 @@ commands below; the Makefile targets are simple wrappers with no hidden logic.
 
 ## Testing conventions
 
-Tests for module `robotsix_chat.<module>` live under `tests/<module>/`, mirroring the per-module
-source layout (e.g. `tests/chat/` for `robotsix_chat.chat`, `tests/config/` for
-`robotsix_chat.config`). Do not place tests directly in the `tests/` root.
-
-**Rule:** When a `ChatAgent` protocol parameter is added or changed, update ALL mock classes that
-implement the protocol (`_MockAgent`, `MockAgent`, and any other test-local mocks) in the same PR.
-Run `mypy` on the full test suite to verify protocol conformance — a mock that lacks a keyword
-argument silently passes structural subtyping at runtime but fails static `mypy --strict` checks.
+See [AGENT.md](AGENT.md) > Testing conventions for the canonical rules.
 
 ## Dependency auditing
 
