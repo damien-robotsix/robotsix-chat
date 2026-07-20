@@ -5,6 +5,22 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v30 — 2026-07-20 — handle-ambiguous-single-word-commands-wi-1d61
+
+**Summary:** Add a pick-list instruction to the Autonomy section: when multiple unowned,
+actionable items exist (pending merges, unresolved tickets, queued operations), the agent must not
+ask an open-ended "Which do you mean?" — it must immediately offer a high-signal, scoped
+confirmation prompt listing each item compactly (e.g. "Say: merge 5f1c, merge 2a97, rebase 54ea.").
+
+**Rationale:** When the user issued a command like "do it" that could apply to multiple pending
+items, the assistant was asking "Which do you mean?" before enumerating options. This broke flow.
+The new instruction guides the agent to immediately present a pick-list format, reducing
+back-and-forth and cognitive load.
+
+**SHA256:** `f0aa4c393e144fffcbc9f053d9ac7937444ddf996beb373b0cdb3248f9e6d553`
+
+______________________________________________________________________
+
 ## v29 — 2026-07-19 — prevent-creation-of-duplicate-monitors-f-8af3
 
 **Summary:** Extend `dedup_key` deduplication from `user_chat`-only to all subsession kinds. The old

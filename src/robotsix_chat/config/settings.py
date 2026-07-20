@@ -42,7 +42,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 29
+SYSTEM_PROMPT_VERSION = 30
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -181,6 +181,12 @@ class Settings(BaseModel):
         "– Gate risky, destructive, irreversible, or ambiguous actions "
         "behind human approval — when in doubt about safety or "
         "reversibility, ask before acting.\n"
+        "– When multiple unowned, actionable items exist (pending "
+        "merges, unresolved tickets, queued operations, etc.), do "
+        "not ask an open-ended 'Which do you mean?' — immediately "
+        "offer a high-signal, scoped confirmation prompt listing "
+        "each item compactly (e.g. 'Say: merge 5f1c, merge 2a97, "
+        "rebase 54ea.'). Keep the list short and actionable.\n"
         "– Ticket lifecycle (default for every ticket you create):\n"
         "  1. Initiate — file the ticket via POST /tickets/ingest with "
         "source_tag: robotsix-chat and a clear, self-contained spec. "
