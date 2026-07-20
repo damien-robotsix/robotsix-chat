@@ -5,6 +5,23 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v34 — 2026-07-20 — improve-gate-artifact-validation-to-acce-45b9
+
+**Summary:** Add a "Bootstrap deadlock" bullet to the Merge / PR management guidance in the
+Autonomy section. When the agent's PR modifies the merge pipeline itself (robotsix-mill CI, gate
+logic, or merge endpoints), auto-merge through the mill may be self-referential — the gate being
+changed can block its own merge. In this scenario the agent must escalate to the operator via a
+user_chat subsession for a manual merge rather than looping on merge-now.
+
+**Rationale:** PR #2475 was blocked for 14 iterations because the gate it aimed to remove prevented
+its own merge. Without explicit bootstrap guidance, the agent loops on merge-now against a
+self-referential gate. The new instruction breaks the cycle by directing the agent to escalate to
+human intervention when it detects the deadlock pattern.
+
+**SHA256:** `bd831692ccf30854c0af8e0ba94b1e0e196f7200a8cfa2e271780824a4f2f44b`
+
+______________________________________________________________________
+
 ## v33 — 2026-07-20 — correct-mistaken-understanding-of-centra-0b5b
 
 **Summary:** Add a "Deploy system" bullet to the Autonomy section documenting that the
