@@ -99,9 +99,26 @@ class MemorySettings(BaseModel):
             ``robotsix-chat-cognee`` project (separate from the main chat's
             Langfuse project). When the public key is empty, cognee LLM calls
             are not traced.
+class ComponentCredentials(BaseModel):
+    """Stored credentials for a single roster component.
+
+    Keys are component IDs matching the ``id`` field returned by the
+    central-deploy ``GET /chat/components`` roster. Each entry carries
+    credentials for all supported auth schemes; the roster entry's ``auth.type``
+    selects which fields are used.
+
+    Attributes:
+        basic_auth_username: Username for HTTP Basic authentication.
+        basic_auth_password: Password for HTTP Basic authentication.
+        header_token: Token value for header-based authentication
+            (e.g. ``X-API-Key``).
 
     """
 
+    basic_auth_username: SecretStr = SecretStr("")
+    basic_auth_password: SecretStr = SecretStr("")
+    header_token: SecretStr = SecretStr("")
+    model_config = ConfigDict(extra="forbid")
     enabled: bool = False
     data_dir: str = "/data/cognee"
     recall_search_type: str = "GRAPH_COMPLETION"
