@@ -126,7 +126,7 @@ not distinguish the two without knowing the running digest. This guidance ensure
 verifies server-side capabilities against live endpoint behavior and image digests before reporting
 them as present.
 
-**SHA256:** `9a858b6b5f90c9591e071a3fe105674dfbc0b9429c0bd1dcc13eb50325329151`
+**SHA256:** `7a3ca453fef6874ea3ac58acf999f3580a2673524b9fb7a0f2d46787b6434418`
 
 ## v43 — 2026-07-21 — ensure-ticket-analysis-by-worker-reads-a-3f31
 
