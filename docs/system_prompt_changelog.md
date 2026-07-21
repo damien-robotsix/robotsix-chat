@@ -7,19 +7,19 @@ ______________________________________________________________________
 
 ## v43 — 2026-07-21 — ensure-ticket-analysis-by-worker-reads-a-3f31
 
-**Summary:** Add a verification bullet requiring the agent to read relevant source files
-(gate functions, permission checks, compose labels, deploy contracts) before filing tickets
-that involve authorization or configuration changes. The agent must verify current behavior
-through available tools and include accurate context in the ticket spec rather than filing
-based on assumptions. Superficial changes (docstring-only edits, label additions without
-logic changes) are explicitly called out as wasteful.
+**Summary:** Add a verification bullet requiring the agent to read relevant source files (gate
+functions, permission checks, compose labels, deploy contracts) before filing tickets that involve
+authorization or configuration changes. The agent must verify current behavior through available
+tools and include accurate context in the ticket spec rather than filing based on assumptions.
+Superficial changes (docstring-only edits, label additions without logic changes) are explicitly
+called out as wasteful.
 
-**Rationale:** Two tickets filed during a session failed to fix the underlying issue: one
-PR only updated a docstring and added a test, leaving the logic unchanged; another label-
-addition ticket required a container recreate the implement agent couldn't perform. The
-implement agent didn't read the actual authorization code or compose labels before closing
-as implement_complete. This guidance ensures the chat agent includes verified context in
-ticket specs so the implement agent has accurate information to work from.
+**Rationale:** Two tickets filed during a session failed to fix the underlying issue: one PR only
+updated a docstring and added a test, leaving the logic unchanged; another label- addition ticket
+required a container recreate the implement agent couldn't perform. The implement agent didn't read
+the actual authorization code or compose labels before closing as implement_complete. This guidance
+ensures the chat agent includes verified context in ticket specs so the implement agent has accurate
+information to work from.
 
 **SHA256:** `f70ca3f5db3176cacba351f45054037b14a790f05b84f547990cdaa5f786b7e6`
 
@@ -443,11 +443,11 @@ Every change to `Settings.agent_instruction` (the pydantic field default literal
 `src/robotsix_chat/config/settings.py`) **MUST**:
 
 1. **Bump** `SYSTEM_PROMPT_VERSION` to the next integer.
-1. **Add a new entry** at the top of this file (reverse-chronological, newest first) with the header
+2. **Add a new entry** at the top of this file (reverse-chronological, newest first) with the header
    `## v<N> — <YYYY-MM-DD> — <ticket-id>`.
-1. **Record the SHA256** of the new `agent_instruction` default literal (computed as
+3. **Record the SHA256** of the new `agent_instruction` default literal (computed as
    `hashlib.sha256(default.encode()).hexdigest()`) in the entry.
-1. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` in
+4. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` in
    the Default column — the full multi-paragraph instruction literal is impractical to embed
    verbatim in a Markdown table cell. Do not attempt to inline the literal; the placeholder is
    sufficient.
@@ -462,14 +462,14 @@ Rollback is a **forward-moving new version** — never reuse a version number. T
 prompt:
 
 1. Pick the target prior version's entry in this changelog.
-1. Restore its prompt text via git, e.g.: `git revert <commit>` or
+2. Restore its prompt text via git, e.g.: `git revert <commit>` or
    `git show <commit>:src/robotsix_chat/config/settings.py` (extract the `agent_instruction` block).
-1. Bump `SYSTEM_PROMPT_VERSION` to the next number.
-1. Add a new changelog entry `## v<N> — <YYYY-MM-DD> — <ticket-id>` with:
+3. Bump `SYSTEM_PROMPT_VERSION` to the next number.
+4. Add a new changelog entry `## v<N> — <YYYY-MM-DD> — <ticket-id>` with:
    - **Summary**: `rollback to v<K>`
    - **Rationale**: why the rollback is needed and which ticket authorises it.
    - **SHA256**: the hash of the restored literal (must match the prior version's recorded hash).
-1. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` — no
+5. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` — no
    change needed there for a rollback.
 
 ______________________________________________________________________
