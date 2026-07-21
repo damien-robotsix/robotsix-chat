@@ -151,6 +151,26 @@ async def test_job_log_400_when_job_id_not_integer() -> None:
     assert "job_id" in response.text
 
 
+@pytest.mark.asyncio
+async def test_job_log_400_when_path_params_blank() -> None:
+    """Blank owner, repo, or job_id path param → 400."""
+    from tests.conftest import mock_app
+
+    gh = _gh_sec_settings()
+    dr = _direct_repo_settings()
+
+    async with mock_app(
+        direct_repo_settings=dr,
+        github_security_settings=gh,
+    ) as f:
+        # job_id is just whitespace → blank after .strip()
+        response = await f.client.get(
+            "/chat/github/repos/damien-robotsix/my-repo/actions/jobs/%20/logs",
+            headers={"X-API-Key": "test-api-key"},
+        )
+    assert response.status_code == 400
+
+
 # ---------------------------------------------------------------------------
 # 404 — repo not in scope / job not found
 # ---------------------------------------------------------------------------
@@ -190,9 +210,44 @@ async def test_job_log_404_when_repo_not_in_scope(
     assert "not in the GitHub App installation scope" in data["error"]
 
 
-# ---------------------------------------------------------------------------
-# 200 — success
-# ---------------------------------------------------------------------------
+@pytest.mark.asyncio
+async def test_job_log_404_when_job_not_found(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Job ID not found on GitHub → 404."""
+    from tests.conftest import mock_app
+
+    gh = _gh_sec_settings()
+    dr = _direct_repo_settings()
+
+    _token_cache["67890"] = (time.monotonic(), "ghs_test_token")
+
+    respx_mock.get("https://api.github.com/installation/repositories").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {"repositories": [{"full_name": "damien-robotsix/my-repo"}]}
+            ),
+        )
+    )
+    # The job log endpoint returns 404 for a non-existent job
+    respx_mock.get(
+        "https://api.github.com/repos/damien-robotsix/my-repo/actions/jobs/99999/logs"
+    ).mock(
+        return_value=httpx.Response(404, text="Not Found")
+    )
+
+    async with mock_app(
+        direct_repo_settings=dr,
+        github_security_settings=gh,
+    ) as f:
+        response = await f.client.get(
+            "/chat/github/repos/damien-robotsix/my-repo/actions/jobs/99999/logs",
+            headers={"X-API-Key": "test-api-key"},
+        )
+    assert response.status_code == 404
+    data = response.json()
+    assert "not found" in data["error"].lower()
 
 
 @pytest.mark.asyncio

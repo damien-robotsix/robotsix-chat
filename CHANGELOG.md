@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Fixed Python 2 ``except X, Y:`` syntax in multiple files — changed to correct Python 3 ``except (X, Y):`` tuple form.  Split the 503 "not enabled" checks in the GitHub endpoints so ``github_security`` and ``direct_repo`` failures produce distinct error messages.  Removed a redundant ``follow_redirects=True`` from ``get_job_log``.  Added two missing tests (404 job-not-found and 400 blank path params) for the job-log endpoint.
 - New `GET /chat/github/repos/{owner}/{repo}/actions/jobs/{job_id}/logs` endpoint fetches plain-text GitHub Actions job logs, following the GitHub 302 redirect server-side and returning log content as a 200 response so the agent can inspect deploy pipeline output directly.
 - Settings UI: new settings panel (⚙ button in header) with config editor,
   ``GET /config`` (returns config with secrets masked), and ``PUT /config``
