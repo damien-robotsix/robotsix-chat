@@ -1,5 +1,33 @@
 {
   "$defs": {
+    "AutonomousSettings": {
+      "additionalProperties": false,
+      "description": "Native autonomous chat sessions \u2014 self-directed agent loops.\n\nWhen enabled, the agent can run fully autonomous sessions that pick a\nsubject, draft a plan, await operator approval, then execute to\ncompletion with auto-cycling.\n\nAttributes:\n    enabled: Master switch.  Default ``False``.\n    approval_marker: Marker string the agent emits after drafting a plan\n        to signal it is awaiting operator approval.\n    completion_marker: Marker string the agent emits when the plan is\n        complete; triggers auto-close and respawn.\n    max_auto_turns: Maximum number of automatic agent turns during the\n        execution phase before reverting to ``awaiting_approval``.",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "approval_marker": {
+          "default": "---AWAITING APPROVAL---",
+          "title": "Approval Marker",
+          "type": "string"
+        },
+        "completion_marker": {
+          "default": "---AUTONOMOUS COMPLETE---",
+          "title": "Completion Marker",
+          "type": "string"
+        },
+        "max_auto_turns": {
+          "default": 20,
+          "title": "Max Auto Turns",
+          "type": "integer"
+        }
+      },
+      "title": "AutonomousSettings",
+      "type": "object"
+    },
     "CentralDeploySettings": {
       "additionalProperties": false,
       "description": "Central-deploy roster and component-access settings.\n\nProvides the base URL and bearer token for the central-deploy\nmanagement-plane API.  At session start the agent fetches the\n``GET /chat/components`` roster (a list of component agents the chat\nis allowed to call), caches it with a short TTL, and loads each\ncomponent's declared skill into the agent.\n\nAttributes:\n    url: Base URL of the central-deploy API (no trailing slash).\n    api_token: Bearer token for authenticating to the central-deploy\n        API.  Required when any component access is expected.\n    roster_cache_ttl: Seconds to cache the roster before re-fetching.\n        Default 300 (5 min).",
@@ -899,6 +927,9 @@
     },
     "feedback": {
       "$ref": "#/$defs/FeedbackSettings"
+    },
+    "autonomous": {
+      "$ref": "#/$defs/AutonomousSettings"
     },
     "max_images_per_message": {
       "default": 8,
