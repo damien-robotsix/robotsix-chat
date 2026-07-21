@@ -166,6 +166,12 @@
     "board_api_token": "",
     "timeout": 60.0
   },
+  "autonomous": {
+    "enabled": false,
+    "approval_marker": "---AWAITING APPROVAL---",
+    "completion_marker": "---AUTONOMOUS COMPLETE---",
+    "max_auto_turns": 20
+  },
   "max_images_per_message": 8,
   "max_image_bytes": 5242880,
   "allowed_image_media_types": [

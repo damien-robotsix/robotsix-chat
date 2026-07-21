@@ -268,6 +268,7 @@ class TestRunServer:
             subsession_registry=sub_registry,
             subsession_delivery=sub_delivery,
             feedback_runner=None,
+            autonomous_runner=None,
             on_startup=on_startup,
             on_startup_async=None,
             on_shutdown=None,

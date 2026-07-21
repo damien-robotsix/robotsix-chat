@@ -42,10 +42,12 @@ from .github import (
 from .sessions import (
     _cleanup_session,
     history_endpoint,
+    sessions_approve_endpoint,
     sessions_close_endpoint,
     sessions_create_endpoint,
     sessions_delete_endpoint,
     sessions_list_endpoint,
+    sessions_reject_endpoint,
     summary_endpoint,
 )
 from .subsessions import (
@@ -86,10 +88,12 @@ __all__ = [
     "http_exception_handler",
     "not_found_handler",
     "server_error_handler",
+    "sessions_approve_endpoint",
     "sessions_close_endpoint",
     "sessions_create_endpoint",
     "sessions_delete_endpoint",
     "sessions_list_endpoint",
+    "sessions_reject_endpoint",
     "subsessions_close_endpoint",
     "subsessions_get_endpoint",
     "subsessions_list_endpoint",

@@ -166,6 +166,7 @@ class MessageCoalescer:
         owner_id: str,
         had_session: bool,
         summary_agent: ChatAgent | None = None,
+        autonomous_runner: Any = None,
     ) -> asyncio.Queue[tuple[str, str | None]]:
         """Submit a message for batching; return a queue of SSE frames.
 
@@ -197,6 +198,7 @@ class MessageCoalescer:
                         owner_id,
                         had_session,
                         summary_agent,
+                        autonomous_runner,
                     )
                 )
                 self._background_tasks.add(task)
@@ -258,6 +260,7 @@ class MessageCoalescer:
         owner_id: str,
         had_session: bool,
         summary_agent: ChatAgent | None = None,
+        autonomous_runner: Any = None,
     ) -> None:
         """Wait for the debounce window, drain, lock, run agent, fan out."""
         await asyncio.sleep(self._debounce_seconds)
@@ -328,6 +331,13 @@ class MessageCoalescer:
                             msg_id_store.mark_completed(
                                 session_id, p.message_id, full_reply
                             )
+
+                    # Scan autonomous session replies for lifecycle markers.
+                    if autonomous_runner is not None:
+                        autonomous_runner.check_reply_for_markers(
+                            session_id,
+                            full_reply,
+                        )
 
                 await self._fan_out(pending, SSE_DONE_TYPE)
             except asyncio.CancelledError:
@@ -649,6 +659,20 @@ async def chat_endpoint(
 
     lock_key = client_id or session_id
 
+    # -- Autonomous approval gate -----------------------------------------
+    # When the session is in awaiting_approval state, refuse new messages
+    # until the operator explicitly approves or rejects.
+    autonomous_runner = request.app.state.autonomous_runner
+    if autonomous_runner is not None:
+        aq_state = autonomous_runner.get_state(session_id)
+        if aq_state is not None and aq_state == "awaiting_approval":
+            raise HTTPException(
+                status_code=409,
+                detail=(
+                    "Session is awaiting operator approval before execution can proceed"
+                ),
+            )
+
     # -- Submit to the message coalescer ----------------------------------
 
     coalescer: MessageCoalescer = request.app.state.message_coalescer
@@ -671,6 +695,7 @@ async def chat_endpoint(
         owner_id=owner_id or "",
         had_session=had_session,
         summary_agent=title_agent,
+        autonomous_runner=autonomous_runner,
     )
 
     # -- SSE async generator ----------------------------------------------

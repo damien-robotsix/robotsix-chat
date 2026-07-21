@@ -685,6 +685,31 @@ class HttpProbeSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class AutonomousSettings(BaseModel):
+    """Native autonomous chat sessions — self-directed agent loops.
+
+    When enabled, the agent can run fully autonomous sessions that pick a
+    subject, draft a plan, await operator approval, then execute to
+    completion with auto-cycling.
+
+    Attributes:
+        enabled: Master switch.  Default ``False``.
+        approval_marker: Marker string the agent emits after drafting a plan
+            to signal it is awaiting operator approval.
+        completion_marker: Marker string the agent emits when the plan is
+            complete; triggers auto-close and respawn.
+        max_auto_turns: Maximum number of automatic agent turns during the
+            execution phase before reverting to ``awaiting_approval``.
+
+    """
+
+    enabled: bool = False
+    approval_marker: str = "---AWAITING APPROVAL---"
+    completion_marker: str = "---AUTONOMOUS COMPLETE---"
+    max_auto_turns: int = 20
+    model_config = ConfigDict(extra="forbid")
+
+
 class CentralDeploySettings(BaseModel):
     """Central-deploy roster and component-access settings.
 

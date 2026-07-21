@@ -49,6 +49,7 @@ def run_server(
     subsession_registry: Any = None,
     subsession_delivery: Any = None,
     feedback_runner: Any = None,
+    autonomous_runner: Any = None,
     on_startup: Callable[[], None] | None = None,
     on_startup_async: Callable[[], Any] | None = None,
     on_shutdown: Callable[[], Any] | None = None,
@@ -80,6 +81,7 @@ def run_server(
         subsession_registry=subsession_registry,
         subsession_delivery=subsession_delivery,
         feedback_runner=feedback_runner,
+        autonomous_runner=autonomous_runner,
         on_startup=on_startup,
         on_startup_async=on_startup_async,
         on_shutdown=on_shutdown,
@@ -214,6 +216,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # browser; terminal summaries go through ParentDelivery → either the
     # owning chat session's history (parent = main chat) or the parent
     # subsession's inbox (nested).
+    from robotsix_chat.autonomous import AutonomousRunner, build_autonomous_instruction
     from robotsix_chat.subsessions import (
         CloseState,
         ParentDelivery,
@@ -274,6 +277,37 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         agent_factory=_subsession_agent_factory,
         event_sink=event_bus,
     )
+
+    # -- autonomous agent factory ------------------------------------------
+    # Creates an agent with the autonomous protocol supplement injected into
+    # its system prompt.  The runner calls this factory for every auto-continue
+    # turn so each turn gets a fresh agent instance.
+    def _autonomous_agent_factory() -> LlmioChatAgent:
+        instruction = settings.agent_instruction + build_autonomous_instruction(
+            settings
+        )
+        return create_agent_from_settings(
+            instruction=instruction,
+            settings=settings,
+            conversation_store=conversation_store,
+            model_level=settings.llmio_model_level,
+        )
+
+    # -- autonomous runner -------------------------------------------------
+    autonomous_runner: AutonomousRunner | None = None
+    if settings.autonomous.enabled:
+        autonomous_runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=conversation_store,
+            agent_factory=_autonomous_agent_factory,
+            run_serializer=run_serializer,
+        )
+        logger.info(
+            "Autonomous sessions enabled (max_auto_turns=%d)",
+            settings.autonomous.max_auto_turns,
+        )
+    else:
+        logger.info("Autonomous sessions disabled (autonomous.enabled=false)")
 
     if agent is None:
         agent = create_agent_from_settings(
@@ -359,6 +393,12 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         """Resume periodic subsessions; report interrupted one-shot work."""
         resume_subsessions(env)
 
+    # -- resume autonomous sessions on restart -----------------------------
+    async def _resume_autonomous() -> None:
+        """Auto-close completed autonomous sessions and resume executing ones."""
+        if autonomous_runner is not None:
+            await autonomous_runner.resume_sessions()
+
     logger.info(
         "Resolved persistence paths: conversation=%s, knowledge=%s, "
         "memory_data=%s, diagnostics=%s, subsessions=%s",
@@ -387,7 +427,9 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         subsession_registry=subsession_registry,
         subsession_delivery=delivery,
         feedback_runner=feedback_runner,
+        autonomous_runner=autonomous_runner,
         on_startup=_resume,
+        on_startup_async=_resume_autonomous,
         direct_repo_settings=settings.direct_repo,
         github_security_settings=settings.github_security,
     )

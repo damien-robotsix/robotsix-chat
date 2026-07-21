@@ -81,6 +81,18 @@ modules:
       - uv.lock
       - vulture_whitelist.py
 
+  - id: autonomous
+    description: "Autonomous chat sessions — self-directed agent loops with operator approval gates."
+    paths:
+      - src/robotsix_chat/autonomous/__init__.py
+      - src/robotsix_chat/autonomous/models.py
+      - src/robotsix_chat/autonomous/prompts.py
+      - src/robotsix_chat/autonomous/runner.py
+      - tests/autonomous/__init__.py
+      - tests/autonomous/test_models.py
+      - tests/autonomous/test_prompts.py
+      - tests/autonomous/test_runner.py
+
   - id: component-client
     description: "Component agent client tools for the chat LLM — exposes build_component_tools(), a factory returning LLM tools that let the chat agent enumerate, inspect, and configure remote component agents via direct HTTP."
     paths:
@@ -147,6 +159,7 @@ modules:
       - tests/chat/server/routes/test_chat.py
       - tests/chat/server/routes/test_events.py
       - tests/chat/server/routes/test_github.py
+      - tests/chat/server/test_autonomous_endpoints.py
 
   - id: common
     description: "Shared utilities — provides safe_http_request() for consistent httpx error handling across HTTP clients, and JsonStoreBase for JSON-persisted dataclass stores."
