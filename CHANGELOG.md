@@ -1,5 +1,8 @@
 ## 0.0.0 (unreleased)
 
+- Add unit tests for ``maybe_generate_towncrier_fragment`` covering all
+  code paths (no pyproject.toml, missing towncrier config, malformed TOML,
+  fragment creation, custom directory, existing fragment skip, OSError).
 - Session-draft persistence: queued messages and attached images survive
   session switches, page refreshes, and tab focus loss. A new
   `GET/PUT /sessions/{session_id}/draft` endpoint persists the draft
