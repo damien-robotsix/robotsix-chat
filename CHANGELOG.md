@@ -1,6 +1,10 @@
 ## 0.0.0 (unreleased)
 
 - Add optional ``session_color`` and ``initial_task`` fields to autonomous settings, allowing operators to configure a CSS accent color for autonomous session rows and a default initial task that the agent spawns on session start.
+- System prompt v43: Add verification guidance to read relevant source files
+  (gate functions, compose labels, deploy contracts) before filing tickets
+  involving authorization or configuration changes, and include accurate
+  context in the ticket spec rather than filing based on assumptions.
 - Add unit tests for ``maybe_generate_towncrier_fragment`` covering all
   code paths (no pyproject.toml, missing towncrier config, malformed TOML,
   fragment creation, custom directory, existing fragment skip, OSError).
