@@ -54,6 +54,7 @@ def run_server(
     on_shutdown: Callable[[], Any] | None = None,
     direct_repo_settings: Any = None,
     github_security_settings: Any = None,
+    config_path: str | None = None,
 ) -> None:
     """Start the chat SSE server on ``host:port``.
 
@@ -84,6 +85,7 @@ def run_server(
         on_shutdown=on_shutdown,
         direct_repo_settings=direct_repo_settings,
         github_security_settings=github_security_settings,
+        config_path=config_path,
     )
     uvicorn.run(app, host=host, port=port)
 

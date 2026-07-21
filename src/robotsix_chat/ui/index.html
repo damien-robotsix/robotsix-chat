@@ -20,6 +20,7 @@
   <button id="sessions-toggle" class="header-btn" title="Show your chat sessions" aria-label="Chat sessions">💬 Chats</button>
   <span id="connection-dot" title="Connection status"></span>
   <button id="subsessions-toggle" class="header-btn" title="Show background subsessions" aria-label="Subsessions">🗂 Subsessions</button>
+  <button id="settings-toggle" class="header-btn" title="Edit server configuration" aria-label="Settings">⚙ Settings</button>
 </header>
 
 <!-- ================================================================= -->
@@ -48,6 +49,25 @@
     </div>
   </div>
   <div id="subsessions-list"></div>
+</div>
+
+<!-- ================================================================= -->
+<!-- Settings panel (config editor)                                     -->
+<!-- ================================================================= -->
+<div id="settings-resize-handle"></div>
+<div id="settings-panel">
+  <div class="settings-header panel-header">
+    <span>Settings</span>
+    <button class="dismiss" title="Close panel" aria-label="Close settings panel">&times;</button>
+  </div>
+  <div id="settings-body">
+    <div id="settings-error" class="settings-error" style="display:none"></div>
+    <div id="settings-form"></div>
+    <div id="settings-actions">
+      <button id="settings-save-btn" class="settings-save-btn">Save</button>
+      <span id="settings-save-status"></span>
+    </div>
+  </div>
 </div>
 
 <!-- ================================================================= -->

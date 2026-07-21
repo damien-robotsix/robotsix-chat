@@ -2557,4 +2557,458 @@
       sessionRefreshTimer = null;
     }
   });
+
+  // ---- Settings panel --------------------------------------------------
+  var settingsToggle = document.getElementById("settings-toggle");
+  var settingsPanel = document.getElementById("settings-panel");
+  var settingsDismiss = settingsPanel.querySelector(".dismiss");
+  var settingsResizeHandle = document.getElementById("settings-resize-handle");
+  var settingsForm = document.getElementById("settings-form");
+  var settingsError = document.getElementById("settings-error");
+  var settingsSaveBtn = document.getElementById("settings-save-btn");
+  var settingsSaveStatus = document.getElementById("settings-save-status");
+  var settingsConfigData = null;  // cached config from server
+  var settingsConfigPath = "config/config.json";  // default
+
+  // Panel visibility (localStorage-backed).
+  var SETTINGS_PANEL_KEY = PROJECT_TITLE + "-settings-panel-visible";
+
+  function getSettingsPanelVisible() {
+    try { return localStorage.getItem(SETTINGS_PANEL_KEY) === "true"; }
+    catch (_) { return false; }
+  }
+
+  function setSettingsPanelVisible(visible) {
+    try { localStorage.setItem(SETTINGS_PANEL_KEY, visible ? "true" : "false"); } catch (_) {}
+  }
+
+  function openSettingsPanel() {
+    settingsPanel.classList.add("visible");
+    positionSettingsResizeHandle();
+    document.documentElement.style.setProperty('--settings-width', settingsPanel.getBoundingClientRect().width + 'px');
+    setSettingsPanelVisible(true);
+    loadSettings();
+  }
+
+  function closeSettingsPanel() {
+    settingsPanel.classList.remove("visible");
+    setSettingsPanelVisible(false);
+    hideSettingsResizeHandle();
+  }
+
+  function restoreSettingsPanelState() {
+    if (getSettingsPanelVisible()) { openSettingsPanel(); }
+  }
+
+  settingsToggle.addEventListener("click", function (e) {
+    e.stopPropagation();
+    if (settingsPanel.classList.contains("visible")) {
+      closeSettingsPanel();
+    } else {
+      openSettingsPanel();
+    }
+  });
+
+  settingsDismiss.addEventListener("click", function (e) {
+    e.stopPropagation();
+    closeSettingsPanel();
+  });
+
+  settingsPanel.addEventListener("click", function (e) {
+    e.stopPropagation();
+  });
+
+  document.addEventListener("keydown", function (e) {
+    if (e.key === "Escape" && settingsPanel.classList.contains("visible")) {
+      closeSettingsPanel();
+    }
+  });
+
+  // Settings panel resize.
+  var settingsResizeDragging = false;
+  var settingsResizeStartX = 0;
+  var settingsResizeStartWidth = 0;
+
+  function positionSettingsResizeHandle() {
+    var rect = settingsPanel.getBoundingClientRect();
+    settingsResizeHandle.style.display = "block";
+    settingsResizeHandle.style.left = rect.left + "px";
+  }
+
+  function hideSettingsResizeHandle() {
+    settingsResizeHandle.style.display = "none";
+  }
+
+  settingsResizeHandle.addEventListener("mousedown", function (e) {
+    e.preventDefault();
+    settingsResizeDragging = true;
+    settingsResizeStartX = e.clientX;
+    settingsResizeStartWidth = settingsPanel.getBoundingClientRect().width;
+    settingsResizeHandle.classList.add("active");
+    document.body.style.userSelect = "none";
+  });
+
+  document.addEventListener("mousemove", function (e) {
+    if (!settingsResizeDragging) return;
+    var dx = settingsResizeStartX - e.clientX;
+    var newWidth = settingsResizeStartWidth + dx;
+    newWidth = Math.max(260, Math.min(newWidth, window.innerWidth * 0.9));
+    settingsPanel.style.width = newWidth + "px";
+    positionSettingsResizeHandle();
+    document.documentElement.style.setProperty('--settings-width', newWidth + 'px');
+  });
+
+  document.addEventListener("mouseup", function () {
+    if (!settingsResizeDragging) return;
+    settingsResizeDragging = false;
+    settingsResizeHandle.classList.remove("active");
+    document.body.style.userSelect = "";
+    positionSettingsResizeHandle();
+  });
+
+  window.addEventListener("resize", function () {
+    if (!settingsPanel.classList.contains("visible")) return;
+    var currentWidth = settingsPanel.getBoundingClientRect().width;
+    var maxWidth = window.innerWidth * 0.9;
+    if (currentWidth > maxWidth) {
+      settingsPanel.style.width = maxWidth + "px";
+    } else if (currentWidth < 260) {
+      settingsPanel.style.width = "260px";
+    }
+    positionSettingsResizeHandle();
+    document.documentElement.style.setProperty('--settings-width', settingsPanel.getBoundingClientRect().width + 'px');
+  });
+
+  // ---- Settings load / render ------------------------------------------
+
+  // Known secret keys (suffix match) — displayed as password fields.
+  var SECRET_KEY_SUFFIXES = [
+    "_api_key", "_api_token", "_secret_key", "_private_key", "_github_token",
+    "api_key", "api_token", "secret_key", "private_key", "github_token",
+    "public_key", "deploy_api_key"
+  ];
+
+  function isSecretKey(key) {
+    for (var i = 0; i < SECRET_KEY_SUFFIXES.length; i++) {
+      if (key === SECRET_KEY_SUFFIXES[i] || key.indexOf(SECRET_KEY_SUFFIXES[i]) === key.length - SECRET_KEY_SUFFIXES[i].length) {
+        return true;
+      }
+    }
+    return false;
+  }
+
+  // Top-level section ordering — groups known sections first.
+  var SECTION_ORDER = [
+    "llmio_model_level", "llmio_api_key", "summary_model_level",
+    "server_host", "server_port", "idle_timeout_minutes",
+    "compaction_min_turns", "log_level", "log_json_format",
+    "cors_allow_origins", "correlation_id_header",
+    "max_images_per_message", "max_image_bytes", "allowed_image_media_types",
+    "memory", "langfuse", "central_deploy", "mail",
+    "conversation", "diagnostics", "refdocs", "render_url",
+    "knowledge", "self_review", "version_check", "component_client",
+    "subsessions", "direct_repo", "github_security", "repo_study",
+    "lifecycle", "notification", "http_probe", "feedback"
+  ];
+
+  function fieldKeySort(a, b) {
+    var ai = SECTION_ORDER.indexOf(a);
+    var bi = SECTION_ORDER.indexOf(b);
+    if (ai === -1 && bi === -1) return a < b ? -1 : a > b ? 1 : 0;
+    if (ai === -1) return 1;
+    if (bi === -1) return -1;
+    return ai - bi;
+  }
+
+  function loadSettings() {
+    settingsError.style.display = "none";
+    settingsSaveStatus.textContent = "";
+    settingsSaveStatus.className = "";
+    settingsForm.innerHTML = "<div class=\"settings-empty\">Loading\u2026</div>";
+
+    fetch(apiBase() + "/config", { method: "GET" })
+      .then(function (r) {
+        if (!r.ok) throw new Error("Failed to load config (HTTP " + r.status + ")");
+        return r.json();
+      })
+      .then(function (data) {
+        settingsConfigData = data;
+        renderSettingsForm(data);
+      })
+      .catch(function (err) {
+        settingsForm.innerHTML = "<div class=\"settings-empty\">Failed to load: " + escapeHtml(err.message) + "</div>";
+      });
+  }
+
+  function renderSettingsForm(data) {
+    settingsForm.innerHTML = "";
+    if (!data || Object.keys(data).length === 0) {
+      settingsForm.innerHTML = "<div class=\"settings-empty\">No config loaded — the config file may be empty or missing.</div>";
+      return;
+    }
+
+    var keys = Object.keys(data).sort(fieldKeySort);
+    for (var i = 0; i < keys.length; i++) {
+      var key = keys[i];
+      var value = data[key];
+      var section = renderFieldSection(key, value, key, 0);
+      if (section) settingsForm.appendChild(section);
+    }
+  }
+
+  function renderFieldSection(key, value, path, depth) {
+    if (value !== null && typeof value === "object" && !Array.isArray(value)) {
+      // Nested object — collapsible section.
+      return renderObjectSection(key, value, path, depth);
+    }
+    // Scalar or array — inline field.
+    var wrap = document.createElement("div");
+    wrap.className = "settings-field";
+    wrap.setAttribute("data-path", path);
+
+    var label = document.createElement("label");
+    label.textContent = formatFieldLabel(key);
+    wrap.appendChild(label);
+
+    if (Array.isArray(value)) {
+      var arrInput = document.createElement("textarea");
+      arrInput.rows = Math.min(value.length + 1, 6);
+      arrInput.value = JSON.stringify(value, null, 2);
+      arrInput.setAttribute("data-path", path);
+      arrInput.setAttribute("data-type", "array");
+      wrap.appendChild(arrInput);
+      var arrHint = document.createElement("span");
+      arrHint.className = "field-hint";
+      arrHint.textContent = "JSON array";
+      wrap.appendChild(arrHint);
+    } else if (typeof value === "boolean") {
+      var cbLabel = document.createElement("label");
+      cbLabel.style.display = "inline-flex"; cbLabel.style.alignItems = "center";
+      var cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.checked = value;
+      cb.setAttribute("data-path", path);
+      cb.setAttribute("data-type", "boolean");
+      cbLabel.appendChild(cb);
+      cbLabel.appendChild(document.createTextNode(" " + (value ? "on" : "off")));
+      cb.addEventListener("change", function () {
+        cbLabel.childNodes[1].textContent = " " + (cb.checked ? "on" : "off");
+      });
+      wrap.appendChild(cbLabel);
+    } else if (typeof value === "number") {
+      var numInput = document.createElement("input");
+      numInput.type = "number";
+      numInput.value = value;
+      numInput.setAttribute("data-path", path);
+      numInput.setAttribute("data-type", "number");
+      if (Number.isInteger(value)) numInput.step = "1";
+      else numInput.step = "any";
+      wrap.appendChild(numInput);
+    } else {
+      var inputType = isSecretKey(key) ? "password" : "text";
+      var input = document.createElement("input");
+      input.type = inputType;
+      input.value = typeof value === "string" ? value : JSON.stringify(value);
+      input.setAttribute("data-path", path);
+      input.setAttribute("data-type", inputType === "password" ? "secret" : "string");
+      wrap.appendChild(input);
+      if (inputType === "password" && value === "***") {
+        var hint = document.createElement("span");
+        hint.className = "field-hint";
+        hint.textContent = "Leave unchanged to keep current secret";
+        wrap.appendChild(hint);
+      }
+    }
+    return wrap;
+  }
+
+  function renderObjectSection(key, obj, path, depth) {
+    var section = document.createElement("div");
+    section.className = "settings-section";
+
+    var header = document.createElement("div");
+    header.className = "settings-section-header";
+
+    var icon = document.createElement("span");
+    icon.className = "toggle-icon";
+    icon.textContent = "\u25bc";  // ▼
+    header.appendChild(icon);
+
+    var title = document.createElement("span");
+    title.textContent = formatFieldLabel(key);
+    header.appendChild(title);
+
+    var body = document.createElement("div");
+    body.className = "settings-section-body";
+
+    section.appendChild(header);
+    section.appendChild(body);
+
+    var collapsed = depth > 0;  // auto-collapse nested sections
+    if (collapsed) { body.style.display = "none"; icon.textContent = "\u25b6"; }
+
+    header.addEventListener("click", function () {
+      if (body.style.display === "none") {
+        body.style.display = "";
+        icon.textContent = "\u25bc";
+      } else {
+        body.style.display = "none";
+        icon.textContent = "\u25b6";
+      }
+    });
+
+    var childKeys = Object.keys(obj).sort(fieldKeySort);
+    for (var i = 0; i < childKeys.length; i++) {
+      var childKey = childKeys[i];
+      var childValue = obj[childKey];
+      var childPath = path + "." + childKey;
+      var childEl = renderFieldSection(childKey, childValue, childPath, depth + 1);
+      if (childEl) body.appendChild(childEl);
+    }
+
+    return section;
+  }
+
+  function formatFieldLabel(key) {
+    return key.replace(/_/g, " ");
+  }
+
+  // ---- Settings save ---------------------------------------------------
+
+  function serializeSettingsForm() {
+    var result = {};
+    var inputs = settingsForm.querySelectorAll("[data-path]");
+    for (var i = 0; i < inputs.length; i++) {
+      var el = inputs[i];
+      var path = el.getAttribute("data-path");
+      var type = el.getAttribute("data-type");
+      var value;
+
+      if (el.tagName === "TEXTAREA") {
+        try { value = JSON.parse(el.value); }
+        catch (_) { value = el.value; }
+      } else if (el.type === "checkbox") {
+        value = el.checked;
+      } else if (el.type === "number") {
+        if (el.value === "" || el.value === null) {
+          value = null;
+        } else {
+          var num = Number(el.value);
+          value = isNaN(num) ? el.value : num;
+        }
+      } else {
+        value = el.value;
+      }
+
+      setNestedValue(result, path, value);
+    }
+    return result;
+  }
+
+  function setNestedValue(obj, path, value) {
+    var parts = path.split(".");
+    var current = obj;
+    for (var i = 0; i < parts.length - 1; i++) {
+      if (!current[parts[i]] || typeof current[parts[i]] !== "object") {
+        current[parts[i]] = {};
+      }
+      current = current[parts[i]];
+    }
+    current[parts[parts.length - 1]] = value;
+  }
+
+  settingsSaveBtn.addEventListener("click", function () {
+    if (!settingsConfigData) return;
+
+    // Clear previous errors.
+    clearSettingsErrors();
+
+    var body = serializeSettingsForm();
+    settingsSaveBtn.disabled = true;
+    settingsSaveStatus.textContent = "Saving\u2026";
+    settingsSaveStatus.className = "";
+
+    fetch(apiBase() + "/config", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(body)
+    }).then(function (r) {
+      return r.json().then(function (data) {
+        return { status: r.status, data: data };
+      });
+    }).then(function (result) {
+      settingsSaveBtn.disabled = false;
+      if (result.status === 200) {
+        settingsSaveStatus.textContent = "Saved.";
+        settingsSaveStatus.className = "success";
+        // Reload to pick up any server-side normalizations.
+        loadSettings();
+      } else if (result.status === 422) {
+        settingsSaveStatus.textContent = "Validation failed.";
+        settingsSaveStatus.className = "error";
+        showSettingsError(result.data.detail || result.data.error || "Validation failed");
+      } else {
+        settingsSaveStatus.textContent = "Error: " + (result.data.error || "HTTP " + result.status);
+        settingsSaveStatus.className = "error";
+        showSettingsError(result.data.error || result.data.detail || "Unknown error");
+      }
+    }).catch(function (err) {
+      settingsSaveBtn.disabled = false;
+      settingsSaveStatus.textContent = "Error: " + err.message;
+      settingsSaveStatus.className = "error";
+      showSettingsError(err.message);
+    });
+  });
+
+  function showSettingsError(msg) {
+    settingsError.style.display = "block";
+    settingsError.textContent = msg;
+    // Try to highlight specific fields mentioned in the error.
+    highlightErrorFields(msg);
+  }
+
+  function clearSettingsErrors() {
+    settingsError.style.display = "none";
+    settingsError.textContent = "";
+    var errFields = settingsForm.querySelectorAll(".field-error");
+    for (var i = 0; i < errFields.length; i++) {
+      errFields[i].classList.remove("field-error");
+      var msgEl = errFields[i].querySelector(".field-error-msg");
+      if (msgEl) msgEl.remove();
+    }
+  }
+
+  function highlightErrorFields(errorMsg) {
+    // Pydantic validation errors mention field paths — try to match them.
+    // e.g. "memory.embedding.endpoint" or "memory.llm.api_key"
+    var fieldPattern = /([a-z_]+(?:\.[a-z_]+)*)/gi;
+    var seen = {};
+    var match;
+    while ((match = fieldPattern.exec(errorMsg)) !== null) {
+      var fieldPath = match[1].toLowerCase();
+      if (seen[fieldPath]) continue;
+      seen[fieldPath] = true;
+
+      var fieldEl = settingsForm.querySelector("[data-path=\"" + fieldPath + "\"]");
+      if (fieldEl) {
+        var wrap = fieldEl.closest(".settings-field");
+        if (wrap) {
+          wrap.classList.add("field-error");
+          var msgEl = document.createElement("span");
+          msgEl.className = "field-error-msg";
+          msgEl.textContent = "see error above";
+          wrap.appendChild(msgEl);
+        }
+      }
+    }
+  }
+
+  function escapeHtml(str) {
+    var div = document.createElement("div");
+    div.appendChild(document.createTextNode(str));
+    return div.innerHTML;
+  }
+
+  // Restore settings panel state on load.
+  restoreSettingsPanelState();
 })();

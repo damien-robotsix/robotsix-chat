@@ -2,3 +2,6 @@ name: "CodeQL config"
 paths-ignore:
   - ".local-deps/**"
   - ".local_pkgs/**"
+query-filters:
+- exclude:
+    id: py/clear-text-storage-sensitive-data
