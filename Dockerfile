@@ -83,7 +83,12 @@ RUN apt-get update \
 # /root/.cache at build time (we run as root), invisible to `app`.
 ENV PLAYWRIGHT_BROWSERS_PATH=/opt/playwright-browsers
 RUN mkdir -p /opt/playwright-browsers \
-    && playwright install --with-deps chromium \
+    && ( for attempt in $(seq 1 3); do \
+           playwright install --with-deps chromium && exit 0; \
+           echo "Attempt ${attempt} failed, retrying in 10s..." >&2; \
+           sleep 10; \
+         done; \
+         exit 1 ) \
     && playwright --version \
     && chmod -R a+rX /opt/playwright-browsers
 
