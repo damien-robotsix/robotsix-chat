@@ -1,0 +1,1 @@
+Persist queued messages to backend + keep attached images across focus changes

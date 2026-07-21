@@ -27,6 +27,10 @@ from .constants import (
     SSE_HEARTBEAT_INTERVAL,
     SSE_TOKEN_TYPE,
 )
+from .draft import (
+    draft_get_endpoint,
+    draft_save_endpoint,
+)
 from .errors import (
     http_exception_handler,
     not_found_handler,
@@ -83,6 +87,8 @@ __all__ = [
     "chat_endpoint",
     "config_get_endpoint",
     "config_save_endpoint",
+    "draft_get_endpoint",
+    "draft_save_endpoint",
     "events_endpoint",
     "github_actions_secret_endpoint",
     "github_actions_workflow_endpoint",

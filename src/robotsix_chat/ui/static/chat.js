@@ -136,7 +136,12 @@
     for (var j = 0; j < accepted.length; j++) {
       var f = accepted[j];
       var objectURL = URL.createObjectURL(f);
-      pendingImages.push({ file: f, objectURL: objectURL, mediaType: f.type });
+      var entry = { file: f, objectURL: objectURL, mediaType: f.type, _b64: null };
+      pendingImages.push(entry);
+      // Eagerly encode so saveDraft() can work synchronously.
+      encodeImage(f).then(function (encoded) {
+        entry._b64 = { media_type: encoded.media_type, data: encoded.data, filename: f.name };
+      });
     }
 
     renderPreviewTray();
@@ -165,6 +170,119 @@
     pendingImages = [];
     renderPreviewTray();
     clearAttachError();
+  }
+
+  // ---- Draft persistence (queued messages + pending images) ------------
+
+  /** Convert a base64 string back to a pending-image entry. */
+  function _base64ToPendingImage(b64, mediaType, filename) {
+    try {
+      var binary = atob(b64);
+      var bytes = new Uint8Array(binary.length);
+      for (var i = 0; i < binary.length; i++) bytes[i] = binary.charCodeAt(i);
+      var blob = new Blob([bytes], { type: mediaType });
+      var file = new File([blob], filename, { type: mediaType });
+      var objectURL = URL.createObjectURL(blob);
+      // Eager encode so subsequent saveDraft calls work without FileReader.
+      var entry = { file: file, objectURL: objectURL, mediaType: mediaType, _b64: { media_type: mediaType, data: b64, filename: filename } };
+      return entry;
+    } catch (_) {
+      return null;
+    }
+  }
+
+  /** Save the current messageQueue and pendingImages to the backend. */
+  function saveDraft() {
+    if (!activeSessionId) return;
+
+    var pending = [];
+    for (var i = 0; i < pendingImages.length; i++) {
+      if (pendingImages[i]._b64) {
+        pending.push(pendingImages[i]._b64);
+      }
+    }
+
+    var queue = [];
+    for (var j = 0; j < messageQueue.length; j++) {
+      var item = messageQueue[j];
+      var qImgs = [];
+      var imgs = item.images || [];
+      for (var k = 0; k < imgs.length; k++) {
+        if (imgs[k]._b64) {
+          qImgs.push(imgs[k]._b64);
+        }
+      }
+      queue.push({ text: item.text, images: qImgs, messageId: item.messageId });
+    }
+
+    // Nothing to persist — skip the request.
+    if (pending.length === 0 && queue.length === 0) return;
+
+    var body = JSON.stringify({ pending_images: pending, queue: queue });
+    fetch(apiBase() + "/sessions/" + encodeURIComponent(activeSessionId) + "/draft", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: body,
+      keepalive: true
+    }).catch(function () { /* best-effort */ });
+  }
+
+  /** Restore a previously saved draft from the backend. */
+  function restoreDraft() {
+    if (!activeSessionId) return;
+
+    fetch(apiBase() + "/sessions/" + encodeURIComponent(activeSessionId) + "/draft")
+      .then(function (r) {
+        if (!r.ok) return {};
+        return r.json();
+      })
+      .then(function (draft) {
+        if (!draft) return;
+
+        // Restore pending images.
+        if (Array.isArray(draft.pending_images) && draft.pending_images.length > 0) {
+          for (var i = 0; i < draft.pending_images.length; i++) {
+            var img = draft.pending_images[i];
+            var pi = _base64ToPendingImage(img.data, img.media_type, img.filename || "image");
+            if (pi) pendingImages.push(pi);
+          }
+          renderPreviewTray();
+        }
+
+        // Restore queued messages.
+        if (Array.isArray(draft.queue) && draft.queue.length > 0) {
+          for (var j = 0; j < draft.queue.length; j++) {
+            var qItem = draft.queue[j];
+            if (!qItem.text && (!qItem.images || qItem.images.length === 0)) continue;
+
+            var el = addUserBubble(qItem.text || "");
+            var restoredImages = [];
+            if (Array.isArray(qItem.images) && qItem.images.length > 0) {
+              var imgsDiv = document.createElement("div");
+              imgsDiv.className = "bubble-images";
+              for (var k = 0; k < qItem.images.length; k++) {
+                var qImg = qItem.images[k];
+                var pi = _base64ToPendingImage(qImg.data, qImg.media_type, qImg.filename || "image");
+                if (!pi) continue;
+                restoredImages.push(pi);
+                var thumb = document.createElement("img");
+                thumb.src = pi.objectURL;
+                thumb.alt = pi.file.name;
+                imgsDiv.appendChild(thumb);
+              }
+              if (imgsDiv.children.length > 0) {
+                el.insertBefore(imgsDiv, el.firstChild);
+              }
+            }
+
+            el.classList.add("queued");
+            addCancelButton(el, qItem.messageId);
+            messageQueue.push({ text: qItem.text, el: el, images: restoredImages, messageId: qItem.messageId });
+          }
+          updateCancelQueuedButton();
+        }
+      })
+      .catch(function () { /* best-effort */ });
   }
 
   function isBusy() {
@@ -622,6 +740,9 @@
 
   function switchSession(sessionId) {
     if (sessionId === activeSessionId) return;
+
+    // Persist any in-progress draft before switching away.
+    saveDraft();
 
     // 1. Persist the new active session_id.
     setActiveSessionId(sessionId);
@@ -1990,6 +2111,8 @@
       scheduleForceScrollToBottom();
       // Refresh the conversation summary once history is loaded.
       refreshSummary();
+      // Restore any saved draft (queued messages / pending images).
+      restoreDraft();
     }).catch(function () {
       // Silently ignore network errors — empty chat is fine.
     });
@@ -2687,9 +2810,17 @@
   }, SESSION_REFRESH_INTERVAL_MS);
 
   window.addEventListener("beforeunload", function () {
+    saveDraft();
     if (sessionRefreshTimer) {
       clearInterval(sessionRefreshTimer);
       sessionRefreshTimer = null;
+    }
+  });
+
+  // Persist drafts when the tab loses focus.
+  document.addEventListener("visibilitychange", function () {
+    if (document.hidden) {
+      saveDraft();
     }
   });
 
