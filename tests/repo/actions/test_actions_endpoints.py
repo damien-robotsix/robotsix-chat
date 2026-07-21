@@ -58,7 +58,7 @@ async def test_secret_endpoint_503_when_disabled() -> None:
     ) as f:
         response = await f.client.put(
             "/chat/github/repos/damien-robotsix/my-repo/actions/secrets/MY_SECRET",
-            json={"secret_value": "test"},
+            json={"secret_value": "test"},  # pragma: allowlist secret
             headers={"X-API-Key": "test-key"},
         )
     assert response.status_code == 503
@@ -103,7 +103,7 @@ async def test_secret_endpoint_503_when_api_key_empty() -> None:
     ) as f:
         response = await f.client.put(
             "/chat/github/repos/damien-robotsix/my-repo/actions/secrets/MY_SECRET",
-            json={"secret_value": "test"},
+            json={"secret_value": "test"},  # pragma: allowlist secret
             headers={"X-API-Key": "wrong"},
         )
     assert response.status_code == 503
@@ -128,7 +128,7 @@ async def test_secret_endpoint_403_when_bad_api_key() -> None:
     ) as f:
         response = await f.client.put(
             "/chat/github/repos/damien-robotsix/my-repo/actions/secrets/MY_SECRET",
-            json={"secret_value": "test"},
+            json={"secret_value": "test"},  # pragma: allowlist secret
             headers={"X-API-Key": "wrong-key"},
         )
     assert response.status_code == 403
@@ -229,7 +229,7 @@ async def test_secret_endpoint_404_repo_not_in_scope(
     ) as f:
         response = await f.client.put(
             "/chat/github/repos/damien-robotsix/other-repo/actions/secrets/MY_SECRET",
-            json={"secret_value": "test"},
+            json={"secret_value": "test"},  # pragma: allowlist secret
             headers={"X-API-Key": "test-api-key"},
         )
     assert response.status_code == 404
