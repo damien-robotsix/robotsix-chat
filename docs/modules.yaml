@@ -51,6 +51,7 @@ modules:
       - _stubs/**/*
       - src/robotsix_mill/__init__.py
       - src/robotsix_mill/stages/towncrier.py
+      - tests/stages/**/*
       - changelog.d/**/*
       - config/**/*
       - deploy/**/*
