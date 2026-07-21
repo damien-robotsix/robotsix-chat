@@ -143,6 +143,7 @@ modules:
       - src/robotsix_chat/chat/server/routes/sessions.py
       - src/robotsix_chat/chat/server/routes/subsessions.py
       - src/robotsix_chat/chat/server/routes/config.py
+      - src/robotsix_chat/chat/server/routes/draft.py
       - docs/chat/server.md
       - tests/chat/__init__.py
       - tests/chat/test_cli.py
@@ -159,6 +160,7 @@ modules:
       - tests/chat/server/routes/test_chat.py
       - tests/chat/server/routes/test_events.py
       - tests/chat/server/routes/test_github.py
+      - tests/chat/server/routes/test_draft.py
       - tests/chat/server/test_autonomous_endpoints.py
 
   - id: common

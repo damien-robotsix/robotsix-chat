@@ -55,6 +55,8 @@ from .routes import (
     chat_endpoint,
     config_get_endpoint,
     config_save_endpoint,
+    draft_get_endpoint,
+    draft_save_endpoint,
     events_endpoint,
     github_actions_secret_endpoint,
     github_actions_workflow_endpoint,
@@ -238,6 +240,7 @@ def create_app(
     github_security_settings: GitHubSecuritySettings | None = None,
     github_actions_settings: GitHubActionsSettings | None = None,
     config_path: str | None = None,
+    draft_store_dir: str | None = None,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -336,6 +339,12 @@ def create_app(
             (default), the path is resolved from the
             ``ROBOTSIX_CONFIG_FILE`` environment variable or the default
             ``config/config.json``.
+        draft_store_dir: Path to the session-drafts directory, used by
+            the ``GET /sessions/{session_id}/draft`` and
+            ``PUT /sessions/{session_id}/draft`` endpoints.  Each session
+            gets its own ``{session_id}.json`` file inside this directory.
+            When ``None`` (default), the directory ``/data/session_drafts``
+            is used.
 
     """
     routes: list[Route | Mount] = [
@@ -366,6 +375,16 @@ def create_app(
             "/sessions/{session_id}/reject",
             sessions_reject_endpoint,
             methods=["POST"],
+        ),
+        Route(
+            "/sessions/{session_id}/draft",
+            draft_get_endpoint,
+            methods=["GET"],
+        ),
+        Route(
+            "/sessions/{session_id}/draft",
+            draft_save_endpoint,
+            methods=["PUT"],
         ),
         Route("/subsessions", subsessions_list_endpoint, methods=["GET"]),
         Route("/subsessions/{sub_id}", subsessions_get_endpoint, methods=["GET"]),
@@ -471,6 +490,8 @@ def create_app(
     app.state.autonomous_runner = autonomous_runner  # may be None
     if config_path is not None:
         app.state.config_path = config_path
+    if draft_store_dir is not None:
+        app.state.draft_store_dir = draft_store_dir
     return app
 
 
