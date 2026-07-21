@@ -84,6 +84,15 @@ async def sessions_list_endpoint(request: Request) -> JSONResponse:
 
     store: ConversationStore = request.app.state.conversation_store
     sessions, active_id = store.list_sessions(owner_id)
+
+    # Annotate autonomous sessions so the UI can render the [AUTONOMOUS] badge.
+    runner = request.app.state.autonomous_runner
+    if runner is not None:
+        for s in sessions:
+            sid = s.get("session_id")
+            if isinstance(sid, str) and runner.is_autonomous(sid):
+                s["autonomous"] = True
+
     return JSONResponse({"sessions": sessions, "active_session_id": active_id})
 
 
@@ -221,6 +230,85 @@ async def sessions_close_endpoint(request: Request) -> JSONResponse:
             "subsessions_closed": subsessions_closed,
         }
     )
+
+
+async def sessions_approve_endpoint(request: Request) -> JSONResponse:
+    """Approve an autonomous session's plan and begin execution.
+
+    ``POST /sessions/{session_id}/approve?owner_id=...``
+
+    Validates ``owner_id`` (returns 403 on mismatch) and transitions the
+    session from ``awaiting_approval`` to ``executing``.  The server then
+    auto-continues execution in the background.
+
+    Returns 200 ``{"approved": true}`` on success.
+    Returns 403 ``{"error": "owner_id mismatch"}`` when the owner does not
+        match the session's owner.
+    Returns 409 ``{"error": "session is in state <state>, not awaiting_approval"}``
+        when the session is not awaiting approval.
+    Returns 404 when no autonomous runner is configured or the session is
+        unknown.
+    """
+    from robotsix_chat.autonomous import AutonomousRunner
+
+    session_id = request.path_params["session_id"]
+    owner_id = _require_owner_id(request)
+
+    runner: AutonomousRunner | None = request.app.state.autonomous_runner
+    if runner is None:
+        return JSONResponse(
+            {"error": "autonomous sessions are not enabled"},
+            status_code=404,
+        )
+
+    ok, reason = runner.approve(owner_id, session_id)
+    if not ok:
+        if reason == "owner_id mismatch":
+            return JSONResponse({"error": reason}, status_code=403)
+        if "not found" in reason:
+            return JSONResponse({"error": reason}, status_code=404)
+        return JSONResponse({"error": reason}, status_code=409)
+
+    return JSONResponse({"approved": True})
+
+
+async def sessions_reject_endpoint(request: Request) -> JSONResponse:
+    """Reject an autonomous session's plan and reset to subject selection.
+
+    ``POST /sessions/{session_id}/reject?owner_id=...``
+
+    Validates ``owner_id`` (returns 403 on mismatch) and resets the session
+    from ``awaiting_approval`` to ``selecting_subject``.
+
+    Returns 200 ``{"rejected": true}`` on success.
+    Returns 403 ``{"error": "owner_id mismatch"}`` when the owner does not
+        match the session's owner.
+    Returns 409 ``{"error": "session is in state <state>, not awaiting_approval"}``
+        when the session is not awaiting approval.
+    Returns 404 when no autonomous runner is configured or the session is
+        unknown.
+    """
+    from robotsix_chat.autonomous import AutonomousRunner
+
+    session_id = request.path_params["session_id"]
+    owner_id = _require_owner_id(request)
+
+    runner: AutonomousRunner | None = request.app.state.autonomous_runner
+    if runner is None:
+        return JSONResponse(
+            {"error": "autonomous sessions are not enabled"},
+            status_code=404,
+        )
+
+    ok, reason = runner.reject(owner_id, session_id)
+    if not ok:
+        if reason == "owner_id mismatch":
+            return JSONResponse({"error": reason}, status_code=403)
+        if "not found" in reason:
+            return JSONResponse({"error": reason}, status_code=404)
+        return JSONResponse({"error": reason}, status_code=409)
+
+    return JSONResponse({"rejected": True})
 
 
 async def summary_endpoint(request: Request) -> JSONResponse:

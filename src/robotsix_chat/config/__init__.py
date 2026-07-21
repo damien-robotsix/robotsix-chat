@@ -9,6 +9,7 @@ from robotsix_chat.config.constants import (
     level_needs_api_key,
 )
 from robotsix_chat.config.models import (
+    AutonomousSettings,
     CentralDeploySettings,
     ComponentClientSettings,
     ComponentTarget,
@@ -42,6 +43,7 @@ from robotsix_chat.config.settings import (
 __all__ = [
     "SYSTEM_PROMPT_VERSION",
     "VALID_MODEL_LEVELS",
+    "AutonomousSettings",
     "CentralDeploySettings",
     "ComponentClientSettings",
     "ComponentTarget",

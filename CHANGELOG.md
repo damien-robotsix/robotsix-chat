@@ -4,6 +4,7 @@
   summaries directly to the active root conversation instead of the
   periodic parent's inbox, so operator decisions in side-chats are
   no longer stranded and ignored.
+- Native autonomous session support: add `kind="autonomous"` as a first-class session type with built-in subject auto-selection, plan drafting, operator approval gate (409 server-side), execution, and auto-cycling (close + respawn). Gated behind `autonomous.enabled` (default `false`). Includes `AutonomousRunner` state machine, marker-based lifecycle transitions, approve/reject endpoints with `owner_id` authorization (403 on mismatch), and `max_auto_turns` enforcement.
 - Settings UI: new settings panel (⚙ button in header) with config editor,
   ``GET /config`` (returns config with secrets masked), and ``PUT /config``
   (deep-merges submitted form over existing config, validates through Settings

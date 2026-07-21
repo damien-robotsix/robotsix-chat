@@ -61,10 +61,12 @@ from .routes import (
     http_exception_handler,
     not_found_handler,
     server_error_handler,
+    sessions_approve_endpoint,
     sessions_close_endpoint,
     sessions_create_endpoint,
     sessions_delete_endpoint,
     sessions_list_endpoint,
+    sessions_reject_endpoint,
     subsessions_close_endpoint,
     subsessions_get_endpoint,
     subsessions_list_endpoint,
@@ -76,6 +78,7 @@ from .routes import (
 )
 
 if TYPE_CHECKING:
+    from robotsix_chat.autonomous import AutonomousRunner
     from robotsix_chat.config.models import DirectRepoSettings, GitHubSecuritySettings
     from robotsix_chat.subsessions import (
         CloseState,
@@ -187,6 +190,7 @@ SHARED_PARAMS: frozenset[str] = frozenset(
         "subsession_registry",
         "subsession_delivery",
         "feedback_runner",
+        "autonomous_runner",
         "on_startup",
         "on_startup_async",
         "on_shutdown",
@@ -218,6 +222,7 @@ def create_app(
     subsession_registry: SubsessionRegistry | None = None,
     subsession_delivery: ParentDelivery | None = None,
     feedback_runner: Any = None,
+    autonomous_runner: AutonomousRunner | None = None,
     on_startup: Callable[[], None] | None = None,
     on_startup_async: Callable[[], Any] | None = None,
     on_shutdown: Callable[[], Any] | None = None,
@@ -293,6 +298,10 @@ def create_app(
             :class:`~robotsix_chat.feedback.FeedbackRunner` that schedules
             feedback analysis runs at compaction and session-end boundaries.
             When ``None`` (default), feedback runs are disabled.
+        autonomous_runner: Optional
+            :class:`~robotsix_chat.autonomous.AutonomousRunner` that drives
+            the autonomous-session state machine and auto-continue loops.
+            When ``None`` (default), autonomous sessions are disabled.
         on_startup: Optional callable invoked during application startup
             (the Starlette lifespan ``startup`` phase).  Pass a closure
             that e.g. resumes persisted subsessions.
@@ -334,6 +343,16 @@ def create_app(
         Route(
             "/sessions/{session_id}/close",
             sessions_close_endpoint,
+            methods=["POST"],
+        ),
+        Route(
+            "/sessions/{session_id}/approve",
+            sessions_approve_endpoint,
+            methods=["POST"],
+        ),
+        Route(
+            "/sessions/{session_id}/reject",
+            sessions_reject_endpoint,
             methods=["POST"],
         ),
         Route("/subsessions", subsessions_list_endpoint, methods=["GET"]),
@@ -426,6 +445,7 @@ def create_app(
     app.state.direct_repo_settings = direct_repo_settings
     app.state.github_security_settings = github_security_settings
     app.state.feedback_runner = feedback_runner  # may be None
+    app.state.autonomous_runner = autonomous_runner  # may be None
     if config_path is not None:
         app.state.config_path = config_path
     return app

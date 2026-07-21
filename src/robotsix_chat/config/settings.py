@@ -15,6 +15,7 @@ from robotsix_llmio.config import TierLevel
 
 from robotsix_chat.config.constants import level_needs_api_key
 from robotsix_chat.config.models import (
+    AutonomousSettings,
     CentralDeploySettings,
     ComponentClientSettings,
     ConversationSettings,
@@ -414,6 +415,7 @@ class Settings(BaseModel):
     notification: NotificationSettings = Field(default_factory=NotificationSettings)
     http_probe: HttpProbeSettings = Field(default_factory=HttpProbeSettings)
     feedback: FeedbackSettings = Field(default_factory=FeedbackSettings)
+    autonomous: AutonomousSettings = Field(default_factory=AutonomousSettings)
     max_images_per_message: int = 8
     max_image_bytes: int = 5_242_880
     allowed_image_media_types: list[str] = Field(
@@ -564,6 +566,7 @@ class Settings(BaseModel):
             "notification",
             "http_probe",
             "feedback",
+            "autonomous",
         )
         for key in _object_keys:
             val = data.get(key)

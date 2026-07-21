@@ -397,7 +397,12 @@
 
       var titleDiv = document.createElement("div");
       titleDiv.className = "session-title";
-      titleDiv.textContent = s.title || "Untitled";
+      if (s.autonomous) {
+        row.classList.add("session-autonomous");
+        titleDiv.textContent = "[AUTONOMOUS] " + (s.title || "Untitled");
+      } else {
+        titleDiv.textContent = s.title || "Untitled";
+      }
       row.appendChild(titleDiv);
 
       var metaDiv = document.createElement("div");
