@@ -238,6 +238,15 @@ class DirectRepoClient:
         Raises ValueError if any file entry is missing a ``path`` field.
         Raises RuntimeError on GitHub API failures.
         """
+        # Normalize changelog fragment trailing newlines
+        for f in files:
+            if (
+                f.get("path", "").startswith("changelog.d/")
+                and f["path"].endswith(".md")
+                and not f.get("content", "").endswith("\n")
+            ):
+                f["content"] = f["content"] + "\n"
+
         # 1. Create a blob for each file
         tree_items: list[dict[str, Any]] = []
         for f in files:
@@ -788,24 +797,3 @@ class DirectRepoClient:
             return f"Error dispatching workflow: {exc}"
         except Exception as exc:
             return f"Error dispatching workflow: {exc}"
-for f in files:
-    if (
-        f.get("path", "").startswith("changelog.d/")
-        and f["path"].endswith(".md")
-        and not f.get("content", "").endswith("\n")
-    ):
-        f["content"] = f["content"] + "\n"
-for f in files:
-    if (
-        f.get("path", "").startswith("changelog.d/")
-        and f["path"].endswith(".md")
-        and not f.get("content", "").endswith("\n")
-    ):
-        f["content"] = f["content"] + "\n"
-for f in files:
-    if (
-        f.get("path", "").startswith("changelog.d/")
-        and f["path"].endswith(".md")
-        and not f.get("content", "").endswith("\n")
-    ):
-        f["content"] = f["content"] + "\n"
