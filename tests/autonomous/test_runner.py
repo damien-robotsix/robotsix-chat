@@ -14,6 +14,13 @@ from robotsix_chat.chat.conversation import ConversationStore, Session
 class TestAutonomousRunnerSessionRegistry:
     """Session creation, lookup, and ownership tests."""
 
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+
     def test_create_session(self) -> None:
         """Creating a session registers it and returns correct metadata."""
         store = ConversationStore()
@@ -60,6 +67,13 @@ class TestAutonomousRunnerSessionRegistry:
 
 class TestMarkerDetection:
     """Marker detection and state transition tests."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
 
     @pytest.fixture
     def runner(self) -> AutonomousRunner:
@@ -118,6 +132,13 @@ class TestMarkerDetection:
 
 class TestApprovalGate:
     """Approve/reject endpoint logic tests."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
 
     @pytest.fixture
     def runner(self) -> AutonomousRunner:
@@ -187,6 +208,13 @@ class TestApprovalGate:
 
 class TestAutoContinue:
     """Auto-continue loop tests."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
 
     @pytest.mark.asyncio
     async def test_max_turns_enforcement(self) -> None:
