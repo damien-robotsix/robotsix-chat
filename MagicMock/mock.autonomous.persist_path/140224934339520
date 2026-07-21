@@ -1,0 +1,9 @@
+{
+  "custom-id": {
+    "session_id": "custom-id",
+    "owner_id": "owner1",
+    "state": "selecting_subject",
+    "plan_text": "",
+    "auto_turn_count": 0
+  }
+}

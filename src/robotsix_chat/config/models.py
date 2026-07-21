@@ -744,6 +744,7 @@ class AutonomousSettings(BaseModel):
     approval_marker: str = "---AWAITING APPROVAL---"
     completion_marker: str = "---AUTONOMOUS COMPLETE---"
     max_auto_turns: int = 20
+    persist_path: str = "/data/autonomous_sessions.json"
     model_config = ConfigDict(extra="forbid")
 
 

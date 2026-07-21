@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
+from pathlib import Path
 from typing import TYPE_CHECKING
 
 from robotsix_chat.autonomous.models import AutonomousSession, AutonomousState
@@ -33,10 +35,65 @@ class AutonomousRunner:
         self._store = conversation_store
         self._agent_factory = agent_factory
         self._run_serializer = run_serializer
-        self._sessions: dict[str, AutonomousSession] = {}
+        self._persist_path = Path(settings.autonomous.persist_path)
+        self._sessions: dict[str, AutonomousSession] = self._load_sessions()
         # Strong references to in-flight auto-continue tasks (see asyncio
         # docs warning on create_task and weak references).
         self._auto_tasks: set[asyncio.Task[None]] = set()
+
+    # -- persistence ------------------------------------------------------
+
+    def _save_sessions(self) -> None:
+        """Persist the in-memory session registry to disk."""
+        try:
+            data = {}
+            for sid, aq in self._sessions.items():
+                data[sid] = {
+                    "session_id": aq.session_id,
+                    "owner_id": aq.owner_id,
+                    "state": aq.state.value,
+                    "plan_text": aq.plan_text,
+                    "auto_turn_count": aq.auto_turn_count,
+                }
+            self._persist_path.parent.mkdir(parents=True, exist_ok=True)
+            self._persist_path.write_text(json.dumps(data, indent=2))
+        except Exception:
+            logger.exception("Failed to persist autonomous sessions")
+
+    def _load_sessions(self) -> dict[str, AutonomousSession]:
+        """Load persisted autonomous sessions from disk.
+
+        Returns an empty dict when the persist file does not exist
+        or cannot be parsed.
+        """
+        if not self._persist_path.exists():
+            return {}
+        try:
+            raw = json.loads(self._persist_path.read_text())
+        except Exception:
+            logger.exception(
+                "Failed to load autonomous sessions from %s",
+                self._persist_path,
+            )
+            return {}
+        sessions: dict[str, AutonomousSession] = {}
+        for sid, entry in raw.items():
+            try:
+                sessions[sid] = AutonomousSession(
+                    session_id=entry["session_id"],
+                    owner_id=entry["owner_id"],
+                    state=AutonomousState(entry["state"]),
+                    plan_text=entry.get("plan_text", ""),
+                    auto_turn_count=entry.get("auto_turn_count", 0),
+                )
+            except Exception:
+                logger.exception("Skipping unparseable autonomous session %s", sid)
+        logger.info(
+            "Loaded %d autonomous sessions from %s",
+            len(sessions),
+            self._persist_path,
+        )
+        return sessions
 
     # -- session registry ---------------------------------------------------
 
@@ -56,6 +113,7 @@ class AutonomousRunner:
             state=AutonomousState.selecting_subject,
         )
         self._sessions[session_id] = aq
+        self._save_sessions()
         return aq
 
     def is_autonomous(self, session_id: str) -> bool:
@@ -101,6 +159,7 @@ class AutonomousRunner:
                 "Autonomous session %s completed",
                 session_id,
             )
+            self._save_sessions()
             return AutonomousState.completed
 
         # Check approval marker.
@@ -114,6 +173,7 @@ class AutonomousRunner:
                 session_id,
                 len(aq.plan_text),
             )
+            self._save_sessions()
             return AutonomousState.awaiting_approval
 
         return None
@@ -142,6 +202,7 @@ class AutonomousRunner:
         self._auto_tasks.add(task)
         task.add_done_callback(self._auto_tasks.discard)
 
+        self._save_sessions()
         logger.info("Autonomous session %s approved — starting execution", session_id)
         return True, ""
 
@@ -160,6 +221,7 @@ class AutonomousRunner:
 
         aq.state = AutonomousState.selecting_subject
         aq.plan_text = ""
+        self._save_sessions()
         logger.info(
             "Autonomous session %s rejected — reset to subject selection",
             session_id,
@@ -192,6 +254,7 @@ class AutonomousRunner:
                         max_turns,
                     )
                     aq.state = AutonomousState.awaiting_approval
+                    self._save_sessions()
                     return
 
                 # Acquire the per-owner run lock.
@@ -228,6 +291,7 @@ class AutonomousRunner:
                     self._store.record(session_id, owner_id, message, full_reply)
 
                     aq.auto_turn_count += 1
+                    self._save_sessions()
 
                     # Check for lifecycle markers in the reply.
                     new_state = self.check_reply_for_markers(session_id, full_reply)

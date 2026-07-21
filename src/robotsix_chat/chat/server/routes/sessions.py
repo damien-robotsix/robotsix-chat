@@ -92,6 +92,9 @@ async def sessions_list_endpoint(request: Request) -> JSONResponse:
             sid = s.get("session_id")
             if isinstance(sid, str) and runner.is_autonomous(sid):
                 s["autonomous"] = True
+                state = runner.get_state(sid)
+                if state is not None:
+                    s["autonomous_state"] = state.value
 
     return JSONResponse({"sessions": sessions, "active_session_id": active_id})
 
@@ -103,6 +106,9 @@ async def sessions_create_endpoint(request: Request) -> JSONResponse:
 
         {"session_id": "...", "title": "New chat", "last_active": 1.0, "turn_count": 0}
 
+    Pass ``"autonomous": true`` to create an autonomous session instead
+    (requires ``autonomous.enabled`` in config).
+
     The new session is marked as the owner's active session.
     """
     body = await _parse_json_body(request)
@@ -112,6 +118,27 @@ async def sessions_create_endpoint(request: Request) -> JSONResponse:
         raise HTTPException(
             status_code=400,
             detail="'owner_id' field is required and must be a string",
+        )
+
+    autonomous = body.get("autonomous", False)
+    runner = request.app.state.autonomous_runner
+
+    if autonomous:
+        if runner is None:
+            raise HTTPException(
+                status_code=404,
+                detail="autonomous sessions are not enabled",
+            )
+        aq = runner.create_session(owner_id)
+        return JSONResponse(
+            {
+                "session_id": aq.session_id,
+                "title": "Autonomous chat",
+                "last_active": 0.0,
+                "turn_count": 0,
+                "autonomous": True,
+                "autonomous_state": aq.state.value,
+            }
         )
 
     store: ConversationStore = request.app.state.conversation_store
