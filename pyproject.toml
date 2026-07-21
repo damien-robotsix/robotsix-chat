@@ -67,6 +67,10 @@ memory = ["cognee", "transformers"]
 # (full-page screenshots + accessibility tree extraction).  Optional —
 # when absent the factory returns no tools.
 render-url = ["playwright"]
+# github-actions: PyNaCl for GitHub Actions secret encryption (libsodium
+# sealed-box).  Required by the ``set_actions_secret`` tool; when absent,
+# the tool returns a clear install-instruction error without crashing.
+github-actions = ["pynacl"]
 
 [project.scripts]
 robotsix-chat = "robotsix_chat.chat.server:run_server_from_config"
@@ -287,6 +291,11 @@ known_first_party = ["robotsix_chat"]
 # resolve the whitelisted symbols; the `src` prefix is a tooling artefact, not a
 # runtime dependency, so it is excluded from deptry's scan (DEP001 'src').
 extend_exclude = ["vulture_whitelist.py", ".local-deps", ".local_pkgs", "local-deps", "-packages", "\\.deps"]
+# pynacl is installed as an optional dependency but imported as `nacl`;
+# tell deptry about the mapping so it can reconcile the import with the
+# package name.
+[tool.deptry.package_module_name_map]
+pynacl = ["nacl"]
 
 [tool.deptry.per_rule_ignores]
 # `transformers` is an optional `memory`-extra dependency consumed dynamically by

@@ -3,6 +3,7 @@
 - Periodic monitor no-change suppression is now more robust: catches common
   LLM paraphrases of "nothing changed" and suppresses verbatim duplicate
   replies, reducing noise when long-running background tasks are tracked.
+- Added GitHub Actions tools: ``set_actions_secret`` (set repository Actions secrets via libsodium encryption) and ``dispatch_workflow`` (trigger ``workflow_dispatch`` events). Both are LLM tools and HTTP endpoints under ``/chat/github/repos/{owner}/{repo}/actions/``, gated by a new ``github_actions`` config block with the same enable/API-key/auth pattern as ``github_security``. Requires ``pynacl`` (optional ``github-actions`` extra) for secret encryption.
 - System prompt v40: add "user statements as ground truth" rule to the Verification section — when the user states a concrete fact, the agent must treat it as ground truth and raise a clarification question rather than contradicting it based on stale or misinterpreted evidence.
 - Strengthen ticket deduplication check in agent system prompt: before filing a new ticket, check for any open or in-flight ticket addressing the same root cause or proposing a similar action, not just tickets with identical scope. Prevents symptom-workaround tickets from being filed when a root-cause fix is already in flight. (v40)
 - Subsession children of periodic parents now relay their closure

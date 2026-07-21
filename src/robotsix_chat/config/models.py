@@ -577,6 +577,43 @@ class GitHubSecuritySettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class GitHubActionsSettings(BaseModel):
+    """GitHub Actions secrets and workflow dispatch via the GitHub App installation.
+
+    When enabled, the chat agent gains ``set_actions_secret`` and
+    ``dispatch_workflow`` tools that can create/update repository Actions
+    secrets and trigger ``workflow_dispatch`` events on repos under the
+    configured GitHub App's installation scope.
+
+    **Guardrails built into the tools (not configurable):**
+    - Repo scope is resolved dynamically from the GitHub App installation
+      (list-installation-repositories) — no static allowlist.
+    - Only repos within the installation scope are modifiable.
+    - Secret encryption uses libsodium sealed-box (requires ``pynacl``).
+    - Both tools are confirmation-gated: the agent must confirm the exact
+      repo, secret name (or workflow id + ref) with the user before calling.
+
+    Attributes:
+        enabled: Master switch.  When ``False``, no Actions tools are offered.
+        github_org: GitHub organisation name whose repos are in scope
+            (e.g. ``"damien-robotsix"``).
+        deploy_api_key: API key that clients must present in the
+            ``X-API-Key`` header when calling the Actions endpoints.
+            When empty, the endpoints return 503 (unconfigured).
+        timeout: Per-request HTTP timeout in seconds.
+
+    Note: GitHub App authentication is delegated to
+    :class:`DirectRepoSettings` — those credentials must also be configured
+    for the tools to function.
+
+    """
+
+    enabled: bool = False
+    github_org: str = "damien-robotsix"
+    deploy_api_key: SecretStr = SecretStr("")
+    timeout: float = 30.0
+
+
 class NotificationSettings(BaseModel):
     """Browser notification settings — lets the agent alert the user proactively.
 

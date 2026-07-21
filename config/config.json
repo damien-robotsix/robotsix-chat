@@ -125,6 +125,12 @@
     "deploy_api_key": "",
     "timeout": 30.0
   },
+  "github_actions": {
+    "enabled": false,
+    "github_org": "damien-robotsix",
+    "deploy_api_key": "",
+    "timeout": 30.0
+  },
   "repo_study": {
     "enabled": false,
     "data_dir": "/data/repo_study",
