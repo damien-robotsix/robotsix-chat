@@ -362,6 +362,7 @@ def build_component_access_tools(
         method: str,
         path: str,
         json_body: dict[str, Any] | None = None,
+        max_response_chars: int | None = None,
     ) -> str:
         """Call an external component's API.
 
@@ -375,6 +376,12 @@ def build_component_access_tools(
             path: The API path relative to the component's base URL
                 (e.g. "/tickets", "/chat/skill").
             json_body: Optional JSON body for POST/PUT/PATCH requests.
+            max_response_chars: Optional per-call truncation limit for the
+                response body.  When omitted the configured default
+                (component_response_max_chars) is used.  Set to a small
+                value (e.g. 2000) to get a compact summary of a large
+                resource like a ticket history; follow up with a larger
+                limit (or omit it) to read the full response.
 
         Returns:
             The component's HTTP status code and response body (truncated
@@ -383,13 +390,18 @@ def build_component_access_tools(
         """
         # Refresh the roster on every call (TTL-gated internally).
         await _refresh()
+        limit = (
+            max_response_chars
+            if max_response_chars is not None
+            else settings.component_response_max_chars
+        )
         return await _component_request_impl(
             _state["entries"],
             component_id,
             method,
             path,
             json_body,
-            read_response_max_chars=settings.component_response_max_chars,
+            read_response_max_chars=limit,
         )
 
     return [component_request]

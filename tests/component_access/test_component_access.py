@@ -734,6 +734,43 @@ async def test_tool_refreshes_roster_on_call(
     assert "HTTP 200" in result
 
 
+@pytest.mark.asyncio
+async def test_tool_max_response_chars_overrides_default(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """max_response_chars per-call arg overrides the configured limit."""
+    _wipe_cache()
+    roster_entries = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(200, json=roster_entries)
+    )
+    # Response body is 8000 chars — exceeds the per-call limit of 500.
+    long_text = "y" * 8000
+    respx_mock.get("http://m:8080/tickets/5cd6").mock(
+        return_value=httpx.Response(200, text=long_text)
+    )
+
+    tools = build_component_access_tools(
+        _settings(url="http://deploy:8080", roster_cache_ttl=300.0)
+    )
+    tool = tools[0]
+
+    # Per-call limit of 500 chars → response should be truncated.
+    result = await tool("mill", "GET", "/tickets/5cd6", max_response_chars=500)
+    assert "HTTP 200" in result
+    assert "truncated at 500" in result
+    assert len(result) < 2000  # well under the 8000-char body
+
+    # Without the per-call arg, the configured default (200_000) applies.
+    respx_mock.get("http://m:8080/tickets/5cd6").mock(
+        return_value=httpx.Response(200, text=long_text)
+    )
+    result2 = await tool("mill", "GET", "/tickets/5cd6")
+    assert "HTTP 200" in result2
+    assert "truncated" not in result2
+    assert "y" * 8000 in result2
+
+
 # ---------------------------------------------------------------------------
 # Roster auth metadata (virtual components: langfuse basic, deploy header)
 # ---------------------------------------------------------------------------
