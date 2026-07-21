@@ -37,6 +37,7 @@ from .events import (
     events_endpoint,
 )
 from .github import (
+    github_job_log_endpoint,
     github_settings_endpoint,
 )
 from .sessions import (
@@ -80,6 +81,7 @@ __all__ = [
     "config_get_endpoint",
     "config_save_endpoint",
     "events_endpoint",
+    "github_job_log_endpoint",
     "github_settings_endpoint",
     "health_endpoint",
     "history_endpoint",

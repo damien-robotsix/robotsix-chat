@@ -626,6 +626,30 @@ class DirectRepoClient:
         except Exception as exc:
             return f"Error pushing commit: {exc}"
 
+    async def get_job_log(self, repo_full_name: str, job_id: int) -> str:
+        """Fetch the plain-text log for a GitHub Actions job.
+
+        Calls ``GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs`` which
+        returns a 302 redirect to a signed URL containing the raw log text.
+        The redirect is followed server-side so the caller receives the log
+        content directly.
+
+        Raises ``RuntimeError`` on any failure (auth, not-found, network).
+        """
+        path = f"/repos/{repo_full_name}/actions/jobs/{job_id}/logs"
+        url = f"{self._base_url}{path}"
+        result = await safe_http_request(
+            "GET",
+            url,
+            headers=await self._gh_headers(),
+            timeout=self._s.timeout,
+            follow_redirects=True,
+            label="GitHub Actions log",
+        )
+        if result.error:
+            raise RuntimeError(f"GitHub Actions log GET {path}: {result.error}")
+        return result.text or ""
+
     async def set_security_and_analysis(
         self,
         repo_full_name: str,
