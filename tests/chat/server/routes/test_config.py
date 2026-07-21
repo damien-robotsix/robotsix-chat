@@ -323,8 +323,8 @@ def test_put_preserves_nested_object_keys(tmp_path: Path) -> None:
     on_disk = _read_config_json(config_path)
     assert on_disk["memory"]["enabled"] is False  # updated
     assert (
-        on_disk["memory"]["llm"]["api_key"] == "sk-llm"
-    )  # preserved  # pragma: allowlist secret
+        on_disk["memory"]["llm"]["api_key"] == "sk-llm"  # pragma: allowlist secret
+    )  # preserved
     # preserved (partial save did not touch these)
     assert on_disk["memory"]["embedding"]["endpoint"] == "http://box:11434/v1"
     assert on_disk["memory"]["embedding"]["dimensions"] == 1024  # preserved
@@ -416,8 +416,9 @@ def test_put_new_secret_overwrites_existing(tmp_path: Path) -> None:
     client = _make_app(config_path)
 
     resp = client.put(
-        "/config", json={"llmio_api_key": "sk-new"}
-    )  # pragma: allowlist secret
+        "/config",
+        json={"llmio_api_key": "sk-new"},  # pragma: allowlist secret
+    )
     assert resp.status_code == 200
 
     on_disk = _read_config_json(config_path)
