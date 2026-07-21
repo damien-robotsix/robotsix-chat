@@ -1,5 +1,11 @@
 ## 0.0.0 (unreleased)
 
+- Add ``self_restart`` tool to the lifecycle module — a privileged endpoint
+  (``POST /self/restart``) that restarts the agent's own service without requiring
+  the deploy server's per-repo access toggle.  The existing
+  ``restart_lifecycle_service`` tool still requires the toggle for restarting
+  arbitrary services.  The system prompt now references ``self_restart()`` as the
+  primary self-restart path after capability upgrades.
 - Decision-chat subsessions now enforce self-contained option context: the user_chat worker prepends a system note reminding the agent to restate option definitions inline on every turn, the spawn_subsession tool instructs callers to include one-line option definitions in user_chat prompts, and the base agent instruction adds a critical rule against bare option labels. No operator-facing decision turn should surface "Option B" without its definition.
 - Increased font size throughout the subsession (decision-chat / side) panel to match the main conversation pane for readability. Body text and inputs now use the same 0.95rem size as main chat bubbles; labels, badges, and action buttons are scaled proportionally.
 - Fix orphaned `.drain` snapshot recovery in cognee backlog drain: if a prior drain
