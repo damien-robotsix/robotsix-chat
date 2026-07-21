@@ -5,6 +5,16 @@ repo_url: https://github.com/damien-robotsix/robotsix-chat
 theme:
   name: material
 
+validation:
+  nav:
+    not_found: warn
+    omitted_files: info
+  links:
+    not_found: warn
+    anchors: warn
+    absolute_links: warn
+    unrecognized_links: warn
+
 plugins:
   - search
   - mkdocstrings:
