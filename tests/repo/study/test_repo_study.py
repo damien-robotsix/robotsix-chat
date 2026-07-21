@@ -236,6 +236,32 @@ async def test_fetch_404_unauthenticated_hints_private_repo(
 
 @respx.mock
 @pytest.mark.asyncio
+async def test_fetch_404_authenticated_reports_not_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Authenticated 404 reports repo not found / installation access issue."""
+    direct_repo = DirectRepoSettings(
+        github_app_id="42",
+        github_app_private_key="fake-pem",  # pragma: allowlist secret
+        github_app_installation_id="7",
+    )
+
+    async def fake_token(_settings: DirectRepoSettings) -> str:
+        return "installation-token"
+
+    import robotsix_chat.repo.direct.client as dr_client
+
+    monkeypatch.setattr(dr_client, "_get_installation_token", fake_token)
+    manager = WorkspaceManager(
+        RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")), direct_repo
+    )
+    respx.get(TARBALL_URL).mock(return_value=Response(404))
+    with pytest.raises(WorkspaceError, match="authenticated"):
+        await manager.fetch("acme/widget")
+
+
+@respx.mock
+@pytest.mark.asyncio
 async def test_fetch_follows_redirect_preserving_auth(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:

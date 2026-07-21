@@ -208,7 +208,16 @@ class WorkspaceManager:
                             "App's permissions and re-install the App "
                             "on the target repo/organisation."
                         )
-                    if response.status_code == 404 and not authenticated:
+                    if response.status_code == 404:
+                        if authenticated:
+                            raise WorkspaceError(
+                                f"GitHub returned 404 for {url}. "
+                                "The GitHub App installation is "
+                                "authenticated but the repository was "
+                                "not found — check that the repo exists "
+                                "and that the App installation has access "
+                                "to it."
+                            )
                         raise WorkspaceError(
                             f"GitHub returned 404 for {url}. "
                             "The repository may be private — configure "
