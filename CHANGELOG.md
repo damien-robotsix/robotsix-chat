@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Autonomous protocol: added guidance to detect and escalate the "empty-diff sub-ticket" failure pattern. When all child tickets of a split close immediately as no-change-needed referencing non-existent modules, the agent is now instructed to consolidate into a single re-implementation ticket rather than repeating the split.
 - Periodic ticket monitors whose persisted checkpoint records a terminal
   ``last_known_state`` (``closed`` or ``done``) are no longer respawned on
   service restart — the resume hook now checks the checkpoint before
