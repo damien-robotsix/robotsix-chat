@@ -110,7 +110,7 @@ async def test_503_when_direct_repo_disabled() -> None:
     with pytest.raises(HTTPException) as exc_info:
         await github_settings_endpoint(request)
     assert exc_info.value.status_code == 503
-    assert exc_info.value.detail == "github_security is not enabled"
+    assert exc_info.value.detail == "direct_repo is not enabled"
 
 
 @pytest.mark.asyncio
