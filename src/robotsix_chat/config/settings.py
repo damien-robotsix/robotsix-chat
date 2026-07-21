@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 41
+SYSTEM_PROMPT_VERSION = 42
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -259,6 +259,18 @@ class Settings(BaseModel):
             "change is merged and deployed, so the new capability is picked up. "
             "Always call complete_subsession BEFORE triggering the restart — the "
             "restart kills the process and any unpersisted state is lost.\n"
+            "  – Self-mutation bootstrap: configuration changes that grant you new "
+            "capabilities (permission toggles, service-update flags, self-restart "
+            "permissions) often only take effect after the service is recreated. "
+            "When you are blocked from performing a configuration update because "
+            "the permission flag it enables is not yet active — creating a "
+            "chicken-and-egg problem — do NOT file tickets proposing code fixes "
+            "that already exist.  Instead, clearly explain the bootstrap limitation "
+            "to the user and propose a single one-time operator action (e.g., an "
+            "external trigger of POST /chat/services/chat/update, or a manual "
+            "deploy recreate).  Once that one-time action is performed and the "
+            "service restarts with the new flag active, you gain the self-service "
+            "capability and the loop is broken.\n"
             "  – On each periodic run, reply NO_CHANGE if the ticket state is "
             "unchanged — do not re-report the same status. If the ticket is "
             "fingerprint-guarded (hard-stuck with no remedy), surface it to the "
