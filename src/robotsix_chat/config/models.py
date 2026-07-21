@@ -742,6 +742,11 @@ class AutonomousSettings(BaseModel):
             complete; triggers auto-close and respawn.
         max_auto_turns: Maximum number of automatic agent turns during the
             execution phase before reverting to ``awaiting_approval``.
+        session_color: Optional CSS color string applied as a visual accent
+            on autonomous session rows (e.g. ``"#ef4444"`` for red).
+        initial_task: Optional description of the first task to spawn when
+            an autonomous session starts.  When empty, the agent picks its
+            own subject.
 
     """
 
@@ -750,6 +755,8 @@ class AutonomousSettings(BaseModel):
     completion_marker: str = "---AUTONOMOUS COMPLETE---"
     max_auto_turns: int = 20
     persist_path: str = "/data/autonomous_sessions.json"
+    session_color: str = ""
+    initial_task: str = ""
     model_config = ConfigDict(extra="forbid")
 
 

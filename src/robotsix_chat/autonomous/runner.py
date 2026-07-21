@@ -132,6 +132,7 @@ class AutonomousRunner:
                 plan_text=aq.plan_text,
                 auto_turn_count=aq.auto_turn_count,
                 max_auto_turns=self._settings.autonomous.max_auto_turns,
+                session_color=self._settings.autonomous.session_color,
             ),
         )
 
@@ -307,9 +308,19 @@ class AutonomousRunner:
         try:
             async with self._run_serializer.for_owner(owner_id):
                 agent = self._agent_factory()
+                initial_task = self._settings.autonomous.initial_task
+                if initial_task:
+                    prompt = (
+                        f"Begin a new autonomous session. Initial task: {initial_task}"
+                    )
+                else:
+                    prompt = (
+                        "Begin a new autonomous session. "
+                        "Pick a subject and draft a plan."
+                    )
                 reply_parts: list[str] = []
                 async for token in agent.stream(
-                    "Begin a new autonomous session. Pick a subject and draft a plan.",
+                    prompt,
                     history=[],
                     session_id=session_id,
                     client_id=session_id,
@@ -319,7 +330,7 @@ class AutonomousRunner:
                 self._store.record(
                     session_id,
                     owner_id,
-                    "Begin a new autonomous session.",
+                    prompt,
                     full_reply,
                 )
                 self.check_reply_for_markers(session_id, full_reply)

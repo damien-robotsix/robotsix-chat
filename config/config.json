@@ -179,7 +179,9 @@
     "approval_marker": "---AWAITING APPROVAL---",
     "completion_marker": "---AUTONOMOUS COMPLETE---",
     "max_auto_turns": 20,
-    "persist_path": "/data/autonomous_sessions.json"
+    "persist_path": "/data/autonomous_sessions.json",
+    "session_color": "",
+    "initial_task": ""
   },
   "max_images_per_message": 8,
   "max_image_bytes": 5242880,
