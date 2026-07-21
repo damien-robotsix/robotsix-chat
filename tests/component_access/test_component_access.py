@@ -815,8 +815,8 @@ async def test_component_request_basic_auth_from_credentials(
         "/api/public/traces",
         component_credentials={
             "langfuse": _creds(
-                basic_auth_username="pk-user",
-                basic_auth_password="sk-pass",
+                basic_auth_username="pk-user",  # pragma: allowlist secret
+                basic_auth_password="sk-pass",  # pragma: allowlist secret
             ),
         },
     )
@@ -824,7 +824,7 @@ async def test_component_request_basic_auth_from_credentials(
     sent = route.calls.last.request
     import base64 as _b64
 
-    expected = _b64.b64encode(b"pk-user:sk-pass").decode()
+    expected = _b64.b64encode(b"pk-user:sk-pass").decode()  # pragma: allowlist secret
     assert sent.headers["Authorization"] == f"Basic {expected}"
 
 
@@ -854,7 +854,7 @@ async def test_component_request_header_auth_from_credentials(
         "GET",
         "/services",
         component_credentials={
-            "deploy": _creds(header_token="tok-123"),
+            "deploy": _creds(header_token="tok-123"),  # pragma: allowlist secret
         },
     )
     assert "HTTP 200" in result
