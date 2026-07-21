@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Periodic ticket monitor: when reporting terminal state (done/closed), the agent is now instructed to check ticket events/history for PR merge status rather than relying solely on the `pr_url` field, avoiding misleading "no PR URL" reports for auto-merged PRs.
+- One-shot (`task`) subsessions are now re-enqueued automatically after a server restart instead of being lost. The task's checkpoint (if any) is preserved so the agent can pick up where it left off.
 - Mark 30 expert-only config settings as `advanced: true` in the committed schema so the central-deploy Configure UI hides them behind the "Show advanced settings" toggle. Common settings (`llmio_model_level`, `llmio_api_key`, `idle_timeout_minutes`, `log_level`, `log_json_format`, `langfuse`, `knowledge`) remain always visible.
 - Add `robotsix.deploy.chat-agent-mutatable: "true"` label to the production
   deploy compose file so the chat agent can mutate its own service config
