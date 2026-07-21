@@ -1,9 +1,0 @@
-{
-  "d64c294e02dd408185328dcbb07136e2": {
-    "session_id": "d64c294e02dd408185328dcbb07136e2",
-    "owner_id": "owner1",
-    "state": "awaiting_approval",
-    "plan_text": "Here is my plan:\n1. Do X\n2. Do Y",
-    "auto_turn_count": 0
-  }
-}
