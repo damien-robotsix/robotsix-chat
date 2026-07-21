@@ -43,7 +43,6 @@ from .models import (
     SubsessionUserChatSpawnError,
 )
 from .registry import SubsessionRegistry
-from .worker_mill import _check_resume_status
 
 if TYPE_CHECKING:
     from robotsix_chat.chat.conversation import ConversationStore
@@ -656,6 +655,8 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
 
         # -- resume status check for ticket monitors -------------------
         if info.kind is SubsessionKind.PERIODIC and info.checkpoint is not None:
+            from .worker_mill import _check_resume_status
+
             should_continue, context_msg = await _check_resume_status(env, info, sub_id)
             if not should_continue:
                 return
