@@ -596,9 +596,7 @@ class FeedbackRunner:
                     _span.set_status(
                         Status(StatusCode.ERROR, f"HTTP {resp.status_code}")
                     )
-                    _span.set_attribute(
-                        "error.type", f"http_{resp.status_code}"
-                    )
+                    _span.set_attribute("error.type", f"http_{resp.status_code}")
                 return False
         except Exception as exc:
             logger.exception("Failed to file feedback ticket: %s", ticket["title"])
