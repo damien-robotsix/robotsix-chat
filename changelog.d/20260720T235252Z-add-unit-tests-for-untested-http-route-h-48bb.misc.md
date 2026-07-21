@@ -1,0 +1,1 @@
+Add unit tests for untested HTTP route handlers (events, github, chat endpoint)
