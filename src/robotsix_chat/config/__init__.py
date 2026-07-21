@@ -4,10 +4,7 @@ Re-exports every public symbol at the package top level so existing
 ``from robotsix_chat.config import <X>`` imports keep working unchanged.
 """
 
-from robotsix_chat.config.constants import (
-    ConfigError,
-    level_needs_api_key,
-)
+from robotsix_chat.config.constants import level_needs_api_key
 from robotsix_chat.config.models import (
     AutonomousSettings,
     CentralDeploySettings,
@@ -48,7 +45,6 @@ __all__ = [
     "CentralDeploySettings",
     "ComponentClientSettings",
     "ComponentTarget",
-    "ConfigError",
     "ConversationSettings",
     "DiagnosticsSettings",
     "DirectRepoSettings",
