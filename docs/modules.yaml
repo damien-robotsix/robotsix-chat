@@ -144,6 +144,8 @@ modules:
       - tests/chat/server/routes/__init__.py
       - tests/chat/server/routes/test_shared.py
       - tests/chat/server/routes/test_config.py
+      - tests/chat/server/routes/test_chat.py
+      - tests/chat/server/routes/test_events.py
       - tests/chat/server/routes/test_github.py
 
   - id: common
