@@ -99,6 +99,9 @@ docs = [
 [tool.hatch.build.targets.wheel]
 packages = ["src/robotsix_chat"]
 
+[tool.uv]
+exclude-newer = "7 days"
+
 # First-party git sources are pinned to commit SHAs (repo baseline); the
 # fleet pin-bump workflow advances them through reviewed PRs.
 [tool.uv.sources]

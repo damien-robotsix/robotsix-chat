@@ -2,6 +2,7 @@
 
 - Extract `_session_metadata()` helper from duplicated session-metadata dict construction in `conversation.py`.
 - Extract shared `_git_push_files` helper from `push_branch` and `push_commit_to_branch` in `DirectRepoClient` to eliminate 51 lines of duplicated Git blob/tree/commit pipeline code.
+- Added `[tool.uv] exclude-newer = "7 days"` to `pyproject.toml`, preventing packages published less than 7 days ago from entering the lockfile. Complements the existing `UV_MALWARE_CHECK=1` hardening.
 - Autonomous protocol: added guidance to detect and escalate the "empty-diff sub-ticket" failure pattern. When all child tickets of a split close immediately as no-change-needed referencing non-existent modules, the agent is now instructed to consolidate into a single re-implementation ticket rather than repeating the split.
 - Periodic ticket monitors whose persisted checkpoint records a terminal
   ``last_known_state`` (``closed`` or ``done``) are no longer respawned on
