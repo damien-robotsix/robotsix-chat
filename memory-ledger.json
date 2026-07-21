@@ -1,20 +1,16 @@
 {
   "doc_layout": {
-    "root": "docs/",
-    "architecture": "docs/architecture.md",
-    "configuration": "docs/configuration.md",
-    "periodic_checks": "docs/periodic-checks.md",
-    "changelog": "CHANGELOG.md",
-    "changelog_fragments": "changelog.d/",
     "subsessions": {
-      "source": "src/robotsix_chat/subsessions/delivery.py",
-      "tests": "tests/subsessions/test_delivery.py",
-      "module_doc": "docs/modules.yaml"
+      "source": "src/robotsix_chat/subsessions/",
+      "tests": "tests/subsessions/",
+      "module_doc": "docs/architecture.md",
+      "periodic_doc": "docs/periodic-checks.md",
+      "config_doc": "docs/configuration.md"
     }
   },
   "conventions": {
-    "changelog_fragments": "One .md file per change under changelog.d/ with suffix .misc.md for non-feature/fix entries",
-    "reaction_turns": "Fire-and-forget background asyncio tasks scheduled via _schedule_reaction(), serialised with user turns via RunSerializer lock, depth-bounded at max 3 (_MAX_REACTION_DEPTH) to prevent unbounded trigger chains. Passive record fallback when cap is reached or agent not wired.",
-    "test_pattern": "Reaction-turn tests must await background tasks via _await_reaction_tasks() helper that gathers all in-flight _reaction_tasks."
-  }
+    "changelog_fragments": "changelog.d/<id>.<type>.md where type ∈ {feature, bugfix, doc, removal, misc}",
+    "reaction_turn_pattern": "assistant replies with exact text matching a known sentinel pattern"
+  },
+  "updated_memory": "Repo doc layout: root docs/ is MkDocs-material. Key files: docs/index.md (home), docs/architecture.md (system context, startup flow, subsession concept at lines 31, 54-64, 116-121, 137, 178, 215), docs/periodic-checks.md (full periodic subsession lifecycle including resume at line 90), docs/configuration.md (subsessions config table at lines 223-236), docs/changelog.md (rendered from fragments), docs/contributing.md. No dedicated one-shot/task subsession doc exists — only a passing mention in architecture.md line 31. Changelog fragments live in changelog.d/ and follow towncrier conventions (CI-enforced via `towncrier check`). Memory ledger is a meta-index, not a runtime store."
 }

@@ -272,40 +272,38 @@ def _resume_task_entry(
     owner: str,
     title: str,
 ) -> _ResumeFate:
-    """Mark a one-shot task as interrupted — in-flight state is gone."""
-    info = _restore_entry(env.registry, entry, force_active=True)
-    if info is None:
-        # Restore failed; return a minimal fate so the restart notice
-        # still mentions this entry.
-        return _ResumeFate(
-            owner_session_id=owner,
-            sub_id=sub_id,
-            kind="task",
-            title=title,
-            fate="interrupted",
-            detail="One-shot tasks cannot survive restarts.",
-        )
-    last = SubsessionRegistry.last_assistant_text(info)
-    summary = "Interrupted by a server restart."
-    if last:
-        summary += f" Last state: {last[:500]}"
-    env.registry.mark_interrupted(sub_id, summary=summary)
-    interrupted_msg = (
-        f"[Subsession {sub_id[:8]} ({SubsessionKind.TASK.value}) "
-        f"'{info.title}' interrupted]"
+    """Re-spawn a one-shot task — it starts fresh but survives the restart.
+
+    The task's checkpoint (if any) is carried forward so the agent can
+    pick up where it left off.  The original prompt is augmented with a
+    restart notice so the agent knows work may have been lost.
+    """
+    common = _entry_to_common_kwargs(entry)
+    common["prompt"] = (
+        f"{common['prompt']}\n\n"
+        f"[System note: this one-shot task was interrupted by a server "
+        f"restart and has been re-enqueued.  Any in-progress work may "
+        f"have been lost — verify the current state before proceeding.  "
+        f"If you saved a checkpoint (via set_checkpoint) it has been "
+        f"preserved and is available on resume.]"
     )
-    env.conversation_store.record_for_session(
-        owner,
-        interrupted_msg,
-        summary,
+    dedup_key = _entry_opt_str(entry, "dedup_key")
+    spawn_subsession(
+        env=env,
+        kind=SubsessionKind.TASK,
+        owner_session_id=owner,
+        **common,
+        sub_id=sub_id,
+        checkpoint=_rebuild_checkpoint(entry),
+        dedup_key=dedup_key,
     )
     return _ResumeFate(
         owner_session_id=owner,
         sub_id=sub_id,
         kind="task",
-        title=info.title,
-        fate="interrupted",
-        detail="One-shot tasks cannot survive restarts.",
+        title=title,
+        fate="resumed",
+        detail="Re-enqueued — the task will restart from its original prompt.",
     )
 
 
@@ -339,7 +337,7 @@ def _resume_entry(
     if kind is SubsessionKind.USER_CHAT:
         return _resume_user_chat_entry(env, entry, sub_id, owner, title)
 
-    # task (and any future one-shot kinds): cannot be resumed.
+    # task (and any future one-shot kinds): re-spawned from original prompt.
     return _resume_task_entry(env, entry, sub_id, owner, title)
 
 

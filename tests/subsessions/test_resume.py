@@ -101,18 +101,20 @@ async def test_resume_subsessions_full_scenario(tmp_path: Path) -> None:
     worker = registry._running.get(ids["periodic"])
     assert worker is not None
 
-    # -- task: cannot resume — marked INTERRUPTED, reported to the owner ---
+    # -- task: re-spawned — task worker re-launched with restart-augmented
+    #    prompt; the worker is alive and the prompt carries the restart note.
     task = registry.get(ids["task"])
     assert task is not None
-    assert task.status is SubsessionStatus.INTERRUPTED
-    assert task.summary is not None
-    assert task.summary.startswith("Interrupted by a server restart.")
-    assert "Last state: half way there" in task.summary
-    assert ids["task"] not in registry._running
+    assert task.kind is SubsessionKind.TASK
+    assert task.status in (SubsessionStatus.RUNNING, SubsessionStatus.CLOSED)
+    assert "one-shot task was interrupted by a server restart" in task.prompt
+    assert ids["task"] in registry._running
+    task_worker = registry._running.get(ids["task"])
 
     history = env.conversation_store.history(OWNER)
     labels = [label for label, _ in history]
-    assert any(
+    # No longer marked as interrupted — the task is re-spawned.
+    assert not any(
         label.startswith(f"[Subsession {ids['task'][:8]} (task)")
         and "interrupted" in label
         for label in labels
@@ -129,7 +131,7 @@ async def test_resume_subsessions_full_scenario(tmp_path: Path) -> None:
     assert f'Periodic "watch CI" ({ids["periodic"][:8]})' in notice
     assert "resumed" in notice
     assert f'Task "one shot" ({ids["task"][:8]})' in notice
-    assert "interrupted" in notice
+    assert "resumed" in notice
     # Terminal entries are not listed.
     assert ids["closed"][:8] not in notice
 
@@ -141,10 +143,14 @@ async def test_resume_subsessions_full_scenario(tmp_path: Path) -> None:
     assert ids["closed"] not in registry._running
     assert not any(ids["closed"][:8] in label for label in labels)
 
-    # Cleanup the live periodic worker.
+    # Cleanup the live workers.
     registry.cancel_and_close(ids["periodic"], reason="teardown", closed_by="system")
+    registry.cancel_and_close(ids["task"], reason="teardown", closed_by="system")
     with contextlib.suppress(asyncio.CancelledError):
         await asyncio.wait_for(worker, 2.0)
+    if task_worker is not None:
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(task_worker, 2.0)
 
 
 @pytest.mark.asyncio
@@ -773,7 +779,8 @@ async def test_restart_notice_deduplicates_identical_periodic_entries(
                 await asyncio.wait_for(worker, 2.0)
 
 
-def test_restart_notice_multiple_owners_each_get_own_notice(
+@pytest.mark.asyncio
+async def test_restart_notice_multiple_owners_each_get_own_notice(
     tmp_path: Path,
 ) -> None:
     """Each affected owner gets a restart notice scoped to its subsessions."""
@@ -801,8 +808,14 @@ def test_restart_notice_multiple_owners_each_get_own_notice(
         model_level=3,
     )
 
+    # Tasks are now re-spawned — workers need a gate so they don't
+    # complete (and close themselves) before the assertions run.
+    gate = asyncio.Event()
     registry2 = SubsessionRegistry(store_path=store_path)
-    env = build_env(registry=registry2)
+    env = build_env(
+        agent=FakeAgent(["ok"], gate=gate),
+        registry=registry2,
+    )
     resume_subsessions(env)
 
     # Owner A's notice mentions only task A.
@@ -812,6 +825,7 @@ def test_restart_notice_multiple_owners_each_get_own_notice(
     ]
     assert len(notices_a) == 1
     assert f'Task "task A" ({task_a.id[:8]})' in notices_a[0]
+    assert "resumed" in notices_a[0]
     assert task_b.id[:8] not in notices_a[0]
 
     # Owner B's notice mentions only task B.
@@ -821,7 +835,16 @@ def test_restart_notice_multiple_owners_each_get_own_notice(
     ]
     assert len(notices_b) == 1
     assert f'Task "task B" ({task_b.id[:8]})' in notices_b[0]
+    assert "resumed" in notices_b[0]
     assert task_a.id[:8] not in notices_b[0]
+
+    # Cleanup workers.
+    for sub_id in (task_a.id, task_b.id):
+        worker = registry2._running.get(sub_id)
+        registry2.cancel_and_close(sub_id, reason="teardown", closed_by="system")
+        if worker is not None:
+            with contextlib.suppress(asyncio.CancelledError):
+                await asyncio.wait_for(worker, 2.0)
 
 
 # ---------------------------------------------------------------------------
