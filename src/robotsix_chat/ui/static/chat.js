@@ -583,8 +583,12 @@
           }
         } else if (aState === "executing") {
           var turn = s.autonomous_turn_count || 0;
-          // max_auto_turns not in list payload; approximate from state frame.
-          parts.push("Executing (turn " + turn + ")");
+          var max = s.autonomous_max_turns || 0;
+          if (max > 0) {
+            parts.push("Executing (turn " + turn + " / " + max + ")");
+          } else {
+            parts.push("Executing (turn " + turn + ")");
+          }
         } else if (aState === "completed") {
           parts.push("Completed");
         }
@@ -696,15 +700,13 @@
         sessionsList[i].autonomous_state = frame.state;
         sessionsList[i].autonomous_plan_text = frame.plan_text || "";
         sessionsList[i].autonomous_turn_count = frame.auto_turn_count || 0;
+        sessionsList[i].autonomous_max_turns = frame.max_auto_turns || 0;
         break;
       }
     }
     // Re-render the list so the row shows the new state text / buttons.
     // The server-side state is authoritative — this is just a client-side
     // cache update to avoid a network round-trip.
-    if (typeof data === "undefined") data = {};
-    // refreshSessions does a full refetch; for live SSE we optimistically
-    // re-render from the patched sessionsList.
     renderSessionList({ sessions: sessionsList });
   }
 

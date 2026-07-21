@@ -13,8 +13,6 @@ from robotsix_chat.autonomous.models import AutonomousSession, AutonomousState
 from robotsix_chat.chat.events import EventSink, autonomous_state_frame
 
 if TYPE_CHECKING:
-    from collections.abc import Callable
-
     from robotsix_chat.chat.conversation import ConversationStore
     from robotsix_chat.chat.server.routes import ChatAgent, RunSerializer
     from robotsix_chat.config import Settings
@@ -284,6 +282,15 @@ class AutonomousRunner:
             "Autonomous session %s rejected — reset to subject selection",
             session_id,
         )
+
+        # Schedule a fresh initial turn so the session is not left inert
+        # in selecting_subject (mirrors create_session).
+        self._schedule_background(
+            lambda sid=session_id, oid=aq.owner_id: self._kickoff_initial_turn(  # type: ignore[misc]
+                sid, oid
+            )
+        )
+
         return True, ""
 
     # -- initial turn kickoff ------------------------------------------------
