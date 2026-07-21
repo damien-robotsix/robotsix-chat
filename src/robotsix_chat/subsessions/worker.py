@@ -94,9 +94,45 @@ _TICKET_STATE_BLOCKED = frozenset({"blocked"})
 _TICKET_STATE_HUMAN_APPROVAL = frozenset({"human_issue_approval"})
 
 
+# Phrases that, when they appear at the start of a periodic reply,
+# indicate the agent found nothing to report.  Kept broad enough to
+# catch common LLM paraphrasing of "nothing changed" without being so
+# broad that it swallows real status updates.
+_NO_CHANGE_PHRASES: tuple[str, ...] = (
+    "NO CHANGE",
+    "NO CHANGES",
+    "NOTHING CHANGED",
+    "NOTHING HAS CHANGED",
+    "NO UPDATES",
+    "UNCHANGED",
+    "NO NEW",
+    "EVERYTHING IS THE SAME",
+    "ALL QUIET",
+    "STATUS UNCHANGED",
+    "NO SIGNIFICANT CHANGE",
+    "NO MEANINGFUL CHANGE",
+)
+
+
 def _is_no_change(reply: str) -> bool:
-    """Whether *reply* is the periodic no-change sentinel."""
-    return reply.strip().upper().startswith(_NO_CHANGE_SENTINEL)
+    """Whether *reply* is the periodic no-change sentinel or a common paraphrase.
+
+    The LLM sometimes returns a paraphrase instead of the exact sentinel.
+    """
+    cleaned = reply.strip().upper()
+    if cleaned.startswith(_NO_CHANGE_SENTINEL):
+        return True
+    return cleaned.startswith(_NO_CHANGE_PHRASES)
+
+
+def _is_duplicate_reply(reply: str, previous: str | None) -> bool:
+    """Whether *reply* is identical to the previous run's reply.
+
+    Strips and case-folds before comparing — suppresses repeated verbatim output.
+    """
+    if previous is None:
+        return False
+    return reply.strip().casefold() == previous.strip().casefold()
 
 
 @dataclass(frozen=True)
@@ -354,8 +390,9 @@ def _build_periodic_input(
             + _render_turn_input(steering)
         )
     parts.append(
-        f"Reply exactly {_NO_CHANGE_SENTINEL} only if genuinely nothing "
-        "changed since the previous run — the observed state is identical "
+        f"Reply with the single word {_NO_CHANGE_SENTINEL} — and nothing "
+        "else, no punctuation, no commentary — only if genuinely nothing "
+        "changed since the previous run: the observed state is identical "
         "to the prior run. If any state transition occurred (e.g. draft → "
         "implement_complete, in_progress → done, ready → in_progress), "
         "DO NOT reply NO_CHANGE. Instead, acknowledge the change with a "
@@ -486,8 +523,8 @@ async def _run_periodic_turn(
     to continue.
     """
     registry = env.registry
-    suppressed = _is_no_change(reply)
-    consecutive_no_change = 0 if not suppressed else consecutive_no_change + 1
+    suppressed = _is_no_change(reply) or _is_duplicate_reply(reply, previous_result)
+    consecutive_no_change = 0 if not _is_no_change(reply) else consecutive_no_change + 1
     runs = info.runs + 1
     if info.interval_seconds is None:  # pragma: no cover - spawn validates
         raise RuntimeError("periodic subsession without an interval")

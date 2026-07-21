@@ -31,6 +31,8 @@ from robotsix_chat.subsessions.worker import (
     _check_resume_status,
     _get_mill_started_at,
     _handle_mill_unreachable,
+    _is_duplicate_reply,
+    _is_no_change,
     _reset_mill_failure_counter,
 )
 from tests.common.subsession_fakes import (
@@ -1873,3 +1875,123 @@ async def test_reset_mill_failure_counter_noop_when_already_zero():
     # Counter stays 0 (or is absent from checkpoint if already 0/absent).
     ck = updated.checkpoint or {}
     assert ck.get("consecutive_mill_failures", 0) == 0
+
+
+# -- _is_no_change / _is_duplicate_reply unit tests ------------------------
+
+
+@pytest.mark.parametrize(
+    "reply,expected",
+    [
+        ("NO_CHANGE", True),
+        ("NO_CHANGE ", True),
+        ("no_change", True),
+        ("NO_CHANGE.", True),  # startswith catches trailing punctuation
+        ("No change", True),  # space variant also caught
+        ("No changes", True),
+        ("Nothing changed", True),
+        ("Nothing has changed", True),
+        ("No updates", True),
+        ("Unchanged", True),
+        ("No new", True),
+        ("Everything is the same", True),
+        ("All quiet", True),
+        ("Status unchanged", True),
+        ("No significant change", True),
+        ("No meaningful change", True),
+        ("  no changes  ", True),
+        ("Ticket #123 moved to done", False),
+        ("Something actually happened", False),
+    ],
+)
+def test_is_no_change(reply: str, expected: bool) -> None:
+    """``_is_no_change`` recognises the sentinel and common paraphrases."""
+    assert _is_no_change(reply) == expected
+
+
+def test_is_duplicate_reply_none_previous() -> None:
+    """A reply is never a duplicate when there's no previous result."""
+    assert _is_duplicate_reply("anything", None) is False
+
+
+def test_is_duplicate_reply_exact_match() -> None:
+    """Exact string match is a duplicate."""
+    assert _is_duplicate_reply("hello", "hello") is True
+
+
+def test_is_duplicate_reply_case_insensitive() -> None:
+    """Case differences are ignored."""
+    assert _is_duplicate_reply("Hello World", "hello world") is True
+
+
+def test_is_duplicate_reply_whitespace_insensitive() -> None:
+    """Leading/trailing whitespace differences are ignored."""
+    assert _is_duplicate_reply("  hello  ", "hello") is True
+
+
+def test_is_duplicate_reply_different() -> None:
+    """Different content is not a duplicate."""
+    assert _is_duplicate_reply("hello", "goodbye") is False
+
+
+# -- integration: duplicate non-NO_CHANGE replies are suppressed ------------
+
+
+@pytest.mark.asyncio
+async def test_periodic_duplicate_replies_are_suppressed() -> None:
+    """Verbose replies that repeat verbatim are suppressed like NO_CHANGE."""
+    agent = FakeAgent(["Status: all clear", "Status: all clear"])
+    env = build_env(agent=agent)
+
+    sub_id = _spawn(
+        env, kind=SubsessionKind.PERIODIC, interval_seconds=0.02, max_runs=2
+    )
+    await _await_worker(env, sub_id)
+
+    # First run is delivered (it's new); second run is suppressed (duplicate).
+    history = env.conversation_store.history(OWNER)
+    # Only the first run result and the terminal summary appear — no second run.
+    assert len(history) == 2
+    assert history[0] == (
+        f"[Subsession {sub_id[:8]} 'job' run 1]",
+        "Status: all clear",
+    )
+    assert "max_runs" in history[1][0]
+
+
+@pytest.mark.asyncio
+async def test_periodic_no_change_phrases_are_suppressed() -> None:
+    """Common LLM paraphrases of 'no change' are suppressed."""
+    agent = FakeAgent(["No changes", "Nothing changed"])
+    sink = RecordingSink()
+    env = build_env(agent=agent, event_sink=sink)
+
+    sub_id = _spawn(
+        env, kind=SubsessionKind.PERIODIC, interval_seconds=0.02, max_runs=2
+    )
+    await _await_worker(env, sub_id)
+
+    # Neither run should produce a result frame.
+    assert sink.of_type(SSE_SUBSESSION_RESULT_TYPE) == []
+
+    # Only the terminal summary is delivered — no per-run turn.
+    history = env.conversation_store.history(OWNER)
+    assert len(history) == 1
+    assert "max_runs" in history[0][0]
+
+
+@pytest.mark.asyncio
+async def test_periodic_no_change_phrases_count_toward_auto_stop() -> None:
+    """No-change phrases increment the consecutive counter for auto-stop."""
+    agent = FakeAgent(["No changes", "Nothing changed", "NO_CHANGE"])
+    env = build_env(agent=agent, settings=make_settings(auto_stop_no_change_runs=2))
+
+    sub_id = _spawn(env, kind=SubsessionKind.PERIODIC, interval_seconds=0.02)
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "no_change_auto_stop"
+    # Stopped after 2 consecutive no-change runs, not all 3.
+    assert len(agent.calls) == 2
