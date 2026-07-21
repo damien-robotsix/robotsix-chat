@@ -346,9 +346,13 @@ async def summary_endpoint(request: Request) -> JSONResponse:
     _summary_prompt = (
         "Write a brief, plain-text summary of the conversation below — "
         "what it's about, what's currently in progress, and anything "
-        "blocking or worth remembering. A few sentences of prose. No "
-        "headers, no bullet points, no JSON, no markdown fences — just "
-        "plain text.\n\nConversation:\n"
+        "blocking or worth remembering. If any unresolved operator "
+        "prerequisites are identified (actions only a human can take, "
+        "such as provisioning credentials, granting permissions, or "
+        "updating infrastructure), call them out explicitly so the "
+        "operator is reminded. A few sentences of prose. No headers, "
+        "no bullet points, no JSON, no markdown fences — just plain "
+        "text.\n\nConversation:\n"
     )
     prompt = f"{_summary_prompt}{transcript}\n\nSummary:"
 
