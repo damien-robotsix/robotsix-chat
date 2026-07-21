@@ -92,6 +92,8 @@
 - Fix guard paragraph in system prompt to clarify the agent **can** access external systems and the network through its explicit tools, rather than falsely stating it has no network access at all (which contradicted http_probe, component_request, lifecycle mutation tools, direct-repo tools, and mill board API).
 - Flush pending Langfuse traces on server shutdown so observation trees are
   captured even when the server stops soon after a trace completes.
+- Extract mill-communication helpers from ``worker.py`` into dedicated ``worker_mill.py`` module (``_check_resume_status``, ``_handle_mill_unreachable``, ``_get_mill_started_at``, ``_reset_mill_failure_counter``, and related constants).
+
 - Removed dead `ConfigError` exception class — `robotsix_config.load_config()` already wraps all errors in its own `InvalidConfigError(ConfigError)`, making the local class redundant.
 - Periodic ticket monitor: when reporting terminal state (done/closed), the agent is now instructed to check ticket events/history for PR merge status rather than relying solely on the `pr_url` field, avoiding misleading "no PR URL" reports for auto-merged PRs.
 - One-shot (`task`) subsessions are now re-enqueued automatically after a server restart instead of being lost. The task's checkpoint (if any) is preserved so the agent can pick up where it left off.

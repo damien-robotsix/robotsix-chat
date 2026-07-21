@@ -1,0 +1,1 @@
+module size: split src/robotsix_chat/subsessions/worker.py (1267 lines, 22 top-level symbols) — extract mill resume-status checks into worker_mill.py
