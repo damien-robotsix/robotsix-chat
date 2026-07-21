@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Mark 30 expert-only config settings as `advanced: true` in the committed schema so the central-deploy Configure UI hides them behind the "Show advanced settings" toggle. Common settings (`llmio_model_level`, `llmio_api_key`, `idle_timeout_minutes`, `log_level`, `log_json_format`, `langfuse`, `knowledge`) remain always visible.
 - Add prompt-level instructions for the assistant to automatically track unresolved operator prerequisites. When a ticket completes but a human-only action (e.g. provisioning a credential or token) is still required, the agent now files a follow-up tracking ticket and surfaces the prerequisite in session summaries and autonomous closure steps.
 - Extract `_session_metadata()` helper from duplicated session-metadata dict construction in `conversation.py`.
 - Extract shared `_git_push_files` helper from `push_branch` and `push_commit_to_branch` in `DirectRepoClient` to eliminate 51 lines of duplicated Git blob/tree/commit pipeline code.
