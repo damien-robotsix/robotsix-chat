@@ -13,7 +13,7 @@ statement as ground truth and must not contradict it based on tool output, logs,
 Instead, the agent must raise a targeted clarification question to reconcile any apparent
 discrepancy, then proceed with the user's account.
 
-**Rationale:** The agent repeatedly claimed that OVH_SFTP_* secrets were missing after the user
+**Rationale:** The agent repeatedly claimed that OVH_SFTP\_\* secrets were missing after the user
 stated they had been provided. The agent was contradicting the user based on inferred evidence,
 wasting time and eroding trust. This new rule makes explicit that user statements of fact carry more
 weight than agent-side evidence (which may be stale, scoped differently, or misinterpreted), and
