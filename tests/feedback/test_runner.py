@@ -238,13 +238,13 @@ class TestParseTickets:
             [
                 {
                     "title": "Fix A",
-                    "description": "desc A",
+                    "description": "description is actionable",
                     "kind": "code",
                     "target_repo": "robotsix-chat",
                 },
                 {
                     "title": "Improve B",
-                    "description": "desc B",
+                    "description": "description is actionable",
                     "kind": "prompt",
                     "target_repo": "robotsix-chat",
                 },
@@ -254,13 +254,13 @@ class TestParseTickets:
         assert len(tickets) == 2
         assert tickets[0] == {
             "title": "Fix A",
-            "description": "desc A",
+            "description": "description is actionable",
             "kind": "code",
             "target_repo": "robotsix-chat",
         }
         assert tickets[1] == {
             "title": "Improve B",
-            "description": "desc B",
+            "description": "description is actionable",
             "kind": "prompt",
             "target_repo": "robotsix-chat",
         }
@@ -299,7 +299,7 @@ class TestParseTickets:
                 [
                     {
                         "title": "T",
-                        "description": "D",
+                        "description": "actionable desc",
                         "kind": kind,
                         "target_repo": "robotsix-chat",
                     }
@@ -383,7 +383,7 @@ class TestParseTickets:
         mixed: list[Any] = [
             {
                 "title": "Good",
-                "description": "desc",
+                "description": "actionable description",
                 "kind": "code",
                 "target_repo": "robotsix-chat",
             },
@@ -427,13 +427,51 @@ class TestParseTickets:
         tickets = FeedbackRunner._parse_tickets("   \n\t  ", repo_ids=["robotsix-chat"])
         assert tickets == []
 
+    def test_description_too_short(self, caplog: pytest.LogCaptureFixture) -> None:
+        """Filter out tickets with descriptions shorter than the minimum.
+
+        The _MIN_DESCRIPTION_LENGTH guard catches boilerplate / low-value
+        tickets before they reach the filing stage.
+        """
+        text = _ticket_json(
+            [
+                {
+                    "title": "Fix bug",
+                    "description": "x" * (FeedbackRunner._MIN_DESCRIPTION_LENGTH - 1),
+                    "kind": "code",
+                    "target_repo": "robotsix-chat",
+                }
+            ]
+        )
+        with caplog.at_level(logging.DEBUG):
+            tickets = FeedbackRunner._parse_tickets(text, repo_ids=["robotsix-chat"])
+        assert tickets == []
+        assert "description too short" in caplog.text
+
+    def test_description_meets_min_length(self) -> None:
+        """Tickets with a description at or above the minimum length pass."""
+        text = _ticket_json(
+            [
+                {
+                    "title": "Fix bug",
+                    "description": "x" * FeedbackRunner._MIN_DESCRIPTION_LENGTH,
+                    "kind": "code",
+                    "target_repo": "robotsix-chat",
+                }
+            ]
+        )
+        tickets = FeedbackRunner._parse_tickets(text, repo_ids=["robotsix-chat"])
+        assert len(tickets) == 1
+
     # -- target_repo validation -----------------------------------------------
 
     def test_missing_target_repo_logs_warning(
         self, caplog: pytest.LogCaptureFixture
     ) -> None:
         """Tickets without a target_repo are skipped when repo_ids provided."""
-        text = _ticket_json([{"title": "T", "description": "D", "kind": "code"}])
+        text = _ticket_json(
+            [{"title": "T", "description": "actionable desc here", "kind": "code"}]
+        )
         with caplog.at_level(logging.WARNING):
             tickets = FeedbackRunner._parse_tickets(text, repo_ids=["robotsix-chat"])
         assert tickets == []
@@ -447,7 +485,7 @@ class TestParseTickets:
             [
                 {
                     "title": "T",
-                    "description": "D",
+                    "description": "actionable desc here",
                     "kind": "code",
                     "target_repo": "nonexistent-repo",
                 }
@@ -464,7 +502,7 @@ class TestParseTickets:
             [
                 {
                     "title": "Fix mill",
-                    "description": "desc",
+                    "description": "actionable desc here",
                     "kind": "code",
                     "target_repo": "robotsix-mill",
                 }
@@ -482,7 +520,7 @@ class TestParseTickets:
             [
                 {
                     "title": "T",
-                    "description": "D",
+                    "description": "actionable desc",
                     "kind": "code",
                     "target_repo": "anything",
                 }
