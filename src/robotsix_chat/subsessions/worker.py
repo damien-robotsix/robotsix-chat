@@ -401,8 +401,17 @@ def _build_periodic_input(
         "implement_complete; PR #654 is open. Let me know if you'd like "
         'me to check on the review status."). Reserve multi-paragraph '
         "reports for substantive changes: first-time blocking, completion, "
-        "failure, or transitions requiring user action. Call "
-        "complete_subsession when the monitored condition reaches a "
+        "failure, or transitions requiring user action.\n\n"
+        "When a ticket reaches a terminal state (done/closed), your "
+        "complete_subsession summary MUST include a note about whether a "
+        "PR was merged for this ticket — check the ticket events/history "
+        "for merge events (look for 'merged', 'auto-merged', 'merge commit', "
+        "or similar). Do NOT report 'no PR URL' as a concern without first "
+        "checking whether a PR was actually merged; a ticket can be closed "
+        "via an auto-merged PR even when the pr_url field is absent or null. "
+        "If a PR was merged, say so; if no PR was involved at all, say "
+        '"closed without a PR" instead of "no PR URL". '
+        "Call complete_subsession when the monitored condition reaches a "
         "terminal state."
     )
     return "\n\n".join(parts)
