@@ -20,6 +20,10 @@
   a private helper ``_check_stale_worker_resume``, reducing the function from
   ~289 to ~210 lines and max nesting depth from 7 to 5.
 - Reuse a single `httpx.AsyncClient` across all tickets in `FeedbackRunner._file_tickets` instead of creating one per ticket.
+- Add minimum description length guard to ``FeedbackRunner._parse_tickets``
+  to filter out auto-generated tickets with trivially short (boilerplate)
+  descriptions before they reach the ticket board.  The threshold is 10
+  characters — below the length of any meaningful improvement ticket. (mill: Improve caretaker ticket auto-generation handling (20260720T232929Z-improve-caretaker-ticket-auto-generation-7021))
 - Add ``self_restart`` tool to the lifecycle module — a privileged endpoint
   (``POST /self/restart``) that restarts the agent's own service without requiring
   the deploy server's per-repo access toggle.  The existing

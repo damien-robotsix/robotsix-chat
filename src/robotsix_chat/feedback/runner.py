@@ -239,6 +239,11 @@ class FeedbackRunner:
     tickets are filed via ``POST /tickets/ingest`` on the configured board.
     """
 
+    #: Minimum description length (in characters) for a ticket to be
+    #: considered actionable.  Shorter descriptions are treated as
+    #: boilerplate / low-value noise and filtered out before filing.
+    _MIN_DESCRIPTION_LENGTH: int = 10
+
     def __init__(
         self,
         settings: FeedbackSettings,
@@ -513,6 +518,15 @@ class FeedbackRunner:
             kind = t.get("kind", "")
             if not title or not description or kind not in valid_kinds:
                 logger.debug("Skipping invalid ticket entry: %s", t)
+                continue
+            if len(description) < FeedbackRunner._MIN_DESCRIPTION_LENGTH:
+                logger.debug(
+                    "Skipping low-value ticket %r — description too short"
+                    " (%d < %d chars)",
+                    title,
+                    len(description),
+                    FeedbackRunner._MIN_DESCRIPTION_LENGTH,
+                )
                 continue
             target_repo = t.get("target_repo", "")
             if valid_repos is not None:
