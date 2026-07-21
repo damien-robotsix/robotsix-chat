@@ -10,7 +10,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from robotsix_chat.common.http import safe_http_request
 
@@ -50,7 +50,7 @@ async def _get_installation_token(settings: DirectRepoSettings) -> str:
         base_url=settings.github_api_base_url,
         timeout=settings.timeout,
     )
-    return token
+    return cast(str, token)
 
 
 # ---------------------------------------------------------------------------
