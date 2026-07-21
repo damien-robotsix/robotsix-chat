@@ -69,9 +69,11 @@ class WorkspaceManager:
         """GitHub API headers, with an App installation token when configured.
 
         Reuses the ``direct_repo`` GitHub App credentials (JWT → installation
-        token, cached in :mod:`robotsix_chat.repo.direct.client`).  Falls back
-        to unauthenticated headers — public repos only — when the App is not
-        configured or the token exchange fails.
+        token, cached in :mod:`robotsix_chat.repo.direct.client`).  Returns
+        unauthenticated headers only when the App is not configured at all;
+        when it IS configured but the token exchange fails the error is raised
+        so the operator can diagnose a credential or scope issue rather than
+        getting a misleading 404 from an unauthenticated fallback.
         """
         headers = {
             "Accept": "application/vnd.github+json",
@@ -87,13 +89,14 @@ class WorkspaceManager:
 
             try:
                 token = await _get_installation_token(dr)
-                headers["Authorization"] = f"Bearer {token}"
             except RuntimeError as exc:
-                logger.warning(
-                    "repo_study: GitHub App token unavailable, "
-                    "falling back to unauthenticated fetch: %s",
-                    exc,
-                )
+                raise WorkspaceError(
+                    f"GitHub App installation token request failed: {exc}. "
+                    "Check that github_app_id, github_app_private_key, "
+                    "and github_app_installation_id are correct in the "
+                    "direct_repo config block."
+                ) from exc
+            headers["Authorization"] = f"Bearer {token}"
         return headers
 
     # -- TTL sweep ----------------------------------------------------------
@@ -167,18 +170,51 @@ class WorkspaceManager:
         )
 
     async def _download(self, url: str) -> bytes:
-        """Stream the tarball, enforcing the archive-size cap."""
+        """Stream the tarball, enforcing the archive-size cap.
+
+        Handles the GitHub API → codeload redirect manually so the
+        ``Authorization`` header survives the cross-origin hop (httpx
+        strips it by default).  GitHub's tarball redirect is always a
+        single 302 hop; no chain-walking is needed.
+        """
         headers = await self._auth_headers()
         chunks: list[bytes] = []
         total = 0
+        authenticated = "Authorization" in headers
         try:
-            async with (
-                httpx.AsyncClient(
-                    timeout=self._s.timeout, follow_redirects=True
-                ) as client,
-                client.stream("GET", url, headers=headers) as response,
-            ):
+            async with httpx.AsyncClient(
+                timeout=self._s.timeout, follow_redirects=False
+            ) as client:
+                response = await client.get(url, headers=headers)
+                # Follow the single 302 to codeload.github.com, re-attaching
+                # the auth headers so private repos stay authenticated.
+                if response.status_code in (301, 302, 303, 307, 308):
+                    location = response.headers.get("Location", "")
+                    if not location:
+                        raise WorkspaceError(
+                            f"GitHub returned {response.status_code} "
+                            f"without a Location header for {url}."
+                        )
+                    response = await client.get(location, headers=headers)
+
                 if response.status_code >= 400:
+                    if response.status_code == 403 and authenticated:
+                        raise WorkspaceError(
+                            f"GitHub returned 403 for {url}. "
+                            "The GitHub App installation token was sent "
+                            "but the installation lacks the "
+                            "``contents:read`` permission on this "
+                            "repository.  Add ``contents: read`` to the "
+                            "App's permissions and re-install the App "
+                            "on the target repo/organisation."
+                        )
+                    if response.status_code == 404 and not authenticated:
+                        raise WorkspaceError(
+                            f"GitHub returned 404 for {url}. "
+                            "The repository may be private — configure "
+                            "the ``direct_repo`` GitHub App credentials "
+                            "or ensure the repository name is correct."
+                        )
                     raise WorkspaceError(
                         f"GitHub returned {response.status_code} for {url} — "
                         "check the repo name/ref and whether the GitHub App "

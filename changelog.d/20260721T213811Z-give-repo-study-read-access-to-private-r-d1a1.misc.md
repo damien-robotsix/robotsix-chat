@@ -1,0 +1,1 @@
+Give repo-study read access to private repos via a declared PAT env slot
