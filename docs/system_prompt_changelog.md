@@ -211,7 +211,7 @@ its own merge, and the agent looped on merge-now without understanding the self-
 deadlock. This guidance was originally drafted in PR #688 (ticket 45b9) and is extracted here as a
 clean standalone addition.
 
-**SHA256:** `bdc73ee47d3fb7d7397acd2cc0953de10b030c433d7c17d1dbeb792abdc758f2`
+**SHA256:** `346af495da125fc27d3225d7f6a5d9699ff6aba8206c987782a203b3d5dd6ed1`
 
 ______________________________________________________________________
 
