@@ -1,5 +1,13 @@
 {
   "doc_layout": {
+    "root": "docs/",
+    "architecture": "docs/architecture.md",
+    "configuration": "docs/configuration.md",
+    "periodic_checks": "docs/periodic-checks.md",
+    "changelog": "CHANGELOG.md",
+    "changelog_fragments": "changelog.d/",
+    "modules_manifest": "docs/modules.yaml",
+    "repo_security": "docs/repo/security/skill.md — documents PATCH /settings and GET .../logs endpoints for GitHub repo security features and job logs",
     "subsessions": {
       "source": "src/robotsix_chat/subsessions/",
       "tests": "tests/subsessions/",
