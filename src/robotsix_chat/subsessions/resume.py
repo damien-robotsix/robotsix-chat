@@ -20,7 +20,7 @@ from .models import (
     TranscriptEntry,
 )
 from .registry import SubsessionRegistry
-from .worker import spawn_subsession
+from .worker import _TICKET_STATE_TERMINAL, spawn_subsession
 
 if TYPE_CHECKING:
     from .worker import SubsessionEnv
@@ -174,8 +174,34 @@ def _resume_periodic_entry(
     sub_id: str,
     owner: str,
     title: str,
-) -> _ResumeFate:
-    """Respawn a periodic subsession under its original id."""
+) -> _ResumeFate | None:
+    """Respawn a periodic subsession under its original id.
+
+    When the persisted checkpoint records a terminal ``last_known_state``
+    the ticket was already finished before the restart — close the
+    subsession without spawning a worker so it does not poll a ticket
+    whose monitor had already been cleanly stopped.
+    """
+    checkpoint = _rebuild_checkpoint(entry)
+    last_known = checkpoint.get("last_known_state") if checkpoint else None
+    if isinstance(last_known, str) and last_known.lower() in _TICKET_STATE_TERMINAL:
+        # The ticket was already terminal — close the subsession without
+        # spawning a worker, matching what _check_resume_status does on
+        # the first post-restart tick.
+        info = _restore_entry(env.registry, entry, force_active=True)
+        if info is not None:
+            env.registry.mark_closed(
+                sub_id,
+                summary=(
+                    f"Ticket monitor was already terminal "
+                    f"('{last_known}') before restart — closed without "
+                    f"resuming."
+                ),
+                reason="ticket_terminal_on_resume",
+                closed_by="system",
+            )
+        return None
+
     completed_runs = _rebuild_completed_runs(entry)
     runs = max(completed_runs) if completed_runs else _entry_int(entry, "runs")
     dedup_key = _entry_opt_str(entry, "dedup_key")
@@ -189,7 +215,7 @@ def _resume_periodic_entry(
         runs=runs,
         completed_runs=completed_runs,
         turn_history=_rebuild_turn_history(entry),
-        checkpoint=_rebuild_checkpoint(entry),
+        checkpoint=checkpoint,
         dedup_key=dedup_key,
     )
     return _ResumeFate(
