@@ -224,6 +224,68 @@ class DirectRepoClient:
         """PATCH *path* on the GitHub API and return the parsed JSON body."""
         return await self._request_json("PATCH", path, body)
 
+    # -- shared git helpers ------------------------------------------------
+
+    async def _git_push_files(
+        self,
+        repo_full_name: str,
+        base_sha: str,
+        files: list[dict[str, str]],
+        commit_message: str,
+    ) -> str:
+        """Create blobs, tree, and commit on *repo_full_name*; return the commit SHA.
+
+        Raises ValueError if any file entry is missing a ``path`` field.
+        Raises RuntimeError on GitHub API failures.
+        """
+        # 1. Create a blob for each file
+        tree_items: list[dict[str, Any]] = []
+        for f in files:
+            path = f.get("path", "")
+            content = f.get("content", "")
+            if not path:
+                raise ValueError("Each file entry must have a 'path' field.")
+            blob_data = await self._post_json(
+                f"/repos/{repo_full_name}/git/blobs",
+                {
+                    "content": content,
+                    "encoding": "utf-8",
+                },
+            )
+            tree_items.append(
+                {
+                    "path": path,
+                    "mode": "100644",
+                    "type": "blob",
+                    "sha": blob_data["sha"],
+                }
+            )
+
+        # 2. Create a tree from the blobs, based on the base tree
+        base_commit = await self._get_json(
+            f"/repos/{repo_full_name}/git/commits/{base_sha}"
+        )
+        base_tree_sha = base_commit["tree"]["sha"]
+        tree_data = await self._post_json(
+            f"/repos/{repo_full_name}/git/trees",
+            {
+                "base_tree": base_tree_sha,
+                "tree": tree_items,
+            },
+        )
+
+        # 3. Create a commit
+        commit_data = await self._post_json(
+            f"/repos/{repo_full_name}/git/commits",
+            {
+                "message": commit_message,
+                "tree": tree_data["sha"],
+                "parents": [base_sha],
+            },
+        )
+
+        return str(commit_data["sha"])
+
     # -- public API --------------------------------------------------------
 
     async def list_installation_repos(self) -> list[str]:
@@ -298,58 +360,20 @@ class DirectRepoClient:
             )
             base_sha: str = ref_data["object"]["sha"]
 
-            # 2. Create a blob for each file
-            tree_items: list[dict[str, Any]] = []
-            for f in files:
-                path = f.get("path", "")
-                content = f.get("content", "")
-                if not path:
-                    return "Error: each file entry must have a 'path' field."
-                blob_data = await self._post_json(
-                    f"/repos/{repo_full_name}/git/blobs",
-                    {
-                        "content": content,
-                        "encoding": "utf-8",
-                    },
-                )
-                tree_items.append(
-                    {
-                        "path": path,
-                        "mode": "100644",
-                        "type": "blob",
-                        "sha": blob_data["sha"],
-                    }
-                )
-
-            # 3. Create a tree from the blobs, based on the base tree
-            base_commit = await self._get_json(
-                f"/repos/{repo_full_name}/git/commits/{base_sha}"
-            )
-            base_tree_sha = base_commit["tree"]["sha"]
-            tree_data = await self._post_json(
-                f"/repos/{repo_full_name}/git/trees",
-                {
-                    "base_tree": base_tree_sha,
-                    "tree": tree_items,
-                },
+            # 2. Create blobs, tree, and commit
+            commit_sha = await self._git_push_files(
+                repo_full_name=repo_full_name,
+                base_sha=base_sha,
+                files=files,
+                commit_message=commit_message,
             )
 
-            # 4. Create a commit
-            commit_data = await self._post_json(
-                f"/repos/{repo_full_name}/git/commits",
-                {
-                    "message": commit_message,
-                    "tree": tree_data["sha"],
-                    "parents": [base_sha],
-                },
-            )
-
-            # 5. Create the branch ref
+            # 3. Create the branch ref
             await self._post_json(
                 f"/repos/{repo_full_name}/git/refs",
                 {
                     "ref": f"refs/heads/{branch_name}",
-                    "sha": commit_data["sha"],
+                    "sha": commit_sha,
                 },
             )
 
@@ -577,63 +601,24 @@ class DirectRepoClient:
             )
             base_sha: str = ref_data["object"]["sha"]
 
-            # 2. Create a blob for each file
-            tree_items: list[dict[str, Any]] = []
-            for f in files:
-                path = f.get("path", "")
-                content = f.get("content", "")
-                if not path:
-                    return "Error: each file entry must have a 'path' field."
-                blob_data = await self._post_json(
-                    f"/repos/{repo_full_name}/git/blobs",
-                    {
-                        "content": content,
-                        "encoding": "utf-8",
-                    },
-                )
-                tree_items.append(
-                    {
-                        "path": path,
-                        "mode": "100644",
-                        "type": "blob",
-                        "sha": blob_data["sha"],
-                    }
-                )
-
-            # 3. Create a tree from the blobs, based on the base tree
-            base_commit = await self._get_json(
-                f"/repos/{repo_full_name}/git/commits/{base_sha}"
-            )
-            base_tree_sha = base_commit["tree"]["sha"]
-            tree_data = await self._post_json(
-                f"/repos/{repo_full_name}/git/trees",
-                {
-                    "base_tree": base_tree_sha,
-                    "tree": tree_items,
-                },
+            # 2. Create blobs, tree, and commit
+            commit_sha = await self._git_push_files(
+                repo_full_name=repo_full_name,
+                base_sha=base_sha,
+                files=files,
+                commit_message=commit_message,
             )
 
-            # 4. Create a commit
-            commit_data = await self._post_json(
-                f"/repos/{repo_full_name}/git/commits",
-                {
-                    "message": commit_message,
-                    "tree": tree_data["sha"],
-                    "parents": [base_sha],
-                },
-            )
-
-            # 5. Update the branch ref to point to the new commit.
+            # 3. Update the branch ref to point to the new commit.
             #    force=False means the update must be a fast-forward.
             await self._patch_json(
                 f"/repos/{repo_full_name}/git/refs/heads/{branch_name}",
                 {
-                    "sha": commit_data["sha"],
+                    "sha": commit_sha,
                     "force": False,
                 },
             )
 
-            commit_sha = commit_data.get("sha", "")
             return (
                 f"Commit pushed successfully to {repo_full_name}/{branch_name}.\n"
                 f"Commit SHA: {commit_sha}\n"
