@@ -564,6 +564,32 @@
       var metaDiv = document.createElement("div");
       metaDiv.className = "session-meta";
       var parts = [];
+
+      // Per-state autonomous feedback (Fix 2).
+      if (s.autonomous) {
+        var aState = s.autonomous_state || "";
+        if (aState === "selecting_subject") {
+          parts.push("Selecting a subject\u2026");
+        } else if (aState === "awaiting_approval") {
+          parts.push("Awaiting approval");
+          // Show a plan snippet when available.
+          if (s.autonomous_plan_text) {
+            var preview = s.autonomous_plan_text.substring(0, 80);
+            if (s.autonomous_plan_text.length > 80) preview += "\u2026";
+            var planDiv = document.createElement("div");
+            planDiv.className = "session-plan-preview";
+            planDiv.textContent = preview;
+            row.appendChild(planDiv);
+          }
+        } else if (aState === "executing") {
+          var turn = s.autonomous_turn_count || 0;
+          // max_auto_turns not in list payload; approximate from state frame.
+          parts.push("Executing (turn " + turn + ")");
+        } else if (aState === "completed") {
+          parts.push("Completed");
+        }
+      }
+
       if (s.turn_count !== undefined) {
         parts.push(s.turn_count + " turn" + (s.turn_count !== 1 ? "s" : ""));
       }
@@ -657,6 +683,29 @@
 
     // Restore scroll position (preserved across auto-refresh re-renders).
     listEl.scrollTop = scrollTop;
+  }
+
+  // ---- Autonomous state frame handler (SSE push) -----------------------
+  function handleAutonomousStateFrame(frame) {
+    // Update the in-memory session list entry so the next renderSessionList
+    // (triggered by refreshSessions) picks up the new state.  Also update
+    // the DOM row in-place for immediate feedback.
+    if (!sessionsList) return;
+    for (var i = 0; i < sessionsList.length; i++) {
+      if (sessionsList[i].session_id === frame.session_id) {
+        sessionsList[i].autonomous_state = frame.state;
+        sessionsList[i].autonomous_plan_text = frame.plan_text || "";
+        sessionsList[i].autonomous_turn_count = frame.auto_turn_count || 0;
+        break;
+      }
+    }
+    // Re-render the list so the row shows the new state text / buttons.
+    // The server-side state is authoritative — this is just a client-side
+    // cache update to avoid a network round-trip.
+    if (typeof data === "undefined") data = {};
+    // refreshSessions does a full refetch; for live SSE we optimistically
+    // re-render from the patched sessionsList.
+    renderSessionList({ sessions: sessionsList });
   }
 
   function deleteSession(sid) {
@@ -2022,6 +2071,10 @@
               body: frame.body || "",
             });
           }
+        } else if (frame.type === "autonomous_state") {
+          // Live state transition for an autonomous session — update the
+          // corresponding session-list row in-place without a full re-fetch.
+          handleAutonomousStateFrame(frame);
         }
         // ignore unknown types gracefully
       },
