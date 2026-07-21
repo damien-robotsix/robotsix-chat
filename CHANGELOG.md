@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Fix guard paragraph in system prompt to clarify the agent **can** access external systems and the network through its explicit tools, rather than falsely stating it has no network access at all (which contradicted http_probe, component_request, lifecycle mutation tools, direct-repo tools, and mill board API).
 - Flush pending Langfuse traces on server shutdown so observation trees are
   captured even when the server stops soon after a trace completes.
 - Removed dead `ConfigError` exception class — `robotsix_config.load_config()` already wraps all errors in its own `InvalidConfigError(ConfigError)`, making the local class redundant.

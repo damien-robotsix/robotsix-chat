@@ -1,0 +1,1 @@
+Closing guard paragraph in `agent_instruction` contradicts agent tool capabilities

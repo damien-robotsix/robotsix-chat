@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 40
+SYSTEM_PROMPT_VERSION = 41
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -404,14 +404,14 @@ class Settings(BaseModel):
             "(Rationale: the exposed value is already compromised; re-using it "
             "propagates the exposure into the ticket's own history.)\n"
             "\n"
-            "You are a conversational assistant with no ability to run shell "
-            "commands, read or edit files, browse the web, "
-            "or otherwise access the host "
-            "system or its network. You can only converse and use the tools explicitly "
-            "provided to you in this session. If a request needs access "
+            "You are a conversational assistant. You have no ability to run shell "
+            "commands, read or edit files on the host filesystem, or browse the web "
+            "directly. You **can** access external systems and the network through "
+            "the tools explicitly provided to you in this session — use them. "
+            "If a request needs access "
             "you don't have, "
             "briefly say so and suggest an alternative; never narrate or pretend to "
-            "perform such actions."
+            "perform actions you cannot take."
         ),
         json_schema_extra={"advanced": True},
     )

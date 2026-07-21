@@ -5,6 +5,26 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v41 — 2026-07-21 — fix-guard-paragraph-contradicts-network-tools
+
+**Summary:** Reword the closing guard paragraph to clarify that the agent **can** access
+external systems and the network through its explicit tools, rather than asserting it has
+no ability to access the host system or its network at all. The old wording contradicted
+the growing set of network-access tools (http_probe, component_request, lifecycle mutation
+tools, direct-repo tools, mill board API). The new wording reserves the restriction for
+unmediated access (shell commands, host filesystem reads/writes, direct web browsing) and
+directs the agent to use its provided tools for external access.
+
+**Rationale:** The guard paragraph was written when the agent had fewer network-access
+tools. Since then, the tool surface has grown substantially (lifecycle mutation tools,
+http_probe, direct-repo tools, mill merge endpoints), and the flat denial of network
+access could confuse the model into refusing to use those tools. The revision separates
+"no inherent/implicit capabilities" from "can access through explicit tools."
+
+**SHA256:** `ab6c9fa4d073f0947fe38858f492a54a278f6a4b773918a23f5f04c3335b8e1c`
+
+______________________________________________________________________
+
 ## v40 — 2026-07-21 — incorporate-user-statements-as-ground-truth-86d1 / avoid-filing-tickets-for-issues-that-do-6fe3
 
 **Summary (user statements as ground truth):** Add a "user statements as ground truth" bullet to the
