@@ -90,6 +90,17 @@ class Session:
     compacted_into: str | None = None
 
 
+def _session_metadata(session: Session) -> dict[str, object]:
+    """Return the standard session-metadata dict for *session*."""
+    return {
+        "session_id": session.session_id,
+        "title": session.title,
+        "last_active": session.wall_last_active,
+        "turn_count": session.turn_count,
+        "closed": session.closed,
+    }
+
+
 @dataclass
 class _OwnerState:
     """Per-owner registry: active session id and session lookup."""
@@ -609,15 +620,7 @@ class ConversationStore:
             self._evict_overflow()
             self._persist()
             return (
-                [
-                    {
-                        "session_id": sid,
-                        "title": _DEFAULT_TITLE,
-                        "last_active": new_session.wall_last_active,
-                        "turn_count": 0,
-                        "closed": False,
-                    }
-                ],
+                [_session_metadata(new_session)],
                 sid,
             )
 
@@ -625,15 +628,7 @@ class ConversationStore:
         for sid in owner.session_ids:
             sess = self._sessions.get(sid)
             if sess is not None:
-                result.append(
-                    {
-                        "session_id": sess.session_id,
-                        "title": sess.title,
-                        "last_active": sess.wall_last_active,
-                        "turn_count": sess.turn_count,
-                        "closed": sess.closed,
-                    }
-                )
+                result.append(_session_metadata(sess))
         # Sort by last_active descending.
         result.sort(key=lambda s: s["last_active"], reverse=True)  # type: ignore[arg-type,return-value]
         return result, owner.active_session_id
@@ -662,13 +657,7 @@ class ConversationStore:
         self._evict_overflow()
         self._persist()
 
-        return {
-            "session_id": sid,
-            "title": _DEFAULT_TITLE,
-            "last_active": now,
-            "turn_count": 0,
-            "closed": False,
-        }
+        return _session_metadata(session)
 
     def delete_session(self, owner_id: str, session_id: str) -> dict[str, object]:
         """Delete *session_id* (and its history) for *owner_id*.
