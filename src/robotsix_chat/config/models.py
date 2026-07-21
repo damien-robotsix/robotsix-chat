@@ -493,6 +493,17 @@ class SubsessionsSettings(BaseModel):
             across restarts).  Env override: ``SUBSESSIONS_STORE_PATH``.
         transcript_max_entries: Per-subsession transcript retention cap.
             Env override: ``SUBSESSIONS_TRANSCRIPT_MAX_ENTRIES``.
+        mill_recovery_initial_backoff_seconds: Initial backoff (seconds)
+            when a ticket monitor enters mill-recovery mode after
+            consecutive failures.  Doubles on each retry up to
+            *mill_recovery_max_backoff_seconds*.  Default ``60.0``.
+            Env override: ``SUBSESSIONS_MILL_RECOVERY_INITIAL_BACKOFF_SECONDS``.
+        mill_recovery_max_backoff_seconds: Maximum backoff (seconds) for
+            mill-recovery retries.  Default ``3600.0`` (1 hour).
+            Env override: ``SUBSESSIONS_MILL_RECOVERY_MAX_BACKOFF_SECONDS``.
+        mill_recovery_max_retries: Maximum number of recovery retries
+            before the subsession is permanently closed.  Default ``10``.
+            Env override: ``SUBSESSIONS_MILL_RECOVERY_MAX_RETRIES``.
 
     """
 
@@ -505,6 +516,9 @@ class SubsessionsSettings(BaseModel):
     run_timeout_seconds: float = 600.0
     store_path: str = "/data/subsessions.json"
     transcript_max_entries: int = 200
+    mill_recovery_initial_backoff_seconds: float = 60.0
+    mill_recovery_max_backoff_seconds: float = 3600.0
+    mill_recovery_max_retries: int = 10
     model_config = ConfigDict(extra="forbid")
 
 

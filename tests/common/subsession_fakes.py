@@ -141,6 +141,9 @@ def make_settings(
     auto_stop_no_change_runs: int = 3,
     human_approval_timeout_runs: int = 3,
     run_timeout_seconds: float = 600.0,
+    mill_recovery_initial_backoff_seconds: float = 0.01,
+    mill_recovery_max_backoff_seconds: float = 3600.0,
+    mill_recovery_max_retries: int = 10,
     llmio_api_key: str = "",
 ) -> SimpleNamespace:
     """Build a settings stand-in with test-friendly (tiny) intervals.
@@ -160,6 +163,9 @@ def make_settings(
             auto_stop_no_change_runs=auto_stop_no_change_runs,
             human_approval_timeout_runs=human_approval_timeout_runs,
             run_timeout_seconds=run_timeout_seconds,
+            mill_recovery_initial_backoff_seconds=mill_recovery_initial_backoff_seconds,
+            mill_recovery_max_backoff_seconds=mill_recovery_max_backoff_seconds,
+            mill_recovery_max_retries=mill_recovery_max_retries,
         ),
         llmio_api_key=SecretStr(llmio_api_key),
     )

@@ -147,6 +147,13 @@
   spawning a worker and closes the subsession instead, preventing
   re-polling of tickets whose monitors had already been cleanly stopped.
 - Updated the built-in `health` periodic check to use live HTTP probes (`http_probe`) as the primary health signal instead of relying on deploy-run status alone. A green deploy pipeline no longer counts as "healthy" — the probe must confirm the site is actually serving content.
+- Ticket monitors no longer self-close after 2 consecutive mill-unreachable
+  failures.  Instead they enter a recovery mode with exponential backoff
+  (configurable via `subsessions.mill_recovery_initial_backoff_seconds`,
+  `mill_recovery_max_backoff_seconds`, and `mill_recovery_max_retries`),
+  probing the mill health endpoint on each cycle and resuming automatically
+  when the mill becomes reachable again.  The subsession is only permanently
+  closed after exhausting all recovery retries.
 - Periodic monitor no-change suppression is now more robust: catches common
   LLM paraphrases of "nothing changed" and suppresses verbatim duplicate
   replies, reducing noise when long-running background tasks are tracked.
