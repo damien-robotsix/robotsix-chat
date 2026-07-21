@@ -34,6 +34,10 @@ SSE_ACTIVITY_TYPE = "activity"
 # connected browser as soon as it's ready — see ``agent_message_frame``.
 SSE_AGENT_MESSAGE_TYPE = "agent_message"
 
+# Autonomous session state transitions pushed over the persistent /events
+# channel so the session-list row updates live without polling.
+SSE_AUTONOMOUS_STATE_TYPE = "autonomous_state"
+
 # ---------------------------------------------------------------------------
 # EventSink — structural Protocol for dependency injection
 # ---------------------------------------------------------------------------
@@ -294,6 +298,42 @@ def agent_message_frame(text: str, timestamp: float) -> dict[str, object]:
         }
     """
     return {"type": SSE_AGENT_MESSAGE_TYPE, "text": text, "timestamp": timestamp}
+
+
+def autonomous_state_frame(
+    session_id: str,
+    state: str,
+    *,
+    plan_text: str = "",
+    auto_turn_count: int = 0,
+    max_auto_turns: int = 0,
+) -> dict[str, object]:
+    """Build an ``autonomous_state`` frame for live session-list updates.
+
+    Published by :class:`~robotsix_chat.autonomous.runner.AutonomousRunner`
+    whenever an autonomous session transitions state, so the browser can
+    update the session-row status, plan preview, and approve/reject buttons
+    without polling.
+
+    Returns a dict with shape::
+
+        {
+            "type": "autonomous_state",
+            "session_id": <str>,
+            "state": <"selecting_subject|awaiting_approval|executing|completed">,
+            "plan_text": <str>,
+            "auto_turn_count": <int>,
+            "max_auto_turns": <int>,
+        }
+    """
+    return {
+        "type": SSE_AUTONOMOUS_STATE_TYPE,
+        "session_id": session_id,
+        "state": state,
+        "plan_text": plan_text,
+        "auto_turn_count": auto_turn_count,
+        "max_auto_turns": max_auto_turns,
+    }
 
 
 # ---------------------------------------------------------------------------
