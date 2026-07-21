@@ -5,13 +5,13 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
-## v40 — 2026-07-21 — incorporate-user-statements-as-ground-truth-86d1
+## v40 — 2026-07-21 — incorporate-user-statements-as-ground-truth-86d1 / avoid-filing-tickets-for-issues-that-do-6fe3
 
-**Summary:** Add a "user statements as ground truth" bullet to the Verification section. When the
-user states a concrete fact (e.g. "the secrets have been provided"), the agent must treat the user's
-statement as ground truth and must not contradict it based on tool output, logs, or recollection.
-Instead, the agent must raise a targeted clarification question to reconcile any apparent
-discrepancy, then proceed with the user's account.
+**Summary (user statements as ground truth):** Add a "user statements as ground truth" bullet to the
+Verification section. When the user states a concrete fact (e.g. "the secrets have been provided"),
+the agent must treat the user's statement as ground truth and must not contradict it based on tool
+output, logs, or recollection. Instead, the agent must raise a targeted clarification question to
+reconcile any apparent discrepancy, then proceed with the user's account.
 
 **Rationale:** The agent repeatedly claimed that OVH_SFTP\_\* secrets were missing after the user
 stated they had been provided. The agent was contradicting the user based on inferred evidence,
@@ -19,7 +19,19 @@ wasting time and eroding trust. This new rule makes explicit that user statement
 weight than agent-side evidence (which may be stale, scoped differently, or misinterpreted), and
 that the correct response to contradiction is clarification, not assertion.
 
-**SHA256:** `a0ed55700596b15778a23703f2f9690eb4b859ed1de5ad80d68ad7f049d0c1a4`
+**Summary (deduplication check):** Strengthen the Initiate step's deduplication check in the ticket
+lifecycle. The old guidance only caught duplicates with the "same scope"; the new guidance also
+catches tickets that address the same root cause or propose similar actions, even when worded
+differently or approaching the problem from a different angle (e.g. a symptom workaround vs. an
+underlying root-cause fix). The agent must now scan open/in-flight tickets for any that share a root
+cause, not just identical scope.
+
+**Rationale:** The agent filed a workaround ticket (trivial commit to trigger a redeploy) while a
+root-cause fix (missing env mapping in deploy.yml) was already in flight. The old dedup rule only
+blocked same-scope duplicates and missed this because the tickets had different stated scopes. The
+broader check prevents symptom-vs.-cause duplicate filing.
+
+**SHA256:** `d76ac3de6cb8062a0af221983304ea52fab732e88db9a5aa3dc0bea166e5389a`
 
 ______________________________________________________________________
 

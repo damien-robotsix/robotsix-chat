@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - System prompt v40: add "user statements as ground truth" rule to the Verification section — when the user states a concrete fact, the agent must treat it as ground truth and raise a clarification question rather than contradicting it based on stale or misinterpreted evidence.
+- Strengthen ticket deduplication check in agent system prompt: before filing a new ticket, check for any open or in-flight ticket addressing the same root cause or proposing a similar action, not just tickets with identical scope. Prevents symptom-workaround tickets from being filed when a root-cause fix is already in flight. (v40)
 - Subsession children of periodic parents now relay their closure
   summaries directly to the active root conversation instead of the
   periodic parent's inbox, so operator decisions in side-chats are
