@@ -1,5 +1,10 @@
 ## 0.0.0 (unreleased)
 
+- Periodic ticket monitors whose persisted checkpoint records a terminal
+  ``last_known_state`` (``closed`` or ``done``) are no longer respawned on
+  service restart — the resume hook now checks the checkpoint before
+  spawning a worker and closes the subsession instead, preventing
+  re-polling of tickets whose monitors had already been cleanly stopped.
 - Periodic monitor no-change suppression is now more robust: catches common
   LLM paraphrases of "nothing changed" and suppresses verbatim duplicate
   replies, reducing noise when long-running background tasks are tracked.

@@ -871,3 +871,179 @@ def test_rebuild_checkpoint_coerces_keys_to_strings():
     entry = {"checkpoint": {"ticket_id": "TICK-1", 42: "answer"}}
     result = _rebuild_checkpoint(entry)
     assert result == {"ticket_id": "TICK-1", "42": "answer"}
+
+
+# ---------------------------------------------------------------------------
+# periodic resume with terminal last_known_state
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resume_periodic_skips_when_last_known_state_is_terminal(
+    tmp_path: Path,
+) -> None:
+    """A periodic monitor whose last_known_state is terminal is NOT resumed.
+
+    When a ticket monitor was cleanly stopped before a restart (e.g. the
+    ticket reached a terminal state and the monitor called
+    complete_subsession), the persisted checkpoint records the terminal
+    state.  On restart the resume hook must close the subsession without
+    spawning a worker — otherwise the monitor would poll a ticket that
+    no longer needs monitoring.
+    """
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    periodic = registry1.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="watch ticket ff0a",
+        prompt="monitor the ticket",
+        model_level=3,
+        interval_seconds=0.05,
+        max_runs=10,
+        checkpoint={"ticket_id": "ff0a", "last_known_state": "closed"},
+    )
+    registry1.set_status(periodic.id, SubsessionStatus.SLEEPING, runs=3)
+
+    gate = asyncio.Event()
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=FakeAgent(["should not run"], gate=gate),
+        registry=registry2,
+        settings=make_settings(min_interval_seconds=0.01),
+    )
+    resume_subsessions(env)
+
+    # The subsession must be CLOSED — not active, not running.
+    info = registry2.get(periodic.id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "ticket_terminal_on_resume"
+    assert periodic.id not in registry2._running
+
+    # No restart notice should mention this subsession.
+    history = env.conversation_store.history(OWNER)
+    restart_notices = [
+        label for label, _ in history if "the chat service was restarted" in label
+    ]
+    # There may be zero notices (no other active subsessions) or notices
+    # that don't mention this one.
+    for notice in restart_notices:
+        assert periodic.id[:8] not in notice
+        assert "watch ticket ff0a" not in notice
+
+
+@pytest.mark.asyncio
+async def test_resume_periodic_still_resumes_when_last_known_state_is_open(
+    tmp_path: Path,
+) -> None:
+    """A periodic monitor with a non-terminal last_known_state resumes normally."""
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    periodic = registry1.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="watch ticket abc1",
+        prompt="monitor the ticket",
+        model_level=3,
+        interval_seconds=0.05,
+        max_runs=10,
+        checkpoint={"ticket_id": "abc1", "last_known_state": "in_progress"},
+    )
+    registry1.set_status(periodic.id, SubsessionStatus.SLEEPING, runs=1)
+
+    gate = asyncio.Event()
+    agent = FakeAgent(["still watching"], gate=gate)
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=agent,
+        registry=registry2,
+        settings=make_settings(min_interval_seconds=0.01),
+    )
+    resume_subsessions(env)
+
+    info = registry2.get(periodic.id)
+    assert info is not None
+    assert info.status in (SubsessionStatus.RUNNING, SubsessionStatus.SLEEPING)
+    assert periodic.id in registry2._running
+
+    # Cleanup.
+    worker = registry2._running.get(periodic.id)
+    if worker is not None:
+        registry2.cancel_and_close(periodic.id, reason="teardown", closed_by="system")
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(worker, 2.0)
+
+
+@pytest.mark.asyncio
+async def test_resume_periodic_skips_when_last_known_state_is_done(
+    tmp_path: Path,
+) -> None:
+    """A periodic monitor whose last_known_state is 'done' is also terminal."""
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    periodic = registry1.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="watch done ticket",
+        prompt="monitor the ticket",
+        model_level=3,
+        interval_seconds=0.05,
+        max_runs=10,
+        checkpoint={"ticket_id": "abc2", "last_known_state": "done"},
+    )
+    registry1.set_status(periodic.id, SubsessionStatus.SLEEPING, runs=2)
+
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=FakeAgent(["should not run"]),
+        registry=registry2,
+        settings=make_settings(min_interval_seconds=0.01),
+    )
+    resume_subsessions(env)
+
+    info = registry2.get(periodic.id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert periodic.id not in registry2._running
+
+
+@pytest.mark.asyncio
+async def test_resume_periodic_skips_when_last_known_state_case_insensitive(
+    tmp_path: Path,
+) -> None:
+    """Case of last_known_state does not matter — 'Closed' is still terminal."""
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    periodic = registry1.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="watch mixed case",
+        prompt="monitor",
+        model_level=3,
+        interval_seconds=0.05,
+        max_runs=10,
+        checkpoint={"ticket_id": "abc3", "last_known_state": "Closed"},
+    )
+    registry1.set_status(periodic.id, SubsessionStatus.SLEEPING, runs=1)
+
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=FakeAgent(["should not run"]),
+        registry=registry2,
+        settings=make_settings(min_interval_seconds=0.01),
+    )
+    resume_subsessions(env)
+
+    info = registry2.get(periodic.id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert periodic.id not in registry2._running
