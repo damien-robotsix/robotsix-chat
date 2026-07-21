@@ -357,9 +357,7 @@ async def github_job_log_endpoint(request: Request) -> PlainTextResponse:
     if not settings.enabled:
         raise HTTPException(status_code=503, detail="github_security is not enabled")
     if not direct_repo.enabled:
-        raise HTTPException(
-            status_code=503, detail="direct_repo is not enabled"
-        )
+        raise HTTPException(status_code=503, detail="direct_repo is not enabled")
     api_key = settings.deploy_api_key.get_secret_value()
     if not api_key:
         raise HTTPException(
@@ -383,7 +381,7 @@ async def github_job_log_endpoint(request: Request) -> PlainTextResponse:
         )
     try:
         job_id = int(job_id_raw)
-    except (ValueError, TypeError):
+    except ValueError, TypeError:
         raise HTTPException(
             status_code=400, detail=f"job_id must be an integer, got {job_id_raw!r}"
         ) from None
