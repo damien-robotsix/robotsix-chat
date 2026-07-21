@@ -5,6 +5,25 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v42 — 2026-07-21 — add-prompt-guidance-for-self-mutation-bo-0461
+
+**Summary:** Add a "Self-mutation bootstrap" bullet to the Autonomy / ticket-lifecycle section
+(after the Reload step). When a configuration change granting a new capability (permission toggle,
+service-update flag, self-restart permission) only takes effect after a service recreate that the
+agent cannot perform (because the flag is not yet active), the agent must recognize the
+chicken-and-egg problem, explain it to the user, and propose a single one-time operator action
+(e.g., an external trigger of POST /chat/services/chat/update) rather than filing tickets for code
+fixes that already exist.
+
+**Rationale:** The agent filed a ticket for a self-mutation code fix when the underlying permission
+flag was already correct — it just required a one-time external restart to take effect. This
+guidance prevents resolution loops by teaching the agent to recognize bootstrap limitations and
+direct the operator to the one-time action that breaks the loop.
+
+**SHA256:** `3a5f2afe0de0c7655fd83baeea3828a5bb1eb3601c70283ef10efa8560e0a8f2`
+
+______________________________________________________________________
+
 ## v41 — 2026-07-21 — fix-guard-paragraph-contradicts-network-tools
 
 **Summary:** Reword the closing guard paragraph to clarify that the agent **can** access external
