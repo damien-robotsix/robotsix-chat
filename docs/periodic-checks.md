@@ -84,11 +84,11 @@ self-closing after a fixed number of failures.
    recovery retries, the subsession is permanently closed and a summary is delivered to the parent
    conversation.
 
-| Config key                                    | Default  | Description                                        |
-| --------------------------------------------- | -------- | -------------------------------------------------- |
+| Config key                                          | Default  | Description                                                                     |
+| --------------------------------------------------- | -------- | ------------------------------------------------------------------------------- |
 | `subsessions.mill_recovery_initial_backoff_seconds` | `60.0`   | Initial backoff (seconds) before the first health probe. Doubles on each retry. |
-| `subsessions.mill_recovery_max_backoff_seconds`     | `3600.0` | Maximum backoff cap (seconds) — backoff never exceeds this. |
-| `subsessions.mill_recovery_max_retries`              | `10`     | Max retries before the subsession is permanently closed. |
+| `subsessions.mill_recovery_max_backoff_seconds`     | `3600.0` | Maximum backoff cap (seconds) — backoff never exceeds this.                     |
+| `subsessions.mill_recovery_max_retries`             | `10`     | Max retries before the subsession is permanently closed.                        |
 
 ## How it works under the hood
 
