@@ -55,12 +55,10 @@ _SECRET_KEY_SUFFIXES: tuple[str, ...] = (
     "_api_token",
     "_secret_key",
     "_private_key",
-    "_github_token",
     "api_key",
     "api_token",
     "secret_key",
     "private_key",
-    "github_token",
     "public_key",
     "deploy_api_key",
 )

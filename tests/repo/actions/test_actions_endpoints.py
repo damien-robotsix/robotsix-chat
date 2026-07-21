@@ -2,16 +2,11 @@
 
 from __future__ import annotations
 
-import time
-
 import pytest
 import respx
 from pydantic import SecretStr
 
 from robotsix_chat.config import DirectRepoSettings, GitHubActionsSettings
-from robotsix_chat.repo.direct.client import (
-    _INSTALLATION_TOKEN_CACHE as _token_cache,
-)
 
 
 def _actions_settings(**kw: object) -> GitHubActionsSettings:
@@ -34,6 +29,20 @@ def _direct_repo_settings(**kw: object) -> DirectRepoSettings:
     }
     base.update(kw)
     return DirectRepoSettings(**base)  # type: ignore[arg-type]
+
+
+@pytest.fixture(autouse=True)
+def _mock_github_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock mint_installation_token so the shared library is never imported."""
+    import sys
+    from types import SimpleNamespace
+
+    async def _fake_mint(**kw: object) -> str:
+        return "ghs_test_installation_token"
+
+    fake = SimpleNamespace()
+    fake.mint_installation_token = _fake_mint
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
 
 
 # ---------------------------------------------------------------------------
@@ -213,11 +222,6 @@ async def test_secret_endpoint_404_repo_not_in_scope(
 
     gh = _actions_settings()
     dr = _direct_repo_settings()
-    dr_obj = dr
-    _token_cache[dr_obj.github_app_installation_id] = (
-        time.monotonic(),
-        "ghs_test_token",  # pragma: allowlist secret
-    )
 
     respx_mock.get(f"{dr.github_api_base_url}/installation/repositories").respond(
         json={"repositories": [{"full_name": "damien-robotsix/allowed-repo"}]}

@@ -10,7 +10,6 @@ from __future__ import annotations
 import base64
 import json
 import logging
-import time
 from typing import TYPE_CHECKING, Any
 
 from robotsix_chat.common.http import safe_http_request
@@ -35,110 +34,23 @@ def _b64encode(data: bytes) -> str:
 # GitHub App authentication helpers
 # ---------------------------------------------------------------------------
 
-_GITHUB_APP_JWT_CACHE: dict[str, tuple[float, str]] = {}
-"""In-memory JWT cache keyed by ``(app_id, private_key_hash)``.
-
-JWTs live for 10 minutes (GitHub's max) but we expire them after 9 minutes
-to avoid edge-of-expiry failures.
-"""
-
-_JWT_LIFETIME_SECONDS = 9 * 60  # 9 minutes
-
-
-def _make_jwt(app_id: str, private_key_pem: str) -> str:
-    """Create a signed JWT for GitHub App authentication (RS256).
-
-    Uses PyJWT if available, otherwise raises an error directing the operator
-    to install the optional dependency.
-    """
-    try:
-        import jwt
-    except ImportError:
-        raise RuntimeError(
-            "PyJWT is required for GitHub App authentication. "
-            "Install it with: uv sync --extra direct-repo  or  pip install pyjwt"
-        ) from None
-
-    now = int(time.time())
-    payload = {
-        "iat": now - 60,  # 60s clock drift tolerance
-        "exp": now + _JWT_LIFETIME_SECONDS,
-        "iss": app_id,
-    }
-    token = str(jwt.encode(payload, private_key_pem, algorithm="RS256"))
-    return token
-
-
-def _get_jwt(settings: DirectRepoSettings) -> str:
-    """Return a cached or fresh JWT for the configured GitHub App."""
-    import hashlib
-
-    app_private_key = settings.github_app_private_key.get_secret_value()
-    key_hash = hashlib.sha256(
-        f"{settings.github_app_id}:{app_private_key[:20]}".encode()
-    ).hexdigest()
-
-    now = time.monotonic()
-    if key_hash in _GITHUB_APP_JWT_CACHE:
-        ts, token = _GITHUB_APP_JWT_CACHE[key_hash]
-        if now - ts < _JWT_LIFETIME_SECONDS - 60:
-            return token
-
-    jwt_token = _make_jwt(settings.github_app_id, app_private_key)
-    _GITHUB_APP_JWT_CACHE[key_hash] = (now, jwt_token)
-    return jwt_token
-
-
-# ---------------------------------------------------------------------------
-# Installation token cache
-# ---------------------------------------------------------------------------
-
-_INSTALLATION_TOKEN_CACHE: dict[str, tuple[float, str]] = {}
-"""In-memory installation token cache keyed by installation_id.
-
-Installation tokens live for 1 hour; we expire after 50 minutes.
-"""
-
-_TOKEN_LIFETIME_SECONDS = 50 * 60  # 50 minutes
-
 
 async def _get_installation_token(settings: DirectRepoSettings) -> str:
-    """Exchange the JWT for a short-lived installation access token."""
-    now = time.monotonic()
-    iid = settings.github_app_installation_id
-    if iid in _INSTALLATION_TOKEN_CACHE:
-        ts, token = _INSTALLATION_TOKEN_CACHE[iid]
-        if now - ts < _TOKEN_LIFETIME_SECONDS:
-            return token
+    """Mint a short-lived GitHub App installation access token.
 
-    jwt_token = _get_jwt(settings)
-    base = settings.github_api_base_url.rstrip("/")
-    url = f"{base}/app/installations/{iid}/access_tokens"
-    result = await safe_http_request(
-        "POST",
-        url,
-        headers={
-            "Accept": "application/vnd.github+json",
-            "Authorization": f"Bearer {jwt_token}",
-            "X-GitHub-Api-Version": "2022-11-28",
-        },
+    Delegates to the shared ``robotsix_github_auth`` library — no in-container
+    JWT logic remains.
+    """
+    from robotsix_github_auth import mint_installation_token
+
+    token = await mint_installation_token(
+        app_id=settings.github_app_id,
+        private_key=settings.github_app_private_key.get_secret_value(),
+        installation_id=settings.github_app_installation_id,
+        base_url=settings.github_api_base_url,
         timeout=settings.timeout,
-        label="GitHub App token",
     )
-    if result.error:
-        raise RuntimeError(f"Failed to get installation token: {result.error}")
-
-    body = result.text or ""
-    try:
-        data = json.loads(body)
-        token = data["token"]
-    except (json.JSONDecodeError, KeyError, TypeError) as exc:
-        raise RuntimeError(
-            f"Failed to parse installation token response: {exc}"
-        ) from exc
-
-    _INSTALLATION_TOKEN_CACHE[iid] = (now, str(token))
-    return str(token)
+    return token
 
 
 # ---------------------------------------------------------------------------

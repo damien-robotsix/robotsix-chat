@@ -3,16 +3,12 @@
 from __future__ import annotations
 
 import json
-import time
 
 import httpx
 import pytest
 import respx
 
 from robotsix_chat.config import DirectRepoSettings, GitHubSecuritySettings
-from robotsix_chat.repo.direct.client import (
-    _INSTALLATION_TOKEN_CACHE as _token_cache,
-)
 
 
 def _gh_sec_settings(**kw: object) -> GitHubSecuritySettings:
@@ -35,6 +31,20 @@ def _direct_repo_settings(**kw: object) -> DirectRepoSettings:
     }
     base.update(kw)
     return DirectRepoSettings(**base)
+
+
+@pytest.fixture(autouse=True)
+def _mock_github_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock mint_installation_token so the shared library is never imported."""
+    import sys
+    from types import SimpleNamespace
+
+    async def _fake_mint(**kw: object) -> str:
+        return "ghs_test_installation_token"
+
+    fake = SimpleNamespace()
+    fake.mint_installation_token = _fake_mint
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
 
 
 # ---------------------------------------------------------------------------
@@ -215,8 +225,6 @@ async def test_endpoint_404_when_repo_not_in_scope(
     gh = _gh_sec_settings()
     dr = _direct_repo_settings()
 
-    _token_cache["67890"] = (time.monotonic(), "ghs_test_token")
-
     respx_mock.get("https://api.github.com/installation/repositories").mock(
         return_value=httpx.Response(
             200,
@@ -255,8 +263,6 @@ async def test_endpoint_enables_dependency_graph(
 
     gh = _gh_sec_settings()
     dr = _direct_repo_settings()
-
-    _token_cache["67890"] = (time.monotonic(), "ghs_test_token")
 
     respx_mock.get("https://api.github.com/installation/repositories").mock(
         return_value=httpx.Response(
@@ -300,8 +306,6 @@ async def test_endpoint_cross_org_repo(
 
     gh = _gh_sec_settings()
     dr = _direct_repo_settings()
-
-    _token_cache["67890"] = (time.monotonic(), "ghs_test_token")
 
     respx_mock.get("https://api.github.com/installation/repositories").mock(
         return_value=httpx.Response(

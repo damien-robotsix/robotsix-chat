@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import time
-
 import pytest
 import respx
 
@@ -35,33 +33,18 @@ def _direct_repo_settings(**kw: object) -> DirectRepoSettings:
     return DirectRepoSettings(**base)  # type: ignore[arg-type]
 
 
-def _prepopulate_installation_token(settings: DirectRepoSettings) -> str:
-    """Set the installation token cache so JWT creation is skipped in tests."""
-    from robotsix_chat.repo.direct.client import (
-        _INSTALLATION_TOKEN_CACHE as _cache,
-    )
-
-    token = "ghs_test_installation_token"  # pragma: allowlist secret
-    _cache[settings.github_app_installation_id] = (time.monotonic(), token)
-    return token
-
-
 @pytest.fixture(autouse=True)
-def _clear_token_cache(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Clear caches and mock JWT creation before each test."""
-    from robotsix_chat.repo.direct.client import (
-        _INSTALLATION_TOKEN_CACHE as _cache,
-    )
+def _mock_github_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock mint_installation_token so the shared library is never imported."""
+    import sys
+    from types import SimpleNamespace
 
-    _cache.clear()
-    from robotsix_chat.repo.direct.client import (
-        _GITHUB_APP_JWT_CACHE as _jwt_cache,
-    )
+    async def _fake_mint(**kw: object) -> str:
+        return "ghs_test_installation_token"
 
-    _jwt_cache.clear()
-    from robotsix_chat.repo.direct import client as _client_mod
-
-    monkeypatch.setattr(_client_mod, "_make_jwt", lambda app_id, key: "fake-jwt-token")
+    fake = SimpleNamespace()
+    fake.mint_installation_token = _fake_mint
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
 
 
 # ---------------------------------------------------------------------------
@@ -98,7 +81,6 @@ async def test_set_actions_secret_refuses_out_of_scope_repo(
 ) -> None:
     """Repo not in installation scope → refused message."""
     dr = _direct_repo_settings()
-    _prepopulate_installation_token(dr)
 
     # Mock list-installation-repos to return only one repo
     respx_mock.get(f"{dr.github_api_base_url}/installation/repositories").respond(
@@ -119,7 +101,6 @@ async def test_dispatch_workflow_refuses_out_of_scope_repo(
 ) -> None:
     """Repo not in installation scope → refused message."""
     dr = _direct_repo_settings()
-    _prepopulate_installation_token(dr)
 
     respx_mock.get(f"{dr.github_api_base_url}/installation/repositories").respond(
         json={"repositories": [{"full_name": "damien-robotsix/allowed-repo"}]}
@@ -144,7 +125,6 @@ async def test_dispatch_workflow_rejects_invalid_inputs_json(
 ) -> None:
     """Non-JSON inputs string → error message."""
     dr = _direct_repo_settings()
-    _prepopulate_installation_token(dr)
 
     respx_mock.get(f"{dr.github_api_base_url}/installation/repositories").respond(
         json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]}
@@ -164,7 +144,6 @@ async def test_dispatch_workflow_rejects_non_object_inputs(
 ) -> None:
     """Inputs that parse but are not a dict → error message."""
     dr = _direct_repo_settings()
-    _prepopulate_installation_token(dr)
 
     respx_mock.get(f"{dr.github_api_base_url}/installation/repositories").respond(
         json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]}

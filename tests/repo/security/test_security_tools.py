@@ -7,7 +7,6 @@ tool, with ``respx`` mocked so there are no real network calls.
 from __future__ import annotations
 
 import json
-import time
 from typing import Any
 
 import httpx
@@ -43,33 +42,18 @@ def _direct_repo_settings(**kw: Any) -> DirectRepoSettings:
     return DirectRepoSettings(**base)
 
 
-def _prepopulate_installation_token(settings: DirectRepoSettings) -> str:
-    """Set the installation token cache so JWT creation is skipped in tests."""
-    from robotsix_chat.repo.direct.client import (
-        _INSTALLATION_TOKEN_CACHE as _cache,
-    )
-
-    token = "ghs_test_installation_token"
-    _cache[settings.github_app_installation_id] = (time.monotonic(), token)
-    return token
-
-
 @pytest.fixture(autouse=True)
-def _clear_token_cache(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Clear caches and mock JWT creation before each test."""
-    from robotsix_chat.repo.direct.client import (
-        _INSTALLATION_TOKEN_CACHE as _cache,
-    )
+def _mock_github_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock mint_installation_token so the shared library is never imported."""
+    import sys
+    from types import SimpleNamespace
 
-    _cache.clear()
-    from robotsix_chat.repo.direct.client import (
-        _GITHUB_APP_JWT_CACHE as _jwt_cache,
-    )
+    async def _fake_mint(**kw: object) -> str:
+        return "ghs_test_installation_token"
 
-    _jwt_cache.clear()
-    from robotsix_chat.repo.direct import client as _client_mod
-
-    monkeypatch.setattr(_client_mod, "_make_jwt", lambda app_id, key: "fake-jwt-token")
+    fake = SimpleNamespace()
+    fake.mint_installation_token = _fake_mint
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
 
 
 # ---------------------------------------------------------------------------
@@ -106,7 +90,6 @@ async def test_refuses_repo_not_in_scope(
 ) -> None:
     """Repo not in installation scope → refused with a descriptive message."""
     dr_settings = _direct_repo_settings()
-    _prepopulate_installation_token(dr_settings)
 
     respx_mock.get("https://api.github.com/installation/repositories").mock(
         return_value=httpx.Response(
@@ -135,7 +118,6 @@ async def test_enables_dependency_graph(
 ) -> None:
     """Enabling dependency_graph on a scoped repo calls the PATCH endpoint."""
     dr_settings = _direct_repo_settings()
-    _prepopulate_installation_token(dr_settings)
 
     respx_mock.get("https://api.github.com/installation/repositories").mock(
         return_value=httpx.Response(
@@ -185,7 +167,6 @@ async def test_rejects_invalid_toggle_value(
 ) -> None:
     """Non-'enabled'/'disabled' values are rejected early."""
     dr_settings = _direct_repo_settings()
-    _prepopulate_installation_token(dr_settings)
 
     respx_mock.get("https://api.github.com/installation/repositories").mock(
         return_value=httpx.Response(
@@ -216,7 +197,6 @@ async def test_rejects_no_toggles(
 ) -> None:
     """Passing no toggles (all None) is rejected."""
     dr_settings = _direct_repo_settings()
-    _prepopulate_installation_token(dr_settings)
 
     respx_mock.get("https://api.github.com/installation/repositories").mock(
         return_value=httpx.Response(
@@ -245,7 +225,6 @@ async def test_multiple_toggles(
 ) -> None:
     """Setting multiple features in one call works correctly."""
     dr_settings = _direct_repo_settings()
-    _prepopulate_installation_token(dr_settings)
 
     respx_mock.get("https://api.github.com/installation/repositories").mock(
         return_value=httpx.Response(
@@ -302,7 +281,6 @@ async def test_push_protection_toggle(
 ) -> None:
     """secret_scanning_push_protection toggle is sent correctly."""
     dr_settings = _direct_repo_settings()
-    _prepopulate_installation_token(dr_settings)
 
     respx_mock.get("https://api.github.com/installation/repositories").mock(
         return_value=httpx.Response(

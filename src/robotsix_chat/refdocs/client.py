@@ -15,7 +15,7 @@ from typing import Any
 import httpx
 
 from robotsix_chat.common.http import safe_http_request
-from robotsix_chat.config import RefDocsSettings
+from robotsix_chat.config import DirectRepoSettings, RefDocsSettings
 
 logger = logging.getLogger(__name__)
 
@@ -28,9 +28,12 @@ _MAX_CONTENT_CHARS = 30_000
 class RefDocsClient:
     """Fetch files from allowlisted GitHub repos via the Contents API."""
 
-    def __init__(self, settings: RefDocsSettings) -> None:
-        """Store *settings* and normalise the base URL for later calls."""
+    def __init__(
+        self, settings: RefDocsSettings, direct_repo: DirectRepoSettings
+    ) -> None:
+        """Store *settings* and *direct_repo* for later calls."""
         self._s = settings
+        self._dr = direct_repo
         # Normalise the base URL once so callers don't worry about trailing slashes.
         self._base_url = settings.base_url.rstrip("/")
 
@@ -129,10 +132,28 @@ class RefDocsClient:
 
     async def _get_json(self, url: str) -> Any:
         headers: dict[str, str] = {"Accept": "application/vnd.github+json"}
-        if self._s.github_token.get_secret_value():
-            headers["Authorization"] = (
-                f"Bearer {self._s.github_token.get_secret_value()}"
-            )
+        if (
+            self._dr.github_app_id
+            and self._dr.github_app_private_key.get_secret_value()
+            and self._dr.github_app_installation_id
+        ):
+            from robotsix_github_auth import mint_installation_token
+
+            try:
+                token = await mint_installation_token(
+                    app_id=self._dr.github_app_id,
+                    private_key=self._dr.github_app_private_key.get_secret_value(),
+                    installation_id=self._dr.github_app_installation_id,
+                    base_url=self._dr.github_api_base_url,
+                    timeout=self._dr.timeout,
+                )
+                headers["Authorization"] = f"Bearer {token}"
+            except RuntimeError as exc:
+                logger.warning(
+                    "refdocs: GitHub App token unavailable, "
+                    "falling back to unauthenticated fetch: %s",
+                    exc,
+                )
         result = await safe_http_request(
             "GET",
             url,

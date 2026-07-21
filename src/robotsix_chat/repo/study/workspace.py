@@ -68,12 +68,19 @@ class WorkspaceManager:
     async def _auth_headers(self) -> dict[str, str]:
         """GitHub API headers, with an App installation token when configured.
 
+<<<<<<< HEAD
         Reuses the ``direct_repo`` GitHub App credentials (JWT → installation
         token, cached in :mod:`robotsix_chat.repo.direct.client`).  Returns
         unauthenticated headers only when the App is not configured at all;
         when it IS configured but the token exchange fails the error is raised
         so the operator can diagnose a credential or scope issue rather than
         getting a misleading 404 from an unauthenticated fallback.
+=======
+        Reuses the ``direct_repo`` GitHub App credentials (via the shared
+        ``robotsix_github_auth`` library).  Falls back to unauthenticated
+        headers — public repos only — when the App is not configured or the
+        token exchange fails.
+>>>>>>> 431f5f0 (mill: Migrate chat direct-repo GitHub App minting to robotsix-github-auth; retire doc/version PATs (20260721T221218Z-migrate-chat-direct-repo-github-app-mint-053a))
         """
         headers = {
             "Accept": "application/vnd.github+json",
@@ -85,10 +92,17 @@ class WorkspaceManager:
             and dr.github_app_private_key.get_secret_value()
             and dr.github_app_installation_id
         ):
-            from robotsix_chat.repo.direct.client import _get_installation_token
+            from robotsix_github_auth import mint_installation_token
 
             try:
-                token = await _get_installation_token(dr)
+                token = await mint_installation_token(
+                    app_id=dr.github_app_id,
+                    private_key=dr.github_app_private_key.get_secret_value(),
+                    installation_id=dr.github_app_installation_id,
+                    base_url=dr.github_api_base_url,
+                    timeout=dr.timeout,
+                )
+                headers["Authorization"] = f"Bearer {token}"
             except RuntimeError as exc:
                 raise WorkspaceError(
                     f"GitHub App installation token request failed: {exc}. "

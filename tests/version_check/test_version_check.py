@@ -13,7 +13,7 @@ import httpx
 import pytest
 import respx
 
-from robotsix_chat.config import VersionCheckSettings
+from robotsix_chat.config import DirectRepoSettings, VersionCheckSettings
 from robotsix_chat.version_check import build_version_check_tools
 from robotsix_chat.version_check.client import (
     VersionCheckClient,
@@ -29,6 +29,11 @@ def _settings(**kw: Any) -> VersionCheckSettings:
     }
     base.update(kw)
     return VersionCheckSettings(**base)
+
+
+def _direct_repo(**kw: Any) -> DirectRepoSettings:
+    """Minimal DirectRepoSettings for tests — App not configured by default."""
+    return DirectRepoSettings(**kw)
 
 
 # ---------------------------------------------------------------------------
@@ -102,12 +107,15 @@ def test_compare_versions_one_unparsable() -> None:
 
 def test_build_disabled_returns_empty() -> None:
     """Disabled version_check returns no tools."""
-    assert build_version_check_tools(VersionCheckSettings(enabled=False)) == []
+    assert (
+        build_version_check_tools(VersionCheckSettings(enabled=False), _direct_repo())
+        == []
+    )
 
 
 def test_build_enabled_returns_one_tool() -> None:
     """Enabled version_check returns a single callable named check_for_updates."""
-    tools = build_version_check_tools(_settings())
+    tools = build_version_check_tools(_settings(), _direct_repo())
     assert len(tools) == 1
     assert tools[0].__name__ == "check_for_updates"
 
@@ -124,7 +132,7 @@ async def test_up_to_date(respx_mock: respx.MockRouter) -> None:
         return_value=httpx.Response(200, json={"tag_name": "0.1.0"})
     )
 
-    client = VersionCheckClient(_settings())
+    client = VersionCheckClient(_settings(), _direct_repo())
     version, source = await client.latest_version()
     assert version == "0.1.0"
     assert source == "releases/latest"
@@ -137,7 +145,7 @@ async def test_behind(respx_mock: respx.MockRouter) -> None:
         return_value=httpx.Response(200, json={"tag_name": "0.2.0"})
     )
 
-    client = VersionCheckClient(_settings())
+    client = VersionCheckClient(_settings(), _direct_repo())
     version, source = await client.latest_version()
     assert version == "0.2.0"
 
@@ -159,7 +167,7 @@ async def test_releases_latest_404_falls_back_to_tags(
         return_value=httpx.Response(200, json=[{"name": "v0.1.0"}, {"name": "v0.0.9"}])
     )
 
-    client = VersionCheckClient(_settings())
+    client = VersionCheckClient(_settings(), _direct_repo())
     version, source = await client.latest_version()
     assert version == "v0.1.0"
     assert "tags" in source.lower()
@@ -180,7 +188,7 @@ async def test_http_error_returns_none(
         return_value=httpx.Response(500, json={})
     )
 
-    client = VersionCheckClient(_settings())
+    client = VersionCheckClient(_settings(), _direct_repo())
     version, source = await client.latest_version()
     assert version is None
     assert "500" in source
@@ -195,7 +203,7 @@ async def test_timeout_returns_none(
         side_effect=httpx.ReadTimeout("timed out")
     )
 
-    client = VersionCheckClient(_settings())
+    client = VersionCheckClient(_settings(), _direct_repo())
     version, source = await client.latest_version()
     assert version is None
     assert "timed out" in source.lower()
@@ -210,7 +218,7 @@ async def test_unexpected_error_returns_none(
         side_effect=RuntimeError("something crashed")
     )
 
-    client = VersionCheckClient(_settings())
+    client = VersionCheckClient(_settings(), _direct_repo())
     version, source = await client.latest_version()
     assert version is None
     assert "something crashed" in source
@@ -225,28 +233,39 @@ async def test_no_token_header_when_empty(
         "https://api.github.com/repos/org/my-repo/releases/latest"
     ).mock(return_value=httpx.Response(200, json={"tag_name": "0.1.0"}))
 
-    client = VersionCheckClient(_settings())
+    client = VersionCheckClient(_settings(), _direct_repo())
     await client.latest_version()
     assert "authorization" not in route.calls.last.request.headers
 
 
 @pytest.mark.asyncio
-async def test_token_header_when_configured(
+async def test_app_token_header_when_configured(
     respx_mock: respx.MockRouter,
+    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """When a token is configured, Bearer auth is sent."""
+    """When App creds are configured, Bearer auth via mint_installation_token."""
     route = respx_mock.get(
         "https://api.github.com/repos/org/my-repo/releases/latest"
     ).mock(return_value=httpx.Response(200, json={"tag_name": "0.1.0"}))
 
-    client = VersionCheckClient(
-        _settings(github_token="ghp_test")  # pragma: allowlist secret
+    import sys
+    from types import SimpleNamespace
+
+    async def _fake_mint(**kw: object) -> str:
+        return "app-token-456"
+
+    fake = SimpleNamespace()
+    fake.mint_installation_token = _fake_mint
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
+
+    dr = _direct_repo(
+        github_app_id="12345",
+        github_app_private_key="fake-key",  # type: ignore[arg-type]
+        github_app_installation_id="67890",
     )
+    client = VersionCheckClient(_settings(), dr)
     await client.latest_version()
-    assert (
-        route.calls.last.request.headers["authorization"]
-        == "Bearer ghp_test"  # pragma: allowlist secret
-    )
+    assert route.calls.last.request.headers["authorization"] == "Bearer app-token-456"
 
 
 # ---------------------------------------------------------------------------
@@ -263,7 +282,7 @@ async def test_cache_reuses_result_within_ttl(
         "https://api.github.com/repos/org/my-repo/releases/latest"
     ).mock(return_value=httpx.Response(200, json={"tag_name": "0.1.0"}))
 
-    client = VersionCheckClient(_settings(cache_ttl=10.0))
+    client = VersionCheckClient(_settings(cache_ttl=10.0), _direct_repo())
     v1, s1 = await client.latest_version()
     v2, s2 = await client.latest_version()
 
@@ -290,7 +309,7 @@ async def test_failed_lookup_not_cached(
         "https://api.github.com/repos/org/my-repo/releases/latest"
     ).mock(side_effect=lambda request: next(responses))
 
-    client = VersionCheckClient(_settings(cache_ttl=10.0))
+    client = VersionCheckClient(_settings(cache_ttl=10.0), _direct_repo())
     v1, s1 = await client.latest_version()
     assert v1 is None
 
@@ -315,7 +334,7 @@ async def test_check_for_updates_up_to_date(
         return_value=httpx.Response(200, json={"tag_name": "0.1.0"})
     )
 
-    tools = build_version_check_tools(_settings())
+    tools = build_version_check_tools(_settings(), _direct_repo())
     tool = tools[0]
     result = await tool()
 
@@ -332,7 +351,7 @@ async def test_check_for_updates_out_of_date(
         return_value=httpx.Response(200, json={"tag_name": "0.2.0"})
     )
 
-    tools = build_version_check_tools(_settings())
+    tools = build_version_check_tools(_settings(), _direct_repo())
     tool = tools[0]
     result = await tool()
 
@@ -350,7 +369,7 @@ async def test_check_for_updates_api_failure(
         return_value=httpx.Response(500, json={})
     )
 
-    tools = build_version_check_tools(_settings())
+    tools = build_version_check_tools(_settings(), _direct_repo())
     tool = tools[0]
     result = await tool()
 
