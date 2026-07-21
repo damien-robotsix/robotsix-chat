@@ -2,7 +2,7 @@
   "$defs": {
     "AutonomousSettings": {
       "additionalProperties": false,
-      "description": "Native autonomous chat sessions \u2014 self-directed agent loops.\n\nWhen enabled, the agent can run fully autonomous sessions that pick a\nsubject, draft a plan, await operator approval, then execute to\ncompletion with auto-cycling.\n\nAttributes:\n    enabled: Master switch.  Default ``False``.\n    approval_marker: Marker string the agent emits after drafting a plan\n        to signal it is awaiting operator approval.\n    completion_marker: Marker string the agent emits when the plan is\n        complete; triggers auto-close and respawn.\n    max_auto_turns: Maximum number of automatic agent turns during the\n        execution phase before reverting to ``awaiting_approval``.",
+      "description": "Native autonomous chat sessions \u2014 self-directed agent loops.\n\nWhen enabled, the agent can run fully autonomous sessions that pick a\nsubject, draft a plan, await operator approval, then execute to\ncompletion with auto-cycling.\n\nAttributes:\n    enabled: Master switch.  Default ``False``.\n    approval_marker: Marker string the agent emits after drafting a plan\n        to signal it is awaiting operator approval.\n    completion_marker: Marker string the agent emits when the plan is\n        complete; triggers auto-close and respawn.\n    max_auto_turns: Maximum number of automatic agent turns during the\n        execution phase before reverting to ``awaiting_approval``.\n    session_color: Optional CSS color string applied as a visual accent\n        on autonomous session rows (e.g. ``\"#ef4444\"`` for red).\n    initial_task: Optional description of the first task to spawn when\n        an autonomous session starts.  When empty, the agent picks its\n        own subject.",
       "properties": {
         "enabled": {
           "default": false,
@@ -27,6 +27,16 @@
         "persist_path": {
           "default": "/data/autonomous_sessions.json",
           "title": "Persist Path",
+          "type": "string"
+        },
+        "session_color": {
+          "default": "",
+          "title": "Session Color",
+          "type": "string"
+        },
+        "initial_task": {
+          "default": "",
+          "title": "Initial Task",
           "type": "string"
         }
       },

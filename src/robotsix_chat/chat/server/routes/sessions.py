@@ -102,6 +102,9 @@ async def sessions_list_endpoint(request: Request) -> JSONResponse:
                     s["autonomous_max_turns"] = (
                         request.app.state.settings.autonomous.max_auto_turns
                     )
+                    s["autonomous_session_color"] = (
+                        request.app.state.settings.autonomous.session_color
+                    )
 
     return JSONResponse({"sessions": sessions, "active_session_id": active_id})
 

@@ -556,6 +556,10 @@
       if (s.autonomous) {
         row.classList.add("session-autonomous");
         titleDiv.textContent = "[AUTONOMOUS] " + (s.title || "Untitled");
+        // Apply session_color as a left-border accent when set.
+        if (s.autonomous_session_color) {
+          row.style.borderLeft = "3px solid " + s.autonomous_session_color;
+        }
       } else {
         titleDiv.textContent = s.title || "Untitled";
       }
@@ -701,6 +705,7 @@
         sessionsList[i].autonomous_plan_text = frame.plan_text || "";
         sessionsList[i].autonomous_turn_count = frame.auto_turn_count || 0;
         sessionsList[i].autonomous_max_turns = frame.max_auto_turns || 0;
+        sessionsList[i].autonomous_session_color = frame.session_color || "";
         break;
       }
     }

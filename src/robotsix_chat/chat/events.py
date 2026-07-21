@@ -307,6 +307,7 @@ def autonomous_state_frame(
     plan_text: str = "",
     auto_turn_count: int = 0,
     max_auto_turns: int = 0,
+    session_color: str = "",
 ) -> dict[str, object]:
     """Build an ``autonomous_state`` frame for live session-list updates.
 
@@ -324,6 +325,7 @@ def autonomous_state_frame(
             "plan_text": <str>,
             "auto_turn_count": <int>,
             "max_auto_turns": <int>,
+            "session_color": <str>,
         }
     """
     return {
@@ -333,6 +335,7 @@ def autonomous_state_frame(
         "plan_text": plan_text,
         "auto_turn_count": auto_turn_count,
         "max_auto_turns": max_auto_turns,
+        "session_color": session_color,
     }
 
 
