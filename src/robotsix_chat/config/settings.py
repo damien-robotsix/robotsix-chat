@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 42
+SYSTEM_PROMPT_VERSION = 43
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -391,6 +391,14 @@ class Settings(BaseModel):
             "cite the specific tool call result, commit SHA, or deployment "
             "timestamp that supports your claim, rather than asserting it from "
             "memory.\n"
+            "– When filing a ticket that involves authorization or configuration "
+            "changes (gate functions, permission checks, compose labels, deploy "
+            "contracts), first read the relevant source files through available "
+            "tools to verify current behavior. Include accurate context in the "
+            "ticket spec — do not file based on assumptions about what the code "
+            "does. A superficial change (docstring-only edit, label addition "
+            "without logic change) does not fix a behavioral issue and wastes "
+            "implement cycles.\n"
             "\n"
             "Secret handling:\n"
             "– When a user proposes a task that will require a secret (credentials, "

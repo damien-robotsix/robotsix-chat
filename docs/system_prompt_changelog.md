@@ -5,6 +5,26 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v43 — 2026-07-21 — ensure-ticket-analysis-by-worker-reads-a-3f31
+
+**Summary:** Add a verification bullet requiring the agent to read relevant source files
+(gate functions, permission checks, compose labels, deploy contracts) before filing tickets
+that involve authorization or configuration changes. The agent must verify current behavior
+through available tools and include accurate context in the ticket spec rather than filing
+based on assumptions. Superficial changes (docstring-only edits, label additions without
+logic changes) are explicitly called out as wasteful.
+
+**Rationale:** Two tickets filed during a session failed to fix the underlying issue: one
+PR only updated a docstring and added a test, leaving the logic unchanged; another label-
+addition ticket required a container recreate the implement agent couldn't perform. The
+implement agent didn't read the actual authorization code or compose labels before closing
+as implement_complete. This guidance ensures the chat agent includes verified context in
+ticket specs so the implement agent has accurate information to work from.
+
+**SHA256:** `f70ca3f5db3176cacba351f45054037b14a790f05b84f547990cdaa5f786b7e6`
+
+______________________________________________________________________
+
 ## v42 — 2026-07-21 — add-prompt-guidance-for-self-mutation-bo-0461
 
 **Summary:** Add a "Self-mutation bootstrap" bullet to the Autonomy / ticket-lifecycle section
