@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- System prompt v43: add "Deploy preflight" gate requiring the assistant to retrieve deploy/docker-compose.yml, check the chat_agent_deployable_components allowlist, and verify endpoint capabilities before any deploy call — prevents guessing at deploy endpoint support for multi-service components.
 - Add optional ``session_color`` and ``initial_task`` fields to autonomous settings, allowing operators to configure a CSS accent color for autonomous session rows and a default initial task that the agent spawns on session start.
 - System prompt v43: Add verification guidance to read relevant source files
   (gate functions, compose labels, deploy contracts) before filing tickets

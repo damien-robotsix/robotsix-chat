@@ -5,6 +5,25 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v44 — 2026-07-21 — do-not-assume-a-generic-one-shot-deploy-45a0
+
+**Summary:** Add a "Deploy preflight" paragraph after the "Deploy system" section. Before calling
+any deploy endpoint (POST /chat/deploy, POST /onboard/*, lifecycle mutations), the assistant must:
+(1) retrieve the target repo's deploy/docker-compose.yml and count services, volumes, healthchecks,
+and commands; (2) check the chat_agent_deployable_components allowlist via the roster or
+central-deploy and refuse if the component is not listed; (3) compare the contract against the
+endpoint's known capabilities and refuse if the endpoint cannot reproduce the full multi-service
+contract. The assistant must never offer to deploy through an endpoint whose capabilities are
+unverified.
+
+**Rationale:** The assistant twice attempted to deploy robotsix-auto-mail via POST /chat/deploy
+without verifying that the endpoint could handle multi-service components, and without checking
+whether the server was running the latest code. This preflight gate prevents the pattern of
+guessing at deploy endpoint capabilities and forces explicit contract verification before every
+deploy attempt.
+
+**SHA256:** `42ae1073840159a89621a4d53ee009d9e69d2fc53449d653d546801370e1d5c4`
+
 ## v43 — 2026-07-21 — ensure-ticket-analysis-by-worker-reads-a-3f31
 
 **Summary:** Add a verification bullet requiring the agent to read relevant source files (gate

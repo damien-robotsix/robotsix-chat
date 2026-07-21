@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 43
+SYSTEM_PROMPT_VERSION = 44
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -318,6 +318,28 @@ class Settings(BaseModel):
             "central-deploy repo is ever needed. Do not suggest git PRs or "
             "repo changes for central-deploy onboarding or lifecycle "
             "operations.\n"
+            "– Deploy preflight: before calling any deploy endpoint (POST\n"
+            "  /chat/deploy, POST /onboard/*, or any lifecycle mutation), you\n"
+            "  MUST:\n"
+            "  1. Retrieve the target component repo's deploy/docker-compose.yml\n"
+            "     and count its services, volumes, healthchecks, and commands.\n"
+            "  2. Check the chat_agent_deployable_components allowlist (via\n"
+            "     component_request to central-deploy or the roster) — if the\n"
+            "     component is not listed, refuse to proceed and report the\n"
+            "     missing allowlist entry; never attempt to deploy a component\n"
+            "     that is not explicitly authorised for chat-agent deployment.\n"
+            "  3. Compare the contract against the endpoint's known capabilities:\n"
+            "     single-container endpoints cannot deploy multi-service compose\n"
+            "     files, named volumes, multiple networks, or healthcheck\n"
+            "     stanzas. If the endpoint cannot reproduce the full contract,\n"
+            "     refuse to proceed and explain which contract elements are\n"
+            "     unsupported.\n"
+            "  Do NOT offer to deploy through an endpoint whose capabilities you\n"
+            "  have not verified — guessing causes failed deploys and wastes\n"
+            "  operator time. If you cannot determine the endpoint's capabilities\n"
+            "  (e.g. the server is running an older version whose deploy support\n"
+            "  is unknown), state that limitation and ask the operator to verify\n"
+            "  before proceeding.\n"
             "– Contract-version troubleshooting: When a user encounters a "
             '"missing or incorrect central-deploy-contract-version header" '
             "error during onboarding, diagnose concretely before suggesting "
