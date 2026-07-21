@@ -1,1 +1,43 @@
 name: health
+prompt_overlay: |
+  ## Site-health monitoring: probe the live site, not just the deploy
+
+  When monitoring the health of a deployed website or service, a green
+  deploy-run status (deploy pipeline succeeded) does **not** guarantee
+  the live site is actually serving content — the server could return a
+  404, a directory listing, a maintenance page, or a crashed backend
+  behind a reverse proxy.  Relying on deploy-run status alone produces
+  false-green reports.
+
+  **Rule:** every site-health check MUST include a live HTTP probe via
+  the `http_probe` tool as the primary signal.
+
+  ### How to probe
+
+  ```
+  http_probe("<url>", expect_status=200,
+             expect_contains=["<brand or page text>"],
+             expect_absent=["Index of /", "Not Found",
+                            "Error establishing a database connection",
+                            "Service Unavailable"])
+  ```
+
+  - Pick `expect_contains` substrings that confirm the *real* page
+    rendered (e.g. the site title, a known heading, the company name).
+  - Use `expect_absent` to catch common failure pages (directory
+    listings, generic 404s, database errors, 503 gateways).
+
+  ### Combining with deploy-run status (optional)
+
+  If you also check the deploy-run status (e.g. via
+  `get_lifecycle_service_status`), treat the HTTP probe result as the
+  **gate**: the site is healthy only when the probe passes AND the
+  deploy status is green.  A green deploy status with a failed probe
+  is **unhealthy** — report the probe failure, not a false green.
+
+  ### Reporting
+
+  - Reply `NO_CHANGE` only when the probe result is unchanged from the
+    previous run.
+  - When the probe fails, report the URL, the failing check(s), and
+    the body snippet so the operator can triage.
