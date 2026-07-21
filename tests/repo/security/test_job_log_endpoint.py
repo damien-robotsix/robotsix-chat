@@ -1,13 +1,18 @@
-"""Tests for the ``GET /chat/github/repos/{owner}/{repo}/actions/jobs/{job_id}/logs`` endpoint."""
+"""Tests for the GitHub job-logs endpoint.
+
+``GET /chat/github/repos/{owner}/{repo}/actions/jobs/{job_id}/logs``
+"""
 
 from __future__ import annotations
 
 import json
 import time
+from typing import Any
 
 import httpx
 import pytest
 import respx
+from pydantic import SecretStr
 
 from robotsix_chat.config import DirectRepoSettings, GitHubSecuritySettings
 from robotsix_chat.repo.direct.client import (
@@ -16,7 +21,7 @@ from robotsix_chat.repo.direct.client import (
 
 
 def _gh_sec_settings(**kw: object) -> GitHubSecuritySettings:
-    base: dict[str, object] = {
+    base: dict[str, Any] = {
         "enabled": True,
         "github_org": "damien-robotsix",
         "deploy_api_key": "test-api-key",  # pragma: allowlist secret
@@ -26,7 +31,7 @@ def _gh_sec_settings(**kw: object) -> GitHubSecuritySettings:
 
 
 def _direct_repo_settings(**kw: object) -> DirectRepoSettings:
-    base: dict[str, object] = {
+    base: dict[str, Any] = {
         "enabled": True,
         "github_app_id": "12345",
         "github_app_private_key": "fake-key",  # pragma: allowlist secret
@@ -49,7 +54,7 @@ async def test_job_log_503_when_github_security_disabled() -> None:
 
     gh = GitHubSecuritySettings(
         enabled=False,
-        deploy_api_key="test-key",  # pragma: allowlist secret
+        deploy_api_key=SecretStr("test-key"),  # pragma: allowlist secret
     )
     dr = _direct_repo_settings()
 
@@ -233,9 +238,7 @@ async def test_job_log_404_when_job_not_found(
     # The job log endpoint returns 404 for a non-existent job
     respx_mock.get(
         "https://api.github.com/repos/damien-robotsix/my-repo/actions/jobs/99999/logs"
-    ).mock(
-        return_value=httpx.Response(404, text="Not Found")
-    )
+    ).mock(return_value=httpx.Response(404, text="Not Found"))
 
     async with mock_app(
         direct_repo_settings=dr,
