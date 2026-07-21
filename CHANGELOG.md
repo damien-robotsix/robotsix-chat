@@ -5,6 +5,7 @@
   `GET/PUT /sessions/{session_id}/draft` endpoint persists the draft
   state per session; the frontend syncs on navigation, blur, and
   beforeunload, and rehydrates on session load.
+- Fix deadlock in `_auto_continue` when an autonomous session completes: release the per-owner `asyncio.Lock` before calling `_close_and_respawn` to avoid re-acquiring the same non-reentrant lock via `_kickoff_initial_turn`.
 - Autonomous sessions now start immediately on creation: the agent is kicked
   off to perform subject selection and plan drafting, and state transitions
   are streamed live to the browser via the `/events` channel. The session

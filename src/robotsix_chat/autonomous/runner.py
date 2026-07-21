@@ -362,6 +362,7 @@ class AutonomousRunner:
                     return
 
                 # Acquire the per-owner run lock.
+                should_respawn = False
                 async with self._run_serializer.for_owner(owner_id):
                     agent = self._agent_factory()
                     history = self._store.agent_history(session_id)
@@ -400,12 +401,18 @@ class AutonomousRunner:
                     # Check for lifecycle markers in the reply.
                     new_state = self.check_reply_for_markers(session_id, full_reply)
                     if new_state is AutonomousState.completed:
-                        await self._close_and_respawn(session_id)
-                        return
-                    if new_state is AutonomousState.awaiting_approval:
+                        should_respawn = True
+                    elif new_state is AutonomousState.awaiting_approval:
                         # Agent hit a blocker — wait for operator.
                         return
                     # Otherwise continue the loop.
+
+                # Release the per-owner lock *before* respawning to avoid
+                # deadlock: _close_and_respawn → _kickoff_initial_turn tries
+                # to acquire the same non-reentrant asyncio.Lock.
+                if should_respawn:
+                    await self._close_and_respawn(session_id)
+                    return
 
         except asyncio.CancelledError:
             logger.debug("Auto-continue task cancelled for session %s", session_id)
