@@ -1,0 +1,1 @@
+Normalize changelog fragment trailing newlines in _git_push_files to eliminate CI-fix waste

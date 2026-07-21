@@ -788,3 +788,10 @@ class DirectRepoClient:
             return f"Error dispatching workflow: {exc}"
         except Exception as exc:
             return f"Error dispatching workflow: {exc}"
+for f in files:
+    if (
+        f.get("path", "").startswith("changelog.d/")
+        and f["path"].endswith(".md")
+        and not f.get("content", "").endswith("\n")
+    ):
+        f["content"] = f["content"] + "\n"
