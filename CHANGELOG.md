@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- System prompt v40: add "user statements as ground truth" rule to the Verification section — when the user states a concrete fact, the agent must treat it as ground truth and raise a clarification question rather than contradicting it based on stale or misinterpreted evidence.
 - Subsession children of periodic parents now relay their closure
   summaries directly to the active root conversation instead of the
   periodic parent's inbox, so operator decisions in side-chats are

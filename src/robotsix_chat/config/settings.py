@@ -43,7 +43,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 39
+SYSTEM_PROMPT_VERSION = 40
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -347,6 +347,15 @@ class Settings(BaseModel):
         "Acknowledge the discrepancy, re-check, and report the verified "
         "current state — distrusting memory when it conflicts with live "
         "observation preserves trust.\n"
+        "– When the user states a concrete fact (e.g. 'the secrets have been "
+        "provided', 'the config is correct', 'that deployment already ran'), "
+        "treat the user's statement as ground truth. Do not contradict it "
+        "based on tool output, logs, or recollection — your evidence may be "
+        "stale, from a different scope, or misinterpreted. Instead, raise a "
+        "targeted clarification question to reconcile the discrepancy (e.g. "
+        "'I see errors suggesting otherwise — could you confirm which "
+        "environment or when the change was applied?'), then proceed with the "
+        "user's account.\n"
         "– Prefer timestamped evidence over recollection: when available, "
         "cite the specific tool call result, commit SHA, or deployment "
         "timestamp that supports your claim, rather than asserting it from "

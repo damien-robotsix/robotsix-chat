@@ -5,6 +5,24 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v40 — 2026-07-21 — incorporate-user-statements-as-ground-truth-86d1
+
+**Summary:** Add a "user statements as ground truth" bullet to the Verification section. When the
+user states a concrete fact (e.g. "the secrets have been provided"), the agent must treat the user's
+statement as ground truth and must not contradict it based on tool output, logs, or recollection.
+Instead, the agent must raise a targeted clarification question to reconcile any apparent
+discrepancy, then proceed with the user's account.
+
+**Rationale:** The agent repeatedly claimed that OVH_SFTP\_\* secrets were missing after the user
+stated they had been provided. The agent was contradicting the user based on inferred evidence,
+wasting time and eroding trust. This new rule makes explicit that user statements of fact carry more
+weight than agent-side evidence (which may be stale, scoped differently, or misinterpreted), and
+that the correct response to contradiction is clarification, not assertion.
+
+**SHA256:** `a0ed55700596b15778a23703f2f9690eb4b859ed1de5ad80d68ad7f049d0c1a4`
+
+______________________________________________________________________
+
 ## v39 — 2026-07-20 — add-deploy-server-restart-capability-for-144c
 
 **Summary:** Add `self_restart` to the Deploy API quick-reference bullet list and update the Reload
