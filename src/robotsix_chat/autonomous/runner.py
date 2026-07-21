@@ -87,7 +87,7 @@ class AutonomousRunner:
                     auto_turn_count=entry.get("auto_turn_count", 0),
                 )
             except Exception:
-                logger.exception("Skipping unparseable autonomous session %s", sid)
+                logger.exception("Skipping unparsable autonomous session %s", sid)
         logger.info(
             "Loaded %d autonomous sessions from %s",
             len(sessions),
