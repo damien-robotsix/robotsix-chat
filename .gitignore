@@ -78,5 +78,3 @@ core
 
 # Node.js artifacts (accidentally created by pre-commit hook environments)
 node_modules/
-package.json
-package-lock.json
