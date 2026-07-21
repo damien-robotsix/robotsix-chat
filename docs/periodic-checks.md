@@ -67,6 +67,29 @@ The UI's Subsessions panel has a **Close** button on every live subsession, or c
 POST /subsessions/{subsession_id}/close
 ```
 
+## Mill-recovery behaviour
+
+When the mill (board API) is unreachable, ticket monitors enter a **recovery mode** instead of
+self-closing after a fixed number of failures.
+
+1. After **2 consecutive** mill-unreachable failures (`_MAX_MILL_FAILURES`), the subsession stops
+   normal periodic ticking and enters recovery mode.
+2. A health probe runs with **exponential backoff** — the first retry sleeps
+   `subsessions.mill_recovery_initial_backoff_seconds` (default 60 s), then doubles on each
+   subsequent retry up to `subsessions.mill_recovery_max_backoff_seconds` (default 3600 s / 1 hour).
+3. On each retry cycle, the subsession probes the mill's health endpoint. If mill is reachable
+   again, the failure counter resets and normal periodic operation resumes automatically — no manual
+   intervention needed.
+4. If the mill remains unreachable after `subsessions.mill_recovery_max_retries` (default 10)
+   recovery retries, the subsession is permanently closed and a summary is delivered to the parent
+   conversation.
+
+| Config key                                    | Default  | Description                                        |
+| --------------------------------------------- | -------- | -------------------------------------------------- |
+| `subsessions.mill_recovery_initial_backoff_seconds` | `60.0`   | Initial backoff (seconds) before the first health probe. Doubles on each retry. |
+| `subsessions.mill_recovery_max_backoff_seconds`     | `3600.0` | Maximum backoff cap (seconds) — backoff never exceeds this. |
+| `subsessions.mill_recovery_max_retries`              | `10`     | Max retries before the subsession is permanently closed. |
+
 ## How it works under the hood
 
 1. `spawn_subsession(kind="periodic", ...)` launches an asyncio worker that runs one agent turn per
@@ -116,5 +139,8 @@ POST /subsessions/{subsession_id}/close
    - When the counter is between 1 and 2 (below the threshold), the agent receives an additional
      context note:
      `"Repeated block: this is blocked-resume attempt X/3 (N remaining before auto-close). If the same failure keeps recurring, stop auto-retrying and escalate to the operator."`
-9. Concurrency is bounded by `subsessions.max_concurrent` (default 8, across all subsession kinds);
+9. **Mill-recovery mode.** If the mill is unreachable, the monitor enters a recovery loop with
+   exponential backoff (see [Mill-recovery behaviour](#mill-recovery-behaviour) above), probing the
+   mill health endpoint and resuming automatically when it recovers.
+10. Concurrency is bounded by `subsessions.max_concurrent` (default 8, across all subsession kinds);
    exceeding it returns a friendly refusal rather than raising.

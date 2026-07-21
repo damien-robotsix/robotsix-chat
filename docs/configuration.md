@@ -234,6 +234,9 @@ Background sub-agent spawning configuration.
 | `subsessions.run_timeout_seconds`      | `number`  | `600.0`                    | Hard per-run timeout (seconds) for a single subsession turn. On expiry the run is marked failed and the schedule continues. |
 | `subsessions.store_path`               | `string`  | `"/data/subsessions.json`" | Path to the subsession persistence file.                                                                                    |
 | `subsessions.transcript_max_entries`   | `integer` | `200`                      | Maximum transcript entries per subsession.                                                                                  |
+| `subsessions.mill_recovery_initial_backoff_seconds` | `number`  | `60.0`                     | Initial backoff (seconds) when a ticket monitor enters mill-recovery mode after consecutive failures. Doubles on each retry up to `mill_recovery_max_backoff_seconds`. |
+| `subsessions.mill_recovery_max_backoff_seconds`     | `number`  | `3600.0`                   | Maximum backoff (seconds) for mill-recovery retries (1 hour). |
+| `subsessions.mill_recovery_max_retries`              | `integer` | `10`                       | Maximum number of recovery retries before the subsession is permanently closed. |
 
 ### Feedback
 
