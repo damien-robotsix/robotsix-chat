@@ -99,6 +99,7 @@
   deploy compose file so the chat agent can mutate its own service config
   (restart, config-write, config-rollback) via central-deploy endpoints.
 - Add prompt-level instructions for the assistant to automatically track unresolved operator prerequisites. When a ticket completes but a human-only action (e.g. provisioning a credential or token) is still required, the agent now files a follow-up tracking ticket and surfaces the prerequisite in session summaries and autonomous closure steps.
+- System prompt v41: add deploy pre-check instruction — the agent now automatically verifies PR merge status before proceeding with deployment after a migration or fix ticket, rather than asking the user for confirmation.
 - Extract `_session_metadata()` helper from duplicated session-metadata dict construction in `conversation.py`.
 - Extract shared `_git_push_files` helper from `push_branch` and `push_commit_to_branch` in `DirectRepoClient` to eliminate 51 lines of duplicated Git blob/tree/commit pipeline code.
 - Added `[tool.uv] exclude-newer = "7 days"` to `pyproject.toml`, preventing packages published less than 7 days ago from entering the lockfile. Complements the existing `UV_MALWARE_CHECK=1` hardening.
