@@ -802,3 +802,10 @@ for f in files:
         and not f.get("content", "").endswith("\n")
     ):
         f["content"] = f["content"] + "\n"
+for f in files:
+    if (
+        f.get("path", "").startswith("changelog.d/")
+        and f["path"].endswith(".md")
+        and not f.get("content", "").endswith("\n")
+    ):
+        f["content"] = f["content"] + "\n"
