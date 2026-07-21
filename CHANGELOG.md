@@ -6,6 +6,9 @@
   before persisting).  Prevents partial saves from blanking unrendered fields
   like ``memory.embedding.endpoint``, and rejects invalid configs with inline
   validation errors.
+- Extract stale-worker resume handling from ``_check_resume_status`` into
+  a private helper ``_check_stale_worker_resume``, reducing the function from
+  ~289 to ~210 lines and max nesting depth from 7 to 5.
 - Reuse a single `httpx.AsyncClient` across all tickets in `FeedbackRunner._file_tickets` instead of creating one per ticket.
 - Add ``self_restart`` tool to the lifecycle module — a privileged endpoint
   (``POST /self/restart``) that restarts the agent's own service without requiring
