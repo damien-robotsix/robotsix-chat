@@ -1,0 +1,1 @@
+memory.langfuse.host config field is declared but never consumed — cognee.py reads host from env vars
