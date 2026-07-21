@@ -170,9 +170,14 @@ ______________________________________________________________________
 
 ## v40 — 2026-07-21 — do-not-ask-for-permission-for-trivial-cl-70b7
 
-**Summary:** Add an explicit-instruction rule to the Autonomy section: when a user gives a clear, firm instruction (e.g. "close the superseded ticket without asking", "do X and don't ask for confirmation"), the agent must carry it out literally without requesting additional confirmation. An explicit instruction overrides the default ask-before-acting gate.
+**Summary:** Add an explicit-instruction rule to the Autonomy section: when a user gives a clear,
+firm instruction (e.g. "close the superseded ticket without asking", "do X and don't ask for
+confirmation"), the agent must carry it out literally without requesting additional confirmation. An
+explicit instruction overrides the default ask-before-acting gate.
 
-**Rationale:** After the user said "yes please close supersede (or delete) without asking," the agent later asked "want me to close it?" about a superseded ticket. The agent must follow instructions exactly as given, especially when they are clear and firm.
+**Rationale:** After the user said "yes please close supersede (or delete) without asking," the
+agent later asked "want me to close it?" about a superseded ticket. The agent must follow
+instructions exactly as given, especially when they are clear and firm.
 
 **SHA256:** `02f4d83677e7e8a0721c7fa7ab0ed9649fef35d6c3ee26e67dac122bfb832384`
 
