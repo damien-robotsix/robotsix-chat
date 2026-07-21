@@ -58,9 +58,10 @@ ______________________________________________________________________
 
 ## 2. Publishing to GHCR
 
-The [release-image workflow](https://github.com/damien-robotsix/robotsix-chat/blob/main/.github/workflows/release-image.yml) calls the fleet's shared
-`docker-release.yml` to build and push the image to `ghcr.io/damien-robotsix/robotsix-chat`. It
-triggers on:
+The
+[release-image workflow](https://github.com/damien-robotsix/robotsix-chat/blob/main/.github/workflows/release-image.yml)
+calls the fleet's shared `docker-release.yml` to build and push the image to
+`ghcr.io/damien-robotsix/robotsix-chat`. It triggers on:
 
 | Trigger                       | Tags pushed            |
 | ----------------------------- | ---------------------- |
