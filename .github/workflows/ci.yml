@@ -64,7 +64,8 @@ jobs:
       trufflehog-pr-diff: true
       trufflehog-extra-args: "--results=verified,unknown"
     permissions:
-      contents: read  # the shared workflow checks out inside its own job
+      contents: read          # checkout the repo
+      security-events: write  # required by python-security.yml's nested jobs for SARIF upload
 
   changelog:
     name: Changelog fragment check
