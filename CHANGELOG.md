@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Reuse a single `httpx.AsyncClient` across all tickets in `FeedbackRunner._file_tickets` instead of creating one per ticket.
 - Add ``self_restart`` tool to the lifecycle module — a privileged endpoint
   (``POST /self/restart``) that restarts the agent's own service without requiring
   the deploy server's per-repo access toggle.  The existing

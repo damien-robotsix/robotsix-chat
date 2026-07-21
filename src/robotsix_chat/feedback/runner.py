@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
 import time
+from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -429,8 +431,6 @@ class FeedbackRunner:
         inside the context so they land on the active root span.
         """
         if start_trace is None:
-            import contextlib
-
             return contextlib.nullcontext()
         return start_trace(trace_name, session_id=session_id)
 
@@ -541,6 +541,80 @@ class FeedbackRunner:
             )
         return result
 
+    async def _file_one_ticket(
+        self,
+        ticket: dict[str, Any],
+        *,
+        ingest_url: str,
+        headers: dict[str, str],
+        span_ctx_builder: Callable[[], contextlib.AbstractContextManager[Any]],
+        session_id: str,
+        trigger_type: str,
+        client: httpx.AsyncClient,
+    ) -> bool:
+        """POST a single ticket; return True when the server responds 2xx."""
+        # Fold runner-level metadata into the body so it survives
+        # the mill ingest round-trip even though mill's TicketIngest
+        # only carries repo_id / title / body / source_tag.
+        body_lines: list[str] = [ticket["description"]]
+        body_lines.append("")
+        body_lines.append(
+            "---"
+            f" kind: {ticket['kind']}"
+            f" | session: {session_id}"
+            f" | trigger: {trigger_type}"
+            f" | origin: robotsix-chat"
+        )
+        payload: dict[str, Any] = {
+            "repo_id": ticket["target_repo"],
+            "title": ticket["title"],
+            "body": "\n".join(body_lines),
+            "source_tag": "robotsix-chat-feedback",
+        }
+
+        _span: Any = None
+        try:
+            with span_ctx_builder() as _span:
+                resp = await client.post(ingest_url, headers=headers, json=payload)
+                if _span is not None:
+                    _span.set_attribute("http.status_code", resp.status_code)
+            if 200 <= resp.status_code < 300:
+                logger.debug(
+                    "Feedback ticket filed: %s (HTTP %d)",
+                    ticket["title"],
+                    resp.status_code,
+                )
+                return True
+            else:
+                logger.warning(
+                    "Feedback ticket ingest returned %d for %r: %s",
+                    resp.status_code,
+                    ticket["title"],
+                    resp.text[:200],
+                )
+                if _span is not None and StatusCode is not None:
+                    _span.set_status(
+                        Status(StatusCode.ERROR, f"HTTP {resp.status_code}")
+                    )
+                    _span.set_attribute("error.type", f"http_{resp.status_code}")
+                return False
+        except Exception as exc:
+            logger.exception("Failed to file feedback ticket: %s", ticket["title"])
+            if _span is not None:
+                try:
+                    if StatusCode is not None:
+                        _span.set_status(Status(StatusCode.ERROR, str(exc)))
+                    _span.record_exception(exc)
+                except Exception:
+                    # Never let span instrumentation break the filing loop.
+                    logger.debug(
+                        "Span instrumentation failed for ticket %r: %s",
+                        ticket["title"],
+                        exc,
+                        exc_info=True,
+                    )
+            return False
+
     async def _file_tickets(
         self,
         tickets: list[dict[str, Any]],
@@ -565,86 +639,33 @@ class FeedbackRunner:
         )
         _span_name = OP_EXECUTE_TOOL if OP_EXECUTE_TOOL is not None else "mill_ingest"
 
+        _span_attrs: dict[str, Any] = {
+            "http.method": "POST",
+            "http.url": ingest_url,
+        }
+        if GEN_AI_TOOL_NAME is not None:
+            _span_attrs[GEN_AI_TOOL_NAME] = "mill_ingest"
+
+        if start_span is not None:
+            span_ctx_builder = lambda: start_span(_tracer, _span_name, _span_attrs)  # noqa: E731
+        else:
+            span_ctx_builder = contextlib.nullcontext
+
         filed = 0
         failed = 0
-        for ticket in tickets:
-            # Fold runner-level metadata into the body so it survives
-            # the mill ingest round-trip even though mill's TicketIngest
-            # only carries repo_id / title / body / source_tag.
-            body_lines: list[str] = [ticket["description"]]
-            body_lines.append("")
-            body_lines.append(
-                "---"
-                f" kind: {ticket['kind']}"
-                f" | session: {session_id}"
-                f" | trigger: {trigger_type}"
-                f" | origin: robotsix-chat"
-            )
-            payload: dict[str, Any] = {
-                "repo_id": ticket["target_repo"],
-                "title": ticket["title"],
-                "body": "\n".join(body_lines),
-                "source_tag": "robotsix-chat-feedback",
-            }
-            _span_attrs: dict[str, Any] = {
-                "http.method": "POST",
-                "http.url": ingest_url,
-            }
-            if GEN_AI_TOOL_NAME is not None:
-                _span_attrs[GEN_AI_TOOL_NAME] = "mill_ingest"
-
-            if start_span is not None:
-                _span_ctx = start_span(_tracer, _span_name, _span_attrs)
-            else:
-                import contextlib
-
-                _span_ctx = contextlib.nullcontext()
-
-            _span: Any = None
-            try:
-                with _span_ctx as _span:
-                    async with httpx.AsyncClient(timeout=self._timeout) as client:
-                        resp = await client.post(
-                            ingest_url, headers=headers, json=payload
-                        )
-                    if _span is not None:
-                        _span.set_attribute("http.status_code", resp.status_code)
-                    if 200 <= resp.status_code < 300:
-                        filed += 1
-                        logger.debug(
-                            "Feedback ticket filed: %s (HTTP %d)",
-                            ticket["title"],
-                            resp.status_code,
-                        )
-                    else:
-                        failed += 1
-                        logger.warning(
-                            "Feedback ticket ingest returned %d for %r: %s",
-                            resp.status_code,
-                            ticket["title"],
-                            resp.text[:200],
-                        )
-                        if _span is not None and StatusCode is not None:
-                            _span.set_status(
-                                Status(StatusCode.ERROR, f"HTTP {resp.status_code}")
-                            )
-                            _span.set_attribute(
-                                "error.type", f"http_{resp.status_code}"
-                            )
-            except Exception as exc:
-                failed += 1
-                logger.exception("Failed to file feedback ticket: %s", ticket["title"])
-                if _span is not None:
-                    try:
-                        if StatusCode is not None:
-                            _span.set_status(Status(StatusCode.ERROR, str(exc)))
-                        _span.record_exception(exc)
-                    except Exception:
-                        # Never let span instrumentation break the filing loop.
-                        logger.debug(
-                            "Span instrumentation failed for ticket %r: %s",
-                            ticket["title"],
-                            exc,
-                            exc_info=True,
-                        )
+        async with httpx.AsyncClient(timeout=self._timeout) as client:
+            for ticket in tickets:
+                success = await self._file_one_ticket(
+                    ticket,
+                    ingest_url=ingest_url,
+                    headers=headers,
+                    span_ctx_builder=span_ctx_builder,
+                    session_id=session_id,
+                    trigger_type=trigger_type,
+                    client=client,
+                )
+                if success:
+                    filed += 1
+                else:
+                    failed += 1
         return (filed, failed)
