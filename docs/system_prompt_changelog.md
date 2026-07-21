@@ -404,11 +404,11 @@ Every change to `Settings.agent_instruction` (the pydantic field default literal
 `src/robotsix_chat/config/settings.py`) **MUST**:
 
 1. **Bump** `SYSTEM_PROMPT_VERSION` to the next integer.
-2. **Add a new entry** at the top of this file (reverse-chronological, newest first) with the header
+1. **Add a new entry** at the top of this file (reverse-chronological, newest first) with the header
    `## v<N> — <YYYY-MM-DD> — <ticket-id>`.
-3. **Record the SHA256** of the new `agent_instruction` default literal (computed as
+1. **Record the SHA256** of the new `agent_instruction` default literal (computed as
    `hashlib.sha256(default.encode()).hexdigest()`) in the entry.
-4. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` in
+1. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` in
    the Default column — the full multi-paragraph instruction literal is impractical to embed
    verbatim in a Markdown table cell. Do not attempt to inline the literal; the placeholder is
    sufficient.
@@ -423,14 +423,14 @@ Rollback is a **forward-moving new version** — never reuse a version number. T
 prompt:
 
 1. Pick the target prior version's entry in this changelog.
-2. Restore its prompt text via git, e.g.: `git revert <commit>` or
+1. Restore its prompt text via git, e.g.: `git revert <commit>` or
    `git show <commit>:src/robotsix_chat/config/settings.py` (extract the `agent_instruction` block).
-3. Bump `SYSTEM_PROMPT_VERSION` to the next number.
-4. Add a new changelog entry `## v<N> — <YYYY-MM-DD> — <ticket-id>` with:
+1. Bump `SYSTEM_PROMPT_VERSION` to the next number.
+1. Add a new changelog entry `## v<N> — <YYYY-MM-DD> — <ticket-id>` with:
    - **Summary**: `rollback to v<K>`
    - **Rationale**: why the rollback is needed and which ticket authorises it.
    - **SHA256**: the hash of the restored literal (must match the prior version's recorded hash).
-5. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` — no
+1. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` — no
    change needed there for a rollback.
 
 ______________________________________________________________________
