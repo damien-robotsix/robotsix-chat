@@ -1,5 +1,267 @@
 ## 0.0.0 (unreleased)
 
+- Fixed Python 2 ``except X, Y:`` syntax in multiple files — changed to correct Python 3 ``except (X, Y):`` tuple form.  Split the 503 "not enabled" checks in the GitHub endpoints so ``github_security`` and ``direct_repo`` failures produce distinct error messages.  Removed a redundant ``follow_redirects=True`` from ``get_job_log``.  Added two missing tests (404 job-not-found and 400 blank path params) for the job-log endpoint.
+- New `GET /chat/github/repos/{owner}/{repo}/actions/jobs/{job_id}/logs` endpoint fetches plain-text GitHub Actions job logs, following the GitHub 302 redirect server-side and returning log content as a 200 response so the agent can inspect deploy pipeline output directly.
+- Settings UI: new settings panel (⚙ button in header) with config editor,
+  ``GET /config`` (returns config with secrets masked), and ``PUT /config``
+  (deep-merges submitted form over existing config, validates through Settings
+  before persisting).  Prevents partial saves from blanking unrendered fields
+  like ``memory.embedding.endpoint``, and rejects invalid configs with inline
+  validation errors.
+- Extract stale-worker resume handling from ``_check_resume_status`` into
+  a private helper ``_check_stale_worker_resume``, reducing the function from
+  ~289 to ~210 lines and max nesting depth from 7 to 5.
+- Reuse a single `httpx.AsyncClient` across all tickets in `FeedbackRunner._file_tickets` instead of creating one per ticket.
+- Add minimum description length guard to ``FeedbackRunner._parse_tickets``
+  to filter out auto-generated tickets with trivially short (boilerplate)
+  descriptions before they reach the ticket board.  The threshold is 10
+  characters — below the length of any meaningful improvement ticket. (mill: Improve caretaker ticket auto-generation handling (20260720T232929Z-improve-caretaker-ticket-auto-generation-7021))
+- Add ``self_restart`` tool to the lifecycle module — a privileged endpoint
+  (``POST /self/restart``) that restarts the agent's own service without requiring
+  the deploy server's per-repo access toggle.  The existing
+  ``restart_lifecycle_service`` tool still requires the toggle for restarting
+  arbitrary services.  The system prompt now references ``self_restart()`` as the
+  primary self-restart path after capability upgrades.
+- Decision-chat subsessions now enforce self-contained option context: the user_chat worker prepends a system note reminding the agent to restate option definitions inline on every turn, the spawn_subsession tool instructs callers to include one-line option definitions in user_chat prompts, and the base agent instruction adds a critical rule against bare option labels. No operator-facing decision turn should surface "Option B" without its definition.
+- Increased font size throughout the subsession (decision-chat / side) panel to match the main conversation pane for readability. Body text and inputs now use the same 0.95rem size as main chat bubbles; labels, badges, and action buttons are scaled proportionally.
+- Fix orphaned `.drain` snapshot recovery in cognee backlog drain: if a prior drain
+  crashed mid-processing (after renaming the backlog but before completing the drain),
+  the orphaned snapshot is now detected and replayed instead of being silently
+  overwritten on the next drain cycle.
+- Document the Pydantic `extra="forbid"` convention as a config-standard rule in AGENT.md
+- Add ``extra="forbid"`` to all Pydantic config models (20 sub-models + top-level ``Settings``). Unknown JSON keys now raise a ``ValidationError`` instead of being silently ignored — a typo like ``"memry"`` for ``"memory"`` is caught at config load rather than causing the operator to wonder why a feature is disabled.
+- Add "CI Failure on Main" triage boilerplate to `docs/triage-boilerplate.md`, with ACKNOWLEDGE decision for main-branch infrastructure failures distinct from the existing OUT-OF-SCOPE boilerplate for PR failures.
+- Fix race condition in durable backlog drain that could silently drop entries
+  queued by concurrent failing writes. Backlog file is now atomically renamed to
+  a snapshot before processing; still-failing entries are appended (not
+  overwritten) to the original path. Drain failures no longer masquerade as
+  write failures, and backlog-entry failures now feed frozen-store detection.
+- Fix race condition in ``_drain_backlog``: add ``_drain_lock`` to prevent
+  overlapping drain calls from silently dropping backlog entries or replaying
+  duplicates.  Also correct the docstring ghost reference to
+  ``_check_frozen_store``.
+- Cognee memory: throttle merge-insert concurrency with a configurable
+  inter-write delay to prevent LanceDB worker OOM during bursts. Add
+  durable JSONL backlog for exchanges that fail after retries (drained
+  opportunistically on subsequent successful writes). Bound DataFusion
+  memory pool via ``DATAFUSION_RUNTIME_MEMORY_LIMIT`` (default 256M).
+  Detect frozen vector store: emit WARNING when consecutive write
+  failures exceed ``frozen_store_alert_minutes`` (default 10 min).
+- Move `lifecycle/skill.md` from `docs/` into the packaged source tree at `src/robotsix_chat/lifecycle/` so the lifecycle skill instructions reach the agent in production (previously the `docs/`-relative path resolved nowhere in the Docker image; `load_lifecycle_skill()` silently returned `""`).
+  `docs/lifecycle/skill.md` is now a symlink to the canonical copy.
+- Add contract-version troubleshooting guidance to the system prompt: when users encounter "missing or incorrect central-deploy-contract-version header" errors during onboarding, the assistant now provides concrete diagnostic steps (check for the header, check recent PRs, file a targeted ticket) instead of offering vague workarounds.
+- Add `direct_fix` tool to the direct-repo capability: pushes a commit
+  directly to a target branch as a last-resort escape hatch for blocked
+  tickets that have exhausted the mill's implement cycle limit (≥3 cycles).
+  Gated behind `direct_repo.direct_fix_enabled` (default `false`). Every
+  invocation is audited at WARNING level.
+- Remove stale `agent_instruction` field from `config/config.json` so the code default in `Settings.agent_instruction` (v35) applies automatically. The committed config file is no longer a second source of truth for the system prompt — it drifts from the code default by ~10 sections and no automated CI check validated it. Now the code default is the single source of truth; operators who need a custom prompt can still add `"agent_instruction"` to their local or deployed config.
+- Lifecycle module now exposes self-service mutation tools (`restart_lifecycle_service`, `update_lifecycle_service_config`, `update_lifecycle_service_env`) alongside the existing read-only tools.  These succeed or fail based on the deploy server's per-repo access toggle — no new client-side toggle is introduced.  The system prompt now references the lifecycle tools for self-restart instead of the unreachable `component_request("central-deploy", …)` path.
+- Use `VALID_MODEL_LEVELS` (derived from llmio's `TierLevel` enum) instead of a hardcoded `(1, 2, 3, 4)` tuple in subsession model-level validation, so the valid range stays in sync with llmio.
+- Register the `agent_check` periodic workflow (`.robotsix-mill/periodic/agent_check.yaml`) for automated agent/tool integrity checks.
+- Add pyright type checker to pre-commit and CI, alongside the existing mypy
+  `--strict` check.  The baseline config (`[tool.pyright]` in `pyproject.toml`)
+  uses `typeCheckingMode = "basic"` with the most valuable diagnostics enabled
+  as warnings for gradual adoption; only `reportMatchNotExhaustive` and
+  `reportUnnecessaryContains` are errors.
+
+- release-image: Fix "Verify CI is green" self-exclusion timeout by adding name-based fallback when `getWorkflowRun` fails to return a check-suite id (#TBD)
+- Add a "Deploy system" bullet to the Autonomy section of the system prompt clarifying that the robotsix-deploy (central-deploy) management plane is a runtime API server — component onboarding, lifecycle operations, and configuration changes are all API-driven (POST /onboard/preflight, /onboard/confirm, etc.) with no git PRs needed.
+- Add batch-MR-approval guidance to the agent system prompt: when multiple MRs are pending human approval, the agent must first categorize them by relevance to active tickets, present a compact filter prompt, and approve the selected group in bulk through the mill's merge endpoint. (#TBD)
+- Periodic subsession auto-stop (``no_change_auto_stop`` and ``human_approval_timeout``) now logs a ``WARNING``-level message so operators can see when a monitor ceases watching and decide whether to restart it.
+- System prompt v34: Explicitly classify merge/rebase conflicts as never-auto-retryable substantive blockers in the Remediate step. The assistant now surfaces a clear "human must rebase manually" message via user_chat instead of looping on resume-blocked. Worker blocked-resume context also warns about merge conflicts.
+- Show a relative timestamp ("2m ago") at the bottom of each chat session for the last model-generated message, with the absolute server time on hover.
+- Add `workflow_dispatch` trigger to `release.yml` for manual recovery deploys.
+- Added `workflow_dispatch` trigger to `.github/workflows/docs.yml` to allow manual deploy of docs from the Actions UI.
+- Fix stale comment on `_active_dedup_keys` in `Registry` — remove `user_chat` qualifier and `or periodic monitors`, matching the dedup scope after the kind guard removal in PR #662.
+- Prompt: when multiple unowned, actionable items exist, the assistant now immediately offers a high-signal scoped confirmation prompt listing each item (e.g. 'Say: merge 5f1c, merge 2a97, rebase 54ea.') instead of asking an open-ended 'Which do you mean?'
+- Add dedicated "Mill & Deploy Endpoints" section to the agent system prompt (v31),
+  listing all key mill and deploy endpoints with paths, methods, and descriptions
+  so the agent can reliably reference available endpoints without trial-and-error
+  discovery.
+- Added defense-in-depth dedup guard in ``SubsessionRegistry.create()``: raises ``SubsessionDedupError`` when a ``dedup_key`` is already active, preventing duplicate monitors even if the ``spawn_subsession`` pre-check is bypassed.
+- Feedback runner: record OTel span error status (`StatusCode.ERROR`) and
+  exception details on each ingest POST span when filing fails (non-2xx or
+  HTTP exception).  The trace root span now carries `feedback.failed_tickets`
+  alongside the existing `feedback.filed_tickets` and `feedback.total_tickets`,
+  making filing failures immediately visible in Langfuse traces.
+- Fix: periodic subsessions (ticket monitors) now correctly restore their `dedup_key` after server restart, preventing duplicate monitors from spawning for the same ticket.
+- Document dynamic feedback target-repo resolution in `docs/configuration.md`: allowed repos are derived from the deploy roster intersected with the mill repo registry, with a fallback to `["robotsix-chat"]`.
+- Extend subsession `dedup_key` deduplication from `user_chat` only to all subsession kinds, preventing duplicate periodic ticket monitors when an agent re-files the same ticket.
+- New `http_probe` tool: the chat agent can now perform read-only HTTPS GET requests
+  against public URLs to verify uptime and content. The tool returns HTTP status,
+  final URL (after redirects), response time, Content-Type, body size, and a body
+  snippet with optional content assertions (`expect_status`, `expect_contains`,
+  `expect_absent`). Gated behind `http_probe.enabled`, hostname-allowlisted,
+  size-capped, and timeout-limited — safe for autonomous use.
+- Periodic monitor prompt: narrow `NO_CHANGE` to only when the observed state is truly identical to the prior run. Any state transition (e.g. draft → implement_complete) now produces a concise acknowledgment with an optional next-step offer instead of being silently suppressed.
+- Add "Merge / PR management" bullet to agent system prompt (v28) documenting
+  that direct-repo tools push branches and open PRs without auto-merge, and
+  that merge capability exists through the mill API via component_request
+  (merge-now and related endpoints). Prevents the agent from falsely claiming
+  it cannot merge approved MRs.
+- Added ``update_pr_branch`` and ``check_pr_merge_conflict`` agent tools to the direct-repo capability. The tools let the agent rebase a PR branch via the GitHub update-branch API and inspect mergeability state, enabling autonomous conflict detection and resolution for blocked tickets.
+- System prompt v28: Add "Verification" section instructing the agent to cross-reference
+  memory-based claims against live system state through available tools. When the user
+  challenges a claim with contradictory observable evidence, re-verify immediately rather
+  than doubling down on memory. Prefer timestamped evidence (commit SHA, deployment
+  timestamp, tool call result) over recollection.
+- Periodic subsessions now auto-escalate when a monitored ticket is stuck at `human_issue_approval`: a new config key `subsessions.human_approval_timeout_runs` (default 5) controls how many consecutive `NO_CHANGE` runs trigger an auto-escalation close with reason `human_approval_timeout`.  The subsession's parent agent receives the summary and can act on it (re-open, notify, etc.).  The resume status check also detects `human_issue_approval` state and updates the checkpoint so the periodic loop can enforce the timeout without re-polling the board.
+- Enable `changelog_autofill` periodic task for auto-committing changelog entries on PRs with failing changelog CI checks.
+- **Breaking:** Remove static `feedback.repo_ids` config key and `FEEDBACK_TARGET_REPOS` env override.  Allowed feedback target repos are now resolved dynamically at run-time from the deploy server's chat-component roster (``DEPLOY_API_KEY`` env var) intersected with the mill board's repo registry.  Falls back to ``["robotsix-chat"]`` when deploy is unreachable.  No chat-side config change or redeploy is needed to add/remove target repos — granting or revoking access in robotsix-deploy is sufficient.
+- Add `watch_service_redeploy` lifecycle tool that polls a service config until a redeploy is detected or a timeout expires, helping the agent break redraft-loops after mill fixes are merged but not yet deployed.
+- Extract `_missing_note_error` helper in `KnowledgeStore` to deduplicate the inline error-entry construction in `append()` and `update()`.
+- Convert subsession error helpers and inline `JSONResponse` sites to raise `HTTPException` so they flow through the centralized error envelope and include `correlation_id`.
+- Unify error response envelope: all error handlers and inline validation errors now emit ``{"error": "...", "correlation_id": "..."}`` instead of mixing ``{"detail": ...}`` and ``{"error": ...}`` shapes. Added catch-all ``Exception`` handler for graceful 500s.
+- Subsessions: add `dedup_key` parameter to `spawn_subsession` for global-issue deduplication. When spawning a `user_chat` with a `dedup_key` that matches an already-active user_chat, the spawn returns the existing subsession id instead of creating a duplicate — preventing redundant side-chats for a single root-cause error (e.g. an `asyncio.run` crash affecting multiple ticket monitors).
+- Periodic subsession `NO_CHANGE` suppression now covers minor, low-value
+  state transitions (draft→ready, waiting_for_ci→in_progress, label changes,
+  routine CI runs) — only substantive changes (first-time blocking, completion,
+  failure, user-action transitions) produce full reports. Minor but notable
+  changes surface as a concise one-liner.
+- Add "Secret handling" section to the agent system prompt (v26) covering three
+  rules: pre-empt secrets before they are pasted, never echo plaintext secrets,
+  and remediate already-exposed credentials with a rotation warning.
+  The section names the concrete secure channel (vault / one-time-secret link /
+  registration ticket secure scope) for credential registration.
+- Blocked-ticket resume now verifies worker freshness before auto-resuming. The resume logic queries the mill's ``/health`` endpoint for ``started_at`` and compares it against a stored checkpoint value. If the worker has not been redeployed after two consecutive blocked-ticket resumes, the subsession is closed with reason ``stale_worker`` to prevent futile retries on a stale image.
+- Add docstring to `CogneeMemory._configure()` documenting its purpose and key side-effects.
+- Fix: resume context messages ("Ticket TICKET-1 is BLOCKED", etc.) are no longer silently discarded on the first turn of a recovered periodic subsession.
+- System prompt v24: add Efficiency rule instructing the assistant to condense repeated service-restart notices into a single summary rather than repeating each one verbatim.
+- Feedback pipeline now supports multiple target repos via `feedback.repo_ids` (default `["robotsix-chat"]`). Each candidate ticket carries a `target_repo` field; the runner validates it against the configured list and POSTs to the correct board. Env override `FEEDBACK_TARGET_REPOS` (comma-separated) allows changing targets without a code change.
+- Deduplicate repetitive restart notice entries: when a chat restart affects multiple subsessions with the same title and kind, the restart notice now collapses them into a single line with a count rather than repeating the same message verbatim.
+- When an agent task fails with a retryable error, the enclosing subsession now emits a
+  ``subsession_message`` frame (severity: warning) as feedback to the parent agent in real
+  time, so the parent can react to the failure without polling.
+- Removed a `>>>` prompt marker left over in `robotsix_chat/knowledge/store.py`
+  that appeared as raw markdown in the intermediate `knowledge_review`
+  presentation; also removed the empty notebook-code sections after the `>>>` shell snippets
+  in that same generated content.
+- System prompt v23: add "Trust but Verify" rule: check the agent's own reasoning
+  traces, challenge source-level assertions, and require tool-based verification
+  of access claims before affirming them.
+- `list_tasks` `broker_query` now includes `status='needsAction'` to skip
+  completed tasks automatically, matching the human-facing calendar view.
+- `query_calendar` broker query now maps `model_level` to a certainty threshold:
+  level-1 (claude-sdk) → >= 0.99, level-2 (opus-4.5) → >= 0.95, level-3
+  (haiku-4.5) → >= 0.90, level-4 (gpt-5-nano) → >= 0.80.  This prevents
+  low-certainty OpenRouter results from producing garbage tool calls.
+- System prompt v21: add two "Avoid going in circles" rules instructing the
+  assistant to label retried-failed actions so the operator can recognise the
+  loop, and to stop retrying after 2 consecutive identical-step failures and
+  instead escalate to the operator with a concise summary.
+- Added `mill.retry_queue_enabled` config (default `true`, env
+  `MILL_RETRY_QUEUE_ENABLED`), with `False` passthrough mode for integration
+  testing.
+- Added `ROBOTSIX_MILL_BASE_URL` env-var override for `mill.base_url`, matching
+  all other `*_BASE_URL` named env vars.
+- Added `query_calendar` and `query_tasks` agent tools providing live read
+  access to the user's calendar events and Google Tasks via the
+  `robotsix-calendar` broker.
+- Calendar client authenticates via a configured `CALENDAR_API_TOKEN` (bearer
+  token), validates the `robotsix-calendar` server's TLS certificate, and fails
+  fast (5 s timeout) so the agent gets a clear error instead of a hung tool
+  call.
+- Added `CALENDAR_CACHE_TTL` env var override for `CalendarSettings.cache_ttl`.
+- Added "Self-review and Health Checks" section to the system prompt (v20),
+  instructing the assistant to run periodic self-reviews (check-now) via the
+  `check_loop` tool when not in an active user conversation. Includes explicit
+  starting prompt, instructions to vary review topics, filter to
+  in-progress/actionable tickets only, and report summary-only unless
+  attention-worthy.
+- New `delegate_task` tool allows the assistant to spawn background agents
+  (sub-agents) for asynchronous work like ticket filing, multi-day check
+  monitoring, and config generation.  Each sub-agent gets its own LLM call and
+  keeps a conversation independently of the main conversation.  Supports
+  `kind: "check_loop"` for periodic checks with interval and TTL, and
+  `kind: "one_shot"` for fire-and-forget tasks.
+- The `start_check_loop` tool now wraps `delegate_task(kind="check_loop")` for
+  legacy API compatibility.
+- New `list_delegate_tasks` tool returns all running tasks (kind, id, prompt
+  preview, running time) for the current session.
+- Added server-side TTL (time-to-live) for check loops: automatic termination
+  after the configured number of iterations or elapsed time, with a notification
+  sent to the parent agent via the SSE events channel.
+- Check-loop iteration count is now persisted to `.data/check_loops.json` and
+  survives container restarts.  Restarted loops pick up where they left off
+  instead of resetting their iteration counter.
+- Added `latest_feedback` field to the Check Loops UI panel, showing the most
+  recent sub-agent response summary in real time.  Stale feedback (≥2 minutes)
+  is visually dimmed.
+
+- Documentation site rebuilt in-repo under `docs/` using MkDocs Material,
+  deployed via GitHub Actions to `gh-pages` branch at
+  `https://damien-robotsix.github.io/robotsix-chat/`. Includes detailed
+  setup, configuration, and architecture guides with cross-references.
+  Config is at `mkdocs.yml`; CI workflow at
+  `.github/workflows/docs.yml`.
+
+- Added `version_check` module: at startup, the server fetches the latest
+  release tag from GitHub (via saved `etag` for cache-aware conditional
+  GET), compares it against the running image's `SOURCE_SHA` label, and
+  logs a WARNING when the image is behind the latest release.
+  `version_check.enabled` (default `true`) gates the check;
+  `SOURCE_SHA` is injected by the Dockerfile (`org.opencontainers.image.revision`).
+
+- Default `llmio_model_level` lowered from `3` (claude-sdk-haiku-4.5) to
+  `1` (claude-sdk-sonnet-4.5) in the committed config template.
+  Level 1 is the canonical default for the agent loop.
+
+- `component_client` module for querying other robotsix components via
+  their `/health` endpoints (read-only).  The agent's `component_request`
+  tool now communicates through the robotsix chat broker
+  (`component_request/*` topics) instead of direct HTTP.  This removes
+  the last direct outbound HTTP call from the agent loop — all tool calls
+  now go through the broker.  The direct HTTP path is retained in
+  `component_client` for operational use (not wired to tools).
+
+- `robotsix-chat` can now be configured to act as a proxy for an agent
+  hosted on a separate `robotsix-agent` server.  When
+  `COMPONENT_AGENT_ENABLED=true`, the component agent path is used
+  instead of the local factory, and the component agent host/port/auth
+  are read from env vars.
+
+- `component_request` tool now supports requesting agent-inaccessible
+  endpoints (e.g. `/onboard/preflight`, `/onboard/confirm`) by internally
+  using the chat server's own HTTP client instead of forwarding the
+  request to the agent.
+
+- `knowledge_store` agent tool and endpoints for persistent key/value
+  knowledge storage.  The assistant can `store_knowledge` (upsert a note
+  with an immutable id and optional topic and tags), `update_knowledge`
+  (append text to a note), `list_knowledge` (list all notes with metadata),
+  `read_knowledge` (retrieve a note by id), and `search_knowledge` (match
+  topic or content by substring).  Knowledge is persisted to
+  `/data/knowledge.json`.
+
+- added `mail` module with `send_mail` broker integration so the agent can
+  send emails through the `robotsix-mail` broker.
+
+- Enhanced broker resilience: `BrokerPubClient` now caches the `broker_client`
+  across calls, and all three client-facing endpoints (`/chat`, `/loops`,
+  `/loop/{id}/stop`) acquire a resilient client (with retry/backoff) on first
+  use rather than creating a new client for every invocation.
+
+- Added `delegate_task` tool — long-running board-tick tasks now run on their
+  own pydantic agent, decoupled from the main executor loop.  Tasks return
+  status through the SSE channel without blocking the main agent.
+
+- Streaming tokens now flow to the frontend per-task, enabling state to be
+  reported to the user without waiting for the full reply.
+
+- `GET /health` now includes `llmio_model_level`, `agent_count`, and per-session
+  agent metadata, reflecting the live state of all active sessions.
+
+- Chat UI shows streaming token-by-token updates as the assistant generates
+  each reply.
+
+- Added `--output-dir` CLI flag to the `robotsix-chat` console script for
+  specifying where generated files should be saved.
+
+- ⚠️ **Doc-only breaking change**: Renamed `docs/user-guide/configuration.md` to
+  `docs/configuration.md` as part of standardizing the docs layout under the
+  top-level `docs/` directory.
+
 - System prompt v46: add "Repo creation bootstrap" guidance — proactively seed an initial commit during repo creation to prevent tool-chain deadlocks with empty repos.
 - Added `search_knowledge_notes` tool to the knowledge base — the agent can now query
   prior diagnostic notes, deployment statuses, and other key facts by content substring
@@ -117,6 +379,7 @@
   periodic parent's inbox, so operator decisions in side-chats are
   no longer stranded and ignored.
 - Native autonomous session support: add `kind="autonomous"` as a first-class session type with built-in subject auto-selection, plan drafting, operator approval gate (409 server-side), execution, and auto-cycling (close + respawn). Gated behind `autonomous.enabled` (default `false`). Includes `AutonomousRunner` state machine, marker-based lifecycle transitions, approve/reject endpoints with `owner_id` authorization (403 on mismatch), and `max_auto_turns` enforcement.
+- Fixed Python 2 ``except X, Y:`` syntax in multiple files — changed to correct Python 3 ``except (X, Y):`` tuple form.  Split the 503 "not enabled" checks in the GitHub endpoints so ``github_security`` and ``direct_repo`` failures produce distinct error messages.  Removed a redundant ``follow_redirects=True`` from ``get_job_log``.  Added two missing tests (404 job-not-found and 400 blank path params) for the job-log endpoint.
 - New `GET /chat/github/repos/{owner}/{repo}/actions/jobs/{job_id}/logs` endpoint fetches plain-text GitHub Actions job logs, following the GitHub 302 redirect server-side and returning log content as a 200 response so the agent can inspect deploy pipeline output directly.
 - Settings UI: new settings panel (⚙ button in header) with config editor,
   ``GET /config`` (returns config with secrets masked), and ``PUT /config``
