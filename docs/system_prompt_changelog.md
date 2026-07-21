@@ -171,8 +171,8 @@ access through explicit tools."
 When a user requests deployment after a migration or fix ticket is marked done, the agent must first
 verify the associated PR is merged — query its status via the mill's ticket endpoint or check the PR
 on GitHub directly, rather than asking the user for confirmation. If the PR is not yet merged, the
-agent must explain the blocker clearly and offer to wait or escalate. Only after confirming the merge
-is complete should the agent proceed with the deploy (restart or watch_service_redeploy).
+agent must explain the blocker clearly and offer to wait or escalate. Only after confirming the
+merge is complete should the agent proceed with the deploy (restart or watch_service_redeploy).
 
 **Rationale:** The agent was asking the user for manual confirmation before proceeding with
 deployment, creating unnecessary friction. The user expects the agent to automatically verify PR
