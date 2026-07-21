@@ -9,7 +9,6 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
-import os
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -92,6 +91,7 @@ async def _component_request_impl(
     path: str,
     json_body: dict[str, Any] | None = None,
     read_response_max_chars: int = _TRUNCATE_LENGTH,
+    component_credentials: dict[str, Any] | None = None,
 ) -> str:
     """Call *component_id*'s API at *method* *path*.
 
@@ -143,34 +143,45 @@ async def _component_request_impl(
     if json_body is not None:
         headers["Content-Type"] = "application/json"
 
-    # Apply the roster entry's auth metadata: the roster carries env-var
-    # NAMES (never secret values); the credentials themselves live in this
-    # process's environment, provisioned via the deploy EnvStore.
+    # Resolve credentials from the component_credentials config dict,
+    # keyed by component id.  The roster carries auth metadata (type,
+    # header name); the actual secret values live in config, never in env.
+    creds = (component_credentials or {}).get(component_id)
     auth: tuple[str, str] | None = None
     auth_meta = entry.get("auth") or {}
     auth_type = auth_meta.get("type", "")
     if auth_type == "basic":
-        username = os.environ.get(auth_meta.get("username_env", ""), "")
-        password = os.environ.get(auth_meta.get("password_env", ""), "")
+        if creds is None:
+            return (
+                f"Error: component '{component_id}' requires Basic auth "
+                f"but no credentials are configured in "
+                f"central_deploy.component_credentials.{component_id}. "
+                "Add a ComponentCredentials entry for this component."
+            )
+        username = creds.basic_auth_username.get_secret_value()
+        password = creds.basic_auth_password.get_secret_value()
         if not (username and password):
             return (
-                f"Error: component '{component_id}' requires Basic auth via "
-                f"env vars {auth_meta.get('username_env')!r}/"
-                f"{auth_meta.get('password_env')!r}, which are not set in the "
-                "agent environment. Provision them via the deploy EnvStore "
-                "and redeploy robotsix-chat."
+                f"Error: component '{component_id}' requires Basic auth "
+                f"but basic_auth_username and/or basic_auth_password are "
+                f"empty in central_deploy.component_credentials.{component_id}."
             )
         auth = (username, password)
     elif auth_type == "header":
+        if creds is None:
+            return (
+                f"Error: component '{component_id}' requires header auth "
+                f"but no credentials are configured in "
+                f"central_deploy.component_credentials.{component_id}. "
+                "Add a ComponentCredentials entry for this component."
+            )
         header_name = auth_meta.get("header_name", "")
-        token = os.environ.get(auth_meta.get("token_env", ""), "")
+        token = creds.header_token.get_secret_value()
         if not (header_name and token):
             return (
                 f"Error: component '{component_id}' requires a "
-                f"{header_name or '?'} header via env var "
-                f"{auth_meta.get('token_env')!r}, which is not set in the "
-                "agent environment. Provision it via the deploy EnvStore "
-                "and redeploy robotsix-chat."
+                f"{header_name or '?'} header but header_token is "
+                f"empty in central_deploy.component_credentials.{component_id}."
             )
         headers[header_name] = token
 
@@ -353,6 +364,7 @@ def build_component_access_tools(
     # We need a mutable container so the closure can refresh the roster
     # between calls.
     _state: dict[str, Any] = {"entries": []}
+    _creds = settings.component_credentials
 
     async def _refresh() -> None:
         _state["entries"] = await fetch_roster(settings)
@@ -402,6 +414,7 @@ def build_component_access_tools(
             path,
             json_body,
             read_response_max_chars=limit,
+            component_credentials=_creds,
         )
 
     return [component_request]

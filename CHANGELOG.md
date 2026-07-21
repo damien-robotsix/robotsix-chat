@@ -3,6 +3,15 @@
 - Add unit tests for ``maybe_generate_towncrier_fragment`` covering all
   code paths (no pyproject.toml, missing towncrier config, malformed TOML,
   fragment creation, custom directory, existing fragment skip, OSError).
+- Config: migrate two remaining env-secret slots to config-standard
+  (``config/config.json`` + pydantic ``SecretStr``). Added
+  ``FeedbackSettings.deploy_api_key`` (replaces ``DEPLOY_API_KEY`` env
+  var), ``ComponentCredentials`` model keyed by component id, and
+  ``CentralDeploySettings.component_credentials`` dict. Updated
+  ``component_access/tools.py`` to resolve credentials from config
+  instead of env-var indirection, and ``feedback/runner.py`` to thread
+  the deploy API key from settings. Regenerated
+  ``config/config.schema.json``.
 - Session-draft persistence: queued messages and attached images survive
   session switches, page refreshes, and tab focus loss. A new
   `GET/PUT /sessions/{session_id}/draft` endpoint persists the draft
