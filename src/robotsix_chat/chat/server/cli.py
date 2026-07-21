@@ -401,6 +401,22 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         if autonomous_runner is not None:
             await autonomous_runner.resume_sessions()
 
+    # -- flush pending traces on shutdown ----------------------------------
+    async def _flush_traces() -> None:
+        """Force-flush any buffered Langfuse spans before the process exits.
+
+        The OTel batch span processor exports on a timer (default ~30 s);
+        pending spans are lost when the process exits before the next tick.
+        This hook drains the buffer so interactive traces (including the
+        agent's observation tree) are captured even when the server stops
+        soon after a trace completes.
+        """
+        try:
+            from robotsix_llmio.core.tracing import flush_tracing
+        except ImportError:
+            return
+        flush_tracing()
+
     logger.info(
         "Resolved persistence paths: conversation=%s, knowledge=%s, "
         "memory_data=%s, diagnostics=%s, subsessions=%s",
@@ -432,6 +448,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         autonomous_runner=autonomous_runner,
         on_startup=_resume,
         on_startup_async=_resume_autonomous,
+        on_shutdown=_flush_traces,
         direct_repo_settings=settings.direct_repo,
         github_security_settings=settings.github_security,
         github_actions_settings=settings.github_actions,

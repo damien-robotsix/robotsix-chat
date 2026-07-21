@@ -1,5 +1,7 @@
 ## 0.0.0 (unreleased)
 
+- Flush pending Langfuse traces on server shutdown so observation trees are
+  captured even when the server stops soon after a trace completes.
 - Removed dead `ConfigError` exception class — `robotsix_config.load_config()` already wraps all errors in its own `InvalidConfigError(ConfigError)`, making the local class redundant.
 - Periodic ticket monitor: when reporting terminal state (done/closed), the agent is now instructed to check ticket events/history for PR merge status rather than relying solely on the `pr_url` field, avoiding misleading "no PR URL" reports for auto-merged PRs.
 - One-shot (`task`) subsessions are now re-enqueued automatically after a server restart instead of being lost. The task's checkpoint (if any) is preserved so the agent can pick up where it left off.
