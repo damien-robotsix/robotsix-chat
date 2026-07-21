@@ -7,19 +7,19 @@ ______________________________________________________________________
 
 ## v41 — 2026-07-21 — fix-guard-paragraph-contradicts-network-tools
 
-**Summary:** Reword the closing guard paragraph to clarify that the agent **can** access
-external systems and the network through its explicit tools, rather than asserting it has
-no ability to access the host system or its network at all. The old wording contradicted
-the growing set of network-access tools (http_probe, component_request, lifecycle mutation
-tools, direct-repo tools, mill board API). The new wording reserves the restriction for
-unmediated access (shell commands, host filesystem reads/writes, direct web browsing) and
-directs the agent to use its provided tools for external access.
+**Summary:** Reword the closing guard paragraph to clarify that the agent **can** access external
+systems and the network through its explicit tools, rather than asserting it has no ability to
+access the host system or its network at all. The old wording contradicted the growing set of
+network-access tools (http_probe, component_request, lifecycle mutation tools, direct-repo tools,
+mill board API). The new wording reserves the restriction for unmediated access (shell commands,
+host filesystem reads/writes, direct web browsing) and directs the agent to use its provided tools
+for external access.
 
-**Rationale:** The guard paragraph was written when the agent had fewer network-access
-tools. Since then, the tool surface has grown substantially (lifecycle mutation tools,
-http_probe, direct-repo tools, mill merge endpoints), and the flat denial of network
-access could confuse the model into refusing to use those tools. The revision separates
-"no inherent/implicit capabilities" from "can access through explicit tools."
+**Rationale:** The guard paragraph was written when the agent had fewer network-access tools. Since
+then, the tool surface has grown substantially (lifecycle mutation tools, http_probe, direct-repo
+tools, mill merge endpoints), and the flat denial of network access could confuse the model into
+refusing to use those tools. The revision separates "no inherent/implicit capabilities" from "can
+access through explicit tools."
 
 **SHA256:** `ab6c9fa4d073f0947fe38858f492a54a278f6a4b773918a23f5f04c3335b8e1c`
 
@@ -404,11 +404,11 @@ Every change to `Settings.agent_instruction` (the pydantic field default literal
 `src/robotsix_chat/config/settings.py`) **MUST**:
 
 1. **Bump** `SYSTEM_PROMPT_VERSION` to the next integer.
-1. **Add a new entry** at the top of this file (reverse-chronological, newest first) with the header
+2. **Add a new entry** at the top of this file (reverse-chronological, newest first) with the header
    `## v<N> — <YYYY-MM-DD> — <ticket-id>`.
-1. **Record the SHA256** of the new `agent_instruction` default literal (computed as
+3. **Record the SHA256** of the new `agent_instruction` default literal (computed as
    `hashlib.sha256(default.encode()).hexdigest()`) in the entry.
-1. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` in
+4. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` in
    the Default column — the full multi-paragraph instruction literal is impractical to embed
    verbatim in a Markdown table cell. Do not attempt to inline the literal; the placeholder is
    sufficient.
@@ -423,14 +423,14 @@ Rollback is a **forward-moving new version** — never reuse a version number. T
 prompt:
 
 1. Pick the target prior version's entry in this changelog.
-1. Restore its prompt text via git, e.g.: `git revert <commit>` or
+2. Restore its prompt text via git, e.g.: `git revert <commit>` or
    `git show <commit>:src/robotsix_chat/config/settings.py` (extract the `agent_instruction` block).
-1. Bump `SYSTEM_PROMPT_VERSION` to the next number.
-1. Add a new changelog entry `## v<N> — <YYYY-MM-DD> — <ticket-id>` with:
+3. Bump `SYSTEM_PROMPT_VERSION` to the next number.
+4. Add a new changelog entry `## v<N> — <YYYY-MM-DD> — <ticket-id>` with:
    - **Summary**: `rollback to v<K>`
    - **Rationale**: why the rollback is needed and which ticket authorises it.
    - **SHA256**: the hash of the restored literal (must match the prior version's recorded hash).
-1. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` — no
+5. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` — no
    change needed there for a rollback.
 
 ______________________________________________________________________
