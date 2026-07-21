@@ -1,5 +1,9 @@
 ## 0.0.0 (unreleased)
 
+- Subsession children of periodic parents now relay their closure
+  summaries directly to the active root conversation instead of the
+  periodic parent's inbox, so operator decisions in side-chats are
+  no longer stranded and ignored.
 - Settings UI: new settings panel (⚙ button in header) with config editor,
   ``GET /config`` (returns config with secrets masked), and ``PUT /config``
   (deep-merges submitted form over existing config, validates through Settings
