@@ -202,6 +202,7 @@ modules:
       - src/robotsix_chat/repo/security/skill.md
       - docs/repo/security/skill.md
       - tests/repo/security/__init__.py
+      - tests/repo/security/test_job_log_endpoint.py
       - tests/repo/security/test_security_tools.py
       - tests/repo/security/test_settings_endpoint.py
 
