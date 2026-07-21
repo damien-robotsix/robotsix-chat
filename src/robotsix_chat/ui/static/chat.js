@@ -215,9 +215,8 @@
       queue.push({ text: item.text, images: qImgs, messageId: item.messageId });
     }
 
-    // Nothing to persist — skip the request.
-    if (pending.length === 0 && queue.length === 0) return;
-
+    // Always PUT — even an empty payload clears the server-side draft
+    // so already-sent messages never re-appear on the next restore.
     var body = JSON.stringify({ pending_images: pending, queue: queue });
     fetch(apiBase() + "/sessions/" + encodeURIComponent(activeSessionId) + "/draft", {
       method: "PUT",
@@ -2171,7 +2170,7 @@
   function drainQueue() {
     // Do not dispatch while a request is in flight.
     if (isBusy()) return;
-    if (messageQueue.length === 0) { updateCancelQueuedButton(); return; }
+    if (messageQueue.length === 0) { updateCancelQueuedButton(); saveDraft(); return; }
 
     var item = messageQueue.shift();
     item.el.classList.remove("queued");
