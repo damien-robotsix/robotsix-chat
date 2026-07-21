@@ -53,3 +53,36 @@ At least one field must be specified.
 | 403    | Invalid or missing `X-API-Key` header                                       |
 | 404    | Repository not in the GitHub App installation scope                         |
 | 503    | `github_security` not configured (disabled or missing `deploy_api_key`)     |
+
+---
+
+## GET /chat/github/repos/{owner}/{repo}/actions/jobs/{job_id}/logs
+
+Fetch the plain-text log for a GitHub Actions job.  The GitHub API returns a 302 redirect to a
+signed URL; this endpoint follows it server-side and returns the log content directly as a 200
+response so the agent can inspect deploy pipeline output (e.g., lftp commands) to diagnose
+deployment failures.
+
+### Request
+
+- **Method:** `GET`
+- **Auth:** `X-API-Key` header (server-side `github_security.deploy_api_key`)
+
+#### Path parameters
+
+| Parameter | Description                        |
+| --------- | ---------------------------------- |
+| `owner`   | GitHub organisation or user name   |
+| `repo`    | Repository name (not `owner/repo`) |
+| `job_id`  | GitHub Actions job ID (integer)    |
+
+### Response
+
+| Status | Meaning                                                                   |
+| ------ | ------------------------------------------------------------------------- |
+| 200    | Plain-text job log content                                                |
+| 400    | Missing path params or invalid `job_id`                                   |
+| 403    | Invalid or missing `X-API-Key` header                                     |
+| 404    | Repository not in the GitHub App installation scope, or job not found     |
+| 502    | Upstream GitHub API error                                                 |
+| 503    | `github_security` not configured (disabled or missing `deploy_api_key`)   |
