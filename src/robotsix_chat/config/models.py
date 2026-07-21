@@ -99,7 +99,9 @@ class MemorySettings(BaseModel):
             ``robotsix-chat-cognee`` project (separate from the main chat's
             Langfuse project). When the public key is empty, cognee LLM calls
             are not traced.
+
     """
+
     enabled: bool = False
     data_dir: str = "/data/cognee"
     recall_search_type: str = "GRAPH_COMPLETION"

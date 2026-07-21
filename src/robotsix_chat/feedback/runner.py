@@ -76,7 +76,6 @@ async def _resolve_allowed_repos(deploy_api_key: str) -> list[str]:
 
 async def _do_resolve_allowed_repos(deploy_api_key: str) -> list[str]:
     """Resolve allowed repos by querying deploy and mill (no caching)."""
-
     # 1. Fetch components from deploy.
     deploy_url = "http://central-deploy:8100/chat/components"
     deploy_headers: dict[str, str] = {}
