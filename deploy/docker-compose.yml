@@ -25,6 +25,10 @@ services:
       # volumes:). Authentication happens through central-deploy's
       # dashboard login flow; no host ~/.claude is involved.
       robotsix.deploy.claude-mount: "true"
+      # Allow the chat agent to mutate its own service config (restart,
+      # config-write, config-rollback) via central-deploy's /chat/config/
+      # endpoints.  ``update`` (self-deploy) remains ungranted.
+      robotsix.deploy.chat-agent-mutatable: "true"
       # Full in-container path of the config file (contract §5/§8): its
       # dirname must match the chat-config mount below; central-deploy
       # resolves the volume from it and writes config.json there on every

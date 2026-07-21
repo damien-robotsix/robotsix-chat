@@ -33,6 +33,7 @@ CI = "CI"
 CD = "CD"
 REPL = "REPL"
 BTree = "BTree"
+mutatable = "mutatable"
 
 [default.extend-identifiers]
 mkdocs = "mkdocs"
