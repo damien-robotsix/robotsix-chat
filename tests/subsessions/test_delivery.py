@@ -571,6 +571,56 @@ async def test_deliver_result_nested_parent_terminal_degrades_to_store() -> None
 
 
 # ---------------------------------------------------------------------------
+# deliver_summary / deliver_result — periodic parent (routes to root)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_periodic_parent_skips_enqueue() -> None:
+    """When parent is PERIODIC, enqueue_message is skipped; outcome routes to root."""
+    store = MagicMock()
+    registry = MagicMock()
+    parent = MagicMock()
+    parent.kind = SubsessionKind.PERIODIC
+    registry.get.return_value = parent
+    delivery = _build_delivery(store=store, registry=registry)
+    info = _make_info(parent_id="parent-periodic", kind=SubsessionKind.TASK)
+
+    await delivery.deliver_summary(info, "periodic child done", "completed")
+    await _await_reaction_tasks(delivery)
+
+    registry.get.assert_called_once_with("parent-periodic")
+    registry.enqueue_message.assert_not_called()
+    store.record_for_session.assert_called_once()
+    args, _kwargs = store.record_for_session.call_args
+    assert args[0] == "owner-sess-1"
+    assert "periodic child done" in args[2]
+
+
+@pytest.mark.asyncio
+async def test_deliver_result_periodic_parent_skips_enqueue() -> None:
+    """When parent is PERIODIC, deliver_result skips enqueue; outcome routes to root."""
+    store = MagicMock()
+    registry = MagicMock()
+    parent = MagicMock()
+    parent.kind = SubsessionKind.PERIODIC
+    registry.get.return_value = parent
+    delivery = _build_delivery(store=store, registry=registry)
+    info = _make_info(parent_id="parent-periodic", kind=SubsessionKind.TASK)
+
+    await delivery.deliver_result(info, 3, "periodic run result")
+    await _await_reaction_tasks(delivery)
+
+    registry.get.assert_called_once_with("parent-periodic")
+    registry.enqueue_message.assert_not_called()
+    store.record_for_session.assert_called_once()
+    args, _kwargs = store.record_for_session.call_args
+    assert args[0] == "owner-sess-1"
+    assert "periodic run result" in args[2]
+    assert "run 3" in args[1]
+
+
+# ---------------------------------------------------------------------------
 # exception paths — logged but not raised
 # ---------------------------------------------------------------------------
 
