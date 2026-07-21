@@ -1,0 +1,1 @@
+Add chat-agent-mutatable compose label so the chat agent can write its own config
