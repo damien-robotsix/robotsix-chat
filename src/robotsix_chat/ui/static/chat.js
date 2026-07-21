@@ -15,6 +15,7 @@
   const sessionsDismiss = sessionsPanel.querySelector(".dismiss");
   const sessionsResizeHandle = document.getElementById("sessions-resize-handle");
   const newChatBtn = document.getElementById("new-chat-btn");
+  const newAutoBtn = document.getElementById("new-auto-btn");
   const subsToggle     = document.getElementById("subsessions-toggle");
   const subsPanel      = document.getElementById("subsessions-panel");
   const subsResizeHandle = document.getElementById("subsessions-resize-handle");
@@ -376,6 +377,44 @@
     });
   }
 
+  function createNewAutonomousSession() {
+    var url = apiBase() + "/sessions";
+    return fetch(url, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ owner_id: clientId, autonomous: true })
+    }).then(function (r) {
+      if (!r.ok) {
+        return r.json().then(function (body) {
+          throw new Error(body.error || body.detail || "Failed to create autonomous session");
+        });
+      }
+      return r.json();
+    });
+  }
+
+  function approveSession(sid) {
+    var url = apiBase() + "/sessions/" + encodeURIComponent(sid) +
+              "/approve?owner_id=" + encodeURIComponent(clientId);
+    return fetch(url, { method: "POST" }).then(function (r) {
+      return r.json().then(function (body) {
+        if (!r.ok) throw new Error(body.error || "approve failed");
+        return body;
+      });
+    });
+  }
+
+  function rejectSession(sid) {
+    var url = apiBase() + "/sessions/" + encodeURIComponent(sid) +
+              "/reject?owner_id=" + encodeURIComponent(clientId);
+    return fetch(url, { method: "POST" }).then(function (r) {
+      return r.json().then(function (body) {
+        if (!r.ok) throw new Error(body.error || "reject failed");
+        return body;
+      });
+    });
+  }
+
   // ---- Session list rendering -----------------------------------------
   function renderSessionList(data) {
     if (!data || !Array.isArray(data.sessions)) return;
@@ -416,6 +455,55 @@
       }
       metaDiv.textContent = parts.join(" · ");
       row.appendChild(metaDiv);
+
+      // Approve / Reject buttons for autonomous sessions awaiting approval.
+      if (s.autonomous_state === "awaiting_approval") {
+        var actionWrap = document.createElement("div");
+        actionWrap.className = "session-auto-actions";
+
+        var approveBtn = document.createElement("button");
+        approveBtn.className = "session-approve-btn";
+        approveBtn.type = "button";
+        approveBtn.title = "Approve plan and start execution";
+        approveBtn.textContent = "✓ Approve";
+        actionWrap.appendChild(approveBtn);
+
+        var rejectBtn = document.createElement("button");
+        rejectBtn.className = "session-reject-btn";
+        rejectBtn.type = "button";
+        rejectBtn.title = "Reject plan and return to subject selection";
+        rejectBtn.textContent = "✗ Reject";
+        actionWrap.appendChild(rejectBtn);
+
+        row.appendChild(actionWrap);
+
+        (function (sid) {
+          approveBtn.addEventListener("click", function (ev) {
+            ev.stopPropagation();
+            approveBtn.disabled = true;
+            rejectBtn.disabled = true;
+            approveSession(sid).then(function () {
+              refreshSessions();
+            }).catch(function (err) {
+              showError("Approve failed: " + err.message);
+              approveBtn.disabled = false;
+              rejectBtn.disabled = false;
+            });
+          });
+          rejectBtn.addEventListener("click", function (ev) {
+            ev.stopPropagation();
+            approveBtn.disabled = true;
+            rejectBtn.disabled = true;
+            rejectSession(sid).then(function () {
+              refreshSessions();
+            }).catch(function (err) {
+              showError("Reject failed: " + err.message);
+              approveBtn.disabled = false;
+              rejectBtn.disabled = false;
+            });
+          });
+        })(s.session_id);
+      }
 
       // Delete (close) button — appears on hover; stops the session's
       // subsessions and deletes its history (after a confirm()).
@@ -2183,9 +2271,15 @@
           var msg;
           try {
             var errBody = JSON.parse(txt);
-            msg = errBody.error || errBody.message || ("HTTP " + response.status);
+            msg = errBody.error || errBody.detail || errBody.message || ("HTTP " + response.status);
           } catch (_) {
             msg = txt || ("HTTP " + response.status);
+          }
+          // Special-case 409 (session awaiting approval) with a
+          // friendlier message and prompt to use approve/reject.
+          if (response.status === 409) {
+            msg = "⏳ " + (msg || "Session is awaiting operator approval") +
+                  " — use the Approve/Reject buttons in the sessions panel.";
           }
           throw new Error(msg);
         });
@@ -2334,6 +2428,31 @@
       newChatBtn.disabled = false;
       newChatBtn.textContent = "+ New chat";
       showError(err.message || "Failed to create session");
+    });
+  });
+
+  // "New autonomous" button
+  newAutoBtn.addEventListener("click", function () {
+    newAutoBtn.disabled = true;
+    newAutoBtn.textContent = "Creating\u2026";
+    createNewAutonomousSession().then(function (data) {
+      newAutoBtn.disabled = false;
+      newAutoBtn.textContent = "\u{1F916} New autonomous";
+      if (data && data.session_id) {
+        setActiveSessionId(data.session_id);
+        clearChatBubbles();
+        clearSubsessions();
+        closeEventStream();
+        openEventStream();
+        loadHistory();
+        fetchSubsessions();
+        refreshSessions();
+        resetIdleTimer();
+      }
+    }).catch(function (err) {
+      newAutoBtn.disabled = false;
+      newAutoBtn.textContent = "\u{1F916} New autonomous";
+      showError(err.message || "Failed to create autonomous session");
     });
   });
 
@@ -2504,6 +2623,17 @@
   }
 
   // Bootstrap: fetch sessions, pick the active one, then load history/events.
+
+  // Preload settings to detect autonomous.enabled and show the button.
+  fetch(apiBase() + "/config", { method: "GET" })
+    .then(function (r) { return r.ok ? r.json() : null; })
+    .then(function (cfg) {
+      if (cfg && cfg.autonomous && cfg.autonomous.enabled) {
+        newAutoBtn.style.display = "";
+      }
+    })
+    .catch(function () { /* ignore — button stays hidden */ });
+
   fetchSessions().then(function (data) {
     // Determine active session: server-reported active, or newest, or local fallback.
     var sid = data.active_session_id;
@@ -2713,7 +2843,8 @@
     "conversation", "diagnostics", "refdocs", "render_url",
     "knowledge", "self_review", "version_check", "component_client",
     "subsessions", "direct_repo", "github_security", "repo_study",
-    "lifecycle", "notification", "http_probe", "feedback"
+    "lifecycle", "notification", "http_probe", "feedback",
+    "autonomous", "github_actions"
   ];
 
   function fieldKeySort(a, b) {

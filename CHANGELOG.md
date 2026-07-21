@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Autonomous sessions: add creation path (``POST /sessions`` with ``{"autonomous": true}``), persistence to ``/data/autonomous_sessions.json`` so sessions survive restarts, and frontend approve/reject buttons for ``awaiting_approval`` sessions. Also add ``autonomous`` and ``github_actions`` to the settings ``SECTION_ORDER`` so their config panels render in proper position.
 - Add self-mutation bootstrap guidance to the system prompt (v42): when a permission flag requires a service recreate to take effect, the agent now recognizes the chicken-and-egg problem and directs the operator to a one-time external action rather than filing tickets for fixes that already exist.
 - `component_request` tool: added optional `max_response_chars` parameter for per-call truncation control, so the agent can request a compact summary of large ticket histories before expanding
 - Enable `--strict` mode on the MkDocs build with an explicit `validation:` block (nav + links), so broken internal links, dead anchors, and removed pages fail the `Docs / Build docs` CI job instead of silently deploying a degraded site.

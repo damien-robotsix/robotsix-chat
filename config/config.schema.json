@@ -23,6 +23,11 @@
           "default": 20,
           "title": "Max Auto Turns",
           "type": "integer"
+        },
+        "persist_path": {
+          "default": "/data/autonomous_sessions.json",
+          "title": "Persist Path",
+          "type": "string"
         }
       },
       "title": "AutonomousSettings",

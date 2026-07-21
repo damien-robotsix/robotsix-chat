@@ -43,6 +43,11 @@ cogney-key.secrets
 
 # Runtime artifacts — persistent data written during test runs / local dev
 
+# MagicMock paths: when MagicMock objects are passed to Path(), they resolve
+# to real filesystem paths like MagicMock/mock.xxx.yyy/... and _save_sessions()
+# writes actual files there.  These are test artifacts, never source.
+MagicMock/
+
 # Vendored deps installed into the tree during sandboxed builds/tests
 # (e.g. pip/uv install --target local-deps). Generated, never committed —
 # without this they flood the implement diff and trip scope-triage.
