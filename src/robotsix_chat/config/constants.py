@@ -28,7 +28,6 @@ except ImportError:
     LEVEL4_DEFAULT = LEVEL3_DEFAULT  # fallback when llmio doesn't ship level 4 yet
 
 __all__ = [
-    "ConfigError",
     "level_needs_api_key",
 ]
 
@@ -61,7 +60,3 @@ def level_needs_api_key(level: int) -> bool:
     """
     tlc = _LEVEL_DEFAULTS.get(level)
     return tlc is None or tlc.provider != _KEYLESS_PROVIDER
-
-
-class ConfigError(Exception):
-    """Raised for config-loading failures (missing file, malformed JSON)."""
