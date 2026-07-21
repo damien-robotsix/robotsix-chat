@@ -62,6 +62,11 @@
 - System prompt v43: add "Deploy preflight" gate requiring the assistant to retrieve deploy/docker-compose.yml, check the chat_agent_deployable_components allowlist, and verify endpoint capabilities before any deploy call — prevents guessing at deploy endpoint support for multi-service components.
 - Migrate in-container GitHub App minting to the shared ``robotsix-github-auth`` library.  Removes 120 lines of JWT creation, caching, and token-exchange logic from ``src/robotsix_chat/repo/direct/client.py``.  ``DirectRepoClient``, ``WorkspaceManager``, ``RefDocsClient``, and ``VersionCheckClient`` now all mint installation tokens through ``robotsix_github_auth.mint_installation_token``.
 - Remove ``github_token`` PAT fields from ``RefDocsSettings`` and ``VersionCheckSettings``.  Both doc-fetch and version-check read access now authenticate via the GitHub App installation token (falling back to unauthenticated when the App is not configured), matching the pattern already used by ``RepoStudySettings``.
+- Add "Server-side capability probes" guidance to system prompt (v43): when checking
+  whether a new server-side capability is available, the agent must probe the
+  endpoint directly and compare the server's running image digest against the
+  expected digest from the merged PR, rather than relying on static skill
+  descriptions or treating catch-all redirects as confirmation.
 - Add optional ``session_color`` and ``initial_task`` fields to autonomous settings, allowing operators to configure a CSS accent color for autonomous session rows and a default initial task that the agent spawns on session start.
 - System prompt v43: Add verification guidance to read relevant source files
   (gate functions, compose labels, deploy contracts) before filing tickets
