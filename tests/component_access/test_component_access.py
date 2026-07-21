@@ -24,13 +24,25 @@ from robotsix_chat.component_access.tools import (
     _component_request_impl,
     build_component_access_tools,
 )
-from robotsix_chat.config import CentralDeploySettings
+from robotsix_chat.config import CentralDeploySettings, ComponentCredentials
 
 
 def _settings(**kw: object) -> CentralDeploySettings:
     base: dict[str, object] = {}
     base.update(kw)
     return CentralDeploySettings(**base)  # type: ignore[arg-type]
+
+
+def _creds(
+    basic_auth_username: str = "",
+    basic_auth_password: str = "",
+    header_token: str = "",
+) -> ComponentCredentials:
+    return ComponentCredentials(
+        basic_auth_username=SecretStr(basic_auth_username),
+        basic_auth_password=SecretStr(basic_auth_password),
+        header_token=SecretStr(header_token),
+    )
 
 
 def _wipe_cache() -> None:
@@ -777,13 +789,10 @@ async def test_tool_max_response_chars_overrides_default(
 
 
 @pytest.mark.asyncio
-async def test_component_request_basic_auth_from_env(
+async def test_component_request_basic_auth_from_credentials(
     respx_mock: respx.MockRouter,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A 'basic' auth entry resolves env vars and sends Basic credentials."""
-    monkeypatch.setenv("LF_PK", "pk-user")
-    monkeypatch.setenv("LF_SK", "sk-pass")
+    """A 'basic' auth entry resolves credentials from the config dict."""
     roster = [
         {
             "id": "langfuse",
@@ -800,23 +809,30 @@ async def test_component_request_basic_auth_from_env(
         return_value=httpx.Response(200, json={"data": []})
     )
     result = await _component_request_impl(
-        roster, "langfuse", "GET", "/api/public/traces"
+        roster,
+        "langfuse",
+        "GET",
+        "/api/public/traces",
+        component_credentials={
+            "langfuse": _creds(
+                basic_auth_username="pk-user",  # pragma: allowlist secret
+                basic_auth_password="sk-pass",  # pragma: allowlist secret
+            ),
+        },
     )
     assert "HTTP 200" in result
     sent = route.calls.last.request
     import base64 as _b64
 
-    expected = _b64.b64encode(b"pk-user:sk-pass").decode()
+    expected = _b64.b64encode(b"pk-user:sk-pass").decode()  # pragma: allowlist secret
     assert sent.headers["Authorization"] == f"Basic {expected}"
 
 
 @pytest.mark.asyncio
-async def test_component_request_header_auth_from_env(
+async def test_component_request_header_auth_from_credentials(
     respx_mock: respx.MockRouter,
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """A 'header' auth entry resolves the token env var into the header."""
-    monkeypatch.setenv("DEPLOY_KEY", "tok-123")
+    """A 'header' auth entry resolves the token from the credentials dict."""
     roster = [
         {
             "id": "deploy",
@@ -832,18 +848,22 @@ async def test_component_request_header_auth_from_env(
     route = respx_mock.get("http://cd:8100/services").mock(
         return_value=httpx.Response(200, json=[])
     )
-    result = await _component_request_impl(roster, "deploy", "GET", "/services")
+    result = await _component_request_impl(
+        roster,
+        "deploy",
+        "GET",
+        "/services",
+        component_credentials={
+            "deploy": _creds(header_token="tok-123"),  # pragma: allowlist secret
+        },
+    )
     assert "HTTP 200" in result
     assert route.calls.last.request.headers["X-API-Key"] == "tok-123"
 
 
 @pytest.mark.asyncio
-async def test_component_request_basic_auth_missing_env(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Missing Basic-auth env vars yield a provisioning error, no request."""
-    monkeypatch.delenv("LF_PK", raising=False)
-    monkeypatch.delenv("LF_SK", raising=False)
+async def test_component_request_basic_auth_missing_credentials() -> None:
+    """Missing Basic-auth credentials in config yields a provisioning error."""
     roster = [
         {
             "id": "langfuse",
@@ -858,16 +878,12 @@ async def test_component_request_basic_auth_missing_env(
     ]
     result = await _component_request_impl(roster, "langfuse", "GET", "/x")
     assert "Error" in result
-    assert "LF_PK" in result
-    assert "EnvStore" in result
+    assert "component_credentials" in result
 
 
 @pytest.mark.asyncio
-async def test_component_request_header_auth_missing_env(
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """Missing header-auth token env yields a provisioning error, no request."""
-    monkeypatch.delenv("DEPLOY_KEY", raising=False)
+async def test_component_request_header_auth_missing_credentials() -> None:
+    """Missing header-auth credentials in config yields a provisioning error."""
     roster = [
         {
             "id": "deploy",
@@ -882,7 +898,7 @@ async def test_component_request_header_auth_missing_env(
     ]
     result = await _component_request_impl(roster, "deploy", "GET", "/services")
     assert "Error" in result
-    assert "DEPLOY_KEY" in result
+    assert "component_credentials" in result
 
 
 @pytest.mark.asyncio

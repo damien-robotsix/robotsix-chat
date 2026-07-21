@@ -6,7 +6,6 @@ import asyncio
 import contextlib
 import json
 import logging
-import os
 import time
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
@@ -54,7 +53,7 @@ _repo_cache: dict[str, tuple[float, list[str]]] = {}
 _REPO_CACHE_TTL: float = 60.0  # seconds — short enough to pick up access changes
 
 
-async def _resolve_allowed_repos() -> list[str]:
+async def _resolve_allowed_repos(deploy_api_key: str) -> list[str]:
     """Resolve the set of allowed feedback target repos dynamically.
 
     Queries the deploy server's chat-component roster and the mill board's
@@ -70,15 +69,13 @@ async def _resolve_allowed_repos() -> list[str]:
     if entry is not None and (now - entry[0]) < _REPO_CACHE_TTL:
         return entry[1]
 
-    result = await _do_resolve_allowed_repos()
+    result = await _do_resolve_allowed_repos(deploy_api_key)
     _repo_cache["repos"] = (now, result)
     return result
 
 
-async def _do_resolve_allowed_repos() -> list[str]:
+async def _do_resolve_allowed_repos(deploy_api_key: str) -> list[str]:
     """Resolve allowed repos by querying deploy and mill (no caching)."""
-    deploy_api_key = os.environ.get("DEPLOY_API_KEY", "")
-
     # 1. Fetch components from deploy.
     deploy_url = "http://central-deploy:8100/chat/components"
     deploy_headers: dict[str, str] = {}
@@ -322,7 +319,9 @@ class FeedbackRunner:
                 subsession_summaries = self._collect_subsession_summaries(session_id)
 
                 # 2. Resolve allowed target repos dynamically.
-                allowed_repos = await _resolve_allowed_repos()
+                allowed_repos = await _resolve_allowed_repos(
+                    self._settings.deploy_api_key.get_secret_value()
+                )
 
                 # 3. Build prompt and call the feedback agent.
                 prompt = _build_feedback_prompt(

@@ -651,11 +651,15 @@ class FeedbackSettings(BaseModel):
             Required when *enabled* — the runner POSTs to
             ``{board_url}/tickets/ingest``.
         board_api_token: Optional Bearer token for the board API.
+        deploy_api_key: Bearer / X-API-Key token for the central-deploy
+            roster endpoint (``GET /chat/components``). Required when
+            the feedback runner needs to resolve allowed repos via the
+            deploy roster.
         timeout: Per-request HTTP timeout in seconds for ingest calls.
             The set of allowed target repos is resolved dynamically at
             run-time from the deploy server's chat-component roster
-            (``DEPLOY_API_KEY`` env var) intersected with the mill board's
-            repo registry — no static allowlist is needed.
+            intersected with the mill board's repo registry — no static
+            allowlist is needed.
 
     """
 
@@ -663,6 +667,7 @@ class FeedbackSettings(BaseModel):
     model_level: int = 1
     board_url: str = ""
     board_api_token: SecretStr = SecretStr("")
+    deploy_api_key: SecretStr = SecretStr("")
     timeout: float = 60.0
     model_config = ConfigDict(extra="forbid")
 
@@ -748,6 +753,28 @@ class AutonomousSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class ComponentCredentials(BaseModel):
+    """Stored credentials for a single roster component.
+
+    Keys are component IDs matching the ``id`` field returned by the
+    central-deploy ``GET /chat/components`` roster. Each entry carries
+    credentials for all supported auth schemes; the roster entry's ``auth.type``
+    selects which fields are used.
+
+    Attributes:
+        basic_auth_username: Username for HTTP Basic authentication.
+        basic_auth_password: Password for HTTP Basic authentication.
+        header_token: Token value for header-based authentication
+            (e.g. ``X-API-Key``).
+
+    """
+
+    basic_auth_username: SecretStr = SecretStr("")
+    basic_auth_password: SecretStr = SecretStr("")
+    header_token: SecretStr = SecretStr("")
+    model_config = ConfigDict(extra="forbid")
+
+
 class CentralDeploySettings(BaseModel):
     """Central-deploy roster and component-access settings.
 
@@ -763,6 +790,10 @@ class CentralDeploySettings(BaseModel):
             API.  Required when any component access is expected.
         roster_cache_ttl: Seconds to cache the roster before re-fetching.
             Default 300 (5 min).
+        component_credentials: Per-component credentials keyed by
+            component id.  Each entry carries credentials for all
+            supported auth schemes; the roster entry's ``auth.type``
+            selects which fields are used.
 
     """
 
@@ -772,3 +803,4 @@ class CentralDeploySettings(BaseModel):
     api_token: SecretStr = SecretStr("")
     roster_cache_ttl: float = 300.0
     component_response_max_chars: int = 200_000
+    component_credentials: dict[str, ComponentCredentials] = Field(default_factory=dict)

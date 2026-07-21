@@ -46,7 +46,8 @@
     "url": "",
     "api_token": "",
     "roster_cache_ttl": 300.0,
-    "component_response_max_chars": 200000
+    "component_response_max_chars": 200000,
+    "component_credentials": {}
   },
   "mail": {
     "enabled": false,
@@ -170,6 +171,7 @@
     "model_level": 1,
     "board_url": "",
     "board_api_token": "",
+    "deploy_api_key": "",
     "timeout": 60.0
   },
   "autonomous": {
