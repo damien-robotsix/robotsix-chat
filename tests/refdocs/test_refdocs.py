@@ -117,7 +117,7 @@ async def test_read_file_uses_app_token_when_configured(
 
     dr = _direct_repo(
         github_app_id="12345",
-        github_app_private_key="fake-key",  # type: ignore[arg-type]
+        github_app_private_key="fake-key",
         github_app_installation_id="67890",
     )
     client = RefDocsClient(_settings(repos=["org/r"]), dr)
