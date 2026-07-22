@@ -645,7 +645,7 @@ system_prompt: |
 
   ## Output format
 
-  IMPORTANT: Your final response MUST be the structured output object  
+  IMPORTANT: Your final response MUST be the structured output object
   — no markdown fencing, no code blocks, no explanations, and no
   thinking text before or after it.  The pipeline reads ONLY the
   structured output and discards everything else.  After your last
