@@ -486,6 +486,7 @@
 - System prompt v46: added two deduplication rules to prevent redundant subsession creation — periodic subsessions must not spawn task children to perform their own monitoring work, and `list_subsessions` must be checked for existing periodic monitors before spawning a task subsession for the same ticket.
 - System prompt v46: instruct the assistant to spawn periodic monitors directly rather than creating child task subsessions whose only job is to launch a monitor, preventing redundant model round-trips and duplicate spawning logic.
 - Add explicit-instruction rule to system prompt Autonomy section: when a user gives a clear, firm instruction (e.g. "close the superseded ticket without asking"), the agent must carry it out literally without requesting additional confirmation.
+- Added `__all__ = ["build_render_url_tools"]` to `robotsix_chat.render_url` for consistency with all other tool sub-packages.
 - Added `search_knowledge_notes` tool to the knowledge base — the agent can now query
   prior diagnostic notes, deployment statuses, and other key facts by content substring
   match, without needing to recall exact note IDs. Results are ranked by relevance
