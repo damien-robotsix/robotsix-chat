@@ -12,6 +12,7 @@ configured; otherwise only public repositories are reachable.
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import logging
@@ -88,14 +89,13 @@ class WorkspaceManager:
             from robotsix_github_auth import mint_installation_token
 
             try:
-                token = await mint_installation_token(
+                result = await asyncio.to_thread(
+                    mint_installation_token,
                     app_id=dr.github_app_id,
                     private_key=dr.github_app_private_key.get_secret_value(),
                     installation_id=dr.github_app_installation_id,
-                    base_url=dr.github_api_base_url,
-                    timeout=dr.timeout,
                 )
-                headers["Authorization"] = f"Bearer {token}"
+                headers["Authorization"] = f"Bearer {result.token}"
             except RuntimeError as exc:
                 raise WorkspaceError(
                     f"GitHub App installation token request failed: {exc}. "
@@ -103,7 +103,6 @@ class WorkspaceManager:
                     "and github_app_installation_id are correct in the "
                     "direct_repo config block."
                 ) from exc
-            headers["Authorization"] = f"Bearer {token}"
         return headers
 
     # -- TTL sweep ----------------------------------------------------------

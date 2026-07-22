@@ -7,6 +7,7 @@ gracefully: all errors become short strings the assistant can relay.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -43,14 +44,13 @@ async def _get_installation_token(settings: DirectRepoSettings) -> str:
     """
     from robotsix_github_auth import mint_installation_token
 
-    token = await mint_installation_token(
+    result = await asyncio.to_thread(
+        mint_installation_token,
         app_id=settings.github_app_id,
         private_key=settings.github_app_private_key.get_secret_value(),
         installation_id=settings.github_app_installation_id,
-        base_url=settings.github_api_base_url,
-        timeout=settings.timeout,
     )
-    return cast(str, token)
+    return cast(str, result.token)
 
 
 # ---------------------------------------------------------------------------

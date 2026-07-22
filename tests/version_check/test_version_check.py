@@ -251,8 +251,8 @@ async def test_app_token_header_when_configured(
     import sys
     from types import SimpleNamespace
 
-    async def _fake_mint(**kw: object) -> str:
-        return "app-token-456"
+    def _fake_mint(**kw: object) -> object:
+        return SimpleNamespace(token="app-token-456")
 
     fake = SimpleNamespace()
     fake.mint_installation_token = _fake_mint

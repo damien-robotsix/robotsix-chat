@@ -7,6 +7,7 @@ returned as concise strings — nothing raises to the agent loop.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -140,14 +141,13 @@ class RefDocsClient:
             from robotsix_github_auth import mint_installation_token
 
             try:
-                token = await mint_installation_token(
+                result = await asyncio.to_thread(
+                    mint_installation_token,
                     app_id=self._dr.github_app_id,
                     private_key=self._dr.github_app_private_key.get_secret_value(),
                     installation_id=self._dr.github_app_installation_id,
-                    base_url=self._dr.github_api_base_url,
-                    timeout=self._dr.timeout,
                 )
-                headers["Authorization"] = f"Bearer {token}"
+                headers["Authorization"] = f"Bearer {result.token}"
             except RuntimeError as exc:
                 logger.warning(
                     "refdocs: GitHub App token unavailable, "

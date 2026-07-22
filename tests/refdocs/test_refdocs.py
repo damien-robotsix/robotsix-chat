@@ -108,8 +108,8 @@ async def test_read_file_uses_app_token_when_configured(
     import sys
     from types import SimpleNamespace
 
-    async def _fake_mint(**kw: object) -> str:
-        return "app-token-123"
+    def _fake_mint(**kw: object) -> object:
+        return SimpleNamespace(token="app-token-123")
 
     fake = SimpleNamespace()
     fake.mint_installation_token = _fake_mint

@@ -148,8 +148,8 @@ async def test_fetch_sends_app_token_when_configured(
         github_app_installation_id="7",
     )
 
-    async def fake_token(**kw: object) -> str:
-        return "installation-token"
+    def fake_token(**kw: object) -> object:
+        return SimpleNamespace(token="installation-token")
 
     import sys
     from types import SimpleNamespace
@@ -180,7 +180,7 @@ async def test_fetch_raises_on_token_failure(
         github_app_installation_id="7",
     )
 
-    async def failing_token(**kw: object) -> str:
+    def failing_token(**kw: object) -> object:
         raise RuntimeError("no token for you")
 
     import sys
@@ -214,8 +214,8 @@ async def test_fetch_403_reports_scope_error(
     import sys
     from types import SimpleNamespace
 
-    async def fake_token(**kw: object) -> str:
-        return "installation-token"
+    def fake_token(**kw: object) -> object:
+        return SimpleNamespace(token="installation-token")
 
     fake = SimpleNamespace()
     fake.mint_installation_token = fake_token
@@ -258,8 +258,8 @@ async def test_fetch_404_authenticated_reports_not_found(
     import sys
     from types import SimpleNamespace
 
-    async def fake_token(**kw: object) -> str:
-        return "installation-token"
+    def fake_token(**kw: object) -> object:
+        return SimpleNamespace(token="installation-token")
 
     fake = SimpleNamespace()
     fake.mint_installation_token = fake_token
@@ -287,8 +287,8 @@ async def test_fetch_follows_redirect_preserving_auth(
     import sys
     from types import SimpleNamespace
 
-    async def fake_token(**kw: object) -> str:
-        return "installation-token"
+    def fake_token(**kw: object) -> object:
+        return SimpleNamespace(token="installation-token")
 
     fake = SimpleNamespace()
     fake.mint_installation_token = fake_token

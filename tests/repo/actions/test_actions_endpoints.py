@@ -37,8 +37,8 @@ def _mock_github_auth(monkeypatch: pytest.MonkeyPatch) -> None:
     import sys
     from types import SimpleNamespace
 
-    async def _fake_mint(**kw: object) -> str:
-        return "ghs_test_installation_token"
+    def _fake_mint(**kw: object) -> object:
+        return SimpleNamespace(token="ghs_test_installation_token")
 
     fake = SimpleNamespace()
     fake.mint_installation_token = _fake_mint
