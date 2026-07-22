@@ -68,19 +68,12 @@ class WorkspaceManager:
     async def _auth_headers(self) -> dict[str, str]:
         """GitHub API headers, with an App installation token when configured.
 
-<<<<<<< HEAD
-        Reuses the ``direct_repo`` GitHub App credentials (JWT → installation
-        token, cached in :mod:`robotsix_chat.repo.direct.client`).  Returns
-        unauthenticated headers only when the App is not configured at all;
-        when it IS configured but the token exchange fails the error is raised
-        so the operator can diagnose a credential or scope issue rather than
-        getting a misleading 404 from an unauthenticated fallback.
-=======
         Reuses the ``direct_repo`` GitHub App credentials (via the shared
-        ``robotsix_github_auth`` library).  Falls back to unauthenticated
-        headers — public repos only — when the App is not configured or the
-        token exchange fails.
->>>>>>> 431f5f0 (mill: Migrate chat direct-repo GitHub App minting to robotsix-github-auth; retire doc/version PATs (20260721T221218Z-migrate-chat-direct-repo-github-app-mint-053a))
+        ``robotsix_github_auth`` library).  Returns unauthenticated headers
+        only when the App is not configured at all; when it IS configured
+        but the token exchange fails the error is raised so the operator can
+        diagnose a credential or scope issue rather than getting a misleading
+        404 from an unauthenticated fallback.
         """
         headers = {
             "Accept": "application/vnd.github+json",
