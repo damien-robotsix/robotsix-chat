@@ -2062,6 +2062,11 @@
         } else if (frame.type === "activity") {
           // Live claudeSDK tool/thinking activity for the in-flight turn.
           handleActivityFrame(frame);
+        } else if (frame.type === "autonomous_token") {
+          // Streaming token from an autonomous background turn — append
+          // to the current assistant bubble the same way the /chat SSE
+          // path handles "token" frames.
+          if (frame.token) streamAssistantBubble(frame.token);
         } else if (frame.type === "agent_message") {
           // A background-triggered agent reply (e.g. reacting to a
           // subsession closing) — not a live /chat response, so it arrives

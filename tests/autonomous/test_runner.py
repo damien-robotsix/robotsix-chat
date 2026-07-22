@@ -9,6 +9,7 @@ import pytest
 from robotsix_chat.autonomous.models import AutonomousState
 from robotsix_chat.autonomous.runner import AutonomousRunner
 from robotsix_chat.chat.conversation import ConversationStore, Session
+from robotsix_chat.chat.events import SSE_AGENT_MESSAGE_TYPE, SSE_AUTONOMOUS_TOKEN_TYPE
 
 
 class TestAutonomousRunnerSessionRegistry:
@@ -400,7 +401,7 @@ class TestAutonomousEventStreaming:
         token_calls = [
             c
             for c in event_sink.publish.call_args_list
-            if c[0][1].get("type") == "autonomous_token"
+            if c[0][1].get("type") == SSE_AUTONOMOUS_TOKEN_TYPE
         ]
         assert len(token_calls) == 3
         assert token_calls[0][0][1]["token"] == "Hello"
@@ -411,7 +412,7 @@ class TestAutonomousEventStreaming:
         agent_msg_calls = [
             c
             for c in event_sink.publish.call_args_list
-            if c[0][1].get("type") == "agent_message"
+            if c[0][1].get("type") == SSE_AGENT_MESSAGE_TYPE
         ]
         assert len(agent_msg_calls) == 1
         assert agent_msg_calls[0][0][1]["text"] == "Hello world!"
@@ -499,7 +500,7 @@ class TestAutonomousEventStreaming:
         token_calls = [
             c
             for c in event_sink.publish.call_args_list
-            if c[0][1].get("type") == "autonomous_token"
+            if c[0][1].get("type") == SSE_AUTONOMOUS_TOKEN_TYPE
         ]
         assert len(token_calls) == 2
         assert token_calls[0][0][1]["token"] == "Executing"
@@ -509,7 +510,7 @@ class TestAutonomousEventStreaming:
         agent_msg_calls = [
             c
             for c in event_sink.publish.call_args_list
-            if c[0][1].get("type") == "agent_message"
+            if c[0][1].get("type") == SSE_AGENT_MESSAGE_TYPE
         ]
         assert len(agent_msg_calls) == 1
         assert agent_msg_calls[0][0][1]["text"] == "Executing step 1"
