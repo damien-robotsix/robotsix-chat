@@ -27,7 +27,7 @@ async def _github_endpoint(
     request: Request,
     settings: GitHubSecuritySettings | GitHubActionsSettings,
     detail_prefix: str,
-) -> tuple[str, str, dict[str, object], DirectRepoClient]:
+) -> tuple[str, str, dict[str, object]]:
     """Shared boilerplate for GitHub endpoints.
 
     Handles:
@@ -35,9 +35,10 @@ async def _github_endpoint(
     2. API key auth (403)
     3. Path-param extraction (owner, repo) (400)
     4. JSON body parse + dict validation (400)
-    5. Installation scope check (404/502)
 
-    Returns ``(owner, repo, body, client)``.
+    Returns ``(owner, repo, body)``.  Does **not** perform the
+    installation scope check — callers must call
+    ``_check_installation_scope`` after their own body validation.
     """
     direct_repo = request.app.state.direct_repo_settings
 
@@ -64,7 +65,6 @@ async def _github_endpoint(
             status_code=400,
             detail="owner and repo path parameters are required",
         )
-    repo_full_name = f"{owner}/{repo}"
 
     # -- body --------------------------------------------------------------
     try:
@@ -74,7 +74,19 @@ async def _github_endpoint(
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="expected a JSON object")
 
-    # -- scope check -------------------------------------------------------
+    return owner, repo, body
+
+
+async def _check_installation_scope(
+    request: Request,
+    repo_full_name: str,
+) -> DirectRepoClient:
+    """Check that *repo_full_name* is in the installation scope.
+
+    Returns a ``DirectRepoClient`` ready for API calls.
+    Raises ``HTTPException`` on failure (404/502).
+    """
+    direct_repo = request.app.state.direct_repo_settings
     client = DirectRepoClient(direct_repo)
     try:
         allowed = await client.list_installation_repos()
@@ -92,7 +104,7 @@ async def _github_endpoint(
             ),
         )
 
-    return owner, repo, body, client
+    return client
 
 
 async def github_settings_endpoint(request: Request) -> JSONResponse:
@@ -120,11 +132,10 @@ async def github_settings_endpoint(request: Request) -> JSONResponse:
 
     """
     settings = request.app.state.github_security_settings
-    owner, repo, body, client = await _github_endpoint(
-        request, settings, "github_security"
-    )
+    owner, repo, body = await _github_endpoint(request, settings, "github_security")
     repo_full_name = f"{owner}/{repo}"
 
+    # -- body validation (before scope check) ------------------------------
     valid = frozenset({"enabled", "disabled"})
     feature_keys = (
         "dependency_graph",
@@ -152,6 +163,9 @@ async def github_settings_endpoint(request: Request) -> JSONResponse:
             status_code=400,
             detail="at least one security feature must be specified",
         )
+
+    # -- scope check -------------------------------------------------------
+    client = await _check_installation_scope(request, repo_full_name)
 
     result = await client.set_security_and_analysis(
         repo_full_name,
@@ -196,9 +210,7 @@ async def github_actions_secret_endpoint(request: Request) -> JSONResponse:
 
     """
     settings = request.app.state.github_actions_settings
-    owner, repo, body, client = await _github_endpoint(
-        request, settings, "github_actions"
-    )
+    owner, repo, body = await _github_endpoint(request, settings, "github_actions")
     repo_full_name = f"{owner}/{repo}"
 
     # -- extra path param --------------------------------------------------
@@ -209,13 +221,16 @@ async def github_actions_secret_endpoint(request: Request) -> JSONResponse:
             detail="owner, repo, and secret_name path parameters are required",
         )
 
-    # -- validate body -----------------------------------------------------
+    # -- validate body (before scope check) --------------------------------
     secret_value = body.get("secret_value")
     if not secret_value or not isinstance(secret_value, str):
         raise HTTPException(
             status_code=400,
             detail="'secret_value' (string) is required",
         )
+
+    # -- scope check -------------------------------------------------------
+    client = await _check_installation_scope(request, repo_full_name)
 
     result = await client.set_actions_secret(
         repo_full_name,
@@ -260,9 +275,7 @@ async def github_actions_workflow_endpoint(request: Request) -> JSONResponse:
 
     """
     settings = request.app.state.github_actions_settings
-    owner, repo, body, client = await _github_endpoint(
-        request, settings, "github_actions"
-    )
+    owner, repo, body = await _github_endpoint(request, settings, "github_actions")
     repo_full_name = f"{owner}/{repo}"
 
     # -- extra path param --------------------------------------------------
@@ -273,7 +286,7 @@ async def github_actions_workflow_endpoint(request: Request) -> JSONResponse:
             detail="owner, repo, and workflow_id path parameters are required",
         )
 
-    # -- validate body -----------------------------------------------------
+    # -- validate body (before scope check) --------------------------------
     ref = body.get("ref")
     if not ref or not isinstance(ref, str):
         raise HTTPException(
@@ -290,6 +303,9 @@ async def github_actions_workflow_endpoint(request: Request) -> JSONResponse:
                 detail="'inputs' must be a JSON object",
             )
         inputs = {str(k): str(v) for k, v in raw_inputs.items()}
+
+    # -- scope check -------------------------------------------------------
+    client = await _check_installation_scope(request, repo_full_name)
 
     result = await client.dispatch_workflow(
         repo_full_name,
