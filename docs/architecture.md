@@ -162,7 +162,7 @@ concurrent duplicate trigger sees `None` and exits early.
 All autonomous lifecycle work is moved off the startup/lifespan critical path:
 
 | Operation | Where it runs | Blocking? |
-|---|---|---|
+| --- | --- | --- |
 | Resume completed sessions | Background task via `_schedule_background` | Never |
 | Resume executing sessions | Background task via `_schedule_background` | Never |
 | Resume selecting-subject sessions | Background task via `_schedule_background` | Never |
@@ -191,7 +191,7 @@ in its prompt so it is aware it is resuming rather than starting cold:
 
 ### Session lifecycle
 
-```
+```text
   create_session()
         │
         ▼
@@ -316,12 +316,12 @@ ______________________________________________________________________
 
 State that survives restarts when `/data/` is bind-mounted:
 
-| File                       | Content                                                               |
-| -------------------------- | --------------------------------------------------------------------- |
-| `/data/conversations.json` | Multi-session conversation history (auto-migrated from legacy format) |
-| `/data/subsessions.json`   | Subsession state (periodic subsessions resumed on startup)            |
-| `/data/cognee/`            | Long-term memory storage (cognee)                                     |
-| `/data/autonomous_sessions.json` | Autonomous session state (resumed on restart — see [Autonomous Sessions](#autonomous-sessions)) |
+| File                               | Content                                                                                                                                    |
+| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/data/conversations.json`         | Multi-session conversation history (auto-migrated from legacy format)                                                                      |
+| `/data/subsessions.json`           | Subsession state (periodic subsessions resumed on startup)                                                                                 |
+| `/data/cognee/`                    | Long-term memory storage (cognee)                                                                                                          |
+| `/data/autonomous_sessions.json`   | Autonomous session state (resumed on restart — see [Autonomous Sessions](#autonomous-sessions))                                            |
 
 ______________________________________________________________________
 
