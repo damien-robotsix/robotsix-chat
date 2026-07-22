@@ -41,6 +41,9 @@ SSE_AUTONOMOUS_STATE_TYPE = "autonomous_state"
 # Streaming token from an autonomous background turn (live progress).
 SSE_AUTONOMOUS_TOKEN_TYPE = "autonomous_token"
 
+# Browser push notification (via notify_user tool → EventBus → SSE).
+SSE_NOTIFICATION_TYPE = "notification"
+
 # ---------------------------------------------------------------------------
 # EventSink — structural Protocol for dependency injection
 # ---------------------------------------------------------------------------
