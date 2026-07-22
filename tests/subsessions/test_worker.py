@@ -684,7 +684,68 @@ async def test_periodic_parent_cannot_spawn_periodic_child() -> None:
 
 
 @pytest.mark.asyncio
-async def test_non_periodic_parent_can_spawn_periodic_child() -> None:
+async def test_user_chat_parent_cannot_spawn_user_chat_child() -> None:
+    """A user_chat subsession cannot spawn another user_chat subsession."""
+    env = build_env()
+    # Register a user_chat parent.
+    parent = env.registry.create(
+        kind=SubsessionKind.USER_CHAT,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="parent user_chat",
+        prompt="chat",
+        model_level=3,
+    )
+
+    from robotsix_chat.subsessions import SubsessionUserChatSpawnError
+
+    with pytest.raises(SubsessionUserChatSpawnError, match="user_chat"):
+        _spawn(
+            env,
+            kind=SubsessionKind.USER_CHAT,
+            parent_id=parent.id,
+            depth=2,
+        )
+
+    # Non-user_chat children (e.g. task) are still allowed.
+    task_id = _spawn(
+        env,
+        kind=SubsessionKind.TASK,
+        parent_id=parent.id,
+        depth=2,
+    )
+    assert task_id
+    # Clean up the spawned worker.
+    env.registry.cancel_and_close(task_id, reason="teardown", closed_by="system")
+
+
+@pytest.mark.asyncio
+async def test_non_user_chat_parent_can_spawn_user_chat_child() -> None:
+    """A task or periodic parent can still spawn user_chat children."""
+    env = build_env()
+    parent = env.registry.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="parent periodic",
+        prompt="monitor",
+        model_level=3,
+        interval_seconds=10.0,
+    )
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.USER_CHAT,
+        parent_id=parent.id,
+        depth=2,
+    )
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.kind is SubsessionKind.USER_CHAT
+    # Clean up the spawned worker.
+    env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
     """A task or user_chat parent can still spawn periodic children."""
     env = build_env()
     parent = env.registry.create(

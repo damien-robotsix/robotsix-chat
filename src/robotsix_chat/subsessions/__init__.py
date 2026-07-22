@@ -19,6 +19,7 @@ from .models import (
     SubsessionLevelError,
     SubsessionPeriodicSpawnError,
     SubsessionStatus,
+    SubsessionUserChatSpawnError,
     TranscriptEntry,
 )
 from .registry import SubsessionRegistry
@@ -48,6 +49,7 @@ __all__ = [
     "SubsessionPeriodicSpawnError",
     "SubsessionRegistry",
     "SubsessionStatus",
+    "SubsessionUserChatSpawnError",
     "TranscriptEntry",
     "build_subsession_tools",
     "resume_subsessions",
