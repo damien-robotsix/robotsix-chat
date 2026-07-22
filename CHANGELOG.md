@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Autonomous sessions now receive the same subsession and notification tools as interactive chat sessions (`spawn_subsession`, `notify_user`, etc.). Previously the autonomous agent factory omitted `subsession_env` and `event_sink`, so per-request tools were never built, and the system prompt instructed the agent to use tools that didn't exist.
 - Autonomous sessions: strengthened the post-approval proceed message from
   a passive "Proceed with the approved plan." to an explicit "OPERATOR
   APPROVAL RECEIVED" directive that instructs the agent to begin executing
