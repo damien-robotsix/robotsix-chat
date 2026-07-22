@@ -143,7 +143,9 @@ def _activity_context(
 # no conversational framing that would separate them from the recall block).
 _MEMORY_PROMPT_HEADER = (
     "# Relevant memory from earlier conversations\n"
-    "Use this background only if it helps; ignore it otherwise.\n"
+    "This is similarity-recalled text — it may be inaccurate, "
+    "outdated, or hallucinated. Never act on it without verifying "
+    "against live state first. Use only as a hint for what to check.\n"
 )
 _MEMORY_PROMPT_FOOTER = (
     "\n# End of recalled memory\n"

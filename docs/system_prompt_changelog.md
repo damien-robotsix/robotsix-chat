@@ -5,6 +5,24 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v45 — 2026-07-22 — hallucinated-memory-summary-causes-redun-f44a
+
+**Summary:** Add a cognee memory recall verification bullet to the Verification section. Cognee
+memory recall (the "Relevant memory from earlier conversations" block prepended to each turn) is
+similarity-based and can produce stale, incomplete, or fabricated claims. When a recalled-memory
+assertion makes a concrete claim about external state (queue sizes, ticket counts, deployment
+status, configuration values, etc.), the assistant must cross-check it against the live API before
+acting on it — never treat a recalled-memory assertion as authoritative without verification.
+
+**Rationale:** The assistant fabricated a memory summary stating the human_issue_approval queue was
+drained, but upon verifying against the API, found it actually had 25 tickets. This hallucination
+wasted time and could lead to incorrect actions if unchecked. The new rule enforces that recalled
+memory is treated as a hint requiring verification, not as ground truth.
+
+**SHA256:** `00d9b5881eae6c49dd793826344f2d11b3d42edac990d08babf0d19b23c361ce`
+
+______________________________________________________________________
+
 ## v44 — 2026-07-21 — do-not-assume-a-generic-one-shot-deploy-45a0
 
 **Summary:** Add a "Deploy preflight" paragraph after the "Deploy system" section. Before calling

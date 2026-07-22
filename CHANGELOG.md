@@ -10,6 +10,7 @@
   `agent_message` frame after each turn is recorded — so the conversation
   area renders live progress and the transcript is immediately visible in
   `/history`, matching the normal `/chat` experience.
+- System prompt v45: add cognee memory-recall verification rule. Recalled memory is similarity-based and can be stale, incomplete, or fabricated — when a recalled claim asserts a concrete fact about external state, cross-check it against the live API before acting. The recall wrapper in ``_MEMORY_PROMPT_HEADER`` now explicitly warns the model that recalled text may be hallucinated.
 - Added CI workflow edit checklist to the implement-stage agent guidance
   (shadow-package override in ``src/robotsix_mill/agent_definitions/implement.yaml``).
   The checklist covers the three most common preventable CI failure classes:
