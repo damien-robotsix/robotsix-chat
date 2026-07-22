@@ -1,6 +1,8 @@
 ## 0.0.0 (unreleased)
 
 - System prompt v46: add "Repo creation bootstrap" guidance — proactively seed an initial commit during repo creation to prevent tool-chain deadlocks with empty repos.
+- System prompt v46: added conciseness rule for periodic subsession terminal-state
+  notifications — report outcome in one sentence instead of echoing full run history.
 - Added `search_knowledge_notes` tool to the knowledge base — the agent can now query
   prior diagnostic notes, deployment statuses, and other key facts by content substring
   match, without needing to recall exact note IDs. Results are ranked by relevance
