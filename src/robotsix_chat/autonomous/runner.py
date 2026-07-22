@@ -43,6 +43,18 @@ class AutonomousRunner:
         # docs warning on create_task and weak references).
         self._auto_tasks: set[asyncio.Task[None]] = set()
 
+    # -- settings accessors -----------------------------------------------
+
+    @property
+    def max_auto_turns(self) -> int:
+        """Maximum number of autonomous turns before requiring approval."""
+        return self._settings.autonomous.max_auto_turns
+
+    @property
+    def session_color(self) -> str:
+        """Colour string for autonomous session UI badge."""
+        return self._settings.autonomous.session_color
+
     # -- persistence ------------------------------------------------------
 
     def _save_sessions(self) -> None:

@@ -11,6 +11,7 @@ from httpx import ASGITransport, AsyncClient
 from robotsix_chat.autonomous.models import AutonomousState
 from robotsix_chat.autonomous.runner import AutonomousRunner
 from robotsix_chat.chat.conversation import ConversationStore
+from robotsix_chat.chat.events import SSE_AUTONOMOUS_STATE_TYPE
 from robotsix_chat.chat.server.app import create_app
 from robotsix_chat.chat.server.routes.chat import RunSerializer
 from robotsix_chat.llm import LlmioChatAgent
@@ -37,6 +38,7 @@ def autonomous_runner(store) -> AutonomousRunner:
     settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
     settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
     settings.autonomous.max_auto_turns = 20
+    settings.autonomous.session_color = "#ff0000"
     return AutonomousRunner(
         settings=settings,
         conversation_store=store,
@@ -205,3 +207,31 @@ class TestRunnerWiring:
         """App starts with autonomous runner on state and health passes."""
         r = await client.get("/health")
         assert r.status_code == 200
+
+
+class TestSessionsListAutonomousAnnotation:
+    """GET /sessions returns autonomous annotations for autonomous sessions."""
+
+    @pytest.mark.asyncio
+    async def test_sessions_list_includes_autonomous_fields(
+        self, client, autonomous_runner, store
+    ):
+        """GET /sessions returns 200 with autonomous annotations."""
+        sid = store.create_session("owner1")["session_id"]
+        aq = autonomous_runner.create_session("owner1", session_id=sid)
+        aq.state = AutonomousState.awaiting_approval
+        aq.plan_text = "Draft plan text"
+        aq.auto_turn_count = 3
+
+        r = await client.get("/sessions?owner_id=owner1")
+        assert r.status_code == 200
+        sessions = r.json()["sessions"]
+        assert len(sessions) == 1
+        s = sessions[0]
+        assert s["session_id"] == sid
+        assert s["autonomous"] is True
+        assert s[SSE_AUTONOMOUS_STATE_TYPE] == "awaiting_approval"
+        assert s["autonomous_plan_text"] == "Draft plan text"
+        assert s["autonomous_turn_count"] == 3
+        assert s["autonomous_max_turns"] == 20
+        assert s["autonomous_session_color"] == "#ff0000"
