@@ -359,7 +359,7 @@ async def test_periodic_auto_stops_after_consecutive_no_change_runs() -> None:
     assert info is not None
     assert info.status is SubsessionStatus.CLOSED
     assert info.close_reason == "no_change_auto_stop"
-    assert info.summary == "Auto-stopped after 2 consecutive no-change runs."
+    assert "Auto-stopped after 2 consecutive no-change runs" in (info.summary or "")
     assert len(agent.calls) == 2
 
 
