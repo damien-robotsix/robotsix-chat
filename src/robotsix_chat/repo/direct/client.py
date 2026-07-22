@@ -638,6 +638,45 @@ class DirectRepoClient:
         except Exception as exc:
             return f"Error pushing commit: {exc}"
 
+    async def create_repo(
+        self,
+        *,
+        org: str,
+        name: str,
+        description: str = "",
+        private: bool = False,
+    ) -> str:
+        """Create a new GitHub repository under *org* with ``auto_init=true``.
+
+        The ``auto_init=true`` flag ensures the repo is created with a
+        default ``main`` branch and an initial README commit, so that
+        ``git clone --branch main`` works immediately — an uninitialized
+        (empty) repo has no branches and would fail ``git clone``.
+
+        Never raises — returns a success/error message string.
+        """
+        try:
+            data = await self._post_json(
+                f"/orgs/{org}/repos",
+                {
+                    "name": name,
+                    "description": description,
+                    "private": private,
+                    "auto_init": True,
+                },
+            )
+            html_url = data.get("html_url", "")
+            clone_url = data.get("clone_url", "")
+            return (
+                f"Repository '{org}/{name}' created successfully.\n"
+                f"URL: {html_url}\n"
+                f"Clone: {clone_url}"
+            )
+        except RuntimeError as exc:
+            return f"Error creating repository: {exc}"
+        except Exception as exc:
+            return f"Error creating repository: {exc}"
+
     async def set_security_and_analysis(
         self,
         repo_full_name: str,

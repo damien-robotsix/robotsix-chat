@@ -60,6 +60,7 @@ from .routes import (
     events_endpoint,
     github_actions_secret_endpoint,
     github_actions_workflow_endpoint,
+    github_repo_create_endpoint,
     github_settings_endpoint,
     health_endpoint,
     history_endpoint,
@@ -401,6 +402,11 @@ def create_app(
         Route(
             "/subsessions/{sub_id}/close",
             subsessions_close_endpoint,
+            methods=["POST"],
+        ),
+        Route(
+            "/chat/github/repos",
+            github_repo_create_endpoint,
             methods=["POST"],
         ),
         Route(
