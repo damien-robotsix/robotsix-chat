@@ -60,7 +60,8 @@ from .routes import (
     config_rollback_endpoint,
     config_save_endpoint,
     config_versions_endpoint,
-    draft_get_endpoint,
+    diagnostics_create_endpoint,
+    diagnostics_list_endpoint,
     draft_save_endpoint,
     events_endpoint,
     github_actions_secret_endpoint,
@@ -212,6 +213,7 @@ SHARED_PARAMS: frozenset[str] = frozenset(
         "github_security_settings",
         "github_actions_settings",
         "config_path",
+        "diagnostic_store",
     }
 )
 
@@ -246,6 +248,7 @@ def create_app(
     github_actions_settings: GitHubActionsSettings | None = None,
     config_path: str | None = None,
     draft_store_dir: str | None = None,
+    diagnostic_store: Any = None,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -350,6 +353,10 @@ def create_app(
             gets its own ``{session_id}.json`` file inside this directory.
             When ``None`` (default), the directory ``/data/session_drafts``
             is used.
+        diagnostic_store: Shared :class:`~robotsix_chat.diagnostics.DiagnosticStore`
+            instance, used by the ``POST /diagnostics/events`` and
+            ``GET /diagnostics/events`` endpoints.  When ``None`` (default),
+            the diagnostic endpoints return 503.
 
     """
     routes: list[Route | Mount] = [
@@ -427,7 +434,16 @@ def create_app(
         Route("/config", config_save_endpoint, methods=["PUT"]),
         Route("/config/versions", config_versions_endpoint, methods=["GET"]),
         Route("/config/rollback", config_rollback_endpoint, methods=["POST"]),
-    ]
+        Route(
+            "/diagnostics/events",
+            diagnostics_create_endpoint,
+            methods=["POST"],
+        ),
+        Route(
+            "/diagnostics/events",
+            diagnostics_list_endpoint,
+            methods=["GET"],
+        ),
     if serve_ui:
         routes.append(Route("/", ui_endpoint, methods=["GET"]))
         static_dir = str(resources.files("robotsix_chat") / "ui" / "static")
@@ -498,6 +514,7 @@ def create_app(
     app.state.github_actions_settings = github_actions_settings
     app.state.feedback_runner = feedback_runner  # may be None
     app.state.autonomous_runner = autonomous_runner  # may be None
+    app.state.diagnostic_store = diagnostic_store  # may be None
     if config_path is not None:
         app.state.config_path = config_path
     if draft_store_dir is not None:
@@ -568,6 +585,7 @@ def _build_static_tools(
     *,
     bare: bool = False,
     conversation_store: ConversationStore | None = None,
+    diagnostic_store: Any = None,
 ) -> list[Any]:
     """Return the static (non-per-request) tool suite gated by *settings*.
 
@@ -591,7 +609,7 @@ def _build_static_tools(
         *build_github_security_tools(settings.github_security, settings.direct_repo),
         *build_github_actions_tools(settings.github_actions, settings.direct_repo),
         *build_knowledge_tools(settings.knowledge),
-        *build_diagnostics_tools(settings.diagnostics),
+        *build_diagnostics_tools(settings.diagnostics, store=diagnostic_store),
         *build_recent_activity_tools(settings.self_review, conversation_store),
         *build_version_check_tools(settings.version_check, settings.direct_repo),
         *build_lifecycle_tools(settings.lifecycle),
@@ -666,6 +684,7 @@ def create_agent_from_settings(
     tool_wrapper: Callable[[list[Any]], list[Any]] | None = None,
     bare: bool = False,
     event_sink: EventSink | None = None,
+    diagnostic_store: Any = None,
 ) -> LlmioChatAgent:
     """Build an :class:`LlmioChatAgent` wired from *settings*.
 
@@ -717,7 +736,10 @@ def create_agent_from_settings(
     )
 
     tools = _build_static_tools(
-        settings, bare=bare, conversation_store=conversation_store
+        settings,
+        bare=bare,
+        conversation_store=conversation_store,
+        diagnostic_store=diagnostic_store,
     )
     if tool_wrapper is not None:
         tools = tool_wrapper(tools)

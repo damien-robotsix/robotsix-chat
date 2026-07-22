@@ -35,12 +35,20 @@ __all__ = [
 
 def build_diagnostics_tools(
     settings: DiagnosticsSettings,
+    *,
+    store: DiagnosticStore | None = None,
 ) -> list[Callable[..., Any]]:
-    """Return diagnostics tools, or ``[]`` when disabled."""
+    """Return diagnostics tools, or ``[]`` when disabled.
+
+    When *store* is given it is reused — this lets an HTTP endpoint share
+    the same in-memory instance so events posted via the API are visible to
+    agent tools immediately.
+    """
     if not settings.enabled:
         return []
 
-    store = DiagnosticStore(settings.store_path)
+    if store is None:
+        store = DiagnosticStore(settings.store_path)
     proposal_store = FixProposalStore(settings.proposals_path)
     eff_store = EffectivenessStore(settings.effectiveness_path)
 
