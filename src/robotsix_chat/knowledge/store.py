@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import uuid
 from dataclasses import dataclass
+from typing import List
 
 from robotsix_chat.common.json_store import JsonStoreBase
 
@@ -113,6 +114,31 @@ class KnowledgeStore(JsonStoreBase[KnowledgeEntry]):
             return list(self._items.values())
         t = topic.strip().lower()
         return [e for e in self._items.values() if e.topic.strip().lower() == t]
+
+    def search(self, query: str) -> List[KnowledgeEntry]:
+        """Return notes whose topic or content contains *query* (case-insensitive).
+
+        Results are ranked: exact topic match first, then topic contains,
+        then content contains.  An empty or whitespace-only *query* returns
+        an empty list.
+        """
+        q = query.strip().lower()
+        if not q:
+            return []
+        scored: List[tuple[int, KnowledgeEntry]] = []
+        for entry in self._items.values():
+            topic_lower = entry.topic.strip().lower()
+            score = 0
+            if topic_lower == q:
+                score = 3
+            elif q in topic_lower:
+                score = 2
+            elif q in entry.content.lower():
+                score = 1
+            if score > 0:
+                scored.append((score, entry))
+        scored.sort(key=lambda item: item[0], reverse=True)
+        return [entry for _, entry in scored]
 
     def get(self, note_id: str) -> KnowledgeEntry | None:
         """Return the entry for *note_id*, or ``None`` if unknown."""

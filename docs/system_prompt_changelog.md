@@ -5,6 +5,22 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v46 — 2026-07-22 — add-cross-session-persistent-knowledge-r-b5bb
+
+**Summary:** Add `search_knowledge_notes` to the knowledge-base tool list in the system prompt.
+The knowledge store now exposes a search tool that finds notes by querying their topic and content
+(case-insensitive substring match), ranked by relevance. This lets the agent retrieve prior
+diagnostic notes, deployment statuses, and other key facts without needing to recall exact note
+ids.
+
+**Rationale:** The assistant wasted time re-discovering that empty-diff bug fixes were already
+merged because it could not reliably retrieve prior diagnostic notes — note ids were truncated
+or missing from its context. The new search capability eliminates the fragile-id-recall dependency.
+
+**SHA256:** `b0e205017f02e8e2a90707f2b6fbaf51f356e5ab7362124803eb79602ba13050`
+
+______________________________________________________________________
+
 ## v45 — 2026-07-22 — hallucinated-memory-summary-causes-redun-f44a
 
 **Summary:** Add a cognee memory recall verification bullet to the Verification section. Cognee
