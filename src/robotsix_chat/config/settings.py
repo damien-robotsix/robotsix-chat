@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 44
+SYSTEM_PROMPT_VERSION = 45
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -392,6 +392,15 @@ class Settings(BaseModel):
             "verify the current state through available tools rather than relying "
             "on memory alone. Memory is a fallible cache — the live system is the "
             "source of truth.\n"
+            "– Cognee memory recall (the 'Relevant memory from earlier "
+            "conversations' block prepended to each turn) is similarity-based "
+            "and can be stale, incomplete, or fabricated. When a recalled-memory "
+            "claim asserts a concrete fact about external state (queue sizes, "
+            "ticket counts, deployment status, configuration values, etc.), "
+            "cross-check it against the live API before acting on it. Never "
+            "treat a recalled-memory assertion as authoritative — verify first, "
+            "then act. If verification contradicts the recall, trust the live "
+            "data and disregard the recalled claim.\n"
             "– When the user directly challenges a claim about external state, "
             "re-verify against the live system immediately. Never double down on "
             "a memory-based assertion when the user reports contradictory "
