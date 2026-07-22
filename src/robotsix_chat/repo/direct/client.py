@@ -72,6 +72,11 @@ class DirectRepoClient:
         """Return a valid installation access token (cached)."""
         return await _get_installation_token(self._s)
 
+    def _invalidate_token(self) -> None:
+        """Clear the cached installation token so the next call re-fetches it."""
+        iid = self._s.github_app_installation_id
+        _INSTALLATION_TOKEN_CACHE.pop(iid, None)
+
     async def _gh_headers(self) -> dict[str, str]:
         """Return headers for a GitHub API call (with installation token)."""
         token = await self._token()
@@ -81,6 +86,29 @@ class DirectRepoClient:
             "X-GitHub-Api-Version": "2022-11-28",
         }
 
+    async def _http_with_retry(
+        self,
+        method: str,
+        url: str,
+        **kwargs: Any,
+    ) -> Any:
+        """Make an HTTP request with one retry on 401 (installation token expiry).
+
+        On the first 401 response the cached installation token is cleared
+        and a fresh token is exchanged before retrying exactly once.
+        Returns the ``safe_http_request`` ``HttpResult``.
+        """
+        result = await safe_http_request(method, url, **kwargs)
+        if result.status_code == 401:
+            logger.info(
+                "GitHub API returned 401 — refreshing installation token and retrying"
+            )
+            self._invalidate_token()
+            if "headers" in kwargs:
+                kwargs["headers"] = await self._gh_headers()
+            result = await safe_http_request(method, url, **kwargs)
+        return result
+
     async def _get_json(self, path: str) -> Any:
         """GET *path* on the GitHub API and return the parsed JSON body.
 
@@ -88,7 +116,7 @@ class DirectRepoClient:
         callers catch and format).
         """
         url = f"{self._base_url}{path}"
-        result = await safe_http_request(
+        result = await self._http_with_retry(
             "GET",
             url,
             headers=await self._gh_headers(),
@@ -109,7 +137,7 @@ class DirectRepoClient:
         ``set_actions_secret`` and ``dispatch_workflow``).
         """
         url = f"{self._base_url}{path}"
-        result = await safe_http_request(
+        result = await self._http_with_retry(
             method,
             url,
             headers=await self._gh_headers(),
@@ -370,7 +398,7 @@ class DirectRepoClient:
                 f"{self._base_url}/repos/{repo_full_name}"
                 f"/pulls/{pr_number}/update-branch"
             )
-            result = await safe_http_request(
+            result = await self._http_with_retry(
                 "PUT",
                 url,
                 headers=await self._gh_headers(),
