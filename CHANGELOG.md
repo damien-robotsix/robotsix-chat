@@ -1,5 +1,16 @@
 ## 0.0.0 (unreleased)
 
+- Remove the "New autonomous" button from the UI (button element in index.html,
+  handler + function + config-display toggle in chat.js). The single-session
+  model makes manual creation unnecessary and dangerous.
+- Autonomous sessions resumed after a process restart now receive a restart-context
+  message ("SYSTEM RESTARTED") in the agent prompt so the agent knows the system
+  was restarted and can resume appropriately. Covers selecting_subject and executing
+  states. Added ``is_restart`` parameter to ``_kickoff_initial_turn`` and
+  ``_auto_continue``.
+- ``_close_and_respawn`` now wraps its body in try/except with logger.exception,
+  matching the pattern in ``_auto_continue`` and ``_kickoff_initial_turn``, so
+  unhandled exceptions in background respawn tasks produce actionable log messages.
 - Rework autonomous `_close_and_respawn` to be non-blocking: respawn and its kickoff
   are scheduled as background tasks so startup/lifespan is never blocked by respawn.
   Enforce single-session invariant: at most one open autonomous session per owner at

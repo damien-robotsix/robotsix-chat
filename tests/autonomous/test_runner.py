@@ -823,3 +823,259 @@ class TestResumeSessionsNonBlocking:
         # scheduled background task (not directly awaited).
         await asyncio.sleep(0)
         assert runner._auto_continue.call_count >= 1
+
+
+class TestRestartContextInjection:
+    """Restart-context messages are injected when resuming after a restart."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+
+    @pytest.mark.asyncio
+    async def test_kickoff_restart_injects_system_restarted(self) -> None:
+        """_kickoff_initial_turn with is_restart=True prepends SYSTEM RESTARTED."""
+        store = ConversationStore()
+        store.create_session("owner1")
+        sessions, _active = store.list_sessions("owner1")
+        sid = sessions[0]["session_id"]
+
+        settings = MagicMock()
+        settings.autonomous.initial_task = ""
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        captured_prompt: list[str] = []
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _capture_stream(prompt, *args, **kwargs):
+            captured_prompt.append(str(prompt))
+            yield ""
+            return
+
+        agent.stream.side_effect = _capture_stream
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+        )
+        await runner._kickoff_initial_turn(sid, "owner1", is_restart=True)
+
+        assert len(captured_prompt) == 1
+        assert "SYSTEM RESTARTED" in captured_prompt[0]
+        assert "resuming an existing autonomous session" in captured_prompt[0]
+
+    @pytest.mark.asyncio
+    async def test_kickoff_no_restart_has_no_system_restarted(self) -> None:
+        """_kickoff_initial_turn without is_restart has no SYSTEM RESTARTED."""
+        store = ConversationStore()
+        store.create_session("owner1")
+        sessions, _active = store.list_sessions("owner1")
+        sid = sessions[0]["session_id"]
+
+        settings = MagicMock()
+        settings.autonomous.initial_task = ""
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        captured_prompt: list[str] = []
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _capture_stream(prompt, *args, **kwargs):
+            captured_prompt.append(str(prompt))
+            yield ""
+            return
+
+        agent.stream.side_effect = _capture_stream
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+        )
+        await runner._kickoff_initial_turn(sid, "owner1", is_restart=False)
+
+        assert len(captured_prompt) == 1
+        assert "SYSTEM RESTARTED" not in captured_prompt[0]
+
+    @pytest.mark.asyncio
+    async def test_auto_continue_restart_mid_execution(self) -> None:
+        """_auto_continue with is_restart and auto_turn_count>0 injects restart msg."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.max_auto_turns = 20  # high enough to not hit the cap
+        settings.autonomous.approval_marker = "[APPROVAL]"
+        settings.autonomous.completion_marker = "[COMPLETE]"
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        captured_message: list[str] = []
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _capture_stream(message, *args, **kwargs):
+            captured_message.append(str(message))
+            yield "[APPROVAL]"  # triggers awaiting_approval so loop exits
+            return
+
+        agent.stream.side_effect = _capture_stream
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+        )
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        aq.state = AutonomousState.executing
+        aq.plan_text = "plan"
+        aq.auto_turn_count = 3  # mid-execution, not first turn
+        runner._save_sessions = MagicMock()
+
+        await runner._auto_continue(aq.session_id, is_restart=True)
+
+        assert len(captured_message) >= 1
+        assert "SYSTEM RESTARTED" in captured_message[0]
+        assert "Continue" in captured_message[0]
+
+    @pytest.mark.asyncio
+    async def test_auto_continue_restart_first_turn(self) -> None:
+        """is_restart + auto_turn_count=0 injects restart + approval."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.max_auto_turns = 20
+        settings.autonomous.approval_marker = "[APPROVAL]"
+        settings.autonomous.completion_marker = "[COMPLETE]"
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        captured_message: list[str] = []
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _capture_stream(message, *args, **kwargs):
+            captured_message.append(str(message))
+            yield "[APPROVAL]"  # triggers awaiting_approval so loop exits
+            return
+
+        agent.stream.side_effect = _capture_stream
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+        )
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        aq.state = AutonomousState.executing
+        aq.plan_text = "plan"
+        aq.auto_turn_count = 0  # first turn after approval
+        runner._save_sessions = MagicMock()
+
+        await runner._auto_continue(aq.session_id, is_restart=True)
+
+        assert len(captured_message) >= 1
+        assert "SYSTEM RESTARTED" in captured_message[0]
+        assert "OPERATOR APPROVAL RECEIVED" in captured_message[0]
+
+    @pytest.mark.asyncio
+    async def test_auto_continue_no_restart_has_no_system_restarted(self) -> None:
+        """_auto_continue without is_restart has no SYSTEM RESTARTED."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.max_auto_turns = 20
+        settings.autonomous.approval_marker = "[APPROVAL]"
+        settings.autonomous.completion_marker = "[COMPLETE]"
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        captured_message: list[str] = []
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _capture_stream(message, *args, **kwargs):
+            captured_message.append(str(message))
+            yield "[APPROVAL]"
+            return
+
+        agent.stream.side_effect = _capture_stream
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+        )
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        aq.state = AutonomousState.executing
+        aq.plan_text = "plan"
+        aq.auto_turn_count = 5
+        runner._save_sessions = MagicMock()
+
+        await runner._auto_continue(aq.session_id, is_restart=False)
+
+        assert len(captured_message) >= 1
+        assert "SYSTEM RESTARTED" not in captured_message[0]
+
+
+class TestCloseAndRespawnExceptionLogging:
+    """_close_and_respawn must log exceptions instead of crashing background tasks."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+
+    @pytest.mark.asyncio
+    async def test_close_and_respawn_logs_exception(self) -> None:
+        """Exception inside _close_and_respawn is logged, not raised."""
+        store = ConversationStore()
+        # Make close_session raise to simulate a store error.
+        store.close_session = MagicMock(side_effect=RuntimeError("store failure"))
+
+        runner = AutonomousRunner(
+            settings=MagicMock(),
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+        )
+        aq = runner.create_session("owner1")
+        aq.state = AutonomousState.completed
+
+        # Patch the logger so we can assert the exception was logged.
+        with MagicMock() as mock_logger:
+            # Temporarily swap the module-level logger.
+            import robotsix_chat.autonomous.runner as runner_mod
+
+            orig_logger = runner_mod.logger
+            runner_mod.logger = mock_logger
+            try:
+                # Must not raise.
+                await runner._close_and_respawn(aq.session_id)
+            finally:
+                runner_mod.logger = orig_logger
+
+        # Verify exception was logged.
+        assert mock_logger.exception.called
+        call_args = mock_logger.exception.call_args[0]
+        assert "Error in _close_and_respawn" in call_args[0]

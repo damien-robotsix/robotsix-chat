@@ -494,22 +494,6 @@
     });
   }
 
-  function createNewAutonomousSession() {
-    var url = apiBase() + "/sessions";
-    return fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ owner_id: clientId, autonomous: true })
-    }).then(function (r) {
-      if (!r.ok) {
-        return r.json().then(function (body) {
-          throw new Error(body.error || body.detail || "Failed to create autonomous session");
-        });
-      }
-      return r.json();
-    });
-  }
-
   function approveSession(sid) {
     var url = apiBase() + "/sessions/" + encodeURIComponent(sid) +
               "/approve?owner_id=" + encodeURIComponent(clientId);
@@ -2810,16 +2794,6 @@
   }
 
   // Bootstrap: fetch sessions, pick the active one, then load history/events.
-
-  // Preload settings to detect autonomous.enabled and show the button.
-  fetch(apiBase() + "/config", { method: "GET" })
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (cfg) {
-      if (cfg && cfg.autonomous && cfg.autonomous.enabled) {
-        newAutoBtn.style.display = "";
-      }
-    })
-    .catch(function () { /* ignore — button stays hidden */ });
 
   fetchSessions().then(function (data) {
     // Determine active session: server-reported active, or newest, or local fallback.
