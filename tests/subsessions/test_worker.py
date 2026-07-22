@@ -746,6 +746,10 @@ async def test_non_user_chat_parent_can_spawn_user_chat_child() -> None:
     assert info.kind is SubsessionKind.USER_CHAT
     # Clean up the spawned worker.
     env.registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
+
+
+@pytest.mark.asyncio
+async def test_non_periodic_parent_can_spawn_periodic_child() -> None:
     """A task or user_chat parent can still spawn periodic children."""
     env = build_env()
     parent = env.registry.create(

@@ -189,11 +189,14 @@ class ParentDelivery:
     def _parent_is_periodic(self, parent_id: str) -> bool:
         """Return True when *parent_id* is a periodic subsession.
 
-        Children of periodic parents should relay to the root conversation
-        rather than the periodic's inbox — periodic subsessions are
-        automated background loops that do not meaningfully process child
-        closure summaries, and the operator needs to see decisions in the
-        active root conversation.
+        Children of periodic parents get dual delivery: the outcome is
+        enqueued into the periodic parent's inbox (so the periodic sees
+        completed children on its next wake and can suppress duplicate
+        user_chat spawns for the same ticket) AND scheduled as a reaction
+        in the main chat (so the operator sees decisions immediately even
+        while the periodic is sleeping).  When the periodic parent is no
+        longer active the enqueue is a silent no-op; the reaction still
+        fires so the outcome is never lost.
         """
         parent = self._registry.get(parent_id)
         return parent is not None and parent.kind == SubsessionKind.PERIODIC
