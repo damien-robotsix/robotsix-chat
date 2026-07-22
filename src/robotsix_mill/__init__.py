@@ -50,3 +50,26 @@ import robotsix_mill.stages  # noqa: E402
 
 if _LOCAL_STAGES not in robotsix_mill.stages.__path__:
     robotsix_mill.stages.__path__.insert(0, _LOCAL_STAGES)
+
+# ---------------------------------------------------------------------------
+# 5.  Patch ``load_agent_definition`` to prefer local overrides in
+#     ``agent_definitions/``.  When a YAML file exists under our local
+#     ``src/robotsix_mill/agent_definitions/`` directory, use it instead
+#     of the installed copy.  This allows the repo to extend or override
+#     agent guidance (e.g. add a CI workflow edit checklist) without
+#     forking the entire mill package.
+# ---------------------------------------------------------------------------
+import robotsix_mill.agents.yaml_loader  # type: ignore[import-untyped]  # noqa: E402
+
+_original_load_agent_definition = robotsix_mill.agents.yaml_loader.load_agent_definition
+_LOCAL_AGENT_DEFINITIONS = str(_LOCAL_DIR / "agent_definitions")
+
+
+def _load_with_local_overrides(path: Path) -> object:
+    local_path = Path(_LOCAL_AGENT_DEFINITIONS) / path.name
+    if local_path.is_file():
+        return _original_load_agent_definition(local_path)
+    return _original_load_agent_definition(path)
+
+
+robotsix_mill.agents.yaml_loader.load_agent_definition = _load_with_local_overrides
