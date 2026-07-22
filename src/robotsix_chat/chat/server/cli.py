@@ -293,6 +293,8 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             settings=settings,
             conversation_store=conversation_store,
             model_level=settings.llmio_model_level,
+            subsession_env=env,
+            event_sink=event_bus,
         )
 
     # -- autonomous runner -------------------------------------------------
