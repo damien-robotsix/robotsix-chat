@@ -42,6 +42,7 @@ from .models import (
     SubsessionLevelError,
     SubsessionPeriodicSpawnError,
     SubsessionStatus,
+    SubsessionUserChatSpawnError,
 )
 from .registry import SubsessionRegistry
 
@@ -249,6 +250,12 @@ def spawn_subsession(
         if parent is not None and parent.kind is SubsessionKind.PERIODIC:
             raise SubsessionPeriodicSpawnError(
                 "periodic subsessions cannot spawn periodic children"
+            )
+    if kind is SubsessionKind.USER_CHAT and parent_id is not None:
+        parent = env.registry.get(parent_id)
+        if parent is not None and parent.kind is SubsessionKind.USER_CHAT:
+            raise SubsessionUserChatSpawnError(
+                "user_chat subsessions cannot spawn user_chat children"
             )
     if kind is SubsessionKind.PERIODIC:
         if interval_seconds is None or interval_seconds < cfg.min_interval_seconds:

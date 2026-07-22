@@ -208,6 +208,25 @@ async def test_spawn_tool_periodic_parent_periodic_child_refusal() -> None:
 
 
 @pytest.mark.asyncio
+async def test_spawn_tool_user_chat_parent_user_chat_child_refusal() -> None:
+    """A user_chat subsession spawning a user_chat child is refused politely."""
+    env = build_env()
+    parent = _register(env, kind=SubsessionKind.USER_CHAT)
+    tools = build_subsession_tools(env, ctx=_ctx(subsession_id=parent.id, depth=1))
+    spawn = _by_name(tools, "spawn_subsession")
+
+    result = await spawn(
+        "user_chat",
+        "child user_chat",
+        "ask more questions",
+        model_level=3,
+    )
+
+    assert result.startswith("Could not start the subsession:")
+    assert "user_chat" in result
+
+
+@pytest.mark.asyncio
 async def test_spawn_tool_refused_for_closed_session() -> None:
     """A closed chat session cannot spawn new subsessions."""
     store = ConversationStore()

@@ -84,6 +84,17 @@ POST /subsessions/{subsession_id}/close
 5. A non-suppressed result is delivered to the parent conversation (a synthetic turn in the owning
    chat session, or the parent subsession's inbox when nested) and published as a
    `subsession_result` frame to the browser.
+   - **Decision chats (user_chat) spawned by periodic parents get dual delivery:** the outcome is
+     enqueued into the periodic parent's inbox (so the periodic sees completed children on its next
+     wake and suppresses duplicate user_chat spawns for the same ticket) AND scheduled as a reaction
+     in the main chat (so the operator sees decisions immediately even while the periodic is
+     sleeping). Previously, outcomes from periodic-spawned decision chats reached only the sleeping
+     periodic parent and were silently stranded.
+   - **Nested user_chat prohibition:** a `user_chat` subsession cannot spawn another `user_chat`
+     subsession — preventing stacked orphaned decision chats. If a spawned decision chat tries to
+     open a second decision chat for the same ticket, the spawn is refused with a
+     `SubsessionUserChatSpawnError`. Non-`user_chat` children (e.g. `task`) from a `user_chat`
+     parent are still allowed.
 6. **Terminal-state discipline.** The sub-agent calls its `complete_subsession(summary)` tool as
    soon as the monitored condition reaches a verified terminal state — the summary is delivered to
    the parent and the subsession closes.

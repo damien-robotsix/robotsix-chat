@@ -6,6 +6,8 @@
   missing permissions blocks, wrong tool install methods (``uv pip install --system``
   vs ``uv tool install``), and missing ``--extra`` dependencies.  The mill's
   implement agent now checks these when a ticket touches ``.github/workflows/`` files.
+- Decision chats spawned by periodic subsessions now surface in the main conversation immediately while also being relayed to the periodic parent's inbox so it doesn't re-spawn duplicates on its next wake.
+- User-chat subsessions can no longer spawn nested user-chat subsessions, preventing stacked orphaned decision chats.
 - Fix `GET /sessions` 500 error for owners with autonomous sessions: the autonomous-annotation block referenced `app.state.settings` which was never set. Expose `max_auto_turns`/`session_color` as properties on `AutonomousRunner` and use them directly from the runner already in scope.
 - Fix autonomous session kickoff crash: `RuntimeError: asyncio.run() cannot be called from a running event loop`. Agent factory calls in `_kickoff_initial_turn`, `_auto_continue`, and `_close_and_respawn` are now offloaded to a thread executor via `asyncio.to_thread`, matching the subsession worker pattern.
 - `repo_study`: fix private-repo fetch by preserving the GitHub App installation token across the API→codeload redirect (httpx was stripping it). Token-exchange failures and 403 scope errors now raise loud, specific errors instead of silently falling back to unauthenticated access.

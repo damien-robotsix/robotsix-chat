@@ -30,6 +30,7 @@ from .models import (
     SubsessionKind,
     SubsessionLevelError,
     SubsessionPeriodicSpawnError,
+    SubsessionUserChatSpawnError,
 )
 from .registry import SubsessionRegistry
 from .worker import CloseState, SubsessionContext, SubsessionEnv, spawn_subsession
@@ -203,6 +204,7 @@ def _build_spawn_and_control_tools(
             SubsessionIntervalError,
             SubsessionLevelError,
             SubsessionPeriodicSpawnError,
+            SubsessionUserChatSpawnError,
         ) as exc:
             return f"Could not start the subsession: {exc}"
         if was_dedup:

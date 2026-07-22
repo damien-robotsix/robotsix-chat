@@ -571,53 +571,68 @@ async def test_deliver_result_nested_parent_terminal_degrades_to_store() -> None
 
 
 # ---------------------------------------------------------------------------
-# deliver_summary / deliver_result — periodic parent (routes to root)
+# deliver_summary / deliver_result — periodic parent (enqueues + reacts)
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_deliver_summary_periodic_parent_skips_enqueue() -> None:
-    """When parent is PERIODIC, enqueue_message is skipped; outcome routes to root."""
+async def test_deliver_summary_periodic_parent_enqueues_and_reacts() -> None:
+    """When parent is PERIODIC, enqueue to parent AND react in main chat."""
     store = MagicMock()
     registry = MagicMock()
     parent = MagicMock()
     parent.kind = SubsessionKind.PERIODIC
     registry.get.return_value = parent
+    registry.enqueue_message.return_value = True
     delivery = _build_delivery(store=store, registry=registry)
-    info = _make_info(parent_id="parent-periodic", kind=SubsessionKind.TASK)
+    info = _make_info(parent_id="parent-periodic", kind=SubsessionKind.USER_CHAT)
 
     await delivery.deliver_summary(info, "periodic child done", "completed")
     await _await_reaction_tasks(delivery)
 
-    registry.get.assert_called_once_with("parent-periodic")
-    registry.enqueue_message.assert_not_called()
-    store.record_for_session.assert_called_once()
-    args, _kwargs = store.record_for_session.call_args
-    assert args[0] == "owner-sess-1"
+    # Enqueued to the periodic parent's inbox.
+    registry.enqueue_message.assert_called_once()
+    args, _kwargs = registry.enqueue_message.call_args
+    assert args[0] == "parent-periodic"
+    assert args[1] == "parent"
     assert "periodic child done" in args[2]
+
+    # Also scheduled a reaction in the main chat (the owner session).
+    store.record_for_session.assert_called_once()
+    store_args, _store_kwargs = store.record_for_session.call_args
+    assert store_args[0] == "owner-sess-1"
+    assert "periodic child done" in store_args[2]
+
+    # The parent-kind check was done.
+    registry.get.assert_called_with("parent-periodic")
 
 
 @pytest.mark.asyncio
-async def test_deliver_result_periodic_parent_skips_enqueue() -> None:
-    """When parent is PERIODIC, deliver_result skips enqueue; outcome routes to root."""
+async def test_deliver_result_periodic_parent_enqueues_and_reacts() -> None:
+    """When parent is PERIODIC, deliver_result enqueues to parent and reacts."""
     store = MagicMock()
     registry = MagicMock()
     parent = MagicMock()
     parent.kind = SubsessionKind.PERIODIC
     registry.get.return_value = parent
+    registry.enqueue_message.return_value = True
     delivery = _build_delivery(store=store, registry=registry)
     info = _make_info(parent_id="parent-periodic", kind=SubsessionKind.TASK)
 
     await delivery.deliver_result(info, 3, "periodic run result")
     await _await_reaction_tasks(delivery)
 
-    registry.get.assert_called_once_with("parent-periodic")
-    registry.enqueue_message.assert_not_called()
-    store.record_for_session.assert_called_once()
-    args, _kwargs = store.record_for_session.call_args
-    assert args[0] == "owner-sess-1"
+    registry.enqueue_message.assert_called_once()
+    args, _kwargs = registry.enqueue_message.call_args
+    assert args[0] == "parent-periodic"
+    assert args[1] == "parent"
     assert "periodic run result" in args[2]
-    assert "run 3" in args[1]
+    assert "run 3" in args[2]
+
+    store.record_for_session.assert_called_once()
+    store_args, _store_kwargs = store.record_for_session.call_args
+    assert store_args[0] == "owner-sess-1"
+    assert "periodic run result" in store_args[2]
 
 
 # ---------------------------------------------------------------------------

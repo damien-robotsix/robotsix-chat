@@ -26,7 +26,9 @@ __all__ = [
     "SubsessionIntervalError",
     "SubsessionKind",
     "SubsessionLevelError",
+    "SubsessionPeriodicSpawnError",
     "SubsessionStatus",
+    "SubsessionUserChatSpawnError",
     "TranscriptEntry",
 ]
 
@@ -78,6 +80,10 @@ class SubsessionLevelError(ValueError):
 
 class SubsessionPeriodicSpawnError(RuntimeError):
     """Raised when a periodic subsession attempts to spawn a periodic child."""
+
+
+class SubsessionUserChatSpawnError(RuntimeError):
+    """Raised when a user_chat subsession attempts to spawn a user_chat child."""
 
 
 class SubsessionDedupError(RuntimeError):

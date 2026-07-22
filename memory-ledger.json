@@ -6,11 +6,18 @@
       "module_doc": "docs/architecture.md",
       "periodic_doc": "docs/periodic-checks.md",
       "config_doc": "docs/configuration.md"
+    },
+    "delivery_dual_routing": {
+      "described_in": "docs/periodic-checks.md (point 5 sub-bullets), docs/architecture.md (subsessions subpackage table row)"
+    },
+    "user_chat_nesting_guard": {
+      "described_in": "docs/periodic-checks.md (point 5 sub-bullet)"
     }
   },
   "conventions": {
     "changelog_fragments": "changelog.d/<id>.<type>.md where type ∈ {feature, bugfix, doc, removal, misc}",
-    "reaction_turn_pattern": "assistant replies with exact text matching a known sentinel pattern"
+    "reaction_turn_pattern": "assistant replies with exact text matching a known sentinel pattern",
+    "periodic_decision_chat_delivery": "Dual delivery: periodic parent inbox + main chat reaction. user_chat subsessions cannot spawn user_chat children."
   },
-  "updated_memory": "Repo doc layout: root docs/ is MkDocs-material. Key files: docs/index.md (home), docs/architecture.md (system context, startup flow, subsession concept at lines 31, 54-64, 116-121, 137, 178, 215), docs/periodic-checks.md (full periodic subsession lifecycle including resume at line 90), docs/configuration.md (subsessions config table at lines 223-236), docs/changelog.md (rendered from fragments), docs/contributing.md. No dedicated one-shot/task subsession doc exists — only a passing mention in architecture.md line 31. Changelog fragments live in changelog.d/ and follow towncrier conventions (CI-enforced via `towncrier check`). Memory ledger is a meta-index, not a runtime store."
+  "updated_memory": "Repo doc layout: root docs/ is MkDocs-material. Key files: docs/index.md (home), docs/architecture.md (system context, startup flow, subsession concept at lines 31, 54-64, 116-121, 137, 178, 215), docs/periodic-checks.md (full periodic subsession lifecycle including dual-delivery for decision chats at point 5 and nested user_chat prohibition), docs/configuration.md (subsessions config table at lines 223-236), docs/changelog.md (rendered from fragments), docs/contributing.md. No dedicated one-shot/task subsession doc exists — only a passing mention in architecture.md line 31. Changelog fragments live in changelog.d/ and follow towncrier conventions (CI-enforced via `towncrier check`). Memory ledger is a meta-index, not a runtime store."
 }

@@ -127,18 +127,30 @@ class ParentDelivery:
             f"[Subsession {info.id[:8]} ({info.kind.value}) '{info.title}' {reason}]"
         )
         try:
-            if (
-                info.parent_id is not None
-                and not self._parent_is_periodic(info.parent_id)
-                and self._registry.enqueue_message(
-                    info.parent_id, "parent", f"{label} {summary}"
-                )
-            ):
-                return
-            # Main-chat parent, periodic parent, or nested parent already
-            # terminal → relay to the owning session so the outcome is
-            # never lost (and for periodic parents, so the operator sees
-            # the decision in the active root conversation).
+            if info.parent_id is not None:
+                if not self._parent_is_periodic(info.parent_id):
+                    if self._registry.enqueue_message(
+                        info.parent_id, "parent", f"{label} {summary}"
+                    ):
+                        return
+                else:
+                    # Parent is periodic — enqueue the completion into
+                    # the parent's inbox so the periodic sees it on its
+                    # next wake (prevents re-spawning a duplicate
+                    # user_chat for the same ticket), AND schedule a
+                    # reaction in the main chat so the operator sees the
+                    # decision immediately even while the periodic is
+                    # sleeping.  When the periodic parent is no longer
+                    # active the enqueue is a silent no-op; the reaction
+                    # still fires so the outcome is never lost.
+                    self._registry.enqueue_message(
+                        info.parent_id, "parent", f"{label} {summary}"
+                    )
+                    self._schedule_reaction(info, summary, reason, label)
+                    return
+            # Main-chat parent (parent_id is None) or nested parent
+            # already terminal → relay to the owning session so the
+            # outcome is never lost.
             self._schedule_reaction(info, summary, reason, label)
         except Exception:
             logger.exception(
@@ -154,14 +166,18 @@ class ParentDelivery:
         """
         label = f"[Subsession {info.id[:8]} '{info.title}' run {run}]"
         try:
-            if (
-                info.parent_id is not None
-                and not self._parent_is_periodic(info.parent_id)
-                and self._registry.enqueue_message(
-                    info.parent_id, "parent", f"{label} {text}"
-                )
-            ):
-                return
+            if info.parent_id is not None:
+                if not self._parent_is_periodic(info.parent_id):
+                    if self._registry.enqueue_message(
+                        info.parent_id, "parent", f"{label} {text}"
+                    ):
+                        return
+                else:
+                    self._registry.enqueue_message(
+                        info.parent_id, "parent", f"{label} {text}"
+                    )
+                    self._schedule_reaction(info, text, f"run {run}", label)
+                    return
             self._schedule_reaction(info, text, f"run {run}", label)
         except Exception:
             logger.exception("Failed to deliver subsession %s run result", info.id)
@@ -173,11 +189,14 @@ class ParentDelivery:
     def _parent_is_periodic(self, parent_id: str) -> bool:
         """Return True when *parent_id* is a periodic subsession.
 
-        Children of periodic parents should relay to the root conversation
-        rather than the periodic's inbox — periodic subsessions are
-        automated background loops that do not meaningfully process child
-        closure summaries, and the operator needs to see decisions in the
-        active root conversation.
+        Children of periodic parents get dual delivery: the outcome is
+        enqueued into the periodic parent's inbox (so the periodic sees
+        completed children on its next wake and can suppress duplicate
+        user_chat spawns for the same ticket) AND scheduled as a reaction
+        in the main chat (so the operator sees decisions immediately even
+        while the periodic is sleeping).  When the periodic parent is no
+        longer active the enqueue is a silent no-op; the reaction still
+        fires so the outcome is never lost.
         """
         parent = self._registry.get(parent_id)
         return parent is not None and parent.kind == SubsessionKind.PERIODIC
