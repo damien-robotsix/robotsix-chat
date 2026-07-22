@@ -11,6 +11,7 @@ from httpx import ASGITransport, AsyncClient
 from robotsix_chat.autonomous.models import AutonomousState
 from robotsix_chat.autonomous.runner import AutonomousRunner
 from robotsix_chat.chat.conversation import ConversationStore
+from robotsix_chat.chat.events import SSE_AUTONOMOUS_STATE_TYPE
 from robotsix_chat.chat.server.app import create_app
 from robotsix_chat.chat.server.routes.chat import RunSerializer
 from robotsix_chat.llm import LlmioChatAgent
@@ -229,7 +230,7 @@ class TestSessionsListAutonomousAnnotation:
         s = sessions[0]
         assert s["session_id"] == sid
         assert s["autonomous"] is True
-        assert s["autonomous_state"] == "awaiting_approval"
+        assert s[SSE_AUTONOMOUS_STATE_TYPE] == "awaiting_approval"
         assert s["autonomous_plan_text"] == "Draft plan text"
         assert s["autonomous_turn_count"] == 3
         assert s["autonomous_max_turns"] == 20
