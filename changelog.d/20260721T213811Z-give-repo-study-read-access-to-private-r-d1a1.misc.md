@@ -1,0 +1,1 @@
+Give repo-study read access to private repos by reusing the GitHub App installation token and fixing the API→codeload redirect so the Authorization header is preserved (httpx was stripping it on the cross-origin hop)

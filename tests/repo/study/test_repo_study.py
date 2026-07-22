@@ -167,10 +167,10 @@ async def test_fetch_sends_app_token_when_configured(
 
 @respx.mock
 @pytest.mark.asyncio
-async def test_fetch_falls_back_unauthenticated_on_token_failure(
+async def test_fetch_raises_on_token_failure(
     tmp_path: Path, monkeypatch: pytest.MonkeyPatch
 ) -> None:
-    """A failed token exchange falls back to an unauthenticated fetch."""
+    """A failed token exchange raises a WorkspaceError — no silent fallback."""
     direct_repo = DirectRepoSettings(
         github_app_id="42",
         github_app_private_key="fake-pem",  # pragma: allowlist secret
@@ -186,11 +186,115 @@ async def test_fetch_falls_back_unauthenticated_on_token_failure(
     manager = WorkspaceManager(
         RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")), direct_repo
     )
-    route = respx.get(TARBALL_URL).mock(
+    respx.get(TARBALL_URL).mock(
         return_value=Response(200, content=make_tarball(SAMPLE_FILES))
     )
-    await manager.fetch("acme/widget")
-    assert "Authorization" not in route.calls.last.request.headers
+    with pytest.raises(WorkspaceError, match="token request failed"):
+        await manager.fetch("acme/widget")
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_fetch_403_reports_scope_error(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Authenticated 403 reports missing ``contents:read`` permission."""
+    direct_repo = DirectRepoSettings(
+        github_app_id="42",
+        github_app_private_key="fake-pem",  # pragma: allowlist secret
+        github_app_installation_id="7",
+    )
+
+    async def fake_token(_settings: DirectRepoSettings) -> str:
+        return "installation-token"
+
+    import robotsix_chat.repo.direct.client as dr_client
+
+    monkeypatch.setattr(dr_client, "_get_installation_token", fake_token)
+    manager = WorkspaceManager(
+        RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")), direct_repo
+    )
+    respx.get(TARBALL_URL).mock(return_value=Response(403))
+    with pytest.raises(WorkspaceError, match="contents:read"):
+        await manager.fetch("acme/widget")
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_fetch_404_unauthenticated_hints_private_repo(
+    tmp_path: Path,
+) -> None:
+    """Unauthenticated 404 hints that the repo may be private."""
+    manager = WorkspaceManager(
+        RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")),
+        DirectRepoSettings(),  # no credentials
+    )
+    respx.get(TARBALL_URL).mock(return_value=Response(404))
+    with pytest.raises(WorkspaceError, match="private"):
+        await manager.fetch("acme/widget")
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_fetch_404_authenticated_reports_not_found(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """Authenticated 404 reports repo not found / installation access issue."""
+    direct_repo = DirectRepoSettings(
+        github_app_id="42",
+        github_app_private_key="fake-pem",  # pragma: allowlist secret
+        github_app_installation_id="7",
+    )
+
+    async def fake_token(_settings: DirectRepoSettings) -> str:
+        return "installation-token"
+
+    import robotsix_chat.repo.direct.client as dr_client
+
+    monkeypatch.setattr(dr_client, "_get_installation_token", fake_token)
+    manager = WorkspaceManager(
+        RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")), direct_repo
+    )
+    respx.get(TARBALL_URL).mock(return_value=Response(404))
+    with pytest.raises(WorkspaceError, match="authenticated"):
+        await manager.fetch("acme/widget")
+
+
+@respx.mock
+@pytest.mark.asyncio
+async def test_fetch_follows_redirect_preserving_auth(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """A 302 redirect to codeload is followed with the auth header intact."""
+    direct_repo = DirectRepoSettings(
+        github_app_id="42",
+        github_app_private_key="fake-pem",  # pragma: allowlist secret
+        github_app_installation_id="7",
+    )
+
+    async def fake_token(_settings: DirectRepoSettings) -> str:
+        return "installation-token"
+
+    import robotsix_chat.repo.direct.client as dr_client
+
+    monkeypatch.setattr(dr_client, "_get_installation_token", fake_token)
+    manager = WorkspaceManager(
+        RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")), direct_repo
+    )
+    codeload_url = "https://codeload.github.com/acme/widget/legacy.tar.gz/ref"
+    api_route = respx.get(TARBALL_URL).mock(
+        return_value=Response(302, headers={"Location": codeload_url})
+    )
+    codeload_route = respx.get(codeload_url).mock(
+        return_value=Response(200, content=make_tarball(SAMPLE_FILES))
+    )
+    summary = await manager.fetch("acme/widget")
+    assert api_route.called
+    assert codeload_route.called
+    # The codeload request must carry the auth header that httpx would strip.
+    codeload_auth = codeload_route.calls.last.request.headers.get("Authorization")
+    assert codeload_auth == "Bearer installation-token"
+    assert "acme--widget--default" in summary
 
 
 # ---------------------------------------------------------------------------
