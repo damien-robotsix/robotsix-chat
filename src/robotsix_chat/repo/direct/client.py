@@ -36,12 +36,20 @@ def _b64encode(data: bytes) -> str:
 # ---------------------------------------------------------------------------
 
 
+_INSTALLATION_TOKEN_CACHE: dict[str, str] = {}
+
+
 async def _get_installation_token(settings: DirectRepoSettings) -> str:
     """Mint a short-lived GitHub App installation access token.
 
     Delegates to the shared ``robotsix_github_auth`` library — no in-container
-    JWT logic remains.
+    JWT logic remains.  Results are cached by installation id.
     """
+    iid = settings.github_app_installation_id
+    cached = _INSTALLATION_TOKEN_CACHE.get(iid)
+    if cached is not None:
+        return cached
+
     from robotsix_github_auth import mint_installation_token
 
     result = await asyncio.to_thread(
@@ -50,7 +58,9 @@ async def _get_installation_token(settings: DirectRepoSettings) -> str:
         private_key=settings.github_app_private_key.get_secret_value(),
         installation_id=settings.github_app_installation_id,
     )
-    return cast(str, result.token)
+    token = cast(str, result.token)
+    _INSTALLATION_TOKEN_CACHE[iid] = token
+    return token
 
 
 # ---------------------------------------------------------------------------
