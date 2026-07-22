@@ -249,7 +249,12 @@ def spawn_subsession(
         parent = env.registry.get(parent_id)
         if parent is not None and parent.kind is SubsessionKind.PERIODIC:
             raise SubsessionPeriodicSpawnError(
-                "periodic subsessions cannot spawn periodic children"
+                "periodic subsessions cannot spawn periodic children. "
+                "Alternatives: (1) use a one-shot task subsession to "
+                "spawn the periodic monitor, (2) modify the existing "
+                "monitor's prompt to cover the additional scope, or "
+                "(3) ask the operator to spawn a top-level periodic "
+                "monitor."
             )
     if kind is SubsessionKind.USER_CHAT and parent_id is not None:
         parent = env.registry.get(parent_id)

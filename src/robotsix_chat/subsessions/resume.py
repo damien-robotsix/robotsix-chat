@@ -474,7 +474,12 @@ def resume_subsessions(env: SubsessionEnv) -> None:
     for entry in env.registry.load_persisted():
         try:
             fate = _resume_entry(env, entry)
-            if fate is not None:
+            # Periodic monitors resume silently — they are autonomous
+            # and report results via their normal delivery channels.
+            # Including them in the restart notice would cause the
+            # parent agent to take unnecessary action on every
+            # restart, undermining the recovery guarantee.
+            if fate is not None and fate["kind"] != "periodic":
                 owner = fate["owner_session_id"]
                 fate_by_owner.setdefault(owner, []).append(fate)
         except Exception:
