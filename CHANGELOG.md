@@ -1,5 +1,9 @@
 ## 0.0.0 (unreleased)
 
+- Autonomous sessions: strengthened the post-approval proceed message from
+  a passive "Proceed with the approved plan." to an explicit "OPERATOR
+  APPROVAL RECEIVED" directive that instructs the agent to begin executing
+  the first step immediately, preventing stalled sessions after approval.
 - Added CI workflow edit checklist to the implement-stage agent guidance
   (shadow-package override in ``src/robotsix_mill/agent_definitions/implement.yaml``).
   The checklist covers the three most common preventable CI failure classes:

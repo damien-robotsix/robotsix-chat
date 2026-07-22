@@ -392,7 +392,15 @@ class AutonomousRunner:
 
                     # First turn after approval: explicit proceed message.
                     if aq.auto_turn_count == 0:
-                        message = "Proceed with the approved plan."
+                        message = (
+                            "OPERATOR APPROVAL RECEIVED. Your plan has been "
+                            "approved. Begin executing the first step of your "
+                            "plan immediately — use your tools to take the "
+                            "action now. Do not describe what you will do; "
+                            "actually perform it. Do not request re-approval "
+                            "unless you encounter a genuine blocker that you "
+                            "cannot resolve on your own."
+                        )
                     else:
                         message = "Continue."
 

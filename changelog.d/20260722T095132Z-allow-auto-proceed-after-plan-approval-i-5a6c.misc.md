@@ -1,0 +1,1 @@
+Allow auto-proceed after plan approval instead of full halt
