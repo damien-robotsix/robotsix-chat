@@ -17,11 +17,21 @@ import respx
 
 from robotsix_chat.config import DirectRepoSettings
 from robotsix_chat.repo.direct import build_direct_repo_tools
-from robotsix_chat.repo.direct.client import DirectRepoClient
+from robotsix_chat.repo.direct.client import (
+    _INSTALLATION_TOKEN_CACHE,
+    DirectRepoClient,
+)
 
 # ---------------------------------------------------------------------------
 # helpers
 # ---------------------------------------------------------------------------
+
+
+def _prepopulate_installation_token(settings: DirectRepoSettings) -> None:
+    """Seed the installation token cache so tests bypass the token exchange."""
+    _INSTALLATION_TOKEN_CACHE[settings.github_app_installation_id] = (
+        "ghs_prepopulated_token"
+    )
 
 
 def _settings(**kw: Any) -> DirectRepoSettings:
@@ -1612,6 +1622,81 @@ async def test_count_implement_cycles_no_data_returns_zero(
     client = DirectRepoClient(settings)
     cycles = await client.count_implement_cycles("t-nodata")
     assert cycles == 0
+
+
+# ---------------------------------------------------------------------------
+# 401 token-expiry retry
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_github_401_triggers_token_refresh_and_retry(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When GitHub returns 401 the client refreshes the token and retries once."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    # The installation repos endpoint: first call → 401, second → 200
+    repos_url = "https://api.github.com/installation/repositories"
+    repos_route = respx_mock.get(repos_url).mock(
+        side_effect=[
+            httpx.Response(401, text=json.dumps({"message": "Bad credentials"})),
+            httpx.Response(
+                200,
+                text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+            ),
+        ]
+    )
+
+    # Token exchange endpoint: returns a fresh token
+    respx_mock.post(
+        "https://api.github.com/app/installations/67890/access_tokens"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"token": "ghs_fresh_token_after_401"}),
+        )
+    )
+
+    client = DirectRepoClient(settings)
+    repos = await client.list_installation_repos()
+
+    assert repos == ["org/repo"]
+    assert repos_route.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_github_401_retry_fails_on_second_401(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When GitHub returns 401 twice the client does not retry a third time."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    repos_url = "https://api.github.com/installation/repositories"
+    repos_route = respx_mock.get(repos_url).mock(
+        return_value=httpx.Response(
+            401, text=json.dumps({"message": "Bad credentials"})
+        )
+    )
+
+    # Token exchange still works
+    respx_mock.post(
+        "https://api.github.com/app/installations/67890/access_tokens"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"token": "ghs_fresh_token_after_401"}),
+        )
+    )
+
+    client = DirectRepoClient(settings)
+    with pytest.raises(RuntimeError, match="GitHub API GET"):
+        await client.list_installation_repos()
+
+    # Two calls: initial + one retry
+    assert repos_route.call_count == 2
 
 
 # ---------------------------------------------------------------------------
