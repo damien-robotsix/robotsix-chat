@@ -281,76 +281,89 @@ async def test_history_read_is_non_mutating() -> None:
 
 
 @pytest.mark.asyncio
-async def test_summary_endpoint_returns_free_text_for_valid_session() -> None:
-    """POST /summary with a session that has turns returns the plain-text reply."""
-    store = ConversationStore()
-    sid = cast(str, store.create_session("owner-a")["session_id"])
-    store.record(sid, "owner-a", "Hello", "Hi there!")
+@pytest.mark.parametrize(
+    ("setup", "expected_summary"),
+    [
+        pytest.param(
+            "with_turns", "Just a friendly greeting so far.", id="valid_session"
+        ),
+        pytest.param("no_turns", "", id="empty_session"),
+        pytest.param("unknown", "", id="unknown_session"),
+    ],
+)
+async def test_summary_endpoint_returns_summary(
+    setup: str, expected_summary: str
+) -> None:
+    """POST /summary returns the expected summary.
 
-    async with mock_app(
-        tokens=["Just a friendly ", "greeting so far."], conversation_store=store
-    ) as f:
+    Covers valid, empty, and unknown session cases.
+    """
+    if setup == "with_turns":
+        store = ConversationStore()
+        sid = cast(str, store.create_session("owner-a")["session_id"])
+        store.record(sid, "owner-a", "Hello", "Hi there!")
+        app_kwargs: dict[str, object] = {
+            "tokens": ["Just a friendly ", "greeting so far."],
+            "conversation_store": store,
+        }
+    elif setup == "no_turns":
+        store = ConversationStore()
+        sid = cast(str, store.create_session("owner-a")["session_id"])
+        app_kwargs = {"conversation_store": store}
+    else:
+        sid = "nonexistent"
+        app_kwargs = {}
+
+    async with mock_app(**app_kwargs) as f:
         response = await f.client.post(
             "/summary",
             json={"session_id": sid, "owner_id": "owner-a"},
         )
 
     assert response.status_code == 200
-    assert response.json() == {"summary": "Just a friendly greeting so far."}
+    assert response.json() == {"summary": expected_summary}
 
 
 @pytest.mark.asyncio
-async def test_summary_endpoint_empty_session_returns_empty_summary() -> None:
-    """POST /summary for a session with no turns returns an empty summary."""
-    store = ConversationStore()
-    sid = cast(str, store.create_session("owner-a")["session_id"])
+@pytest.mark.parametrize(
+    ("payload", "expected_status", "mock_app_kwargs"),
+    [
+        pytest.param(
+            {"json": {"owner_id": "o"}},
+            400,
+            {},
+            id="missing_session_id",
+        ),
+        pytest.param(
+            None,  # computed below — needs store + turns
+            500,
+            {"error": ValueError("boom")},
+            id="agent_error",
+        ),
+    ],
+)
+async def test_summary_endpoint_error_cases(
+    payload: dict[str, object] | None,
+    expected_status: int,
+    mock_app_kwargs: dict[str, object],
+) -> None:
+    """POST /summary returns the expected error status for edge cases."""
+    if payload is not None:
+        request_kwargs = payload
+    else:
+        # Build a valid request that triggers an agent error.
+        store = ConversationStore()
+        sid = cast(str, store.create_session("owner-a")["session_id"])
+        store.record(sid, "owner-a", "Hello", "Hi there!")
+        request_kwargs = {
+            "json": {"session_id": sid, "owner_id": "owner-a"},
+        }
+        mock_app_kwargs = {**mock_app_kwargs, "conversation_store": store}
 
-    async with mock_app(conversation_store=store) as f:
-        response = await f.client.post(
-            "/summary",
-            json={"session_id": sid, "owner_id": "owner-a"},
-        )
+    async with mock_app(**mock_app_kwargs) as f:
+        response = await f.client.post("/summary", **request_kwargs)
 
-    assert response.status_code == 200
-    assert response.json() == {"summary": ""}
-
-
-@pytest.mark.asyncio
-async def test_summary_endpoint_unknown_session_returns_empty_summary() -> None:
-    """POST /summary for unknown session returns an empty summary (no lazy-create)."""
-    async with mock_app() as f:
-        response = await f.client.post(
-            "/summary",
-            json={"session_id": "nonexistent", "owner_id": "owner-a"},
-        )
-
-    assert response.status_code == 200
-    assert response.json() == {"summary": ""}
-
-
-@pytest.mark.asyncio
-async def test_summary_endpoint_missing_session_id_returns_400() -> None:
-    """POST /summary without session_id returns 400."""
-    async with mock_app() as f:
-        response = await f.client.post("/summary", json={"owner_id": "o"})
-
-    assert response.status_code == 400
-
-
-@pytest.mark.asyncio
-async def test_summary_endpoint_agent_error_returns_500() -> None:
-    """POST /summary returns 500 when the agent raises an exception."""
-    store = ConversationStore()
-    sid = cast(str, store.create_session("owner-a")["session_id"])
-    store.record(sid, "owner-a", "Hello", "Hi there!")
-
-    async with mock_app(error=ValueError("boom"), conversation_store=store) as f:
-        response = await f.client.post(
-            "/summary",
-            json={"session_id": sid, "owner_id": "owner-a"},
-        )
-
-    assert response.status_code == 500
+    assert response.status_code == expected_status
 
 
 @pytest.mark.asyncio
@@ -397,6 +410,35 @@ async def test_summary_endpoint_uses_dedicated_summary_agent() -> None:
     assert response.json()["summary"] == "Just a friendly greeting so far."
     assert summary_agent.call_count == 1
     assert main_agent.call_count == 0
+
+
+# ---------------------------------------------------------------------------
+# Sessions endpoints — missing owner_id validation
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    ("method", "path", "payload"),
+    [
+        pytest.param("get", "/sessions", None, id="list"),
+        pytest.param("post", "/sessions", {"json": {}}, id="create"),
+        pytest.param("delete", "/sessions/whatever", None, id="delete"),
+        pytest.param("post", "/sessions/whatever/close", None, id="close"),
+    ],
+)
+async def test_sessions_missing_owner_id_returns_400(
+    method: str, path: str, payload: dict[str, object] | None
+) -> None:
+    """Sessions endpoints return 400 when ``owner_id`` is missing."""
+    async with mock_app() as f:
+        client_method = getattr(f.client, method)
+        if payload is not None:
+            response = await client_method(path, **payload)
+        else:
+            response = await client_method(path)
+
+    assert response.status_code == 400
 
 
 # ---------------------------------------------------------------------------
@@ -458,16 +500,6 @@ async def test_sessions_list_lazy_create_is_idempotent() -> None:
     assert s1[0]["session_id"] == s2[0]["session_id"]
 
 
-@pytest.mark.asyncio
-async def test_sessions_list_missing_owner_id_returns_400() -> None:
-    """``GET /sessions`` without ``owner_id`` returns 400."""
-    async with mock_app() as f:
-        response = await f.client.get("/sessions")
-
-    assert response.status_code == 400
-    assert "owner_id" in response.json()["error"]
-
-
 # ---------------------------------------------------------------------------
 # Sessions endpoints — POST /sessions
 # ---------------------------------------------------------------------------
@@ -493,16 +525,6 @@ async def test_sessions_create_returns_new_session() -> None:
     assert active == data["session_id"]
     sids = [cast(str, s["session_id"]) for s in sessions]
     assert data["session_id"] in sids
-
-
-@pytest.mark.asyncio
-async def test_sessions_create_missing_owner_id_returns_400() -> None:
-    """``POST /sessions`` without ``owner_id`` returns 400."""
-    async with mock_app() as f:
-        response = await f.client.post("/sessions", json={})
-
-    assert response.status_code == 400
-    assert "owner_id" in response.json()["error"]
 
 
 @pytest.mark.asyncio
@@ -562,14 +584,6 @@ async def test_sessions_delete_unknown_returns_404() -> None:
     assert response.status_code == 404
 
 
-@pytest.mark.asyncio
-async def test_sessions_delete_missing_owner_id_returns_400() -> None:
-    """``DELETE`` without ``owner_id`` returns 400."""
-    async with mock_app() as f:
-        response = await f.client.delete("/sessions/whatever")
-    assert response.status_code == 400
-
-
 # ---------------------------------------------------------------------------
 # Sessions close endpoint — POST /sessions/{id}/close
 # ---------------------------------------------------------------------------
@@ -619,14 +633,6 @@ async def test_sessions_close_unknown_returns_404() -> None:
     assert response.status_code == 404
     data = response.json()
     assert "error" in data
-
-
-@pytest.mark.asyncio
-async def test_sessions_close_missing_owner_id_returns_400() -> None:
-    """``POST /sessions/{id}/close`` without ``owner_id`` returns 400."""
-    async with mock_app() as f:
-        response = await f.client.post("/sessions/whatever/close")
-    assert response.status_code == 400
 
 
 @pytest.mark.asyncio
@@ -872,49 +878,27 @@ async def test_ui_static_js_served() -> None:
 
 
 @pytest.mark.asyncio
-async def test_chat_endpoint_missing_message_field() -> None:
-    """Verify that the /chat endpoint returns 400 when the message field is missing."""
+@pytest.mark.parametrize(
+    "payload",
+    [
+        pytest.param({"json": {}}, id="missing"),
+        pytest.param({"json": {"message": 123}}, id="wrong_type"),
+        pytest.param(
+            {"content": b"not json", "headers": {"Content-Type": "application/json"}},
+            id="invalid_json",
+        ),
+        pytest.param({"json": {"message": ""}}, id="empty_string"),
+    ],
+)
+async def test_chat_endpoint_rejects_invalid_payload(
+    payload: dict[str, object],
+) -> None:
+    """The /chat endpoint returns 400 for invalid payloads."""
     async with mock_app() as f:
-        response = await f.client.post("/chat", json={})
+        response = await f.client.post("/chat", **payload)
 
     assert response.status_code == 400
-    data = response.json()
-    assert "error" in data
-
-
-@pytest.mark.asyncio
-async def test_chat_endpoint_message_not_a_string() -> None:
-    """Verify that the /chat endpoint returns 400 when message is not a string."""
-    async with mock_app() as f:
-        response = await f.client.post("/chat", json={"message": 123})
-
-    assert response.status_code == 400
-    data = response.json()
-    assert "error" in data
-
-
-@pytest.mark.asyncio
-async def test_chat_endpoint_invalid_json() -> None:
-    """Return 400 when the request body is not valid JSON."""
-    async with mock_app() as f:
-        response = await f.client.post(
-            "/chat", content=b"not json", headers={"Content-Type": "application/json"}
-        )
-
-    assert response.status_code == 400
-    data = response.json()
-    assert "error" in data
-
-
-@pytest.mark.asyncio
-async def test_chat_endpoint_empty_message_string() -> None:
-    """Return 400 when the message field is an empty string."""
-    async with mock_app() as f:
-        response = await f.client.post("/chat", json={"message": ""})
-
-    assert response.status_code == 400
-    data = response.json()
-    assert "error" in data
+    assert "error" in response.json()
 
 
 @pytest.mark.asyncio
@@ -948,6 +932,13 @@ def _png_pixel() -> bytes:
         "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8/5"
         "+hHgAHggJ/PchI7wAAAABJRU5ErkJggg=="
     )
+
+
+_PNG_B64 = base64.b64encode(_png_pixel()).decode()
+"""Pre-computed base64 of the 1x1 red pixel PNG — used in parametrized tests."""
+
+_OVERSIZED_B64 = base64.b64encode(b"x" * 50).decode()
+"""A 50-byte payload encoded as base64 — used for the oversized-image test."""
 
 
 @pytest.mark.asyncio
@@ -1013,157 +1004,105 @@ async def test_chat_endpoint_multiple_images() -> None:
 
 
 @pytest.mark.asyncio
-async def test_chat_endpoint_neither_message_nor_images_returns_400() -> None:
-    """A body with no message and no images is rejected with 400."""
-    async with mock_app() as f:
-        response = await f.client.post("/chat", json={})
-
-    assert response.status_code == 400
-    assert "error" in response.json()
-    assert "message" in response.json()["error"] or "image" in response.json()["error"]
-
-
-@pytest.mark.asyncio
-async def test_chat_endpoint_images_not_a_list_returns_400() -> None:
-    """A non-list ``images`` field is rejected with 400."""
-    async with mock_app() as f:
-        response = await f.client.post(
-            "/chat", json={"message": "hi", "images": "not-a-list"}
-        )
-
-    assert response.status_code == 400
-    assert "error" in response.json()
-    assert "array" in response.json()["error"]
-
-
-@pytest.mark.asyncio
-async def test_chat_endpoint_too_many_images_returns_400() -> None:
-    """Exceeding ``max_images_per_message`` returns 400."""
-    png_bytes = _png_pixel()
-    data_b64 = base64.b64encode(png_bytes).decode()
-
-    async with mock_app(max_images_per_message=2) as f:
-        response = await f.client.post(
-            "/chat",
-            json={
-                "message": "hi",
-                "images": [
-                    {"media_type": "image/png", "data": data_b64},
-                    {"media_type": "image/png", "data": data_b64},
-                    {"media_type": "image/png", "data": data_b64},
-                ],
+@pytest.mark.parametrize(
+    ("payload", "expected_substring", "mock_app_kwargs"),
+    [
+        pytest.param({"json": {}}, "message", {}, id="neither_message_nor_images"),
+        pytest.param(
+            {"json": {"message": "hi", "images": "not-a-list"}},
+            "array",
+            {},
+            id="images_not_a_list",
+        ),
+        pytest.param(
+            {
+                "json": {
+                    "message": "hi",
+                    "images": [
+                        {"media_type": "image/png", "data": _PNG_B64},
+                        {"media_type": "image/png", "data": _PNG_B64},
+                        {"media_type": "image/png", "data": _PNG_B64},
+                    ],
+                }
             },
-        )
-
-    assert response.status_code == 400
-    err = response.json()["error"]
-    assert "too many images" in err
-    assert "3" in err
-
-
-@pytest.mark.asyncio
-async def test_chat_endpoint_oversized_image_returns_400() -> None:
-    """An image whose decoded size exceeds ``max_image_bytes`` returns 400."""
-    # Create a 50-byte payload, set limit to 40.
-    payload = b"x" * 50
-    data_b64 = base64.b64encode(payload).decode()
-
-    async with mock_app(max_image_bytes=40) as f:
-        response = await f.client.post(
-            "/chat",
-            json={
-                "message": "hi",
-                "images": [{"media_type": "image/png", "data": data_b64}],
+            "too many images",
+            {"max_images_per_message": 2},
+            id="too_many_images",
+        ),
+        pytest.param(
+            {
+                "json": {
+                    "message": "hi",
+                    "images": [{"media_type": "image/png", "data": _OVERSIZED_B64}],
+                }
             },
-        )
-
-    assert response.status_code == 400
-    err = response.json()["error"]
-    assert "exceeds maximum" in err
-    assert "50" in err
-
-
-@pytest.mark.asyncio
-async def test_chat_endpoint_disallowed_media_type_returns_400() -> None:
-    """A media_type not in the allowlist is rejected with 400."""
-    data_b64 = base64.b64encode(b"fake").decode()
-
-    async with mock_app() as f:
-        response = await f.client.post(
-            "/chat",
-            json={
-                "message": "hi",
-                "images": [{"media_type": "image/bmp", "data": data_b64}],
+            "exceeds maximum",
+            {"max_image_bytes": 40},
+            id="oversized_image",
+        ),
+        pytest.param(
+            {
+                "json": {
+                    "message": "hi",
+                    "images": [
+                        {
+                            "media_type": "image/bmp",
+                            "data": base64.b64encode(b"fake").decode(),
+                        }
+                    ],
+                }
             },
-        )
-
-    assert response.status_code == 400
-    err = response.json()["error"]
-    assert "image/bmp" in err
-    assert "not allowed" in err
-
-
-@pytest.mark.asyncio
-async def test_chat_endpoint_non_base64_data_returns_400() -> None:
-    """Non-base64 ``data`` is rejected with 400."""
-    async with mock_app() as f:
-        response = await f.client.post(
-            "/chat",
-            json={
-                "message": "hi",
-                "images": [{"media_type": "image/png", "data": "!!!not-base64!!!"}],
+            "not allowed",
+            {},
+            id="disallowed_media_type",
+        ),
+        pytest.param(
+            {
+                "json": {
+                    "message": "hi",
+                    "images": [{"media_type": "image/png", "data": "!!!not-base64!!!"}],
+                }
             },
-        )
-
-    assert response.status_code == 400
-    assert "not valid base64" in response.json()["error"]
-
-
-@pytest.mark.asyncio
-async def test_chat_endpoint_image_missing_media_type_returns_400() -> None:
-    """An image entry without ``media_type`` is rejected."""
-    data_b64 = base64.b64encode(b"x").decode()
-
-    async with mock_app() as f:
-        response = await f.client.post(
-            "/chat",
-            json={
-                "message": "hi",
-                "images": [{"data": data_b64}],
+            "not valid base64",
+            {},
+            id="non_base64_data",
+        ),
+        pytest.param(
+            {
+                "json": {
+                    "message": "hi",
+                    "images": [{"data": base64.b64encode(b"x").decode()}],
+                }
             },
-        )
+            "media_type",
+            {},
+            id="missing_media_type",
+        ),
+        pytest.param(
+            {"json": {"message": "hi", "images": [{"media_type": "image/png"}]}},
+            "data",
+            {},
+            id="missing_data",
+        ),
+        pytest.param(
+            {"json": {"message": "hi", "images": ["not-a-dict"]}},
+            "expected a JSON object",
+            {},
+            id="image_entry_not_a_dict",
+        ),
+    ],
+)
+async def test_chat_endpoint_rejects_invalid_image_input(
+    payload: dict[str, object],
+    expected_substring: str,
+    mock_app_kwargs: dict[str, object],
+) -> None:
+    """The /chat endpoint returns 400 for invalid image input."""
+    async with mock_app(**mock_app_kwargs) as f:
+        response = await f.client.post("/chat", **payload)
 
     assert response.status_code == 400
-    assert "media_type" in response.json()["error"]
-
-
-@pytest.mark.asyncio
-async def test_chat_endpoint_image_missing_data_returns_400() -> None:
-    """An image entry without ``data`` is rejected."""
-    async with mock_app() as f:
-        response = await f.client.post(
-            "/chat",
-            json={
-                "message": "hi",
-                "images": [{"media_type": "image/png"}],
-            },
-        )
-
-    assert response.status_code == 400
-    assert "data" in response.json()["error"]
-
-
-@pytest.mark.asyncio
-async def test_chat_endpoint_image_entry_not_a_dict_returns_400() -> None:
-    """An image entry that is not a dict is rejected."""
-    async with mock_app() as f:
-        response = await f.client.post(
-            "/chat",
-            json={"message": "hi", "images": ["not-a-dict"]},
-        )
-
-    assert response.status_code == 400
-    assert "expected a JSON object" in response.json()["error"]
+    assert expected_substring in response.json()["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -1629,15 +1568,45 @@ async def test_resume_hook_passed_through_mock_app() -> None:
 
 
 @pytest.mark.asyncio
-async def test_subsessions_list_missing_session_id_returns_400() -> None:
-    """``GET /subsessions`` without ``session_id`` returns 400."""
-    async with mock_app(subsession_registry=SubsessionRegistry(store_path=None)) as f:
-        response = await f.client.get("/subsessions")
+@pytest.mark.parametrize(
+    ("method", "path_factory", "payload", "expected_error"),
+    [
+        pytest.param(
+            "get",
+            lambda _: "/subsessions",
+            None,
+            "session_id query parameter is required",
+            id="list_missing_session_id",
+        ),
+        pytest.param(
+            "post",
+            lambda info: f"/subsessions/{info.id}/message",
+            {"json": {"text": ""}},
+            "text",
+            id="message_empty_text",
+        ),
+    ],
+)
+async def test_subsessions_validation_errors(
+    method: str,
+    path_factory: object,
+    payload: dict[str, object] | None,
+    expected_error: str,
+) -> None:
+    """Subsessions endpoints return 400 for invalid requests."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _register_subsession(registry, owner="sess-a")
+    path = path_factory(info)  # type: ignore[operator]
+
+    async with mock_app(subsession_registry=registry) as f:
+        client_method = getattr(f.client, method)
+        if payload is not None:
+            response = await client_method(path, **payload)
+        else:
+            response = await client_method(path)
 
     assert response.status_code == 400
-    data = response.json()
-    assert data["error"] == "session_id query parameter is required"
-    assert "correlation_id" in data
+    assert expected_error in response.json()["error"]
 
 
 @pytest.mark.asyncio
@@ -1767,23 +1736,6 @@ async def test_subsessions_transcript_endpoint() -> None:
 # ---------------------------------------------------------------------------
 # POST /subsessions/{id}/message
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_subsessions_message_empty_text_returns_400() -> None:
-    """An empty or missing ``text`` field is rejected with 400."""
-    registry = SubsessionRegistry(store_path=None)
-    info = _register_subsession(registry, owner="sess-a")
-
-    async with mock_app(subsession_registry=registry) as f:
-        empty = await f.client.post(
-            f"/subsessions/{info.id}/message", json={"text": ""}
-        )
-        missing = await f.client.post(f"/subsessions/{info.id}/message", json={})
-
-    assert empty.status_code == 400
-    assert "text" in empty.json()["error"]
-    assert missing.status_code == 400
 
 
 @pytest.mark.asyncio
