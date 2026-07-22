@@ -73,7 +73,6 @@
     "enabled": false,
     "repos": [],
     "ref": "main",
-    "github_token": "",
     "base_url": "https://api.github.com",
     "timeout": 30.0
   },
@@ -88,7 +87,6 @@
   "version_check": {
     "enabled": false,
     "repo": "",
-    "github_token": "",
     "base_url": "https://api.github.com",
     "timeout": 30.0,
     "cache_ttl": 300.0

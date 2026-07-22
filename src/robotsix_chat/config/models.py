@@ -132,17 +132,17 @@ class RefDocsSettings(BaseModel):
             The board-workflow reference repo goes here. The tool refuses
             any repo not in this list.
         ref: Default git ref/branch to read from (``"main"``).
-        github_token: Optional PAT for private team repos; public repos work
-            without a token.
         base_url: Overridable base URL for GitHub Enterprise.
         timeout: Per-request HTTP timeout in seconds.
+
+    Authentication reuses the ``direct_repo`` GitHub App credentials when
+    they are configured; without them only public repositories are reachable.
 
     """
 
     enabled: bool = False
     repos: list[str] = Field(default_factory=list)
     ref: str = "main"
-    github_token: SecretStr = SecretStr("")
     base_url: str = "https://api.github.com"
     timeout: float = 30.0
     model_config = ConfigDict(extra="forbid")
@@ -159,10 +159,13 @@ class VersionCheckSettings(BaseModel):
         enabled: Master switch. When ``False``, no version-check tool is offered.
         repo: GitHub ``owner/name`` (e.g. ``robotsix/robotsix-chat``). Required
             when *enabled*.
-        github_token: Optional PAT to avoid unauthenticated rate limits.
         base_url: Overridable base URL for GitHub Enterprise.
         timeout: Per-request HTTP timeout in seconds.
         cache_ttl: Seconds to cache the latest-release lookup (monotonic clock).
+
+    Authentication reuses the ``direct_repo`` GitHub App credentials when
+    they are configured; without them the lookup is unauthenticated (subject
+    to lower rate limits).
 
     Note: the check is only meaningful when releases bump
     ``robotsix_chat.__version__`` in lockstep with the GitHub release tag.
@@ -171,7 +174,6 @@ class VersionCheckSettings(BaseModel):
 
     enabled: bool = False
     repo: str = ""
-    github_token: SecretStr = SecretStr("")
     base_url: str = "https://api.github.com"
     timeout: float = 30.0
     cache_ttl: float = 300.0

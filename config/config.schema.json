@@ -665,7 +665,7 @@
     },
     "RefDocsSettings": {
       "additionalProperties": false,
-      "description": "Read-only reference-docs tool for the agent.\n\nLets the agent fetch documentation from allowlisted GitHub repos on\ndemand. Primarily used to consult the board-workflow reference repo\nwhen deciding whether a ticket needs manual human action. The tool is\nstrictly read-only, fetches are on-demand (no bulk ingestion), and only\nrepos in the *repos* allowlist are reachable.\n\nAttributes:\n    enabled: Master switch. When ``False``, no refdocs tools are offered.\n    repos: Allowlist of ``owner/name`` GitHub repos the agent may read.\n        The board-workflow reference repo goes here. The tool refuses\n        any repo not in this list.\n    ref: Default git ref/branch to read from (``\"main\"``).\n    github_token: Optional PAT for private team repos; public repos work\n        without a token.\n    base_url: Overridable base URL for GitHub Enterprise.\n    timeout: Per-request HTTP timeout in seconds.",
+      "description": "Read-only reference-docs tool for the agent.\n\nLets the agent fetch documentation from allowlisted GitHub repos on\ndemand. Primarily used to consult the board-workflow reference repo\nwhen deciding whether a ticket needs manual human action. The tool is\nstrictly read-only, fetches are on-demand (no bulk ingestion), and only\nrepos in the *repos* allowlist are reachable.\n\nAttributes:\n    enabled: Master switch. When ``False``, no refdocs tools are offered.\n    repos: Allowlist of ``owner/name`` GitHub repos the agent may read.\n        The board-workflow reference repo goes here. The tool refuses\n        any repo not in this list.\n    ref: Default git ref/branch to read from (``\"main\"``).\n    base_url: Overridable base URL for GitHub Enterprise.\n    timeout: Per-request HTTP timeout in seconds.\n\nAuthentication reuses the ``direct_repo`` GitHub App credentials when\nthey are configured; without them only public repositories are reachable.",
       "properties": {
         "enabled": {
           "default": false,
@@ -683,13 +683,6 @@
           "default": "main",
           "title": "Ref",
           "type": "string"
-        },
-        "github_token": {
-          "default": "",
-          "format": "password",
-          "title": "Github Token",
-          "type": "string",
-          "writeOnly": true
         },
         "base_url": {
           "default": "https://api.github.com",
@@ -849,7 +842,7 @@
     },
     "VersionCheckSettings": {
       "additionalProperties": false,
-      "description": "Self-version-check tool: compare running version vs latest GitHub release.\n\nDisabled by default. When enabled, the agent gains a tool that reports the\nrunning ``robotsix_chat.__version__`` and the latest published release of\nthe configured GitHub repo, and flags when the deployment is out of date.\n\nAttributes:\n    enabled: Master switch. When ``False``, no version-check tool is offered.\n    repo: GitHub ``owner/name`` (e.g. ``robotsix/robotsix-chat``). Required\n        when *enabled*.\n    github_token: Optional PAT to avoid unauthenticated rate limits.\n    base_url: Overridable base URL for GitHub Enterprise.\n    timeout: Per-request HTTP timeout in seconds.\n    cache_ttl: Seconds to cache the latest-release lookup (monotonic clock).\n\nNote: the check is only meaningful when releases bump\n``robotsix_chat.__version__`` in lockstep with the GitHub release tag.",
+      "description": "Self-version-check tool: compare running version vs latest GitHub release.\n\nDisabled by default. When enabled, the agent gains a tool that reports the\nrunning ``robotsix_chat.__version__`` and the latest published release of\nthe configured GitHub repo, and flags when the deployment is out of date.\n\nAttributes:\n    enabled: Master switch. When ``False``, no version-check tool is offered.\n    repo: GitHub ``owner/name`` (e.g. ``robotsix/robotsix-chat``). Required\n        when *enabled*.\n    base_url: Overridable base URL for GitHub Enterprise.\n    timeout: Per-request HTTP timeout in seconds.\n    cache_ttl: Seconds to cache the latest-release lookup (monotonic clock).\n\nAuthentication reuses the ``direct_repo`` GitHub App credentials when\nthey are configured; without them the lookup is unauthenticated (subject\nto lower rate limits).\n\nNote: the check is only meaningful when releases bump\n``robotsix_chat.__version__`` in lockstep with the GitHub release tag.",
       "properties": {
         "enabled": {
           "default": false,
@@ -860,13 +853,6 @@
           "default": "",
           "title": "Repo",
           "type": "string"
-        },
-        "github_token": {
-          "default": "",
-          "format": "password",
-          "title": "Github Token",
-          "type": "string",
-          "writeOnly": true
         },
         "base_url": {
           "default": "https://api.github.com",

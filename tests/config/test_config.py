@@ -245,7 +245,6 @@ def test_refdocs_disabled_by_default() -> None:
     assert settings.refdocs.enabled is False
     assert settings.refdocs.repos == []
     assert settings.refdocs.ref == "main"
-    assert settings.refdocs.github_token.get_secret_value() == ""
     assert settings.refdocs.base_url == "https://api.github.com"
     assert settings.refdocs.timeout == 30.0
 
@@ -455,7 +454,6 @@ def test_version_check_disabled_by_default() -> None:
     settings = Settings()
     assert settings.version_check.enabled is False
     assert settings.version_check.repo == ""
-    assert settings.version_check.github_token.get_secret_value() == ""
     assert settings.version_check.base_url == "https://api.github.com"
     assert settings.version_check.timeout == 30.0
     assert settings.version_check.cache_ttl == 300.0

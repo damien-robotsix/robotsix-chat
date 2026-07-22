@@ -14,21 +14,23 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from robotsix_chat.config import RefDocsSettings
+    from robotsix_chat.config import DirectRepoSettings, RefDocsSettings
 
 logger = logging.getLogger(__name__)
 
 __all__ = ["build_refdocs_tools"]
 
 
-def build_refdocs_tools(settings: RefDocsSettings) -> list[Callable[..., Any]]:
+def build_refdocs_tools(
+    settings: RefDocsSettings, direct_repo: DirectRepoSettings
+) -> list[Callable[..., Any]]:
     """Return the refdocs tool(s) for the agent, or ``[]`` when unavailable."""
     if not settings.enabled:
         return []
 
     from .client import RefDocsClient
 
-    client = RefDocsClient(settings)
+    client = RefDocsClient(settings, direct_repo)
 
     async def read_reference_doc(repo: str, path: str) -> str:
         """Read a single file from an allowlisted team reference repository.

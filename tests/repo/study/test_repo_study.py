@@ -148,12 +148,15 @@ async def test_fetch_sends_app_token_when_configured(
         github_app_installation_id="7",
     )
 
-    async def fake_token(_settings: DirectRepoSettings) -> str:
-        return "installation-token"
+    def fake_token(**kw: object) -> object:
+        return SimpleNamespace(token="installation-token")
 
-    import robotsix_chat.repo.direct.client as dr_client
+    import sys
+    from types import SimpleNamespace
 
-    monkeypatch.setattr(dr_client, "_get_installation_token", fake_token)
+    fake = SimpleNamespace()
+    fake.mint_installation_token = fake_token
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
     manager = WorkspaceManager(
         RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")), direct_repo
     )
@@ -177,12 +180,15 @@ async def test_fetch_raises_on_token_failure(
         github_app_installation_id="7",
     )
 
-    async def failing_token(_settings: DirectRepoSettings) -> str:
+    def failing_token(**kw: object) -> object:
         raise RuntimeError("no token for you")
 
-    import robotsix_chat.repo.direct.client as dr_client
+    import sys
+    from types import SimpleNamespace
 
-    monkeypatch.setattr(dr_client, "_get_installation_token", failing_token)
+    fake = SimpleNamespace()
+    fake.mint_installation_token = failing_token
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
     manager = WorkspaceManager(
         RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")), direct_repo
     )
@@ -205,12 +211,15 @@ async def test_fetch_403_reports_scope_error(
         github_app_installation_id="7",
     )
 
-    async def fake_token(_settings: DirectRepoSettings) -> str:
-        return "installation-token"
+    import sys
+    from types import SimpleNamespace
 
-    import robotsix_chat.repo.direct.client as dr_client
+    def fake_token(**kw: object) -> object:
+        return SimpleNamespace(token="installation-token")
 
-    monkeypatch.setattr(dr_client, "_get_installation_token", fake_token)
+    fake = SimpleNamespace()
+    fake.mint_installation_token = fake_token
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
     manager = WorkspaceManager(
         RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")), direct_repo
     )
@@ -246,12 +255,15 @@ async def test_fetch_404_authenticated_reports_not_found(
         github_app_installation_id="7",
     )
 
-    async def fake_token(_settings: DirectRepoSettings) -> str:
-        return "installation-token"
+    import sys
+    from types import SimpleNamespace
 
-    import robotsix_chat.repo.direct.client as dr_client
+    def fake_token(**kw: object) -> object:
+        return SimpleNamespace(token="installation-token")
 
-    monkeypatch.setattr(dr_client, "_get_installation_token", fake_token)
+    fake = SimpleNamespace()
+    fake.mint_installation_token = fake_token
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
     manager = WorkspaceManager(
         RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")), direct_repo
     )
@@ -272,12 +284,15 @@ async def test_fetch_follows_redirect_preserving_auth(
         github_app_installation_id="7",
     )
 
-    async def fake_token(_settings: DirectRepoSettings) -> str:
-        return "installation-token"
+    import sys
+    from types import SimpleNamespace
 
-    import robotsix_chat.repo.direct.client as dr_client
+    def fake_token(**kw: object) -> object:
+        return SimpleNamespace(token="installation-token")
 
-    monkeypatch.setattr(dr_client, "_get_installation_token", fake_token)
+    fake = SimpleNamespace()
+    fake.mint_installation_token = fake_token
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
     manager = WorkspaceManager(
         RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")), direct_repo
     )

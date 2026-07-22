@@ -185,6 +185,7 @@ modules:
       - src/robotsix_chat/repo/direct/client.py
       - tests/repo/direct/__init__.py
       - tests/repo/direct/test_direct_repo.py
+      - tests/repo/direct/test_github_auth_dependency.py
   - id: repo-study
     description: "Repo-study tools — temporary local repo snapshots (GitHub tarball, no git binary) the agent can list, read, and regex-search before they expire; auth reuses the direct_repo GitHub App credentials."
     paths:

@@ -17,7 +17,7 @@ from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from robotsix_chat.config import VersionCheckSettings
+    from robotsix_chat.config import DirectRepoSettings, VersionCheckSettings
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +26,7 @@ __all__ = ["build_version_check_tools"]
 
 def build_version_check_tools(
     settings: VersionCheckSettings,
+    direct_repo: DirectRepoSettings,
 ) -> list[Callable[..., Any]]:
     """Return the version-check tool for the agent, or ``[]`` when disabled."""
     if not settings.enabled:
@@ -35,7 +36,7 @@ def build_version_check_tools(
 
     from .client import VersionCheckClient, compare_versions
 
-    client = VersionCheckClient(settings)
+    client = VersionCheckClient(settings, direct_repo)
 
     async def check_for_updates() -> str:
         """Report the running version and whether a newer release is available.

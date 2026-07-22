@@ -1,14 +1,14 @@
 """Tests for the direct-repo integration.
 
 :func:`build_direct_repo_tools` and :class:`DirectRepoClient`, with ``respx``
-mocked so there are no real network calls.  The installation token cache is
-pre-populated in tests so PyJWT is never imported.
+mocked so there are no real network calls.
+``robotsix_github_auth.mint_installation_token`` is mocked so the shared
+library is never imported.
 """
 
 from __future__ import annotations
 
 import json
-import time
 from typing import Any
 
 import httpx
@@ -36,34 +36,18 @@ def _settings(**kw: Any) -> DirectRepoSettings:
     return DirectRepoSettings(**base)
 
 
-def _prepopulate_installation_token(settings: DirectRepoSettings) -> str:
-    """Set the installation token cache so JWT creation is skipped in tests."""
-    from robotsix_chat.repo.direct.client import (
-        _INSTALLATION_TOKEN_CACHE as _cache,
-    )
-
-    token = "ghs_test_installation_token"
-    _cache[settings.github_app_installation_id] = (time.monotonic(), token)
-    return token
-
-
 @pytest.fixture(autouse=True)
-def _clear_token_cache(monkeypatch: pytest.MonkeyPatch) -> None:
-    """Clear caches and mock JWT creation before each test."""
-    from robotsix_chat.repo.direct.client import (
-        _INSTALLATION_TOKEN_CACHE as _cache,
-    )
+def _mock_github_auth(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Mock mint_installation_token so the shared library is never imported."""
+    import sys
+    from types import SimpleNamespace
 
-    _cache.clear()
-    from robotsix_chat.repo.direct.client import (
-        _GITHUB_APP_JWT_CACHE as _jwt_cache,
-    )
+    def _fake_mint(**kw: object) -> object:
+        return SimpleNamespace(token="ghs_test_installation_token")
 
-    _jwt_cache.clear()
-    # Mock _make_jwt globally for all tests so we never try to import jwt
-    from robotsix_chat.repo.direct import client as _client_mod
-
-    monkeypatch.setattr(_client_mod, "_make_jwt", lambda app_id, key: "fake-jwt-token")
+    fake = SimpleNamespace()
+    fake.mint_installation_token = _fake_mint
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
 
 
 # ---------------------------------------------------------------------------
@@ -124,7 +108,6 @@ async def test_push_branch_allows_blocked_ticket(
 ) -> None:
     """Ticket in BLOCKED state → push proceeds (scope guard passes, push runs)."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-1").mock(
         return_value=httpx.Response(
@@ -169,8 +152,7 @@ async def test_push_branch_rejects_repo_not_in_scope(
     respx_mock: respx.MockRouter,
 ) -> None:
     """Repo not in installation scope → push is refused."""
-    settings = _settings()
-    _prepopulate_installation_token(settings)
+    _settings()
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-1").mock(
         return_value=httpx.Response(
@@ -235,7 +217,6 @@ async def test_open_pr_allows_blocked_ticket(
 ) -> None:
     """Ticket in BLOCKED → PR open proceeds."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-2").mock(
         return_value=httpx.Response(
@@ -320,7 +301,6 @@ async def test_create_pr_does_not_enable_auto_merge(
 ) -> None:
     """create_pr must NOT set auto_merge or merge-related fields in the payload."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("https://api.github.com/repos/org/repo").mock(
         return_value=httpx.Response(200, text=json.dumps({"default_branch": "main"}))
@@ -434,7 +414,6 @@ async def test_open_pr_default_body_links_ticket_id(
 ) -> None:
     """When no body is provided, the tool generates one referencing the ticket."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-3").mock(
         return_value=httpx.Response(
@@ -484,7 +463,6 @@ async def test_update_pr_branch_success(
 ) -> None:
     """202 response → success message."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-up").mock(
         return_value=httpx.Response(
@@ -519,7 +497,6 @@ async def test_update_pr_branch_conflict(
 ) -> None:
     """422 response → conflict message returned."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-conflict").mock(
         return_value=httpx.Response(
@@ -582,8 +559,7 @@ async def test_update_pr_branch_rejects_out_of_scope(
     respx_mock: respx.MockRouter,
 ) -> None:
     """Scope guard applies to update_pr_branch."""
-    settings = _settings()
-    _prepopulate_installation_token(settings)
+    _settings()
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-scope").mock(
         return_value=httpx.Response(
@@ -620,7 +596,6 @@ async def test_check_pr_merge_conflict_clean(
 ) -> None:
     """mergeable=True → no-conflict message."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-clean").mock(
         return_value=httpx.Response(
@@ -667,7 +642,6 @@ async def test_check_pr_merge_conflict_dirty(
 ) -> None:
     """mergeable=False → conflict message."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-dirty").mock(
         return_value=httpx.Response(
@@ -713,7 +687,6 @@ async def test_check_pr_merge_conflict_unknown(
 ) -> None:
     """mergeable=None → still-computing message."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-unk").mock(
         return_value=httpx.Response(
@@ -785,7 +758,6 @@ async def test_push_branch_uses_ticket_id_in_commit(
 ) -> None:
     """Commit message references the ticket id even when commit_message not given."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-4").mock(
         return_value=httpx.Response(
@@ -855,7 +827,6 @@ async def test_push_branch_ensures_changelog_fragment_trailing_newline(
 ) -> None:
     """changelog.d/*.md files without trailing newline get one appended."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-cl").mock(
         return_value=httpx.Response(
@@ -937,7 +908,6 @@ async def test_push_branch_preserves_existing_trailing_newline_in_changelog(
 ) -> None:
     r"""changelog.d/*.md files that already end with \n are not double-terminated."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-cl2").mock(
         return_value=httpx.Response(
@@ -1012,7 +982,6 @@ async def test_push_branch_ignores_non_md_files_in_changelog_dir(
 ) -> None:
     """Only .md files in changelog.d/ get newline normalization."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-cl3").mock(
         return_value=httpx.Response(
@@ -1098,7 +1067,6 @@ async def test_list_installation_repos_parses_response(
 ) -> None:
     """list_installation_repos returns full_names from the API response."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("https://api.github.com/installation/repositories").mock(
         return_value=httpx.Response(
@@ -1201,7 +1169,6 @@ async def test_direct_fix_rejects_few_cycles(
 ) -> None:
     """Ticket has <3 implement cycles → direct_fix is refused."""
     settings = _settings(direct_fix_enabled=True)
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-df2").mock(
         return_value=httpx.Response(
@@ -1244,7 +1211,6 @@ async def test_direct_fix_allows_enough_cycles(
 ) -> None:
     """Ticket has ≥3 implement cycles → direct_fix proceeds."""
     settings = _settings(direct_fix_enabled=True)
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-df3").mock(
         return_value=httpx.Response(
@@ -1301,7 +1267,6 @@ async def test_direct_fix_rejects_out_of_scope(
 ) -> None:
     """Repo not in installation scope → direct_fix is refused."""
     settings = _settings(direct_fix_enabled=True)
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-df4").mock(
         return_value=httpx.Response(
@@ -1348,7 +1313,6 @@ async def test_direct_fix_uses_ticket_id_in_commit_message(
 ) -> None:
     """Default commit message references the ticket id and cycle count."""
     settings = _settings(direct_fix_enabled=True)
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-df5").mock(
         return_value=httpx.Response(
@@ -1423,7 +1387,6 @@ async def test_direct_fix_pushes_to_target_branch(
 ) -> None:
     """direct_fix updates the existing branch ref, does not create a new one."""
     settings = _settings(direct_fix_enabled=True)
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-df6").mock(
         return_value=httpx.Response(
@@ -1507,7 +1470,6 @@ async def test_get_ticket_data_returns_full_json(
 ) -> None:
     """get_ticket_data returns the full ticket JSON."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-full").mock(
         return_value=httpx.Response(
@@ -1536,7 +1498,6 @@ async def test_get_ticket_data_returns_none_on_error(
 ) -> None:
     """get_ticket_data returns None when the board API errors."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-err2").mock(
         return_value=httpx.Response(500, text="boom")
@@ -1553,7 +1514,6 @@ async def test_count_implement_cycles_from_events(
 ) -> None:
     """count_implement_cycles counts events with 'implement' in type/action."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-cycles").mock(
         return_value=httpx.Response(
@@ -1586,7 +1546,6 @@ async def test_count_implement_cycles_fallback_history(
 ) -> None:
     """count_implement_cycles falls back to history when no events array."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-hist").mock(
         return_value=httpx.Response(
@@ -1617,7 +1576,6 @@ async def test_count_implement_cycles_fallback_direct_field(
 ) -> None:
     """count_implement_cycles falls back to cycle_count field."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-count").mock(
         return_value=httpx.Response(
@@ -1643,7 +1601,6 @@ async def test_count_implement_cycles_no_data_returns_zero(
 ) -> None:
     """count_implement_cycles returns 0 when no events/history/cycle_count."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("http://127.0.0.1:8077/tickets/t-nodata").mock(
         return_value=httpx.Response(
@@ -1668,7 +1625,6 @@ async def test_push_commit_to_branch_updates_ref(
 ) -> None:
     """push_commit_to_branch creates commit and updates existing ref via PATCH."""
     settings = _settings()
-    _prepopulate_installation_token(settings)
 
     respx_mock.get("https://api.github.com/repos/org/repo/git/ref/heads/main").mock(
         return_value=httpx.Response(200, text=json.dumps({"object": {"sha": "abc123"}}))

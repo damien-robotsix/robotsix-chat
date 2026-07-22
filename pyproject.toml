@@ -14,7 +14,6 @@ dependencies = [
     "asgi-correlation-id",
     "httpx",
     "pydantic",
-    "pyjwt",
     "structlog>=24.0.0",
     "uvicorn",
     "starlette",
@@ -26,6 +25,7 @@ dependencies = [
     #     from the per-transport extras below.
     "robotsix-config",
     "robotsix-llmio",
+    "robotsix-github-auth",
 ]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
@@ -109,6 +109,7 @@ robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.gi
 robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "aada2ed0032d28b97349bc31e61128fe2b2b3691" }  # pragma: allowlist secret
 # robotsix-modules: same SHA as robotsix-mill (coherent-set rule).
 robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "d7c5e59980516de6e050db02ff54aef4e15ff5c3" }  # pragma: allowlist secret
+robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git", rev = "e6214c41fd743120aa987bacb4e9b2bc88e73943" }  # pragma: allowlist secret
 
 [tool.towncrier]
 package = "robotsix_chat"
@@ -210,10 +211,9 @@ ignore_missing_imports = true
 module = ["playwright.*"]
 ignore_missing_imports = true
 
-# PyJWT is an optional dependency for direct_repo; tolerate its absence
-# in the default dev/test env.
+# robotsix-github-auth is a shared fleet library; may lack type stubs initially.
 [[tool.mypy.overrides]]
-module = ["jwt"]
+module = ["robotsix_github_auth", "robotsix_github_auth.*"]
 ignore_missing_imports = true
 
 # asgi-correlation-id is installed at runtime but mypy can't find stubs in

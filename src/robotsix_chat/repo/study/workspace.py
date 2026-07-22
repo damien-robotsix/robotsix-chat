@@ -12,6 +12,7 @@ configured; otherwise only public repositories are reachable.
 
 from __future__ import annotations
 
+import asyncio
 import io
 import json
 import logging
@@ -68,12 +69,12 @@ class WorkspaceManager:
     async def _auth_headers(self) -> dict[str, str]:
         """GitHub API headers, with an App installation token when configured.
 
-        Reuses the ``direct_repo`` GitHub App credentials (JWT → installation
-        token, cached in :mod:`robotsix_chat.repo.direct.client`).  Returns
-        unauthenticated headers only when the App is not configured at all;
-        when it IS configured but the token exchange fails the error is raised
-        so the operator can diagnose a credential or scope issue rather than
-        getting a misleading 404 from an unauthenticated fallback.
+        Reuses the ``direct_repo`` GitHub App credentials (via the shared
+        ``robotsix_github_auth`` library).  Returns unauthenticated headers
+        only when the App is not configured at all; when it IS configured
+        but the token exchange fails the error is raised so the operator can
+        diagnose a credential or scope issue rather than getting a misleading
+        404 from an unauthenticated fallback.
         """
         headers = {
             "Accept": "application/vnd.github+json",
@@ -85,10 +86,16 @@ class WorkspaceManager:
             and dr.github_app_private_key.get_secret_value()
             and dr.github_app_installation_id
         ):
-            from robotsix_chat.repo.direct.client import _get_installation_token
+            from robotsix_github_auth import mint_installation_token
 
             try:
-                token = await _get_installation_token(dr)
+                result = await asyncio.to_thread(
+                    mint_installation_token,
+                    app_id=dr.github_app_id,
+                    private_key=dr.github_app_private_key.get_secret_value(),
+                    installation_id=dr.github_app_installation_id,
+                )
+                headers["Authorization"] = f"Bearer {result.token}"
             except RuntimeError as exc:
                 raise WorkspaceError(
                     f"GitHub App installation token request failed: {exc}. "
@@ -96,7 +103,6 @@ class WorkspaceManager:
                     "and github_app_installation_id are correct in the "
                     "direct_repo config block."
                 ) from exc
-            headers["Authorization"] = f"Bearer {token}"
         return headers
 
     # -- TTL sweep ----------------------------------------------------------
