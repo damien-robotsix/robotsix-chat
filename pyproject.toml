@@ -25,6 +25,7 @@ dependencies = [
     #     from the per-transport extras below.
     "robotsix-config",
     "robotsix-llmio",
+    "robotsix-github-auth",
 ]
 classifiers = [
     "Development Status :: 2 - Pre-Alpha",
@@ -108,6 +109,7 @@ robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.gi
 robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "aada2ed0032d28b97349bc31e61128fe2b2b3691" }  # pragma: allowlist secret
 # robotsix-modules: same SHA as robotsix-mill (coherent-set rule).
 robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "d7c5e59980516de6e050db02ff54aef4e15ff5c3" }  # pragma: allowlist secret
+robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git", rev = "e6214c41fd743120aa987bacb4e9b2bc88e73943" }  # pragma: allowlist secret
 
 [tool.towncrier]
 package = "robotsix_chat"
@@ -305,7 +307,7 @@ pynacl = ["nacl"]
 # DEP002 ("defined but not used") is expected and intentional.
 # litellm is a transitive dependency of cognee (the memory extra); imported
 # for its Langfuse callback so cognee traffic lands in a separate project.
-DEP001 = ["litellm", "robotsix_github_auth"]
+DEP001 = ["litellm"]
 DEP002 = ["transformers"]
 # `pydantic_ai` is robotsix-llmio's agent framework: `handle.run` already returns
 # its result objects, and the agent builds a multi-turn `message_history` from
