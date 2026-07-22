@@ -1,0 +1,1 @@
+Autonomous kickoff crashes: asyncio.run() cannot be called from a running event loop (fetch_roster_sync via _inject_skills) — every autonomous agent turn fails
