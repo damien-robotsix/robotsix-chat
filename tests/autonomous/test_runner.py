@@ -260,6 +260,74 @@ class TestAutoContinue:
         assert aq.state is AutonomousState.selecting_subject
 
 
+class TestAgentFactoryLoopSafety:
+    """Agent factory calling asyncio.run() must not crash inside the event loop."""
+
+    @pytest.mark.asyncio
+    async def test_factory_with_asyncio_run_via_to_thread(self) -> None:
+        """A factory that calls asyncio.run() must work via asyncio.to_thread.
+
+        Regression test for #752: ``_kickoff_initial_turn`` and ``_auto_continue``
+        call ``self._agent_factory()`` inside a running event loop.  The factory
+        calls ``create_agent_from_settings`` → ``_inject_skills`` →
+        ``fetch_roster_sync`` → ``asyncio.run(fetch_roster(...))``, which raises
+        ``RuntimeError: asyncio.run() cannot be called from a running event loop``.
+        Wrapping the factory call in ``asyncio.to_thread`` offloads it to a
+        separate thread where no loop is running.
+        """
+        import asyncio
+
+        def factory_that_calls_asyncio_run() -> str:
+            # Simulates the exact pattern: fetch_roster_sync → asyncio.run(...)
+            return asyncio.run(asyncio.sleep(0))  # type: ignore[func-returns-value]
+
+        # Must not raise RuntimeError.
+        await asyncio.to_thread(factory_that_calls_asyncio_run)
+
+    @pytest.mark.asyncio
+    async def test_kickoff_initial_turn_loop_safe(self) -> None:
+        """_kickoff_initial_turn must not crash when agent factory calls asyncio.run().
+
+        Full-path integration: the runner calls the factory via asyncio.to_thread,
+        which should prevent the ``asyncio.run() cannot be called from a running
+        event loop`` RuntimeError.
+        """
+        import asyncio
+
+        store = ConversationStore()
+        store.create_session("owner1")
+        sessions, _active = store.list_sessions("owner1")
+        sid = sessions[0]["session_id"]
+
+        settings = MagicMock()
+        settings.autonomous.initial_task = ""
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        # Factory that triggers the asyncio.run() crash path.
+        def factory() -> MagicMock:
+            asyncio.run(asyncio.sleep(0))  # simulates fetch_roster_sync
+            agent = MagicMock()
+            agent.stream = MagicMock()
+
+            async def _empty_stream(*args, **kwargs):
+                yield ""
+                return
+
+            agent.stream.return_value = _empty_stream()
+            return agent
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=factory,
+            run_serializer=run_serializer,
+        )
+        # Must not raise RuntimeError.
+        await runner._kickoff_initial_turn(sid, "owner1")
+
+
 class TestStorePublicMethods:
     """Tests for the new public ConversationStore methods."""
 

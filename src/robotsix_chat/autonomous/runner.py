@@ -307,7 +307,7 @@ class AutonomousRunner:
         """
         try:
             async with self._run_serializer.for_owner(owner_id):
-                agent = self._agent_factory()
+                agent = await asyncio.to_thread(self._agent_factory)
                 initial_task = self._settings.autonomous.initial_task
                 if initial_task:
                     prompt = (
@@ -375,7 +375,7 @@ class AutonomousRunner:
                 # Acquire the per-owner run lock.
                 should_respawn = False
                 async with self._run_serializer.for_owner(owner_id):
-                    agent = self._agent_factory()
+                    agent = await asyncio.to_thread(self._agent_factory)
                     history = self._store.agent_history(session_id)
 
                     # First turn after approval: explicit proceed message.
