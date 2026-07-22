@@ -260,7 +260,7 @@ async def test_app_token_header_when_configured(
 
     dr = _direct_repo(
         github_app_id="12345",
-        github_app_private_key="fake-key",
+        github_app_private_key="fake-key",  # pragma: allowlist secret
         github_app_installation_id="67890",
     )
     client = VersionCheckClient(_settings(), dr)
