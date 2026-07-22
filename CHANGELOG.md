@@ -4,6 +4,11 @@
   a passive "Proceed with the approved plan." to an explicit "OPERATOR
   APPROVAL RECEIVED" directive that instructs the agent to begin executing
   the first step immediately, preventing stalled sessions after approval.
+- Autonomous sessions now stream live tokens via the `/events` SSE channel
+  (`autonomous_token` frames during each turn) and publish a completed
+  `agent_message` frame after each turn is recorded — so the conversation
+  area renders live progress and the transcript is immediately visible in
+  `/history`, matching the normal `/chat` experience.
 - Added CI workflow edit checklist to the implement-stage agent guidance
   (shadow-package override in ``src/robotsix_mill/agent_definitions/implement.yaml``).
   The checklist covers the three most common preventable CI failure classes:

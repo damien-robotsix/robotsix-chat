@@ -160,6 +160,7 @@ select = ["E", "F", "I", "UP", "B", "SIM", "S", "D", "FURB", "ARG", "N", "RUF", 
 # S105: SSE event-type names like "token" / "done" / "error" are not
 # credentials.
 "src/robotsix_chat/chat/server/routes/**" = ["S105"]
+"src/robotsix_chat/chat/events.py" = ["S105"]
 # Test files routinely use asserts (S101), bind-all-interfaces test servers
 # (S104), and hard-coded sentinel credentials/tokens (S105-S107).
 # ARG001 / ARG002 / ARG005: pytest fixture arguments are often required for

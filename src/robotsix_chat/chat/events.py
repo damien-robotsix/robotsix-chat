@@ -38,6 +38,9 @@ SSE_AGENT_MESSAGE_TYPE = "agent_message"
 # channel so the session-list row updates live without polling.
 SSE_AUTONOMOUS_STATE_TYPE = "autonomous_state"
 
+# Streaming token from an autonomous background turn (live progress).
+SSE_AUTONOMOUS_TOKEN_TYPE = "autonomous_token"
+
 # ---------------------------------------------------------------------------
 # EventSink — structural Protocol for dependency injection
 # ---------------------------------------------------------------------------
@@ -278,6 +281,23 @@ def activity_frame(
         "detail": detail,
         "is_error": is_error,
     }
+
+
+def autonomous_token_frame(token: str) -> dict[str, object]:
+    """Build an ``autonomous_token`` frame for a single streamed token.
+
+    Published during an autonomous background turn so a connected browser
+    can render live progress — the same way the normal ``/chat`` SSE path
+    fans out ``token`` frames.
+
+    Returns a dict with shape::
+
+        {
+            "type": "autonomous_token",
+            "token": <str>,
+        }
+    """
+    return {"type": SSE_AUTONOMOUS_TOKEN_TYPE, "token": token}
 
 
 def agent_message_frame(text: str, timestamp: float) -> dict[str, object]:

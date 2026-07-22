@@ -5,12 +5,18 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+import time
 from collections.abc import Callable, Coroutine
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from robotsix_chat.autonomous.models import AutonomousSession, AutonomousState
-from robotsix_chat.chat.events import EventSink, autonomous_state_frame
+from robotsix_chat.chat.events import (
+    EventSink,
+    agent_message_frame,
+    autonomous_state_frame,
+    autonomous_token_frame,
+)
 
 if TYPE_CHECKING:
     from robotsix_chat.chat.conversation import ConversationStore
@@ -338,6 +344,11 @@ class AutonomousRunner:
                     client_id=session_id,
                 ):
                     reply_parts.append(token)
+                    if self._event_sink is not None:
+                        self._event_sink.publish(
+                            session_id,
+                            autonomous_token_frame(token),
+                        )
                 full_reply = "".join(reply_parts)
                 self._store.record(
                     session_id,
@@ -345,6 +356,11 @@ class AutonomousRunner:
                     prompt,
                     full_reply,
                 )
+                if self._event_sink is not None:
+                    self._event_sink.publish(
+                        session_id,
+                        agent_message_frame(full_reply, time.time()),
+                    )
                 self.check_reply_for_markers(session_id, full_reply)
         except asyncio.CancelledError:
             logger.debug("Initial-turn task cancelled for session %s", session_id)
@@ -414,6 +430,11 @@ class AutonomousRunner:
                             client_id=session_id,
                         ):
                             reply_parts.append(token)
+                            if self._event_sink is not None:
+                                self._event_sink.publish(
+                                    session_id,
+                                    autonomous_token_frame(token),
+                                )
                     except Exception:
                         logger.exception(
                             "Agent stream error in autonomous session %s",
@@ -425,6 +446,12 @@ class AutonomousRunner:
 
                     # Record the exchange so history accumulates.
                     self._store.record(session_id, owner_id, message, full_reply)
+
+                    if self._event_sink is not None:
+                        self._event_sink.publish(
+                            session_id,
+                            agent_message_frame(full_reply, time.time()),
+                        )
 
                     aq.auto_turn_count += 1
                     self._save_sessions()
