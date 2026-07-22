@@ -186,13 +186,21 @@ self-closing after a fixed number of failures.
       open a second decision chat for the same ticket, the spawn is refused with a
       `SubsessionUserChatSpawnError`. Non-`user_chat` children (e.g. `task`) from a `user_chat`
       parent are still allowed.
+    - **Periodic nesting restriction:** a **periodic** subsession cannot spawn another periodic
+      child. If the periodic agent attempts to spawn a periodic monitor, the error message
+      suggests actionable alternatives: use a one-shot task subsession instead, modify the
+      existing monitor's prompt to cover the additional scope, or ask the operator to spawn a
+      top-level periodic monitor.
 
 06. **Terminal-state discipline.** The sub-agent calls its `complete_subsession(summary)` tool as
     soon as the monitored condition reaches a verified terminal state — the summary is delivered to
     the parent and the subsession closes.
 
 07. Subsessions persist to `/data/subsessions.json`; periodic ones are automatically resumed after a
-    process restart (e.g. Watchtower redeploy) with their remaining run budget.
+    process restart (e.g. Watchtower redeploy) with their remaining run budget. Unlike task and
+    user_chat subsessions, periodic monitors resume silently — they are excluded from the restart
+    notice injected into the parent conversation, preventing unnecessary parent-agent noise on
+    every redeploy. Results continue to be delivered via their normal `subsession_result` frames.
 
     **Auto-closed monitors are also re-spawned on restart.** If a periodic monitor was auto-closed
     with one of the following reasons — `no_change_auto_stop` (consecutive no-change runs), `paused`
