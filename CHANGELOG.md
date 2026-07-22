@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add CI check (`check-activity-kinds`) to validate `frame.kind` comparisons in `chat.js` against the canonical `ACTIVITY_KINDS` frozenset in `events.py`, preventing silent frontend breakage when activity frame kinds are added or renamed.
 - DirectRepoClient now automatically detects expired GitHub App installation tokens (HTTP 401) and re-mints the token before retrying the request once. This prevents push failures in long-running sessions where the token expires between clone and push.
 - Autonomous sessions now receive the same subsession and notification tools as interactive chat sessions (`spawn_subsession`, `notify_user`, etc.). Previously the autonomous agent factory omitted `subsession_env` and `event_sink`, so per-request tools were never built, and the system prompt instructed the agent to use tools that didn't exist.
 - Autonomous sessions: strengthened the post-approval proceed message from

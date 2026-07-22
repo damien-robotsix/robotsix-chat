@@ -132,6 +132,22 @@ jobs:
       - name: Run SubsessionKind check
         run: python scripts/check_subsession_kinds.py
 
+  check-activity-kinds:
+    name: ActivityKind audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read  # checkout the repo
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
+        with:
+          persist-credentials: false
+      - name: Run ActivityKind check
+        run: python scripts/check_activity_kinds.py
+
   # docs/modules.yaml drift is gated by the shared baseline-check workflow
   # (has-board: true → robotsix-modules validate / check-registration /
   # validate-paths) — see .github/workflows/baseline-check.yml.

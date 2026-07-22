@@ -247,6 +247,11 @@ def subsession_failed_frame(
     }
 
 
+ACTIVITY_KINDS: frozenset[str] = frozenset(
+    {"tool_call", "tool_result", "thinking", "text"}
+)
+
+
 def activity_frame(
     kind: str,
     turn: int,
