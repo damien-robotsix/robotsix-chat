@@ -251,8 +251,16 @@ async def test_400_body_is_array() -> None:
 async def test_400_no_features_specified() -> None:
     """Returns 400 when no feature keys are present in the body."""
     request = _make_patch_request(body={"unrelated": "value"})
-    with pytest.raises(HTTPException) as exc_info:
-        await github_settings_endpoint(request)
+    with patch(
+        "robotsix_chat.chat.server.routes.github.DirectRepoClient",
+        autospec=True,
+    ) as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.list_installation_repos = AsyncMock(
+            return_value=["test-org/test-repo"],
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            await github_settings_endpoint(request)
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == ("at least one security feature must be specified")
 
@@ -261,8 +269,16 @@ async def test_400_no_features_specified() -> None:
 async def test_400_empty_body_object() -> None:
     """Returns 400 when the body is an empty JSON object."""
     request = _make_patch_request(body={})
-    with pytest.raises(HTTPException) as exc_info:
-        await github_settings_endpoint(request)
+    with patch(
+        "robotsix_chat.chat.server.routes.github.DirectRepoClient",
+        autospec=True,
+    ) as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.list_installation_repos = AsyncMock(
+            return_value=["test-org/test-repo"],
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            await github_settings_endpoint(request)
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == ("at least one security feature must be specified")
 
@@ -271,8 +287,16 @@ async def test_400_empty_body_object() -> None:
 async def test_400_invalid_feature_value() -> None:
     """Returns 400 when a feature value is not 'enabled' or 'disabled'."""
     request = _make_patch_request(body={"dependency_graph": "maybe"})
-    with pytest.raises(HTTPException) as exc_info:
-        await github_settings_endpoint(request)
+    with patch(
+        "robotsix_chat.chat.server.routes.github.DirectRepoClient",
+        autospec=True,
+    ) as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.list_installation_repos = AsyncMock(
+            return_value=["test-org/test-repo"],
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            await github_settings_endpoint(request)
     assert exc_info.value.status_code == 400
     assert "dependency_graph" in exc_info.value.detail
     assert "maybe" in exc_info.value.detail
@@ -282,8 +306,16 @@ async def test_400_invalid_feature_value() -> None:
 async def test_400_invalid_feature_value_non_string() -> None:
     """Returns 400 when a feature value is not a string at all."""
     request = _make_patch_request(body={"secret_scanning": 123})
-    with pytest.raises(HTTPException) as exc_info:
-        await github_settings_endpoint(request)
+    with patch(
+        "robotsix_chat.chat.server.routes.github.DirectRepoClient",
+        autospec=True,
+    ) as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.list_installation_repos = AsyncMock(
+            return_value=["test-org/test-repo"],
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            await github_settings_endpoint(request)
     assert exc_info.value.status_code == 400
     assert "secret_scanning" in exc_info.value.detail
     assert "123" in exc_info.value.detail
