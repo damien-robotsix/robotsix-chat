@@ -1,5 +1,9 @@
 ## 0.0.0 (unreleased)
 
+- Rework autonomous `_close_and_respawn` to be non-blocking: respawn and its kickoff
+  are scheduled as background tasks so startup/lifespan is never blocked by respawn.
+  Enforce single-session invariant: at most one open autonomous session per owner at
+  any time; `create_session` returns the existing open session when one already exists.
 - Autonomous sessions now receive the same subsession and notification tools as interactive chat sessions (`spawn_subsession`, `notify_user`, etc.). Previously the autonomous agent factory omitted `subsession_env` and `event_sink`, so per-request tools were never built, and the system prompt instructed the agent to use tools that didn't exist.
 - Autonomous sessions: strengthened the post-approval proceed message from
   a passive "Proceed with the approved plan." to an explicit "OPERATOR

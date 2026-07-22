@@ -167,7 +167,26 @@ class AutonomousRunner:
         turn is scheduled as a background task so the session immediately
         begins subject selection.  Pass ``False`` when the caller will handle
         the kickoff itself (e.g. :meth:`_close_and_respawn`).
+
+        Enforces the single-session invariant: if *owner_id* already has an
+        open autonomous session (any non-terminal state), the existing session
+        is returned unchanged and no new session is created.
         """
+        # Single-session invariant: at most one open autonomous session per owner.
+        for existing in self._sessions.values():
+            if (
+                existing.owner_id == owner_id
+                and existing.state is not AutonomousState.completed
+            ):
+                logger.warning(
+                    "Cannot create new autonomous session for owner %s: "
+                    "session %s is already open (state=%s)",
+                    owner_id,
+                    existing.session_id,
+                    existing.state.value,
+                )
+                return existing
+
         if session_id is None:
             session_id = self._store.new_session_id()
         # Ensure the store has this session.
@@ -465,11 +484,13 @@ class AutonomousRunner:
                         return
                     # Otherwise continue the loop.
 
-                # Release the per-owner lock *before* respawning to avoid
-                # deadlock: _close_and_respawn → _kickoff_initial_turn tries
-                # to acquire the same non-reentrant asyncio.Lock.
+                # Schedule respawn as a background task so the auto-continue
+                # loop can return immediately — the respawn kickoff is also
+                # non-blocking (see _close_and_respawn docstring).
                 if should_respawn:
-                    await self._close_and_respawn(session_id)
+                    self._schedule_background(
+                        lambda sid=session_id: self._close_and_respawn(sid)  # type: ignore[misc]
+                    )
                     return
 
         except asyncio.CancelledError:
@@ -483,7 +504,16 @@ class AutonomousRunner:
     # -- completion & respawn -----------------------------------------------
 
     async def _close_and_respawn(self, session_id: str) -> None:
-        """Close the completed autonomous session and spawn a new one."""
+        """Close the completed autonomous session and spawn a new one.
+
+        This method is *non-blocking*: the respawn kickoff is scheduled as a
+        background task and this coroutine returns immediately.  Callers must
+        never ``await`` this in startup/lifespan paths — schedule it via
+        :meth:`_schedule_background` instead.
+
+        Enforces the single-session invariant: at most one open autonomous
+        session per owner at any time.
+        """
         aq = self._sessions.get(session_id)
         if aq is None:
             return
@@ -496,18 +526,37 @@ class AutonomousRunner:
             aq.auto_turn_count,
         )
 
-        # Close the completed session.
+        # Close the completed session and remove it from the in-memory
+        # registry so a concurrent trigger sees ``None`` and exits early
+        # (idempotency guard — prevents double-spawn).
         self._store.close_session(owner_id, session_id)
+        del self._sessions[session_id]
 
-        # Spawn a new autonomous session (no auto-kickoff — we handle it
-        # inline below).
+        # Single-session invariant: never spawn a second open session for
+        # this owner.  (The just-closed session is already gone, so any
+        # match here is a genuine duplicate.)
+        for existing in self._sessions.values():
+            if (
+                existing.owner_id == owner_id
+                and existing.state is not AutonomousState.completed
+            ):
+                logger.warning(
+                    "Cannot spawn new autonomous session for owner %s: "
+                    "session %s is still open (state=%s)",
+                    owner_id,
+                    existing.session_id,
+                    existing.state.value,
+                )
+                self._save_sessions()
+                return
+
+        # Spawn a new autonomous session.  ``schedule_kickoff=True`` kicks
+        # off the initial turn as a background task, so this coroutine
+        # returns immediately — the caller (or the lifespan) is never
+        # blocked waiting for the agent's first reply.
         new_sid = self._store.new_session_id()
         self._store.begin(new_sid)
-        self.create_session(owner_id, session_id=new_sid, schedule_kickoff=False)
-
-        # Kick off the new session with an initial prompt so the agent
-        # starts subject selection without waiting for a user message.
-        await self._kickoff_initial_turn(new_sid, owner_id)
+        self.create_session(owner_id, session_id=new_sid, schedule_kickoff=True)
 
     # -- resume on restart --------------------------------------------------
 
@@ -529,13 +578,9 @@ class AutonomousRunner:
                     "Resuming: auto-closing completed autonomous session %s",
                     session_id,
                 )
-                try:
-                    await self._close_and_respawn(session_id)
-                except Exception:
-                    logger.exception(
-                        "Failed to close completed session %s on resume",
-                        session_id,
-                    )
+                self._schedule_background(
+                    lambda sid=session_id: self._close_and_respawn(sid)  # type: ignore[misc]
+                )
 
             elif aq.state is AutonomousState.executing:
                 logger.info(
