@@ -211,12 +211,15 @@ async def test_fetch_403_reports_scope_error(
         github_app_installation_id="7",
     )
 
-    async def fake_token(_settings: DirectRepoSettings) -> str:
+    import sys
+    from types import SimpleNamespace
+
+    async def fake_token(**kw: object) -> str:
         return "installation-token"
 
-    import robotsix_chat.repo.direct.client as dr_client
-
-    monkeypatch.setattr(dr_client, "_get_installation_token", fake_token)
+    fake = SimpleNamespace()
+    fake.mint_installation_token = fake_token
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
     manager = WorkspaceManager(
         RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")), direct_repo
     )
@@ -252,12 +255,15 @@ async def test_fetch_404_authenticated_reports_not_found(
         github_app_installation_id="7",
     )
 
-    async def fake_token(_settings: DirectRepoSettings) -> str:
+    import sys
+    from types import SimpleNamespace
+
+    async def fake_token(**kw: object) -> str:
         return "installation-token"
 
-    import robotsix_chat.repo.direct.client as dr_client
-
-    monkeypatch.setattr(dr_client, "_get_installation_token", fake_token)
+    fake = SimpleNamespace()
+    fake.mint_installation_token = fake_token
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
     manager = WorkspaceManager(
         RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")), direct_repo
     )
@@ -278,12 +284,15 @@ async def test_fetch_follows_redirect_preserving_auth(
         github_app_installation_id="7",
     )
 
-    async def fake_token(_settings: DirectRepoSettings) -> str:
+    import sys
+    from types import SimpleNamespace
+
+    async def fake_token(**kw: object) -> str:
         return "installation-token"
 
-    import robotsix_chat.repo.direct.client as dr_client
-
-    monkeypatch.setattr(dr_client, "_get_installation_token", fake_token)
+    fake = SimpleNamespace()
+    fake.mint_installation_token = fake_token
+    monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
     manager = WorkspaceManager(
         RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")), direct_repo
     )
