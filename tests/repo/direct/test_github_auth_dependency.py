@@ -10,6 +10,7 @@ a green CI can never again hide a missing dependency.
 
 
 def test_robotsix_github_auth_is_a_real_installed_dependency() -> None:
+    """Verify the shared library imports and exposes ``mint_installation_token``."""
     import robotsix_github_auth  # noqa: F401
     from robotsix_github_auth import mint_installation_token
 
