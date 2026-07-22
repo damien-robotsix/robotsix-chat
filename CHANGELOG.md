@@ -498,6 +498,14 @@
   spawned by a periodic subsession could strand its outcome — the tool
   persisted the terminal state but the worker was cancelled before delivering,
   and the HTTP close endpoint saw "already closed" and also skipped delivery.
+- Periodic subsessions are now excluded from the restart notice injected
+  after a server restart.  They resume silently and report results via
+  their normal delivery channels, preventing the parent agent from
+  taking unnecessary action on every redeploy.
+- The ``SubsessionPeriodicSpawnError`` message now includes actionable
+  alternatives when a periodic subsession attempts to spawn a periodic
+  child (use a one-shot task, modify the existing monitor, or ask the
+  operator).
 - Remove the "New autonomous" button from the UI (button element in index.html,
   handler + function + config-display toggle in chat.js). The single-session
   model makes manual creation unnecessary and dangerous.
