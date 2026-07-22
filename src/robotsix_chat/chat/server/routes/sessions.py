@@ -99,12 +99,8 @@ async def sessions_list_endpoint(request: Request) -> JSONResponse:
                 if aq is not None:
                     s["autonomous_plan_text"] = aq.plan_text
                     s["autonomous_turn_count"] = aq.auto_turn_count
-                    s["autonomous_max_turns"] = (
-                        request.app.state.settings.autonomous.max_auto_turns
-                    )
-                    s["autonomous_session_color"] = (
-                        request.app.state.settings.autonomous.session_color
-                    )
+                    s["autonomous_max_turns"] = runner.max_auto_turns
+                    s["autonomous_session_color"] = runner.session_color
 
     return JSONResponse({"sessions": sessions, "active_session_id": active_id})
 

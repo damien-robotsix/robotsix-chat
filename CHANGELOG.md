@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Fix `GET /sessions` 500 error for owners with autonomous sessions: the autonomous-annotation block referenced `app.state.settings` which was never set. Expose `max_auto_turns`/`session_color` as properties on `AutonomousRunner` and use them directly from the runner already in scope.
 - Fix autonomous session kickoff crash: `RuntimeError: asyncio.run() cannot be called from a running event loop`. Agent factory calls in `_kickoff_initial_turn`, `_auto_continue`, and `_close_and_respawn` are now offloaded to a thread executor via `asyncio.to_thread`, matching the subsession worker pattern.
 - `repo_study`: fix private-repo fetch by preserving the GitHub App installation token across the API→codeload redirect (httpx was stripping it). Token-exchange failures and 403 scope errors now raise loud, specific errors instead of silently falling back to unauthenticated access.
 - System prompt v43: add "Deploy preflight" gate requiring the assistant to retrieve deploy/docker-compose.yml, check the chat_agent_deployable_components allowlist, and verify endpoint capabilities before any deploy call — prevents guessing at deploy endpoint support for multi-service components.
