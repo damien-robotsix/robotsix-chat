@@ -11,7 +11,7 @@ from typing import Any
 
 import pytest
 
-from robotsix_chat.chat.events import EventBus
+from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE, EventBus
 from robotsix_chat.config import NotificationSettings
 from robotsix_chat.notification import (
     build_notification_tools,
@@ -97,7 +97,7 @@ async def test_notify_user_success() -> None:
     assert len(spy.calls) == 1
     sid, frame = spy.calls[0]
     assert sid == session_id
-    assert frame["type"] == "notification"
+    assert frame["type"] == SSE_NOTIFICATION_TYPE
     assert frame["title"] == "Test"
     assert frame["body"] == "Test body"
     assert frame["urgency"] == "default"
@@ -121,7 +121,7 @@ async def test_notify_user_with_link() -> None:
     assert len(spy.calls) == 1
     _, frame = spy.calls[0]
     assert frame["link"] == "https://github.com/org/repo/pull/42"
-    assert frame["type"] == "notification"
+    assert frame["type"] == SSE_NOTIFICATION_TYPE
     assert frame["title"] == "PR merged"
 
 
@@ -216,7 +216,7 @@ async def test_notify_user_eventbus_delivers_to_subscriber() -> None:
 
     # The subscriber should receive the frame.
     frame = queue.get_nowait()
-    assert frame["type"] == "notification"
+    assert frame["type"] == SSE_NOTIFICATION_TYPE
     assert frame["title"] == "Hello"
     assert frame["body"] == "World"
     assert frame["urgency"] == "high"
