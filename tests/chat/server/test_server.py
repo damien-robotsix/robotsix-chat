@@ -7,7 +7,7 @@ import base64
 import json
 import os
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Callable, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -419,16 +419,27 @@ async def test_summary_endpoint_uses_dedicated_summary_agent() -> None:
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize(
-    ("method", "path", "payload"),
+    ("method", "path", "payload", "expected_substring"),
     [
-        pytest.param("get", "/sessions", None, id="list"),
-        pytest.param("post", "/sessions", {"json": {}}, id="create"),
-        pytest.param("delete", "/sessions/whatever", None, id="delete"),
-        pytest.param("post", "/sessions/whatever/close", None, id="close"),
+        pytest.param(
+            "get", "/sessions", None, "owner_id", id="list"
+        ),
+        pytest.param(
+            "post", "/sessions", {"json": {}}, "owner_id", id="create"
+        ),
+        pytest.param(
+            "delete", "/sessions/whatever", None, "owner_id", id="delete"
+        ),
+        pytest.param(
+            "post", "/sessions/whatever/close", None, "owner_id", id="close"
+        ),
     ],
 )
 async def test_sessions_missing_owner_id_returns_400(
-    method: str, path: str, payload: dict[str, object] | None
+    method: str,
+    path: str,
+    payload: dict[str, object] | None,
+    expected_substring: str,
 ) -> None:
     """Sessions endpoints return 400 when ``owner_id`` is missing."""
     async with mock_app() as f:
@@ -439,6 +450,7 @@ async def test_sessions_missing_owner_id_returns_400(
             response = await client_method(path)
 
     assert response.status_code == 400
+    assert expected_substring in response.json()["error"]
 
 
 # ---------------------------------------------------------------------------
@@ -1585,18 +1597,25 @@ async def test_resume_hook_passed_through_mock_app() -> None:
             "text",
             id="message_empty_text",
         ),
+        pytest.param(
+            "post",
+            lambda info: f"/subsessions/{info.id}/message",
+            {"json": {}},
+            "text",
+            id="message_missing_text_field",
+        ),
     ],
 )
 async def test_subsessions_validation_errors(
     method: str,
-    path_factory: object,
+    path_factory: Callable[[SubsessionInfo], str],
     payload: dict[str, object] | None,
     expected_error: str,
 ) -> None:
     """Subsessions endpoints return 400 for invalid requests."""
     registry = SubsessionRegistry(store_path=None)
     info = _register_subsession(registry, owner="sess-a")
-    path = path_factory(info)  # type: ignore[operator]
+    path = path_factory(info)
 
     async with mock_app(subsession_registry=registry) as f:
         client_method = getattr(f.client, method)
