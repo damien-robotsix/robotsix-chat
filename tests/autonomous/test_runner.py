@@ -9,6 +9,7 @@ import pytest
 from robotsix_chat.autonomous.models import AutonomousState
 from robotsix_chat.autonomous.runner import AutonomousRunner
 from robotsix_chat.chat.conversation import ConversationStore, Session
+from robotsix_chat.chat.events import SSE_AGENT_MESSAGE_TYPE, SSE_AUTONOMOUS_TOKEN_TYPE
 
 
 class TestAutonomousRunnerSessionRegistry:
@@ -350,3 +351,170 @@ class TestStorePublicMethods:
         for sid, session in sessions.items():
             assert isinstance(sid, str)
             assert isinstance(session, Session)
+
+
+class TestAutonomousEventStreaming:
+    """Live SSE token publishing and transcript recording during autonomous turns."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+
+    @pytest.mark.asyncio
+    async def test_kickoff_publishes_tokens_to_event_sink(self) -> None:
+        """_kickoff_initial_turn publishes each streamed token to the event sink."""
+        store = ConversationStore()
+        store.create_session("owner1")
+        sessions, _active = store.list_sessions("owner1")
+        sid = sessions[0]["session_id"]
+
+        event_sink = MagicMock()
+        settings = MagicMock()
+        settings.autonomous.initial_task = "Test task"
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _token_stream(*args, **kwargs):
+            yield "Hello"
+            yield " "
+            yield "world!"
+
+        agent.stream.return_value = _token_stream()
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+            event_sink=event_sink,
+        )
+        await runner._kickoff_initial_turn(sid, "owner1")
+
+        # Verify token frames were published.
+        token_calls = [
+            c
+            for c in event_sink.publish.call_args_list
+            if c[0][1].get("type") == SSE_AUTONOMOUS_TOKEN_TYPE
+        ]
+        assert len(token_calls) == 3
+        assert token_calls[0][0][1]["token"] == "Hello"
+        assert token_calls[1][0][1]["token"] == " "
+        assert token_calls[2][0][1]["token"] == "world!"
+
+        # Verify an agent_message frame was published after the stream.
+        agent_msg_calls = [
+            c
+            for c in event_sink.publish.call_args_list
+            if c[0][1].get("type") == SSE_AGENT_MESSAGE_TYPE
+        ]
+        assert len(agent_msg_calls) == 1
+        assert agent_msg_calls[0][0][1]["text"] == "Hello world!"
+
+    @pytest.mark.asyncio
+    async def test_kickoff_records_to_store(self) -> None:
+        """_kickoff_initial_turn records the turn so /history is non-empty."""
+        store = ConversationStore()
+        store.create_session("owner1")
+        sessions, _active = store.list_sessions("owner1")
+        sid = sessions[0]["session_id"]
+
+        settings = MagicMock()
+        settings.autonomous.initial_task = "Test task"
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _token_stream(*args, **kwargs):
+            yield "Plan text"
+            yield " [APPROVAL_NEEDED]"
+
+        agent.stream.return_value = _token_stream()
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+        )
+        await runner._kickoff_initial_turn(sid, "owner1")
+
+        # /history must be non-empty after kickoff.
+        turns = store.history(sid)
+        assert len(turns) >= 1
+        user_msg, asst_msg = turns[0]
+        assert "Test task" in user_msg
+        assert "Plan text" in asst_msg
+        assert "APPROVAL_NEEDED" in asst_msg
+
+    @pytest.mark.asyncio
+    async def test_auto_continue_publishes_tokens_to_event_sink(self) -> None:
+        """_auto_continue publishes streamed tokens and agent_message to the sink."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.max_auto_turns = 1
+        settings.autonomous.approval_marker = "[APPROVAL_NEEDED]"
+        settings.autonomous.completion_marker = "[COMPLETED]"
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        event_sink = MagicMock()
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _token_stream(*args, **kwargs):
+            yield "Executing"
+            yield " step 1"
+
+        agent.stream.return_value = _token_stream()
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+            event_sink=event_sink,
+        )
+        # Create session without scheduling kickoff so the background task
+        # does not also publish tokens / agent_message frames.
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        # Manually transition to executing so _auto_continue runs.
+        aq.state = AutonomousState.executing
+        aq.plan_text = "plan"
+        runner._save_sessions = MagicMock()  # re-stub after create_session
+
+        await runner._auto_continue(aq.session_id)
+
+        # Verify token frames were published during the single turn.
+        token_calls = [
+            c
+            for c in event_sink.publish.call_args_list
+            if c[0][1].get("type") == SSE_AUTONOMOUS_TOKEN_TYPE
+        ]
+        assert len(token_calls) == 2
+        assert token_calls[0][0][1]["token"] == "Executing"
+        assert token_calls[1][0][1]["token"] == " step 1"
+
+        # Verify exactly one agent_message frame was published.
+        agent_msg_calls = [
+            c
+            for c in event_sink.publish.call_args_list
+            if c[0][1].get("type") == SSE_AGENT_MESSAGE_TYPE
+        ]
+        assert len(agent_msg_calls) == 1
+        assert agent_msg_calls[0][0][1]["text"] == "Executing step 1"
+
+        # Verify store was recorded.
+        turns = store.history(aq.session_id)
+        assert len(turns) >= 1
