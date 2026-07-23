@@ -36,7 +36,7 @@ jobs:
 
   ci:
     name: Python CI (shared)
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-ci.yml@43309967ea8011400212a8995d33ca900ee2afed  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-ci.yml@0234f4b82365d776fc021c774dc104c5e7042c29  # main
     with:
       python-version: "3.14"
       cov-package: "robotsix_chat"
@@ -58,7 +58,7 @@ jobs:
 
   security:
     name: Security scan (shared)
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-security.yml@43309967ea8011400212a8995d33ca900ee2afed  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/python-security.yml@0234f4b82365d776fc021c774dc104c5e7042c29  # main
     with:
       install-extras: ""
       trufflehog-pr-diff: true
@@ -72,7 +72,7 @@ jobs:
     # Shared reusable gate (repo baseline); the skip-changelog label
     # exemption is handled inside the reusable workflow.
     if: github.event_name == 'pull_request'
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/changelog-check.yml@43309967ea8011400212a8995d33ca900ee2afed  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/changelog-check.yml@0234f4b82365d776fc021c774dc104c5e7042c29  # main
     permissions:
       contents: read  # checkout the repo with full history
 

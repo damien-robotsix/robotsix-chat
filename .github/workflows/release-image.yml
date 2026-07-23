@@ -42,7 +42,7 @@ jobs:
   publish:
     name: Build, scan, and publish image
     needs: verify
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/docker-release.yml@43309967ea8011400212a8995d33ca900ee2afed  # main
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/docker-release.yml@0234f4b82365d776fc021c774dc104c5e7042c29  # main
     permissions:
       contents: read          # checkout the repo
       packages: write         # push image to GHCR
