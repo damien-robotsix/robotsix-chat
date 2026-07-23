@@ -52,6 +52,22 @@ missing from its context. The new search capability eliminates the fragile-id-re
 
 **SHA256:** `b0e205017f02e8e2a90707f2b6fbaf51f356e5ab7362124803eb79602ba13050`
 
+## v46 — 2026-07-23 — proactively-escalate-stalled-ticket-moni-f6e8
+
+**Summary:** Add a "Monitor auto-stop escalation" bullet to the Ticket lifecycle section. When a
+monitor subsession auto-stops with reason `no_change_auto_stop` (repeated NO_CHANGE runs), the
+agent must not silently accept the stall — it must proactively offer the operator concrete
+escalation paths: (a) re-trigger implementation with more specific debugging instructions, (b)
+escalate for human review with a clear diagnosis, or (c) suggest direct debugging input such as
+inspecting implementation history or fetch-spec logs.
+
+**Rationale:** Monitors (like eba2) showing repeated no-change runs currently auto-stop with a
+passive notification. The operator may not know the monitor stopped, leaving blockers unresolved
+for long periods and wasting trust. This new rule forces the assistant to surface stalled work
+immediately with actionable next steps rather than silently dropping it.
+
+**SHA256:** `4c2f77d43fd71ad9382a5bf667a32d9ca36aebf1f8dd657552fd53f5345aeece`
+
 ______________________________________________________________________
 
 ## v45 — 2026-07-22 — hallucinated-memory-summary-causes-redun-f44a
