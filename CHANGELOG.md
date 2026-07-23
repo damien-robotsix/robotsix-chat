@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Added `POST /chat/github/repos` endpoint to create GitHub repositories under the configured organisation. Repos are created with `auto_init: true` by default so they have an initial commit and are immediately clonable.
 - Added `search_knowledge_notes` tool to the knowledge base — the agent can now query
   prior diagnostic notes, deployment statuses, and other key facts by content substring
   match, without needing to recall exact note IDs. Results are ranked by relevance

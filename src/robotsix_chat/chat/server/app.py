@@ -60,6 +60,7 @@ from .routes import (
     events_endpoint,
     github_actions_secret_endpoint,
     github_actions_workflow_endpoint,
+    github_create_repo_endpoint,
     github_settings_endpoint,
     health_endpoint,
     history_endpoint,
@@ -407,6 +408,11 @@ def create_app(
             "/chat/github/repos/{owner}/{repo}/settings",
             github_settings_endpoint,
             methods=["PATCH"],
+        ),
+        Route(
+            "/chat/github/repos",
+            github_create_repo_endpoint,
+            methods=["POST"],
         ),
         Route(
             "/chat/github/repos/{owner}/{repo}/actions/secrets/{secret_name}",
