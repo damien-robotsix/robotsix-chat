@@ -105,7 +105,7 @@ POST /subsessions/{subsession_id}/close
 7. Subsessions persist to `/data/subsessions.json`; periodic ones are automatically resumed after a
    process restart (e.g. Watchtower redeploy) with their remaining run budget. Unlike task and
    user_chat subsessions, periodic monitors resume silently — they are excluded from the restart
-   notice injected into the parent conversation, preventing unnecessary parent-agent noise on
-   every redeploy. Results continue to be delivered via their normal `subsession_result` frames.
+   notice injected into the parent conversation, preventing unnecessary parent-agent noise on every
+   redeploy. Results continue to be delivered via their normal `subsession_result` frames.
 8. Concurrency is bounded by `subsessions.max_concurrent` (default 8, across all subsession kinds);
    exceeding it returns a friendly refusal rather than raising.
