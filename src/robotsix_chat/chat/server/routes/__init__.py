@@ -53,6 +53,7 @@ from .events import (
 from .github import (
     github_actions_secret_endpoint,
     github_actions_workflow_endpoint,
+    github_create_repo_endpoint,
     github_job_log_endpoint,
     github_settings_endpoint,
 )
@@ -106,6 +107,7 @@ __all__ = [
     "events_endpoint",
     "github_actions_secret_endpoint",
     "github_actions_workflow_endpoint",
+    "github_create_repo_endpoint",
     "github_job_log_endpoint",
     "github_settings_endpoint",
     "health_endpoint",
