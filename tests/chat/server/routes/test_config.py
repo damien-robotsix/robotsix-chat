@@ -412,6 +412,8 @@ def test_put_rejects_invalid_config(tmp_path: Path) -> None:
     assert error_data["title"] == "Config Validation Failed"
     assert error_data["status"] == 422
     assert "memory.embedding.endpoint" in error_data.get("detail", "")
+    assert "failures" in error_data
+    assert any("memory.embedding.endpoint" in f for f in error_data["failures"])
 
     # Assert the on-disk config was NOT modified.
     on_disk = _read_config_json(config_path)
@@ -426,9 +428,45 @@ def test_put_rejects_invalid_model_level(tmp_path: Path) -> None:
 
     resp = client.put("/config", json={"llmio_model_level": 99})
     assert resp.status_code == 422
+    error_data = resp.json()
+    assert "failures" in error_data
+    assert any("llmio.model_level" in f for f in error_data["failures"])
 
     on_disk = _read_config_json(config_path)
     assert on_disk["llmio_model_level"] == 3
+
+
+def test_put_reports_all_precondition_failures(tmp_path: Path) -> None:
+    """Multiple precondition failures are all reported in the failures list."""
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "llmio_model_level": 3,
+            "memory": {
+                "enabled": True,
+                "llm": {"api_key": "sk-llm"},  # pragma: allowlist secret
+                "embedding": {"endpoint": "http://box:11434/v1"},
+            },
+        },
+    )
+    client = _make_app(config_path)
+
+    # Trigger multiple failures: invalid model_level + blank embedding endpoint
+    resp = client.put(
+        "/config",
+        json={
+            "llmio_model_level": 99,
+            "memory": {"embedding": {"endpoint": ""}},
+        },
+    )
+    assert resp.status_code == 422
+    error_data = resp.json()
+    assert "failures" in error_data
+    failures = error_data["failures"]
+    # Both preconditions should appear
+    assert any("llmio.model_level" in f for f in failures), failures
+    assert any("memory.embedding.endpoint" in f for f in failures), failures
 
 
 # ---------------------------------------------------------------------------
