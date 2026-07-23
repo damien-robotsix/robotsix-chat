@@ -94,6 +94,7 @@ modules:
       - tests/autonomous/test_models.py
       - tests/autonomous/test_prompts.py
       - tests/autonomous/test_runner.py
+      - tests/autonomous/test_continue_throttle_gate.py
 
   - id: component-client
     description: "Component agent client tools for the chat LLM — exposes build_component_tools(), a factory returning LLM tools that let the chat agent enumerate, inspect, and configure remote component agents via direct HTTP."

@@ -306,6 +306,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             agent_factory=_autonomous_agent_factory,
             run_serializer=run_serializer,
             event_sink=event_bus,
+            subsession_registry=subsession_registry,
         )
         logger.info(
             "Autonomous sessions enabled (max_auto_turns=%d)",

@@ -1,0 +1,1 @@
+Autonomous `_auto_continue` now throttles between turns (`autonomous.continue_interval_seconds`, default 45s) and pauses while the session has pending/running subsessions or periodic workflows (`autonomous.pending_subsession_wait_timeout`, default 600s, bounded), instead of sending "Continue." back-to-back and burning the turn budget on idle waits.
