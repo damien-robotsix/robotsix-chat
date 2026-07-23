@@ -12,10 +12,10 @@ system prompt.
 
 from __future__ import annotations
 
+import builtins
 import logging
 import uuid
 from dataclasses import dataclass
-from typing import List
 
 from robotsix_chat.common.json_store import JsonStoreBase
 
@@ -115,7 +115,7 @@ class KnowledgeStore(JsonStoreBase[KnowledgeEntry]):
         t = topic.strip().lower()
         return [e for e in self._items.values() if e.topic.strip().lower() == t]
 
-    def search(self, query: str) -> List[KnowledgeEntry]:
+    def search(self, query: str) -> builtins.list[KnowledgeEntry]:
         """Return notes whose topic or content contains *query* (case-insensitive).
 
         Results are ranked: exact topic match first, then topic contains,
@@ -125,7 +125,7 @@ class KnowledgeStore(JsonStoreBase[KnowledgeEntry]):
         q = query.strip().lower()
         if not q:
             return []
-        scored: List[tuple[int, KnowledgeEntry]] = []
+        scored: list[tuple[int, KnowledgeEntry]] = []
         for entry in self._items.values():
             topic_lower = entry.topic.strip().lower()
             score = 0
