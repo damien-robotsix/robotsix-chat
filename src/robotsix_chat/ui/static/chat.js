@@ -15,7 +15,6 @@
   const sessionsDismiss = sessionsPanel.querySelector(".dismiss");
   const sessionsResizeHandle = document.getElementById("sessions-resize-handle");
   const newChatBtn = document.getElementById("new-chat-btn");
-  const newAutoBtn = document.getElementById("new-auto-btn");
   const subsToggle     = document.getElementById("subsessions-toggle");
   const subsPanel      = document.getElementById("subsessions-panel");
   const subsResizeHandle = document.getElementById("subsessions-resize-handle");
@@ -490,22 +489,6 @@
       body: JSON.stringify({ owner_id: clientId })
     }).then(function (r) {
       if (!r.ok) throw new Error("Failed to create session");
-      return r.json();
-    });
-  }
-
-  function createNewAutonomousSession() {
-    var url = apiBase() + "/sessions";
-    return fetch(url, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ owner_id: clientId, autonomous: true })
-    }).then(function (r) {
-      if (!r.ok) {
-        return r.json().then(function (body) {
-          throw new Error(body.error || body.detail || "Failed to create autonomous session");
-        });
-      }
       return r.json();
     });
   }
@@ -2618,30 +2601,6 @@
     });
   });
 
-  // "New autonomous" button
-  newAutoBtn.addEventListener("click", function () {
-    newAutoBtn.disabled = true;
-    newAutoBtn.textContent = "Creating\u2026";
-    createNewAutonomousSession().then(function (data) {
-      newAutoBtn.disabled = false;
-      newAutoBtn.textContent = "\u{1F916} New autonomous";
-      if (data && data.session_id) {
-        setActiveSessionId(data.session_id);
-        clearChatBubbles();
-        clearSubsessions();
-        closeEventStream();
-        openEventStream();
-        loadHistory();
-        fetchSubsessions();
-        refreshSessions();
-        resetIdleTimer();
-      }
-    }).catch(function (err) {
-      newAutoBtn.disabled = false;
-      newAutoBtn.textContent = "\u{1F916} New autonomous";
-      showError(err.message || "Failed to create autonomous session");
-    });
-  });
 
   // ---- Sessions panel resize ------------------------------------------
   var sessionsResizeDragging = false;
@@ -2810,16 +2769,6 @@
   }
 
   // Bootstrap: fetch sessions, pick the active one, then load history/events.
-
-  // Preload settings to detect autonomous.enabled and show the button.
-  fetch(apiBase() + "/config", { method: "GET" })
-    .then(function (r) { return r.ok ? r.json() : null; })
-    .then(function (cfg) {
-      if (cfg && cfg.autonomous && cfg.autonomous.enabled) {
-        newAutoBtn.style.display = "";
-      }
-    })
-    .catch(function () { /* ignore — button stays hidden */ });
 
   fetchSessions().then(function (data) {
     // Determine active session: server-reported active, or newest, or local fallback.

@@ -125,6 +125,113 @@ On `"done"` the client knows the reply is complete and can re-enable the input.
 
 ______________________________________________________________________
 
+## Autonomous Sessions
+
+The autonomous subsystem lets the agent independently pick a subject, draft a plan, seek operator
+approval, and execute the plan through tool calls — cycling back to subject selection after
+completion. It was redesigned around a **single, continuous session** model to eliminate production
+outages caused by blocking startup and accumulating sessions.
+
+### Single-session model
+
+When `autonomous.enabled=true`, there is **at most one open** autonomous session per owner at any
+instant. "Open" means any non-terminal state (`selecting_subject`, `awaiting_approval`,
+`executing`). Terminal states are `completed` (and any existing failed/cancelled terminal states).
+
+- `create_session()` enforces this invariant: if the owner already has an open session, the existing
+  session is returned unchanged and no new session is created.
+- `_close_and_respawn()` checks the same invariant before spawning a successor, guarding against
+  stale/duplicate sessions.
+
+### Continuous respawn (complete → new session)
+
+When the current open session reaches `completed`, a new autonomous session is automatically spawned
+— the system maintains a continuous cycle while `autonomous.enabled=true`:
+
+1. The `_auto_continue` loop detects the `completion_marker` in the agent's reply.
+2. It schedules `_close_and_respawn` as a **detached background task** (never awaited).
+3. `_close_and_respawn` removes the completed session, enforces the single-session invariant, and
+   calls `create_session(…, schedule_kickoff=True)` which kicks off a fresh subject-selection → plan
+   → approval → execution cycle.
+
+The respawn is **idempotent**: after removing the completed session from the in-memory registry, a
+concurrent duplicate trigger sees `None` and exits early.
+
+### Non-blocking startup (never blocks chat)
+
+All autonomous lifecycle work is moved off the startup/lifespan critical path:
+
+| Operation                         | Where it runs                              | Blocking? |
+| --------------------------------- | ------------------------------------------ | --------- |
+| Resume completed sessions         | Background task via `_schedule_background` | Never     |
+| Resume executing sessions         | Background task via `_schedule_background` | Never     |
+| Resume selecting-subject sessions | Background task via `_schedule_background` | Never     |
+| Close + respawn on completion     | Background task via `_schedule_background` | Never     |
+| Initial turn kickoff              | Background task via `_schedule_background` | Never     |
+| Auto-continue loop                | Background task via `_schedule_background` | Never     |
+
+`resume_sessions()` (called from the lifespan) iterates persisted autonomous sessions and schedules
+each one's handling as a background task, then returns immediately. Chat becomes available
+regardless of whether the background tasks have finished or errored. Errors in background tasks are
+caught and logged via `logger.exception`; they never propagate into the lifespan/startup path.
+
+### Restart context message
+
+When a session is resumed after a process restart, the agent receives a `"SYSTEM RESTARTED"` notice
+in its prompt so it is aware it is resuming rather than starting cold:
+
+- **`selecting_subject` sessions** — the restart notice is prepended to the initial-turn prompt
+  (`_kickoff_initial_turn(…, is_restart=True)`).
+- **`executing` sessions with `auto_turn_count == 0`** (first turn after approval) — the restart
+  notice is prepended to the "OPERATOR APPROVAL RECEIVED" proceed message.
+- **`executing` sessions with `auto_turn_count > 0`** (mid-execution) — the restart notice is
+  prepended to the "Continue." message.
+- **`completed` sessions** — handled by `_close_and_respawn` which spawns a fresh session with no
+  restart notice needed (the new session starts cold).
+
+### Session lifecycle
+
+```text
+  create_session()
+        │
+        ▼
+  selecting_subject  ◄── reject
+        │                 (reset after rejection)
+        ▼
+   _kickoff_initial_turn()
+        │
+        ▼
+  awaiting_approval  ◄── max_auto_turns hit
+        │
+        ├─ approve() → executing
+        └─ reject()  → selecting_subject (re-kickoff)
+                          │
+                          ▼
+  executing ── _auto_continue() ──► awaiting_approval (blocker)
+        │                                   │
+        │                                   └─ approve() → executing (re-approval)
+        │
+        └─ completion_marker detected
+                │
+                ▼
+           completed ──► _close_and_respawn() ──► create_session() (back to selecting_subject)
+```
+
+### Configuration
+
+All autonomous behaviour is gated by the `autonomous.enabled` boolean config key (default `false`).
+No new config keys were added for this redesign. See `docs/configuration.md` for the full autonomous
+settings reference.
+
+### UI changes
+
+The "🤖 New autonomous" button previously shown in the sessions sidebar when `autonomous.enabled` was
+`true` has been **removed**. With the single-session + continuous-respawn model, manual creation is
+redundant and can violate the single-session invariant. The code path that checked `GET /config` to
+conditionally show the button has also been removed from `chat.js`.
+
+______________________________________________________________________
+
 ## Subpackage Inventory
 
 Each subpackage lives under `src/robotsix_chat/`.
@@ -209,11 +316,12 @@ ______________________________________________________________________
 
 State that survives restarts when `/data/` is bind-mounted:
 
-| File                       | Content                                                               |
-| -------------------------- | --------------------------------------------------------------------- |
-| `/data/conversations.json` | Multi-session conversation history (auto-migrated from legacy format) |
-| `/data/subsessions.json`   | Subsession state (periodic subsessions resumed on startup)            |
-| `/data/cognee/`            | Long-term memory storage (cognee)                                     |
+| File                             | Content                                                                                         |
+| -------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `/data/conversations.json`       | Multi-session conversation history (auto-migrated from legacy format)                           |
+| `/data/subsessions.json`         | Subsession state (periodic subsessions resumed on startup)                                      |
+| `/data/cognee/`                  | Long-term memory storage (cognee)                                                               |
+| `/data/autonomous_sessions.json` | Autonomous session state (resumed on restart — see [Autonomous Sessions](#autonomous-sessions)) |
 
 ______________________________________________________________________
 
