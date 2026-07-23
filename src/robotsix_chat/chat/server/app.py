@@ -595,13 +595,18 @@ def _build_static_tools(
     if bare:
         return []
 
+    component_access_tools = build_component_access_tools(settings.central_deploy)
+    component_request = component_access_tools[0] if component_access_tools else None
+
     return [
-        *build_component_access_tools(settings.central_deploy),
+        *component_access_tools,
         *build_mail_tools(settings.mail),
         *build_component_tools(settings.component_client),
         *build_refdocs_tools(settings.refdocs, settings.direct_repo),
         *build_repo_study_tools(settings.repo_study, settings.direct_repo),
-        *build_direct_repo_tools(settings.direct_repo),
+        *build_direct_repo_tools(
+            settings.direct_repo, component_request=component_request
+        ),
         *build_github_security_tools(settings.github_security, settings.direct_repo),
         *build_github_actions_tools(settings.github_actions, settings.direct_repo),
         *build_knowledge_tools(settings.knowledge),
