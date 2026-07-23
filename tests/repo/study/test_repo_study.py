@@ -410,6 +410,38 @@ def test_drop_deletes_workspace(manager: WorkspaceManager, fetched: str) -> None
         manager.list_files(fetched)
 
 
+def test_delete_artifact_removes_file(manager: WorkspaceManager, fetched: str) -> None:
+    """delete_artifact removes a single file from a workspace."""
+    assert "Deleted" in manager.delete_artifact(fetched, "README.md")
+    with pytest.raises(WorkspaceError, match="No file"):
+        manager.read_file(fetched, "README.md")
+
+
+def test_delete_artifact_removes_directory(
+    manager: WorkspaceManager, fetched: str
+) -> None:
+    """delete_artifact removes a directory and its contents."""
+    assert "Deleted" in manager.delete_artifact(fetched, "src")
+    listing = manager.list_files(fetched)
+    assert "src/widget/core.py" not in listing
+    # README.md is still there.
+    assert "README.md" in listing
+
+
+def test_delete_artifact_missing(manager: WorkspaceManager, fetched: str) -> None:
+    """delete_artifact errors clearly on a missing path."""
+    with pytest.raises(WorkspaceError, match="No artifact"):
+        manager.delete_artifact(fetched, "nope.txt")
+
+
+def test_delete_artifact_rejects_traversal(
+    manager: WorkspaceManager, fetched: str
+) -> None:
+    """delete_artifact rejects paths escaping the workspace."""
+    with pytest.raises(WorkspaceError, match="escapes"):
+        manager.delete_artifact(fetched, "../../../etc/passwd")
+
+
 def test_unknown_workspace_errors(manager: WorkspaceManager) -> None:
     """Operations on unknown workspaces error clearly."""
     with pytest.raises(WorkspaceError, match="Unknown workspace"):
@@ -459,6 +491,7 @@ async def test_factory_tools_relay_errors_as_strings(tmp_path: Path) -> None:
         "list_repo_files",
         "read_repo_file",
         "search_repo_files",
+        "delete_workspace_artifact",
         "drop_repo_workspace",
     ]
     by_name = dict(zip(names, tools, strict=True))
@@ -466,6 +499,9 @@ async def test_factory_tools_relay_errors_as_strings(tmp_path: Path) -> None:
     assert (await by_name["list_repo_files"]("missing")).startswith("Error:")
     assert (await by_name["read_repo_file"]("missing", "x")).startswith("Error:")
     assert (await by_name["search_repo_files"]("missing", "x")).startswith("Error:")
+    assert (await by_name["delete_workspace_artifact"]("missing", "x")).startswith(
+        "Error:"
+    )
     assert (await by_name["drop_repo_workspace"]("missing")).startswith("Error:")
 
 
