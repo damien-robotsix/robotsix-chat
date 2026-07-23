@@ -128,8 +128,9 @@ async def test_resume_subsessions_full_scenario(tmp_path: Path) -> None:
         "expected exactly one restart notice per affected conversation"
     )
     notice = restart_notices[0]
-    assert f'Periodic "watch CI" ({ids["periodic"][:8]})' in notice
-    assert "resumed" in notice
+    # Periodic monitors are autonomous and resume silently — they are
+    # excluded from the restart notice to avoid parent-agent noise.
+    assert f'Periodic "watch CI" ({ids["periodic"][:8]})' not in notice
     assert f'Task "one shot" ({ids["task"][:8]})' in notice
     assert "resumed" in notice
     # Terminal entries are not listed.
@@ -703,48 +704,45 @@ async def test_restart_notice_includes_user_chat_as_resumed(
 
 
 @pytest.mark.asyncio
-async def test_restart_notice_deduplicates_identical_periodic_entries(
+async def test_restart_notice_deduplicates_identical_task_entries(
     tmp_path: Path,
 ) -> None:
-    """Identical periodic entries for the same owner are collapsed into one line.
+    """Identical task entries for the same owner are collapsed into one line.
 
-    When a monitor has multiple periodic subsessions with the same title,
+    When a session has multiple task subsessions with the same title,
     the restart notice should group them into a single line with a count
     instead of repeating the same message verbatim.
+
+    (Periodic monitors are autonomous and excluded from the restart
+    notice — only task and user_chat entries trigger it.)
     """
     store_path = tmp_path / "subsessions.json"
     registry1 = SubsessionRegistry(store_path=store_path)
 
-    # Create 5 periodic entries with the same title.
+    # Create 5 task entries with the same title.
     ids = []
     for _ in range(5):
-        periodic = registry1.create(
-            kind=SubsessionKind.PERIODIC,
+        task = registry1.create(
+            kind=SubsessionKind.TASK,
             owner_session_id=OWNER,
             parent_id=None,
             depth=1,
-            title="Monitor 42e0",
-            prompt="check the build",
+            title="Run 42e0",
+            prompt="run the build",
             model_level=3,
-            interval_seconds=0.05,
-            max_runs=10,
         )
-        registry1.set_status(periodic.id, SubsessionStatus.SLEEPING, runs=1)
-        ids.append(periodic.id)
+        ids.append(task.id)
 
-    # Also create one periodic with a *different* title.
+    # Also create one task with a *different* title.
     other = registry1.create(
-        kind=SubsessionKind.PERIODIC,
+        kind=SubsessionKind.TASK,
         owner_session_id=OWNER,
         parent_id=None,
         depth=1,
-        title="Monitor abc1",
-        prompt="check the deploy",
+        title="Run abc1",
+        prompt="run the deploy",
         model_level=3,
-        interval_seconds=0.05,
-        max_runs=10,
     )
-    registry1.set_status(other.id, SubsessionStatus.SLEEPING, runs=1)
 
     gate = asyncio.Event()
     registry2 = SubsessionRegistry(store_path=store_path)
@@ -762,12 +760,12 @@ async def test_restart_notice_deduplicates_identical_periodic_entries(
     assert len(notices) == 1
     notice = notices[0]
 
-    # The 5 identical "Monitor 42e0" entries should be collapsed into one
+    # The 5 identical "Run 42e0" entries should be collapsed into one
     # line showing "5 instances".
     assert "5 instances" in notice
-    assert "Monitor 42e0" in notice
-    # The distinct "Monitor abc1" should still appear as a separate entry.
-    assert "Monitor abc1" in notice
+    assert "Run 42e0" in notice
+    # The distinct "Run abc1" should still appear as a separate entry.
+    assert "Run abc1" in notice
     assert other.id[:8] in notice
 
     # Cleanup.
