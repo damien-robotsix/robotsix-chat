@@ -151,8 +151,8 @@ When the current open session reaches `completed`, a new autonomous session is a
 1. The `_auto_continue` loop detects the `completion_marker` in the agent's reply.
 2. It schedules `_close_and_respawn` as a **detached background task** (never awaited).
 3. `_close_and_respawn` removes the completed session, enforces the single-session invariant, and
-   calls `create_session(…, schedule_kickoff=True)` which kicks off a fresh subject-selection →
-   plan → approval → execution cycle.
+   calls `create_session(…, schedule_kickoff=True)` which kicks off a fresh subject-selection → plan
+   → approval → execution cycle.
 
 The respawn is **idempotent**: after removing the completed session from the in-memory registry, a
 concurrent duplicate trigger sees `None` and exits early.
@@ -161,14 +161,14 @@ concurrent duplicate trigger sees `None` and exits early.
 
 All autonomous lifecycle work is moved off the startup/lifespan critical path:
 
-| Operation | Where it runs | Blocking? |
-| --- | --- | --- |
-| Resume completed sessions | Background task via `_schedule_background` | Never |
-| Resume executing sessions | Background task via `_schedule_background` | Never |
-| Resume selecting-subject sessions | Background task via `_schedule_background` | Never |
-| Close + respawn on completion | Background task via `_schedule_background` | Never |
-| Initial turn kickoff | Background task via `_schedule_background` | Never |
-| Auto-continue loop | Background task via `_schedule_background` | Never |
+| Operation                         | Where it runs                              | Blocking? |
+| --------------------------------- | ------------------------------------------ | --------- |
+| Resume completed sessions         | Background task via `_schedule_background` | Never     |
+| Resume executing sessions         | Background task via `_schedule_background` | Never     |
+| Resume selecting-subject sessions | Background task via `_schedule_background` | Never     |
+| Close + respawn on completion     | Background task via `_schedule_background` | Never     |
+| Initial turn kickoff              | Background task via `_schedule_background` | Never     |
+| Auto-continue loop                | Background task via `_schedule_background` | Never     |
 
 `resume_sessions()` (called from the lifespan) iterates persisted autonomous sessions and schedules
 each one's handling as a background task, then returns immediately. Chat becomes available
@@ -225,10 +225,10 @@ settings reference.
 
 ### UI changes
 
-The "🤖 New autonomous" button previously shown in the sessions sidebar when `autonomous.enabled`
-was `true` has been **removed**. With the single-session + continuous-respawn model, manual creation
-is redundant and can violate the single-session invariant. The code path that checked
-`GET /config` to conditionally show the button has also been removed from `chat.js`.
+The "🤖 New autonomous" button previously shown in the sessions sidebar when `autonomous.enabled` was
+`true` has been **removed**. With the single-session + continuous-respawn model, manual creation is
+redundant and can violate the single-session invariant. The code path that checked `GET /config` to
+conditionally show the button has also been removed from `chat.js`.
 
 ______________________________________________________________________
 
@@ -316,12 +316,12 @@ ______________________________________________________________________
 
 State that survives restarts when `/data/` is bind-mounted:
 
-| File                               | Content                                                                                                                                    |
-| ---------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------ |
-| `/data/conversations.json`         | Multi-session conversation history (auto-migrated from legacy format)                                                                      |
-| `/data/subsessions.json`           | Subsession state (periodic subsessions resumed on startup)                                                                                 |
-| `/data/cognee/`                    | Long-term memory storage (cognee)                                                                                                          |
-| `/data/autonomous_sessions.json`   | Autonomous session state (resumed on restart — see [Autonomous Sessions](#autonomous-sessions))                                            |
+| File                             | Content                                                                                         |
+| -------------------------------- | ----------------------------------------------------------------------------------------------- |
+| `/data/conversations.json`       | Multi-session conversation history (auto-migrated from legacy format)                           |
+| `/data/subsessions.json`         | Subsession state (periodic subsessions resumed on startup)                                      |
+| `/data/cognee/`                  | Long-term memory storage (cognee)                                                               |
+| `/data/autonomous_sessions.json` | Autonomous session state (resumed on restart — see [Autonomous Sessions](#autonomous-sessions)) |
 
 ______________________________________________________________________
 
