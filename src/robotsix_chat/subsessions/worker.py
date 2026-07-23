@@ -143,10 +143,15 @@ class CloseState:
 
     The ``complete_subsession`` tool sets :attr:`requested` (and the
     summary); the worker checks it after every turn.
+
+    When the tool itself already delivered the summary (e.g. to survive
+    a race with an external close), :attr:`delivery_done` is set to
+    ``True`` so the worker does not deliver a second time.
     """
 
     requested: bool = False
     summary: str | None = None
+    delivery_done: bool = False
 
 
 @dataclass
@@ -785,11 +790,12 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                 )
                 if closed is not None:
                     await env.delivery.deliver_summary(closed, summary, "completed")
-                else:
+                elif not close_state.delivery_done:
                     # Already closed by the complete_subsession tool (which
                     # persists immediately to survive a process restart).
-                    # Still deliver the summary so the parent agent reacts
-                    # and the outcome is recorded in the conversation.
+                    # The tool may have already delivered the summary to
+                    # survive a race with an external close; only deliver
+                    # here when the tool did NOT already deliver.
                     closed_info = registry.get(sub_id)
                     if closed_info is not None:
                         await env.delivery.deliver_summary(
