@@ -110,7 +110,9 @@ class TestApproveEndpoint:
     ):
         """Approving when not awaiting_approval returns 409."""
         sid = store.create_session("owner1")["session_id"]
-        autonomous_runner.create_session("owner1", session_id=sid)
+        autonomous_runner.create_session(
+            "owner1", session_id=sid, schedule_kickoff=False
+        )
         r = await client.post(f"/sessions/{sid}/approve?owner_id=owner1")
         assert r.status_code == 409
 
@@ -153,7 +155,9 @@ class TestRejectEndpoint:
     ):
         """Rejecting when not awaiting_approval returns 409."""
         sid = store.create_session("owner1")["session_id"]
-        autonomous_runner.create_session("owner1", session_id=sid)
+        autonomous_runner.create_session(
+            "owner1", session_id=sid, schedule_kickoff=False
+        )
         r = await client.post(f"/sessions/{sid}/reject?owner_id=owner1")
         assert r.status_code == 409
 
@@ -181,7 +185,9 @@ class TestApprovalGate409:
     ):
         """Messages to a non-awaiting autonomous session are not blocked."""
         sid = store.create_session("owner1")["session_id"]
-        autonomous_runner.create_session("owner1", session_id=sid)
+        autonomous_runner.create_session(
+            "owner1", session_id=sid, schedule_kickoff=False
+        )
         r = await client.post(
             "/chat",
             json={"message": "Hello", "session_id": sid, "owner_id": "owner1"},
