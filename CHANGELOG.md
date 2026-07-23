@@ -508,6 +508,8 @@
   alternatives when a periodic subsession attempts to spawn a periodic
   child (use a one-shot task, modify the existing monitor, or ask the
   operator).
+- Remove 23 dead re-exports from `robotsix_chat.chat.server` that had zero
+  external consumers importing through the package path.
 - Remove the "New autonomous" button from the UI (button element in index.html,
   handler + function + config-display toggle in chat.js). The single-session
   model makes manual creation unnecessary and dangerous.
