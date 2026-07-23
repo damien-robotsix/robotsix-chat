@@ -602,6 +602,11 @@
 - System prompt v46: instruct the assistant to spawn periodic monitors directly rather than creating child task subsessions whose only job is to launch a monitor, preventing redundant model round-trips and duplicate spawning logic.
 - Add explicit-instruction rule to system prompt Autonomy section: when a user gives a clear, firm instruction (e.g. "close the superseded ticket without asking"), the agent must carry it out literally without requesting additional confirmation.
 - Added `__all__ = ["build_render_url_tools"]` to `robotsix_chat.render_url` for consistency with all other tool sub-packages.
+- Autonomous runner now detects stalled no-change loops and injects escalation
+  warnings after `escalation_warning_turns` (default 10) consecutive turns without
+  completion. The agent prompt has also been updated to teach proactive escalation
+  (re-trigger implementation, request human review, suggest direct debugging)
+  rather than silently looping until the turn cap.
 - System prompt v46: add monitor auto-stop escalation rule — when a monitor auto-stops after repeated NO_CHANGE runs, the assistant must proactively offer re-trigger, human review, or direct debugging paths instead of silently accepting the stall.
 - Added `search_knowledge_notes` tool to the knowledge base — the agent can now query
   prior diagnostic notes, deployment statuses, and other key facts by content substring
