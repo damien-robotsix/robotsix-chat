@@ -229,6 +229,7 @@
     "completion_marker": "---AUTONOMOUS COMPLETE---",
     "max_auto_turns": 20,
     "max_idle_auto_turns": 5,
+    "escalation_warning_turns": 10,
     "persist_path": "/data/autonomous_sessions.json",
     "session_color": "",
     "initial_task": "",
