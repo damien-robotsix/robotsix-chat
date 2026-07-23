@@ -1,0 +1,1 @@
+Deduplicate sessions_approve_endpoint and sessions_reject_endpoint into a shared helper

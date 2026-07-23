@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
@@ -265,6 +265,33 @@ async def sessions_close_endpoint(request: Request) -> JSONResponse:
     )
 
 
+async def _session_action(
+    request: Request, action: Literal["approve", "reject"]
+) -> JSONResponse:
+    """Execute *action* on the session and return the appropriate response."""
+    from robotsix_chat.autonomous import AutonomousRunner
+
+    session_id = request.path_params["session_id"]
+    owner_id = _require_owner_id(request)
+
+    runner: AutonomousRunner | None = request.app.state.autonomous_runner
+    if runner is None:
+        return JSONResponse(
+            {"error": "autonomous sessions are not enabled"}, status_code=404
+        )
+
+    ok, reason = getattr(runner, action)(owner_id, session_id)
+    if not ok:
+        if reason == "owner_id mismatch":
+            return JSONResponse({"error": reason}, status_code=403)
+        if "not found" in reason:
+            return JSONResponse({"error": reason}, status_code=404)
+        return JSONResponse({"error": reason}, status_code=409)
+
+    result_key = {"approve": "approved", "reject": "rejected"}[action]
+    return JSONResponse({result_key: True})
+
+
 async def sessions_approve_endpoint(request: Request) -> JSONResponse:
     """Approve an autonomous session's plan and begin execution.
 
@@ -282,27 +309,7 @@ async def sessions_approve_endpoint(request: Request) -> JSONResponse:
     Returns 404 when no autonomous runner is configured or the session is
         unknown.
     """
-    from robotsix_chat.autonomous import AutonomousRunner
-
-    session_id = request.path_params["session_id"]
-    owner_id = _require_owner_id(request)
-
-    runner: AutonomousRunner | None = request.app.state.autonomous_runner
-    if runner is None:
-        return JSONResponse(
-            {"error": "autonomous sessions are not enabled"},
-            status_code=404,
-        )
-
-    ok, reason = runner.approve(owner_id, session_id)
-    if not ok:
-        if reason == "owner_id mismatch":
-            return JSONResponse({"error": reason}, status_code=403)
-        if "not found" in reason:
-            return JSONResponse({"error": reason}, status_code=404)
-        return JSONResponse({"error": reason}, status_code=409)
-
-    return JSONResponse({"approved": True})
+    return await _session_action(request, "approve")
 
 
 async def sessions_reject_endpoint(request: Request) -> JSONResponse:
@@ -321,27 +328,7 @@ async def sessions_reject_endpoint(request: Request) -> JSONResponse:
     Returns 404 when no autonomous runner is configured or the session is
         unknown.
     """
-    from robotsix_chat.autonomous import AutonomousRunner
-
-    session_id = request.path_params["session_id"]
-    owner_id = _require_owner_id(request)
-
-    runner: AutonomousRunner | None = request.app.state.autonomous_runner
-    if runner is None:
-        return JSONResponse(
-            {"error": "autonomous sessions are not enabled"},
-            status_code=404,
-        )
-
-    ok, reason = runner.reject(owner_id, session_id)
-    if not ok:
-        if reason == "owner_id mismatch":
-            return JSONResponse({"error": reason}, status_code=403)
-        if "not found" in reason:
-            return JSONResponse({"error": reason}, status_code=404)
-        return JSONResponse({"error": reason}, status_code=409)
-
-    return JSONResponse({"rejected": True})
+    return await _session_action(request, "reject")
 
 
 async def summary_endpoint(request: Request) -> JSONResponse:

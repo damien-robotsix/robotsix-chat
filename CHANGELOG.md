@@ -31,6 +31,7 @@
   Enforce single-session invariant: at most one open autonomous session per owner at
   any time; `create_session` returns the existing open session when one already exists.
 - Extract `_stream_summary` helper from the duplicated stream-collect-join pattern shared by `_generate_title` and `_generate_idle_summary` in `chat.py`.
+- Deduplicate `sessions_approve_endpoint` and `sessions_reject_endpoint` by extracting a shared `_session_action` helper parameterised by the action verb.
 - Add CI check (`check-activity-kinds`) to validate `frame.kind` comparisons in `chat.js` against the canonical `ACTIVITY_KINDS` frozenset in `events.py`, preventing silent frontend breakage when activity frame kinds are added or renamed.
 - Extract shared boilerplate from three GitHub endpoint functions into a ``_github_endpoint`` helper, eliminating ~62 lines of duplicated settings/auth/path-param/body-parse/scope-check code.)
 - DirectRepoClient now automatically detects expired GitHub App installation tokens (HTTP 401) and re-mints the token before retrying the request once. This prevents push failures in long-running sessions where the token expires between clone and push.
