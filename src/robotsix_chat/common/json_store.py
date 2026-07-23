@@ -132,7 +132,7 @@ class JsonStoreBase[T]:
         try:
             data = self._path.read_bytes()
             self._deserialize(data)
-        except json.JSONDecodeError, OSError:
+        except (json.JSONDecodeError, OSError):
             logger.warning(
                 "Could not read %s file %s; starting empty",
                 self._store_name,

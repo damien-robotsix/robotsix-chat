@@ -357,7 +357,7 @@ class DirectRepoClient:
             return None
         try:
             data = json.loads(result.text or "")
-        except json.JSONDecodeError, TypeError:
+        except (json.JSONDecodeError, TypeError):
             logger.warning(
                 "Non-JSON response for ticket %s: %s",
                 ticket_id,
@@ -1085,7 +1085,7 @@ class DirectRepoClient:
         strongly suggests the repo has no GitHub Actions billing enabled.
 
         Note: zero-job detection is NOT attempted here because the
-        ``/actions/runs`` endpoint does not include per-run job data.
+        ``/actions/runs`` endpoint does not include per-job run data.
         That signature is handled by the per-run inspection path in
         ``check_workflow_run`` (via ``get_workflow_run_jobs``).
 

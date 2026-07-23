@@ -46,7 +46,7 @@ async def _parse_json_body(request: Request) -> dict[str, Any]:
     """
     try:
         body = await request.json()
-    except json.JSONDecodeError, ValueError:
+    except (json.JSONDecodeError, ValueError):
         raise HTTPException(status_code=400, detail="invalid JSON body") from None
 
     if not isinstance(body, dict):
