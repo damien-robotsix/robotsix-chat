@@ -14,7 +14,7 @@ from robotsix_chat.diagnostics import DiagnosticStore
 class _DummyAgent:
     """Minimal agent stub — only ``stream`` is called by the chat endpoint."""
 
-    async def stream(self, message: str) -> Any:  # noqa: ANN401
+    async def stream(self, message: str) -> Any:
         yield "ok"
         return
 
