@@ -3,6 +3,7 @@
 - System prompt v46: add "Repo creation bootstrap" guidance — proactively seed an initial commit during repo creation to prevent tool-chain deadlocks with empty repos.
 - System prompt v46: added conciseness rule for periodic subsession terminal-state
   notifications — report outcome in one sentence instead of echoing full run history.
+- System prompt v46: added two deduplication rules to prevent redundant subsession creation — periodic subsessions must not spawn task children to perform their own monitoring work, and `list_subsessions` must be checked for existing periodic monitors before spawning a task subsession for the same ticket.
 - Added `search_knowledge_notes` tool to the knowledge base — the agent can now query
   prior diagnostic notes, deployment statuses, and other key facts by content substring
   match, without needing to recall exact note IDs. Results are ranked by relevance
