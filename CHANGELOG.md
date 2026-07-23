@@ -3,6 +3,7 @@
 - Remove the "New autonomous" button from the UI (button element in index.html,
   handler + function + config-display toggle in chat.js). The single-session
   model makes manual creation unnecessary and dangerous.
+- Subsessions panel now auto-opens when switching to a session that has active background subsessions, making autonomous-session subsessions visible in the same way as interactive-session subsessions.
 - Autonomous sessions resumed after a process restart now receive a restart-context
   message ("SYSTEM RESTARTED") in the agent prompt so the agent knows the system
   was restarted and can resume appropriately. Covers selecting_subject and executing

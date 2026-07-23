@@ -1517,6 +1517,22 @@
         subsOrder.push(sid);
       }
       renderSubsessionsList();
+      // If the loaded session has active (non-terminal) subsessions,
+      // open the panel so the operator can see them — this matters
+      // especially for autonomous sessions whose subsessions ran
+      // in the background before the operator selected the session.
+      if (subsOrder.length > 0) {
+        var hasActive = false;
+        for (var j = 0; j < subsOrder.length; j++) {
+          if (!isSubsTerminal(subsById[subsOrder[j]])) {
+            hasActive = true;
+            break;
+          }
+        }
+        if (hasActive) {
+          openSubsessionsPanel();
+        }
+      }
     }).catch(function () {
       // Silently ignore fetch failures — the panel just stays stale.
     });
