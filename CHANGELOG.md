@@ -15,6 +15,9 @@
   are scheduled as background tasks so startup/lifespan is never blocked by respawn.
   Enforce single-session invariant: at most one open autonomous session per owner at
   any time; `create_session` returns the existing open session when one already exists.
+- Add CI check (`check-activity-kinds`) to validate `frame.kind` comparisons in `chat.js` against the canonical `ACTIVITY_KINDS` frozenset in `events.py`, preventing silent frontend breakage when activity frame kinds are added or renamed.
+- Extract shared boilerplate from three GitHub endpoint functions into a ``_github_endpoint`` helper, eliminating ~62 lines of duplicated settings/auth/path-param/body-parse/scope-check code.)
+- DirectRepoClient now automatically detects expired GitHub App installation tokens (HTTP 401) and re-mints the token before retrying the request once. This prevents push failures in long-running sessions where the token expires between clone and push.
 - Autonomous sessions now receive the same subsession and notification tools as interactive chat sessions (`spawn_subsession`, `notify_user`, etc.). Previously the autonomous agent factory omitted `subsession_env` and `event_sink`, so per-request tools were never built, and the system prompt instructed the agent to use tools that didn't exist.
 - Autonomous sessions: strengthened the post-approval proceed message from
   a passive "Proceed with the approved plan." to an explicit "OPERATOR
