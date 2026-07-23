@@ -3,6 +3,11 @@
 - System prompt v46: add "Repo creation bootstrap" guidance — proactively seed an initial commit during repo creation to prevent tool-chain deadlocks with empty repos.
 - System prompt v46: added conciseness rule for periodic subsession terminal-state
   notifications — report outcome in one sentence instead of echoing full run history.
+- Autonomous runner now detects stalled no-change loops and injects escalation
+  warnings after `escalation_warning_turns` (default 10) consecutive turns without
+  completion. The agent prompt has also been updated to teach proactive escalation
+  (re-trigger implementation, request human review, suggest direct debugging)
+  rather than silently looping until the turn cap.
 - System prompt v46: add monitor auto-stop escalation rule — when a monitor auto-stops after repeated NO_CHANGE runs, the assistant must proactively offer re-trigger, human review, or direct debugging paths instead of silently accepting the stall.
 - Added `search_knowledge_notes` tool to the knowledge base — the agent can now query
   prior diagnostic notes, deployment statuses, and other key facts by content substring
