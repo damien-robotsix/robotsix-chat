@@ -546,6 +546,7 @@
   operator).
 - Remove 23 dead re-exports from `robotsix_chat.chat.server` that had zero
   external consumers importing through the package path.
+- Add Model Policy section to system prompt defining named tier labels (cheap-high-perf, default, strong-reasoning, primary-frontier) mapped to existing model levels 1-4. Assistant now uses tier labels instead of hardcoded model names when filing tickets that specify model requirements, keeping configurations evergreen. [v46]
 - Remove the "New autonomous" button from the UI (button element in index.html,
   handler + function + config-display toggle in chat.js). The single-session
   model makes manual creation unnecessary and dangerous.
