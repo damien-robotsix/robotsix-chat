@@ -42,8 +42,8 @@ def test_build_knowledge_tools_disabled() -> None:
     assert build_knowledge_tools(KnowledgeSettings(enabled=False)) == []
 
 
-def test_build_knowledge_tools_returns_five_tools() -> None:
-    """Enabled knowledge returns exactly five named tools."""
+def test_build_knowledge_tools_returns_six_tools() -> None:
+    """Enabled knowledge returns exactly six named tools."""
     tools = build_knowledge_tools(KnowledgeSettings())
     names = {t.__name__ for t in tools}
     assert names == {
@@ -51,6 +51,7 @@ def test_build_knowledge_tools_returns_five_tools() -> None:
         "append_to_knowledge_note",
         "update_knowledge_note",
         "list_knowledge_notes",
+        "search_knowledge_notes",
         "read_knowledge_note",
     }
 
@@ -148,6 +149,81 @@ def test_read_returns_content(tmp_path: Path) -> None:
     store = KnowledgeStore(tmp_path / "k.json")
     entry = store.add("topic", "hello world")
     assert store.get(entry.id) is entry
+
+
+# ---------------------------------------------------------------------------
+# KnowledgeStore — search
+# ---------------------------------------------------------------------------
+
+
+def test_search_empty_query_returns_empty(tmp_path: Path) -> None:
+    """An empty or whitespace-only query returns an empty list."""
+    store = KnowledgeStore(tmp_path / "k.json")
+    store.add("config", "some content")
+    assert store.search("") == []
+    assert store.search("   ") == []
+
+
+def test_search_no_matches_returns_empty(tmp_path: Path) -> None:
+    """A query with no matches returns an empty list."""
+    store = KnowledgeStore(tmp_path / "k.json")
+    store.add("config", "some content")
+    assert store.search("nonexistent") == []
+
+
+def test_search_matches_topic(tmp_path: Path) -> None:
+    """search() finds notes by topic (case-insensitive)."""
+    store = KnowledgeStore(tmp_path / "k.json")
+    e1 = store.add("Config", "content A")
+    store.add("Deploy", "content B")
+    store.add("Python", "content C")
+
+    results = store.search("config")
+    assert len(results) == 1
+    assert results[0].id == e1.id
+
+    # case-insensitive
+    results_upper = store.search("CONFIG")
+    assert len(results_upper) == 1
+    assert results_upper[0].id == e1.id
+
+
+def test_search_matches_content(tmp_path: Path) -> None:
+    """search() finds notes by content (case-insensitive)."""
+    store = KnowledgeStore(tmp_path / "k.json")
+    e1 = store.add("topic-a", "contains the word DIAGNOSTIC here")
+    store.add("topic-b", "something else")
+    store.add("topic-c", "unrelated")
+
+    results = store.search("diagnostic")
+    assert len(results) == 1
+    assert results[0].id == e1.id
+
+
+def test_search_ranking(tmp_path: Path) -> None:
+    """Results are ranked: exact topic > topic contains > content contains."""
+    store = KnowledgeStore(tmp_path / "k.json")
+    e_exact = store.add("deploy", "some content")
+    e_topic_contains = store.add("deployment-guide", "some content")
+    e_content = store.add("misc", "discusses deploy strategies")
+
+    results = store.search("deploy")
+    assert len(results) == 3
+    assert results[0].id == e_exact.id
+    assert results[1].id == e_topic_contains.id
+    assert results[2].id == e_content.id
+
+
+def test_search_multiple_same_score(tmp_path: Path) -> None:
+    """Multiple notes with the same score are all returned."""
+    store = KnowledgeStore(tmp_path / "k.json")
+    store.add("config", "mentions deploy in content")
+    store.add("deploy-notes", "deploy stuff")
+    store.add("deploy-logs", "more deploy info")
+
+    results = store.search("deploy")
+    # Two topic-contains matches + one content match
+    assert len(results) == 3
 
 
 # ---------------------------------------------------------------------------
@@ -265,6 +341,47 @@ async def test_list_knowledge_notes_empty_returns_message(tmp_path: Path) -> Non
 
     result = await list_tool()
     assert "No knowledge notes found" in result
+
+
+@pytest.mark.asyncio
+async def test_search_knowledge_notes_finds_matches(tmp_path: Path) -> None:
+    """The search tool returns formatted results for matching notes."""
+    tools = build_knowledge_tools(KnowledgeSettings(path=str(tmp_path / "k.json")))
+    add_tool = [t for t in tools if t.__name__ == "add_knowledge_note"][0]
+    search_tool = [t for t in tools if t.__name__ == "search_knowledge_notes"][0]
+
+    await add_tool("config", "server port is 8000")
+    await add_tool("deploy", "deployed to production")
+
+    result = await search_tool("config")
+    assert "server port is 8000" in result
+    assert "deploy" not in result  # only config topic matches
+
+
+@pytest.mark.asyncio
+async def test_search_knowledge_notes_no_matches(tmp_path: Path) -> None:
+    """The search tool returns a clear message when no notes match."""
+    tools = build_knowledge_tools(KnowledgeSettings(path=str(tmp_path / "k.json")))
+    add_tool = [t for t in tools if t.__name__ == "add_knowledge_note"][0]
+    search_tool = [t for t in tools if t.__name__ == "search_knowledge_notes"][0]
+
+    await add_tool("config", "some content")
+    result = await search_tool("nonexistent")
+    assert "No knowledge notes found matching" in result
+
+
+@pytest.mark.asyncio
+async def test_search_knowledge_notes_searches_content(tmp_path: Path) -> None:
+    """The search tool finds notes by content, not just topic."""
+    tools = build_knowledge_tools(KnowledgeSettings(path=str(tmp_path / "k.json")))
+    add_tool = [t for t in tools if t.__name__ == "add_knowledge_note"][0]
+    search_tool = [t for t in tools if t.__name__ == "search_knowledge_notes"][0]
+
+    await add_tool("misc", "empty-diff bug fix was merged in commit abc123")
+
+    result = await search_tool("empty-diff")
+    assert "empty-diff" in result
+    assert "abc123" in result
 
 
 # ---------------------------------------------------------------------------

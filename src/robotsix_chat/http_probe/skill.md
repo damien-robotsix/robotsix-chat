@@ -82,6 +82,10 @@ Common `expect_absent` patterns:
 http_probe("https://www.robotsix.net")
 
 # Deploy verification — did the page land?
-http_probe("https://www.robotsix.net", expect_status=200,
-           expect_contains=["Robotsix"], expect_absent=["Index of /", "Not Found"])
+http_probe(
+    "https://www.robotsix.net",
+    expect_status=200,
+    expect_contains=["Robotsix"],
+    expect_absent=["Index of /", "Not Found"],
+)
 ```

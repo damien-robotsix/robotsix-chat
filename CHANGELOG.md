@@ -1,5 +1,9 @@
 ## 0.0.0 (unreleased)
 
+- Added `search_knowledge_notes` tool to the knowledge base — the agent can now query
+  prior diagnostic notes, deployment statuses, and other key facts by content substring
+  match, without needing to recall exact note IDs. Results are ranked by relevance
+  (exact topic match > topic contains > content contains).
 - Remove the "New autonomous" button from the UI (button element in index.html,
   handler + function + config-display toggle in chat.js). The single-session
   model makes manual creation unnecessary and dangerous.

@@ -1,9 +1,9 @@
 """Writable knowledge-base tools for the agent.
 
-Exposes :func:`build_knowledge_tools` — a factory that returns **five**
+Exposes :func:`build_knowledge_tools` — a factory that returns **six**
 plain undecorated ``async def`` tools the agent can call to add, append to,
-update, list, and read back durable notes across sessions.  Returns no
-tools when knowledge is disabled.
+update, list, search, and read back durable notes across sessions.  Returns
+no tools when knowledge is disabled.
 
 This is the agent's **deliberate, explicit, curated** store of operational
 notes and lessons — entirely local JSON, no embeddings, no external service,
@@ -129,6 +129,39 @@ def build_knowledge_tools(settings: KnowledgeSettings) -> list[Callable[..., Any
             )
         return "\n".join(lines)
 
+    async def search_knowledge_notes(query: str) -> str:
+        """Search your knowledge base for notes matching a query.
+
+        Searches both topic and content (case-insensitive).  Results are
+        ranked: exact topic match first, then topic contains, then content
+        contains.  Use this when you cannot recall the exact note id or
+        topic — it finds notes by their actual content.
+
+        Args:
+            query: The search term to look for.
+
+        Returns:
+            A formatted listing of matching notes with id, topic,
+            timestamps and a content snippet, or a message when no matches
+            exist.
+
+        """
+        entries = store.search(query)
+        if not entries:
+            return f"No knowledge notes found matching '{query}'."
+
+        lines: list[str] = []
+        for e in entries:
+            snippet = e.content.replace("\n", " ")
+            if len(snippet) > _LIST_SNIPPET_LENGTH:
+                snippet = snippet[:_LIST_SNIPPET_LENGTH].rstrip() + "…"
+            lines.append(
+                f"[{e.id}] {e.topic}\n"
+                f"  created: {e.created_at}  updated: {e.updated_at}\n"
+                f"  snippet: {snippet}"
+            )
+        return "\n".join(lines)
+
     async def read_knowledge_note(note_id: str) -> str:
         """Read the full content of a knowledge note by id.
 
@@ -149,5 +182,6 @@ def build_knowledge_tools(settings: KnowledgeSettings) -> list[Callable[..., Any
         append_to_knowledge_note,
         update_knowledge_note,
         list_knowledge_notes,
+        search_knowledge_notes,
         read_knowledge_note,
     ]
