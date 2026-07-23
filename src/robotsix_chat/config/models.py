@@ -759,6 +759,8 @@ class AutonomousSettings(BaseModel):
     persist_path: str = "/data/autonomous_sessions.json"
     session_color: str = ""
     initial_task: str = ""
+    continue_interval_seconds: float = 45.0
+    pending_subsession_wait_timeout: float = 600.0
     model_config = ConfigDict(extra="forbid")
 
 

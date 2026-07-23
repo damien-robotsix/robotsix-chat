@@ -38,6 +38,16 @@
           "default": "",
           "title": "Initial Task",
           "type": "string"
+        },
+        "continue_interval_seconds": {
+          "default": 45.0,
+          "title": "Continue Interval Seconds",
+          "type": "number"
+        },
+        "pending_subsession_wait_timeout": {
+          "default": 600.0,
+          "title": "Pending Subsession Wait Timeout",
+          "type": "number"
         }
       },
       "title": "AutonomousSettings",

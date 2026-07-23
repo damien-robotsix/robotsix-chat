@@ -36,6 +36,7 @@ class AutonomousRunner:
         agent_factory: Callable[[], ChatAgent],
         run_serializer: RunSerializer,
         event_sink: EventSink | None = None,
+        subsession_registry: Any = None,
     ) -> None:
         """Create a runner with settings, store, agent factory, and serializer."""
         self._settings = settings
@@ -43,6 +44,7 @@ class AutonomousRunner:
         self._agent_factory = agent_factory
         self._run_serializer = run_serializer
         self._event_sink = event_sink
+        self._subsession_registry = subsession_registry
         self._persist_path = Path(settings.autonomous.persist_path)
         self._sessions: dict[str, AutonomousSession] = self._load_sessions()
         # Strong references to in-flight auto-continue tasks (see asyncio
@@ -405,6 +407,36 @@ class AutonomousRunner:
 
     # -- auto-continue loop -------------------------------------------------
 
+    def _has_pending_subsessions(self, session_id: str) -> bool:
+        """Return True when the session has active/pending subsessions."""
+        reg = self._subsession_registry
+        if reg is None:
+            return False
+        try:
+            subs = reg.list_for_owner(session_id)
+        except Exception:
+            return False
+        return any(getattr(s, "is_active", False) for s in subs)
+
+    async def _wait_before_continue(self, session_id: str) -> None:
+        """Pace the continue loop and pause while pending subsessions exist.
+
+        Always waits at least ``continue_interval_seconds`` (throttle), then
+        keeps waiting while the session has active subsessions, bounded by
+        ``pending_subsession_wait_timeout`` so a stuck subsession cannot hang
+        the session forever. Runs OUTSIDE the per-owner run lock and is
+        cancellable (``asyncio.sleep`` propagates ``CancelledError``).
+        """
+        interval = max(0.0, self._settings.autonomous.continue_interval_seconds)
+        timeout = max(0.0, self._settings.autonomous.pending_subsession_wait_timeout)
+        step = interval if interval > 0 else 5.0
+        if interval > 0:
+            await asyncio.sleep(interval)
+        waited = interval
+        while self._has_pending_subsessions(session_id) and waited < timeout:
+            await asyncio.sleep(step)
+            waited += step
+
     async def _auto_continue(
         self, session_id: str, *, is_restart: bool = False
     ) -> None:
@@ -438,6 +470,14 @@ class AutonomousRunner:
                     self._save_sessions()
                     self._publish_state(session_id)
                     return
+
+                # Throttle + gate: pace continues and pause while the session
+                # has pending subsessions/periodic work outstanding.
+                if aq.auto_turn_count > 0:
+                    await self._wait_before_continue(session_id)
+                    aq = self._sessions.get(session_id)
+                    if aq is None or aq.state is not AutonomousState.executing:
+                        return
 
                 # Acquire the per-owner run lock.
                 should_respawn = False

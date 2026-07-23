@@ -84,6 +84,8 @@ class TestMarkerDetection:
         settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
         settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
         settings.autonomous.max_auto_turns = 20
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
         return AutonomousRunner(
             settings=settings,
             conversation_store=store,
@@ -149,6 +151,8 @@ class TestApprovalGate:
         settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
         settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
         settings.autonomous.max_auto_turns = 20
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
         return AutonomousRunner(
             settings=settings,
             conversation_store=store,
@@ -225,6 +229,8 @@ class TestAutoContinue:
         settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
         settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
         settings.autonomous.max_auto_turns = 2
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
         run_serializer = MagicMock()
         run_serializer.for_owner.return_value = MagicMock()
         run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
@@ -250,6 +256,8 @@ class TestAutoContinue:
         store = ConversationStore()
         settings = MagicMock()
         settings.autonomous.max_auto_turns = 20
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
         runner = AutonomousRunner(
             settings=settings,
             conversation_store=store,
@@ -462,6 +470,8 @@ class TestAutonomousEventStreaming:
         store = ConversationStore()
         settings = MagicMock()
         settings.autonomous.max_auto_turns = 1
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
         settings.autonomous.approval_marker = "[APPROVAL_NEEDED]"
         settings.autonomous.completion_marker = "[COMPLETED]"
         run_serializer = MagicMock()
@@ -537,6 +547,8 @@ class TestCloseAndRespawn:
         settings = MagicMock()
         settings.autonomous.initial_task = ""
         settings.autonomous.max_auto_turns = 20
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
         run_serializer = MagicMock()
         run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
         run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
@@ -573,6 +585,8 @@ class TestCloseAndRespawn:
         settings = MagicMock()
         settings.autonomous.initial_task = ""
         settings.autonomous.max_auto_turns = 20
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
         run_serializer = MagicMock()
         run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
         run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
@@ -606,6 +620,8 @@ class TestCloseAndRespawn:
         settings = MagicMock()
         settings.autonomous.initial_task = ""
         settings.autonomous.max_auto_turns = 20
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
         run_serializer = MagicMock()
         run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
         run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
@@ -764,6 +780,8 @@ class TestResumeSessionsNonBlocking:
         settings = MagicMock()
         settings.autonomous.initial_task = ""
         settings.autonomous.max_auto_turns = 20
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
         run_serializer = MagicMock()
         run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
         run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
@@ -800,6 +818,8 @@ class TestResumeSessionsNonBlocking:
         store = ConversationStore()
         settings = MagicMock()
         settings.autonomous.max_auto_turns = 20
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
         run_serializer = MagicMock()
         run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
         run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
@@ -916,6 +936,8 @@ class TestRestartContextInjection:
         store = ConversationStore()
         settings = MagicMock()
         settings.autonomous.max_auto_turns = 20  # high enough to not hit the cap
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
         settings.autonomous.approval_marker = "[APPROVAL]"
         settings.autonomous.completion_marker = "[COMPLETE]"
         run_serializer = MagicMock()
@@ -958,6 +980,8 @@ class TestRestartContextInjection:
         store = ConversationStore()
         settings = MagicMock()
         settings.autonomous.max_auto_turns = 20
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
         settings.autonomous.approval_marker = "[APPROVAL]"
         settings.autonomous.completion_marker = "[COMPLETE]"
         run_serializer = MagicMock()
@@ -1000,6 +1024,8 @@ class TestRestartContextInjection:
         store = ConversationStore()
         settings = MagicMock()
         settings.autonomous.max_auto_turns = 20
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
         settings.autonomous.approval_marker = "[APPROVAL]"
         settings.autonomous.completion_marker = "[COMPLETE]"
         run_serializer = MagicMock()
