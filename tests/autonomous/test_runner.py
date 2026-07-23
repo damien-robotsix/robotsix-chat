@@ -251,6 +251,145 @@ class TestAutoContinue:
         assert aq.state is AutonomousState.awaiting_approval
 
     @pytest.mark.asyncio
+    async def test_escalation_warning_below_threshold(self) -> None:
+        """Below escalation_warning_turns, the message is plain 'Continue.'."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.max_auto_turns = 20
+        settings.autonomous.escalation_warning_turns = 10
+        settings.autonomous.approval_marker = "[APPROVAL]"
+        settings.autonomous.completion_marker = "[COMPLETE]"
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        captured_message: list[str] = []
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _capture_stream(message, *args, **kwargs):
+            captured_message.append(str(message))
+            yield "[APPROVAL]"
+            return
+
+        agent.stream.side_effect = _capture_stream
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+        )
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        aq.state = AutonomousState.executing
+        aq.plan_text = "plan"
+        aq.auto_turn_count = 3  # below escalation_warning_turns
+        runner._save_sessions = MagicMock()
+
+        await runner._auto_continue(aq.session_id)
+
+        assert len(captured_message) == 1
+        assert captured_message[0] == "Continue."
+
+    @pytest.mark.asyncio
+    async def test_escalation_warning_at_threshold(self) -> None:
+        """At escalation_warning_turns, the message includes escalation guidance."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.max_auto_turns = 20
+        settings.autonomous.escalation_warning_turns = 10
+        settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
+        settings.autonomous.completion_marker = "[COMPLETE]"
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        captured_message: list[str] = []
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _capture_stream(message, *args, **kwargs):
+            captured_message.append(str(message))
+            yield "[COMPLETE]"
+            return
+
+        agent.stream.side_effect = _capture_stream
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+        )
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        aq.state = AutonomousState.executing
+        aq.plan_text = "plan"
+        aq.auto_turn_count = 10  # exactly at escalation_warning_turns
+        runner._save_sessions = MagicMock()
+
+        await runner._auto_continue(aq.session_id)
+
+        assert len(captured_message) == 1
+        msg = captured_message[0]
+        assert "no-change loop" in msg
+        assert "escalate" in msg.lower()
+        assert "re-trigger implementation" in msg.lower()
+        assert "human review" in msg.lower()
+        assert "direct debugging" in msg.lower()
+        assert "10 turns remain" in msg
+
+    @pytest.mark.asyncio
+    async def test_escalation_warning_above_threshold(self) -> None:
+        """Above escalation_warning_turns, the message counts remaining turns."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.max_auto_turns = 20
+        settings.autonomous.escalation_warning_turns = 10
+        settings.autonomous.approval_marker = "[APPROVAL]"
+        settings.autonomous.completion_marker = "[COMPLETE]"
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        captured_message: list[str] = []
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _capture_stream(message, *args, **kwargs):
+            captured_message.append(str(message))
+            yield "[APPROVAL]"
+            return
+
+        agent.stream.side_effect = _capture_stream
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+        )
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        aq.state = AutonomousState.executing
+        aq.plan_text = "plan"
+        aq.auto_turn_count = 15  # above warning threshold
+        runner._save_sessions = MagicMock()
+
+        await runner._auto_continue(aq.session_id)
+
+        assert len(captured_message) == 1
+        msg = captured_message[0]
+        assert "5 turns remain" in msg
+
+    @pytest.mark.asyncio
     async def test_auto_continue_stops_on_non_executing(self) -> None:
         """_auto_continue exits immediately if not in executing state."""
         store = ConversationStore()

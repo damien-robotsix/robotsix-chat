@@ -510,7 +510,34 @@ class AutonomousRunner:
                                 "Continue."
                             )
                         else:
-                            message = "Continue."
+                            # Escalation warning: after N turns without
+                            # completion, nudge the agent to consider
+                            # alternatives rather than looping silently.
+                            warning_turns = (
+                                self._settings.autonomous.escalation_warning_turns
+                            )
+                            if aq.auto_turn_count >= warning_turns:
+                                remaining = max_turns - aq.auto_turn_count
+                                message = (
+                                    f"Continue.  NOTE: you have completed "
+                                    f"{aq.auto_turn_count} execution turns "
+                                    f"(turn cap: {max_turns}).  If you are "
+                                    f"stuck in a no-change loop — tickets "
+                                    f"closing with empty diffs, repeated "
+                                    f"attempts producing no progress — "
+                                    f"escalate now instead of continuing: "
+                                    f"(1) re-trigger implementation with a "
+                                    f"fresh approach, (2) request human "
+                                    f"review by emitting "
+                                    f"{self._settings.autonomous.approval_marker} "
+                                    f"with a clear explanation, or "
+                                    f"(3) suggest direct debugging (e.g. "
+                                    f"inspecting fetch-spec logs).  "
+                                    f"{remaining} turns remain before the "
+                                    f"session reverts to awaiting approval."
+                                )
+                            else:
+                                message = "Continue."
 
                     # Stream the agent reply.
                     reply_parts: list[str] = []

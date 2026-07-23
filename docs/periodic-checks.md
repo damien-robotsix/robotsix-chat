@@ -35,7 +35,10 @@ you are only bothered when something substantive happened. For minor but notable
 replies with a single concise line; full reports are reserved for substantive changes (first-time
 blocking, completion, failure, or transitions requiring user action). After a configurable number of
 consecutive `NO_CHANGE` runs (`subsessions.auto_stop_no_change_runs`, default 5) the subsession
-closes itself.
+closes itself. When this happens, the assistant does **not** silently drop the stall — it
+proactively offers escalation paths: re-trigger the check with narrower debugging instructions,
+escalate for human review with a clear diagnosis, or suggest inspecting implementation history and
+fetch-spec logs to understand what is blocking progress.
 
 ## Listing active checks
 

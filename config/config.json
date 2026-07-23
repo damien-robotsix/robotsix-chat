@@ -177,6 +177,7 @@
     "approval_marker": "---AWAITING APPROVAL---",
     "completion_marker": "---AUTONOMOUS COMPLETE---",
     "max_auto_turns": 20,
+    "escalation_warning_turns": 10,
     "persist_path": "/data/autonomous_sessions.json",
     "session_color": "",
     "initial_task": ""
