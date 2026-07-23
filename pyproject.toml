@@ -84,6 +84,7 @@ dev = [
     "pre-commit",
     "pytest",
     "pytest-asyncio",
+    "pytest-benchmark",
     "pytest-cov",
     "pytest-xdist[psutil]",
     "respx",
