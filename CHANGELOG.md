@@ -2,6 +2,10 @@
 
 - Deduplicated `DirectRepoClient.get_ticket_state` and `get_ticket_data` by extracting a shared `_fetch_ticket_field` helper (57 duplicated lines → 2 one-liner callers).
 - Periodic subsession monitors now include an explicit instruction to re-query the board API for canonical ticket state on every poll tick, preventing stale-state readback where the agent reports a cached `draft` state that diverged from the live board state.
+- Periodic monitors now auto-pause after `max_idle_runs` consecutive
+  NO_CHANGE runs (default 5), closing with reason ``"paused"`` instead of
+  ``"no_change_auto_stop"``.  Set ``max_idle_runs`` to ``0`` to disable
+  the pause behaviour and fall through to the existing hard auto-stop.
 - Periodic subsessions can no longer spawn task child subsessions to work around
   the nesting restriction. The enforcement gate in `spawn_subsession` now blocks
   periodic→task spawns (periodic→periodic was already blocked). The system prompt

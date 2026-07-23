@@ -703,6 +703,26 @@ async def _run_periodic_turn(
                 )
             return None
 
+    idle_cap = env.settings.subsessions.max_idle_runs
+    if idle_cap > 0 and consecutive_no_change >= idle_cap:
+        logger.info(
+            "Subsession %s: auto-pausing after %d consecutive no-change runs. "
+            "The monitor will resume when the ticket state changes or an "
+            "external trigger occurs.",
+            sub_id,
+            consecutive_no_change,
+        )
+        summary = f"Auto-paused after {idle_cap} consecutive no-change runs."
+        closed = registry.mark_closed(
+            sub_id,
+            summary=summary,
+            reason="paused",
+            closed_by="system",
+        )
+        if closed is not None:
+            await env.delivery.deliver_summary(closed, summary, "paused")
+        return None
+
     no_change_cap = env.settings.subsessions.auto_stop_no_change_runs
     if consecutive_no_change >= no_change_cap:
         logger.warning(
