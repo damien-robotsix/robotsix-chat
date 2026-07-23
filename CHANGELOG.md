@@ -8,6 +8,7 @@
   prior diagnostic notes, deployment statuses, and other key facts by content substring
   match, without needing to recall exact note IDs. Results are ranked by relevance
   (exact topic match > topic contains > content contains).
+- Added 28 unit tests for ``subsessions.py`` route handlers covering all error branches (503, 404, 400, 409) and the idempotent close flow.
 - Remove the "New autonomous" button from the UI (button element in index.html,
   handler + function + config-display toggle in chat.js). The single-session
   model makes manual creation unnecessary and dangerous.
