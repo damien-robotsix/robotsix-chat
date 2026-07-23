@@ -646,6 +646,9 @@ class AutonomousRunner:
         - Sessions in ``executing`` state: resume auto-continue.
         - Sessions in ``selecting_subject`` state: re-kickoff the initial
           turn (the previous kickoff was lost on restart).
+        - When no sessions exist at all (e.g. a fresh or wiped store),
+          auto-start exactly one bootstrap session so autonomous mode is
+          not permanently idle.
         """
         for session_id in list(self._sessions):
             aq = self._sessions.get(session_id)
@@ -680,3 +683,12 @@ class AutonomousRunner:
                         sid, oid, is_restart=True
                     )
                 )
+
+        # Bootstrap: when the store is empty (fresh deploy or wiped data),
+        # auto-start one session so autonomous mode isn't permanently idle.
+        if not self._sessions:
+            logger.info(
+                "No autonomous sessions found — bootstrapping one "
+                "for owner 'autonomous'"
+            )
+            self.create_session("autonomous", schedule_kickoff=True)
