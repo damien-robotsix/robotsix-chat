@@ -15,7 +15,6 @@
   const sessionsDismiss = sessionsPanel.querySelector(".dismiss");
   const sessionsResizeHandle = document.getElementById("sessions-resize-handle");
   const newChatBtn = document.getElementById("new-chat-btn");
-  const newAutoBtn = document.getElementById("new-auto-btn");
   const subsToggle     = document.getElementById("subsessions-toggle");
   const subsPanel      = document.getElementById("subsessions-panel");
   const subsResizeHandle = document.getElementById("subsessions-resize-handle");
@@ -2602,30 +2601,6 @@
     });
   });
 
-  // "New autonomous" button
-  newAutoBtn.addEventListener("click", function () {
-    newAutoBtn.disabled = true;
-    newAutoBtn.textContent = "Creating\u2026";
-    createNewAutonomousSession().then(function (data) {
-      newAutoBtn.disabled = false;
-      newAutoBtn.textContent = "\u{1F916} New autonomous";
-      if (data && data.session_id) {
-        setActiveSessionId(data.session_id);
-        clearChatBubbles();
-        clearSubsessions();
-        closeEventStream();
-        openEventStream();
-        loadHistory();
-        fetchSubsessions();
-        refreshSessions();
-        resetIdleTimer();
-      }
-    }).catch(function (err) {
-      newAutoBtn.disabled = false;
-      newAutoBtn.textContent = "\u{1F916} New autonomous";
-      showError(err.message || "Failed to create autonomous session");
-    });
-  });
 
   // ---- Sessions panel resize ------------------------------------------
   var sessionsResizeDragging = false;
