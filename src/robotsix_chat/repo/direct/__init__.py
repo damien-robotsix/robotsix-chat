@@ -23,6 +23,8 @@ capability is disabled.
 
 from __future__ import annotations
 
+import json
+import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
@@ -34,8 +36,16 @@ __all__ = ["build_direct_repo_tools"]
 
 def build_direct_repo_tools(
     settings: DirectRepoSettings,
+    component_request: Callable[..., Any] | None = None,
 ) -> list[Callable[..., Any]]:
-    """Return direct-repo tool(s) for the agent, or ``[]`` when disabled."""
+    """Return direct-repo tool(s) for the agent, or ``[]`` when disabled.
+
+    When *component_request* is provided, ticket-state verification uses
+    it (the same roster-based connectivity as the component API) instead
+    of the direct ``board_api_base_url`` path.  This ensures push/PR
+    operations succeed when the roster-based path works but the direct
+    config path doesn't.
+    """
     if not settings.enabled:
         return []
 
@@ -43,22 +53,97 @@ def build_direct_repo_tools(
 
     client = DirectRepoClient(settings)
 
+    async def _get_ticket_state_via_component(
+        component_req: Callable[..., Any],
+        ticket_id: str,
+    ) -> tuple[str | None, str | None]:
+        """Fetch ticket state via *component_req*; return ``(state, error)``.
+
+        Returns ``(state, None)`` on success, ``(None, error_msg)`` on failure.
+        The error message includes the connectivity path used for diagnosis.
+        """
+        resp = await component_req("mill", "GET", f"/tickets/{ticket_id}")
+        # Parse the component_request response format: "HTTP <status>\n<body>"
+        # or "Error: ..."
+        if resp.startswith("Error:"):
+            return None, (
+                f"Error: could not determine state for ticket {ticket_id} "
+                f"via component_request (roster-based board connectivity): "
+                f"{resp}"
+            )
+        try:
+            newline = resp.index("\n")
+            status_line = resp[:newline]
+            body_str = resp[newline + 1 :]
+        except ValueError:
+            return None, (
+                f"Error: could not determine state for ticket {ticket_id} "
+                f"via component_request (roster-based board connectivity): "
+                f"unexpected response format"
+            )
+        if not status_line.startswith("HTTP "):
+            return None, (
+                f"Error: could not determine state for ticket {ticket_id} "
+                f"via component_request (roster-based board connectivity): "
+                f"{status_line}"
+            )
+        try:
+            status_code = int(status_line.split()[1])
+        except IndexError, ValueError:
+            return None, (
+                f"Error: could not determine state for ticket {ticket_id} "
+                f"via component_request (roster-based board connectivity): "
+                f"unparsable status {status_line!r}"
+            )
+        if status_code >= 400:
+            return None, (
+                f"Error: could not determine state for ticket {ticket_id} "
+                f"via component_request (roster-based board connectivity): "
+                f"HTTP {status_code}"
+            )
+        try:
+            data = json.loads(body_str)
+            state: str | None = data.get("state")
+            return state, None
+        except json.JSONDecodeError, TypeError:
+            return None, (
+                f"Error: could not determine state for ticket {ticket_id} "
+                f"via component_request (roster-based board connectivity): "
+                f"non-JSON response body"
+            )
+
     async def _assert_blocked_and_scoped(
         client: DirectRepoClient,
         ticket_id: str,
         repo_full_name: str,
     ) -> str | None:
         """Return an error string if preconditions fail, or None if OK."""
-        state = await client.get_ticket_state(ticket_id)
-        if state is None:
-            return (
-                f"Error: could not determine state for ticket {ticket_id}. "
-                "Verify the ticket id and board API connectivity."
+        if component_request is not None:
+            state, error = await _get_ticket_state_via_component(
+                component_request, ticket_id
             )
-        if state.upper() != "BLOCKED":
+        else:
+            state = await client.get_ticket_state(ticket_id)
+            if state is not None:
+                error = None
+            else:
+                board_url = client._s.board_api_base_url.rstrip("/")
+                error = (
+                    f"Error: could not determine state for ticket "
+                    f"{ticket_id}. Verify the ticket id and board API "
+                    f"connectivity (tried {board_url}/tickets/{ticket_id})."
+                )
+        if error is not None:
+            return error
+        if state is not None and state.upper() != "BLOCKED":
             return (
                 f"Refused: ticket {ticket_id} is in state '{state}', not BLOCKED. "
                 "Direct-repo actions are only permitted for BLOCKED tickets."
+            )
+        if state is None:
+            return (
+                f"Error: ticket {ticket_id} returned no state field. "
+                "Verify the ticket id and board API connectivity."
             )
 
         allowed = await client.list_installation_repos()
@@ -108,8 +193,6 @@ def build_direct_repo_tools(
             message describing why the push was refused or failed.
 
         """
-        import json
-
         try:
             files: list[dict[str, str]] = json.loads(files_json)
         except json.JSONDecodeError, TypeError:
@@ -349,9 +432,6 @@ def build_direct_repo_tools(
                 message describing why the push was refused or failed.
 
             """
-            import json
-            import logging
-
             _logger = logging.getLogger(__name__)
 
             # --- validate files_json ---

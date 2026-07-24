@@ -1,23 +1,17 @@
 {
   "doc_layout": {
-    "subsessions": {
-      "source": "src/robotsix_chat/subsessions/",
-      "tests": "tests/subsessions/",
-      "module_doc": "docs/architecture.md",
-      "periodic_doc": "docs/periodic-checks.md",
-      "config_doc": "docs/configuration.md"
-    },
-    "delivery_dual_routing": {
-      "described_in": "docs/periodic-checks.md (point 5 sub-bullets), docs/architecture.md (subsessions subpackage table row)"
-    },
-    "user_chat_nesting_guard": {
-      "described_in": "docs/periodic-checks.md (point 5 sub-bullet)"
-    }
+    "CHANGELOG.md": "Project changelog, unreleased section at top",
+    "changelog.d/": "Changelog fragment directory, one .misc.md file per change",
+    "src/robotsix_chat/": "Main source package",
+    "src/robotsix_chat/repo/direct/__init__.py": "Direct-repo tool factory (push, PR, direct_fix). Tools are nested async functions inside build_direct_repo_tools(). Entry point: build_direct_repo_tools(settings, component_request=None).",
+    "src/robotsix_chat/repo/study/workspace.py": "WorkspaceManager class for tarball-based repo study (no git binary). Entry point: build_repo_study_tools(settings, direct_repo_settings). URL-building for tarball downloads at line ~152.",
+    "src/robotsix_chat/chat/server/app.py": "Starlette ASGI app. _build_static_tools() at line ~582 assembles all tool lists."
   },
   "conventions": {
-    "changelog_fragments": "changelog.d/<id>.<type>.md where type ∈ {feature, bugfix, doc, removal, misc}",
-    "reaction_turn_pattern": "assistant replies with exact text matching a known sentinel pattern",
-    "periodic_decision_chat_delivery": "Dual delivery: periodic parent inbox + main chat reaction. user_chat subsessions cannot spawn user_chat children."
-  },
-  "updated_memory": "Repo doc layout: root docs/ is MkDocs-material. Key files: docs/index.md (home), docs/architecture.md (system context, startup flow, subsession concept at lines 31, 54-64, 116-121, 137, 178, 215), docs/periodic-checks.md (full periodic subsession lifecycle including dual-delivery for decision chats at point 5 and nested user_chat prohibition), docs/configuration.md (subsessions config table at lines 223-236), docs/changelog.md (rendered from fragments), docs/contributing.md. No dedicated one-shot/task subsession doc exists — only a passing mention in architecture.md line 31. Changelog fragments live in changelog.d/ and follow towncrier conventions (CI-enforced via `towncrier check`). Memory ledger is a meta-index, not a runtime store."
+    "changelog": "CHANGELOG.md has unreleased section at top; changes listed as markdown bullets.",
+    "changelog_fragments": "Each PR adds a fragment under changelog.d/ with pattern YYYYMMDDTHHMMSSZ-<description>-<random>.misc.md containing a single-line description.",
+    "error_format": "Tool error strings start with 'Error:' or 'Refused:' — no trailing punctuation after 'Refused:' lines.",
+    "docstrings": "NumPy-style with Args: / Returns: sections.",
+    "imports": "TYPE_CHECKING guard for type-only imports."
+  }
 }

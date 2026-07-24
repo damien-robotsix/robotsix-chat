@@ -22,6 +22,7 @@ import tarfile
 import time
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import quote
 
 import httpx
 
@@ -148,7 +149,7 @@ class WorkspaceManager:
 
         base = self._direct_repo.github_api_base_url.rstrip("/")
         url = (
-            f"{base}/repos/{repo}/tarball/{ref}"
+            f"{base}/repos/{repo}/tarball/{quote(ref, safe='')}"
             if ref
             else (f"{base}/repos/{repo}/tarball")
         )
