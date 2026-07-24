@@ -1,0 +1,1 @@
+ci_fix: out-of-scope CI failure — Python CI (shared) / Tests — test_chat_returns_409_when_awaiting_approval in tests/chat/server/test_autonomous_endpoints.py or src/robotsix_chat/autonomous/runner.py (autonomous session test isolation / MagicMock persist_path uniqueness)
