@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 
 
 class TestChatEndpointPerformance:
@@ -49,15 +48,13 @@ class TestChatEndpointPerformance:
         """SSE streaming with an image attached (medium payload)."""
         from tests.conftest import mock_app
 
-        small_png = base64.b64decode(
-            "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk",
-        )
+        small_png_b64 = "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNk"
 
         async def _run():
             async with mock_app() as f:
                 payload = {
                     "message": "What's in this image?",
-                    "images": [["image/png", small_png]],
+                    "images": [{"media_type": "image/png", "data": small_png_b64}],
                 }
                 async with f.client.stream("POST", "/chat", json=payload) as resp:
                     async for _ in resp.aiter_bytes():
