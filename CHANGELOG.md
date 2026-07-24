@@ -74,6 +74,12 @@
 - Extract `_stream_summary` helper from the duplicated stream-collect-join pattern shared by `_generate_title` and `_generate_idle_summary` in `chat.py`.
 - Deduplicate `sessions_approve_endpoint` and `sessions_reject_endpoint` by extracting a shared `_session_action` helper parameterised by the action verb.
 - Fix queued messages not being dispatched after session focus switch: `restoreDraft()` now calls `drainQueue()` so restored queued messages are dispatched automatically when the user returns to a backgrounded session.
+- Enhanced the auto-stop summary for periodic subsession monitors: when a
+  watcher closes after ``auto_stop_no_change_runs`` consecutive ``NO_CHANGE``
+  runs, the summary now includes the elapsed monitoring time, the last-known
+  checkpoint state, and actionable guidance (e.g. "consider checking
+  step-level logs"). The ``human_approval_timeout`` close reason also
+  includes elapsed time.
 - Add CI check (`check-activity-kinds`) to validate `frame.kind` comparisons in `chat.js` against the canonical `ACTIVITY_KINDS` frozenset in `events.py`, preventing silent frontend breakage when activity frame kinds are added or renamed.
 - Extract shared boilerplate from three GitHub endpoint functions into a ``_github_endpoint`` helper, eliminating ~62 lines of duplicated settings/auth/path-param/body-parse/scope-check code.)
 - DirectRepoClient now automatically detects expired GitHub App installation tokens (HTTP 401) and re-mints the token before retrying the request once. This prevents push failures in long-running sessions where the token expires between clone and push.

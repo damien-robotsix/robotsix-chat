@@ -164,6 +164,20 @@ _NO_CHANGE_PHRASES: tuple[str, ...] = (
 )
 
 
+def _format_duration(seconds: float) -> str:
+    """Return a human-readable duration string for *seconds*."""
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    if seconds < 3600:
+        minutes = int(seconds / 60)
+        return f"{minutes} min"
+    hours = int(seconds / 3600)
+    minutes = int((seconds % 3600) / 60)
+    if minutes == 0:
+        return f"{hours}h"
+    return f"{hours}h {minutes}m"
+
+
 def _is_no_change(reply: str) -> bool:
     """Whether *reply* is the periodic no-change sentinel or a common paraphrase.
 
@@ -671,10 +685,11 @@ async def _run_periodic_turn(
                 sub_id,
                 consecutive_no_change,
             )
+            elapsed = _format_duration(registry.now() - info.created_at)
             summary = (
                 f"Ticket has been stuck at human_issue_approval for "
-                f"{human_approval_cap} consecutive no-change runs — "
-                f"auto-escalating."
+                f"{human_approval_cap} consecutive no-change runs "
+                f"({elapsed} elapsed) — auto-escalating."
             )
             closed = registry.mark_closed(
                 sub_id,
@@ -697,7 +712,24 @@ async def _run_periodic_turn(
             sub_id,
             consecutive_no_change,
         )
-        summary = f"Auto-stopped after {no_change_cap} consecutive no-change runs."
+        elapsed = _format_duration(registry.now() - info.created_at)
+        state_context = ""
+        last_known_state = checkpoint.get("last_known_state", "")
+        if isinstance(last_known_state, str) and last_known_state:
+            state_context = (
+                f" Still '{last_known_state}' after {elapsed} — "
+                f"if this is not expected, consider checking step-level "
+                f"logs or the ticket timeline."
+            )
+        else:
+            state_context = (
+                f" No changes detected over {elapsed}. "
+                f"Restart the monitor if continued watching is needed."
+            )
+        summary = (
+            f"Auto-stopped after {no_change_cap} consecutive no-change runs."
+            f"{state_context}"
+        )
         closed = registry.mark_closed(
             sub_id,
             summary=summary,
