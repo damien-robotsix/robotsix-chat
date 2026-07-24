@@ -114,8 +114,7 @@ POST /subsessions/{subsession_id}/close
      `close_reason="stale_worker"`) is checked independently; whichever cap fires first closes the
      subsession.
    - When the counter is between 1 and 2 (below the threshold), the agent receives an additional
-     context note: `"Repeated block: this is blocked-resume attempt X/3 (N remaining before
-     auto-close). If the same failure keeps recurring, stop auto-retrying and escalate to the
-     operator."`
+     context note:
+     `"Repeated block: this is blocked-resume attempt X/3 (N remaining before auto-close). If the same failure keeps recurring, stop auto-retrying and escalate to the operator."`
 9. Concurrency is bounded by `subsessions.max_concurrent` (default 8, across all subsession kinds);
    exceeding it returns a friendly refusal rather than raising.
