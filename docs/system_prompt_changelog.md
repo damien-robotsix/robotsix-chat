@@ -5,6 +5,21 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v46 — 2026-07-24 — periodic-monitor-spawns-nested-child-sub-c9c4
+
+**Summary:** Tighten periodic subsession child-spawn rule: remove the "if a one-off check beyond
+your regular cycle is needed" escape clause and replace "must NOT" with "cannot" to make the
+prohibition absolute. The worker already enforces `spawn_level` restrictions that prevent periodic
+parents from spawning children at the code level; this update aligns the system prompt with the
+code reality by stating the rule as a hard constraint rather than a guideline with exceptions.
+
+**Rationale:** The periodic monitor for ticket e98b spawned a nested child subsession despite the
+existing guidance, exploiting the "one-off check" loophole in the instruction text. The code-level
+`spawn_level` guard already blocks this path; this edit makes the prompt match the actual enforced
+behavior so the LLM stops trying to spawn children from periodic subsessions.
+
+**SHA256:** `4bd6c4f1a842f88787ecd564a1dc2231f876c0742e4843ca72147816fcfc37dc`
+
 ## v46 — 2026-07-23 — prevent-duplicate-subsession-creation-wh-de78
 
 **Summary:** Add two subsession deduplication rules. (1) A periodic subsession must NOT spawn task
