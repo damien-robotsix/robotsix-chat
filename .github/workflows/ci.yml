@@ -166,6 +166,22 @@ jobs:
       - name: Run SubsessionStatus check
         run: python scripts/check_subsession_statuses.py
 
+  check-autonomous-states:
+    name: AutonomousState audit
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read  # checkout the repo
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - name: Run AutonomousState check
+        run: python scripts/check_autonomous_states.py
+
   # docs/modules.yaml drift is gated by the shared baseline-check workflow
   # (has-board: true → robotsix-modules validate / check-registration /
   # validate-paths) — see .github/workflows/baseline-check.yml.
@@ -324,7 +340,7 @@ jobs:
 
   check:
     name: All CI checks passed
-    needs: [lockfile, ci, security, pre-commit, check-sse-types, check-subsession-kinds, check-activity-kinds, check-subsession-statuses, image-scan, check-config-schema, deptry, pyright]
+    needs: [lockfile, ci, security, pre-commit, check-sse-types, check-subsession-kinds, check-activity-kinds, check-subsession-statuses, check-autonomous-states, image-scan, check-config-schema, deptry, pyright]
     runs-on: ubuntu-latest
     steps:
       - run: echo "All CI checks passed"
