@@ -464,6 +464,9 @@ def create_app(
         ),
     )
     app.state.agent = agent
+    # The main agent's memory backend, surfaced for GET /health so a frozen
+    # store is externally visible (``None`` for agents with no memory).
+    app.state.memory = getattr(agent, "memory", None)
     app.state.summary_agent = summary_agent if summary_agent is not None else agent
     app.state.conversation_store = conversation_store or ConversationStore()
     app.state.idle_timeout_minutes = idle_timeout_minutes
@@ -754,7 +757,7 @@ def create_agent_from_settings(
             event_sink,
         )
 
-    return LlmioChatAgent(
+    agent = LlmioChatAgent(
         model_level=effective_level,
         instruction=instruction,
         api_key=api_key,
@@ -763,3 +766,14 @@ def create_agent_from_settings(
         request_tools_factory=request_tools_factory,
         event_sink=event_sink,
     )
+    # Wire guarded auto-recovery (self-restart) for the top-level chat agent's
+    # memory only — never for bare summary agents or subsession children.  It
+    # needs the lifecycle transport; without it a freeze is still surfaced (via
+    # ERROR log + GET /health) but not auto-healed.
+    if not bare and subsession_ctx is None and settings.lifecycle.enabled:
+        from robotsix_chat.lifecycle.client import LifecycleClient
+
+        agent.memory.set_recovery_callback(
+            LifecycleClient(settings.lifecycle).self_restart
+        )
+    return agent

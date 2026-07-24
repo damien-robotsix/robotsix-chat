@@ -29,6 +29,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from robotsix_chat.config import MemorySettings
+    from robotsix_chat.memory.base import RecoverCallback
 
 logger = logging.getLogger(__name__)
 
@@ -87,6 +88,21 @@ def _is_healable_kuzu_error(exc: BaseException) -> bool:
     return bool(_SHADOW_MISSING_RE.search(msg) or _DB_ID_MISMATCH_RE.search(msg))
 
 
+# Signatures of the orphaned-lock freeze (sqlite relational store locked or the
+# LanceDB worker subprocess wedged) — distinguished from the benign "empty
+# store on the first-ever message" case so recall only reports *faults* as
+# degraded, not an empty memory.
+_LOCK_FREEZE_RE = re.compile(
+    r"database is locked|OperationalError|LanceError|Deadlock|lock.*timed? ?out",
+    re.IGNORECASE,
+)
+
+
+def _is_lock_freeze_error(exc: BaseException) -> bool:
+    """Return True if *exc* looks like the orphaned-lock / frozen-store fault."""
+    return bool(_LOCK_FREEZE_RE.search(str(exc)))
+
+
 class CogneeMemory:
     """Long-term agent memory backed by cognee.
 
@@ -110,10 +126,63 @@ class CogneeMemory:
         # Frozen-store detection: track when consecutive write failures began
         # (monotonic seconds since an arbitrary point) so we can alert when the
         # vector store has been failing for longer than the configured threshold.
+        # This one is reset after each alert to rate-limit the log line.
         self._write_failure_start: float | None = None
         # Count of exchanges lost since the last successful write (for
         # diagnostics — only the last-failure timestamp drives the alert).
         self._consecutive_write_failures: int = 0
+        # Start of the *current* freeze streak — set on the first failure and
+        # NOT reset by the alert rate-limiter, so it measures the true freeze
+        # duration that drives the degraded flag and auto-recovery threshold.
+        # Cleared only on a successful write/recall.
+        self._freeze_start: float | None = None
+        # Externally-visible degraded state (surfaced on GET /health) and the
+        # reason string.  A fault, not the benign empty-store case.
+        self._degraded: bool = False
+        self._degraded_reason: str | None = None
+        # Auto-recovery (guarded self-restart) wiring.
+        self._recover_cb: RecoverCallback | None = None
+        self._last_recovery_attempt: float | None = None
+        self._recovery_in_flight: bool = False
+        # Hold a reference to the in-flight recovery task so it isn't GC'd.
+        self._recovery_task: asyncio.Task[None] | None = None
+
+    # -- health & recovery wiring -----------------------------------------
+
+    def set_recovery_callback(self, callback: RecoverCallback | None) -> None:
+        """Register (or clear) the guarded self-restart used for auto-recovery.
+
+        Injected by the server (wired to the deploy-lifecycle ``self_restart``
+        endpoint) so this module stays decoupled from the HTTP client and is
+        trivially testable with a fake callback.
+        """
+        self._recover_cb = callback
+
+    def status(self) -> dict[str, Any]:
+        """Return a small health snapshot for ``GET /health`` (never raises)."""
+        return {
+            "backend": "cognee",
+            "degraded": self._degraded,
+            "reason": self._degraded_reason,
+            "consecutive_write_failures": self._consecutive_write_failures,
+        }
+
+    def _mark_degraded(self, reason: str) -> None:
+        """Flag the store degraded (idempotent); logs the transition once."""
+        if not self._degraded:
+            logger.error("cognee memory entering DEGRADED state: %s", reason)
+        self._degraded = True
+        self._degraded_reason = reason
+
+    def _clear_degraded(self) -> None:
+        """Clear degraded state and freeze tracking after a successful op."""
+        if self._degraded:
+            logger.info("cognee memory recovered — leaving degraded state")
+        self._degraded = False
+        self._degraded_reason = None
+        self._freeze_start = None
+        self._write_failure_start = None
+        self._consecutive_write_failures = 0
 
     # -- lifecycle --------------------------------------------------------
 
@@ -435,11 +504,19 @@ class CogneeMemory:
             return ""
         try:
             async with asyncio.timeout(self._settings.recall_timeout_seconds):
-                return await self._recall_core(query, session_id=session_id)
+                result = await self._recall_core(query, session_id=session_id)
+            # A successful recall proves the store is responsive again.
+            self._clear_degraded()
+            return result
         except TimeoutError:
             logger.warning(
                 "memory recall timed out after %.0fs; continuing without memory",
                 self._settings.recall_timeout_seconds,
+            )
+            # A recall timeout is the orphaned-lock freeze signature — surface it
+            # (visible on GET /health); the write path drives guarded recovery.
+            self._mark_degraded(
+                f"recall timed out after {self._settings.recall_timeout_seconds:.0f}s"
             )
             return ""
         except Exception as exc:
@@ -447,6 +524,10 @@ class CogneeMemory:
             # case on the first-ever message) must never break the reply, so
             # log it concisely — no ERROR-level traceback — and continue.
             logger.warning("memory recall failed (%s); continuing without memory", exc)
+            # Only a lock/freeze signature marks the store degraded; a benign
+            # empty-store error on the first-ever message must not.
+            if _is_lock_freeze_error(exc):
+                self._mark_degraded(f"recall failed: {exc}")
             return ""
 
     async def _recall_core(self, query: str, *, session_id: str | None = None) -> str:
@@ -510,9 +591,8 @@ class CogneeMemory:
                 await self._remember_core(
                     user_message, assistant_message, session_id=session_id
                 )
-            # Write succeeded → reset failure tracking and drain backlog.
-            self._write_failure_start = None
-            self._consecutive_write_failures = 0
+            # Write succeeded → clear freeze/degraded tracking and drain backlog.
+            self._clear_degraded()
             try:
                 await self._drain_backlog()
             except Exception:
@@ -569,21 +649,25 @@ class CogneeMemory:
     # -- write-failure tracking & self-heal -------------------------------
 
     def _record_write_failure(self) -> None:
-        """Mark one write failure and emit a frozen-store diagnostic.
+        """Mark one write failure; alert, flag degraded, and trigger recovery.
 
-        When the failure streak exceeds the configured alert threshold a
-        WARNING is emitted so a silently frozen vector store cannot go
-        unnoticed for days.
+        When the failure streak exceeds the alert threshold an ERROR is emitted
+        (rate-limited) and the store is flagged ``degraded`` (visible on
+        ``GET /health``).  When it exceeds the recovery threshold a guarded
+        self-restart is triggered — the store cannot stay silently frozen.
         """
         now = time.monotonic()
         if self._write_failure_start is None:
             self._write_failure_start = now
+        # True freeze clock — not reset by the alert rate-limiter below.
+        if self._freeze_start is None:
+            self._freeze_start = now
         self._consecutive_write_failures += 1
 
         elapsed_minutes = (now - self._write_failure_start) / 60.0
         threshold = self._settings.frozen_store_alert_minutes
         if elapsed_minutes >= threshold:
-            logger.warning(
+            logger.error(
                 "Vector store appears FROZEN: %d consecutive write failures "
                 "over the last %.1f minutes (alert threshold: %.1f min). "
                 "No new memories are being persisted — check the LanceDB "
@@ -593,11 +677,77 @@ class CogneeMemory:
                 elapsed_minutes,
                 threshold,
             )
-            # Reset the start time so we do not spam the warning on every
-            # subsequent failure — re-alert only if the freeze persists
-            # through another full threshold window.  Add a tiny epsilon
-            # so a second call in the same tick does not re-fire.
+            self._mark_degraded(
+                f"{self._consecutive_write_failures} consecutive write failures "
+                f"over {elapsed_minutes:.1f} min"
+            )
+            # Reset the *alert* start time so we do not spam the log on every
+            # subsequent failure — re-alert only if the freeze persists through
+            # another full threshold window.  Add a tiny epsilon so a second
+            # call in the same tick does not re-fire.  (The freeze clock,
+            # ``_freeze_start``, is NOT reset here.)
             self._write_failure_start = now + 0.001
+
+        # Guarded auto-recovery once the freeze has persisted long enough.
+        freeze_minutes = (now - self._freeze_start) / 60.0
+        if freeze_minutes >= self._settings.frozen_store_recovery_minutes:
+            self._maybe_trigger_recovery(freeze_minutes)
+
+    # -- auto-recovery (guarded self-restart) -----------------------------
+
+    def _maybe_trigger_recovery(self, freeze_minutes: float) -> None:
+        """Schedule a guarded self-restart if all recovery guards pass.
+
+        Guards: recovery enabled, a callback is wired, none already in flight,
+        and the per-attempt cooldown has elapsed (so a store that re-freezes
+        right after a restart cannot restart-loop).
+        """
+        if not self._settings.auto_recovery_enabled:
+            return
+        if self._recover_cb is None:
+            # No self-restart transport (lifecycle disabled) — stay degraded.
+            return
+        if self._recovery_in_flight:
+            return
+        now = time.monotonic()
+        cooldown = self._settings.recovery_cooldown_minutes * 60.0
+        if (
+            self._last_recovery_attempt is not None
+            and now - self._last_recovery_attempt < cooldown
+        ):
+            logger.error(
+                "cognee frozen %.1f min but auto-recovery is in cooldown "
+                "(%.0f min between attempts) — not restarting yet",
+                freeze_minutes,
+                self._settings.recovery_cooldown_minutes,
+            )
+            return
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            return
+        self._last_recovery_attempt = now
+        self._recovery_in_flight = True
+        self._recovery_task = loop.create_task(self._run_recovery(freeze_minutes))
+
+    async def _run_recovery(self, freeze_minutes: float) -> None:
+        """Invoke the recovery callback (self-restart); never raises."""
+        cb = self._recover_cb
+        try:
+            logger.error(
+                "cognee memory FROZEN for %.1f min — triggering guarded "
+                "auto-recovery via self-restart",
+                freeze_minutes,
+            )
+            if cb is not None:
+                result = await cb()
+                logger.error("cognee auto-recovery self-restart requested: %s", result)
+        except Exception:
+            logger.exception("cognee auto-recovery self-restart failed")
+        finally:
+            # If the restart did not actually take down the process, allow a
+            # future attempt after the cooldown.
+            self._recovery_in_flight = False
 
     # -- durable backlog --------------------------------------------------
 
