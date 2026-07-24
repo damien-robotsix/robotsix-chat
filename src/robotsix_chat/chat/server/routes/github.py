@@ -187,6 +187,87 @@ async def github_settings_endpoint(request: Request) -> JSONResponse:
     )
 
 
+async def github_create_repo_endpoint(request: Request) -> JSONResponse:
+    """Handle ``POST /chat/github/repos``.
+
+    Create a new repository under the configured GitHub organisation.
+    Requires an ``X-API-Key`` header matching the configured
+    ``deploy_api_key``.
+
+    JSON body:
+        name: string — repository name (required).
+        auto_init: bool — seed an initial commit (default true).
+
+    Returns:
+        200 — repository created successfully.
+        400 — invalid body or missing name.
+        403 — invalid or missing X-API-Key.
+        503 — github_security not configured (disabled or missing key).
+
+    """
+    settings = request.app.state.github_security_settings
+
+    # -- 503: unconfigured -------------------------------------------------
+    direct_repo = request.app.state.direct_repo_settings
+    if not settings.enabled or not direct_repo.enabled:
+        raise HTTPException(status_code=503, detail="github_security is not enabled")
+    api_key = settings.deploy_api_key.get_secret_value()
+    if not api_key:
+        raise HTTPException(
+            status_code=503,
+            detail="github_security.deploy_api_key is not configured",
+        )
+
+    # -- 403: auth ---------------------------------------------------------
+    presented = request.headers.get("X-API-Key", "")
+    if not presented or presented != api_key:
+        raise HTTPException(status_code=403, detail="invalid or missing X-API-Key")
+
+    # -- body --------------------------------------------------------------
+    try:
+        body = await request.json()
+    except json.JSONDecodeError, ValueError:
+        raise HTTPException(status_code=400, detail="invalid JSON body") from None
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="expected a JSON object")
+
+    repo_name = body.get("name")
+    if not repo_name or not isinstance(repo_name, str) or not repo_name.strip():
+        raise HTTPException(
+            status_code=400,
+            detail="'name' (string) is required",
+        )
+    repo_name = repo_name.strip()
+
+    auto_init = body.get("auto_init", True)
+    if not isinstance(auto_init, bool):
+        raise HTTPException(
+            status_code=400,
+            detail="'auto_init' must be a boolean",
+        )
+
+    # -- action ------------------------------------------------------------
+    direct_repo = request.app.state.direct_repo_settings
+    client = DirectRepoClient(direct_repo)
+
+    result = await client.create_repo(
+        org_name=settings.github_org,
+        repo_name=repo_name,
+        auto_init=auto_init,
+    )
+
+    if result.startswith("Error"):
+        raise HTTPException(status_code=502, detail=result)
+
+    return JSONResponse(
+        {
+            "status": "ok",
+            "repo": f"{settings.github_org}/{repo_name}",
+            "message": result,
+        }
+    )
+
+
 async def github_actions_secret_endpoint(request: Request) -> JSONResponse:
     """Handle ``PUT /chat/github/repos/{owner}/{repo}/actions/secrets/{secret_name}``.
 
