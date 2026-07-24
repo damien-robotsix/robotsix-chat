@@ -1,6 +1,7 @@
-"""Tests for the config GET/PUT endpoints.
+"""Tests for the config GET/PUT/versions/rollback endpoints.
 
-Coverage: deep-merge preservation, validation-before-persist, secret masking.
+Coverage: deep-merge preservation, validation-before-persist, secret
+masking, version history, rollback, and RFC 9457 error responses.
 """
 
 from __future__ import annotations
@@ -117,10 +118,12 @@ def test_deep_merge_does_not_mutate_existing() -> None:
 
 
 def test_mask_secrets_masks_api_key() -> None:
-    """Secret keys are replaced with ``***``."""
+    """Secret keys are replaced with ``**********``."""
     data = {"memory": {"llm": {"api_key": "sk-secret"}}}  # pragma: allowlist secret
     result = _mask_secrets(data)
-    assert result["memory"]["llm"]["api_key"] == "***"  # pragma: allowlist secret
+    assert (
+        result["memory"]["llm"]["api_key"] == "**********"
+    )  # pragma: allowlist secret
 
 
 def test_mask_secrets_preserves_non_secret() -> None:
@@ -150,12 +153,16 @@ def test_mask_secrets_masks_multiple_keys() -> None:
         "direct_repo": {"github_app_private_key": "pk"},  # pragma: allowlist secret
     }
     result = _mask_secrets(data)
-    assert result["llmio_api_key"] == "***"
-    assert result["memory"]["llm"]["api_key"] == "***"  # pragma: allowlist secret
-    assert result["memory"]["embedding"]["api_key"] == "***"  # pragma: allowlist secret
-    assert result["langfuse"]["secret_key"] == "***"  # pragma: allowlist secret
+    assert result["llmio_api_key"] == "**********"
     assert (
-        result["direct_repo"]["github_app_private_key"] == "***"
+        result["memory"]["llm"]["api_key"] == "**********"
+    )  # pragma: allowlist secret
+    assert (
+        result["memory"]["embedding"]["api_key"] == "**********"
+    )  # pragma: allowlist secret
+    assert result["langfuse"]["secret_key"] == "**********"  # pragma: allowlist secret
+    assert (
+        result["direct_repo"]["github_app_private_key"] == "**********"
     )  # pragma: allowlist secret
 
 
@@ -165,9 +172,18 @@ def test_mask_secrets_masks_multiple_keys() -> None:
 
 
 def test_preserve_masked_secrets_restores_original() -> None:
-    """When update has ``***`` for a secret, the existing value is restored."""
+    """When update has sentinel for a secret, the existing value is restored."""
     existing = {"memory": {"llm": {"api_key": "sk-real"}}}  # pragma: allowlist secret
-    update = {"memory": {"llm": {"api_key": "***"}}}  # pragma: allowlist secret
+    update = {"memory": {"llm": {"api_key": "**********"}}}  # pragma: allowlist secret
+    merged = _deep_merge(existing, update)
+    result = _preserve_masked_secrets(merged, existing, update)
+    assert result["memory"]["llm"]["api_key"] == "sk-real"  # pragma: allowlist secret
+
+
+def test_preserve_masked_secrets_restores_on_blank() -> None:
+    """When update has blank string for a secret, the existing value is restored."""
+    existing = {"memory": {"llm": {"api_key": "sk-real"}}}  # pragma: allowlist secret
+    update = {"memory": {"llm": {"api_key": ""}}}  # pragma: allowlist secret
     merged = _deep_merge(existing, update)
     result = _preserve_masked_secrets(merged, existing, update)
     assert result["memory"]["llm"]["api_key"] == "sk-real"  # pragma: allowlist secret
@@ -183,13 +199,13 @@ def test_preserve_masked_secrets_lets_new_value_through() -> None:
 
 
 def test_preserve_masked_secrets_non_secret_not_affected() -> None:
-    """Non-secret fields with ``***`` value are NOT treated as masked."""
+    """Non-secret fields with sentinel value are NOT treated as masked."""
     existing = {"server_host": "0.0.0.0"}
-    update = {"server_host": "***"}
+    update = {"server_host": "**********"}
     merged = _deep_merge(existing, update)
     result = _preserve_masked_secrets(merged, existing, update)
-    # "server_host" is not a secret key, so "***" is kept as-is
-    assert result["server_host"] == "***"
+    # "server_host" is not a secret key, so sentinel is kept as-is
+    assert result["server_host"] == "**********"
 
 
 # ---------------------------------------------------------------------------
@@ -230,12 +246,25 @@ def test_write_and_read_roundtrip(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# Shared assertions for the standard GET /config response shape
+# ---------------------------------------------------------------------------
+
+
+def _assert_version_header(data: dict, expected_version: int) -> None:
+    """Assert the standard GET /config response shape."""
+    assert data["version"] == expected_version
+    assert "schema" in data
+    assert isinstance(data["schema"], dict)
+    assert "$defs" in data["schema"] or "properties" in data["schema"]
+
+
+# ---------------------------------------------------------------------------
 # GET /config
 # ---------------------------------------------------------------------------
 
 
 def test_get_config_returns_masked_data(tmp_path: Path) -> None:
-    """GET /config returns the on-disk config with secrets masked."""
+    """GET /config returns config with secrets masked, plus version and schema."""
     config_path = tmp_path / "config.json"
     _write_config(
         config_path,
@@ -253,20 +282,38 @@ def test_get_config_returns_masked_data(tmp_path: Path) -> None:
     resp = client.get("/config")
     assert resp.status_code == 200
     data = resp.json()
+    _assert_version_header(data, 1)
+
     assert data["llmio_model_level"] == 3
-    assert data["llmio_api_key"] == "***"
+    assert data["llmio_api_key"] == "**********"
     assert data["server_port"] == 8080
-    assert data["memory"]["llm"]["api_key"] == "***"  # pragma: allowlist secret
+    assert data["memory"]["llm"]["api_key"] == "**********"  # pragma: allowlist secret
     assert data["memory"]["embedding"]["endpoint"] == "http://box:11434/v1"
 
 
 def test_get_config_missing_file(tmp_path: Path) -> None:
-    """GET /config returns empty object when no config file exists."""
+    """GET /config returns version 1 and empty config when no config file exists."""
     config_path = tmp_path / "nonexistent.json"
     client = _make_app(config_path)
     resp = client.get("/config")
     assert resp.status_code == 200
-    assert resp.json() == {}
+    data = resp.json()
+    assert data["version"] == 1  # bootstrapped from empty config
+    assert data.get("schema") is not None
+
+
+def test_get_config_includes_schema(tmp_path: Path) -> None:
+    """GET /config includes a valid JSON Schema at the ``schema`` key."""
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_model_level": 3})
+    client = _make_app(config_path)
+    resp = client.get("/config")
+    assert resp.status_code == 200
+    data = resp.json()
+    schema = data.get("schema")
+    assert isinstance(schema, dict)
+    # A valid JSON Schema has a top-level "type" or "properties" key.
+    assert "properties" in schema or "type" in schema
 
 
 # ---------------------------------------------------------------------------
@@ -292,6 +339,8 @@ def test_put_preserves_unmentioned_keys(tmp_path: Path) -> None:
     # Submit only server_port — memory.embedding.endpoint must be preserved.
     resp = client.put("/config", json={"server_port": 9000})
     assert resp.status_code == 200
+    assert resp.json()["version"] >= 1
+    assert resp.json()["status"] == "ok"
 
     # Re-read the file.
     on_disk = _read_config_json(config_path)
@@ -336,7 +385,7 @@ def test_put_preserves_nested_object_keys(tmp_path: Path) -> None:
 
 
 def test_put_rejects_invalid_config(tmp_path: Path) -> None:
-    """A save that would yield an invalid config is rejected with 422."""
+    """A save that would yield an invalid config is rejected with 422 (RFC 9457)."""
     config_path = tmp_path / "config.json"
     _write_config(
         config_path,
@@ -357,8 +406,11 @@ def test_put_rejects_invalid_config(tmp_path: Path) -> None:
         json={"memory": {"embedding": {"endpoint": ""}}},
     )
     assert resp.status_code == 422
+    assert resp.headers["Content-Type"] == "application/problem+json"
     error_data = resp.json()
-    assert "error" in error_data
+    assert error_data["type"] == "about:blank"
+    assert error_data["title"] == "Config Validation Failed"
+    assert error_data["status"] == 422
     assert "memory.embedding.endpoint" in error_data.get("detail", "")
 
     # Assert the on-disk config was NOT modified.
@@ -385,7 +437,7 @@ def test_put_rejects_invalid_model_level(tmp_path: Path) -> None:
 
 
 def test_put_masked_secret_preserves_original(tmp_path: Path) -> None:
-    """Submitting ``***`` for a secret field preserves the on-disk value."""
+    """Submitting the sentinel for a secret field preserves the on-disk value."""
     config_path = tmp_path / "config.json"
     _write_config(
         config_path,
@@ -396,7 +448,26 @@ def test_put_masked_secret_preserves_original(tmp_path: Path) -> None:
     )
     client = _make_app(config_path)
 
-    resp = client.put("/config", json={"llmio_api_key": "***"})
+    resp = client.put("/config", json={"llmio_api_key": "**********"})
+    assert resp.status_code == 200
+
+    on_disk = _read_config_json(config_path)
+    assert on_disk["llmio_api_key"] == "sk-real-key"  # pragma: allowlist secret
+
+
+def test_put_blank_secret_preserves_original(tmp_path: Path) -> None:
+    """Submitting an empty string for a secret field preserves the on-disk value."""
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "llmio_model_level": 3,
+            "llmio_api_key": "sk-real-key",  # pragma: allowlist secret
+        },
+    )
+    client = _make_app(config_path)
+
+    resp = client.put("/config", json={"llmio_api_key": ""})
     assert resp.status_code == 200
 
     on_disk = _read_config_json(config_path)
@@ -480,3 +551,145 @@ def test_put_settings_validation_roundtrip(tmp_path: Path) -> None:
     settings = Settings.model_validate(on_disk)
     assert settings.server_port == 9000
     assert settings.idle_timeout_minutes == 15
+
+
+# ---------------------------------------------------------------------------
+# PUT /config — version increment
+# ---------------------------------------------------------------------------
+
+
+def test_put_increments_version(tmp_path: Path) -> None:
+    """Each successful PUT increments the version number."""
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_model_level": 3})
+    client = _make_app(config_path)
+
+    resp1 = client.put("/config", json={"server_port": 9000})
+    assert resp1.status_code == 200
+    v1 = resp1.json()["version"]
+    assert v1 >= 1
+
+    resp2 = client.put("/config", json={"idle_timeout_minutes": 30})
+    assert resp2.status_code == 200
+    v2 = resp2.json()["version"]
+    assert v2 == v1 + 1
+
+
+# ---------------------------------------------------------------------------
+# GET /config/versions
+# ---------------------------------------------------------------------------
+
+
+def test_get_versions_returns_history(tmp_path: Path) -> None:
+    """GET /config/versions returns version history entries."""
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_model_level": 3})
+    client = _make_app(config_path)
+
+    # Bootstrap: at least one version exists from a GET.
+    resp_get = client.get("/config")
+    assert resp_get.status_code == 200
+
+    # Make a change to create version 2.
+    client.put("/config", json={"server_port": 9000})
+
+    resp = client.get("/config/versions")
+    assert resp.status_code == 200
+    versions = resp.json()
+    assert isinstance(versions, list)
+    assert len(versions) >= 2  # initial + save
+
+    # Each entry has the standard keys and no data payload.
+    for entry in versions:
+        assert "version" in entry
+        assert "timestamp" in entry
+        assert "changed_keys" in entry
+        assert "data" not in entry  # full config data excluded
+
+    # Newest first.
+    assert versions[0]["version"] > versions[-1]["version"]
+
+
+def test_get_versions_no_history(tmp_path: Path) -> None:
+    """GET /config/versions bootstraps if no prior history exists."""
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_model_level": 3})
+    client = _make_app(config_path)
+
+    # Don't call GET /config first — go straight to /config/versions.
+    resp = client.get("/config/versions")
+    assert resp.status_code == 200
+    versions = resp.json()
+    assert isinstance(versions, list)
+    assert len(versions) >= 1  # bootstrapped
+
+
+# ---------------------------------------------------------------------------
+# POST /config/rollback
+# ---------------------------------------------------------------------------
+
+
+def test_rollback_to_previous_version(tmp_path: Path) -> None:
+    """Rolling back restores that version's data and creates a new version."""
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_model_level": 3, "server_port": 8000})
+    client = _make_app(config_path)
+
+    # Bootstrap version history.
+    client.get("/config")
+
+    # Change server_port to 9000 (version 2).
+    resp = client.put("/config", json={"server_port": 9000})
+    assert resp.status_code == 200
+
+    # Confirm it's 9000 on disk.
+    assert _read_config_json(config_path)["server_port"] == 9000
+
+    # Roll back to version 1 (server_port was 8000).
+    rollback_resp = client.post("/config/rollback", json={"version": 1})
+    assert rollback_resp.status_code == 200
+    assert rollback_resp.json()["status"] == "ok"
+    new_version = rollback_resp.json()["version"]
+    assert new_version >= 3  # v1 initial, v2 save, v3 rollback
+
+    # Verify the config was restored.
+    on_disk = _read_config_json(config_path)
+    assert on_disk["server_port"] == 8000
+    assert on_disk["llmio_model_level"] == 3
+
+
+def test_rollback_nonexistent_version(tmp_path: Path) -> None:
+    """Rollback to a nonexistent version returns 404."""
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_model_level": 3})
+    client = _make_app(config_path)
+
+    # Bootstrap version history.
+    client.get("/config")
+
+    resp = client.post("/config/rollback", json={"version": 999})
+    assert resp.status_code == 404
+
+
+def test_rollback_invalid_version_param(tmp_path: Path) -> None:
+    """Rollback with a non-integer version param returns 400."""
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_model_level": 3})
+    client = _make_app(config_path)
+
+    # Bootstrap version history.
+    client.get("/config")
+
+    resp = client.post("/config/rollback", json={"version": "abc"})
+    assert resp.status_code == 400
+
+
+def test_rollback_no_history(tmp_path: Path) -> None:
+    """Rollback with no prior version history returns 404."""
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_model_level": 3})
+    client = _make_app(config_path)
+
+    # No bootstrap (no GET /config, no PUT) — no version history.
+    resp = client.post("/config/rollback", json={"version": 1})
+    assert resp.status_code == 404

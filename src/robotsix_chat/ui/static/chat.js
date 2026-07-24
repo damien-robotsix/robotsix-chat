@@ -3021,6 +3021,8 @@
   var settingsSaveBtn = document.getElementById("settings-save-btn");
   var settingsSaveStatus = document.getElementById("settings-save-status");
   var settingsConfigData = null;  // cached config from server
+  var settingsConfigSchema = null;  // JSON Schema from server
+  var settingsConfigVersion = 0;    // current version from server
   var settingsConfigPath = "config/config.json";  // default
 
   // Panel visibility (localStorage-backed).
@@ -3186,7 +3188,14 @@
         return r.json();
       })
       .then(function (data) {
+        // Extract metadata keys added by the config-ownership standard.
+        var schema = data.schema || null;
+        var version = data.version || 0;
+        delete data.schema;
+        delete data.version;
         settingsConfigData = data;
+        settingsConfigSchema = schema;
+        settingsConfigVersion = version;
         renderSettingsForm(data);
       })
       .catch(function (err) {
@@ -3266,7 +3275,7 @@
       input.setAttribute("data-path", path);
       input.setAttribute("data-type", inputType === "password" ? "secret" : "string");
       wrap.appendChild(input);
-      if (inputType === "password" && value === "***") {
+      if (inputType === "password" && value === "**********") {
         var hint = document.createElement("span");
         hint.className = "field-hint";
         hint.textContent = "Leave unchanged to keep current secret";
@@ -3388,23 +3397,27 @@
       body: JSON.stringify(body)
     }).then(function (r) {
       return r.json().then(function (data) {
-        return { status: r.status, data: data };
+        return { status: r.status, data: data, contentType: r.headers.get("Content-Type") || "" };
       });
     }).then(function (result) {
       settingsSaveBtn.disabled = false;
       if (result.status === 200) {
-        settingsSaveStatus.textContent = "Saved.";
+        settingsConfigVersion = result.data.version || (settingsConfigVersion + 1);
+        settingsSaveStatus.textContent = "Saved (v" + settingsConfigVersion + ").";
         settingsSaveStatus.className = "success";
         // Reload to pick up any server-side normalizations.
         loadSettings();
       } else if (result.status === 422) {
         settingsSaveStatus.textContent = "Validation failed.";
         settingsSaveStatus.className = "error";
-        showSettingsError(result.data.detail || result.data.error || "Validation failed");
+        // RFC 9457 problem+json — detail may be in "detail" or "title" field.
+        var detail = result.data.detail || result.data.title || result.data.error || "Validation failed";
+        showSettingsError(detail);
       } else {
-        settingsSaveStatus.textContent = "Error: " + (result.data.error || "HTTP " + result.status);
+        var errMsg = result.data.detail || result.data.title || result.data.error || ("HTTP " + result.status);
+        settingsSaveStatus.textContent = "Error: " + errMsg;
         settingsSaveStatus.className = "error";
-        showSettingsError(result.data.error || result.data.detail || "Unknown error");
+        showSettingsError(errMsg);
       }
     }).catch(function (err) {
       settingsSaveBtn.disabled = false;
