@@ -381,6 +381,11 @@ body {
   background: var(--error-banner-bg); color: var(--error-banner-fg);
   border-bottom: 1px solid var(--error-banner-border);
   font-size: 0.9rem; flex-shrink: 0;
+  /* The summary overlay (#summary-container) is absolutely positioned at
+     top:0 of #content-wrap with z-index:10 — the same spot as this in-flow
+     banner. Without a higher stacking order the error is painted behind the
+     summary and hidden. Sit above it (the banner is opaque). */
+  position: relative; z-index: 11;
 }
 #error-banner.visible { display: flex; }
 #error-banner .msg { flex: 1; }
