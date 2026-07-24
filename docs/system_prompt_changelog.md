@@ -5,6 +5,24 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v46 — 2026-07-23 — prevent-duplicate-subsession-creation-wh-de78
+
+**Summary:** Add two subsession deduplication rules. (1) A periodic subsession must NOT spawn task
+subsessions to perform its own monitoring work — the periodic subsession's instructions execute on
+every cycle, so monitoring, polling, and checking should be done directly in the reply rather than
+delegating to a child task. Spawning a child task to check the same ticket the periodic parent is
+already monitoring is redundant and wastes system resources. (2) When spawning any subsession, check
+list_subsessions for an existing periodic monitor for the same ticket or subject — if one exists, do
+not spawn a task subsession for it; the periodic monitor will report changes.
+
+**Rationale:** During session 8b03ed2ca8f946629bdee029f2efaaa7, the periodic monitor for ticket e98b
+spawned an extra task subsession that checked the same ticket state, producing redundant output and
+wasting system resources. These two rules close the gap: the first prevents the periodic subsession
+from offloading its own work to a child, and the second prevents a parent agent from bypassing an
+existing periodic monitor by spawning a one-shot task.
+
+**SHA256:** `d6c9eadbcd4d732dcf25bb7665a39e51c305bb1863e6622fae9e5ff43a348fbf`
+
 ## v46 — 2026-07-22 — improve-terminal-state-notification-conc-70aa
 
 **Summary:** Add a conciseness rule for periodic subsession terminal-state notifications. When a
