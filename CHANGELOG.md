@@ -4,6 +4,7 @@
   modifies the merge pipeline itself, auto-merge may be self-referential — escalate
   to the operator for a manual merge rather than looping on merge-now. Extracted
   from the stalled PR #688 (ticket 45b9); motivated by PR #2475's 14-iteration block.
+- Add `SSE_NOTIFICATION_TYPE = "notification"` constant to `robotsix_chat.chat.events` and replace bare string literal in notification emitter and tests.
 - System prompt v46: add "Repo creation bootstrap" guidance — proactively seed an initial commit during repo creation to prevent tool-chain deadlocks with empty repos.
 - System prompt v46: added conciseness rule for periodic subsession terminal-state
   notifications — report outcome in one sentence instead of echoing full run history.
