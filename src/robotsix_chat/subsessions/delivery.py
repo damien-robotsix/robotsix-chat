@@ -53,9 +53,12 @@ logger = logging.getLogger(__name__)
 _REACT_PROMPT_TEMPLATE = (
     "[System notice] Subsession {sub_id} ({kind}) '{title}' {reason} while "
     "you were not actively conversing with the user. Outcome:\n\n{outcome}\n\n"
-    "React to this for the user now — comment on it, continue the work if "
-    "appropriate, or just acknowledge it briefly. This is a real turn: your "
-    "reply will be shown to the user."
+    "If the outcome is already current and needs no action, reply with a single "
+    "terse sentence — do NOT restate what the subsession already reported. "
+    "If there is something new or actionable, jump straight to the delta: what "
+    "changed, what the user should know, or what to do next. Never start with "
+    "'Acknowledged' or echo the subsession's full summary. This is a real turn: "
+    "your reply will be shown to the user."
 )
 
 # Hard cap on how many consecutive reaction turns (triggered by subsession
