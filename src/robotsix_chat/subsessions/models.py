@@ -167,6 +167,12 @@ class SubsessionInfo:
     # asyncio.run crash affecting multiple ticket monitors) produces only
     # one side-chat instead of a flood of duplicate notifications.
     dedup_key: str | None = None
+    # Retry counter for user_chat / task subsessions that fail with a
+    # recoverable error.  Persisted so the retry budget survives restarts.
+    retry_count: int = 0
+    # The last formatted error message, carried forward into the retry
+    # prompt so the agent knows what went wrong on the prior attempt.
+    _last_error: str | None = None
 
     def snapshot(self, *, with_transcript: bool = False) -> dict[str, object]:
         """Return a JSON-serialisable snapshot for SSE frames and REST bodies.
@@ -199,6 +205,7 @@ class SubsessionInfo:
             "turn_history": [list(pair) for pair in self.turn_history],
             "checkpoint": self.checkpoint,
             "dedup_key": self.dedup_key,
+            "retry_count": self.retry_count,
         }
         if with_transcript:
             data["transcript"] = [entry.as_dict() for entry in self.transcript]

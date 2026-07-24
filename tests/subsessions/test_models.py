@@ -68,6 +68,7 @@ def test_snapshot_round_trips_every_field() -> None:
         "turn_history": [],
         "checkpoint": None,
         "dedup_key": None,
+        "retry_count": 0,
     }
 
 

@@ -68,6 +68,12 @@ def _entry_opt_str(entry: Mapping[str, object], key: str) -> str | None:
     return value if isinstance(value, str) else None
 
 
+def _entry_retry_count(entry: Mapping[str, object]) -> int:
+    """Coerce a persisted-entry ``retry_count`` field to ``int``."""
+    value = entry.get("retry_count")
+    return int(value) if isinstance(value, (int, float)) else 0
+
+
 # -- reconstruction helpers -----------------------------------------------
 
 
@@ -206,6 +212,7 @@ def _resume_periodic_entry(
     completed_runs = _rebuild_completed_runs(entry)
     runs = max(completed_runs) if completed_runs else _entry_int(entry, "runs")
     dedup_key = _entry_opt_str(entry, "dedup_key")
+    retry_count = _entry_retry_count(entry)
     spawn_subsession(
         env=env,
         kind=SubsessionKind.PERIODIC,
@@ -218,6 +225,7 @@ def _resume_periodic_entry(
         turn_history=_rebuild_turn_history(entry),
         checkpoint=checkpoint,
         dedup_key=dedup_key,
+        retry_count=retry_count,
     )
     return _ResumeFate(
         owner_session_id=owner,
@@ -247,6 +255,7 @@ def _resume_user_chat_entry(
             f"was:]\n\n{last_text[:2000]}"
         )
     dedup_key = _entry_opt_str(entry, "dedup_key")
+    retry_count = _entry_retry_count(entry)
     spawn_subsession(
         env=env,
         kind=SubsessionKind.USER_CHAT,
@@ -255,6 +264,7 @@ def _resume_user_chat_entry(
         sub_id=sub_id,
         checkpoint=_rebuild_checkpoint(entry),
         dedup_key=dedup_key,
+        retry_count=retry_count,
     )
     return _ResumeFate(
         owner_session_id=owner,
@@ -289,6 +299,7 @@ def _resume_task_entry(
         f"preserved and is available on resume.]"
     )
     dedup_key = _entry_opt_str(entry, "dedup_key")
+    retry_count = _entry_retry_count(entry)
     spawn_subsession(
         env=env,
         kind=SubsessionKind.TASK,
@@ -297,6 +308,7 @@ def _resume_task_entry(
         sub_id=sub_id,
         checkpoint=_rebuild_checkpoint(entry),
         dedup_key=dedup_key,
+        retry_count=retry_count,
     )
     return _ResumeFate(
         owner_session_id=owner,
@@ -430,6 +442,7 @@ def _restore_entry(
             completed_runs=_rebuild_completed_runs(entry),
             checkpoint=_rebuild_checkpoint(entry),
             dedup_key=_entry_opt_str(entry, "dedup_key"),
+            retry_count=_entry_retry_count(entry),
         )
     except ValueError:
         logger.warning("Skipping malformed persisted subsession %r", sub_id)

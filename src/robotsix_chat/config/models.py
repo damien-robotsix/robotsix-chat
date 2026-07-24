@@ -518,6 +518,14 @@ class SubsessionsSettings(BaseModel):
         mill_recovery_max_retries: Maximum number of recovery retries
             before the subsession is permanently closed.  Default ``10``.
             Env override: ``SUBSESSIONS_MILL_RECOVERY_MAX_RETRIES``.
+        user_chat_max_retries: Maximum number of automatic retries for
+            ``user_chat`` and ``task`` subsession failures.  Each retry
+            re-launches the subsession with the prior error folded into
+            the prompt so the agent can self-correct.  Once exhausted the
+            subsession is failed and, for ``user_chat``, the original
+            decision prompt is surfaced in the main conversation as a
+            fallback so the operator can answer directly.  Default ``3``.
+            Env override: ``SUBSESSIONS_USER_CHAT_MAX_RETRIES``.
 
     """
 
@@ -534,6 +542,7 @@ class SubsessionsSettings(BaseModel):
     mill_recovery_initial_backoff_seconds: float = 60.0
     mill_recovery_max_backoff_seconds: float = 3600.0
     mill_recovery_max_retries: int = 10
+    user_chat_max_retries: int = 3
     model_config = ConfigDict(extra="forbid")
 
 

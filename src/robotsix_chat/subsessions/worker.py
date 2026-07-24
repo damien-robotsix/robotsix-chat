@@ -73,8 +73,12 @@ def _format_worker_error(exc: BaseException) -> str:
     subprocess exited non-zero), the message includes the exit code and
     stderr output so the operator can diagnose the tool failure without
     digging through logs.
+
+    For unrecognised exceptions the exception type name is always included
+    so the message is actionable even when the SDK wording is opaque.
     """
     msg = str(exc)
+    exc_type_name = type(exc).__name__
 
     # Degenerate success frame — a known transient Claude SDK bug that
     # can persist across retries.  Not a real tool failure.
@@ -109,6 +113,11 @@ def _format_worker_error(exc: BaseException) -> str:
         parts.append(msg)
         return "\n".join(parts)
 
+    # For any other exception, include the type name so the message is
+    # never just an opaque SDK string — the operator can distinguish a
+    # TimeoutError from a RuntimeError at a glance.
+    if exc_type_name not in msg:
+        return f"[{exc_type_name}] {msg}"
     return msg
 
 
@@ -121,6 +130,19 @@ def _truncate(text: str, max_len: int) -> str:
 
 # Reply sentinel a periodic subsession uses to report "nothing changed".
 _NO_CHANGE_SENTINEL = "NO_CHANGE"
+
+
+# Prompt fragment prepended when a user_chat / task subsession is retried
+# after a failure.  The agent sees the original error so it can diagnose
+# and self-correct (e.g. re-build context that was lost).
+_RETRY_PROMPT_TEMPLATE = (
+    "[System note: this subsession is being retried after a failure "
+    "(attempt {attempt}/{max_retries}). The error was:\n\n{error}\n\n"
+    "The subsession has been re-launched from its original instructions. "
+    "If the error was caused by lost context (e.g. after a server restart) "
+    "you may need to re-fetch any external state you were relying on. "
+    "Your original instructions follow below.]\n\n"
+)
 
 # System note prepended to the first turn of every user_chat subsession so
 # the agent always restates option definitions inline instead of surfacing
@@ -271,6 +293,7 @@ def spawn_subsession(
     turn_history: list[tuple[str, str]] | None = None,
     checkpoint: dict[str, object] | None = None,
     dedup_key: str | None = None,
+    retry_count: int = 0,
 ) -> str:
     """Validate, register, and launch a subsession worker; return its id.
 
@@ -359,6 +382,7 @@ def spawn_subsession(
             turn_history=turn_history,
             checkpoint=checkpoint,
             dedup_key=dedup_key,
+            retry_count=retry_count,
         )
     except SubsessionDedupError as exc:
         return exc.existing_id
@@ -958,11 +982,62 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
     except Exception as exc:
         logger.exception("Subsession %s worker failed", sub_id)
         error_msg = _format_worker_error(exc)
+
+        # -- retry for user_chat / task kinds --------------------------
+        info = registry.get(sub_id)
+        if info is not None and info.kind in (
+            SubsessionKind.USER_CHAT,
+            SubsessionKind.TASK,
+        ):
+            max_retries = env.settings.subsessions.user_chat_max_retries
+            if info.retry_count < max_retries:
+                info.retry_count += 1
+                info._last_error = error_msg
+                retry_notice = _RETRY_PROMPT_TEMPLATE.format(
+                    attempt=info.retry_count,
+                    max_retries=max_retries,
+                    error=error_msg,
+                )
+                # Prepend the retry notice to the original prompt.
+                # Strip a prior retry notice if present so they don't
+                # accumulate across attempts.
+                if _RETRY_PROMPT_TEMPLATE.split("{", 1)[0] in info.prompt:
+                    # There is a prior retry notice — replace it.
+                    info.prompt = info.prompt.split("]\n\n", 1)[-1]
+                info.prompt = retry_notice + info.prompt
+                # Persist the retry state before re-launching so a
+                # crash restart picks up the updated retry_count.
+                registry.persist()
+                logger.info(
+                    "Subsession %s: retry %d/%d after error: %s",
+                    sub_id,
+                    info.retry_count,
+                    max_retries,
+                    error_msg,
+                )
+                await _subsession_worker(env, sub_id)
+                return
+
+        # -- exhausted retries or non-retryable kind ------------------
         failed = registry.fail(sub_id, error=error_msg)
         if failed is not None:
-            await env.delivery.deliver_summary(
-                failed, failed.summary or f"Failed: {error_msg}", "failed"
-            )
+            summary = failed.summary or f"Failed: {error_msg}"
+            # For user_chat subsessions that exhausted retries, append
+            # the original prompt so the operator can answer the
+            # decision directly in the main conversation — the
+            # side-chat panel is no longer available.
+            if (
+                failed.kind is SubsessionKind.USER_CHAT
+                and info is not None
+                and info.retry_count >= env.settings.subsessions.user_chat_max_retries
+            ):
+                summary += (
+                    "\n\nThe side-chat could not be delivered after "
+                    f"{info.retry_count} retries. "
+                    "You can answer the original decision here:\n\n"
+                    f"{info.prompt}"
+                )
+            await env.delivery.deliver_summary(failed, summary, "failed")
 
 
 async def _handle_kind_continuation(
