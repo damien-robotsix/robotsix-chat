@@ -18,7 +18,7 @@ existing guidance, exploiting the "one-off check" loophole in the instruction te
 `spawn_level` guard already blocks this path; this edit makes the prompt match the actual enforced
 behavior so the LLM stops trying to spawn children from periodic subsessions.
 
-**SHA256:** `4bd6c4f1a842f88787ecd564a1dc2231f876c0742e4843ca72147816fcfc37dc`
+**SHA256:** `e352f343aa6b97a38f6ebe92bee37ab1eb6bb2896fef08bfd9bc27fb609a4196`
 
 ## v46 — 2026-07-23 — prevent-duplicate-subsession-creation-wh-de78
 
