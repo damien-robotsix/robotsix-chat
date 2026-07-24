@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- System prompt v47: add verification rule against repeatedly referencing unverified recalled-memory claims across turns; cross-check recalled ticket metadata against the ticket API before echoing.
 - Changed `GHSA-9xwg-3r6f-jcx2` (pymdown-extensions) advisory suppression from `--ignore` to `--ignore-until-fixed` in both the pre-commit uv-audit hook and CI lockfile job.
 - Periodic monitors now include guidance to recognize decision-blocked tickets (human_issue_approval, awaiting operator choice) and recommend pausing rather than silently emitting NO_CHANGE until the auto-stop timeout.
 - Replace hand-rolled retry loops with robotsix-http
