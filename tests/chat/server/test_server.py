@@ -6,8 +6,9 @@ import asyncio
 import base64
 import json
 import os
+from collections.abc import Callable
 from pathlib import Path
-from typing import Any, Callable, cast
+from typing import Any, cast
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -421,18 +422,10 @@ async def test_summary_endpoint_uses_dedicated_summary_agent() -> None:
 @pytest.mark.parametrize(
     ("method", "path", "payload", "expected_substring"),
     [
-        pytest.param(
-            "get", "/sessions", None, "owner_id", id="list"
-        ),
-        pytest.param(
-            "post", "/sessions", {"json": {}}, "owner_id", id="create"
-        ),
-        pytest.param(
-            "delete", "/sessions/whatever", None, "owner_id", id="delete"
-        ),
-        pytest.param(
-            "post", "/sessions/whatever/close", None, "owner_id", id="close"
-        ),
+        pytest.param("get", "/sessions", None, "owner_id", id="list"),
+        pytest.param("post", "/sessions", {"json": {}}, "owner_id", id="create"),
+        pytest.param("delete", "/sessions/whatever", None, "owner_id", id="delete"),
+        pytest.param("post", "/sessions/whatever/close", None, "owner_id", id="close"),
     ],
 )
 async def test_sessions_missing_owner_id_returns_400(
