@@ -2060,7 +2060,7 @@ async def test_handle_mill_unreachable_recovery_success_resets_counter():
     with (
         patch("robotsix_chat.subsessions.worker.asyncio.sleep", new=AsyncMock()),
         patch(
-            "robotsix_chat.subsessions.worker._get_mill_started_at",
+            "robotsix_chat.subsessions.worker_mill._get_mill_started_at",
             new=AsyncMock(return_value="2025-01-01T00:00:00Z"),
         ),
     ):
