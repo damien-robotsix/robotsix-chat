@@ -13,6 +13,11 @@ from starlette.responses import StreamingResponse
 from robotsix_chat.chat.events import (
     SSE_ACTIVITY_TYPE,
     SSE_AGENT_MESSAGE_TYPE,
+    SSE_CHAT_TOKEN_TYPE,
+    SSE_CHAT_TURN_DONE_TYPE,
+    SSE_CHAT_TURN_ERROR_TYPE,
+    SSE_CHAT_TURN_RESUME_TYPE,
+    SSE_CHAT_TURN_STARTED_TYPE,
     SSE_SUBSESSION_CLOSED_TYPE,
     SSE_SUBSESSION_FAILED_TYPE,
     SSE_SUBSESSION_MESSAGE_TYPE,
@@ -293,6 +298,121 @@ def test_event_bus_unsubscribe_keeps_other_queues() -> None:
     assert q2.get_nowait() == {"type": "only-q2"}
     assert q1.empty()
     assert "c1" in bus._subscribers  # set not empty
+
+
+# ---------------------------------------------------------------------------
+# EventBus — foreground turn buffer / live re-attach
+# ---------------------------------------------------------------------------
+
+
+def test_begin_turn_announces_and_buffers() -> None:
+    """begin_turn publishes chat_turn_started to existing subscribers."""
+    bus = EventBus()
+    q = bus.subscribe("s1")
+
+    bus.begin_turn("s1", "turn-1")
+
+    assert q.get_nowait() == {
+        "type": SSE_CHAT_TURN_STARTED_TYPE,
+        "session_id": "s1",
+        "turn_id": "turn-1",
+    }
+
+
+def test_append_turn_token_publishes_and_accumulates() -> None:
+    """Each token is published live and accumulated for later replay."""
+    bus = EventBus()
+    q = bus.subscribe("s1")
+    bus.begin_turn("s1", "turn-1")
+    q.get_nowait()  # drop the started frame
+
+    bus.append_turn_token("s1", "turn-1", "Hello")
+    bus.append_turn_token("s1", "turn-1", " world")
+
+    first = q.get_nowait()
+    assert first["type"] == SSE_CHAT_TOKEN_TYPE
+    assert first["content"] == "Hello"
+    assert q.get_nowait()["content"] == " world"
+
+
+def test_subscribe_mid_turn_replays_accumulated_content() -> None:
+    """A subscriber that joins mid-turn gets a resume then live tokens.
+
+    The chat_turn_resume frame carries the text emitted so far; subsequent
+    live tokens are delivered without duplicating the replayed content.
+    """
+    bus = EventBus()
+    bus.begin_turn("s1", "turn-1")
+    bus.append_turn_token("s1", "turn-1", "Hello")
+    bus.append_turn_token("s1", "turn-1", " world")
+
+    late = bus.subscribe("s1")
+    # First frame is the replay of everything so far.
+    assert late.get_nowait() == {
+        "type": SSE_CHAT_TURN_RESUME_TYPE,
+        "session_id": "s1",
+        "turn_id": "turn-1",
+        "content": "Hello world",
+    }
+    # A subsequent live token reaches the late subscriber but is NOT duplicated
+    # into the replay.
+    bus.append_turn_token("s1", "turn-1", "!")
+    assert late.get_nowait()["content"] == "!"
+    assert late.empty()
+
+
+def test_end_turn_clears_buffer_and_no_replay_after() -> None:
+    """After end_turn a fresh subscriber gets no replay (buffer cleared)."""
+    bus = EventBus()
+    q = bus.subscribe("s1")
+    bus.begin_turn("s1", "turn-1")
+    bus.append_turn_token("s1", "turn-1", "hi")
+    q.get_nowait()  # started
+    q.get_nowait()  # token
+
+    bus.end_turn("s1", "turn-1", timestamp=1234.5)
+
+    assert q.get_nowait() == {
+        "type": SSE_CHAT_TURN_DONE_TYPE,
+        "session_id": "s1",
+        "turn_id": "turn-1",
+        "timestamp": 1234.5,
+    }
+    late = bus.subscribe("s1")
+    assert late.empty()  # no in-flight turn to replay
+
+
+def test_end_turn_with_error_publishes_error_frame() -> None:
+    """end_turn(error=...) emits chat_turn_error instead of chat_turn_done."""
+    bus = EventBus()
+    q = bus.subscribe("s1")
+    bus.begin_turn("s1", "turn-1")
+    q.get_nowait()  # started
+
+    bus.end_turn("s1", "turn-1", error="boom")
+
+    assert q.get_nowait() == {
+        "type": SSE_CHAT_TURN_ERROR_TYPE,
+        "session_id": "s1",
+        "turn_id": "turn-1",
+        "message": "boom",
+    }
+
+
+def test_stale_turn_token_does_not_mutate_current_buffer() -> None:
+    """A stale turn_id's token is published but never corrupts the buffer.
+
+    A token whose turn_id is not the current turn is still forwarded to
+    subscribers, but must not append to the active turn's accumulated text.
+    """
+    bus = EventBus()
+    bus.begin_turn("s1", "turn-2")
+    bus.append_turn_token("s1", "turn-2", "real")
+    # Stale token from a previous turn — must not append to turn-2's buffer.
+    bus.append_turn_token("s1", "turn-1", "stale")
+
+    late = bus.subscribe("s1")
+    assert late.get_nowait()["content"] == "real"
 
 
 # ---------------------------------------------------------------------------

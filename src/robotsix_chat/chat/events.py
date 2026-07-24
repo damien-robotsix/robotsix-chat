@@ -41,6 +41,20 @@ SSE_AUTONOMOUS_STATE_TYPE = "autonomous_state"
 # Streaming token from an autonomous background turn (live progress).
 SSE_AUTONOMOUS_TOKEN_TYPE = "autonomous_token"
 
+# Foreground ``POST /chat`` turn lifecycle, mirrored onto the /events channel
+# so a browser that is NOT the originating request — a second tab, or the same
+# tab after it switched away from the session and came back — can see the
+# in-progress turn.  The originating request still renders live tokens from its
+# own POST response body and ignores these echoes; everyone else renders from
+# them.  The bus buffers the CURRENT turn per session so a late subscriber
+# replays what has been emitted so far via a ``chat_turn_resume`` frame and
+# then follows the live ``chat_token`` frames.
+SSE_CHAT_TURN_STARTED_TYPE = "chat_turn_started"
+SSE_CHAT_TOKEN_TYPE = "chat_token"
+SSE_CHAT_TURN_DONE_TYPE = "chat_turn_done"
+SSE_CHAT_TURN_ERROR_TYPE = "chat_turn_error"
+SSE_CHAT_TURN_RESUME_TYPE = "chat_turn_resume"
+
 # ---------------------------------------------------------------------------
 # EventSink — structural Protocol for dependency injection
 # ---------------------------------------------------------------------------
@@ -386,12 +400,101 @@ class EventBus:
         self._subscribers: defaultdict[str, set[asyncio.Queue[dict[str, object]]]] = (
             defaultdict(set)
         )
+        # Buffer of the CURRENT in-flight foreground turn per session:
+        # session_id -> (turn_id, [token, token, ...]).  Lets a browser that
+        # subscribes mid-turn replay what has been emitted and then follow the
+        # live tokens.  Populated by begin_turn/append_turn_token and cleared
+        # by end_turn — at most one entry per session, so memory stays bounded.
+        self._current_turn: dict[str, tuple[str, list[str]]] = {}
 
     def subscribe(self, session_id: str) -> asyncio.Queue[dict[str, object]]:
-        """Create a fresh queue, add to *session_id*'s subscribers, return it."""
+        """Create a fresh queue, add to *session_id*'s subscribers, return it.
+
+        If a foreground turn is in flight for *session_id*, the queue is
+        primed with a ``chat_turn_resume`` frame carrying the text emitted so
+        far so the new subscriber re-attaches to the live turn.  Runs to
+        completion between event-loop steps (no ``await``), so no token can
+        interleave between registering the queue and priming it.
+        """
         queue: asyncio.Queue[dict[str, object]] = asyncio.Queue()
         self._subscribers[session_id].add(queue)
+        current = self._current_turn.get(session_id)
+        if current is not None:
+            turn_id, parts = current
+            queue.put_nowait(
+                {
+                    "type": SSE_CHAT_TURN_RESUME_TYPE,
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                    "content": "".join(parts),
+                }
+            )
         return queue
+
+    def begin_turn(self, session_id: str, turn_id: str) -> None:
+        """Start buffering a foreground turn and announce it to subscribers."""
+        self._current_turn[session_id] = (turn_id, [])
+        self.publish(
+            session_id,
+            {
+                "type": SSE_CHAT_TURN_STARTED_TYPE,
+                "session_id": session_id,
+                "turn_id": turn_id,
+            },
+        )
+
+    def append_turn_token(self, session_id: str, turn_id: str, content: str) -> None:
+        """Buffer *content* for the current turn and publish it as a token.
+
+        A no-op mismatch guard: only the turn that :meth:`begin_turn`
+        registered appends to the buffer, but the token is still published so
+        an in-flight subscriber is never starved by a race.
+        """
+        current = self._current_turn.get(session_id)
+        if current is not None and current[0] == turn_id:
+            current[1].append(content)
+        self.publish(
+            session_id,
+            {
+                "type": SSE_CHAT_TOKEN_TYPE,
+                "session_id": session_id,
+                "turn_id": turn_id,
+                "content": content,
+            },
+        )
+
+    def end_turn(
+        self,
+        session_id: str,
+        turn_id: str,
+        *,
+        timestamp: float | None = None,
+        error: str | None = None,
+    ) -> None:
+        """Finish the current turn: clear its buffer and publish done/error."""
+        current = self._current_turn.get(session_id)
+        if current is not None and current[0] == turn_id:
+            del self._current_turn[session_id]
+        if error is not None:
+            self.publish(
+                session_id,
+                {
+                    "type": SSE_CHAT_TURN_ERROR_TYPE,
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                    "message": error,
+                },
+            )
+        else:
+            self.publish(
+                session_id,
+                {
+                    "type": SSE_CHAT_TURN_DONE_TYPE,
+                    "session_id": session_id,
+                    "turn_id": turn_id,
+                    "timestamp": timestamp,
+                },
+            )
 
     def unsubscribe(
         self, session_id: str, queue: asyncio.Queue[dict[str, object]]
