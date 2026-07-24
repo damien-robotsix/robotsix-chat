@@ -1078,7 +1078,9 @@ async def test_list_installation_repos_parses_response(
     """list_installation_repos returns full_names from the API response."""
     settings = _settings()
 
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        "https://api.github.com/installation/repositories?per_page=100&page=1"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps(
@@ -1095,6 +1097,42 @@ async def test_list_installation_repos_parses_response(
     client = DirectRepoClient(settings)
     repos = await client.list_installation_repos()
     assert repos == ["org/repo-a", "org/repo-b"]
+
+
+@pytest.mark.asyncio
+async def test_list_installation_repos_paginates(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """list_installation_repos follows pages and returns all repos."""
+    settings = _settings()
+
+    # Simulate a full first page (100 repos, triggers another request)
+    # and a partial second page (35 repos, which stops the loop).
+    page_1_repos = [{"full_name": f"org/repo-{i}"} for i in range(100)]
+    page_2_repos = [{"full_name": f"org/repo-{i}"} for i in range(100, 135)]
+
+    respx_mock.get(
+        "https://api.github.com/installation/repositories?per_page=100&page=1"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": page_1_repos}),
+        )
+    )
+    respx_mock.get(
+        "https://api.github.com/installation/repositories?per_page=100&page=2"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": page_2_repos}),
+        )
+    )
+
+    client = DirectRepoClient(settings)
+    repos = await client.list_installation_repos()
+
+    expected = [f"org/repo-{i}" for i in range(135)]
+    assert repos == expected
 
 
 # ---------------------------------------------------------------------------
