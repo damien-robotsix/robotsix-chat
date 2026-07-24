@@ -1,5 +1,10 @@
 ## 0.0.0 (unreleased)
 
+- Periodic subsessions can no longer spawn task child subsessions to work around
+  the nesting restriction. The enforcement gate in `spawn_subsession` now blocks
+  periodic→task spawns (periodic→periodic was already blocked). The system prompt
+  no longer describes the prohibition as a workaround — periodic monitors poll
+  directly on every cycle.
 - Changed `GHSA-9xwg-3r6f-jcx2` (pymdown-extensions) advisory suppression from `--ignore` to `--ignore-until-fixed` in both the pre-commit uv-audit hook and CI lockfile job.
 - Periodic monitors now include guidance to recognize decision-blocked tickets (human_issue_approval, awaiting operator choice) and recommend pausing rather than silently emitting NO_CHANGE until the auto-stop timeout.
 - Replace hand-rolled retry loops with robotsix-http

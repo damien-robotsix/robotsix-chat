@@ -649,8 +649,8 @@ def test_spawn_level_errors() -> None:
 
 
 @pytest.mark.asyncio
-async def test_periodic_parent_cannot_spawn_periodic_child() -> None:
-    """A periodic subsession cannot spawn another periodic subsession."""
+async def test_periodic_parent_cannot_spawn_periodic_or_task_child() -> None:
+    """A periodic subsession cannot spawn periodic or task children."""
     env = build_env()
     # Register a periodic parent.
     parent = env.registry.create(
@@ -664,6 +664,7 @@ async def test_periodic_parent_cannot_spawn_periodic_child() -> None:
         interval_seconds=10.0,
     )
 
+    # Periodic children are blocked.
     with pytest.raises(SubsessionPeriodicSpawnError, match="periodic"):
         _spawn(
             env,
@@ -673,16 +674,24 @@ async def test_periodic_parent_cannot_spawn_periodic_child() -> None:
             interval_seconds=5.0,
         )
 
-    # Non-periodic children (e.g. task) are still allowed.
-    task_id = _spawn(
+    # Task children are also blocked.
+    with pytest.raises(SubsessionPeriodicSpawnError, match="task"):
+        _spawn(
+            env,
+            kind=SubsessionKind.TASK,
+            parent_id=parent.id,
+            depth=2,
+        )
+
+    # User_chat children from a periodic parent are still allowed.
+    chat_id = _spawn(
         env,
-        kind=SubsessionKind.TASK,
+        kind=SubsessionKind.USER_CHAT,
         parent_id=parent.id,
         depth=2,
     )
-    assert task_id
-    # Clean up the spawned worker.
-    env.registry.cancel_and_close(task_id, reason="teardown", closed_by="system")
+    assert chat_id
+    env.registry.cancel_and_close(chat_id, reason="teardown", closed_by="system")
 
 
 @pytest.mark.asyncio

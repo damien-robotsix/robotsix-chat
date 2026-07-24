@@ -79,7 +79,7 @@ class SubsessionLevelError(ValueError):
 
 
 class SubsessionPeriodicSpawnError(RuntimeError):
-    """Raised when a periodic subsession attempts to spawn a periodic child."""
+    """Raised when a periodic subsession attempts to spawn a periodic or task child."""
 
 
 class SubsessionUserChatSpawnError(RuntimeError):
