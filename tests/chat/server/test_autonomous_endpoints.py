@@ -32,13 +32,17 @@ def mock_agent() -> LlmioChatAgent:
 
 
 @pytest.fixture
-def autonomous_runner(store) -> AutonomousRunner:
+def autonomous_runner(store, tmp_path) -> AutonomousRunner:
     """Runner wired to the mock store with default markers."""
     settings = MagicMock()
     settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
     settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
     settings.autonomous.max_auto_turns = 20
     settings.autonomous.session_color = "#ff0000"
+    # Use a unique persist_path per test so _load_sessions never picks up
+    # sessions persisted by a prior test (MagicMock str() is deterministic
+    # within a process, causing cross-test contamination via the persist file).
+    settings.autonomous.persist_path = str(tmp_path / "autonomous_sessions.json")
     return AutonomousRunner(
         settings=settings,
         conversation_store=store,
