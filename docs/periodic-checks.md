@@ -94,19 +94,24 @@ self-closing after a fixed number of failures.
 
 01. `spawn_subsession(kind="periodic", ...)` launches an asyncio worker that runs one agent turn per
     tick on the configured interval (minimum `subsessions.min_interval_seconds`, default 60s).
+
 02. Each turn runs the subsession's own agent (built at the chosen `model_level` via
     `create_agent_from_settings`) with the full standard tool suite plus the subsession tools. Every
     turn is guarded by a hard timeout (`subsessions.run_timeout_seconds`, default 600 s): if the
     agent turn (recall + LLM call + delivery) exceeds the deadline, the run is marked failed, a
     warning is logged, and the schedule continues with the next tick — preventing a hung cognee
     adapter lock or stalled LLM call from freezing the subsession forever.
+
 03. When `include_previous_result` is `true`, the previous run's result is prepended to the prompt
     so the agent can compare state across runs.
+
 04. A `NO_CHANGE` reply suppresses parent delivery and the `subsession_result` SSE frame for that
     run; N consecutive suppressed runs auto-close the subsession.
+
 05. A non-suppressed result is delivered to the parent conversation (a synthetic turn in the owning
     chat session, or the parent subsession's inbox when nested) and published as a
     `subsession_result` frame to the browser.
+
     - **Decision chats (user_chat) spawned by periodic parents get dual delivery:** the outcome is
       enqueued into the periodic parent's inbox (so the periodic sees completed children on its next
       wake and suppresses duplicate user_chat spawns for the same ticket) AND scheduled as a
@@ -118,11 +123,14 @@ self-closing after a fixed number of failures.
       open a second decision chat for the same ticket, the spawn is refused with a
       `SubsessionUserChatSpawnError`. Non-`user_chat` children (e.g. `task`) from a `user_chat`
       parent are still allowed.
+
 06. **Terminal-state discipline.** The sub-agent calls its `complete_subsession(summary)` tool as
     soon as the monitored condition reaches a verified terminal state — the summary is delivered to
     the parent and the subsession closes.
+
 07. Subsessions persist to `/data/subsessions.json`; periodic ones are automatically resumed after a
     process restart (e.g. Watchtower redeploy) with their remaining run budget.
+
 08. **Blocked-resume threshold detection.** When a periodic monitor resumes and finds its ticket
     still BLOCKED, the subsession's checkpoint tracks a `blocked_resume_count`. If the ticket stays
     blocked across **3 consecutive resume attempts** (controlled by `_MAX_BLOCKED_RESUMES` in
@@ -131,6 +139,7 @@ self-closing after a fixed number of failures.
     cycling through a dead-end implement→blocked→resume loop — e.g. config-standard footprint
     violations that the assistant cannot fix on its own (the implement step fails to revert
     base-branch files, re-blocking the ticket on every attempt).
+
     - The counter **resets to 0** any time the ticket transitions to a non-blocked state between
       resumes, meaning the agent made progress.
     - The stale-worker cap (`_MAX_STALE_WORKER_RESUMES = 2`, which closes with
@@ -139,8 +148,23 @@ self-closing after a fixed number of failures.
     - When the counter is between 1 and 2 (below the threshold), the agent receives an additional
       context note:
       `"Repeated block: this is blocked-resume attempt X/3 (N remaining before auto-close). If the same failure keeps recurring, stop auto-retrying and escalate to the operator."`
-09. **Mill-recovery mode.** If the mill is unreachable, the monitor enters a recovery loop with
+
+09. **Decision-blocked guidance.** When a periodic monitor finds its ticket awaiting an operator
+    decision — stuck in `human_issue_approval`, waiting on an `"Option A or B?"` choice, or
+    otherwise blocked on human direction — the sub-agent is instructed to **not** silently reply
+    `NO_CHANGE` run after run. Instead, it reports the blocked state with a recommendation to pause
+    the monitor, e.g.:
+
+    > "Ticket is awaiting operator decision. Consider pausing this monitor until the operator
+    > provides direction."
+
+    This surfaces the pause recommendation immediately so the operator can act on it, rather than
+    waiting for the `auto_stop_no_change_runs` timeout to close the subsession. The guidance is
+    embedded in the prompt built by `_build_periodic_input` in `worker.py`.
+
+10. **Mill-recovery mode.** If the mill is unreachable, the monitor enters a recovery loop with
     exponential backoff (see [Mill-recovery behaviour](#mill-recovery-behaviour) above), probing the
     mill health endpoint and resuming automatically when it recovers.
-10. Concurrency is bounded by `subsessions.max_concurrent` (default 8, across all subsession kinds);
+
+11. Concurrency is bounded by `subsessions.max_concurrent` (default 8, across all subsession kinds);
     exceeding it returns a friendly refusal rather than raising.
