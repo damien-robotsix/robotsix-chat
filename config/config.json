@@ -179,7 +179,9 @@
     "max_auto_turns": 20,
     "persist_path": "/data/autonomous_sessions.json",
     "session_color": "",
-    "initial_task": ""
+    "initial_task": "",
+    "continue_interval_seconds": 45.0,
+    "pending_subsession_wait_timeout": 600.0
   },
   "max_images_per_message": 8,
   "max_image_bytes": 5242880,
