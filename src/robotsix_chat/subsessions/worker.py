@@ -394,14 +394,24 @@ def _build_periodic_input(
             + _render_turn_input(steering)
         )
     parts.append(
+        "IMPORTANT — fetch canonical state on every poll: your "
+        "conversation history may carry stale snapshots from prior "
+        "turns.  Before deciding whether to reply NO_CHANGE, you MUST "
+        "re-query the board API for the current ticket state (e.g. "
+        "fetch the ticket endpoint, re-read the ticket description "
+        "and comments).  Only compare the live board state against "
+        "the previous run's result — never trust a state you only "
+        "recall from an earlier turn.  A state transition that "
+        "happened between polls (e.g. draft → ready → in_progress) "
+        "MUST be detected from the live query, not from your memory.\n\n"
         f"Reply with the single word {_NO_CHANGE_SENTINEL} — and nothing "
         "else, no punctuation, no commentary — only if genuinely nothing "
-        "changed since the previous run: the observed state is identical "
-        "to the prior run. If any state transition occurred (e.g. draft → "
-        "implement_complete, in_progress → done, ready → in_progress), "
-        "DO NOT reply NO_CHANGE. Instead, acknowledge the change with a "
-        "concise line summarising what changed and, when appropriate, "
-        'offer a next step (e.g. "Ticket 5f1c has moved to '
+        "changed since the previous run: the live board state is identical "
+        "to the prior run's observed state. If any state transition occurred "
+        "(e.g. draft → implement_complete, in_progress → done, ready → "
+        "in_progress), DO NOT reply NO_CHANGE. Instead, acknowledge the "
+        "change with a concise line summarising what changed and, when "
+        'appropriate, offer a next step (e.g. "Ticket 5f1c has moved to '
         "implement_complete; PR #654 is open. Let me know if you'd like "
         'me to check on the review status."). '
         "Reserve multi-paragraph "
