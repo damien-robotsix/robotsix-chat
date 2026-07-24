@@ -9,6 +9,7 @@ import pytest
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 
+from robotsix_chat.chat.events import SSE_AUTONOMOUS_STATE_TYPE
 from robotsix_chat.chat.server.routes.sessions import (
     _cleanup_session,
     _require_owner_id,
@@ -275,7 +276,7 @@ async def test_sessions_list_endpoint_autonomous_annotations() -> None:
     assert response.status_code == 200
     body = json.loads(response.body)  # type: ignore[arg-type]
     assert body["sessions"][0]["autonomous"] is True
-    assert body["sessions"][0]["autonomous_state"] == "executing"
+    assert body["sessions"][0][SSE_AUTONOMOUS_STATE_TYPE] == "executing"
     assert body["sessions"][0]["autonomous_plan_text"] == "Do stuff"
     assert body["sessions"][0]["autonomous_turn_count"] == 5
     assert body["sessions"][0]["autonomous_max_turns"] == 50
@@ -306,7 +307,7 @@ async def test_sessions_list_endpoint_autonomous_none_state_and_session() -> Non
     body = json.loads(response.body)  # type: ignore[arg-type]
     s = body["sessions"][0]
     assert s["autonomous"] is True
-    assert "autonomous_state" not in s
+    assert SSE_AUTONOMOUS_STATE_TYPE not in s
     assert "autonomous_plan_text" not in s
     assert "autonomous_turn_count" not in s
 
