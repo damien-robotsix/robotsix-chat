@@ -1,5 +1,9 @@
 ## 0.0.0 (unreleased)
 
+- Made `AutonomousRunner._load_sessions` handle `persist_path.exists()` failures
+  gracefully by moving the check inside the try/except block, preventing
+  crashes when `_persist_path` is not a real filesystem path (e.g. under
+  mocked test settings).
 - Periodic subsession monitors now include an explicit instruction to re-query the board API for canonical ticket state on every poll tick, preventing stale-state readback where the agent reports a cached `draft` state that diverged from the live board state.
 - Periodic subsessions can no longer spawn task child subsessions to work around
   the nesting restriction. The enforcement gate in `spawn_subsession` now blocks

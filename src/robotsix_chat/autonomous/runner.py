@@ -88,9 +88,9 @@ class AutonomousRunner:
         Returns an empty dict when the persist file does not exist
         or cannot be parsed.
         """
-        if not self._persist_path.exists():
-            return {}
         try:
+            if not self._persist_path.exists():
+                return {}
             raw = json.loads(self._persist_path.read_text())
         except Exception:
             logger.exception(
