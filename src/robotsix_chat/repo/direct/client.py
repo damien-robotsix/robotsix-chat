@@ -304,7 +304,10 @@ class DirectRepoClient:
 
         Calls the board API directly — the same endpoint the browser UI uses.
         """
-        return cast("str | None", await self._fetch_ticket_field(ticket_id, "state", field="state"))
+        return cast(
+            "str | None",
+            await self._fetch_ticket_field(ticket_id, "state", field="state"),
+        )
 
     async def push_branch(
         self,
@@ -464,7 +467,9 @@ class DirectRepoClient:
         parsed JSON body.  The response includes ``state``, ``events`` (state
         transitions), and other ticket metadata.
         """
-        return cast("dict[str, Any] | None", await self._fetch_ticket_field(ticket_id, "data"))
+        return cast(
+            "dict[str, Any] | None", await self._fetch_ticket_field(ticket_id, "data")
+        )
 
     async def count_implement_cycles(self, ticket_id: str) -> int | None:
         """Return the number of implement cycles for *ticket_id*, or None on failure.
