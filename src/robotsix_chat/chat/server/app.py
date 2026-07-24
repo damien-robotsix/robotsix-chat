@@ -30,18 +30,21 @@ from robotsix_chat.component_access import build_component_access_tools
 from robotsix_chat.component_client import build_component_tools
 from robotsix_chat.config import Settings, level_needs_api_key
 from robotsix_chat.diagnostics import build_diagnostics_tools
-from robotsix_chat.http_probe import build_http_probe_tools
+from robotsix_chat.http_probe import build_http_probe_tools, load_http_probe_skill
 from robotsix_chat.knowledge import build_knowledge_tools
-from robotsix_chat.lifecycle import build_lifecycle_tools
+from robotsix_chat.lifecycle import build_lifecycle_tools, load_lifecycle_skill
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.mail import build_mail_tools
 from robotsix_chat.memory import NullMemory, build_memory
-from robotsix_chat.notification import build_notification_tools
+from robotsix_chat.notification import build_notification_tools, load_notification_skill
 from robotsix_chat.refdocs import build_refdocs_tools
 from robotsix_chat.render_url import build_render_url_tools
-from robotsix_chat.repo.actions import build_github_actions_tools
+from robotsix_chat.repo.actions import (
+    build_github_actions_tools,
+    load_github_actions_skill,
+)
 from robotsix_chat.repo.direct import build_direct_repo_tools
-from robotsix_chat.repo.security import build_github_security_tools
+from robotsix_chat.repo.security import build_github_security_tools, load_github_skill
 from robotsix_chat.repo.study import build_repo_study_tools
 from robotsix_chat.selfreview import build_recent_activity_tools
 from robotsix_chat.version_check import build_version_check_tools
@@ -539,45 +542,19 @@ def _inject_skills(
         if skill_prompt:
             instruction = f"{instruction}\n\n{skill_prompt}"
 
-    # Lifecycle skill.
-    if settings.lifecycle.enabled:
-        from robotsix_chat.lifecycle import load_lifecycle_skill
+    _skill_entries: list[tuple[bool, str, Callable[[], str]]] = [
+        (settings.lifecycle.enabled, "lifecycle", load_lifecycle_skill),
+        (settings.notification.enabled, "notification", load_notification_skill),
+        (settings.http_probe.enabled, "http_probe", load_http_probe_skill),
+        (settings.github_security.enabled, "github_security", load_github_skill),
+        (settings.github_actions.enabled, "github_actions", load_github_actions_skill),
+    ]
 
-        lifecycle_skill = load_lifecycle_skill()
-        if lifecycle_skill:
-            instruction = f"{instruction}\n\n{lifecycle_skill}"
-
-    # Notification skill.
-    if settings.notification.enabled:
-        from robotsix_chat.notification import load_notification_skill
-
-        notification_skill = load_notification_skill()
-        if notification_skill:
-            instruction = f"{instruction}\n\n{notification_skill}"
-
-    # HTTP probe skill.
-    if settings.http_probe.enabled:
-        from robotsix_chat.http_probe import load_http_probe_skill
-
-        http_probe_skill = load_http_probe_skill()
-        if http_probe_skill:
-            instruction = f"{instruction}\n\n{http_probe_skill}"
-
-    # GitHub skill.
-    if settings.github_security.enabled:
-        from robotsix_chat.repo.security import load_github_skill
-
-        github_skill = load_github_skill()
-        if github_skill:
-            instruction = f"{instruction}\n\n{github_skill}"
-
-    # GitHub Actions skill.
-    if settings.github_actions.enabled:
-        from robotsix_chat.repo.actions import load_github_actions_skill
-
-        github_actions_skill = load_github_actions_skill()
-        if github_actions_skill:
-            instruction = f"{instruction}\n\n{github_actions_skill}"
+    for enabled, _name, loader in _skill_entries:
+        if enabled:
+            skill = loader()
+            if skill:
+                instruction = f"{instruction}\n\n{skill}"
 
     return instruction
 

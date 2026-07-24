@@ -4,6 +4,7 @@
   modifies the merge pipeline itself, auto-merge may be self-referential — escalate
   to the operator for a manual merge rather than looping on merge-now. Extracted
   from the stalled PR #688 (ticket 45b9); motivated by PR #2475's 14-iteration block.
+- Refactor `_inject_skills()` in `app.py`: replace five repeated skill-injection blocks with a table-driven `_skill_entries` loop, and promote the lazy `load_*_skill` imports to module-level (all target modules are lightweight).
 - System prompt v46: add "Repo creation bootstrap" guidance — proactively seed an initial commit during repo creation to prevent tool-chain deadlocks with empty repos.
 - System prompt v46: added conciseness rule for periodic subsession terminal-state
   notifications — report outcome in one sentence instead of echoing full run history.
