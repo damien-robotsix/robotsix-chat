@@ -1676,8 +1676,9 @@ async def test_github_401_triggers_token_refresh_and_retry(
     _prepopulate_installation_token(settings)
 
     # The installation repos endpoint: first call → 401, second → 200
-    repos_url = "https://api.github.com/installation/repositories"
-    repos_route = respx_mock.get(repos_url).mock(
+    repos_route = respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         side_effect=[
             httpx.Response(401, text=json.dumps({"message": "Bad credentials"})),
             httpx.Response(
@@ -1712,8 +1713,9 @@ async def test_github_401_retry_fails_on_second_401(
     settings = _settings()
     _prepopulate_installation_token(settings)
 
-    repos_url = "https://api.github.com/installation/repositories"
-    repos_route = respx_mock.get(repos_url).mock(
+    repos_route = respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             401, text=json.dumps({"message": "Bad credentials"})
         )
