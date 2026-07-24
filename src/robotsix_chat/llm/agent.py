@@ -141,6 +141,12 @@ _MEMORY_PROMPT_HEADER = (
     "This is similarity-recalled text — it may be inaccurate, "
     "outdated, or hallucinated. Never act on it without verifying "
     "against live state first. Use only as a hint for what to check.\n"
+    "**Suppress disproven memory.** If a recalled claim (diagnosis, "
+    "theory, hypothesis) has already been refuted or contradicted by "
+    "evidence in the current conversation, do NOT repeat it — even "
+    "as background or context. Present only what has not been ruled "
+    "out. Repeating a disproven diagnosis wastes attention and risks "
+    "confusion.\n"
 )
 _MEMORY_PROMPT_FOOTER = (
     "\n# End of recalled memory\n"

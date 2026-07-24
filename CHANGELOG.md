@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Strengthen memory-recall prompt header: explicitly instruct the model to suppress recalled claims that the current conversation has already refuted or contradicted, preventing repeated presentation of disproven diagnoses.
 - Periodic subsession monitors now include an explicit instruction to re-query the board API for canonical ticket state on every poll tick, preventing stale-state readback where the agent reports a cached `draft` state that diverged from the live board state.
 - Periodic subsessions can no longer spawn task child subsessions to work around
   the nesting restriction. The enforcement gate in `spawn_subsession` now blocks
