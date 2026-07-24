@@ -8,6 +8,7 @@ import contextlib
 import dataclasses
 import logging
 import time
+import uuid
 from collections.abc import AsyncIterator
 from typing import Any, Protocol
 
@@ -167,12 +168,17 @@ class MessageCoalescer:
         had_session: bool,
         summary_agent: ChatAgent | None = None,
         autonomous_runner: Any = None,
+        event_bus: Any = None,  # EventBus | None (lazy typing to avoid cycle)
     ) -> asyncio.Queue[tuple[str, str | None]]:
         """Submit a message for batching; return a queue of SSE frames.
 
         The caller reads ``(type, payload)`` tuples from the returned
         queue and streams them as SSE frames.  The queue receives
         ``SSE_DONE_TYPE`` at completion or ``SSE_ERROR_TYPE`` on failure.
+
+        When *event_bus* is given, the turn is also mirrored onto the
+        /events channel (``chat_turn_started`` / ``chat_token`` /
+        ``chat_turn_done``) so other views can re-attach live.
         """
         response_queue: asyncio.Queue[tuple[str, str | None]] = asyncio.Queue()
         pending = _PendingMessage(message, images, message_id, response_queue)
@@ -199,6 +205,7 @@ class MessageCoalescer:
                         had_session,
                         summary_agent,
                         autonomous_runner,
+                        event_bus,
                     )
                 )
                 self._background_tasks.add(task)
@@ -261,6 +268,7 @@ class MessageCoalescer:
         had_session: bool,
         summary_agent: ChatAgent | None = None,
         autonomous_runner: Any = None,
+        event_bus: Any = None,
     ) -> None:
         """Wait for the debounce window, drain, lock, run agent, fan out."""
         await asyncio.sleep(self._debounce_seconds)
@@ -306,6 +314,15 @@ class MessageCoalescer:
                         await p.response_queue.put((SSE_DONE_TYPE, None))
                     return
 
+            # Mirror the turn onto the /events channel so a non-originating
+            # view (second tab, or a tab that switched away and back) can
+            # re-attach live. The originating POST request still renders from
+            # its own response body and ignores the /events echo.
+            publish_turn = event_bus is not None and bool(session_id)
+            turn_id = uuid.uuid4().hex if publish_turn else ""
+            if publish_turn:
+                event_bus.begin_turn(session_id, turn_id)
+
             reply_parts: list[str] = []
             try:
                 async for token in agent.stream(
@@ -318,6 +335,8 @@ class MessageCoalescer:
                     reply_parts.append(token)
                     for p in pending:
                         await p.response_queue.put((SSE_TOKEN_TYPE, token))
+                    if publish_turn:
+                        event_bus.append_turn_token(session_id, turn_id, token)
 
                 full_reply = "".join(reply_parts)
                 if session_id:
@@ -340,11 +359,17 @@ class MessageCoalescer:
                         )
 
                 await self._fan_out(pending, SSE_DONE_TYPE)
+                if publish_turn:
+                    event_bus.end_turn(session_id, turn_id, timestamp=time.time())
             except asyncio.CancelledError:
+                if publish_turn:
+                    event_bus.end_turn(session_id, turn_id, error="cancelled")
                 raise
             except Exception as exc:
                 logger.exception("Agent stream error")
                 await self._fan_out(pending, SSE_ERROR_TYPE, str(exc))
+                if publish_turn:
+                    event_bus.end_turn(session_id, turn_id, error=str(exc))
 
     async def _maybe_generate_title(
         self,
@@ -690,6 +715,7 @@ async def chat_endpoint(
         had_session=had_session,
         summary_agent=title_agent,
         autonomous_runner=autonomous_runner,
+        event_bus=request.app.state.event_bus,
     )
 
     # -- SSE async generator ----------------------------------------------

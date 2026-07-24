@@ -2346,6 +2346,50 @@ async def test_coalescer_concatenates_rapid_messages() -> None:
 
 
 @pytest.mark.asyncio
+async def test_chat_turn_mirrored_to_event_bus() -> None:
+    """A foreground /chat turn is mirrored onto the EventBus.
+
+    It publishes chat_turn_started / chat_token / chat_turn_done so other
+    views can re-attach to the live turn.
+    """
+    async with mock_app(tokens=["Hel", "lo"], message_coalesce_seconds=0.0) as f:
+        session_id = "s-mirror"
+        # Subscribe before sending so the whole turn is captured.
+        q = f.app.state.event_bus.subscribe(session_id)
+
+        r = await f.client.post(
+            "/chat",
+            json={"message": "hi", "session_id": session_id, "owner_id": "o"},
+        )
+        assert r.status_code == 200
+
+        # Drain the bus, waiting briefly for end_turn (runs in the background
+        # coalescer task, just after the SSE response completes).
+        frames: list[dict[str, object]] = []
+        for _ in range(100):
+            while not q.empty():
+                frames.append(q.get_nowait())
+            if frames and frames[-1]["type"] == "chat_turn_done":
+                break
+            await asyncio.sleep(0.01)
+
+        types = [fr["type"] for fr in frames]
+        assert types[0] == "chat_turn_started"
+        assert "chat_token" in types
+        assert types[-1] == "chat_turn_done"
+
+        # A single turn_id threads the whole turn.
+        turn_ids = {fr["turn_id"] for fr in frames}
+        assert len(turn_ids) == 1
+
+        # The streamed tokens reconstruct the reply.
+        content = "".join(
+            str(fr["content"]) for fr in frames if fr["type"] == "chat_token"
+        )
+        assert content == "Hello"
+
+
+@pytest.mark.asyncio
 async def test_coalescer_single_message_passes_unchanged() -> None:
     """A single message with no racing partner is processed normally."""
     async with mock_app(tokens=["ok"], message_coalesce_seconds=0.0) as f:

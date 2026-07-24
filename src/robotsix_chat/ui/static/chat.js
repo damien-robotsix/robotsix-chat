@@ -35,6 +35,17 @@
   // (currentRequestSessionId removed — unused; cross-session guard uses
   //  the requestSessionId captured inside doPost instead.)
 
+  // ---- Live re-attach state -------------------------------------------
+  // The foreground turn's live tokens arrive on the POST /chat response body
+  // (rendered by doPost) AND are mirrored onto /events. To avoid double
+  // rendering, the tab that owns the in-flight POST renders from the POST and
+  // ignores the /events echo; any other view (a second tab, or this tab after
+  // switching away and back) renders the turn from /events instead.
+  var activePostAbort = null;      // AbortController for the in-flight POST
+  var activePostSessionId = null;  // session that POST belongs to (null = none)
+  var reattachActive = false;      // rendering an in-flight turn via /events
+  var reattachTurnId = null;       // turn_id currently being re-attached
+
   // ---- Summary overlay: keep chat padding in sync with summary height ---
   // Uses a ResizeObserver so the absolutely-positioned summary never
   // participates in layout — the chat's scroll offset is stable regardless
@@ -278,9 +289,11 @@
             messageQueue.push({ text: qItem.text, el: el, images: restoredImages, messageId: qItem.messageId });
           }
           updateCancelQueuedButton();
-          // Automatically dispatch queued messages restored from draft
-          // when the session regains focus (e.g. after a session switch).
-          drainQueue();
+          // Automatically dispatch queued messages restored from draft when
+          // the session regains focus — but NOT while a turn is in flight
+          // (isBusy is true when we've re-attached to an ongoing turn via
+          // /events). In that case handleReattachDone drains once it finishes.
+          if (!isBusy()) drainQueue();
         }
       })
       .catch(function () { /* best-effort */ });
@@ -306,6 +319,8 @@
     // notice so the user can still scroll back through the conversation.
     currentAssistantBubble = null;
     messageQueue = [];
+    reattachActive = false;
+    reattachTurnId = null;
     hideTypingIndicator();
     state = "idle";
     updateSendBusy();
@@ -782,14 +797,22 @@
   function switchSession(sessionId) {
     if (sessionId === activeSessionId) return;
 
-    // Dispatch any queued messages before backgrounding this session.
-    // Only the first message is sent now; the remaining queue is saved
-    // as a draft and dispatched when the session regains focus via
-    // restoreDraft().
-    drainQueue();
-
-    // Persist any in-progress draft before switching away.
+    // Persist the outgoing session's queued messages before switching away.
+    // They stay queued (not auto-dispatched into a session we're leaving) and
+    // are restored — and re-attached to any ongoing turn — when we return.
     saveDraft();
+
+    // Abandon the outgoing session's foreground POST stream. Its turn keeps
+    // running server-side; we re-attach to it via /events (chat_turn_resume)
+    // if we come back. Aborting stops its onData from rendering into the
+    // bubbles we're about to clear.
+    if (activePostAbort) {
+      try { activePostAbort.abort(); } catch (_) {}
+      activePostAbort = null;
+      activePostSessionId = null;
+    }
+    reattachActive = false;
+    reattachTurnId = null;
 
     // 1. Persist the new active session_id.
     setActiveSessionId(sessionId);
@@ -834,6 +857,95 @@
     fetchSubsessions();
     refreshSessions();
     updateActiveHighlight();
+  }
+
+  // ---- Live re-attach handlers (foreground turn over /events) ----------
+  // These render an in-flight turn for the *currently viewed* session when
+  // this tab does NOT own its POST (a second tab, or this tab after switching
+  // away and back). The tab that owns the POST renders from the POST body and
+  // ignores these echoes (isOwnPostSession guard).
+
+  function isOwnPostSession(sid) {
+    return activePostSessionId !== null && activePostSessionId === sid;
+  }
+
+  // Only act on frames for the session we're viewing, and only when we're not
+  // the POST owner (which renders the same turn from its response body).
+  function reattachApplies(frame) {
+    return frame.session_id === activeSessionId && !isOwnPostSession(frame.session_id);
+  }
+
+  function handleReattachStart(frame) {
+    if (!reattachApplies(frame)) return;
+    if (reattachActive) return;
+    reattachActive = true;
+    reattachTurnId = frame.turn_id;
+    state = "sending";
+    updateSendBusy();
+    showTypingIndicator();
+  }
+
+  function handleReattachResume(frame) {
+    // A late subscriber's replay of the in-progress turn: render what has been
+    // emitted so far, then follow the live chat_token frames.
+    if (!reattachApplies(frame)) return;
+    reattachActive = true;
+    reattachTurnId = frame.turn_id;
+    currentAssistantBubble = null;
+    rawAssistantText = "";
+    if (typeof frame.content === "string" && frame.content.length > 0) {
+      hideTypingIndicator();
+      state = "streaming";
+      updateSendBusy();
+      appendToken(frame.content);
+    } else {
+      // Turn started but no tokens yet — show the typing indicator.
+      state = "sending";
+      updateSendBusy();
+      showTypingIndicator();
+    }
+  }
+
+  function handleReattachToken(frame) {
+    if (!reattachApplies(frame)) return;
+    if (!reattachActive) return;
+    if (reattachTurnId && frame.turn_id && frame.turn_id !== reattachTurnId) return;
+    if (state === "sending") {
+      hideTypingIndicator();
+      state = "streaming";
+      updateSendBusy();
+    }
+    if (typeof frame.content === "string") appendToken(frame.content);
+  }
+
+  function handleReattachDone(frame) {
+    if (frame.session_id !== activeSessionId) return;
+    if (!reattachActive) return;
+    if (reattachTurnId && frame.turn_id && frame.turn_id !== reattachTurnId) return;
+    hideTypingIndicator();
+    finaliseAssistantBubble();
+    reattachActive = false;
+    reattachTurnId = null;
+    state = "idle";
+    updateSendBusy();
+    if (frame.timestamp) updateLastModelTimestamp(frame.timestamp);
+    refreshSummary();
+    // The re-attached turn finished — now dispatch any messages the user
+    // queued behind it.
+    drainQueue();
+  }
+
+  function handleReattachError(frame) {
+    if (frame.session_id !== activeSessionId) return;
+    if (!reattachActive) return;
+    if (reattachTurnId && frame.turn_id && frame.turn_id !== reattachTurnId) return;
+    hideTypingIndicator();
+    finaliseAssistantBubble();
+    reattachActive = false;
+    reattachTurnId = null;
+    showError(frame.message || "Server error");
+    state = "error";
+    updateSendBusy();
   }
 
   // ---- Event stream lifecycle -----------------------------------------
@@ -1750,6 +1862,9 @@
     if (lastModelTimestampEl) { lastModelTimestampEl.remove(); lastModelTimestampEl = null; }
     // Also clear queued messages — they belong to the old session.
     messageQueue = [];
+    // Drop any in-progress re-attach render — its bubble is being removed.
+    reattachActive = false;
+    reattachTurnId = null;
     // Reset state so the composer is not blocked.
     if (state === "sending" || state === "streaming") {
       state = "idle";
@@ -2095,6 +2210,16 @@
           // Live state transition for an autonomous session — update the
           // corresponding session-list row in-place without a full re-fetch.
           handleAutonomousStateFrame(frame);
+        } else if (frame.type === "chat_turn_started") {
+          handleReattachStart(frame);
+        } else if (frame.type === "chat_turn_resume") {
+          handleReattachResume(frame);
+        } else if (frame.type === "chat_token") {
+          handleReattachToken(frame);
+        } else if (frame.type === "chat_turn_done") {
+          handleReattachDone(frame);
+        } else if (frame.type === "chat_turn_error") {
+          handleReattachError(frame);
         }
         // ignore unknown types gracefully
       },
@@ -2388,6 +2513,18 @@
 
   function doPost(message, encodedImages, messageId) {
     var requestSessionId = activeSessionId;
+    // Track this POST so switchSession can abandon it (its turn keeps running
+    // server-side and is re-attached via /events on return) and so the
+    // /events echo of this same turn is ignored while we own the POST.
+    var abortController = new AbortController();
+    activePostAbort = abortController;
+    activePostSessionId = requestSessionId;
+    function clearPost() {
+      if (activePostAbort === abortController) {
+        activePostAbort = null;
+        activePostSessionId = null;
+      }
+    }
     var streamController = {
       onData: function (raw) {
         // Ignore frames from a request that started on a different session.
@@ -2409,6 +2546,7 @@
             appendToken(content);
           }
         } else if (frame.type === "done") {
+          clearPost();
           hideTypingIndicator();
           finaliseAssistantBubble();
           setConnectionStatus(true);
@@ -2428,6 +2566,7 @@
           // Automatically dispatch the next queued message (FIFO).
           drainQueue();
         } else if (frame.type === "error") {
+          clearPost();
           hideTypingIndicator();
           finaliseAssistantBubble();
           showError(frame.message || "Server error");
@@ -2438,6 +2577,7 @@
         }
       },
       error: function (err) {
+        clearPost();
         hideTypingIndicator();
         finaliseAssistantBubble();
         showError(err.message || "Network error — is the server running?");
@@ -2458,7 +2598,8 @@
     fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(body)
+      body: JSON.stringify(body),
+      signal: abortController.signal
     }).then(function (response) {
       if (!response.ok) {
         // Non-2xx — try to read an error body, else show status.
@@ -2491,6 +2632,9 @@
       var parser = processSSEStream(response.body, streamController);
       parser.start();
     }).catch(function (err) {
+      // Intentional abort on session switch — the turn continues server-side
+      // and is re-attached via /events; not an error to surface.
+      if (err && err.name === "AbortError") { clearPost(); return; }
       streamController.error(err);
     });
   }
