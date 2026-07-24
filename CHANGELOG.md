@@ -35,6 +35,8 @@
   spawned by a periodic subsession could strand its outcome — the tool
   persisted the terminal state but the worker was cancelled before delivering,
   and the HTTP close endpoint saw "already closed" and also skipped delivery.
+- Remove 23 dead re-exports from `robotsix_chat.chat.server` that had zero
+  external consumers importing through the package path.
 - Remove the "New autonomous" button from the UI (button element in index.html,
   handler + function + config-display toggle in chat.js). The single-session
   model makes manual creation unnecessary and dangerous.
