@@ -18,6 +18,14 @@
   (exact topic match > topic contains > content contains).
 - `push_direct_repo_branch` ticket-state verification now uses the same roster-based board connectivity as `component_request`, fixing failures when `board_api_base_url` differs from the roster-provided mill URL. Error messages now include the connectivity path or URL tried for direct diagnosis. `fetch_repo_for_study` URL-encodes branch refs containing slashes (e.g. `mill/20260723T...`), fixing 404 errors on such refs.
 - Fix stale `SYSTEM_PROMPT_VERSION` in `docs/configuration.md` (v38 → v45). Add CI governance test to prevent future drift.
+- Subsessions: guarantee delivery of `complete_subsession` outcomes to the parent
+  conversation even when an external close (HTTP endpoint) races the worker.
+  The `complete_subsession` tool now delivers the summary immediately inside
+  the tool call, with a `delivery_done` flag on `CloseState` preventing the
+  worker from delivering a second time. This closes a race where a user_chat
+  spawned by a periodic subsession could strand its outcome — the tool
+  persisted the terminal state but the worker was cancelled before delivering,
+  and the HTTP close endpoint saw "already closed" and also skipped delivery.
 - Remove the "New autonomous" button from the UI (button element in index.html,
   handler + function + config-display toggle in chat.js). The single-session
   model makes manual creation unnecessary and dangerous.

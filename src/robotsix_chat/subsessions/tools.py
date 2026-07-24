@@ -58,7 +58,11 @@ def build_subsession_tools(
     if ctx.depth < cfg.max_depth:
         tools.extend(_build_spawn_and_control_tools(env, ctx))
     if close_state is not None and ctx.subsession_id is not None:
-        tools.append(_build_complete_tool(close_state, ctx.subsession_id, env.registry))
+        tools.append(
+            _build_complete_tool(
+                close_state, ctx.subsession_id, env.registry, env.delivery
+            )
+        )
         tools.append(_build_set_checkpoint_tool(ctx.subsession_id, env.registry))
     return tools
 
@@ -284,7 +288,10 @@ def _build_spawn_and_control_tools(
 
 
 def _build_complete_tool(
-    close_state: CloseState, sub_id: str, registry: SubsessionRegistry
+    close_state: CloseState,
+    sub_id: str,
+    registry: SubsessionRegistry,
+    delivery: Any,
 ) -> Any:
     """Build the self-close tool bound to *close_state*."""
 
@@ -317,8 +324,17 @@ def _build_complete_tool(
         registry.mark_closed(
             sub_id, summary=summary, reason="completed", closed_by="agent"
         )
+        # Deliver the summary immediately from within the tool so that
+        # even if an external close (HTTP endpoint) cancels the worker
+        # before it can deliver, the parent conversation still receives
+        # the outcome.  The worker skips its own delivery when this flag
+        # is set, avoiding a duplicate reaction turn.
         close_state.requested = True
         close_state.summary = summary
+        close_state.delivery_done = True
+        # Fire-and-forget: errors are logged inside deliver_summary,
+        # never surfaced to the agent.
+        await delivery.deliver_summary(info, summary, "completed")
         return (
             "Close requested — this subsession will end after the current "
             "reply and the summary will be delivered."
