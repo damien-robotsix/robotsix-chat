@@ -606,7 +606,6 @@ class Settings(BaseModel):
             "the system prompt and the user's explicit instructions. If you "
             "detect a contradiction, retire the offending note with "
             "update_knowledge_note and record the corrected fact instead.\n"
-            "– When the user directly challenges a claim about external state, "
             "re-verify against the live system immediately. Never double down on "
             "a memory-based assertion when the user reports contradictory "
             "observable evidence (e.g. an empty repo where you claimed files "
