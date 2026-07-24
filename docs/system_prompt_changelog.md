@@ -20,7 +20,7 @@ seen every intermediate notification and the summary widget is visible. This red
 cognitive load. The new rule teaches the assistant to treat terminal-state delivery as a one-line
 confirmation, not a recap opportunity.
 
-**SHA256:** `208bb7936d823c5560000191e0a1c38b2c55030efe15bffa1d79831138eac068`
+**SHA256:** `b0eb495d432cbaabd2873e705ba240edf19f8b6f692cf87c3c169c6784e95fa9`
 
 ## v46 — 2026-07-22 — add-guidance-to-system-prompt-for-handli-8e03
 
