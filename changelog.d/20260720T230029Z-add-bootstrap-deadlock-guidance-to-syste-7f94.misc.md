@@ -1,0 +1,1 @@
+Add bootstrap deadlock guidance to system prompt (v38)

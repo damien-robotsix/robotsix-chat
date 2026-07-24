@@ -74,6 +74,8 @@ modules:
       - LICENSE
       - Makefile
       - memory-ledger.json
+      - package.json
+      - package-lock.json
       - README.md
       - SECURITY.md
       - docker-compose.yml

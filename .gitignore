@@ -75,3 +75,6 @@ shellcheck
 
 # Core dumps — binary artifacts, can contain sensitive memory
 core
+
+# Node.js artifacts (accidentally created by pre-commit hook environments)
+node_modules/

@@ -198,6 +198,23 @@ broader check prevents symptom-vs.-cause duplicate filing.
 
 ______________________________________________________________________
 
+## v39 — 2026-07-20 — add-bootstrap-deadlock-guidance-to-system-prompt-7f94
+
+**Summary:** Add a "Bootstrap deadlock" bullet to the Merge/PR management section of the agent
+system prompt. When a PR modifies the merge pipeline itself (robotsix-mill CI, gate logic, or merge
+endpoints), auto-merge through the mill may be self-referential — the gate being changed can block
+its own merge. The agent should escalate to the operator via a user_chat subsession for a manual
+merge rather than looping on merge-now.
+
+**Rationale:** PR #2475 was blocked for 14 iterations because the gate it aimed to change prevented
+its own merge, and the agent looped on merge-now without understanding the self-referential
+deadlock. This guidance was originally drafted in PR #688 (ticket 45b9) and is extracted here as a
+clean standalone addition.
+
+**SHA256:** `346af495da125fc27d3225d7f6a5d9699ff6aba8206c987782a203b3d5dd6ed1`
+
+______________________________________________________________________
+
 ## v39 — 2026-07-20 — add-deploy-server-restart-capability-for-144c
 
 **Summary:** Add `self_restart` to the Deploy API quick-reference bullet list and update the Reload
