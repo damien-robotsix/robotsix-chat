@@ -13,6 +13,11 @@ from starlette.responses import StreamingResponse
 from robotsix_chat.chat.events import (
     SSE_ACTIVITY_TYPE,
     SSE_AGENT_MESSAGE_TYPE,
+    SSE_CHAT_TOKEN_TYPE,
+    SSE_CHAT_TURN_DONE_TYPE,
+    SSE_CHAT_TURN_ERROR_TYPE,
+    SSE_CHAT_TURN_RESUME_TYPE,
+    SSE_CHAT_TURN_STARTED_TYPE,
     SSE_SUBSESSION_CLOSED_TYPE,
     SSE_SUBSESSION_FAILED_TYPE,
     SSE_SUBSESSION_MESSAGE_TYPE,
@@ -308,7 +313,7 @@ def test_begin_turn_announces_and_buffers() -> None:
     bus.begin_turn("s1", "turn-1")
 
     assert q.get_nowait() == {
-        "type": "chat_turn_started",
+        "type": SSE_CHAT_TURN_STARTED_TYPE,
         "session_id": "s1",
         "turn_id": "turn-1",
     }
@@ -324,7 +329,9 @@ def test_append_turn_token_publishes_and_accumulates() -> None:
     bus.append_turn_token("s1", "turn-1", "Hel")
     bus.append_turn_token("s1", "turn-1", "lo")
 
-    assert q.get_nowait()["content"] == "Hel"
+    first = q.get_nowait()
+    assert first["type"] == SSE_CHAT_TOKEN_TYPE
+    assert first["content"] == "Hel"
     assert q.get_nowait()["content"] == "lo"
 
 
@@ -342,7 +349,7 @@ def test_subscribe_mid_turn_replays_accumulated_content() -> None:
     late = bus.subscribe("s1")
     # First frame is the replay of everything so far.
     assert late.get_nowait() == {
-        "type": "chat_turn_resume",
+        "type": SSE_CHAT_TURN_RESUME_TYPE,
         "session_id": "s1",
         "turn_id": "turn-1",
         "content": "Hello",
@@ -366,7 +373,7 @@ def test_end_turn_clears_buffer_and_no_replay_after() -> None:
     bus.end_turn("s1", "turn-1", timestamp=1234.5)
 
     assert q.get_nowait() == {
-        "type": "chat_turn_done",
+        "type": SSE_CHAT_TURN_DONE_TYPE,
         "session_id": "s1",
         "turn_id": "turn-1",
         "timestamp": 1234.5,
@@ -385,7 +392,7 @@ def test_end_turn_with_error_publishes_error_frame() -> None:
     bus.end_turn("s1", "turn-1", error="boom")
 
     assert q.get_nowait() == {
-        "type": "chat_turn_error",
+        "type": SSE_CHAT_TURN_ERROR_TYPE,
         "session_id": "s1",
         "turn_id": "turn-1",
         "message": "boom",

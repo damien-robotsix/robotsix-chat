@@ -2352,6 +2352,12 @@ async def test_chat_turn_mirrored_to_event_bus() -> None:
     It publishes chat_turn_started / chat_token / chat_turn_done so other
     views can re-attach to the live turn.
     """
+    from robotsix_chat.chat.events import (
+        SSE_CHAT_TOKEN_TYPE,
+        SSE_CHAT_TURN_DONE_TYPE,
+        SSE_CHAT_TURN_STARTED_TYPE,
+    )
+
     async with mock_app(tokens=["Hel", "lo"], message_coalesce_seconds=0.0) as f:
         session_id = "s-mirror"
         # Subscribe before sending so the whole turn is captured.
@@ -2369,14 +2375,14 @@ async def test_chat_turn_mirrored_to_event_bus() -> None:
         for _ in range(100):
             while not q.empty():
                 frames.append(q.get_nowait())
-            if frames and frames[-1]["type"] == "chat_turn_done":
+            if frames and frames[-1]["type"] == SSE_CHAT_TURN_DONE_TYPE:
                 break
             await asyncio.sleep(0.01)
 
         types = [fr["type"] for fr in frames]
-        assert types[0] == "chat_turn_started"
-        assert "chat_token" in types
-        assert types[-1] == "chat_turn_done"
+        assert types[0] == SSE_CHAT_TURN_STARTED_TYPE
+        assert SSE_CHAT_TOKEN_TYPE in types
+        assert types[-1] == SSE_CHAT_TURN_DONE_TYPE
 
         # A single turn_id threads the whole turn.
         turn_ids = {fr["turn_id"] for fr in frames}
@@ -2384,7 +2390,7 @@ async def test_chat_turn_mirrored_to_event_bus() -> None:
 
         # The streamed tokens reconstruct the reply.
         content = "".join(
-            str(fr["content"]) for fr in frames if fr["type"] == "chat_token"
+            str(fr["content"]) for fr in frames if fr["type"] == SSE_CHAT_TOKEN_TYPE
         )
         assert content == "Hello"
 
