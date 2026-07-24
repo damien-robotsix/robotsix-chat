@@ -2577,6 +2577,11 @@
         }
       },
       error: function (err) {
+        // A session switch aborts this POST on purpose (the turn keeps
+        // running server-side and re-attaches via /events). The abort
+        // surfaces here through the SSE parser's read loop — it is benign,
+        // so clean up quietly without flashing "operation was aborted".
+        if (err && err.name === "AbortError") { clearPost(); return; }
         clearPost();
         hideTypingIndicator();
         finaliseAssistantBubble();
