@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import asyncio
+import time
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -1105,3 +1107,149 @@ class TestCloseAndRespawnExceptionLogging:
         assert mock_logger.exception.called
         call_args = mock_logger.exception.call_args[0]
         assert "Error in _close_and_respawn" in call_args[0]
+
+
+class TestAutoContinueThrottleAndSubsessionGate:
+    """Throttle interval, subsession gate blocking, timeout fallback, and
+    backward-compat no-registry path."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+
+    # -- helpers ----------------------------------------------------------
+
+    @staticmethod
+    def _make_subsession_info(is_active: bool = True) -> MagicMock:
+        """Return a mock SubsessionInfo with controllable is_active."""
+        info = MagicMock()
+        info.is_active = is_active
+        return info
+
+    @staticmethod
+    def _make_registry(
+        *subsessions: MagicMock,
+    ) -> MagicMock:
+        """Return a mock SubsessionRegistry whose list_for_owner returns *subsessions."""
+        reg = MagicMock()
+        reg.list_for_owner.return_value = list(subsessions)
+        return reg
+
+    # -- tests ------------------------------------------------------------
+
+    @pytest.mark.asyncio
+    async def test_throttle_waits_interval(self) -> None:
+        """``_wait_before_continue`` sleeps at least ``continue_interval_seconds``."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.continue_interval_seconds = 0.05
+        settings.autonomous.pending_subsession_wait_timeout = 600.0
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+            subsession_registry=self._make_registry(),
+        )
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+
+        start = time.monotonic()
+        await runner._wait_before_continue(aq.session_id)
+        elapsed = time.monotonic() - start
+
+        # Should have waited at least the interval (with a small tolerance
+        # for test environment scheduling jitter).
+        assert elapsed >= 0.04
+
+    @pytest.mark.asyncio
+    async def test_subsession_gate_blocks_while_active(self) -> None:
+        """``_wait_before_continue`` keeps waiting while active subsessions exist."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.continue_interval_seconds = 0.01
+        settings.autonomous.pending_subsession_wait_timeout = 0.5
+
+        # Active subsession that becomes inactive after a few polls.
+        active_info = self._make_subsession_info(is_active=True)
+        registry = self._make_registry(active_info)
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+            subsession_registry=registry,
+        )
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+
+        async def _resolve_after_delay() -> None:
+            await asyncio.sleep(0.1)
+            active_info.is_active = False
+
+        async def _run() -> float:
+            start = time.monotonic()
+            await runner._wait_before_continue(aq.session_id)
+            return time.monotonic() - start
+
+        elapsed = await asyncio.gather(_run(), _resolve_after_delay())
+        elapsed = elapsed[0]
+
+        # Should have waited longer than the interval because the gate
+        # kept polling while the subsession was active.
+        assert elapsed >= 0.1
+        # Registry was consulted at least once.
+        assert registry.list_for_owner.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_subsession_gate_timeout_fallback(self) -> None:
+        """``_wait_before_continue`` eventually returns when subsession stays active."""
+        store = ConversationStore()
+        timeout = 0.2
+        settings = MagicMock()
+        settings.autonomous.continue_interval_seconds = 0.01
+        settings.autonomous.pending_subsession_wait_timeout = timeout
+
+        # Subsession stays active forever — gate must time out.
+        registry = self._make_registry(self._make_subsession_info(is_active=True))
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+            subsession_registry=registry,
+        )
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+
+        start = time.monotonic()
+        await runner._wait_before_continue(aq.session_id)
+        elapsed = time.monotonic() - start
+
+        # Must return without raising, after approximately the timeout.
+        assert elapsed >= timeout
+        # Must not hugely exceed the timeout (50% tolerance for CI jitter).
+        assert elapsed < timeout * 1.5
+
+    @pytest.mark.asyncio
+    async def test_no_registry_backward_compat(self) -> None:
+        """``_wait_before_continue`` works when subsession_registry is None."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.continue_interval_seconds = 0.01
+        settings.autonomous.pending_subsession_wait_timeout = 600.0
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+            subsession_registry=None,
+        )
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+
+        # Must not raise despite having no registry.
+        await runner._wait_before_continue(aq.session_id)
