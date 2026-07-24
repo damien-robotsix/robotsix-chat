@@ -45,8 +45,24 @@ def mock_agent() -> LlmioChatAgent:
 
 
 @pytest.fixture
-def autonomous_runner(store, tmp_path) -> AutonomousRunner:
-    """Runner wired to the mock store with default markers."""
+def autonomous_runner(store, tmp_path, monkeypatch) -> AutonomousRunner:
+    """Runner wired to the mock store with default markers.
+
+    Persistence and background-task methods are mocked at the class
+    level *before* construction so that :meth:`AutonomousRunner.__init__`
+    never calls the real ``_load_sessions`` (which reads from disk).
+    Instance-level mocking after construction (as done previously) still
+    lets the constructor touch the filesystem and leaves a window for
+    cross-test leakage under CI parallelism / filesystem contention.
+    """
+    # Prevent background tasks (from approve/reject) from leaking across
+    # xdist workers or between tests sharing an event loop.
+    monkeypatch.setattr(AutonomousRunner, "_schedule_background", MagicMock())
+    # Eliminate filesystem I/O: _save_sessions writes to disk on every
+    # state mutation, which can collide across xdist workers even under
+    # per-test tmp_path when the CI filesystem is overloaded.
+    monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+    monkeypatch.setattr(AutonomousRunner, "_load_sessions", MagicMock(return_value={}))
     settings = MagicMock()
     settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
     settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
@@ -60,14 +76,6 @@ def autonomous_runner(store, tmp_path) -> AutonomousRunner:
         agent_factory=MagicMock(),
         run_serializer=RunSerializer(),
     )
-    # Prevent background tasks (from approve/reject) from leaking across
-    # xdist workers or between tests sharing an event loop.
-    runner._schedule_background = MagicMock()  # type: ignore[assignment]
-    # Eliminate filesystem I/O: _save_sessions writes to disk on every
-    # state mutation, which can collide across xdist workers even under
-    # per-test tmp_path when the CI filesystem is overloaded.
-    runner._save_sessions = MagicMock()  # type: ignore[assignment]
-    runner._load_sessions = MagicMock(return_value={})  # type: ignore[assignment]
     return runner
 
 
