@@ -575,7 +575,7 @@
     },
     "MemoryLlmSettings": {
       "additionalProperties": false,
-      "description": "Extraction-LLM config for cognee memory (OpenRouter via litellm).\n\nDefaults match the validated robotsix setup: Claude Haiku through\nOpenRouter's ``custom`` provider. ``api_key`` is required when memory\nis enabled (provide it via ``MEMORY_LLM_API_KEY``).",
+      "description": "Extraction-LLM config for cognee memory (OpenRouter via litellm).\n\nDefaults match the validated robotsix setup: ``gpt-5-mini`` (cognee's\nown default model, reliable json_mode structured output) through\nOpenRouter's ``custom`` provider. ``api_key`` is required when memory\nis enabled (provide it via ``MEMORY_LLM_API_KEY``).\n\nThe default is deliberately a **cheap** model: cognee runs an\nextraction/consolidation LLM call per message, so an expensive default\nsilently burns credits whenever the config is reset or clobbered. Do\nnot default this to a frontier/expensive model.",
       "properties": {
         "provider": {
           "default": "custom",
@@ -583,7 +583,7 @@
           "type": "string"
         },
         "model": {
-          "default": "openrouter/anthropic/claude-haiku-4.5",
+          "default": "openrouter/openai/gpt-5-mini",
           "title": "Model",
           "type": "string"
         },
