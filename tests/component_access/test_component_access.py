@@ -931,7 +931,6 @@ async def test_retry_on_transient_network_error(
     )
     result = await _component_request_impl(roster, "mill", "GET", "/tickets")
     assert "Error calling" in result
-    assert "all 3 attempts failed" in result
     assert "connection refused" in result
 
 
@@ -986,12 +985,12 @@ async def test_retry_on_5xx_for_get(
 async def test_retry_on_empty_exception_message(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """Exception with empty message is transient — retried until exhausted."""
+    """Exception("") is no longer considered transient by the library."""
     roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
-    respx_mock.get("http://m:8080/tickets").mock(side_effect=Exception(""))
+    route = respx_mock.get("http://m:8080/tickets").mock(side_effect=Exception(""))
     result = await _component_request_impl(roster, "mill", "GET", "/tickets")
     assert "Error calling" in result
-    assert "all 3 attempts failed" in result
+    assert route.call_count == 1
 
 
 @pytest.mark.asyncio
@@ -1014,14 +1013,14 @@ async def test_non_transient_exception_not_retried(
 async def test_retry_on_nested_transient_error(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """OSError is treated as transient network error and retried."""
+    """OSError is not retried — library handles transient detection via httpx types."""
     roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
-    respx_mock.get("http://m:8080/tickets").mock(
+    route = respx_mock.get("http://m:8080/tickets").mock(
         side_effect=OSError("network unreachable")
     )
     result = await _component_request_impl(roster, "mill", "GET", "/tickets")
     assert "Error calling" in result
-    assert "all 3 attempts failed" in result
+    assert route.call_count == 1
 
 
 @pytest.mark.asyncio

@@ -24,6 +24,7 @@ dependencies = [
     #     enough to import the config factory; the actual backend deps come
     #     from the per-transport extras below.
     "robotsix-config",
+    "robotsix-http",
     "robotsix-llmio",
     "robotsix-github-auth",
 ]
@@ -109,6 +110,7 @@ robotsix-config = { git = "https://github.com/damien-robotsix/robotsix-config.gi
 robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git", rev = "aada2ed0032d28b97349bc31e61128fe2b2b3691" }  # pragma: allowlist secret
 # robotsix-modules: same SHA as robotsix-mill (coherent-set rule).
 robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "d7c5e59980516de6e050db02ff54aef4e15ff5c3" }  # pragma: allowlist secret
+robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "8c583936720342c4ac9bd10230656d807986c114" }  # pragma: allowlist secret
 robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git", rev = "e6214c41fd743120aa987bacb4e9b2bc88e73943" }  # pragma: allowlist secret
 
 [tool.towncrier]
