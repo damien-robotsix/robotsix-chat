@@ -172,10 +172,14 @@ class TestRejectEndpoint:
     ):
         """Mismatched owner_id returns 403."""
         sid = store.create_session(owner_id)["session_id"]
-        aq = autonomous_runner.create_session(owner_id, session_id=sid)
+        aq = autonomous_runner.create_session(
+            owner_id, session_id=sid, schedule_kickoff=False
+        )
         aq.state = AutonomousState.awaiting_approval
         r = await client.post(f"/sessions/{sid}/reject?owner_id={other_owner_id}")
         assert r.status_code == 403
+        data = r.json()
+        assert "owner_id mismatch" in data["error"]
 
     @pytest.mark.asyncio
     async def test_reject_unknown_session_returns_404(self, client, owner_id):
