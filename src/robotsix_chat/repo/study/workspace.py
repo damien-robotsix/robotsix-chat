@@ -411,6 +411,24 @@ class WorkspaceManager:
             )
         return result
 
+    def delete_artifact(self, workspace_id: str, path: str) -> str:
+        """Delete a single file or directory inside a workspace.
+
+        Raises:
+            WorkspaceError: when the workspace does not exist, the path
+                escapes the workspace, or the target does not exist.
+
+        """
+        root = self._resolve_root(workspace_id)
+        target = self._resolve_file(root, path)
+        if not target.exists():
+            raise WorkspaceError(f"No artifact {path!r} in workspace '{workspace_id}'.")
+        if target.is_dir():
+            shutil.rmtree(target)
+        else:
+            target.unlink()
+        return f"Deleted {path!r} from workspace '{workspace_id}'."
+
     def drop(self, workspace_id: str) -> str:
         """Delete a workspace immediately."""
         root = self._resolve_root(workspace_id)

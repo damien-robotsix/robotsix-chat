@@ -16,6 +16,9 @@
   failure summary so operators can diagnose tool failures without log-diving.
 - Replace hand-rolled retry loops with robotsix-http
 - Config-ownership standard: `GET /config` now includes `version` and `schema` fields; `PUT /config` returns the new version and increments a monotonic counter; secrets masked as `"**********"` (was `"***"`); blank string on secret fields now also triggers preservation (was only the sentinel); validation errors now use RFC 9457 `application/problem+json`. New `GET /config/versions` and `POST /config/rollback` endpoints for append-only version history and rollback. Chat UI Settings panel updated to handle the new response shapes.
+- Repo-study: add ``delete_workspace_artifact`` tool so the assistant can
+  remove individual files and directories from a fetched workspace without
+  dropping the entire workspace.
 - Config validation now reports **all** precondition failures at once (instead of stopping at the first error), with per-precondition detail in the ``failures`` list of the 422 response. Server-side logging includes the full failure list.
 - Added blocked-resume threshold detection: when a ticket monitor finds the
   ticket BLOCKED on every resume for `_MAX_BLOCKED_RESUMES` (3) consecutive
