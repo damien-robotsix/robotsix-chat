@@ -21,7 +21,7 @@ wasting system resources. These two rules close the gap: the first prevents the 
 from offloading its own work to a child, and the second prevents a parent agent from bypassing an
 existing periodic monitor by spawning a one-shot task.
 
-**SHA256:** `d6c9eadbcd4d732dcf25bb7665a39e51c305bb1863e6622fae9e5ff43a348fbf`
+**SHA256:** `237cb86b37b138470a13383ac3859ebcb7c4c2db315463045e5a0fbee27361a3`
 
 ## v46 — 2026-07-22 — improve-terminal-state-notification-conc-70aa
 
