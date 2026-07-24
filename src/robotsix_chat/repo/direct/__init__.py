@@ -93,7 +93,7 @@ def build_direct_repo_tools(
             return None, (
                 f"Error: could not determine state for ticket {ticket_id} "
                 f"via component_request (roster-based board connectivity): "
-                f"unparseable status {status_line!r}"
+                f"unparsable status {status_line!r}"
             )
         if status_code >= 400:
             return None, (
