@@ -20,7 +20,7 @@ to an existing branch). The assistant responded by repeatedly asking the user to
 the repo rather than proposing a tool-based workaround. The new rule enforces that repo creation
 must always include seeding an initial commit to prevent this class of bootstrap deadlock.
 
-**SHA256:** `493610cf12e8deed31276c50ead948fdebb7893142ddbbabeb274107b04b3871`
+**SHA256:** `fba320e778a0a6a8d9399334b6f10dc5a8c07901822ca36d1f0cd097fb8b9cdb`
 
 ## v46 — 2026-07-22 — add-cross-session-persistent-knowledge-r-b5bb
 
