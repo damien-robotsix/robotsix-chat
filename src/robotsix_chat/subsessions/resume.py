@@ -20,7 +20,8 @@ from .models import (
     TranscriptEntry,
 )
 from .registry import SubsessionRegistry
-from .worker import _TICKET_STATE_TERMINAL, spawn_subsession
+from .worker import spawn_subsession
+from .worker_mill import _TICKET_STATE_TERMINAL
 
 if TYPE_CHECKING:
     from .worker import SubsessionEnv

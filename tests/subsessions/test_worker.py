@@ -28,11 +28,13 @@ from robotsix_chat.subsessions.worker import (
     CloseState,
     SubsessionContext,
     SubsessionEnv,
+    _is_duplicate_reply,
+    _is_no_change,
+)
+from robotsix_chat.subsessions.worker_mill import (
     _check_resume_status,
     _get_mill_started_at,
     _handle_mill_unreachable,
-    _is_duplicate_reply,
-    _is_no_change,
     _reset_mill_failure_counter,
 )
 from tests.common.subsession_fakes import (

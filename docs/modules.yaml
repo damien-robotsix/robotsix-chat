@@ -267,6 +267,7 @@ modules:
       - src/robotsix_chat/subsessions/registry.py
       - src/robotsix_chat/subsessions/delivery.py
       - src/robotsix_chat/subsessions/worker.py
+      - src/robotsix_chat/subsessions/worker_mill.py
       - src/robotsix_chat/subsessions/resume.py
       - src/robotsix_chat/subsessions/tools.py
       - tests/subsessions/__init__.py
