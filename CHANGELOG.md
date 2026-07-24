@@ -8,6 +8,7 @@
   prior diagnostic notes, deployment statuses, and other key facts by content substring
   match, without needing to recall exact note IDs. Results are ranked by relevance
   (exact topic match > topic contains > content contains).
+- Add pytest-benchmark microbenchmarks for the chat server's critical request paths (SSE streaming, /health, / UI), gated behind `--benchmark-only` and run on push to main only.
 - Remove the "New autonomous" button from the UI (button element in index.html,
   handler + function + config-display toggle in chat.js). The single-session
   model makes manual creation unnecessary and dangerous.

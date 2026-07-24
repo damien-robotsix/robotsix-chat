@@ -1,3 +1,6 @@
+# Benchmark history (pytest-benchmark --benchmark-autosave)
+.benchmarks/
+
 # Byte-compiled / optimized files
 __pycache__/
 *.pyc
