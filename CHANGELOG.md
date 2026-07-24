@@ -8,6 +8,12 @@
   directly on every cycle.
 - Changed `GHSA-9xwg-3r6f-jcx2` (pymdown-extensions) advisory suppression from `--ignore` to `--ignore-until-fixed` in both the pre-commit uv-audit hook and CI lockfile job.
 - Periodic monitors now include guidance to recognize decision-blocked tickets (human_issue_approval, awaiting operator choice) and recommend pausing rather than silently emitting NO_CHANGE until the auto-stop timeout.
+- Subsessions that fail due to the Claude Agent SDK's degenerate-success frame
+  (`is_error=True` / `subtype="success"` — a self-contradictory result that can
+  persist across retries) now report a clear human-readable explanation instead of
+  the raw "Claude Code returned an error result: success" text.  ProcessError
+  (non-zero CLI exit) failures now include the exit code and stderr in the
+  failure summary so operators can diagnose tool failures without log-diving.
 - Replace hand-rolled retry loops with robotsix-http
 - Config-ownership standard: `GET /config` now includes `version` and `schema` fields; `PUT /config` returns the new version and increments a monotonic counter; secrets masked as `"**********"` (was `"***"`); blank string on secret fields now also triggers preservation (was only the sentinel); validation errors now use RFC 9457 `application/problem+json`. New `GET /config/versions` and `POST /config/rollback` endpoints for append-only version history and rollback. Chat UI Settings panel updated to handle the new response shapes.
 - Config validation now reports **all** precondition failures at once (instead of stopping at the first error), with per-precondition detail in the ``failures`` list of the 422 response. Server-side logging includes the full failure list.

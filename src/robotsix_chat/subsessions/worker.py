@@ -57,6 +57,68 @@ logger = logging.getLogger(__name__)
 # without bound.
 _MAX_WORKER_HISTORY_TURNS = 20
 
+# The Claude Agent SDK's wording when it collapses a self-contradictory
+# ``is_error=True`` / ``errors=[]`` / ``subtype="success"`` frame into a
+# bare message — a known transient bug, not a real tool failure.
+_DEGENERATE_SUCCESS_SIGNATURE = "returned an error result: success"
+
+# The Claude CLI's wording when a tier's usage credits are exhausted.
+_USAGE_EXHAUSTED_SIGNATURE = "out of usage credits"
+
+
+def _format_worker_error(exc: BaseException) -> str:
+    """Translate known Claude SDK error patterns into clear human-readable messages.
+
+    When *exc* is a :class:`claude_agent_sdk.ProcessError` (the CLI
+    subprocess exited non-zero), the message includes the exit code and
+    stderr output so the operator can diagnose the tool failure without
+    digging through logs.
+    """
+    msg = str(exc)
+
+    # Degenerate success frame — a known transient Claude SDK bug that
+    # can persist across retries.  Not a real tool failure.
+    if _DEGENERATE_SUCCESS_SIGNATURE in msg.lower():
+        return (
+            "The Claude agent encountered a transient internal SDK error "
+            "(degenerate success frame — the SDK reported an error result "
+            "whose subtype is 'success', a self-contradictory frame that "
+            "could not be cleared by retry). This is a known Claude SDK "
+            "bug and does not indicate a real tool failure. "
+            f"Original SDK message: {msg}"
+        )
+
+    # Usage-exhaustion — the tier has no credits left.
+    if _USAGE_EXHAUSTED_SIGNATURE in msg.lower():
+        return (
+            "The Claude agent's usage credits for this tier are exhausted. "
+            "Switch to a different model level, or wait for credits to "
+            "reset. " + msg
+        )
+
+    # ProcessError from claude_agent_sdk carries exit_code and stderr —
+    # surface those so the operator can diagnose without log-diving.
+    exit_code = getattr(exc, "exit_code", None)
+    if exit_code is not None:
+        stderr = getattr(exc, "stderr", None)
+        parts = [f"Claude CLI process exited with code {exit_code}"]
+        if stderr:
+            stderr_text = str(stderr).strip()
+            if stderr_text:
+                parts.append(f"stderr: {_truncate(stderr_text, 500)}")
+        parts.append(msg)
+        return "\n".join(parts)
+
+    return msg
+
+
+def _truncate(text: str, max_len: int) -> str:
+    """Truncate *text* to *max_len* chars, appending ``"..."`` when cut."""
+    if len(text) <= max_len:
+        return text
+    return text[:max_len] + "..."
+
+
 # Reply sentinel a periodic subsession uses to report "nothing changed".
 _NO_CHANGE_SENTINEL = "NO_CHANGE"
 
@@ -843,10 +905,11 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
         raise
     except Exception as exc:
         logger.exception("Subsession %s worker failed", sub_id)
-        failed = registry.fail(sub_id, error=str(exc))
+        error_msg = _format_worker_error(exc)
+        failed = registry.fail(sub_id, error=error_msg)
         if failed is not None:
             await env.delivery.deliver_summary(
-                failed, failed.summary or f"Failed: {exc}", "failed"
+                failed, failed.summary or f"Failed: {error_msg}", "failed"
             )
 
 
