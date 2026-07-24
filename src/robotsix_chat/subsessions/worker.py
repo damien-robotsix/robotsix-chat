@@ -237,12 +237,17 @@ def spawn_subsession(
             f"maximum subsession nesting depth is {cfg.max_depth}"
         )
     _validate_model_level(env.settings, model_level)
-    if kind is SubsessionKind.PERIODIC and parent_id is not None:
+    if parent_id is not None:
         parent = env.registry.get(parent_id)
         if parent is not None and parent.kind is SubsessionKind.PERIODIC:
-            raise SubsessionPeriodicSpawnError(
-                "periodic subsessions cannot spawn periodic children"
-            )
+            if kind is SubsessionKind.PERIODIC:
+                raise SubsessionPeriodicSpawnError(
+                    "periodic subsessions cannot spawn periodic children"
+                )
+            if kind is SubsessionKind.TASK:
+                raise SubsessionPeriodicSpawnError(
+                    "periodic subsessions cannot spawn task children"
+                )
     if kind is SubsessionKind.USER_CHAT and parent_id is not None:
         parent = env.registry.get(parent_id)
         if parent is not None and parent.kind is SubsessionKind.USER_CHAT:

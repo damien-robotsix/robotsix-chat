@@ -208,6 +208,25 @@ async def test_spawn_tool_periodic_parent_periodic_child_refusal() -> None:
 
 
 @pytest.mark.asyncio
+async def test_spawn_tool_periodic_parent_task_child_refusal() -> None:
+    """A periodic subsession spawning a task child is refused politely."""
+    env = build_env()
+    parent = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=10.0)
+    tools = build_subsession_tools(env, ctx=_ctx(subsession_id=parent.id, depth=1))
+    spawn = _by_name(tools, "spawn_subsession")
+
+    result = await spawn(
+        "task",
+        "child task",
+        "check ticket",
+        model_level=3,
+    )
+
+    assert result.startswith("Could not start the subsession:")
+    assert "periodic" in result
+
+
+@pytest.mark.asyncio
 async def test_spawn_tool_user_chat_parent_user_chat_child_refusal() -> None:
     """A user_chat subsession spawning a user_chat child is refused politely."""
     env = build_env()
