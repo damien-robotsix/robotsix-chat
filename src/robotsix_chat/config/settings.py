@@ -41,6 +41,21 @@ from robotsix_chat.config.models import (
 
 logger = logging.getLogger(__name__)
 
+
+class ConfigValidationError(ValueError):
+    """Raised when one or more config preconditions fail.
+
+    Carries a ``failures`` list so callers can report per-precondition
+    details (which check failed, what value was seen) rather than a
+    single opaque string.
+    """
+
+    def __init__(self, failures: list[str]) -> None:
+        """Store *failures* and set a combined message."""
+        self.failures: list[str] = failures
+        super().__init__("; ".join(failures))
+
+
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
@@ -591,15 +606,23 @@ class Settings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     @staticmethod
-    def _require_min(value: float | int, min_val: float | int, name: str) -> None:
-        """Raise :class:`ValueError` if *value* < *min_val*."""
+    def _require_min(value: float | int, min_val: float | int, name: str) -> str | None:
+        """Return an error string if *value* < *min_val*, or ``None``."""
         if value < min_val:
-            raise ValueError(f"{name} must be >= {min_val}, got {value!r}")
+            return f"{name} must be >= {min_val}, got {value!r}"
+        return None
 
     def model_post_init(self, __context: Any) -> None:
-        """Validate fields that cannot be expressed via simple type annotations."""
+        """Validate fields that cannot be expressed via simple type annotations.
+
+        All preconditions are checked so that every failure is reported
+        at once — callers get a full list of what failed rather than
+        stopping at the first error.
+        """
+        failures: list[str] = []
+
         if self.llmio_model_level not in VALID_MODEL_LEVELS:
-            raise ValueError(
+            failures.append(
                 f"llmio.model_level must be one of {sorted(VALID_MODEL_LEVELS)}, "
                 f"got {self.llmio_model_level!r}"
             )
@@ -609,14 +632,14 @@ class Settings(BaseModel):
             level_needs_api_key(self.llmio_model_level)
             and not self.llmio_api_key.get_secret_value()
         ):
-            raise ValueError(
+            failures.append(
                 f"llmio.api_key must be set for model_level "
                 f"{self.llmio_model_level} (its provider needs a key) — provide "
                 "it via the `llmio.api_key` field of your config file "
                 "(or use model_level 3, which is keyless)"
             )
         if self.summary_model_level not in VALID_MODEL_LEVELS:
-            raise ValueError(
+            failures.append(
                 f"summary_model_level must be one of {sorted(VALID_MODEL_LEVELS)}, "
                 f"got {self.summary_model_level!r}"
             )
@@ -626,72 +649,93 @@ class Settings(BaseModel):
         # that has not configured an OpenRouter key.
         if self.memory.enabled:
             if not self.memory.llm.api_key.get_secret_value():
-                raise ValueError(
+                failures.append(
                     "memory.llm.api_key must be set when memory is enabled — "
                     "provide it via the `memory.llm.api_key` "
                     "field of your config file"
                 )
             if not self.memory.embedding.endpoint:
-                raise ValueError(
+                failures.append(
                     "memory.embedding.endpoint must be set when memory is enabled "
                     "(e.g. http://host:11434/v1) — provide it via "
                     "the config file"
                 )
-        self._require_min(self.idle_timeout_minutes, 0, "idle_timeout_minutes")
-        self._require_min(self.compaction_min_turns, 0, "compaction_min_turns")
-        self._require_min(
+        err = self._require_min(self.idle_timeout_minutes, 0, "idle_timeout_minutes")
+        if err:
+            failures.append(err)
+        err = self._require_min(self.compaction_min_turns, 0, "compaction_min_turns")
+        if err:
+            failures.append(err)
+        err = self._require_min(
             self.subsessions.max_concurrent, 1, "subsessions.max_concurrent"
         )
-        self._require_min(self.subsessions.max_depth, 1, "subsessions.max_depth")
+        if err:
+            failures.append(err)
+        err = self._require_min(self.subsessions.max_depth, 1, "subsessions.max_depth")
+        if err:
+            failures.append(err)
         if self.subsessions.default_model_level not in VALID_MODEL_LEVELS:
-            raise ValueError(
+            failures.append(
                 f"subsessions.default_model_level must be one of "
                 f"{sorted(VALID_MODEL_LEVELS)}, "
                 f"got {self.subsessions.default_model_level!r}"
             )
-        self._require_min(
+        err = self._require_min(
             self.subsessions.min_interval_seconds,
             1.0,
             "subsessions.min_interval_seconds",
         )
-        self._require_min(
+        if err:
+            failures.append(err)
+        err = self._require_min(
             self.subsessions.auto_stop_no_change_runs,
             1,
             "subsessions.auto_stop_no_change_runs",
         )
-        self._require_min(
+        if err:
+            failures.append(err)
+        err = self._require_min(
             self.subsessions.mill_recovery_initial_backoff_seconds,
             1.0,
             "subsessions.mill_recovery_initial_backoff_seconds",
         )
-        self._require_min(
+        if err:
+            failures.append(err)
+        err = self._require_min(
             self.subsessions.mill_recovery_max_backoff_seconds,
             1.0,
             "subsessions.mill_recovery_max_backoff_seconds",
         )
-        self._require_min(
+        if err:
+            failures.append(err)
+        err = self._require_min(
             self.subsessions.mill_recovery_max_retries,
             0,
             "subsessions.mill_recovery_max_retries",
         )
+        if err:
+            failures.append(err)
         # component_client has no required fields beyond `enabled` —
         # an empty components list just means no agents are reachable,
         # and the list_component_agents tool returns a helpful message.
         if self.refdocs.enabled and not self.refdocs.repos:
-            raise ValueError(
+            failures.append(
                 "refdocs.repos must be non-empty when refdocs is enabled — "
                 "provide it via the `refdocs.repos` config field"
             )
         if self.version_check.enabled and not self.version_check.repo:
-            raise ValueError(
+            failures.append(
                 "version_check.repo is required when version_check.enabled is true — "
                 "provide it via the `version_check.repo` config field"
             )
         if self.feedback.enabled and not self.feedback.board_url:
-            raise ValueError(
+            failures.append(
                 "feedback.board_url must be non-empty when feedback.enabled is "
                 "true — provide it via the `feedback.board_url` config field"
             )
+
+        if failures:
+            raise ConfigValidationError(failures)
 
     # ------------------------------------------------------------------
     # Legacy config normalisation
