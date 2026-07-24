@@ -86,8 +86,24 @@ class MemorySettings(BaseModel):
             ``merge_insert`` does not OOM the container.  Default ``"256M"``
             (safe for a 2 GB container; raise for larger limits).
         frozen_store_alert_minutes: Consecutive-write-failure duration (minutes)
-            after which a ``WARNING`` diagnostic is emitted so a silently
-            frozen vector store cannot go unnoticed for days.  Default ``10.0``.
+            after which an ``ERROR`` diagnostic is emitted and memory is flagged
+            ``degraded`` on ``GET /health`` — so a silently frozen vector store
+            cannot go unnoticed.  Default ``10.0``.
+        auto_recovery_enabled: When ``True`` (default), a freeze that persists
+            past ``frozen_store_recovery_minutes`` triggers a guarded self-restart
+            (``POST /self/restart``) — the proven remedy for the orphaned
+            LanceDB/sqlite lock — instead of staying frozen until a human
+            restarts the container.  Requires ``lifecycle.enabled`` (the
+            self-restart transport); otherwise recovery is skipped and the
+            freeze is only surfaced.
+        frozen_store_recovery_minutes: Freeze duration (minutes) after which
+            auto-recovery self-restart is attempted.  Should be greater than
+            ``frozen_store_alert_minutes`` so the store is surfaced as degraded
+            before a restart is attempted.  Default ``15.0``.
+        recovery_cooldown_minutes: Minimum interval (minutes) between two
+            auto-recovery self-restart attempts — a loop guard so a store that
+            re-freezes immediately after a restart cannot restart-loop.
+            Default ``30.0``.
         write_throttle_seconds: Delay (seconds) between serialised writes so
             the LanceDB worker subprocess can complete its ``merge_insert``
             before the next write starts.  Prevents a burst of many concurrent
@@ -110,6 +126,9 @@ class MemorySettings(BaseModel):
     write_backlog_path: str = "/data/cognee/backlog.jsonl"
     datafusion_runtime_memory_limit: str = "256M"
     frozen_store_alert_minutes: float = 10.0
+    auto_recovery_enabled: bool = True
+    frozen_store_recovery_minutes: float = 15.0
+    recovery_cooldown_minutes: float = 30.0
     write_throttle_seconds: float = 0.5
     llm: MemoryLlmSettings = Field(default_factory=MemoryLlmSettings)
     embedding: MemoryEmbeddingSettings = Field(default_factory=MemoryEmbeddingSettings)

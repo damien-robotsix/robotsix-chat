@@ -6,12 +6,15 @@ These are small, standalone utilities that multiple endpoint files depend on.
 from __future__ import annotations
 
 import json
+import logging
 from collections.abc import Iterable
 from typing import Any
 
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
+
+logger = logging.getLogger(__name__)
 
 
 def build_transcript(turns: Iterable[tuple[str, str]], *, max_len: int = 2000) -> str:
@@ -68,9 +71,27 @@ def _get_session_id(request: Request) -> str:
     return session_id
 
 
-async def health_endpoint(_request: Request) -> JSONResponse:
-    """Liveness probe — returns 200 ``{"status": "ok"}``."""
-    return JSONResponse({"status": "ok"})
+async def health_endpoint(request: Request) -> JSONResponse:
+    """Liveness probe — 200 ``{"status": "ok", "memory": {...}}``.
+
+    Stays ``status: ok`` (a memory freeze must not fail the liveness probe and
+    have the orchestrator kill the container — the store's own guarded
+    self-restart handles recovery), but embeds the memory backend's health so a
+    frozen store is externally observable (``memory.degraded``).
+    """
+    payload: dict[str, object] = {"status": "ok"}
+    try:
+        memory = getattr(request.app.state, "memory", None)
+        status_fn = getattr(memory, "status", None)
+        if callable(status_fn):
+            snapshot = status_fn()
+            # Only embed a real (JSON-serialisable) status mapping — guards
+            # against a mock/None backend serialising into a 500.
+            if isinstance(snapshot, dict):
+                payload["memory"] = snapshot
+    except Exception:  # never let health reporting raise (probe must stay 200)
+        logger.debug("health: memory status unavailable", exc_info=True)
+    return JSONResponse(payload)
 
 
 async def ui_endpoint(request: Request) -> HTMLResponse:

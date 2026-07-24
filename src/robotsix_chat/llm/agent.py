@@ -205,6 +205,11 @@ class LlmioChatAgent:
         # Hold references to in-flight background writes so they aren't GC'd.
         self._write_tasks: set[asyncio.Task[None]] = set()
 
+    @property
+    def memory(self) -> ChatMemory:
+        """The agent's memory backend (for health reporting / recovery wiring)."""
+        return self._memory
+
     def _activity_callback(
         self, session_id: str | None
     ) -> Callable[[ClaudeSDKActivityEvent], None] | None:

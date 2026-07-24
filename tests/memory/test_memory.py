@@ -9,6 +9,7 @@ from __future__ import annotations
 import asyncio
 import base64
 import sys
+import time
 import types
 from pathlib import Path
 from typing import Any
@@ -1379,6 +1380,136 @@ async def test_successful_write_resets_failure_tracking(
 
     assert mem._write_failure_start is None
     assert mem._consecutive_write_failures == 0
+
+
+# ---------------------------------------------------------------------------
+# Degraded state (GET /health) + guarded auto-recovery
+# ---------------------------------------------------------------------------
+
+
+def test_is_lock_freeze_error() -> None:
+    """The freeze-signature detector matches lock faults, not benign errors."""
+    from robotsix_chat.memory.cognee import _is_lock_freeze_error
+
+    assert _is_lock_freeze_error(
+        RuntimeError("(sqlite3.OperationalError) database is locked")
+    )
+    assert _is_lock_freeze_error(Exception("LanceError: Deadlock detected"))
+    assert not _is_lock_freeze_error(ValueError("no data found for the given query"))
+
+
+def test_null_memory_status_not_degraded() -> None:
+    """NullMemory always reports a non-degraded backend."""
+    from robotsix_chat.memory import NullMemory
+
+    assert NullMemory().status() == {"backend": "null", "degraded": False}
+
+
+@pytest.mark.asyncio
+async def test_write_freeze_marks_status_degraded(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """A sustained write freeze flips status()['degraded'] to True."""
+    mem, _ = cognee_memory
+    mem._settings.frozen_store_alert_minutes = 0.0  # alert on first failure
+    assert mem.status()["degraded"] is False
+
+    mem._record_write_failure()
+
+    assert mem.status()["degraded"] is True
+    assert mem.status()["reason"]
+
+
+@pytest.mark.asyncio
+async def test_recall_lock_error_marks_degraded_then_success_clears(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """A lock-signature recall fault marks degraded; a later success clears it."""
+    mem, fake = cognee_memory
+    fake.search = AsyncMock(side_effect=RuntimeError("database is locked"))
+    assert await mem.recall("who?") == ""
+    assert mem.status()["degraded"] is True
+
+    # Store recovers — a successful recall clears the degraded flag.
+    fake.search = AsyncMock(return_value="recalled fact")
+    assert await mem.recall("who?") == "recalled fact"
+    assert mem.status()["degraded"] is False
+
+
+@pytest.mark.asyncio
+async def test_recall_benign_error_not_degraded(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """A benign (non-lock) recall error must NOT flag the store degraded."""
+    mem, fake = cognee_memory
+    fake.search = AsyncMock(side_effect=RuntimeError("empty store, no user"))
+    assert await mem.recall("who?") == ""
+    assert mem.status()["degraded"] is False
+
+
+@pytest.mark.asyncio
+async def test_auto_recovery_triggers_self_restart(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """A freeze past the recovery threshold invokes the recovery callback once."""
+    mem, _ = cognee_memory
+    mem._settings.frozen_store_recovery_minutes = 0.0  # recover on first failure
+    cb = AsyncMock(return_value="restart requested")
+    mem.set_recovery_callback(cb)
+
+    mem._record_write_failure()
+    assert mem._recovery_task is not None
+    await mem._recovery_task
+
+    cb.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_auto_recovery_respects_cooldown(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """A recent recovery attempt within the cooldown suppresses a new restart."""
+    mem, _ = cognee_memory
+    mem._settings.frozen_store_recovery_minutes = 0.0
+    mem._settings.recovery_cooldown_minutes = 60.0
+    cb = AsyncMock(return_value="restart requested")
+    mem.set_recovery_callback(cb)
+    # Pretend a restart was just attempted.
+    mem._last_recovery_attempt = time.monotonic()
+
+    mem._record_write_failure()
+
+    assert mem._recovery_task is None
+    cb.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_auto_recovery_disabled_skips_restart(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """With auto_recovery_enabled=False the callback is never invoked."""
+    mem, _ = cognee_memory
+    mem._settings.frozen_store_recovery_minutes = 0.0
+    mem._settings.auto_recovery_enabled = False
+    cb = AsyncMock(return_value="restart requested")
+    mem.set_recovery_callback(cb)
+
+    mem._record_write_failure()
+
+    assert mem._recovery_task is None
+    cb.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_auto_recovery_noop_without_callback(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """No recovery callback wired → freeze is surfaced but nothing is scheduled."""
+    mem, _ = cognee_memory
+    mem._settings.frozen_store_recovery_minutes = 0.0
+    # No set_recovery_callback() call.
+    mem._record_write_failure()
+    assert mem._recovery_task is None
 
 
 # ---------------------------------------------------------------------------

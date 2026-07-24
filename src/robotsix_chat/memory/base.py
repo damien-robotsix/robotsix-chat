@@ -2,7 +2,14 @@
 
 from __future__ import annotations
 
-from typing import Protocol, runtime_checkable
+from collections.abc import Awaitable, Callable
+from typing import Any, Protocol, runtime_checkable
+
+# A zero-arg async callable that triggers out-of-band recovery (a service
+# self-restart) and returns a human-readable result string.  Injected into a
+# memory backend so it can recover a frozen store without a hard dependency on
+# the deploy-lifecycle client.
+RecoverCallback = Callable[[], Awaitable[str]]
 
 
 @runtime_checkable
@@ -41,6 +48,22 @@ class ChatMemory(Protocol):
         """
         ...
 
+    def status(self) -> dict[str, Any]:
+        """Return a small health snapshot (``{"degraded": bool, ...}``).
+
+        Read by ``GET /health`` so a frozen store is externally visible.
+        Must never raise.
+        """
+        ...
+
+    def set_recovery_callback(self, callback: RecoverCallback | None) -> None:
+        """Register (or clear) the out-of-band recovery callback.
+
+        A backend that can detect a persistent freeze uses this to trigger a
+        self-restart.  Backends with no recovery path may ignore it.
+        """
+        ...
+
 
 class NullMemory:
     """A :class:`ChatMemory` that stores nothing and recalls nothing.
@@ -65,4 +88,12 @@ class NullMemory:
         session_id: str | None = None,
     ) -> None:
         """Discard the exchange (no memory backend)."""
+        return None
+
+    def status(self) -> dict[str, Any]:
+        """Report a non-degraded no-op backend."""
+        return {"backend": "null", "degraded": False}
+
+    def set_recovery_callback(self, callback: RecoverCallback | None) -> None:
+        """No-op: a null backend has nothing to recover."""
         return None

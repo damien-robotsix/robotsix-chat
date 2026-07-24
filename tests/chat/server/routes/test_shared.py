@@ -258,12 +258,35 @@ def _make_bare_request(app: object | None = None) -> Request:
 
 @pytest.mark.asyncio
 async def test_health_endpoint() -> None:
-    """The /health endpoint returns 200 ``{"status": "ok"}``."""
+    """The /health endpoint returns 200 ``{"status": "ok"}`` with no memory."""
     request = _make_bare_request()
     response = await health_endpoint(request)
     assert isinstance(response, JSONResponse)
     assert response.status_code == 200
     assert json.loads(response.body) == {"status": "ok"}  # type: ignore[arg-type]
+
+
+@pytest.mark.asyncio
+async def test_health_endpoint_surfaces_degraded_memory() -> None:
+    """When a memory backend is wired, /health embeds its status (degraded)."""
+    from types import SimpleNamespace
+    from unittest.mock import Mock
+
+    memory = Mock()
+    memory.status.return_value = {
+        "backend": "cognee",
+        "degraded": True,
+        "reason": "frozen",
+    }
+    app = SimpleNamespace(state=SimpleNamespace(memory=memory))
+    request = _make_bare_request(app=app)
+
+    response = await health_endpoint(request)
+
+    assert response.status_code == 200
+    body = json.loads(response.body)  # type: ignore[arg-type]
+    assert body["status"] == "ok"  # liveness must stay ok even when degraded
+    assert body["memory"]["degraded"] is True
 
 
 # ---------------------------------------------------------------------------
