@@ -117,7 +117,7 @@ class WorkspaceManager:
                 fetched_at = float(
                     json.loads(meta_path.read_text()).get("fetched_at", 0)
                 )
-            except (json.JSONDecodeError, OSError, ValueError):
+            except json.JSONDecodeError, OSError, ValueError:
                 fetched_at = 0.0
             if fetched_at < cutoff:
                 ws_id = meta_path.name.removesuffix(_META_SUFFIX)

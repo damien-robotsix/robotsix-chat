@@ -69,7 +69,7 @@ async def _github_endpoint(
     # -- body --------------------------------------------------------------
     try:
         body = await request.json()
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         raise HTTPException(status_code=400, detail="invalid JSON body") from None
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="expected a JSON object")
@@ -226,7 +226,7 @@ async def github_create_repo_endpoint(request: Request) -> JSONResponse:
     # -- body --------------------------------------------------------------
     try:
         body = await request.json()
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         raise HTTPException(status_code=400, detail="invalid JSON body") from None
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="expected a JSON object")
