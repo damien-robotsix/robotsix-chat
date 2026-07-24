@@ -5,6 +5,23 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v46 — 2026-07-22 — add-guidance-to-system-prompt-for-handli-8e03
+
+**Summary:** Add a "Repo creation bootstrap" paragraph to the Autonomy section. When creating a new
+repository or working with a freshly created empty repo, tool-chains that require an existing commit
+or branch to push to (e.g. push_direct_repo_branch, open_direct_repo_pr) will deadlock if the repo
+has no commits. The assistant must proactively seed an initial commit during repo creation (a
+README.md, .gitignore, or minimal template file) so that subsequent tool-chains have a branch and
+commit to target.
+
+**Rationale:** The assistant encountered a structural deadlock where a tool needed to push the first
+commit to a newly created empty repo but had no tool that could create an initial commit (only push
+to an existing branch). The assistant responded by repeatedly asking the user to manually initialize
+the repo rather than proposing a tool-based workaround. The new rule enforces that repo creation
+must always include seeding an initial commit to prevent this class of bootstrap deadlock.
+
+**SHA256:** `fba320e778a0a6a8d9399334b6f10dc5a8c07901822ca36d1f0cd097fb8b9cdb`
+
 ## v46 — 2026-07-22 — add-cross-session-persistent-knowledge-r-b5bb
 
 **Summary:** Add `search_knowledge_notes` to the knowledge-base tool list in the system prompt. The
