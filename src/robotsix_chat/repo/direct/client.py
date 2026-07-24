@@ -268,7 +268,7 @@ class DirectRepoClient:
         """Create a new repository under *org_name*.
 
         Calls ``POST /orgs/{org}/repos``.  By default sets ``auto_init``
-        so the new repo has an initial commit and is immediately clonable.
+        so the new repo has an initial commit and is immediately cloneable.
 
         Never raises — returns a success/error message string.
         """
