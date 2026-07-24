@@ -145,6 +145,7 @@ def make_settings(
     mill_recovery_initial_backoff_seconds: float = 0.01,
     mill_recovery_max_backoff_seconds: float = 3600.0,
     mill_recovery_max_retries: int = 10,
+    user_chat_max_retries: int = 3,
     llmio_api_key: str = "",
 ) -> SimpleNamespace:
     """Build a settings stand-in with test-friendly (tiny) intervals.
@@ -168,6 +169,7 @@ def make_settings(
             mill_recovery_initial_backoff_seconds=mill_recovery_initial_backoff_seconds,
             mill_recovery_max_backoff_seconds=mill_recovery_max_backoff_seconds,
             mill_recovery_max_retries=mill_recovery_max_retries,
+            user_chat_max_retries=user_chat_max_retries,
         ),
         llmio_api_key=SecretStr(llmio_api_key),
     )

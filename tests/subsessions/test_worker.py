@@ -540,9 +540,13 @@ async def test_worker_failure_marks_failed_and_delivers_summary() -> None:
     info = env.registry.get(sub_id)
     assert info is not None
     assert info.status is SubsessionStatus.FAILED
-    assert info.error == "kaboom"
+    # _format_worker_error now includes the exception type for unclassified
+    # errors so opaque SDK strings are never passed through verbatim.
+    assert "[RuntimeError] kaboom" in (info.error or "")
     assert info.summary is not None
-    assert info.summary.startswith("Failed: kaboom")
+    assert "kaboom" in info.summary
+    # The task subsession should have exhausted its retry budget.
+    assert info.retry_count == 3
 
     history = env.conversation_store.history(OWNER)
     assert len(history) == 1
@@ -604,10 +608,17 @@ def test_format_process_error_empty_stderr() -> None:
 
 
 def test_format_unknown_error_preserves_message() -> None:
-    """An unrecognized error returns str(exc) unchanged."""
+    """An unrecognized error includes the exception type for diagnostics."""
     exc = RuntimeError("kaboom")
     result = _format_worker_error(exc)
-    assert result == "kaboom"
+    assert result == "[RuntimeError] kaboom"
+
+
+def test_format_unknown_error_type_name_in_message() -> None:
+    """When the type name is already in the message it is not duplicated."""
+    exc = RuntimeError("RuntimeError: kaboom")
+    result = _format_worker_error(exc)
+    assert result == "RuntimeError: kaboom"
 
 
 def test_truncate_short() -> None:

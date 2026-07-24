@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Subsessions: user_chat and task kinds now retry on failure (up to `user_chat_max_retries`, default 3) with the prior error folded into the retry prompt so the agent can self-correct. Retry state is persisted to survive restarts. When retries are exhausted for a user_chat subsession, the original decision prompt is surfaced in the main conversation as a fallback so the operator can answer directly. `_format_worker_error` now includes the exception type name for unrecognised errors so opaque SDK strings are never passed through verbatim.
 - Deduplicated `DirectRepoClient.get_ticket_state` and `get_ticket_data` by extracting a shared `_fetch_ticket_field` helper (57 duplicated lines → 2 one-liner callers).
 - Add `check_autonomous_states.py` CI gate that verifies `AutonomousState` enum values stay in sync with bare-string comparisons in `chat.js`, following the same pattern as `check_subsession_kinds.py` and `check_activity_kinds.py`.
 - Periodic subsession monitors now include an explicit instruction to re-query the board API for canonical ticket state on every poll tick, preventing stale-state readback where the agent reports a cached `draft` state that diverged from the live board state.

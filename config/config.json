@@ -109,7 +109,8 @@
     "transcript_max_entries": 200,
     "mill_recovery_initial_backoff_seconds": 60.0,
     "mill_recovery_max_backoff_seconds": 3600.0,
-    "mill_recovery_max_retries": 10
+    "mill_recovery_max_retries": 10,
+    "user_chat_max_retries": 3
   },
   "direct_repo": {
     "enabled": false,

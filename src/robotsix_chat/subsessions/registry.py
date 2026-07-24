@@ -341,6 +341,13 @@ class SubsessionRegistry:
     # lifecycle
     # ------------------------------------------------------------------
 
+    def persist(self) -> None:
+        """Write the full registry state to the JSON store.
+
+        See :meth:`RegistryStore.persist`.
+        """
+        self._store.persist()
+
     def create(
         self,
         *,
@@ -360,6 +367,7 @@ class SubsessionRegistry:
         turn_history: list[tuple[str, str]] | None = None,
         checkpoint: dict[str, object] | None = None,
         dedup_key: str | None = None,
+        retry_count: int = 0,
     ) -> SubsessionInfo:
         """Register a new subsession and publish ``subsession_started``.
 
@@ -404,6 +412,7 @@ class SubsessionRegistry:
             turn_history=turn_history or [],
             checkpoint=checkpoint,
             dedup_key=dedup_key,
+            retry_count=retry_count,
         )
         self._subs[info.id] = info
         self._inboxes[info.id] = deque()
