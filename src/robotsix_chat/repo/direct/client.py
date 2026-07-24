@@ -258,10 +258,14 @@ class DirectRepoClient:
         repos: list[dict[str, Any]] = data.get("repositories", [])
         return [r["full_name"] for r in repos if "full_name" in r]
 
-    async def get_ticket_state(self, ticket_id: str) -> str | None:
-        """Return the ticket's state (e.g. ``"BLOCKED"``), or ``None`` on failure.
+    async def _fetch_ticket_field(
+        self, ticket_id: str, label_suffix: str, field: str | None = None
+    ) -> Any:
+        """Fetch a ticket from the board API and return *field* or the full dict.
 
-        Calls the board API directly — the same endpoint the browser UI uses.
+        When *field* is provided (e.g. ``"state"``), returns ``data.get(field)``;
+        when ``None``, returns the full parsed JSON dict.  Returns ``None`` on
+        any error (logged as a warning).
         """
         board_url = self._s.board_api_base_url.rstrip("/")
         url = f"{board_url}/tickets/{ticket_id}"
@@ -270,22 +274,20 @@ class DirectRepoClient:
             headers["Authorization"] = (
                 f"Bearer {self._s.board_api_token.get_secret_value()}"
             )
+        label = f"Board API (ticket {label_suffix})"
         result = await safe_http_request(
-            "GET",
-            url,
-            headers=headers,
-            timeout=self._s.timeout,
-            label="Board API (ticket state)",
+            "GET", url, headers=headers, timeout=self._s.timeout, label=label
         )
         if result.error:
             logger.warning(
-                "Failed to fetch ticket %s state: %s", ticket_id, result.error
+                "Failed to fetch ticket %s %s: %s",
+                ticket_id,
+                label_suffix,
+                result.error,
             )
             return None
         try:
             data = json.loads(result.text or "")
-            state: str | None = data.get("state")
-            return state
         except json.JSONDecodeError, TypeError:
             logger.warning(
                 "Non-JSON response for ticket %s: %s",
@@ -293,6 +295,19 @@ class DirectRepoClient:
                 (result.text or "")[:200],
             )
             return None
+        if field is not None:
+            return data.get(field)
+        return data
+
+    async def get_ticket_state(self, ticket_id: str) -> str | None:
+        """Return the ticket's state (e.g. ``"BLOCKED"``), or ``None`` on failure.
+
+        Calls the board API directly — the same endpoint the browser UI uses.
+        """
+        return cast(
+            "str | None",
+            await self._fetch_ticket_field(ticket_id, "state", field="state"),
+        )
 
     async def push_branch(
         self,
@@ -452,35 +467,9 @@ class DirectRepoClient:
         parsed JSON body.  The response includes ``state``, ``events`` (state
         transitions), and other ticket metadata.
         """
-        board_url = self._s.board_api_base_url.rstrip("/")
-        url = f"{board_url}/tickets/{ticket_id}"
-        headers: dict[str, str] = {"Accept": "application/json"}
-        if self._s.board_api_token.get_secret_value():
-            headers["Authorization"] = (
-                f"Bearer {self._s.board_api_token.get_secret_value()}"
-            )
-        result = await safe_http_request(
-            "GET",
-            url,
-            headers=headers,
-            timeout=self._s.timeout,
-            label="Board API (ticket data)",
+        return cast(
+            "dict[str, Any] | None", await self._fetch_ticket_field(ticket_id, "data")
         )
-        if result.error:
-            logger.warning(
-                "Failed to fetch ticket %s data: %s", ticket_id, result.error
-            )
-            return None
-        try:
-            data: dict[str, Any] = json.loads(result.text or "")
-            return data
-        except json.JSONDecodeError, TypeError:
-            logger.warning(
-                "Non-JSON response for ticket %s: %s",
-                ticket_id,
-                (result.text or "")[:200],
-            )
-            return None
 
     async def count_implement_cycles(self, ticket_id: str) -> int | None:
         """Return the number of implement cycles for *ticket_id*, or None on failure.
