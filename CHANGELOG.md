@@ -14,6 +14,7 @@
   match, without needing to recall exact note IDs. Results are ranked by relevance
   (exact topic match > topic contains > content contains).
 - `push_direct_repo_branch` ticket-state verification now uses the same roster-based board connectivity as `component_request`, fixing failures when `board_api_base_url` differs from the roster-provided mill URL. Error messages now include the connectivity path or URL tried for direct diagnosis. `fetch_repo_for_study` URL-encodes branch refs containing slashes (e.g. `mill/20260723T...`), fixing 404 errors on such refs.
+- Fix stale `SYSTEM_PROMPT_VERSION` in `docs/configuration.md` (v38 → v45). Add CI governance test to prevent future drift.
 - Remove the "New autonomous" button from the UI (button element in index.html,
   handler + function + config-display toggle in chat.js). The single-session
   model makes manual creation unnecessary and dangerous.

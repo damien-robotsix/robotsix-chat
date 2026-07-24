@@ -191,6 +191,54 @@ def test_docs_configuration_md_mirrors_llmio_model_level_default() -> None:
     )
 
 
+def _extract_docs_agent_instruction_version(docs_text: str) -> int | None:
+    """Extract the version number from the ``agent_instruction`` row description.
+
+    Returns the integer version (e.g. 45) if the description contains
+    ``(currently v<N>)``.  Returns ``None`` when the docs description does
+    NOT contain a version number (e.g. because it was replaced with a
+    symbolic reference like ``(see SYSTEM_PROMPT_VERSION…)``).
+    """
+    m = re.search(r"\(currently v(\d+)\)", docs_text)
+    if m is None:
+        return None
+    return int(m.group(1))
+
+
+def test_docs_configuration_md_version_matches_system_prompt_version() -> None:
+    """Validate the docs agent_instruction row version against SYSTEM_PROMPT_VERSION.
+
+    The description column includes a ``(currently v<N>)`` parenthetical.
+    When that number drifts from ``SYSTEM_PROMPT_VERSION`` in
+    ``settings.py``, this test fails, telling the author to update the
+    docs row.
+    """
+    docs_path = Path("docs") / "configuration.md"
+    if not docs_path.exists():
+        raise FileNotFoundError(
+            f"docs/configuration.md not found at {docs_path.resolve()}"
+        )
+    docs_text = docs_path.read_text()
+
+    documented_version = _extract_docs_agent_instruction_version(docs_text)
+    if documented_version is None:
+        raise AssertionError(
+            "docs/configuration.md agent_instruction row description no "
+            "longer contains a '(currently v<N>)' version number.  If "
+            "the version was intentionally replaced with a symbolic "
+            "reference, remove this test.  Otherwise restore the "
+            "'(currently v<N>)' parenthetical and keep it in sync with "
+            "SYSTEM_PROMPT_VERSION."
+        )
+
+    assert documented_version == SYSTEM_PROMPT_VERSION, (
+        f"docs/configuration.md agent_instruction row version "
+        f"(currently v{documented_version}) does not match "
+        f"SYSTEM_PROMPT_VERSION ({SYSTEM_PROMPT_VERSION}).  Update "
+        f"the docs row to '(currently v{SYSTEM_PROMPT_VERSION})'."
+    )
+
+
 def test_docs_configuration_md_mirrors_agent_instruction_default() -> None:
     """``docs/configuration.md`` ``agent_instruction`` row uses ``(long default)``.
 
