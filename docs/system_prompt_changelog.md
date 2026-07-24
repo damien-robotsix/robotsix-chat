@@ -18,7 +18,7 @@ existing guidance, exploiting the "one-off check" loophole in the instruction te
 `spawn_level` guard already blocks this path; this edit makes the prompt match the actual enforced
 behavior so the LLM stops trying to spawn children from periodic subsessions.
 
-**SHA256:** `4bd6c4f1a842f88787ecd564a1dc2231f876c0742e4843ca72147816fcfc37dc`
+**SHA256:** `e352f343aa6b97a38f6ebe92bee37ab1eb6bb2896fef08bfd9bc27fb609a4196`
 
 ## v46 — 2026-07-23 — prevent-duplicate-subsession-creation-wh-de78
 
@@ -37,6 +37,19 @@ from offloading its own work to a child, and the second prevents a parent agent 
 existing periodic monitor by spawning a one-shot task.
 
 **SHA256:** `237cb86b37b138470a13383ac3859ebcb7c4c2db315463045e5a0fbee27361a3`
+
+## v46 — 2026-07-22 — prevent-child-launch-tasks-for-periodic-monitors-24b0
+
+**Summary:** Add a bullet instructing the assistant to spawn periodic monitors directly from its own
+context rather than creating a child task subsession whose only job is to call
+`spawn_subsession(kind='periodic', ...)`. A task that exists solely to launch a monitor wastes a
+model round-trip and duplicates spawning logic the assistant already owns.
+
+**Rationale:** The assistant launched a periodic monitor and then created a child background task
+whose sole job was to launch the same monitor — the child task was redundant and was correctly
+identified as such. This guidance prevents that class of waste at the source.
+
+**SHA256:** `21a47f67fd08bd2df25880c99c66a5e5189992f5e3beba9109dc006302ed948b`
 
 ## v46 — 2026-07-22 — improve-terminal-state-notification-conc-70aa
 
@@ -83,7 +96,9 @@ diagnostic notes, deployment statuses, and other key facts without needing to re
 merged because it could not reliably retrieve prior diagnostic notes — note ids were truncated or
 missing from its context. The new search capability eliminates the fragile-id-recall dependency.
 
-**SHA256:** `b0e205017f02e8e2a90707f2b6fbaf51f356e5ab7362124803eb79602ba13050`
+**SHA256:** `b0e205017f02e8e2a90707f2b6fbaf51f356e5ab7362124803eb79602ba13050` (mill: Prevent
+periodic monitors from spawning redundant child monitor-launch tasks
+(20260722T135418Z-prevent-periodic-monitors-from-spawning-24b0))
 
 ______________________________________________________________________
 
