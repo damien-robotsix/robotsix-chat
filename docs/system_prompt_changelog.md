@@ -14,10 +14,10 @@ live system. Repeating an unverified claim across turns reinforces incorrect inf
 recall involves ticket metadata, cross-check against the ticket API before echoing the claim.
 
 **Rationale:** During multiple monitor responses for ticket fb23, the assistant stated that a
-recalled memory about a "ticket 3e44 dependency" was unverified but continued to reference it
-across several turns. This repeated mention of an unverified dependency risked reinforcing
-incorrect information. The new rule teaches the assistant to either verify or drop unverified
-recalled claims after the first mention.
+recalled memory about a "ticket 3e44 dependency" was unverified but continued to reference it across
+several turns. This repeated mention of an unverified dependency risked reinforcing incorrect
+information. The new rule teaches the assistant to either verify or drop unverified recalled claims
+after the first mention.
 
 **SHA256:** `18ca5c9ae0ba98f18db5df0007fac263c8e091ad5cb412694cafdd864ffee9bd`
 
