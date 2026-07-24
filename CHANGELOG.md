@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Changed `GHSA-9xwg-3r6f-jcx2` (pymdown-extensions) advisory suppression from `--ignore` to `--ignore-until-fixed` in both the pre-commit uv-audit hook and CI lockfile job.
 - Periodic monitors now include guidance to recognize decision-blocked tickets (human_issue_approval, awaiting operator choice) and recommend pausing rather than silently emitting NO_CHANGE until the auto-stop timeout.
 - Replace hand-rolled retry loops with robotsix-http
 - Config-ownership standard: `GET /config` now includes `version` and `schema` fields; `PUT /config` returns the new version and increments a monotonic counter; secrets masked as `"**********"` (was `"***"`); blank string on secret fields now also triggers preservation (was only the sentinel); validation errors now use RFC 9457 `application/problem+json`. New `GET /config/versions` and `POST /config/rollback` endpoints for append-only version history and rollback. Chat UI Settings panel updated to handle the new response shapes.

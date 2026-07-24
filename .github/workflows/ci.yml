@@ -39,7 +39,7 @@ jobs:
         # ignore until the upstream releases a compatible version.
         # --preview-features audit-command: uv ≥0.12 requires the flag; older
         # versions accept it without error, so this is safe to pass always.
-        run: uv --preview-features audit-command audit --ignore-until-fixed GHSA-w8v5-vhqr-4h9v --ignore GHSA-9xwg-3r6f-jcx2
+        run: uv --preview-features audit-command audit --ignore-until-fixed GHSA-w8v5-vhqr-4h9v --ignore-until-fixed GHSA-9xwg-3r6f-jcx2
 
   ci:
     name: Python CI (shared)
