@@ -91,11 +91,12 @@ class MemorySettings(BaseModel):
             cannot go unnoticed.  Default ``10.0``.
         auto_recovery_enabled: When ``True`` (default), a freeze that persists
             past ``frozen_store_recovery_minutes`` triggers a guarded self-restart
-            (``POST /self/restart``) — the proven remedy for the orphaned
-            LanceDB/sqlite lock — instead of staying frozen until a human
-            restarts the container.  Requires ``lifecycle.enabled`` (the
-            self-restart transport); otherwise recovery is skipped and the
-            freeze is only surfaced.
+            (via ``lifecycle.self_restart`` →
+            ``POST /chat/services/{name}/restart``) — the proven remedy for the
+            orphaned LanceDB/sqlite lock — instead of staying frozen until a
+            human restarts the container.  Requires ``lifecycle.enabled`` **and**
+            ``lifecycle.service_name`` (the self-restart transport); otherwise
+            recovery is skipped and the freeze is only surfaced.
         frozen_store_recovery_minutes: Freeze duration (minutes) after which
             auto-recovery self-restart is attempted.  Should be greater than
             ``frozen_store_alert_minutes`` so the store is surfaced as degraded
@@ -558,9 +559,15 @@ class LifecycleSettings(BaseModel):
         enabled: Master switch.  When ``False``, no lifecycle tools are
             offered.
         base_url: Base URL of the deploy-lifecycle API server (no trailing
-            slash).
-        api_key: API key sent as the ``X-API-Key`` header.  Injected
-            server-side from ``ROBOTSIX_LIFECYCLE_API_KEY``.
+            slash), e.g. ``http://central-deploy:8100``.
+        api_key: API key sent as the ``X-API-Key`` header.
+        service_name: This service's own name as registered with the deploy
+            server (e.g. ``"chat"``).  Required for ``self_restart`` — the
+            deploy server has no bare ``/self/restart`` route, so a service
+            restarts itself by naming itself at
+            ``POST /chat/services/{service_name}/restart``.  When empty,
+            ``self_restart`` (and the cognee frozen-store auto-recovery that
+            depends on it) is unavailable.
         timeout: Per-request HTTP timeout in seconds.
 
     """
@@ -568,6 +575,7 @@ class LifecycleSettings(BaseModel):
     enabled: bool = False
     base_url: str = ""
     api_key: SecretStr = SecretStr("")
+    service_name: str = ""
     timeout: float = 30.0
     model_config = ConfigDict(extra="forbid")
 

@@ -22,6 +22,7 @@ def _settings(**kw: Any) -> LifecycleSettings:
         "enabled": True,
         "base_url": "http://lifecycle:9000",
         "api_key": "test-api-key",  # pragma: allowlist secret
+        "service_name": "chat",
     }
     base.update(kw)
     return LifecycleSettings(**base)
@@ -296,8 +297,8 @@ async def test_restart_service_403_returns_error_string(
 async def test_self_restart_success(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """self_restart sends POST /self/restart and returns formatted response."""
-    route = respx_mock.post("http://lifecycle:9000/self/restart").mock(
+    """self_restart POSTs /chat/services/{name}/restart and returns the body."""
+    route = respx_mock.post("http://lifecycle:9000/chat/services/chat/restart").mock(
         return_value=httpx.Response(200, json={"status": "restarting"})
     )
 
@@ -312,7 +313,7 @@ async def test_self_restart_error_returns_string(
     respx_mock: respx.MockRouter,
 ) -> None:
     """A server error on self_restart is returned as a string, not raised."""
-    respx_mock.post("http://lifecycle:9000/self/restart").mock(
+    respx_mock.post("http://lifecycle:9000/chat/services/chat/restart").mock(
         return_value=httpx.Response(
             500,
             json={"error": "internal server error"},
@@ -323,6 +324,15 @@ async def test_self_restart_error_returns_string(
     out = await client.self_restart()
     assert "Lifecycle" in out
     assert "500" in out
+
+
+@pytest.mark.asyncio
+async def test_self_restart_unconfigured_service_name_returns_message() -> None:
+    """With no service_name, self_restart returns a clear message (no call)."""
+    client = LifecycleClient(_settings(service_name=""))
+    out = await client.self_restart()
+    assert "service_name" in out
+    assert "not" in out.lower()
 
 
 @pytest.mark.asyncio
@@ -338,7 +348,7 @@ async def test_self_restart_tool_calls_client_self_restart(
     respx_mock: respx.MockRouter,
 ) -> None:
     """Calling the self_restart tool invokes the client's self_restart method."""
-    route = respx_mock.post("http://lifecycle:9000/self/restart").mock(
+    route = respx_mock.post("http://lifecycle:9000/chat/services/chat/restart").mock(
         return_value=httpx.Response(200, json={"status": "restarting"})
     )
 
