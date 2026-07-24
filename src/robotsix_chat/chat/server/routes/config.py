@@ -358,12 +358,15 @@ async def config_save_endpoint(request: Request) -> JSONResponse:
         Settings.model_validate(merged)
     except ValidationError as exc:
         # Extract per-precondition failures from the underlying
-        # ConfigValidationError (carried via __cause__ by Pydantic).
-        cause = exc.__cause__
-        if isinstance(cause, ConfigValidationError):
-            failures = cause.failures
-        else:
-            failures = [str(exc)]
+        # ConfigValidationError.  Pydantic v2 stores the original
+        # exception in ``ctx["error"]`` of each error entry (not in
+        # ``__cause__``), so we pull it from the first error's context.
+        failures: list[str] = [str(exc)]
+        for err in exc.errors():
+            ctx_error = err.get("ctx", {}).get("error")
+            if isinstance(ctx_error, ConfigValidationError):
+                failures = ctx_error.failures
+                break
 
         logger.warning(
             "Config save rejected: validation failed — %d precondition(s): %s",
