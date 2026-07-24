@@ -398,9 +398,20 @@ def _build_periodic_input(
         "concise line summarising what changed and, when appropriate, "
         'offer a next step (e.g. "Ticket 5f1c has moved to '
         "implement_complete; PR #654 is open. Let me know if you'd like "
-        'me to check on the review status."). Reserve multi-paragraph '
+        'me to check on the review status."). '
+        "Reserve multi-paragraph "
         "reports for substantive changes: first-time blocking, completion, "
         "failure, or transitions requiring user action.\n\n"
+        "Decision-blocked tickets: when the monitored ticket is awaiting an "
+        "operator decision — stuck in human_issue_approval, waiting on an "
+        '"Option A or B?" choice, or otherwise blocked on a human '
+        "direction — do NOT silently reply NO_CHANGE run after run.  "
+        "Instead, report the blocked state with a concise note that "
+        'recommends pausing: "Ticket is awaiting operator decision. '
+        "Consider pausing this monitor until the operator provides "
+        'direction."  This surfaces the pause recommendation so the '
+        "operator can act on it rather than waiting for the auto-stop "
+        "timeout.\n\n"
         "When a ticket reaches a terminal state (done/closed), your "
         "complete_subsession summary MUST include a note about whether a "
         "PR was merged for this ticket — check the ticket events/history "
