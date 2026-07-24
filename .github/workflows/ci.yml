@@ -32,14 +32,9 @@ jobs:
       - name: Audit dependencies
         # CVE-2025-69872 / GHSA-w8v5-vhqr-4h9v: diskcache unsafe pickle deserialization.
         # No fix version available; ignored until a patched release is published.
-        # GHSA-9xwg-3r6f-jcx2: pymdown-extensions path traversal in the b64 extension.
-        # Transitive dev dependency (mkdocs-material → pymdown-extensions); the b64
-        # extension is not used by this project — only mkdocs renders documentation.
-        # Fix is available (11.0.0) but requires a cascade upgrade of mkdocs-material;
-        # ignore until the upstream releases a compatible version.
         # --preview-features audit-command: uv ≥0.12 requires the flag; older
         # versions accept it without error, so this is safe to pass always.
-        run: uv --preview-features audit-command audit --ignore-until-fixed GHSA-w8v5-vhqr-4h9v --ignore GHSA-9xwg-3r6f-jcx2
+        run: uv --preview-features audit-command audit --ignore-until-fixed GHSA-w8v5-vhqr-4h9v
 
   ci:
     name: Python CI (shared)

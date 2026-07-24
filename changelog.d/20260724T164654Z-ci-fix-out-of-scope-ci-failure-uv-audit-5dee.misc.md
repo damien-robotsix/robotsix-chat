@@ -1,0 +1,1 @@
+ci_fix: out-of-scope CI failure — uv audit (GHSA-9xwg-3r6f-jcx2: pymdown-extensions path traversal) in .pre-commit-config.yaml (uv-audit hook args) and .github/workflows/ci.yml (lockfile job audit command)

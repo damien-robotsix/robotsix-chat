@@ -73,12 +73,7 @@ repos:
         entry: uv --preview-features audit-command audit
         # CVE-2025-69872 / GHSA-w8v5-vhqr-4h9v: diskcache unsafe pickle deserialization.
         # No fix version available; ignored until a patched release is published.
-        # GHSA-9xwg-3r6f-jcx2: pymdown-extensions path traversal in the b64 extension.
-        # Transitive dev dependency (mkdocs-material → pymdown-extensions); the b64
-        # extension is not used by this project — only mkdocs renders documentation.
-        # Fix is available (11.0.0) but requires a cascade upgrade of mkdocs-material;
-        # ignore until the upstream releases a compatible version.
-        args: ["--ignore-until-fixed", "GHSA-w8v5-vhqr-4h9v", "--ignore", "GHSA-9xwg-3r6f-jcx2"]
+        args: ["--ignore-until-fixed", "GHSA-w8v5-vhqr-4h9v"]
         language: system
         pass_filenames: false
         files: ^uv\.lock$
