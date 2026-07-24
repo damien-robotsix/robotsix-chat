@@ -53,6 +53,7 @@ def autonomous_runner(store, tmp_path) -> AutonomousRunner:
     settings.autonomous.max_auto_turns = 20
     settings.autonomous.session_color = "#ff0000"
     settings.autonomous.persist_path = str(tmp_path / "autonomous_sessions.json")
+    settings.autonomous.initial_task = ""
     runner = AutonomousRunner(
         settings=settings,
         conversation_store=store,
@@ -62,6 +63,11 @@ def autonomous_runner(store, tmp_path) -> AutonomousRunner:
     # Prevent background tasks (from approve/reject) from leaking across
     # xdist workers or between tests sharing an event loop.
     runner._schedule_background = MagicMock()  # type: ignore[assignment]
+    # Eliminate filesystem I/O: _save_sessions writes to disk on every
+    # state mutation, which can collide across xdist workers even under
+    # per-test tmp_path when the CI filesystem is overloaded.
+    runner._save_sessions = MagicMock()  # type: ignore[assignment]
+    runner._load_sessions = MagicMock(return_value={})  # type: ignore[assignment]
     return runner
 
 

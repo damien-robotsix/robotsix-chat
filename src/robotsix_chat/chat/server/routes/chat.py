@@ -16,6 +16,7 @@ from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse, StreamingResponse
 
+from robotsix_chat.autonomous.models import AutonomousState
 from robotsix_chat.chat.conversation import ConversationStore
 
 from ._shared import _parse_json_body, _sse_frame, build_transcript
@@ -684,7 +685,7 @@ async def chat_endpoint(
     autonomous_runner = request.app.state.autonomous_runner
     if autonomous_runner is not None:
         aq_state = autonomous_runner.get_state(session_id)
-        if aq_state is not None and aq_state == "awaiting_approval":
+        if aq_state is not None and aq_state == AutonomousState.awaiting_approval:
             raise HTTPException(
                 status_code=409,
                 detail=(
