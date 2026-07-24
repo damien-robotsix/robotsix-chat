@@ -8,17 +8,17 @@ secret values in config and environment responses are masked as `***` server-sid
 
 ## Allowed operations
 
-| Tool                              | HTTP                            | Description                                                          |
-| --------------------------------- | ------------------------------- | -------------------------------------------------------------------- |
-| `list_lifecycle_services`         | `GET /services`                 | List all managed services and status.                                |
-| `get_lifecycle_service_status`    | `GET /services/{name}/status`   | Live status + health-check history.                                  |
-| `get_lifecycle_service_config`    | `GET /services/{name}/config`   | Service configuration (secrets masked).                              |
-| `get_lifecycle_service_env`       | `GET /services/{name}/env`      | Runtime environment (secrets masked).                                |
-| `watch_service_redeploy`          | (polls config + status)         | Block until a service config changes (redeploy detected) or timeout. |
-| `restart_lifecycle_service`       | `POST /services/{name}/restart` | Restart a service (requires per-repo access toggle).                 |
-| `self_restart`                    | `POST /self/restart`            | Restart the calling service (no per-repo toggle required).           |
-| `update_lifecycle_service_config` | `PUT /services/{name}/config`   | Update service configuration (requires per-repo access toggle).      |
-| `update_lifecycle_service_env`    | `PUT /services/{name}/env`      | Update service environment (requires per-repo access toggle).        |
+| Tool                              | HTTP                                 | Description                                                          |
+| --------------------------------- | ------------------------------------ | -------------------------------------------------------------------- |
+| `list_lifecycle_services`         | `GET /services`                      | List all managed services and status.                                |
+| `get_lifecycle_service_status`    | `GET /services/{name}/status`        | Live status + health-check history.                                  |
+| `get_lifecycle_service_config`    | `GET /services/{name}/config`        | Service configuration (secrets masked).                              |
+| `get_lifecycle_service_env`       | `GET /services/{name}/env`           | Runtime environment (secrets masked).                                |
+| `watch_service_redeploy`          | (polls config + status)              | Block until a service config changes (redeploy detected) or timeout. |
+| `restart_lifecycle_service`       | `POST /services/{name}/restart`      | Restart a service (requires per-repo access toggle).                 |
+| `self_restart`                    | `POST /chat/services/{name}/restart` | Restart this service (named via `lifecycle.service_name`).           |
+| `update_lifecycle_service_config` | `PUT /services/{name}/config`        | Update service configuration (requires per-repo access toggle).      |
+| `update_lifecycle_service_env`    | `PUT /services/{name}/env`           | Update service environment (requires per-repo access toggle).        |
 
 ### `watch_service_redeploy`
 
@@ -48,15 +48,17 @@ return a 403 error — the agent should treat that as "not permitted" and not re
 - `PUT  /services/{name}/config` — update service configuration
 - `PUT  /services/{name}/env` — update service environment
 
-## Self-restart (no toggle required)
+## Self-restart
 
-`POST /self/restart` (`self_restart`) is a privileged endpoint that allows the agent to restart its
-**own** service without requiring the per-repo access toggle. The deploy server identifies the
-calling service from the `X-API-Key` header, so the agent does not pass a service name — it always
-restarts the service that made the call. Use this after a deploy that changed the agent's own
-capabilities (new component, tool, skill, or permission) so the new capability is picked up.
+`self_restart` restarts the agent's **own** service via `POST /chat/services/{name}/restart`, where
+`{name}` is the configured `lifecycle.service_name` (the deploy server has no bare `/self/restart`
+route). It is granted by the same `allow_chat_access` / `chat_agent_mutatable` flag as the other
+chat-agent restart calls. Use this after a deploy that changed the agent's own capabilities (new
+component, tool, skill, or permission) so the new capability is picked up. When
+`lifecycle.service_name` is unset the tool returns a clear "not configured" message rather than
+attempting a call.
 
-This endpoint cannot restart other managed services — for those, use `restart_lifecycle_service`.
+This tool cannot restart other managed services — for those, use `restart_lifecycle_service`.
 
 The following endpoints remain forbidden — no tool exists for them and the agent must not attempt to
 reach them through any other path:
@@ -69,6 +71,6 @@ reach them through any other path:
 The five read-only tools are pure reads — they make no state changes and can be called freely for
 diagnostics and investigation. The three mutation tools (restart, config-write, env-write) make real
 state changes and are gated by the deploy server's per-repo access toggle. The `self_restart` tool
-is a mutation that restarts the agent's own service unconditionally (no toggle required) — it should
+is a mutation that restarts the agent's own service (named via `lifecycle.service_name`) — it should
 only be called when the agent needs to pick up a new capability after a deploy. Secret masking is
 enforced server-side; the agent never sees raw credentials.

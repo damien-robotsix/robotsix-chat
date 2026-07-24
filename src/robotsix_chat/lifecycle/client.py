@@ -144,16 +144,25 @@ class LifecycleClient:
         return await self._post(f"/services/{service_name}/restart")
 
     async def self_restart(self) -> str:
-        """``POST /self/restart`` — restart the calling service.
+        """Restart this service via ``POST /chat/services/{name}/restart``.
 
-        Unlike ``restart_service`` this endpoint does **not** require the
-        deploy server's per-repo access toggle — the server identifies the
-        calling service from the ``X-API-Key`` header and permits the
-        self-restart unconditionally.  Use this when the agent needs to
-        restart its own service (e.g. to pick up a new config or image)
-        and the per-repo toggle is not enabled.
+        The deploy server exposes **no** bare ``/self/restart`` route; a
+        service restarts itself by naming itself through
+        ``lifecycle.service_name``.  This uses the chat-agent restart
+        endpoint, granted by the same ``allow_chat_access`` /
+        ``chat_agent_mutatable`` flag that gates the other mutation
+        endpoints (restart access — not the more sensitive ``update``
+        capability).  Returns a clear message (never raises) when
+        ``service_name`` is not configured.
         """
-        return await self._post("/self/restart")
+        name = self._s.service_name
+        if not name:
+            return (
+                "self_restart is unavailable: lifecycle.service_name is not "
+                "configured, so this service cannot name itself to the deploy "
+                "server."
+            )
+        return await self._post(f"/chat/services/{name}/restart")
 
     async def update_service_config(
         self, service_name: str, config: dict[str, Any]

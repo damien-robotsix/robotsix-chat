@@ -185,21 +185,21 @@ def build_lifecycle_tools(
         return await client.restart_service(service_name)
 
     async def self_restart() -> str:
-        """Restart the agent's own service (no per-repo toggle required).
+        """Restart the agent's own service.
 
-        Sends a self-restart request to the deploy server.  Unlike
-        ``restart_lifecycle_service``, this endpoint identifies the calling
-        service from the API key and permits the restart unconditionally —
-        no per-repo access toggle is required.  Use this after a deploy
-        that changed the agent's own capabilities (new component, tool,
-        skill, or permission) so the new capability is picked up.
+        Restarts this service via the deploy server's chat-agent restart
+        endpoint, naming this service through the configured
+        ``lifecycle.service_name``.  Use this after a deploy that changed
+        the agent's own capabilities (new component, tool, skill, or
+        permission) so the new capability is picked up.
 
         Only call this for the agent's own service — it cannot restart
         other managed services.  For restarting other services, use
         ``restart_lifecycle_service``.
 
         Returns:
-            The restart result or an error message.
+            The restart result or an error message (including when
+            ``lifecycle.service_name`` is not configured).
 
         """
         return await client.self_restart()

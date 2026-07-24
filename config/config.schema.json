@@ -470,7 +470,7 @@
     },
     "LifecycleSettings": {
       "additionalProperties": false,
-      "description": "Read-only deploy-lifecycle API access for the agent.\n\nWhen enabled, the chat agent gains read-only tools to inspect the\ncentral-deploy lifecycle server: list services, check service status\nand health, and read configuration and environment (with secrets\nalready masked as ``***`` server-side by ``_mask_secrets``).\n\nAttributes:\n    enabled: Master switch.  When ``False``, no lifecycle tools are\n        offered.\n    base_url: Base URL of the deploy-lifecycle API server (no trailing\n        slash).\n    api_key: API key sent as the ``X-API-Key`` header.  Injected\n        server-side from ``ROBOTSIX_LIFECYCLE_API_KEY``.\n    timeout: Per-request HTTP timeout in seconds.",
+      "description": "Read-only deploy-lifecycle API access for the agent.\n\nWhen enabled, the chat agent gains read-only tools to inspect the\ncentral-deploy lifecycle server: list services, check service status\nand health, and read configuration and environment (with secrets\nalready masked as ``***`` server-side by ``_mask_secrets``).\n\nAttributes:\n    enabled: Master switch.  When ``False``, no lifecycle tools are\n        offered.\n    base_url: Base URL of the deploy-lifecycle API server (no trailing\n        slash), e.g. ``http://central-deploy:8100``.\n    api_key: API key sent as the ``X-API-Key`` header.\n    service_name: This service's own name as registered with the deploy\n        server (e.g. ``\"chat\"``).  Required for ``self_restart`` \u2014 the\n        deploy server has no bare ``/self/restart`` route, so a service\n        restarts itself by naming itself at\n        ``POST /chat/services/{service_name}/restart``.  When empty,\n        ``self_restart`` (and the cognee frozen-store auto-recovery that\n        depends on it) is unavailable.\n    timeout: Per-request HTTP timeout in seconds.",
       "properties": {
         "enabled": {
           "default": false,
@@ -488,6 +488,11 @@
           "title": "Api Key",
           "type": "string",
           "writeOnly": true
+        },
+        "service_name": {
+          "default": "",
+          "title": "Service Name",
+          "type": "string"
         },
         "timeout": {
           "default": 30.0,
