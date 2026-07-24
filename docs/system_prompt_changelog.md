@@ -22,7 +22,7 @@ output and wasting system resources. These two rules close the gap: the first pr
 periodic subsession from offloading its own work to a child, and the second prevents a parent
 agent from bypassing an existing periodic monitor by spawning a one-shot task.
 
-**SHA256:** `604b119ce9c8c3d1222a1756345e700987f9e18660ac5978974cbc296d892129`
+**SHA256:** `d6c9eadbcd4d732dcf25bb7665a39e51c305bb1863e6622fae9e5ff43a348fbf`
 
 ## v46 — 2026-07-22 — improve-terminal-state-notification-conc-70aa
 
