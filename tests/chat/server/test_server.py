@@ -2358,7 +2358,9 @@ async def test_chat_turn_mirrored_to_event_bus() -> None:
         SSE_CHAT_TURN_STARTED_TYPE,
     )
 
-    async with mock_app(tokens=["Hel", "lo"], message_coalesce_seconds=0.0) as f:
+    async with mock_app(
+        tokens=["Hello", " ", "world!"], message_coalesce_seconds=0.0
+    ) as f:
         session_id = "s-mirror"
         # Subscribe before sending so the whole turn is captured.
         q = f.app.state.event_bus.subscribe(session_id)
@@ -2392,7 +2394,7 @@ async def test_chat_turn_mirrored_to_event_bus() -> None:
         content = "".join(
             str(fr["content"]) for fr in frames if fr["type"] == SSE_CHAT_TOKEN_TYPE
         )
-        assert content == "Hello"
+        assert content == "Hello world!"
 
 
 @pytest.mark.asyncio

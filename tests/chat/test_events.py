@@ -326,13 +326,13 @@ def test_append_turn_token_publishes_and_accumulates() -> None:
     bus.begin_turn("s1", "turn-1")
     q.get_nowait()  # drop the started frame
 
-    bus.append_turn_token("s1", "turn-1", "Hel")
-    bus.append_turn_token("s1", "turn-1", "lo")
+    bus.append_turn_token("s1", "turn-1", "Hello")
+    bus.append_turn_token("s1", "turn-1", " world")
 
     first = q.get_nowait()
     assert first["type"] == SSE_CHAT_TOKEN_TYPE
-    assert first["content"] == "Hel"
-    assert q.get_nowait()["content"] == "lo"
+    assert first["content"] == "Hello"
+    assert q.get_nowait()["content"] == " world"
 
 
 def test_subscribe_mid_turn_replays_accumulated_content() -> None:
@@ -343,8 +343,8 @@ def test_subscribe_mid_turn_replays_accumulated_content() -> None:
     """
     bus = EventBus()
     bus.begin_turn("s1", "turn-1")
-    bus.append_turn_token("s1", "turn-1", "Hel")
-    bus.append_turn_token("s1", "turn-1", "lo")
+    bus.append_turn_token("s1", "turn-1", "Hello")
+    bus.append_turn_token("s1", "turn-1", " world")
 
     late = bus.subscribe("s1")
     # First frame is the replay of everything so far.
@@ -352,7 +352,7 @@ def test_subscribe_mid_turn_replays_accumulated_content() -> None:
         "type": SSE_CHAT_TURN_RESUME_TYPE,
         "session_id": "s1",
         "turn_id": "turn-1",
-        "content": "Hello",
+        "content": "Hello world",
     }
     # A subsequent live token reaches the late subscriber but is NOT duplicated
     # into the replay.
