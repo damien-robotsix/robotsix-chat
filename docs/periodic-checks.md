@@ -100,5 +100,21 @@ POST /subsessions/{subsession_id}/close
    the parent and the subsession closes.
 7. Subsessions persist to `/data/subsessions.json`; periodic ones are automatically resumed after a
    process restart (e.g. Watchtower redeploy) with their remaining run budget.
-8. Concurrency is bounded by `subsessions.max_concurrent` (default 8, across all subsession kinds);
+8. **Blocked-resume threshold detection.** When a periodic monitor resumes and finds its ticket
+   still BLOCKED, the subsession's checkpoint tracks a `blocked_resume_count`. If the ticket stays
+   blocked across **3 consecutive resume attempts** (controlled by `_MAX_BLOCKED_RESUMES` in
+   `worker_mill.py`), the subsession is automatically closed with `close_reason="repeated_blocked"`
+   and a diagnostic summary is delivered to the parent conversation. This prevents the agent from
+   cycling through a dead-end implement→blocked→resume loop — e.g. config-standard footprint
+   violations that the assistant cannot fix on its own (the implement step fails to revert
+   base-branch files, re-blocking the ticket on every attempt).
+   - The counter **resets to 0** any time the ticket transitions to a non-blocked state between
+     resumes, meaning the agent made progress.
+   - The stale-worker cap (`_MAX_STALE_WORKER_RESUMES = 2`, which closes with
+     `close_reason="stale_worker"`) is checked independently; whichever cap fires first closes the
+     subsession.
+   - When the counter is between 1 and 2 (below the threshold), the agent receives an additional
+     context note:
+     `"Repeated block: this is blocked-resume attempt X/3 (N remaining before auto-close). If the same failure keeps recurring, stop auto-retrying and escalate to the operator."`
+9. Concurrency is bounded by `subsessions.max_concurrent` (default 8, across all subsession kinds);
    exceeding it returns a friendly refusal rather than raising.

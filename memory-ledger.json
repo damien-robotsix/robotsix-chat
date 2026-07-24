@@ -5,7 +5,9 @@
     "src/robotsix_chat/": "Main source package",
     "src/robotsix_chat/repo/direct/__init__.py": "Direct-repo tool factory (push, PR, direct_fix). Tools are nested async functions inside build_direct_repo_tools(). Entry point: build_direct_repo_tools(settings, component_request=None).",
     "src/robotsix_chat/repo/study/workspace.py": "WorkspaceManager class for tarball-based repo study (no git binary). Entry point: build_repo_study_tools(settings, direct_repo_settings). URL-building for tarball downloads at line ~152.",
-    "src/robotsix_chat/chat/server/app.py": "Starlette ASGI app. _build_static_tools() at line ~582 assembles all tool lists."
+    "src/robotsix_chat/chat/server/app.py": "Starlette ASGI app. _build_static_tools() at line ~582 assembles all tool lists.",
+    "docs/periodic-checks.md": "User-facing docs for periodic subsessions (monitors). Documents the blocked-resume threshold detection (item 8 under 'How it works under the hood'): 3 consecutive blocked resumes auto-close with repeated_blocked reason.",
+    "docs/architecture.md": "Architecture docs — subpackage inventory mentions blocked-resume threshold in the subsessions/ row."
   },
   "conventions": {
     "changelog": "CHANGELOG.md has unreleased section at top; changes listed as markdown bullets.",
