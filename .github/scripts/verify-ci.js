@@ -89,10 +89,18 @@ module.exports = async ({github, context, core}) => {
       })
     );
 
-    // Deploy jobs (e.g. GitHub Pages) can fail for infrastructure reasons
-    // outside the codebase (repo settings, environment config).  Exclude them
-    // from the CI gate so they don't block releases.
-    const isDeploy = (r) => (r.name || '').endsWith(' / Deploy');
+    // Deploy jobs (e.g. GitHub Pages, reusable-workflow nested deploy
+    // steps) can fail for infrastructure reasons outside the codebase
+    // (repo settings, environment config).  Exclude them from the CI gate
+    // so they don't block releases.
+    //
+    // Two patterns: reusable-workflow nested jobs end with " / Deploy";
+    // standalone deploy jobs (e.g. "Deploy to GitHub Pages") contain
+    // "Deploy" as a whole word.
+    const isDeploy = (r) => {
+      const name = r.name || '';
+      return name.endsWith(' / Deploy') || /\bDeploy\b/.test(name);
+    };
     others = runs.filter((r) => !isSelf(r) && !isDeploy(r));
     const pending = others.filter((r) => r.status !== 'completed');
 

@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - test-only
+- CI failure: Release image on main — `uv audit` now requires `--preview-features audit-command` on uv ≥0.12; added the flag to both the `lockfile` CI job and the `uv-audit` pre-commit hook. Also broadened the `verify-ci.js` deploy-job exclusion filter and fixed Python 2-style `except E, V:` syntax in `repo/direct/__init__.py`.
 - Add "Bootstrap deadlock" guidance to the agent system prompt (v39): when a PR
   modifies the merge pipeline itself, auto-merge may be self-referential — escalate
   to the operator for a manual merge rather than looping on merge-now. Extracted
