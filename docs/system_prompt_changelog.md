@@ -5,6 +5,23 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v46 — 2026-07-22 — improve-terminal-state-notification-conc-70aa
+
+**Summary:** Add a conciseness rule for periodic subsession terminal-state notifications. When a
+periodic subsession reaches a verified terminal state and delivers its summary to the main
+conversation, the assistant must report the outcome in ONE sentence rather than echoing the
+subsession's full run history, listing every status transition, or restating the summary text
+verbatim. The summary widget already shows the detail — the assistant's job is to confirm the
+conclusion and move on.
+
+**Rationale:** The assistant frequently echoes the entire subsession state history (long lists of
+run summaries, repeated statuses) when a periodic monitor closes, even though the user has already
+seen every intermediate notification and the summary widget is visible. This redundant output adds
+cognitive load. The new rule teaches the assistant to treat terminal-state delivery as a one-line
+confirmation, not a recap opportunity.
+
+**SHA256:** `b0eb495d432cbaabd2873e705ba240edf19f8b6f692cf87c3c169c6784e95fa9`
+
 ## v46 — 2026-07-22 — add-guidance-to-system-prompt-for-handli-8e03
 
 **Summary:** Add a "Repo creation bootstrap" paragraph to the Autonomy section. When creating a new
