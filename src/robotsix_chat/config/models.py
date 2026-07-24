@@ -91,11 +91,12 @@ class MemorySettings(BaseModel):
             cannot go unnoticed.  Default ``10.0``.
         auto_recovery_enabled: When ``True`` (default), a freeze that persists
             past ``frozen_store_recovery_minutes`` triggers a guarded self-restart
-            (``POST /self/restart``) — the proven remedy for the orphaned
-            LanceDB/sqlite lock — instead of staying frozen until a human
-            restarts the container.  Requires ``lifecycle.enabled`` (the
-            self-restart transport); otherwise recovery is skipped and the
-            freeze is only surfaced.
+            (via ``lifecycle.self_restart`` →
+            ``POST /chat/services/{name}/restart``) — the proven remedy for the
+            orphaned LanceDB/sqlite lock — instead of staying frozen until a
+            human restarts the container.  Requires ``lifecycle.enabled`` **and**
+            ``lifecycle.service_name`` (the self-restart transport); otherwise
+            recovery is skipped and the freeze is only surfaced.
         frozen_store_recovery_minutes: Freeze duration (minutes) after which
             auto-recovery self-restart is attempted.  Should be greater than
             ``frozen_store_alert_minutes`` so the store is surfaced as degraded
