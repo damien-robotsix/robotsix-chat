@@ -429,12 +429,10 @@ def cognee_memory_with_langfuse_creds(
 @pytest.mark.asyncio
 async def test_litellm_langfuse_callback_configured_with_dedicated_creds(
     cognee_memory_with_langfuse_creds: tuple[CogneeMemory, Any, Any, Any],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
     """When dedicated creds are set, litellm's Langfuse callback is wired."""
     mem, _, fake_litellm, _ = cognee_memory_with_langfuse_creds
-    monkeypatch.delenv("LANGFUSE_BASE_URL", raising=False)
-    monkeypatch.setenv("LANGFUSE_HOST", "https://langfuse.robotsix.net")
+    mem._settings.langfuse.host = "https://langfuse.robotsix.net"
     await mem.setup()
 
     # An explicitly-configured LangfuseOtelLogger INSTANCE is registered (the
@@ -466,31 +464,12 @@ async def test_litellm_langfuse_callback_configured_with_dedicated_creds(
 
 
 @pytest.mark.asyncio
-async def test_litellm_langfuse_callback_prefers_base_url_env(
-    cognee_memory_with_langfuse_creds: tuple[CogneeMemory, Any, Any, Any],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """LANGFUSE_BASE_URL (llmio's name) wins over LANGFUSE_HOST."""
-    mem, _, fake_litellm, _ = cognee_memory_with_langfuse_creds
-    monkeypatch.setenv("LANGFUSE_BASE_URL", "https://langfuse.robotsix.net")
-    monkeypatch.setenv("LANGFUSE_HOST", "https://wrong.example.com")
-    await mem.setup()
-
-    assert (
-        fake_litellm.callbacks[0].config.endpoint
-        == "https://langfuse.robotsix.net/api/public/otel/v1/traces"
-    )
-
-
-@pytest.mark.asyncio
 async def test_litellm_langfuse_callback_skipped_without_host(
     cognee_memory_with_langfuse_creds: tuple[CogneeMemory, Any, Any, Any],
-    monkeypatch: pytest.MonkeyPatch,
 ) -> None:
-    """No base-URL env -> no callback (never default to Langfuse US cloud)."""
+    """Empty host -> no callback (never default to Langfuse US cloud)."""
     mem, _, fake_litellm, _ = cognee_memory_with_langfuse_creds
-    monkeypatch.delenv("LANGFUSE_BASE_URL", raising=False)
-    monkeypatch.delenv("LANGFUSE_HOST", raising=False)
+    mem._settings.langfuse.host = ""
     await mem.setup()
 
     assert fake_litellm.callbacks == []

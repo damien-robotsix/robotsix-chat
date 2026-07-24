@@ -415,12 +415,11 @@ class CogneeMemory:
             )
             return
 
-        # The cognee project lives on the same Langfuse instance as the main
-        # project, so reuse the deployment's base URL (llmio's env name, with
-        # litellm's LANGFUSE_HOST honored as a fallback).
-        lf_host = os.environ.get("LANGFUSE_BASE_URL") or os.environ.get(
-            "LANGFUSE_HOST", ""
-        )
+        # Read the host from the memory-specific Langfuse config so that
+        # ``memory.langfuse.host`` in config.json is actually honored
+        # (instead of relying on env vars set from the top-level
+        # ``langfuse.host`` by the server CLI).
+        lf_host = s.langfuse.host
         if not lf_host:
             logger.warning(
                 "cognee Langfuse creds set but no LANGFUSE_BASE_URL/LANGFUSE_HOST; "
