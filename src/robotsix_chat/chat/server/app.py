@@ -62,6 +62,7 @@ from .routes import (
     config_versions_endpoint,
     diagnostics_create_endpoint,
     diagnostics_list_endpoint,
+    draft_get_endpoint,
     draft_save_endpoint,
     events_endpoint,
     github_actions_secret_endpoint,
@@ -444,6 +445,7 @@ def create_app(
             diagnostics_list_endpoint,
             methods=["GET"],
         ),
+    ]
     if serve_ui:
         routes.append(Route("/", ui_endpoint, methods=["GET"]))
         static_dir = str(resources.files("robotsix_chat") / "ui" / "static")
