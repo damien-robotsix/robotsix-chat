@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import uuid
 from unittest.mock import MagicMock
 
 import pytest
@@ -15,6 +16,18 @@ from robotsix_chat.chat.events import SSE_AUTONOMOUS_STATE_TYPE
 from robotsix_chat.chat.server.app import create_app
 from robotsix_chat.chat.server.routes.chat import RunSerializer
 from robotsix_chat.llm import LlmioChatAgent
+
+
+@pytest.fixture
+def owner_id() -> str:
+    """Return a unique owner ID to prevent collisions under xdist parallelism."""
+    return f"owner-{uuid.uuid4().hex}"
+
+
+@pytest.fixture
+def other_owner_id() -> str:
+    """Return a unique owner ID representing a different owner."""
+    return f"owner-{uuid.uuid4().hex}"
 
 
 @pytest.fixture
@@ -70,21 +83,23 @@ class TestApproveEndpoint:
     """POST /sessions/{id}/approve tests."""
 
     @pytest.mark.asyncio
-    async def test_approve_requires_owner_id(self, client, autonomous_runner, store):
+    async def test_approve_requires_owner_id(
+        self, client, autonomous_runner, store, owner_id
+    ):
         """Missing owner_id returns 400."""
-        sid = store.create_session("owner1")["session_id"]
-        aq = autonomous_runner.create_session("owner1", session_id=sid)
+        sid = store.create_session(owner_id)["session_id"]
+        aq = autonomous_runner.create_session(owner_id, session_id=sid)
         aq.state = AutonomousState.awaiting_approval
         r = await client.post(f"/sessions/{sid}/approve")
         assert r.status_code == 400
 
     @pytest.mark.asyncio
-    async def test_approve_success(self, client, autonomous_runner, store):
+    async def test_approve_success(self, client, autonomous_runner, store, owner_id):
         """Valid approve transitions to executing and returns 200."""
-        sid = store.create_session("owner1")["session_id"]
-        aq = autonomous_runner.create_session("owner1", session_id=sid)
+        sid = store.create_session(owner_id)["session_id"]
+        aq = autonomous_runner.create_session(owner_id, session_id=sid)
         aq.state = AutonomousState.awaiting_approval
-        r = await client.post(f"/sessions/{sid}/approve?owner_id=owner1")
+        r = await client.post(f"/sessions/{sid}/approve?owner_id={owner_id}")
         assert r.status_code == 200
         data = r.json()
         assert data["approved"] is True
@@ -92,33 +107,33 @@ class TestApproveEndpoint:
 
     @pytest.mark.asyncio
     async def test_approve_wrong_owner_returns_403(
-        self, client, autonomous_runner, store
+        self, client, autonomous_runner, store, owner_id, other_owner_id
     ):
         """Mismatched owner_id returns 403."""
-        sid = store.create_session("owner1")["session_id"]
-        aq = autonomous_runner.create_session("owner1", session_id=sid)
+        sid = store.create_session(owner_id)["session_id"]
+        aq = autonomous_runner.create_session(owner_id, session_id=sid)
         aq.state = AutonomousState.awaiting_approval
-        r = await client.post(f"/sessions/{sid}/approve?owner_id=owner2")
+        r = await client.post(f"/sessions/{sid}/approve?owner_id={other_owner_id}")
         assert r.status_code == 403
         data = r.json()
         assert "owner_id mismatch" in data["error"]
 
     @pytest.mark.asyncio
-    async def test_approve_unknown_session_returns_404(self, client):
+    async def test_approve_unknown_session_returns_404(self, client, owner_id):
         """Unknown session returns 404."""
-        r = await client.post("/sessions/nonexistent/approve?owner_id=owner1")
+        r = await client.post(f"/sessions/nonexistent/approve?owner_id={owner_id}")
         assert r.status_code == 404
 
     @pytest.mark.asyncio
     async def test_approve_wrong_state_returns_409(
-        self, client, autonomous_runner, store
+        self, client, autonomous_runner, store, owner_id
     ):
         """Approving when not awaiting_approval returns 409."""
-        sid = store.create_session("owner1")["session_id"]
+        sid = store.create_session(owner_id)["session_id"]
         autonomous_runner.create_session(
-            "owner1", session_id=sid, schedule_kickoff=False
+            owner_id, session_id=sid, schedule_kickoff=False
         )
-        r = await client.post(f"/sessions/{sid}/approve?owner_id=owner1")
+        r = await client.post(f"/sessions/{sid}/approve?owner_id={owner_id}")
         assert r.status_code == 409
 
 
@@ -126,12 +141,12 @@ class TestRejectEndpoint:
     """POST /sessions/{id}/reject tests."""
 
     @pytest.mark.asyncio
-    async def test_reject_success(self, client, autonomous_runner, store):
+    async def test_reject_success(self, client, autonomous_runner, store, owner_id):
         """Valid reject resets to selecting_subject and returns 200."""
-        sid = store.create_session("owner1")["session_id"]
-        aq = autonomous_runner.create_session("owner1", session_id=sid)
+        sid = store.create_session(owner_id)["session_id"]
+        aq = autonomous_runner.create_session(owner_id, session_id=sid)
         aq.state = AutonomousState.awaiting_approval
-        r = await client.post(f"/sessions/{sid}/reject?owner_id=owner1")
+        r = await client.post(f"/sessions/{sid}/reject?owner_id={owner_id}")
         assert r.status_code == 200
         data = r.json()
         assert data["rejected"] is True
@@ -139,31 +154,31 @@ class TestRejectEndpoint:
 
     @pytest.mark.asyncio
     async def test_reject_wrong_owner_returns_403(
-        self, client, autonomous_runner, store
+        self, client, autonomous_runner, store, owner_id, other_owner_id
     ):
         """Mismatched owner_id returns 403."""
-        sid = store.create_session("owner1")["session_id"]
-        aq = autonomous_runner.create_session("owner1", session_id=sid)
+        sid = store.create_session(owner_id)["session_id"]
+        aq = autonomous_runner.create_session(owner_id, session_id=sid)
         aq.state = AutonomousState.awaiting_approval
-        r = await client.post(f"/sessions/{sid}/reject?owner_id=owner2")
+        r = await client.post(f"/sessions/{sid}/reject?owner_id={other_owner_id}")
         assert r.status_code == 403
 
     @pytest.mark.asyncio
-    async def test_reject_unknown_session_returns_404(self, client):
+    async def test_reject_unknown_session_returns_404(self, client, owner_id):
         """Unknown session returns 404."""
-        r = await client.post("/sessions/nonexistent/reject?owner_id=owner1")
+        r = await client.post(f"/sessions/nonexistent/reject?owner_id={owner_id}")
         assert r.status_code == 404
 
     @pytest.mark.asyncio
     async def test_reject_wrong_state_returns_409(
-        self, client, autonomous_runner, store
+        self, client, autonomous_runner, store, owner_id
     ):
         """Rejecting when not awaiting_approval returns 409."""
-        sid = store.create_session("owner1")["session_id"]
+        sid = store.create_session(owner_id)["session_id"]
         autonomous_runner.create_session(
-            "owner1", session_id=sid, schedule_kickoff=False
+            owner_id, session_id=sid, schedule_kickoff=False
         )
-        r = await client.post(f"/sessions/{sid}/reject?owner_id=owner1")
+        r = await client.post(f"/sessions/{sid}/reject?owner_id={owner_id}")
         assert r.status_code == 409
 
 
@@ -172,40 +187,52 @@ class TestApprovalGate409:
 
     @pytest.mark.asyncio
     async def test_chat_returns_409_when_awaiting_approval(
-        self, client, autonomous_runner, store, mock_agent
+        self, client, autonomous_runner, store, mock_agent, owner_id
     ):
         """Messages to an awaiting_approval session are rejected with 409."""
-        sid = store.create_session("owner1")["session_id"]
-        aq = autonomous_runner.create_session("owner1", session_id=sid)
+        sid = store.create_session(owner_id)["session_id"]
+        aq = autonomous_runner.create_session(owner_id, session_id=sid)
         aq.state = AutonomousState.awaiting_approval
         r = await client.post(
             "/chat",
-            json={"message": "Hello", "session_id": sid, "owner_id": "owner1"},
+            json={
+                "message": "Hello",
+                "session_id": sid,
+                "owner_id": owner_id,
+            },
         )
         assert r.status_code == 409
 
     @pytest.mark.asyncio
     async def test_chat_allows_when_not_awaiting_approval(
-        self, client, autonomous_runner, store
+        self, client, autonomous_runner, store, owner_id
     ):
         """Messages to a non-awaiting autonomous session are not blocked."""
-        sid = store.create_session("owner1")["session_id"]
+        sid = store.create_session(owner_id)["session_id"]
         autonomous_runner.create_session(
-            "owner1", session_id=sid, schedule_kickoff=False
+            owner_id, session_id=sid, schedule_kickoff=False
         )
         r = await client.post(
             "/chat",
-            json={"message": "Hello", "session_id": sid, "owner_id": "owner1"},
+            json={
+                "message": "Hello",
+                "session_id": sid,
+                "owner_id": owner_id,
+            },
         )
         assert r.status_code != 409
 
     @pytest.mark.asyncio
-    async def test_chat_allows_non_autonomous_session(self, client, store):
+    async def test_chat_allows_non_autonomous_session(self, client, store, owner_id):
         """Messages to a non-autonomous session are never blocked."""
-        sid = store.create_session("owner1")["session_id"]
+        sid = store.create_session(owner_id)["session_id"]
         r = await client.post(
             "/chat",
-            json={"message": "Hello", "session_id": sid, "owner_id": "owner1"},
+            json={
+                "message": "Hello",
+                "session_id": sid,
+                "owner_id": owner_id,
+            },
         )
         assert r.status_code != 409
 
@@ -225,16 +252,16 @@ class TestSessionsListAutonomousAnnotation:
 
     @pytest.mark.asyncio
     async def test_sessions_list_includes_autonomous_fields(
-        self, client, autonomous_runner, store
+        self, client, autonomous_runner, store, owner_id
     ):
         """GET /sessions returns 200 with autonomous annotations."""
-        sid = store.create_session("owner1")["session_id"]
-        aq = autonomous_runner.create_session("owner1", session_id=sid)
+        sid = store.create_session(owner_id)["session_id"]
+        aq = autonomous_runner.create_session(owner_id, session_id=sid)
         aq.state = AutonomousState.awaiting_approval
         aq.plan_text = "Draft plan text"
         aq.auto_turn_count = 3
 
-        r = await client.get("/sessions?owner_id=owner1")
+        r = await client.get(f"/sessions?owner_id={owner_id}")
         assert r.status_code == 200
         sessions = r.json()["sessions"]
         assert len(sessions) == 1

@@ -1,0 +1,1 @@
+ci_fix: out-of-scope CI failure — Python CI (shared) / Tests — test_autonomous_endpoints.py::TestRejectEndpoint::test_reject_wrong_owner_returns_403 in tests/chat/server/test_autonomous_endpoints.py — fix test isolation (likely unique session IDs or proper cleanup) to prevent collision under pytest-xdist parallelism
