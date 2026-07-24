@@ -1,5 +1,12 @@
 ## 0.0.0 (unreleased)
 
+- Added blocked-resume threshold detection: when a ticket monitor finds the
+  ticket BLOCKED on every resume for `_MAX_BLOCKED_RESUMES` (3) consecutive
+  attempts, the subsession is automatically closed with reason
+  `"repeated_blocked"`.  This prevents the agent from cycling through the same
+  dead-end implement→blocked→resume loop (e.g. config-standard footprint
+  violations the assistant cannot fix on its own) and escalates to the operator
+  via the parent delivery channel.
 - test-only
 - CI failure: Release image on main — `uv audit` now requires `--preview-features audit-command` on uv ≥0.12; added the flag to both the `lockfile` CI job and the `uv-audit` pre-commit hook. Also broadened the `verify-ci.js` deploy-job exclusion filter and fixed Python 2-style `except E, V:` syntax in `repo/direct/__init__.py`.
 - Add "Bootstrap deadlock" guidance to the agent system prompt (v39): when a PR

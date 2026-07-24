@@ -29,6 +29,14 @@ _MAX_MILL_FAILURES = 2
 # any fix PRs merged since the ticket was blocked cannot be present.
 _MAX_STALE_WORKER_RESUMES = 2
 
+# Consecutive blocked-on-resume events before the subsession is closed.
+# When a ticket is BLOCKED on every resume (the agent keeps hitting the
+# same failure without making progress), auto-retry is futile — close
+# the monitor so the operator can intervene (e.g. manually revert
+# footprint-violating files rather than re-running the same dead-end
+# implement loop).
+_MAX_BLOCKED_RESUMES = 3
+
 # Ticket states recognised by the resume status check.
 _TICKET_STATE_TERMINAL = frozenset({"closed", "done"})
 _TICKET_STATE_BLOCKED = frozenset({"blocked"})
@@ -284,6 +292,15 @@ async def _check_resume_status(
         else "unknown"
     )
 
+    # Reset the blocked-resume counter when the ticket is NOT blocked —
+    # the agent made progress (the ticket left the "blocked" state at
+    # some point since the last resume).
+    if current_state_str.lower() not in _TICKET_STATE_BLOCKED and checkpoint.get(
+        "blocked_resume_count"
+    ):
+        checkpoint["blocked_resume_count"] = 0
+        env.registry.update_checkpoint(sub_id, checkpoint)
+
     # Terminal → close the subsession.
     if current_state_str.lower() in _TICKET_STATE_TERMINAL:
         summary = (
@@ -308,6 +325,17 @@ async def _check_resume_status(
 
     # Blocked → inject context for the agent to handle.
     if current_state_str.lower() in _TICKET_STATE_BLOCKED:
+        # Track consecutive blocked-on-resume events.  If the ticket
+        # keeps landing back in BLOCKED after every resume attempt
+        # (e.g. the agent hits the same config-standard footprint
+        # violation and never reverts the offending files), auto-retry
+        # is futile — close the monitor so the operator can intervene.
+        raw_count = checkpoint.get("blocked_resume_count")
+        blocked_count = int(raw_count) if isinstance(raw_count, (int, float)) else 0
+        blocked_count += 1
+        checkpoint["blocked_resume_count"] = blocked_count
+        env.registry.update_checkpoint(sub_id, checkpoint)
+
         # Probe mill health for worker freshness.  If the worker has not
         # been redeployed since the last resume attempt, a fix merged in
         # the meantime cannot be present — auto-resuming would just hit
@@ -322,25 +350,74 @@ async def _check_resume_status(
             ticket_id,
             last_known_str,
         )
-        if not stale_decision or stale_context is not None:
-            return (stale_decision, stale_context)
+        if not stale_decision:
+            # Stale-worker cap reached — subsession already closed.
+            return (False, stale_context)
 
-        context = (
-            f"[System note: this ticket monitor was restarted after a "
-            f"service restart.  Ticket {ticket_id} is currently BLOCKED "
-            f"(previous known state: {last_known_str}).  Fetch the ticket "
-            f"history and comments before deciding whether to auto-resume "
-            f"transient failures (provider timeouts, sandbox 503s) or "
-            f"escalate substantive blockers to the operator.  "
-            f"IMPORTANT: merge/rebase conflicts are substantive blockers "
-            f"— do NOT auto-resume these; the assistant has no "
-            f"conflict-resolution tools so retrying is futile.  Surface "
-            f"them to the operator immediately via user_chat.]"
-        )
+        # Check the blocked-resume cap (independent of stale-worker).
+        if blocked_count >= _MAX_BLOCKED_RESUMES:
+            summary = (
+                f"Ticket {ticket_id} has been BLOCKED on every resume "
+                f"for {blocked_count} consecutive attempts.  The agent "
+                f"is cycling without making progress — this typically "
+                f"means a footprint violation, merge conflict, or "
+                f"other CI gate that the assistant cannot fix on its "
+                f"own.  Close the monitor so the operator can intervene "
+                f"(e.g. manually revert base-branch files, resolve the "
+                f"conflict, or invoke a branch-revert task)."
+            )
+            closed = env.registry.mark_closed(
+                sub_id,
+                summary=summary,
+                reason="repeated_blocked",
+                closed_by="system",
+            )
+            if closed is not None:
+                await env.delivery.deliver_summary(closed, summary, "repeated_blocked")
+            logger.warning(
+                "Subsession %s (ticket %s): blocked %d consecutive "
+                "times on resume — closing to prevent futile retries.",
+                sub_id,
+                ticket_id,
+                blocked_count,
+            )
+            return (False, summary)
+
+        # Under the blocked-resume cap.  Use the stale-worker context if
+        # present; otherwise build the standard blocked-context message.
+        if stale_context is not None:
+            context = stale_context
+        else:
+            context = (
+                f"[System note: this ticket monitor was restarted after a "
+                f"service restart.  Ticket {ticket_id} is currently BLOCKED "
+                f"(previous known state: {last_known_str}).  Fetch the ticket "
+                f"history and comments before deciding whether to auto-resume "
+                f"transient failures (provider timeouts, sandbox 503s) or "
+                f"escalate substantive blockers to the operator.  "
+                f"IMPORTANT: merge/rebase conflicts are substantive blockers "
+                f"— do NOT auto-resume these; the assistant has no "
+                f"conflict-resolution tools so retrying is futile.  Surface "
+                f"them to the operator immediately via user_chat.]"
+            )
+
+        if blocked_count > 1:
+            remaining = _MAX_BLOCKED_RESUMES - blocked_count
+            context += (
+                f"\n\n[Repeated block: this is blocked-resume attempt "
+                f"{blocked_count}/{_MAX_BLOCKED_RESUMES} "
+                f"({remaining} remaining before auto-close).  "
+                f"If the same failure keeps recurring, stop auto-retrying "
+                f"and escalate to the operator.]"
+            )
+
         logger.info(
-            "Subsession %s (ticket %s): blocked on resume — injecting context.",
+            "Subsession %s (ticket %s): blocked on resume "
+            "(attempt %d/%d) — injecting context.",
             sub_id,
             ticket_id,
+            blocked_count,
+            _MAX_BLOCKED_RESUMES,
         )
         return (True, context)
 

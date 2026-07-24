@@ -1623,6 +1623,152 @@ async def test_check_resume_status_blocked_no_previous_started_at_stores_it():
     assert updated.checkpoint.get("worker_started_at") == "2024-01-01T00:00:00Z"
 
 
+# -- blocked-resume threshold detection --------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_blocked_increments_blocked_resume_count():
+    """First blocked resume increments blocked_resume_count and returns context."""
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+    )
+
+    mock = _mock_async_client(response_json={"state": "blocked"})
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is True
+    assert context_msg is not None
+    assert "BLOCKED" in context_msg
+
+    # Counter should be 1 after first blocked resume.
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.checkpoint is not None
+    assert updated.checkpoint.get("blocked_resume_count") == 1
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_blocked_second_attempt_adds_warning():
+    """Second blocked resume adds a repeated-block warning to the context."""
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+        blocked_resume_count=1,
+    )
+
+    mock = _mock_async_client(response_json={"state": "blocked"})
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is True
+    assert context_msg is not None
+    assert "Repeated block" in context_msg
+    assert "2/3" in context_msg
+    assert "1 remaining" in context_msg
+
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.checkpoint is not None
+    assert updated.checkpoint.get("blocked_resume_count") == 2
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_blocked_at_cap_closes():
+    """Third consecutive blocked resume closes the subsession."""
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+        blocked_resume_count=2,
+    )
+
+    mock = _mock_async_client(response_json={"state": "blocked"})
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is False
+    assert context_msg is not None
+    assert "3 consecutive" in context_msg
+    assert "TICKET-1" in context_msg
+
+    await asyncio.sleep(0)
+
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.status is SubsessionStatus.CLOSED
+    assert updated.close_reason == "repeated_blocked"
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_blocked_resets_counter_on_non_blocked():
+    """When ticket transitions to a non-blocked state, the counter resets."""
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="blocked",
+        blocked_resume_count=2,
+    )
+
+    mock = _mock_async_client(response_json={"state": "open"})
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is True
+    assert context_msg is not None
+    assert "Continue monitoring" in context_msg
+
+    # Counter should be reset to 0.
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.checkpoint is not None
+    assert updated.checkpoint.get("blocked_resume_count") == 0
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_blocked_stale_and_blocked_caps_independent():
+    """Stale-worker cap closes independently of blocked-resume cap.
+
+    When the stale-worker cap fires first (at 2), the blocked-resume
+    counter is still tracked but the stale-worker close takes precedence.
+    """
+    env = _env_with_board()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+        worker_started_at="2024-01-01T00:00:00Z",
+        stale_worker_resume_count=1,
+        blocked_resume_count=1,
+    )
+
+    mock = _mock_async_client_dual(
+        ticket_json={"state": "blocked"},
+        health_json={"status": "alive", "started_at": "2024-01-01T00:00:00Z"},
+    )
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    # Stale-worker cap (2) fires before blocked-resume cap (3).
+    assert should_continue is False
+    assert context_msg is not None
+    assert "not been redeployed" in context_msg
+
+    await asyncio.sleep(0)
+
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.status is SubsessionStatus.CLOSED
+    assert updated.close_reason == "stale_worker"
+
+
 # -- _get_mill_started_at ----------------------------------------------------
 
 
