@@ -225,7 +225,9 @@ async def test_endpoint_404_when_repo_not_in_scope(
     gh = _gh_sec_settings()
     dr = _direct_repo_settings()
 
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps(
@@ -264,7 +266,9 @@ async def test_endpoint_enables_dependency_graph(
     gh = _gh_sec_settings()
     dr = _direct_repo_settings()
 
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps(
@@ -307,7 +311,9 @@ async def test_endpoint_cross_org_repo(
     gh = _gh_sec_settings()
     dr = _direct_repo_settings()
 
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "other-org/some-repo"}]}),
