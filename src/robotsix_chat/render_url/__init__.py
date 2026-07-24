@@ -13,6 +13,8 @@ factory returns an empty list (graceful degradation).
 
 from __future__ import annotations
 
+__all__ = ["build_render_url_tools"]
+
 import base64
 import json
 import logging

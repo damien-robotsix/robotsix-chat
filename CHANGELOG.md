@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - System prompt v46: add "Repo creation bootstrap" guidance — proactively seed an initial commit during repo creation to prevent tool-chain deadlocks with empty repos.
+- Added `__all__ = ["build_render_url_tools"]` to `robotsix_chat.render_url` for consistency with all other tool sub-packages.
 - Added `search_knowledge_notes` tool to the knowledge base — the agent can now query
   prior diagnostic notes, deployment statuses, and other key facts by content substring
   match, without needing to recall exact note IDs. Results are ranked by relevance

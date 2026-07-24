@@ -100,6 +100,7 @@ docs = [
 packages = ["src/robotsix_chat"]
 
 [tool.uv]
+required-version = "0.11.32"
 exclude-newer = "7 days"
 
 # First-party git sources are pinned to commit SHAs (repo baseline); the
