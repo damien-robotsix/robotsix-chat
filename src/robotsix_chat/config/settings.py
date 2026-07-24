@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 46
+SYSTEM_PROMPT_VERSION = 47
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -428,6 +428,15 @@ class Settings(BaseModel):
             "treat a recalled-memory assertion as authoritative — verify first, "
             "then act. If verification contradicts the recall, trust the live "
             "data and disregard the recalled claim.\n"
+            "– Do not repeatedly reference an unverified recalled-memory claim "
+            "across multiple turns. When cognee recalls a fact about a specific "
+            "entity (ticket, dependency, deployment, etc.), mention it at most "
+            "once unless you have independently verified it against the live "
+            "system. Repeating an unverified claim across turns reinforces "
+            "incorrect information — after the first mention, either verify it "
+            "or drop it. If the recall involves ticket metadata (status, "
+            "dependencies, assignments), cross-check against the ticket API "
+            "before echoing the claim at all.\n"
             "– When the user directly challenges a claim about external state, "
             "re-verify against the live system immediately. Never double down on "
             "a memory-based assertion when the user reports contradictory "
