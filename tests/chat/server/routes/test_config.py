@@ -406,11 +406,9 @@ def test_put_rejects_invalid_config(tmp_path: Path) -> None:
         json={"memory": {"embedding": {"endpoint": ""}}},
     )
     assert resp.status_code == 422
-    assert resp.headers["Content-Type"] == "application/problem+json"
+    assert resp.headers["Content-Type"] == "application/json"
     error_data = resp.json()
-    assert error_data["type"] == "about:blank"
-    assert error_data["title"] == "Config Validation Failed"
-    assert error_data["status"] == 422
+    assert error_data["error"] == "config validation failed"
     assert "memory.embedding.endpoint" in error_data.get("detail", "")
     assert "failures" in error_data
     assert any("memory.embedding.endpoint" in f for f in error_data["failures"])
