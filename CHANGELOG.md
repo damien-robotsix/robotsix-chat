@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- test-only
 - Add "Bootstrap deadlock" guidance to the agent system prompt (v39): when a PR
   modifies the merge pipeline itself, auto-merge may be self-referential — escalate
   to the operator for a manual merge rather than looping on merge-now. Extracted
