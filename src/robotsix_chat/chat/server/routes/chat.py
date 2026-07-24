@@ -450,6 +450,20 @@ def _parse_and_validate_images(
     return images
 
 
+async def _stream_summary(agent: ChatAgent, prompt: str, error_msg: str) -> str:
+    """Stream *agent* on *prompt* and return the joined result, or "" on failure."""
+    try:
+        reply_parts: list[str] = []
+        async for token in agent.stream(
+            prompt, history=None, session_id=None, client_id=None
+        ):
+            reply_parts.append(token)
+        return "".join(reply_parts).strip()
+    except Exception:
+        logger.exception(error_msg)
+        return ""
+
+
 async def _generate_title(
     summary_agent: ChatAgent,
     user_message: str,
@@ -474,25 +488,15 @@ async def _generate_title(
         "Title:"
     )
 
-    try:
-        reply_parts: list[str] = []
-        async for token in summary_agent.stream(
-            prompt,
-            history=None,
-            session_id=None,
-            client_id=None,
-        ):
-            reply_parts.append(token)
-        title = "".join(reply_parts).strip()
-        # Clean up common LLM artifacts.
-        title = title.strip('"').strip("'").rstrip(".")
-        # Truncate to a reasonable length.
-        if len(title) > 80:
-            title = title[:80].rstrip() + "\u2026"
-        return title
-    except Exception:
-        logger.exception("Title generation failed")
+    title = await _stream_summary(summary_agent, prompt, "Title generation failed")
+    if not title:
         return ""
+    # Clean up common LLM artifacts.
+    title = title.strip('"').strip("'").rstrip(".")
+    # Truncate to a reasonable length.
+    if len(title) > 80:
+        title = title[:80].rstrip() + "\u2026"
+    return title
 
 
 async def _generate_idle_summary(
@@ -517,19 +521,9 @@ async def _generate_idle_summary(
         f"{transcript}\n\nSummary:"
     )
 
-    try:
-        reply_parts: list[str] = []
-        async for token in summary_agent.stream(
-            prompt,
-            history=None,
-            session_id=None,
-            client_id=None,
-        ):
-            reply_parts.append(token)
-        return "".join(reply_parts).strip()
-    except Exception:
-        logger.exception("Idle-timeout summary generation failed")
-        return ""
+    return await _stream_summary(
+        summary_agent, prompt, "Idle-timeout summary generation failed"
+    )
 
 
 async def chat_endpoint(
