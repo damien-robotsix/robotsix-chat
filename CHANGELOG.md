@@ -33,6 +33,7 @@
   modifies the merge pipeline itself, auto-merge may be self-referential — escalate
   to the operator for a manual merge rather than looping on merge-now. Extracted
   from the stalled PR #688 (ticket 45b9); motivated by PR #2475's 14-iteration block.
+- Add ``POST /diagnostics/events`` and ``GET /diagnostics/events`` HTTP endpoints so external pipeline stages (e.g. robotsix-mill) can emit diagnostic events (including ``CI_FAILURE``) into the shared ``DiagnosticStore``.  Events posted via the API are immediately visible to agent tools (``list_diagnostic_events``, ``check_recurring_categories``) because the store instance is shared between the HTTP layer and the agent tool closures.
 - Refactor `_inject_skills()` in `app.py`: replace five repeated skill-injection blocks with a table-driven `_skill_entries` loop, and promote the lazy `load_*_skill` imports to module-level (all target modules are lightweight).
 - Fix queued messages never being dispatched after switching session focus in the UI: add a session-backgrounding drain in `switchSession()` and a focus-change drain in `restoreDraft()` so queued messages are dispatched both when leaving a session and when returning to it.
 - System prompt v46: add "Repo creation bootstrap" guidance — proactively seed an initial commit during repo creation to prevent tool-chain deadlocks with empty repos.
