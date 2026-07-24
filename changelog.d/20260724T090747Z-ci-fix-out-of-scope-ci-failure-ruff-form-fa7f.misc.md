@@ -1,0 +1,1 @@
+ci_fix: out-of-scope CI failure — ruff format --check (skill.md formatting) + Container image scan (Trivy) — Docker Hub timeout in src/robotsix_chat/http_probe/skill.md (formatting fix for pre-existing issue); Docker Hub connectivity / retry logic in CI workflow for the Trivy scan
