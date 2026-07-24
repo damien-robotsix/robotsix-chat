@@ -5,41 +5,50 @@ name: Lint workflows
 # workflow-permissions check can run even when ci.yml itself would be
 # rejected by GitHub (0-second startup_failure).
 #
-# The reusable workflow's actionlint job (reviewdog/action-actionlint
-# v1.65.0) uses the deprecated fail_on_error input, which causes a
-# hard failure.  We disable it here (run-actionlint: false) and run
-# actionlint directly in a local job with the replacement fail_level
-# parameter.
+# The shared workflow's actionlint job uses reviewdog with the
+# github-pr-check reporter, which calls the GitHub Checks API
+# (POST /repos/.../check-runs).  When that API endpoint is degraded
+# (503), reviewdog fails hard.  To avoid being gated on GitHub API
+# availability, the local actionlint job below runs actionlint
+# directly without reviewdog, so it never touches the Checks API.
+# The shared workflow's actionlint is disabled (run-actionlint: false).
 
 on:
   push:
     branches: [main]
   pull_request:
 
-permissions:
-  contents: read
-
 concurrency:
   group: lint-workflows-${{ github.ref }}
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
+permissions:
+  contents: read
+
 jobs:
   lint-workflows:
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/lint-workflows.yml@43309967ea8011400212a8995d33ca900ee2afed  # main
+    permissions:
+      contents: read       # checkout the repo
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/lint-workflows.yml@44f210c7429969be62eb8cc4f53bfbd3b744da16  # main
     with:
-      run-actionlint: false
+      run-actionlint: false  # run locally below to avoid Checks API dependency
       run-zizmor: true
       sarif-workflows: "python-ci.yml scan-container.yml"
 
   actionlint:
-    name: actionlint
+    name: lint-workflows / actionlint
     runs-on: ubuntu-latest
     permissions:
-      contents: read
+      contents: read  # checkout the repo
     steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
       - uses: actions/checkout@9c091bb21b7c1c1d1991bb908d89e4e9dddfe3e0  # v7.0.0
         with:
           persist-credentials: false
-      - uses: reviewdog/action-actionlint@6fb7acc99f4a1008869fa8a0f09cfca740837d9d  # v1.72.0
-        with:
-          fail_level: error
+      - name: Run actionlint
+        run: |
+          bash <(curl -sSL https://raw.githubusercontent.com/rhysd/actionlint/main/scripts/download-actionlint.bash)
+          ./actionlint -color

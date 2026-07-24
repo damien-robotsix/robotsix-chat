@@ -1,0 +1,1 @@
+Classify hidden dotfiles (changelog.d/.gitkeep, deploy/.env.example): assign to housekeeping module
