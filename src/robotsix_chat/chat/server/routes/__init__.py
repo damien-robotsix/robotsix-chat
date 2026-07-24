@@ -17,7 +17,9 @@ from .chat import (
 )
 from .config import (
     config_get_endpoint,
+    config_rollback_endpoint,
     config_save_endpoint,
+    config_versions_endpoint,
 )
 from .constants import (
     SSE_CONTENT_TYPE,
@@ -86,7 +88,9 @@ __all__ = [
     "cancel_queued_endpoint",
     "chat_endpoint",
     "config_get_endpoint",
+    "config_rollback_endpoint",
     "config_save_endpoint",
+    "config_versions_endpoint",
     "draft_get_endpoint",
     "draft_save_endpoint",
     "events_endpoint",

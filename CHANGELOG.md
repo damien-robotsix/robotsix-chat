@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Replace hand-rolled retry loops with robotsix-http
+- Config-ownership standard: `GET /config` now includes `version` and `schema` fields; `PUT /config` returns the new version and increments a monotonic counter; secrets masked as `"**********"` (was `"***"`); blank string on secret fields now also triggers preservation (was only the sentinel); validation errors now use RFC 9457 `application/problem+json`. New `GET /config/versions` and `POST /config/rollback` endpoints for append-only version history and rollback. Chat UI Settings panel updated to handle the new response shapes.
 - Added blocked-resume threshold detection: when a ticket monitor finds the
   ticket BLOCKED on every resume for `_MAX_BLOCKED_RESUMES` (3) consecutive
   attempts, the subsession is automatically closed with reason
