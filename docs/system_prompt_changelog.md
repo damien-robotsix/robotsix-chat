@@ -21,7 +21,7 @@ wasting system resources. These two rules close the gap: the first prevents the 
 from offloading its own work to a child, and the second prevents a parent agent from bypassing an
 existing periodic monitor by spawning a one-shot task.
 
-**SHA256:** `d6c9eadbcd4d732dcf25bb7665a39e51c305bb1863e6622fae9e5ff43a348fbf`
+**SHA256:** `237cb86b37b138470a13383ac3859ebcb7c4c2db315463045e5a0fbee27361a3`
 
 ## v46 — 2026-07-22 — improve-terminal-state-notification-conc-70aa
 
@@ -108,6 +108,25 @@ at deploy endpoint capabilities and forces explicit contract verification before
 attempt.
 
 **SHA256:** `42ae1073840159a89621a4d53ee009d9e69d2fc53449d653d546801370e1d5c4`
+
+## v44 — 2026-07-21 — always-verify-server-side-capability-by-2bbd
+
+**Summary:** Add a "Server-side capability probes" bullet to the Verification section. When checking
+whether a new server-side capability (e.g. POST /chat/deploy) is available, the agent must probe the
+target server's endpoint directly with a GET request rather than relying on static skill
+descriptions, roster entries, or the audit log. A catch-all 303 redirect from an old build does NOT
+confirm the capability is present — only a meaningful status code (405, 422, etc.) from the endpoint
+itself indicates the route exists. Before concluding a capability is live, the agent must check the
+server's running image digest against the expected digest from the merged PR that introduced the
+capability and report the digest comparison to the user.
+
+**Rationale:** In a recent session the agent interpreted a 303 (old build catch-all) as "route
+works" and later a 422 (genuine schema validation) from the corrected server as "live", but could
+not distinguish the two without knowing the running digest. This guidance ensures the agent always
+verifies server-side capabilities against live endpoint behavior and image digests before reporting
+them as present.
+
+**SHA256:** `7a3ca453fef6874ea3ac58acf999f3580a2673524b9fb7a0f2d46787b6434418`
 
 ## v43 — 2026-07-21 — ensure-ticket-analysis-by-worker-reads-a-3f31
 
