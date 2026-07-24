@@ -278,6 +278,9 @@
             messageQueue.push({ text: qItem.text, el: el, images: restoredImages, messageId: qItem.messageId });
           }
           updateCancelQueuedButton();
+          // Automatically dispatch queued messages restored from draft
+          // when the session regains focus (e.g. after a session switch).
+          drainQueue();
         }
       })
       .catch(function () { /* best-effort */ });
@@ -778,6 +781,12 @@
 
   function switchSession(sessionId) {
     if (sessionId === activeSessionId) return;
+
+    // Dispatch any queued messages before backgrounding this session.
+    // Only the first message is sent now; the remaining queue is saved
+    // as a draft and dispatched when the session regains focus via
+    // restoreDraft().
+    drainQueue();
 
     // Persist any in-progress draft before switching away.
     saveDraft();
