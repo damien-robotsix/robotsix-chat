@@ -139,8 +139,20 @@ self-closing after a fixed number of failures.
     - When the counter is between 1 and 2 (below the threshold), the agent receives an additional
       context note:
       `"Repeated block: this is blocked-resume attempt X/3 (N remaining before auto-close). If the same failure keeps recurring, stop auto-retrying and escalate to the operator."`
-09. **Mill-recovery mode.** If the mill is unreachable, the monitor enters a recovery loop with
+09. **Decision-blocked guidance.** When a periodic monitor finds its ticket awaiting an operator
+    decision — stuck in `human_issue_approval`, waiting on an `"Option A or B?"` choice, or
+    otherwise blocked on human direction — the sub-agent is instructed to **not** silently reply
+    `NO_CHANGE` run after run. Instead, it reports the blocked state with a recommendation to pause
+    the monitor, e.g.:
+
+    > "Ticket is awaiting operator decision. Consider pausing this monitor until the operator
+    > provides direction."
+
+    This surfaces the pause recommendation immediately so the operator can act on it, rather than
+    waiting for the `auto_stop_no_change_runs` timeout to close the subsession. The guidance is
+    embedded in the prompt built by `_build_periodic_input` in `worker.py`.
+10. **Mill-recovery mode.** If the mill is unreachable, the monitor enters a recovery loop with
     exponential backoff (see [Mill-recovery behaviour](#mill-recovery-behaviour) above), probing the
     mill health endpoint and resuming automatically when it recovers.
-10. Concurrency is bounded by `subsessions.max_concurrent` (default 8, across all subsession kinds);
+11. Concurrency is bounded by `subsessions.max_concurrent` (default 8, across all subsession kinds);
     exceeding it returns a friendly refusal rather than raising.
