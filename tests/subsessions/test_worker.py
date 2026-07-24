@@ -28,8 +28,10 @@ from robotsix_chat.subsessions.worker import (
     CloseState,
     SubsessionContext,
     SubsessionEnv,
+    _format_worker_error,
     _is_duplicate_reply,
     _is_no_change,
+    _truncate,
 )
 from robotsix_chat.subsessions.worker_mill import (
     _check_resume_status,
@@ -507,6 +509,80 @@ async def test_worker_failure_marks_failed_and_delivers_summary() -> None:
     label, reply = history[0]
     assert "failed" in label
     assert reply == info.summary
+
+
+# ---------------------------------------------------------------------------
+# _format_worker_error / _truncate unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_format_degenerate_success_error() -> None:
+    """A degenerate-success exception gets a clear explanation."""
+    exc = RuntimeError("Claude Code returned an error result: success")
+    result = _format_worker_error(exc)
+    assert "degenerate success frame" in result
+    assert "known Claude SDK bug" in result
+    assert "Original SDK message:" in result
+
+
+def test_format_usage_exhausted_error() -> None:
+    """A usage-exhausted exception gets a clear message about credits."""
+    exc = RuntimeError("You are out of usage credits for this tier")
+    result = _format_worker_error(exc)
+    assert "usage credits" in result.lower()
+    assert "exhausted" in result.lower()
+
+
+def test_format_process_error_with_exit_code_and_stderr() -> None:
+    """A ProcessError-like exception includes exit code and stderr."""
+    exc = RuntimeError("command failed")
+    exc.exit_code = 1  # type: ignore[attr-defined]
+    exc.stderr = "permission denied\nfatal error"  # type: ignore[attr-defined]
+    result = _format_worker_error(exc)
+    assert "exited with code 1" in result
+    assert "permission denied" in result
+    assert "command failed" in result
+
+
+def test_format_process_error_no_stderr() -> None:
+    """ProcessError without stderr still includes the exit code."""
+    exc = RuntimeError("something broke")
+    exc.exit_code = 2  # type: ignore[attr-defined]
+    result = _format_worker_error(exc)
+    assert "exited with code 2" in result
+    assert "stderr:" not in result
+
+
+def test_format_process_error_empty_stderr() -> None:
+    """ProcessError with empty stderr omits the stderr line."""
+    exc = RuntimeError("fail")
+    exc.exit_code = 3  # type: ignore[attr-defined]
+    exc.stderr = "  "  # type: ignore[attr-defined]
+    result = _format_worker_error(exc)
+    assert "exited with code 3" in result
+    assert "stderr:" not in result
+
+
+def test_format_unknown_error_preserves_message() -> None:
+    """An unrecognized error returns str(exc) unchanged."""
+    exc = RuntimeError("kaboom")
+    result = _format_worker_error(exc)
+    assert result == "kaboom"
+
+
+def test_truncate_short() -> None:
+    """Short text is not truncated."""
+    assert _truncate("hello", 10) == "hello"
+
+
+def test_truncate_long() -> None:
+    """Long text is truncated with trailing '...'."""
+    assert _truncate("hello world", 5) == "hello..."
+
+
+def test_truncate_exact() -> None:
+    """Text at the exact limit is not truncated."""
+    assert _truncate("hello", 5) == "hello"
 
 
 # ---------------------------------------------------------------------------
