@@ -191,7 +191,9 @@ class TestApprovalGate409:
     ):
         """Messages to an awaiting_approval session are rejected with 409."""
         sid = store.create_session(owner_id)["session_id"]
-        aq = autonomous_runner.create_session(owner_id, session_id=sid)
+        aq = autonomous_runner.create_session(
+            owner_id, session_id=sid, schedule_kickoff=False
+        )
         aq.state = AutonomousState.awaiting_approval
         r = await client.post(
             "/chat",

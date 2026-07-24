@@ -1,0 +1,1 @@
+ci_fix: out-of-scope CI failure — Python CI (shared) / Tests — test_chat_returns_409_when_awaiting_approval in tests/chat/server/test_autonomous_endpoints.py (or src/robotsix_chat/autonomous/runner.py) — fix the race condition in the approval gate test, likely by disabling schedule_kickoff or awaiting the background task before asserting.
