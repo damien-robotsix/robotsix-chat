@@ -33,8 +33,6 @@ if TYPE_CHECKING:
 
 __all__ = ["build_direct_repo_tools"]
 
-logger = logging.getLogger(__name__)
-
 
 def build_direct_repo_tools(
     settings: DirectRepoSettings,
@@ -91,7 +89,7 @@ def build_direct_repo_tools(
             )
         try:
             status_code = int(status_line.split()[1])
-        except (IndexError, ValueError):
+        except IndexError, ValueError:
             return None, (
                 f"Error: could not determine state for ticket {ticket_id} "
                 f"via component_request (roster-based board connectivity): "
@@ -107,7 +105,7 @@ def build_direct_repo_tools(
             data = json.loads(body_str)
             state: str | None = data.get("state")
             return state, None
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             return None, (
                 f"Error: could not determine state for ticket {ticket_id} "
                 f"via component_request (roster-based board connectivity): "
@@ -195,11 +193,9 @@ def build_direct_repo_tools(
             message describing why the push was refused or failed.
 
         """
-        import json
-
         try:
             files: list[dict[str, str]] = json.loads(files_json)
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             return (
                 "Error: files_json must be a valid JSON array "
                 "of {path, content} objects."
@@ -436,15 +432,12 @@ def build_direct_repo_tools(
                 message describing why the push was refused or failed.
 
             """
-            import json
-            import logging
-
             _logger = logging.getLogger(__name__)
 
             # --- validate files_json ---
             try:
                 files: list[dict[str, str]] = json.loads(files_json)
-            except (json.JSONDecodeError, TypeError):
+            except json.JSONDecodeError, TypeError:
                 return (
                     "Error: files_json must be a valid JSON array "
                     "of {path, content} objects."
