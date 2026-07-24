@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Strengthened periodic monitor verify-first policy: before reporting any state change or outcome, the monitor must do a live GET of the ticket and compare against previously verified state. Terminal-state claims now require a double-check via the PR API to confirm merge status before reporting.
+- Strengthened the memory-recall prompt header with explicit guidance about stale action items: recalled text mentioning "pending", "awaiting confirmation", or similar unresolved-state language is often from a past conversation where the action was already completed. The LLM is now instructed to treat conversation history (not recalled memory) as the authoritative record of what is actually pending, and to label unverified recalled items explicitly.
 - Deduplicated `DirectRepoClient.get_ticket_state` and `get_ticket_data` by extracting a shared `_fetch_ticket_field` helper (57 duplicated lines → 2 one-liner callers).
 - Add `check_autonomous_states.py` CI gate that verifies `AutonomousState` enum values stay in sync with bare-string comparisons in `chat.js`, following the same pattern as `check_subsession_kinds.py` and `check_activity_kinds.py`.
 - Periodic subsession monitors now include an explicit instruction to re-query the board API for canonical ticket state on every poll tick, preventing stale-state readback where the agent reports a cached `draft` state that diverged from the live board state.
