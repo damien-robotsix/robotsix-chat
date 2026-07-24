@@ -276,7 +276,6 @@ class TestRunServer:
             github_security_settings=None,
             github_actions_settings=None,
             config_path=None,
-            diagnostic_store=None,
         )
 
 
