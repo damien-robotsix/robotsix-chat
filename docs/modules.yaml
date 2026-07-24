@@ -164,6 +164,7 @@ modules:
       - tests/chat/server/routes/test_events.py
       - tests/chat/server/routes/test_github.py
       - tests/chat/server/routes/test_draft.py
+      - tests/chat/server/routes/test_subsessions.py
       - tests/chat/server/test_autonomous_endpoints.py
 
   - id: common
