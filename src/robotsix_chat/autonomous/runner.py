@@ -180,6 +180,11 @@ class AutonomousRunner:
                 existing.owner_id == owner_id
                 and existing.state is not AutonomousState.completed
             ):
+                # Idempotent re-creation of the SAME session: return it
+                # without a warning (the caller is re-registering an
+                # already-tracked session, not trying to open a second one).
+                if session_id is not None and existing.session_id == session_id:
+                    return existing
                 logger.warning(
                     "Cannot create new autonomous session for owner %s: "
                     "session %s is already open (state=%s)",

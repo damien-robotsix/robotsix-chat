@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Fix: `AutonomousRunner.create_session` no longer logs a warning for idempotent re-creation of an already-tracked session (same `session_id`).
 - Periodic subsession monitors now include an explicit instruction to re-query the board API for canonical ticket state on every poll tick, preventing stale-state readback where the agent reports a cached `draft` state that diverged from the live board state.
 - Periodic subsessions can no longer spawn task child subsessions to work around
   the nesting restriction. The enforcement gate in `spawn_subsession` now blocks

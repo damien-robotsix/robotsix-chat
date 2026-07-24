@@ -111,7 +111,9 @@ class TestApproveEndpoint:
     async def test_approve_success(self, client, autonomous_runner, store, owner_id):
         """Valid approve transitions to executing and returns 200."""
         sid = store.create_session(owner_id)["session_id"]
-        aq = autonomous_runner.create_session(owner_id, session_id=sid)
+        aq = autonomous_runner.create_session(
+            owner_id, session_id=sid, schedule_kickoff=False
+        )
         aq.state = AutonomousState.awaiting_approval
         r = await client.post(f"/sessions/{sid}/approve?owner_id={owner_id}")
         assert r.status_code == 200
@@ -158,7 +160,9 @@ class TestRejectEndpoint:
     async def test_reject_success(self, client, autonomous_runner, store, owner_id):
         """Valid reject resets to selecting_subject and returns 200."""
         sid = store.create_session(owner_id)["session_id"]
-        aq = autonomous_runner.create_session(owner_id, session_id=sid)
+        aq = autonomous_runner.create_session(
+            owner_id, session_id=sid, schedule_kickoff=False
+        )
         aq.state = AutonomousState.awaiting_approval
         r = await client.post(f"/sessions/{sid}/reject?owner_id={owner_id}")
         assert r.status_code == 200

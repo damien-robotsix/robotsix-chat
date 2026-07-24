@@ -1,0 +1,1 @@
+ci_fix: out-of-scope CI failure — Python CI (shared) / Tests — test_autonomous_endpoints.py::TestRejectEndpoint::test_reject_success in tests/chat/server/test_autonomous_endpoints.py and/or src/robotsix_chat/autonomous/runner.py — the autonomous session creation logic conflicts with pre-existing sessions in the merge context
