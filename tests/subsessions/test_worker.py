@@ -364,6 +364,46 @@ async def test_periodic_auto_stops_after_consecutive_no_change_runs() -> None:
 
 
 @pytest.mark.asyncio
+async def test_periodic_max_idle_runs_pauses_after_consecutive_no_change() -> None:
+    """max_idle_runs closes the subsession with reason 'paused'."""
+    agent = FakeAgent(["NO_CHANGE", "NO_CHANGE", "NO_CHANGE"])
+    env = build_env(
+        agent=agent,
+        settings=make_settings(max_idle_runs=3, auto_stop_no_change_runs=10),
+    )
+
+    sub_id = _spawn(env, kind=SubsessionKind.PERIODIC, interval_seconds=0.02)
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "paused"
+    assert info.summary == "Auto-paused after 3 consecutive no-change runs."
+    assert len(agent.calls) == 3
+
+
+@pytest.mark.asyncio
+async def test_periodic_max_idle_runs_zero_disables_pause() -> None:
+    """max_idle_runs=0 disables pausing; falls through to auto_stop."""
+    agent = FakeAgent(["NO_CHANGE", "NO_CHANGE"])
+    env = build_env(
+        agent=agent,
+        settings=make_settings(max_idle_runs=0, auto_stop_no_change_runs=2),
+    )
+
+    sub_id = _spawn(env, kind=SubsessionKind.PERIODIC, interval_seconds=0.02)
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    # Falls through to auto_stop, not paused.
+    assert info.close_reason == "no_change_auto_stop"
+    assert len(agent.calls) == 2
+
+
+@pytest.mark.asyncio
 async def test_periodic_human_approval_timeout_auto_escalates() -> None:
     """human_issue_approval checkpoint triggers human_approval_timeout close."""
     agent = FakeAgent(["NO_CHANGE", "NO_CHANGE", "NO_CHANGE"])

@@ -719,6 +719,13 @@ class Settings(BaseModel):
         )
         if err:
             failures.append(err)
+        err = self._require_min(
+            self.subsessions.max_idle_runs,
+            0,
+            "subsessions.max_idle_runs",
+        )
+        if err:
+            failures.append(err)
         # component_client has no required fields beyond `enabled` —
         # an empty components list just means no agents are reachable,
         # and the list_component_agents tool returns a helpful message.
