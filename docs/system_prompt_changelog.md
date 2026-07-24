@@ -111,14 +111,14 @@ attempt.
 
 ## v44 — 2026-07-21 — always-verify-server-side-capability-by-2bbd
 
-**Summary:** Add a "Server-side capability probes" bullet to the Verification section. When
-checking whether a new server-side capability (e.g. POST /chat/deploy) is available, the agent must
-probe the target server's endpoint directly with a GET request rather than relying on static skill
+**Summary:** Add a "Server-side capability probes" bullet to the Verification section. When checking
+whether a new server-side capability (e.g. POST /chat/deploy) is available, the agent must probe the
+target server's endpoint directly with a GET request rather than relying on static skill
 descriptions, roster entries, or the audit log. A catch-all 303 redirect from an old build does NOT
-confirm the capability is present — only a meaningful status code (405, 422, etc.) from the
-endpoint itself indicates the route exists. Before concluding a capability is live, the agent must
-check the server's running image digest against the expected digest from the merged PR that
-introduced the capability and report the digest comparison to the user.
+confirm the capability is present — only a meaningful status code (405, 422, etc.) from the endpoint
+itself indicates the route exists. Before concluding a capability is live, the agent must check the
+server's running image digest against the expected digest from the merged PR that introduced the
+capability and report the digest comparison to the user.
 
 **Rationale:** In a recent session the agent interpreted a 303 (old build catch-all) as "route
 works" and later a 422 (genuine schema validation) from the corrected server as "live", but could
@@ -583,11 +583,11 @@ Every change to `Settings.agent_instruction` (the pydantic field default literal
 `src/robotsix_chat/config/settings.py`) **MUST**:
 
 1. **Bump** `SYSTEM_PROMPT_VERSION` to the next integer.
-1. **Add a new entry** at the top of this file (reverse-chronological, newest first) with the header
+2. **Add a new entry** at the top of this file (reverse-chronological, newest first) with the header
    `## v<N> — <YYYY-MM-DD> — <ticket-id>`.
-1. **Record the SHA256** of the new `agent_instruction` default literal (computed as
+3. **Record the SHA256** of the new `agent_instruction` default literal (computed as
    `hashlib.sha256(default.encode()).hexdigest()`) in the entry.
-1. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` in
+4. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` in
    the Default column — the full multi-paragraph instruction literal is impractical to embed
    verbatim in a Markdown table cell. Do not attempt to inline the literal; the placeholder is
    sufficient.
@@ -602,14 +602,14 @@ Rollback is a **forward-moving new version** — never reuse a version number. T
 prompt:
 
 1. Pick the target prior version's entry in this changelog.
-1. Restore its prompt text via git, e.g.: `git revert <commit>` or
+2. Restore its prompt text via git, e.g.: `git revert <commit>` or
    `git show <commit>:src/robotsix_chat/config/settings.py` (extract the `agent_instruction` block).
-1. Bump `SYSTEM_PROMPT_VERSION` to the next number.
-1. Add a new changelog entry `## v<N> — <YYYY-MM-DD> — <ticket-id>` with:
+3. Bump `SYSTEM_PROMPT_VERSION` to the next number.
+4. Add a new changelog entry `## v<N> — <YYYY-MM-DD> — <ticket-id>` with:
    - **Summary**: `rollback to v<K>`
    - **Rationale**: why the rollback is needed and which ticket authorises it.
    - **SHA256**: the hash of the restored literal (must match the prior version's recorded hash).
-1. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` — no
+5. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` — no
    change needed there for a rollback.
 
 ______________________________________________________________________
