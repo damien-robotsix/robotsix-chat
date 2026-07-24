@@ -105,7 +105,10 @@
     "human_approval_timeout_runs": 5,
     "run_timeout_seconds": 600.0,
     "store_path": "/data/subsessions.json",
-    "transcript_max_entries": 200
+    "transcript_max_entries": 200,
+    "mill_recovery_initial_backoff_seconds": 60.0,
+    "mill_recovery_max_backoff_seconds": 3600.0,
+    "mill_recovery_max_retries": 10
   },
   "direct_repo": {
     "enabled": false,

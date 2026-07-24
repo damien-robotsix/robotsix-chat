@@ -663,6 +663,21 @@ class Settings(BaseModel):
             1,
             "subsessions.auto_stop_no_change_runs",
         )
+        self._require_min(
+            self.subsessions.mill_recovery_initial_backoff_seconds,
+            1.0,
+            "subsessions.mill_recovery_initial_backoff_seconds",
+        )
+        self._require_min(
+            self.subsessions.mill_recovery_max_backoff_seconds,
+            1.0,
+            "subsessions.mill_recovery_max_backoff_seconds",
+        )
+        self._require_min(
+            self.subsessions.mill_recovery_max_retries,
+            0,
+            "subsessions.mill_recovery_max_retries",
+        )
         # component_client has no required fields beyond `enabled` —
         # an empty components list just means no agents are reachable,
         # and the list_component_agents tool returns a helpful message.

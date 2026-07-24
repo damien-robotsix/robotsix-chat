@@ -8,19 +8,23 @@ module extracted from ``worker.py``.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import TYPE_CHECKING
 
 import httpx
 
-from .models import SubsessionInfo
+from .models import SubsessionInfo, SubsessionStatus
 
 if TYPE_CHECKING:
     from .worker import SubsessionEnv
 
 logger = logging.getLogger(__name__)
 
-# Consecutive mill-unreachable failures before the subsession is closed.
+# Consecutive mill-unreachable failures before the subsession enters
+# recovery mode (exponential backoff + health probe) instead of closing
+# immediately.  _handle_mill_unreachable applies further retries
+# controlled by SubsessionsSettings.mill_recovery_max_retries.
 _MAX_MILL_FAILURES = 2
 
 # Consecutive stale-worker resume attempts before the subsession is closed.
@@ -465,12 +469,21 @@ async def _handle_mill_unreachable(
     info: SubsessionInfo,
     sub_id: str,
 ) -> bool:
-    """Increment the mill-failure counter; close the subsession at the cap.
+    """Increment the mill-failure counter; pause with backoff at the cap.
+
+    Under ``_MAX_MILL_FAILURES`` this just increments the counter and
+    returns ``True`` (the worker continues to its next turn normally).
+
+    At the cap and above the subsession enters a **recovery loop**:
+    sleep with exponential backoff, probe mill health, then retry.
+    The subsession is only permanently closed after
+    ``mill_recovery_max_retries`` additional retries beyond the cap.
 
     Returns ``True`` when the subsession should continue, ``False`` when
-    the failure cap was reached and the subsession was closed (summary
+    all retries are exhausted and the subsession was closed (summary
     delivered to the parent conversation).
     """
+    cfg = env.settings.subsessions
     checkpoint = info.checkpoint or {}
     failures = checkpoint.get("consecutive_mill_failures")
     count = int(failures) if isinstance(failures, (int, float)) else 0
@@ -478,10 +491,23 @@ async def _handle_mill_unreachable(
     checkpoint["consecutive_mill_failures"] = count
     env.registry.update_checkpoint(sub_id, checkpoint)
 
-    if count >= _MAX_MILL_FAILURES:
+    if count < _MAX_MILL_FAILURES:
+        logger.warning(
+            "Subsession %s: mill unreachable (%d/%d) — will retry on next run.",
+            sub_id,
+            count,
+            _MAX_MILL_FAILURES,
+        )
+        return True
+
+    # At or above the cap — enter recovery with exponential backoff.
+    # Retry number is zero-indexed counting from the cap.
+    retry_num = count - _MAX_MILL_FAILURES
+
+    if retry_num >= cfg.mill_recovery_max_retries:
         summary = (
             f"Mill unreachable for {count} consecutive status checks "
-            f"after restart — closing subsession."
+            f"({retry_num} recovery retries) — closing subsession."
         )
         closed = env.registry.mark_closed(
             sub_id,
@@ -498,11 +524,62 @@ async def _handle_mill_unreachable(
         )
         return False
 
-    logger.warning(
-        "Subsession %s: mill unreachable (%d/%d) — will retry on next run.",
+    # Compute backoff and sleep.
+    backoff = min(
+        cfg.mill_recovery_initial_backoff_seconds * (2**retry_num),
+        cfg.mill_recovery_max_backoff_seconds,
+    )
+    logger.info(
+        "Subsession %s: mill unreachable — entering recovery "
+        "(retry %d/%d, sleeping %.0fs).",
         sub_id,
-        count,
-        _MAX_MILL_FAILURES,
+        retry_num + 1,
+        cfg.mill_recovery_max_retries,
+        backoff,
+    )
+    env.registry.set_status(
+        sub_id,
+        SubsessionStatus.SLEEPING,
+    )
+
+    await asyncio.sleep(backoff)
+
+    # Re-fetch after sleeping — the subsession may have been closed
+    # externally while we waited.
+    current = env.registry.get(sub_id)
+    if current is None or not current.is_active:
+        logger.info(
+            "Subsession %s: no longer active after recovery sleep — exiting.",
+            sub_id,
+        )
+        return False
+
+    # Probe mill health.  Use the same board_url derivation as
+    # _check_resume_status so the health probe targets the same host.
+    direct_repo = getattr(env.settings, "direct_repo", None)
+    board_url = (
+        getattr(direct_repo, "board_api_base_url", "")
+        if direct_repo is not None
+        else ""
+    )
+    if board_url:
+        started_at = await _get_mill_started_at(board_url)
+        if started_at is not None:
+            logger.info(
+                "Subsession %s: mill health probe succeeded — "
+                "resetting failure counter and resuming.",
+                sub_id,
+            )
+            _reset_mill_failure_counter(env, current, sub_id)
+            return True
+
+    # Still unreachable — the counter stays incremented; the next call
+    # (from the caller's next resume attempt) will increment again and
+    # either sleep longer or close.
+    logger.warning(
+        "Subsession %s: mill still unreachable after recovery sleep — "
+        "will retry on next cycle.",
+        sub_id,
     )
     return True
 

@@ -2015,10 +2015,13 @@ async def test_handle_mill_unreachable_increments_counter():
 
 
 @pytest.mark.asyncio
-async def test_handle_mill_unreachable_cap_closes_and_delivers():
-    """When the counter reaches the cap the subsession is closed.
+async def test_handle_mill_unreachable_cap_enters_recovery():
+    """At the cap the subsession enters recovery instead of closing.
 
-    Summary delivered to the parent conversation.
+    With ``consecutive_mill_failures`` already at (cap - 1), the next
+    call reaches the cap, sleeps with backoff, probes health, and
+    returns ``True`` (continue) when the health probe fails — it does
+    NOT close the subsession.
     """
     env = build_env()
     # _MAX_MILL_FAILURES is 2, so one below the cap is 1.
@@ -2026,6 +2029,64 @@ async def test_handle_mill_unreachable_cap_closes_and_delivers():
         env,
         ticket_id="TICKET-1",
         consecutive_mill_failures=1,
+    )
+
+    # Patch asyncio.sleep so the recovery backoff is instant.
+    with patch("robotsix_chat.subsessions.worker.asyncio.sleep", new=AsyncMock()):
+        should_continue = await _handle_mill_unreachable(env, info, info.id)
+
+    assert should_continue is True
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.status is SubsessionStatus.SLEEPING  # not CLOSED
+    assert updated.checkpoint is not None
+    assert updated.checkpoint.get("consecutive_mill_failures") == 2
+
+
+@pytest.mark.asyncio
+async def test_handle_mill_unreachable_recovery_success_resets_counter():
+    """When the health probe succeeds after recovery sleep, reset counter.
+
+    The subsession returns to normal (counter cleared, continues).
+    """
+    env = _env_with_board("https://mill.example.com")
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        consecutive_mill_failures=1,
+    )
+
+    # Patch asyncio.sleep and the health probe to simulate mill recovery.
+    with (
+        patch("robotsix_chat.subsessions.worker.asyncio.sleep", new=AsyncMock()),
+        patch(
+            "robotsix_chat.subsessions.worker_mill._get_mill_started_at",
+            new=AsyncMock(return_value="2025-01-01T00:00:00Z"),
+        ),
+    ):
+        should_continue = await _handle_mill_unreachable(env, info, info.id)
+
+    assert should_continue is True
+    updated = env.registry.get(info.id)
+    assert updated is not None
+    assert updated.status is SubsessionStatus.SLEEPING  # set during sleep
+    assert updated.checkpoint is not None
+    # Counter was reset on successful health probe.
+    assert updated.checkpoint.get("consecutive_mill_failures") == 0
+
+
+@pytest.mark.asyncio
+async def test_handle_mill_unreachable_recovery_exhausted_closes():
+    """After mill_recovery_max_retries retries the subsession is closed.
+
+    Default max retries is 10, so with the cap at 2, closing happens
+    at failure count = 2 + 10 = 12.
+    """
+    env = build_env()
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        consecutive_mill_failures=11,  # cap(2) + 9 retries = one below close
     )
 
     should_continue = await _handle_mill_unreachable(env, info, info.id)
