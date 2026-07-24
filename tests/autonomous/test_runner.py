@@ -841,6 +841,35 @@ class TestResumeSessionsNonBlocking:
         await asyncio.sleep(0)
         assert runner._auto_continue.call_count >= 1
 
+    @pytest.mark.asyncio
+    async def test_resume_empty_store_bootstraps_session(self) -> None:
+        """resume_sessions auto-starts one session when the store is empty."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.max_auto_turns = 20
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=run_serializer,
+        )
+        # Verify the runner starts with no sessions.
+        assert len(runner._sessions) == 0
+
+        import asyncio
+
+        await asyncio.wait_for(runner.resume_sessions(), timeout=0.5)
+
+        # A bootstrap session must have been created for owner 'autonomous'.
+        assert len(runner._sessions) == 1
+        new_aq = next(iter(runner._sessions.values()))
+        assert new_aq.owner_id == "autonomous"
+        assert new_aq.state is AutonomousState.selecting_subject
+
 
 class TestRestartContextInjection:
     """Restart-context messages are injected when resuming after a restart."""
