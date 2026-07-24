@@ -83,9 +83,9 @@ async def test_set_actions_secret_refuses_out_of_scope_repo(
     dr = _direct_repo_settings()
 
     # Mock list-installation-repos to return only one repo
-    respx_mock.get(f"{dr.github_api_base_url}/installation/repositories").respond(
-        json={"repositories": [{"full_name": "damien-robotsix/allowed-repo"}]}
-    )
+    respx_mock.get(
+        url__startswith=f"{dr.github_api_base_url}/installation/repositories"
+    ).respond(json={"repositories": [{"full_name": "damien-robotsix/allowed-repo"}]})
 
     tools = build_github_actions_tools(_actions_settings(), dr)
     set_secret = tools[0]
@@ -102,9 +102,9 @@ async def test_dispatch_workflow_refuses_out_of_scope_repo(
     """Repo not in installation scope → refused message."""
     dr = _direct_repo_settings()
 
-    respx_mock.get(f"{dr.github_api_base_url}/installation/repositories").respond(
-        json={"repositories": [{"full_name": "damien-robotsix/allowed-repo"}]}
-    )
+    respx_mock.get(
+        url__startswith=f"{dr.github_api_base_url}/installation/repositories"
+    ).respond(json={"repositories": [{"full_name": "damien-robotsix/allowed-repo"}]})
 
     tools = build_github_actions_tools(_actions_settings(), dr)
     dispatch = tools[1]
@@ -126,9 +126,9 @@ async def test_dispatch_workflow_rejects_invalid_inputs_json(
     """Non-JSON inputs string → error message."""
     dr = _direct_repo_settings()
 
-    respx_mock.get(f"{dr.github_api_base_url}/installation/repositories").respond(
-        json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]}
-    )
+    respx_mock.get(
+        url__startswith=f"{dr.github_api_base_url}/installation/repositories"
+    ).respond(json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]})
 
     tools = build_github_actions_tools(_actions_settings(), dr)
     dispatch = tools[1]
@@ -145,9 +145,9 @@ async def test_dispatch_workflow_rejects_non_object_inputs(
     """Inputs that parse but are not a dict → error message."""
     dr = _direct_repo_settings()
 
-    respx_mock.get(f"{dr.github_api_base_url}/installation/repositories").respond(
-        json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]}
-    )
+    respx_mock.get(
+        url__startswith=f"{dr.github_api_base_url}/installation/repositories"
+    ).respond(json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]})
 
     tools = build_github_actions_tools(_actions_settings(), dr)
     dispatch = tools[1]

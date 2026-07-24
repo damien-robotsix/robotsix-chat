@@ -223,9 +223,9 @@ async def test_secret_endpoint_404_repo_not_in_scope(
     gh = _actions_settings()
     dr = _direct_repo_settings()
 
-    respx_mock.get(f"{dr.github_api_base_url}/installation/repositories").respond(
-        json={"repositories": [{"full_name": "damien-robotsix/allowed-repo"}]}
-    )
+    respx_mock.get(
+        url__startswith=f"{dr.github_api_base_url}/installation/repositories"
+    ).respond(json={"repositories": [{"full_name": "damien-robotsix/allowed-repo"}]})
 
     async with mock_app(
         direct_repo_settings=dr,

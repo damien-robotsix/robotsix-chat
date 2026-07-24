@@ -253,10 +253,26 @@ class DirectRepoClient:
         Resolved dynamically from the GitHub App installation — NOT a static
         allowlist — so adding/removing repos from the app changes what the
         agent can act on with no code change.
+
+        Paginates through all pages to capture every repo in the installation
+        (the API defaults to ``per_page=30`` and installations routinely have
+        more repos than that).
         """
-        data = await self._get_json("/installation/repositories")
-        repos: list[dict[str, Any]] = data.get("repositories", [])
-        return [r["full_name"] for r in repos if "full_name" in r]
+        per_page = 100
+        page = 1
+        all_repos: list[str] = []
+
+        while True:
+            data = await self._get_json(
+                f"/installation/repositories?per_page={per_page}&page={page}"
+            )
+            repos: list[dict[str, Any]] = data.get("repositories", [])
+            all_repos.extend(r["full_name"] for r in repos if "full_name" in r)
+            if len(repos) < per_page:
+                break
+            page += 1
+
+        return all_repos
 
     async def _fetch_ticket_field(
         self, ticket_id: str, label_suffix: str, field: str | None = None
