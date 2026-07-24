@@ -286,7 +286,6 @@ class TestAgentFactoryLoopSafety:
         Wrapping the factory call in ``asyncio.to_thread`` offloads it to a
         separate thread where no loop is running.
         """
-        import asyncio
 
         def factory_that_calls_asyncio_run() -> str:
             # Simulates the exact pattern: fetch_roster_sync → asyncio.run(...)
@@ -303,8 +302,6 @@ class TestAgentFactoryLoopSafety:
         which should prevent the ``asyncio.run() cannot be called from a running
         event loop`` RuntimeError.
         """
-        import asyncio
-
         store = ConversationStore()
         store.create_session("owner1")
         sessions, _active = store.list_sessions("owner1")
@@ -836,8 +833,6 @@ class TestResumeSessionsNonBlocking:
         aq.state = AutonomousState.executing
         runner._auto_continue = AsyncMock()
 
-        import asyncio
-
         await asyncio.wait_for(runner.resume_sessions(), timeout=0.5)
 
         # resume_sessions returned quickly.  Give the background task a
@@ -1110,8 +1105,10 @@ class TestCloseAndRespawnExceptionLogging:
 
 
 class TestAutoContinueThrottleAndSubsessionGate:
-    """Throttle interval, subsession gate blocking, timeout fallback, and
-    backward-compat no-registry path."""
+    """Throttle interval, subsession gate blocking, and timeout fallback.
+
+    Also covers the backward-compat no-registry path.
+    """
 
     @pytest.fixture(autouse=True)
     def _mock_persistence(self, monkeypatch) -> None:
@@ -1133,7 +1130,7 @@ class TestAutoContinueThrottleAndSubsessionGate:
     def _make_registry(
         *subsessions: MagicMock,
     ) -> MagicMock:
-        """Return a mock SubsessionRegistry whose list_for_owner returns *subsessions."""
+        """Return a mock registry with list_for_owner returning *subsessions."""
         reg = MagicMock()
         reg.list_for_owner.return_value = list(subsessions)
         return reg
