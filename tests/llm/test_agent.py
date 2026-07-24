@@ -576,7 +576,7 @@ async def test_retry_on_transient_error() -> None:
     with (
         patch("robotsix_chat.llm.agent.create_model", create_model_patch),
         patch("robotsix_chat.llm.agent.is_openrouter_transient", return_value=True),
-        patch("robotsix_chat.llm.agent.asyncio.sleep", new=AsyncMock()),
+        patch("robotsix_http.retry.asyncio.sleep", new=AsyncMock()),
     ):
         agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
         chunks = [c async for c in agent.stream("hi")]
@@ -616,8 +616,6 @@ async def test_no_retry_on_non_transient_error() -> None:
 @pytest.mark.asyncio
 async def test_retries_exhausted_on_persistent_transient() -> None:
     """Persistent transient errors exhaust max attempts then re-raise."""
-    from robotsix_chat.llm.agent import _MAX_RUN_ATTEMPTS
-
     handle = MagicMock()
 
     async def always_boom(_message: str, *, message_history: object = None) -> None:
@@ -633,14 +631,15 @@ async def test_retries_exhausted_on_persistent_transient() -> None:
     with (
         patch("robotsix_chat.llm.agent.create_model", create_model_patch),
         patch("robotsix_chat.llm.agent.is_openrouter_transient", return_value=True),
-        patch("robotsix_chat.llm.agent.asyncio.sleep", new=AsyncMock()),
+        patch("robotsix_http.retry.asyncio.sleep", new=AsyncMock()),
     ):
         agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
         with pytest.raises(ValueError, match="persistent transient"):
             _ = [c async for c in agent.stream("hi")]
 
-    assert provider.build_agent.call_count == _MAX_RUN_ATTEMPTS
-    assert handle.close.call_count == _MAX_RUN_ATTEMPTS
+    # max_retries=2 → 3 total attempts (1 initial + 2 retries)
+    assert provider.build_agent.call_count == 3
+    assert handle.close.call_count == 3
 
 
 # ---------------------------------------------------------------------------
@@ -775,7 +774,7 @@ async def test_non_usage_exhausted_error_not_affected_by_fallback() -> None:
 
 @pytest.mark.asyncio
 async def test_retry_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
-    """Each retry attempt logs at WARNING with the exception type."""
+    """Retries are handled by robotsix-http; no per-retry agent log lines."""
     call_count = 0
 
     async def fail_twice(_message: str, *, message_history: object = None) -> MagicMock:
@@ -798,25 +797,20 @@ async def test_retry_logs_warning(caplog: pytest.LogCaptureFixture) -> None:
     with (
         patch("robotsix_chat.llm.agent.create_model", create_model_patch),
         patch("robotsix_chat.llm.agent.is_openrouter_transient", return_value=True),
-        patch("robotsix_chat.llm.agent.asyncio.sleep", new=AsyncMock()),
-        caplog.at_level("WARNING", logger="robotsix_chat.llm.agent"),
+        patch("robotsix_http.retry.asyncio.sleep", new=AsyncMock()),
     ):
         agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
         _ = [c async for c in agent.stream("hi")]
 
-    assert len(caplog.records) == 2
-    for record in caplog.records:
-        assert record.levelname == "WARNING"
-        assert "transient backend error on attempt" in record.message
-        assert "ValueError" in record.message
-        assert "retrying" in record.message
+    # Three attempts: two transient failures, one success.
+    assert provider.build_agent.call_count == 3
+    assert handle.close.call_count == 3
 
 
 @pytest.mark.asyncio
 async def test_retry_sleeps_backoff() -> None:
-    """asyncio.sleep is awaited with the backoff schedule on each retry."""
+    """Retry backoff is handled by robotsix-http RetryConfig; verify retry count."""
     call_count = 0
-    from robotsix_chat.llm.agent import _RETRY_BACKOFFS
 
     async def fail_twice(_message: str, *, message_history: object = None) -> MagicMock:
         nonlocal call_count
@@ -840,15 +834,14 @@ async def test_retry_sleeps_backoff() -> None:
     with (
         patch("robotsix_chat.llm.agent.create_model", create_model_patch),
         patch("robotsix_chat.llm.agent.is_openrouter_transient", return_value=True),
-        patch("robotsix_chat.llm.agent.asyncio.sleep", new=sleep_mock),
+        patch("robotsix_http.retry.asyncio.sleep", new=sleep_mock),
     ):
         agent = LlmioChatAgent(model_level=3, instruction="Be helpful.")
         _ = [c async for c in agent.stream("hi")]
 
+    # Two transient failures → two sleeps, three total attempts.
     assert sleep_mock.await_count == 2
-    # First retry → _RETRY_BACKOFFS[0], second → _RETRY_BACKOFFS[1]
-    assert sleep_mock.await_args_list[0].args == (_RETRY_BACKOFFS[0],)
-    assert sleep_mock.await_args_list[1].args == (_RETRY_BACKOFFS[1],)
+    assert provider.build_agent.call_count == 3
 
 
 # ---------------------------------------------------------------------------

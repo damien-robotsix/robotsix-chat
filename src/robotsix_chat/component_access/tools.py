@@ -6,13 +6,13 @@ in the roster — no per-component tools, no typed board operations.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 from collections.abc import Callable
 from typing import TYPE_CHECKING, Any
 
 import httpx
+from robotsix_http import ExternalHTTPError, RetryClient, RetryConfig
 
 if TYPE_CHECKING:
     from robotsix_chat.config import CentralDeploySettings
@@ -21,51 +21,17 @@ logger = logging.getLogger(__name__)
 
 _TRUNCATE_LENGTH = 8000  # default for write methods (POST/PUT/PATCH/DELETE)
 
-# Retry configuration for transient component-call failures.
-_MAX_ATTEMPTS = 3
-_BASE_DELAY = 1.0  # seconds
-_MAX_DELAY = 10.0  # seconds
 _HEALTH_PROBE_TIMEOUT = 2.0  # seconds
 
-
-def _is_transient_exception(exc: Exception) -> bool:
-    """Return True if *exc* represents a transient (retryable) error.
-
-    Network-level errors (connection refused, timeout, protocol errors)
-    are transient — the request may not have reached the server at all.
-    An empty exception message is also treated as transient: it often
-    indicates a proxy/network hiccup that didn't produce a meaningful
-    diagnostic.
-    """
-    if isinstance(
-        exc,
-        (
-            httpx.ConnectError,
-            httpx.TimeoutException,
-            httpx.RemoteProtocolError,
-            httpx.NetworkError,
-        ),
-    ):
-        return True
-    if isinstance(exc, OSError):
-        return True
-    # Empty error messages often signal transient network hiccups.
-    return bool(not str(exc))
-
-
-def _is_terminal_http_status(status_code: int, method: str) -> bool:
-    """Return True if this HTTP status should NOT be retried.
-
-    For idempotent methods (GET, HEAD, PUT, DELETE): only 4xx is terminal.
-    For non-idempotent methods (POST, PATCH): ANY HTTP response is terminal
-    — the write may have been partially or fully processed server-side,
-    and a retry would risk duplication.
-    """
-    if method.upper() in ("POST", "PATCH"):
-        # Non-idempotent: a response means the server received the request.
-        return True
-    # Idempotent: only client errors (4xx) are terminal.
-    return 400 <= status_code < 500
+# Retry configuration for transient component-call failures.
+# max_retries=2 + 1 initial = 3 total attempts, matching the prior hand-rolled
+# _MAX_ATTEMPTS=3.
+_COMPONENT_RETRY_CONFIG = RetryConfig(
+    max_retries=2,
+    backoff_base=1.0,
+    backoff_cap=10.0,
+    jitter_factor=0.5,
+)
 
 
 async def _health_probe(base_url: str) -> bool:
@@ -215,131 +181,76 @@ async def _component_request_impl(
             )
         return f"HTTP {status}\n{body_str}"
 
-    last_error: str | None = None
-    last_status: int | None = None
-    last_body_str: str | None = None
-    for attempt in range(1, _MAX_ATTEMPTS + 1):
-        resp: httpx.Response | None = None
+    async with httpx.AsyncClient(timeout=30.0) as client:
+        retry_client = RetryClient(client, config=_COMPONENT_RETRY_CONFIG)
         try:
-            async with httpx.AsyncClient(timeout=30.0) as client:
-                if method_upper == "GET":
-                    resp = await client.get(url, headers=headers, auth=auth_arg)
-                elif method_upper == "DELETE":
-                    resp = await client.delete(url, headers=headers, auth=auth_arg)
-                else:
-                    resp = await client.request(
-                        method_upper,
-                        url,
-                        headers=headers,
-                        json=json_body,
-                        auth=auth_arg,
-                    )
-        except Exception as exc:
-            if not _is_transient_exception(exc):
-                # Non-transient error — report immediately.
-                logger.warning(
-                    "component_request %s %s %s failed with non-transient "
-                    "error (attempt %d/%d): %s",
-                    component_id,
-                    method_upper,
-                    path,
-                    attempt,
-                    _MAX_ATTEMPTS,
-                    exc,
-                )
-                return f"Error calling {component_id} {method_upper} {path}: {exc}"
-
-            # Transient exception — retry if attempts remain.
-            last_error = str(exc) or f"{type(exc).__name__} (no detail)"
-            if attempt < _MAX_ATTEMPTS:
-                delay = min(_BASE_DELAY * (2 ** (attempt - 1)), _MAX_DELAY)
-                logger.warning(
-                    "component_request %s %s %s transient error "
-                    "(attempt %d/%d, retrying in %.1fs): %s",
-                    component_id,
-                    method_upper,
-                    path,
-                    attempt,
-                    _MAX_ATTEMPTS,
-                    delay,
-                    exc,
-                )
-                await asyncio.sleep(delay)
-                continue
-            logger.error(
-                "component_request %s %s %s exhausted %d attempts; last error: %s",
-                component_id,
+            resp = await retry_client.request(
                 method_upper,
-                path,
-                _MAX_ATTEMPTS,
-                exc,
+                url,
+                headers=headers,
+                json=json_body,
+                auth=auth_arg,
             )
-            continue
-
-        # We got an HTTP response (resp is not None).
-        if resp is None:  # pragma: no cover — defensive, not reachable
-            raise RuntimeError("Expected httpx.Response but got None")
-        status = resp.status_code
-
-        # Extract body once.
-        try:
-            body = resp.json()
-            body_str = json.dumps(body)
-        except Exception:
-            body_str = resp.text
-
-        # Save for possible exhausted-return at loop end.
-        last_status = status
-        last_body_str = body_str
-
-        # Immediate return: success (2xx / 3xx) or terminal status.
-        if status < 400 or _is_terminal_http_status(status, method_upper):
-            tag = "terminal" if status >= 400 else "ok"
+        except ExternalHTTPError as exc:
+            # Terminal HTTP status (mapped by the library: auth errors, rate
+            # limits, service errors) — return the body so the caller can
+            # inspect it.
+            status = exc.status_code
+            try:
+                body = exc.response.json()
+                body_str = json.dumps(body)
+            except Exception:
+                body_str = exc.response.text
             logger.info(
-                "component_request %s %s %s → %d (%s, attempt %d/%d)",
+                "component_request %s %s %s → %d (terminal, not retried)",
                 component_id,
                 method_upper,
                 path,
                 status,
-                tag,
-                attempt,
-                _MAX_ATTEMPTS,
             )
             return _format_body(status, body_str)
-
-        # Retryable HTTP status (5xx on idempotent methods).
-        last_error = f"HTTP {status}"
-        if attempt < _MAX_ATTEMPTS:
-            delay = min(_BASE_DELAY * (2 ** (attempt - 1)), _MAX_DELAY)
-            logger.warning(
-                "component_request %s %s %s → %d (attempt %d/%d, retrying in %.1fs)",
+        except httpx.HTTPStatusError as exc:
+            # Unmapped HTTP status (e.g., 404, 418) — also terminal.
+            status = exc.response.status_code
+            try:
+                body = exc.response.json()
+                body_str = json.dumps(body)
+            except Exception:
+                body_str = exc.response.text
+            logger.info(
+                "component_request %s %s %s → %d (terminal, not retried)",
                 component_id,
                 method_upper,
                 path,
                 status,
-                attempt,
-                _MAX_ATTEMPTS,
-                delay,
             )
-            await asyncio.sleep(delay)
-        else:
+            return _format_body(status, body_str)
+        except Exception as exc:
+            # All retries exhausted or non-retryable error.
             logger.error(
-                "component_request %s %s %s → %d (attempt %d/%d, exhausted)",
+                "component_request %s %s %s failed after retries: %s",
                 component_id,
                 method_upper,
                 path,
-                status,
-                attempt,
-                _MAX_ATTEMPTS,
+                exc,
             )
+            return f"Error calling {component_id} {method_upper} {path}: {exc}"
 
-    # All retries exhausted.
-    if last_status is not None and last_body_str is not None:
-        return _format_body(last_status, last_body_str)
-    return (
-        f"Error calling {component_id} {method_upper} {path}: "
-        f"all {_MAX_ATTEMPTS} attempts failed. Last error: {last_error}"
+    # Success (2xx / 3xx).
+    status = resp.status_code
+    try:
+        body = resp.json()
+        body_str = json.dumps(body)
+    except Exception:
+        body_str = resp.text
+    logger.info(
+        "component_request %s %s %s → %d (ok)",
+        component_id,
+        method_upper,
+        path,
+        status,
     )
+    return _format_body(status, body_str)
 
 
 def build_component_access_tools(

@@ -29,6 +29,7 @@ import logging
 from collections.abc import AsyncIterator, Callable, Iterator
 from typing import Any
 
+from robotsix_http import RetryConfig, acall_with_retry
 from robotsix_llmio.claude_sdk import (
     ClaudeSDKActivityEvent,
     ClaudeSDKUsageExhaustedError,
@@ -43,12 +44,6 @@ from robotsix_chat.chat.events import EventSink, activity_frame
 from robotsix_chat.memory import ChatMemory, NullMemory
 
 logger = logging.getLogger(__name__)
-
-# Transient upstream errors (OpenRouter provider failures, 5xx, network
-# blips) are retried up to this many times.  A fresh agent handle is built
-# per attempt so each try starts from a clean state.
-_MAX_RUN_ATTEMPTS = 3
-_RETRY_BACKOFFS = (0.5, 1.0)
 
 # A prior conversation turn replayed to the agent: ``(user, assistant)``.
 Turn = tuple[str, str]
@@ -363,10 +358,12 @@ class LlmioChatAgent:
 
         on_activity = self._activity_callback(session_id)
         result: Any = None
-        for attempt in range(1, _MAX_RUN_ATTEMPTS + 1):
-            # Build a fresh handle per attempt so each try starts from a
-            # clean state (the handle is always closed in the finally block
-            # below regardless of success or failure).
+
+        # Build a fresh handle per attempt so each try starts from a clean
+        # state.  transient detection is delegated to is_openrouter_transient
+        # so the retry loop only reacts to OpenRouter-level blips; non-transient
+        # errors (including ClaudeSDKUsageExhaustedError) propagate immediately.
+        async def _attempt() -> Any:
             handle = provider.build_agent(
                 level=self._model_level,
                 system_prompt=system_prompt,
@@ -374,39 +371,36 @@ class LlmioChatAgent:
                 builtin_tools=False,
             )
             try:
-                try:
-                    with (
-                        _trace_session(session_id, trace_metadata),
-                        _activity_context(on_activity),
-                    ):
-                        result = await handle.run(
-                            prompt, message_history=message_history
-                        )
-                finally:
-                    handle.close()
-            except ClaudeSDKUsageExhaustedError as exc:
-                logger.warning(
-                    "model_level %d usage credits exhausted (%s) — "
-                    "falling back to another tier for this turn",
-                    self._model_level,
-                    exc,
-                )
-                result = await self._run_with_usage_fallback(
-                    prompt, message_history, tools_arg, session_id, trace_metadata
-                )
-                break
-            except Exception as exc:
-                if attempt == _MAX_RUN_ATTEMPTS or not is_openrouter_transient(exc):
-                    raise
-                logger.warning(
-                    "transient backend error on attempt %d/%d (%s), retrying",
-                    attempt,
-                    _MAX_RUN_ATTEMPTS,
-                    type(exc).__name__,
-                )
-                await asyncio.sleep(_RETRY_BACKOFFS[attempt - 1])
-                continue
-            break
+                with (
+                    _trace_session(session_id, trace_metadata),
+                    _activity_context(on_activity),
+                ):
+                    return await handle.run(prompt, message_history=message_history)
+            finally:
+                handle.close()
+
+        try:
+            result = await acall_with_retry(
+                _attempt,
+                config=RetryConfig(
+                    backoff_base=0.5,
+                    backoff_cap=1.0,
+                    max_retries=2,
+                    jitter_factor=0.0,
+                ),
+                is_transient_fn=is_openrouter_transient,
+                what="chat turn",
+            )
+        except ClaudeSDKUsageExhaustedError as exc:
+            logger.warning(
+                "model_level %d usage credits exhausted (%s) — "
+                "falling back to another tier for this turn",
+                self._model_level,
+                exc,
+            )
+            result = await self._run_with_usage_fallback(
+                prompt, message_history, tools_arg, session_id, trace_metadata
+            )
 
         # The loop above always either raises or breaks with `result` set.
         text = result.output

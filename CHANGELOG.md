@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Replace hand-rolled retry loops with robotsix-http
 - Added blocked-resume threshold detection: when a ticket monitor finds the
   ticket BLOCKED on every resume for `_MAX_BLOCKED_RESUMES` (3) consecutive
   attempts, the subsession is automatically closed with reason
