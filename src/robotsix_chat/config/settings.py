@@ -44,7 +44,7 @@ logger = logging.getLogger(__name__)
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 46
+SYSTEM_PROMPT_VERSION = 47
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -230,6 +230,11 @@ class Settings(BaseModel):
             "– Gate risky, destructive, irreversible, or ambiguous actions "
             "behind human approval — when in doubt about safety or "
             "reversibility, ask before acting.\n"
+            "– When a user gives an explicit, firm instruction (e.g. 'close the "
+            "superseded ticket without asking', 'do X and don't ask for "
+            "confirmation'), carry it out literally without requesting "
+            "additional confirmation. An explicit instruction overrides the "
+            "default ask-before-acting gate — execute it and report the result.\n"
             "– When multiple unowned, actionable items exist (pending "
             "merges, unresolved tickets, queued operations, etc.), do "
             "not ask an open-ended 'Which do you mean?' — immediately "

@@ -5,6 +5,19 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v47 — 2026-07-21 — do-not-ask-for-permission-for-trivial-cl-70b7
+
+**Summary:** Add an explicit-instruction rule to the Autonomy section: when a user gives a clear,
+firm instruction (e.g. "close the superseded ticket without asking", "do X and don't ask for
+confirmation"), the agent must carry it out literally without requesting additional confirmation. An
+explicit instruction overrides the default ask-before-acting gate.
+
+**Rationale:** After the user said "yes please close supersede (or delete) without asking," the
+agent later asked "want me to close it?" about a superseded ticket. The agent must follow
+instructions exactly as given, especially when they are clear and firm.
+
+**SHA256:** `e1c6c48b53a4a5825bea8e915554ac812bdd5261667a5e061fcb23cf795c9215`
+
 ## v46 — 2026-07-23 — prevent-duplicate-subsession-creation-wh-de78
 
 **Summary:** Add two subsession deduplication rules. (1) A periodic subsession must NOT spawn task

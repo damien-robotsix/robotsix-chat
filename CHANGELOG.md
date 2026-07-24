@@ -4,6 +4,7 @@
 - System prompt v46: added conciseness rule for periodic subsession terminal-state
   notifications — report outcome in one sentence instead of echoing full run history.
 - System prompt v46: added two deduplication rules to prevent redundant subsession creation — periodic subsessions must not spawn task children to perform their own monitoring work, and `list_subsessions` must be checked for existing periodic monitors before spawning a task subsession for the same ticket.
+- Add explicit-instruction rule to system prompt Autonomy section: when a user gives a clear, firm instruction (e.g. "close the superseded ticket without asking"), the agent must carry it out literally without requesting additional confirmation.
 - Added `search_knowledge_notes` tool to the knowledge base — the agent can now query
   prior diagnostic notes, deployment statuses, and other key facts by content substring
   match, without needing to recall exact note IDs. Results are ranked by relevance
@@ -121,6 +122,7 @@
 - Added GitHub Actions tools: ``set_actions_secret`` (set repository Actions secrets via libsodium encryption) and ``dispatch_workflow`` (trigger ``workflow_dispatch`` events). Both are LLM tools and HTTP endpoints under ``/chat/github/repos/{owner}/{repo}/actions/``, gated by a new ``github_actions`` config block with the same enable/API-key/auth pattern as ``github_security``. Requires ``pynacl`` (optional ``github-actions`` extra) for secret encryption.
 - System prompt v40: add "user statements as ground truth" rule to the Verification section — when the user states a concrete fact, the agent must treat it as ground truth and raise a clarification question rather than contradicting it based on stale or misinterpreted evidence.
 - Strengthen ticket deduplication check in agent system prompt: before filing a new ticket, check for any open or in-flight ticket addressing the same root cause or proposing a similar action, not just tickets with identical scope. Prevents symptom-workaround tickets from being filed when a root-cause fix is already in flight. (v40)
+
 - Subsession children of periodic parents now relay their closure
   summaries directly to the active root conversation instead of the
   periodic parent's inbox, so operator decisions in side-chats are
