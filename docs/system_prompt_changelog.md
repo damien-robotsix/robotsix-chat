@@ -70,6 +70,27 @@ missing from its context. The new search capability eliminates the fragile-id-re
 
 **SHA256:** `b0e205017f02e8e2a90707f2b6fbaf51f356e5ab7362124803eb79602ba13050`
 
+## v46 — 2026-07-23 — introduce-model-policy-abstraction-for-d-42d5
+
+> **Note:** Version v46 is also claimed by three entries above (2026-07-22); these are parallel
+> branches that landed at the same version stamp.  The PR author should bump to a fresh version
+> number and update the SHA256 hash before merge.
+
+**Summary:** Add a "Model Policy" section defining named tier labels for the existing model levels
+(1 = 'cheap-high-perf', 2 = 'default', 3 = 'strong-reasoning', 4 = 'primary-frontier'). Update the
+subsession model_level guidance to cross-reference the tier labels. Instruct the assistant to use
+these tier labels (e.g. 'primary-frontier') rather than hardcoded model names when filing tickets
+that specify model requirements — agent configurations, tool defaults, deployment specs, subsession
+spawning defaults. The resolver at deploy-time maps tier labels to concrete models based on the
+current central policy, keeping configurations evergreen without rework.
+
+**Rationale:** The assistant occasionally hardcoded specific model names (e.g. 'GPT current-tier',
+'Kimi K2') when creating default agent configuration tickets, causing staleness as frontier models
+evolve. The named-tier abstraction decouples ticket specs from concrete models so configurations
+stay current without manual rework.
+
+**SHA256:** `4ba9ad1dee11ff81649c09227fd6dfb25aef87dc19fa2cf3379b0236a0b9c412`
+
 ______________________________________________________________________
 
 ## v45 — 2026-07-22 — hallucinated-memory-summary-causes-redun-f44a
