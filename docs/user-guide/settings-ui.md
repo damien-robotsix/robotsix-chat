@@ -114,8 +114,8 @@ data no longer validates.
    - **Secret fields** — password input; value shows as `"**********"`; leave unchanged to keep the
      current secret.
 4. Click **Save**.
-   - **Success** — the panel shows "Saved (vN)" (where N is the new version number) and reloads
-     the form from the server.
+   - **Success** — the panel shows "Saved (vN)" (where N is the new version number) and reloads the
+     form from the server.
    - **Validation failure** — the panel displays the pydantic validation error and highlights
      affected fields with a red border. You must fix the error before the save is accepted.
    - **Server error** — the panel shows the error message.

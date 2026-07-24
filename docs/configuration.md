@@ -6,14 +6,15 @@ and no env-var overlay — the only environment variable consumed for config is 
 
 ## Config ownership
 
-Per the [config-ownership standard](https://damien-robotsix.github.io/robotsix-standards/config-ownership/),
+Per the
+[config-ownership standard](https://damien-robotsix.github.io/robotsix-standards/config-ownership/),
 component-owned configuration (feature flags, intervals, model selection, limits, behaviour toggles
 — every key listed in this document) belongs to the component and is edited through its **own**
 surface:
 
 - **Settings panel** — the browser chat UI (`⚙ Settings`) loads the full config via `GET /config`
-  and persists changes via `PUT /config`. This is the canonical edit path for all
-  component-owned keys.
+  and persists changes via `PUT /config`. This is the canonical edit path for all component-owned
+  keys.
 - **Config file** — operators can also edit `config/config.json` directly (or
   `config/config.local.json` for local development) and restart the service.
 
