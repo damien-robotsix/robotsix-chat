@@ -46,10 +46,9 @@ def autonomous_runner(store, tmp_path) -> AutonomousRunner:
         agent_factory=MagicMock(),
         run_serializer=RunSerializer(),
     )
-    # Suppress background tasks in tests: every test that calls
-    # create_session / approve / reject would otherwise schedule real
-    # asyncio tasks that race with test assertions under xdist.
-    runner._schedule_background = MagicMock()  # type: ignore[method-assign]
+    # Prevent background tasks (from approve/reject) from leaking across
+    # xdist workers or between tests sharing an event loop.
+    runner._schedule_background = MagicMock()  # type: ignore[assignment]
     return runner
 
 
