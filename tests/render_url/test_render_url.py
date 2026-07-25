@@ -298,6 +298,38 @@ async def test_render_url_missing_accessibility_tree() -> None:
 
 
 # ---------------------------------------------------------------------------
+# render_url — text_only mode
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_render_url_text_only_skips_screenshot() -> None:
+    """text_only=True omits the screenshot but still returns a11y tree."""
+    fake = _install_fake_playwright()
+    try:
+        from robotsix_chat.render_url import build_render_url_tools
+
+        tools = build_render_url_tools(_settings())
+        render_url = tools[0]
+
+        result_str = await render_url("https://example.com/page", text_only=True)
+        result = json.loads(result_str)
+
+        assert result["page_title"] == "Test Page Title"
+        assert result["page_url"] == "https://example.com/page"
+        assert result["error"] == ""
+        # Screenshot must be empty in text-only mode.
+        assert result["screenshot_base64"] == ""
+        # Accessibility tree must still be present.
+        assert result["accessibility_tree"] == fake._test_a11y
+
+        # page.screenshot must NOT have been called.
+        fake._test_page.screenshot.assert_not_called()
+    finally:
+        _remove_fake_playwright()
+
+
+# ---------------------------------------------------------------------------
 # render_url — browser launch args
 # ---------------------------------------------------------------------------
 

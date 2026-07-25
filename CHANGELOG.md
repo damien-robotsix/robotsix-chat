@@ -12,6 +12,7 @@
   into both the system prompt (v49) and every periodic turn's input.
   `ParentDelivery.deliver_result` is removed; the `subsession_result`
   SSE frame still fires for UI notification bubbles.
+- `render_url`: add `text_only` parameter — when `True` the full-page screenshot is skipped, producing a compact (text-only) response suitable for subsessions that lack file-slicing tools.
 - Derive `__version__` from installed distribution metadata instead of
   hard-coding it, so `pyproject.toml` is the single source of truth.
 - Strengthen the subsession reaction prompt to suppress redundant state restatements: when a subsession reports no change (auto-stopped, auto-paused, or explicit NO_CHANGE), the parent agent now replies with a brief acknowledgment instead of re-listing the ticket ID, status, and timestamp.
