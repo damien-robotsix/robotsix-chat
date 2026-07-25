@@ -106,6 +106,7 @@
   strings.  The retry + backoff mechanism continues to handle transient
   errors; non-retryable failures and exhausted retries both receive the
   new diagnostic format.
+- Document five previously-undocumented config groups in `docs/configuration.md`: GitHub Security, GitHub Actions, Notification, HTTP Probe, and Autonomous. Add `log_json_format` to the Server table.
 - Fix `render_url` returning `AttributeError: 'Page' object has no attribute 'accessibility'` — migrated from the removed `page.accessibility.snapshot()` API to the ARIA snapshot API (`page.locator("body").aria_snapshot()`), which returns a YAML-like string instead of a nested dict.
 - Periodic subsessions are now closed immediately at startup when
   ``central_deploy.url`` is not configured, preventing futile retries
