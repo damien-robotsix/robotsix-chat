@@ -364,10 +364,6 @@ def build_public_fetch_tools(
             _audit(result, "error:exception")
             return json.dumps(result, ensure_ascii=False)
 
-        # --- Success ---
-        _audit(result, "success")
-        return json.dumps(result, ensure_ascii=False)
-
     return [fetch_public_url]
 
 
