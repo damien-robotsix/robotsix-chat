@@ -110,9 +110,9 @@ annotation level (`failure`, `warning`, `notice`), title, and the full message t
 Use this when a CI run fails and you need the exact annotation text to diagnose the root cause
 (rather than rendering the entire GitHub Actions UI page, which can produce very large blobs).
 
-Takes a repository name and a workflow run id (the numeric id from the Actions tab URL). Returns
-a Markdown-formatted string with all annotations grouped by check run, or a diagnostic message
-when no annotations are found.
+Takes a repository name and a workflow run id (the numeric id from the Actions tab URL). Returns a
+Markdown-formatted string with all annotations grouped by check run, or a diagnostic message when no
+annotations are found.
 
 **Read-only.** Does not modify any repository state. No confirmation gating — safe to call anytime
 to investigate a CI failure.
