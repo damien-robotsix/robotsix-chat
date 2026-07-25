@@ -1,6 +1,5 @@
 ## 0.0.0 (unreleased)
 
-<<<<<<< HEAD
 - Added `subsessions.pre_authorized_ticket_patterns` config key — a
   list of glob patterns matching ticket IDs that are pre-authorized
   under a standing operator directive.  When a monitored ticket matches
