@@ -920,3 +920,14 @@ class CentralDeploySettings(BaseModel):
     roster_cache_ttl: float = 300.0
     component_response_max_chars: int = 200_000
     component_credentials: dict[str, ComponentCredentials] = Field(default_factory=dict)
+    component_fallbacks: dict[str, str] = Field(
+        default_factory=dict,
+        description=(
+            "Baked-in fallback base URLs for components that may be missing "
+            "from the central-deploy roster (e.g. after a redeploy). "
+            'Keyed by component id (e.g. "robotsix-mill"). When the roster '
+            "returned by central-deploy is missing a component, the fallback "
+            "URL is used instead. This keeps monitors running through "
+            "transient roster gaps."
+        ),
+    )

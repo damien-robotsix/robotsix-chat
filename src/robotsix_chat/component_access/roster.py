@@ -43,6 +43,40 @@ def _cache_valid(ttl: float) -> bool:
     return (time.monotonic() - fetched_at) < ttl
 
 
+def _augment_with_fallbacks(
+    entries: list[dict[str, Any]],
+    fallbacks: dict[str, str],
+) -> list[dict[str, Any]]:
+    """Augment *entries* with any fallback components not already present.
+
+    Returns a new list — the original *entries* is not mutated.
+    Logged at INFO so operators can see which components are running on
+    baked-in fallbacks rather than the live roster.
+    """
+    if not fallbacks:
+        return entries
+    existing_ids = {e.get("id") for e in entries if not e.get("_error")}
+    augmented = list(entries)
+    for cid, base_url in fallbacks.items():
+        if cid in existing_ids:
+            continue
+        logger.info(
+            "Using baked-in fallback for component '%s' at %s "
+            "(not in central-deploy roster)",
+            cid,
+            base_url,
+        )
+        augmented.append(
+            {
+                "id": cid,
+                "base_url": base_url,
+                "skill": "",
+                "_fallback": True,
+            }
+        )
+    return augmented
+
+
 async def fetch_roster(
     settings: CentralDeploySettings,
 ) -> list[dict[str, Any]]:
@@ -51,8 +85,14 @@ async def fetch_roster(
     Returns a cached result when still fresh; on a cache miss fetches
     ``GET {url}/chat/components`` with the bearer token.
 
+    When *settings.component_fallbacks* is non-empty, any component ids
+    not present in the fetched roster are added from the fallback map so
+    that monitors and tool calls keep working through transient roster
+    gaps (e.g. after a redeploy).
+
     Args:
-        settings: Central-deploy configuration (url, api_token, ttl).
+        settings: Central-deploy configuration (url, api_token, ttl,
+            component_fallbacks).
 
     Returns:
         A list of component entries (each with ``id``, ``base_url``,
@@ -62,11 +102,23 @@ async def fetch_roster(
     """
     global _cache, _last_non_empty_cache
     if not settings.url:
+        # Even without a central-deploy URL, still honour fallbacks so
+        # standalone component access works.
+        if settings.component_fallbacks:
+            ids = ", ".join(
+                f"{k} ({v})" for k, v in settings.component_fallbacks.items()
+            )
+            logger.info(
+                "No central-deploy URL configured; using baked-in "
+                "component fallbacks only: %s",
+                ids,
+            )
+            return _augment_with_fallbacks([], settings.component_fallbacks)
         return []
 
     if _cache_valid(settings.roster_cache_ttl):
         _, entries = _cache  # type: ignore[misc]
-        return entries
+        return _augment_with_fallbacks(entries, settings.component_fallbacks)
 
     token = settings.api_token.get_secret_value()
     headers: dict[str, str] = {}
@@ -84,7 +136,7 @@ async def fetch_roster(
             entries = resp.json()
     except Exception as exc:
         logger.warning("Failed to fetch component roster: %s", exc)
-        return [
+        entries = [
             {
                 "id": "_error",
                 "base_url": "",
@@ -95,20 +147,45 @@ async def fetch_roster(
 
     if not isinstance(entries, list):
         logger.warning("Roster response is not a list: %r", type(entries))
-        return []
+        entries = []
 
-    if not entries:
-        logger.warning("Fetched component roster is empty")
+    if not entries or (len(entries) == 1 and entries[0].get("_error")):
+        logger.warning("Fetched component roster is empty or errored")
         # Do not cache an empty roster for the full TTL — a transient
         # upstream blip would lock out all component_request calls.
-        # Fall back to the last non-empty roster if available.
+        # Fall back to the last non-empty roster if available, but
+        # do NOT update _cache (empty must never poison the cache).
         if _last_non_empty_cache is not None:
-            return _last_non_empty_cache[1]
-        return []
+            return _augment_with_fallbacks(
+                _last_non_empty_cache[1], settings.component_fallbacks
+            )
+        # No cached fallback available — return empty/error augmented
+        # with any baked-in fallbacks.
+        return _augment_with_fallbacks(entries, settings.component_fallbacks)
 
+    # Log the roster at startup / on first fetch so operators can
+    # verify which components are registered.
+    non_error = [e for e in entries if not e.get("_error")]
+    if non_error:
+        ids = ", ".join(f"{e['id']} ({e.get('base_url', '?')})" for e in non_error)
+        logger.info("Component roster loaded: %s", ids)
+    if settings.component_fallbacks:
+        existing_ids = {e.get("id") for e in entries if not e.get("_error")}
+        missing = {
+            k: v
+            for k, v in settings.component_fallbacks.items()
+            if k not in existing_ids
+        }
+        if missing:
+            logger.info(
+                "Component fallbacks available for missing entries: %s",
+                ", ".join(f"{k} ({v})" for k, v in missing.items()),
+            )
+
+    # Cache non-empty, non-error entries.
     _cache = (time.monotonic(), entries)
     _last_non_empty_cache = _cache
-    return entries
+    return _augment_with_fallbacks(entries, settings.component_fallbacks)
 
 
 def fetch_roster_sync(settings: CentralDeploySettings) -> list[dict[str, Any]]:
