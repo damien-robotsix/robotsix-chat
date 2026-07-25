@@ -488,6 +488,11 @@
           "title": "Base Url",
           "type": "string"
         },
+        "default_protocol": {
+          "default": "http",
+          "title": "Default Protocol",
+          "type": "string"
+        },
         "api_key": {
           "default": "",
           "format": "password",
@@ -503,6 +508,21 @@
         "timeout": {
           "default": 30.0,
           "title": "Timeout",
+          "type": "number"
+        },
+        "self_restart_max_retries": {
+          "default": 3,
+          "title": "Self Restart Max Retries",
+          "type": "integer"
+        },
+        "self_restart_backoff_base": {
+          "default": 1.0,
+          "title": "Self Restart Backoff Base",
+          "type": "number"
+        },
+        "self_restart_backoff_cap": {
+          "default": 30.0,
+          "title": "Self Restart Backoff Cap",
           "type": "number"
         }
       },

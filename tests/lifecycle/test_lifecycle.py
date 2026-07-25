@@ -14,7 +14,11 @@ import respx
 
 from robotsix_chat.config import LifecycleSettings
 from robotsix_chat.lifecycle import build_lifecycle_tools, load_lifecycle_skill
-from robotsix_chat.lifecycle.client import LifecycleClient
+from robotsix_chat.lifecycle.client import (
+    LifecycleClient,
+    _ensure_url_scheme,
+    _is_transient_error,
+)
 
 
 def _settings(**kw: Any) -> LifecycleSettings:
@@ -580,3 +584,244 @@ async def test_watch_service_redeploy_non_json_status_is_raw_text(
     )
     assert "Redeploy detected" in out
     assert "status: healthy (plain text)" in out
+
+
+# ---------------------------------------------------------------------------
+# _ensure_url_scheme
+# ---------------------------------------------------------------------------
+
+
+def test_ensure_url_scheme_empty_returns_empty() -> None:
+    """Empty URL is returned as-is."""
+    assert _ensure_url_scheme("", "http") == ""
+
+
+def test_ensure_url_scheme_http_unchanged() -> None:
+    """URL with http:// scheme is returned unchanged."""
+    assert (
+        _ensure_url_scheme("http://central-deploy:8100", "http")
+        == "http://central-deploy:8100"
+    )
+
+
+def test_ensure_url_scheme_https_unchanged() -> None:
+    """URL with https:// scheme is returned unchanged."""
+    assert (
+        _ensure_url_scheme("https://central-deploy:8100", "http")
+        == "https://central-deploy:8100"
+    )
+
+
+def test_ensure_url_scheme_no_scheme_prepends_default() -> None:
+    """URL without a scheme gets the default protocol prepended."""
+    assert (
+        _ensure_url_scheme("central-deploy:8100", "http")
+        == "http://central-deploy:8100"
+    )
+
+
+def test_ensure_url_scheme_no_scheme_uses_configured_protocol() -> None:
+    """URL without a scheme uses the explicitly configured default protocol."""
+    assert (
+        _ensure_url_scheme("deploy.internal:9000", "https")
+        == "https://deploy.internal:9000"
+    )
+
+
+def test_ensure_url_scheme_unrecognised_scheme_left_alone() -> None:
+    """A URL with an unrecognised scheme (e.g. ftp://) is left unchanged."""
+    assert _ensure_url_scheme("ftp://deploy:8100", "http") == "ftp://deploy:8100"
+
+
+# ---------------------------------------------------------------------------
+# _is_transient_error
+# ---------------------------------------------------------------------------
+
+
+def test_is_transient_error_5xx() -> None:
+    """5xx HTTP errors are transient."""
+    assert _is_transient_error("Lifecycle error 500 for POST url: boom") is True
+    assert _is_transient_error("Lifecycle error 503 for POST url: gone") is True
+
+
+def test_is_transient_error_timeout() -> None:
+    """Timeout errors are transient."""
+    timeout_msg = "Lifecycle request timed out after 30.0s: http://x"
+    assert _is_transient_error(timeout_msg) is True
+
+
+def test_is_transient_error_connection_failure() -> None:
+    """Connection failures are transient."""
+    assert _is_transient_error("Lifecycle request failed: connection refused") is True
+
+
+def test_is_transient_error_4xx_not_transient() -> None:
+    """4xx errors are not transient."""
+    assert _is_transient_error("Lifecycle error 403 for POST url: nope") is False
+    assert _is_transient_error("Lifecycle error 404 for POST url: missing") is False
+
+
+def test_is_transient_error_success_not_transient() -> None:
+    """A success response (no error marker) is not transient."""
+    assert _is_transient_error('{"status": "ok"}') is False
+
+
+# ---------------------------------------------------------------------------
+# self_restart — retry with exponential backoff
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_self_restart_succeeds_on_first_attempt(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """self_restart succeeds on the first attempt (no retries needed)."""
+    respx_mock.post("http://lifecycle:9000/chat/services/chat/restart").mock(
+        return_value=httpx.Response(200, json={"status": "restarting"})
+    )
+
+    client = LifecycleClient(_settings())
+    out = await client.self_restart()
+    assert '"status": "restarting"' in out
+
+
+@pytest.mark.asyncio
+async def test_self_restart_retries_on_503_then_succeeds(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A 503 is retried; the method succeeds on the second attempt."""
+    call_count = [0]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        call_count[0] += 1
+        if call_count[0] == 1:
+            return httpx.Response(503, json={"error": "temporarily unavailable"})
+        return httpx.Response(200, json={"status": "restarting"})
+
+    respx_mock.post("http://lifecycle:9000/chat/services/chat/restart").mock(
+        side_effect=handler
+    )
+
+    client = LifecycleClient(_settings(self_restart_max_retries=2))
+    out = await client.self_restart()
+    assert '"status": "restarting"' in out
+    assert call_count[0] == 2  # one retry
+
+
+@pytest.mark.asyncio
+async def test_self_restart_retries_on_timeout_then_succeeds(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A timeout is retried; the method succeeds on retry."""
+    call_count = [0]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        call_count[0] += 1
+        if call_count[0] == 1:
+            raise httpx.TimeoutException("timed out")
+        return httpx.Response(200, json={"status": "restarting"})
+
+    respx_mock.post("http://lifecycle:9000/chat/services/chat/restart").mock(
+        side_effect=handler
+    )
+
+    client = LifecycleClient(_settings(self_restart_max_retries=2))
+    out = await client.self_restart()
+    assert '"status": "restarting"' in out
+    assert call_count[0] == 2
+
+
+@pytest.mark.asyncio
+async def test_self_restart_all_retries_exhausted(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When all retries are exhausted, a combined error message is returned."""
+    respx_mock.post("http://lifecycle:9000/chat/services/chat/restart").mock(
+        return_value=httpx.Response(503, json={"error": "still down"})
+    )
+
+    client = LifecycleClient(_settings(self_restart_max_retries=1))
+    out = await client.self_restart()
+    assert "failed after 2 attempts" in out
+    assert "503" in out
+
+
+@pytest.mark.asyncio
+async def test_self_restart_does_not_retry_4xx(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A 4xx error is returned immediately — no retries."""
+    call_count = [0]
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        call_count[0] += 1
+        return httpx.Response(403, json={"error": "forbidden"})
+
+    respx_mock.post("http://lifecycle:9000/chat/services/chat/restart").mock(
+        side_effect=handler
+    )
+
+    client = LifecycleClient(_settings(self_restart_max_retries=3))
+    out = await client.self_restart()
+    assert "Lifecycle" in out
+    assert "403" in out
+    assert call_count[0] == 1  # no retries
+
+
+# ---------------------------------------------------------------------------
+# self_restart — empty base_url
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_self_restart_empty_base_url_returns_clear_message() -> None:
+    """When base_url is empty, self_restart returns a clear error message."""
+    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
+    out = await client.self_restart()
+    assert "base_url is empty" in out
+    assert "http://central-deploy:8100" in out
+
+
+# ---------------------------------------------------------------------------
+# LifecycleClient — protocol fallback (base_url without scheme)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_client_no_scheme_base_url_prepends_protocol(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When base_url has no scheme, the default protocol is prepended."""
+    route = respx_mock.post(
+        "http://central-deploy:8100/chat/services/chat/restart"
+    ).mock(return_value=httpx.Response(200, json={"status": "restarting"}))
+
+    client = LifecycleClient(
+        _settings(base_url="central-deploy:8100", default_protocol="http")
+    )
+    out = await client.self_restart()
+    assert '"status": "restarting"' in out
+    assert (
+        route.calls.last.request.url
+        == "http://central-deploy:8100/chat/services/chat/restart"
+    )
+
+
+@pytest.mark.asyncio
+async def test_client_no_scheme_uses_https_default(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When base_url has no scheme and default_protocol=https, https:// is prepended."""
+    route = respx_mock.post(
+        "https://secure-deploy:8443/chat/services/chat/restart"
+    ).mock(return_value=httpx.Response(200, json={"status": "restarting"}))
+
+    client = LifecycleClient(
+        _settings(base_url="secure-deploy:8443", default_protocol="https")
+    )
+    out = await client.self_restart()
+    assert '"status": "restarting"' in out
+    assert (
+        route.calls.last.request.url
+        == "https://secure-deploy:8443/chat/services/chat/restart"
+    )

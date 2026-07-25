@@ -23,6 +23,54 @@ _DEFAULT_MAX_WAIT_SECONDS = 300.0  # 5 minutes
 _DEFAULT_POLL_INTERVAL_SECONDS = 15.0
 _MIN_POLL_INTERVAL_SECONDS = 5.0
 
+# Set of recognised URL schemes that do not need a protocol prepend.
+_KNOWN_SCHEMES = frozenset({"http", "https"})
+
+
+def _ensure_url_scheme(raw: str, default_protocol: str) -> str:
+    """Return *raw* with a protocol scheme if it is missing one.
+
+    If *raw* is empty, returns it as-is (the caller is expected to
+    handle the empty-base-url case separately).  If *raw* already
+    contains ``://`` with a recognised scheme, returns it unchanged.
+    Otherwise prepends ``{default_protocol}://`` and logs a warning.
+    """
+    if not raw:
+        return raw
+    # Already has a scheme component?
+    if "://" in raw:
+        scheme = raw.split("://", 1)[0]
+        if scheme in _KNOWN_SCHEMES:
+            return raw
+        # Unrecognised scheme — leave it alone so httpx can reject it
+        # with a clear error rather than silently rewriting it.
+        return raw
+    # No scheme — apply the default protocol.
+    fixed = f"{default_protocol}://{raw}"
+    logger.warning(
+        "lifecycle.base_url has no URL scheme; prepending %s:// → %s",
+        default_protocol,
+        fixed,
+    )
+    return fixed
+
+
+def _is_transient_error(result: str) -> bool:
+    """Return ``True`` if *result* indicates a retryable (transient) error.
+
+    Heuristic: lifecycle error strings follow the pattern
+    ``"Lifecycle error NNN for METHOD URL: …"`` (HTTP errors) or
+    ``"Lifecycle request timed out …"`` / ``"Lifecycle request failed: …"``
+    (network-level errors).  5xx server errors and network failures are
+    transient and worth retrying; 4xx client errors (configuration or
+    auth) are not.
+    """
+    if "Lifecycle error 5" in result:
+        return True
+    if "Lifecycle request timed out" in result:
+        return True
+    return "Lifecycle request failed:" in result
+
 
 class LifecycleClient:
     """HTTP client for the deploy-lifecycle API.
@@ -35,7 +83,15 @@ class LifecycleClient:
     def __init__(self, settings: LifecycleSettings) -> None:
         """Initialise with lifecycle settings."""
         self._s = settings
-        self._base_url = settings.base_url.rstrip("/")
+        base_url = _ensure_url_scheme(
+            settings.base_url, settings.default_protocol
+        ).rstrip("/")
+        if not base_url:
+            logger.warning(
+                "lifecycle.base_url is empty — all lifecycle API calls "
+                "will fail with a URL protocol error."
+            )
+        self._base_url = base_url
 
     # -- public methods ---------------------------------------------------
 
@@ -154,6 +210,12 @@ class LifecycleClient:
         endpoints (restart access — not the more sensitive ``update``
         capability).  Returns a clear message (never raises) when
         ``service_name`` is not configured.
+
+        On transient failures this method retries with exponential
+        backoff (configurable via ``self_restart_max_retries``,
+        ``self_restart_backoff_base``, and ``self_restart_backoff_cap``)
+        before reporting failure.  Non-retryable errors (e.g. 4xx client
+        errors) are returned immediately.
         """
         name = self._s.service_name
         if not name:
@@ -162,7 +224,51 @@ class LifecycleClient:
                 "configured, so this service cannot name itself to the deploy "
                 "server."
             )
-        return await self._post(f"/chat/services/{name}/restart")
+        if not self._base_url:
+            return (
+                "self_restart is unavailable: lifecycle.base_url is empty. "
+                "Set lifecycle.base_url to the deploy-lifecycle API address "
+                "(e.g. http://central-deploy:8100) and restart the chat server."
+            )
+
+        path = f"/chat/services/{name}/restart"
+        max_retries = self._s.self_restart_max_retries
+        backoff_base = self._s.self_restart_backoff_base
+        backoff_cap = self._s.self_restart_backoff_cap
+
+        last_result: str | None = None
+        for attempt in range(max_retries + 1):
+            if attempt > 0:
+                delay = min(backoff_base * (2 ** (attempt - 1)), backoff_cap)
+                logger.warning(
+                    "self_restart retry %d/%d after %.1fs",
+                    attempt,
+                    max_retries,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+
+            result = await self._post(path)
+
+            # Retry only on transient errors: 5xx or network-level failures
+            # (timeouts, connection errors).  4xx errors are not retryable.
+            if _is_transient_error(result):
+                last_result = result
+                continue
+
+            return result
+
+        # All retries exhausted.
+        logger.error(
+            "self_restart failed after %d retries (max %d): %s",
+            max_retries,
+            max_retries,
+            last_result,
+        )
+        return (
+            f"self_restart failed after {max_retries + 1} attempts. "
+            f"Last error: {last_result}"
+        )
 
     async def update_service_config(
         self, service_name: str, config: dict[str, Any]

@@ -588,9 +588,13 @@ class LifecycleSettings(BaseModel):
 
     enabled: bool = False
     base_url: str = ""
+    default_protocol: str = "http"
     api_key: SecretStr = SecretStr("")
     service_name: str = ""
     timeout: float = 30.0
+    self_restart_max_retries: int = 3
+    self_restart_backoff_base: float = 1.0
+    self_restart_backoff_cap: float = 30.0
     model_config = ConfigDict(extra="forbid")
 
 
