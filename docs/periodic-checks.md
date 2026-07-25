@@ -34,7 +34,7 @@ suppression: no result is delivered to the parent conversation and no notificati
 you are only bothered when something substantive happened. For minor but notable changes the agent
 replies with a single concise line; full reports are reserved for substantive changes (first-time
 blocking, completion, failure, or transitions requiring user action). After a configurable number of
-consecutive `NO_CHANGE` runs (`subsessions.auto_stop_no_change_runs`, default 5) the subsession
+consecutive `NO_CHANGE` runs (`subsessions.auto_stop_no_change_runs`, default 3) the subsession
 closes itself.
 
 ### Auto-stop and failure notifications

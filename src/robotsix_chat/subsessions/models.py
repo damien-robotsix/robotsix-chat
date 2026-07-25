@@ -161,6 +161,10 @@ class SubsessionInfo:
     # consecutive-failures counter so recovery can decide whether to resume
     # the monitoring loop or close the subsession.
     checkpoint: dict[str, object] | None = None
+    # Number of consecutive NO_CHANGE replies — persisted so a periodic
+    # monitor's counter survives server restarts and the auto-stop /
+    # auto-pause thresholds are not defeated by process restarts.
+    consecutive_no_change: int = 0
     # Global-issue deduplication key — when set on a user_chat subsession,
     # spawn_subsession refuses to create another user_chat with the same key
     # while this one is active, so a single root-cause error (e.g. an
@@ -199,6 +203,7 @@ class SubsessionInfo:
             "turn_history": [list(pair) for pair in self.turn_history],
             "checkpoint": self.checkpoint,
             "dedup_key": self.dedup_key,
+            "consecutive_no_change": self.consecutive_no_change,
         }
         if with_transcript:
             data["transcript"] = [entry.as_dict() for entry in self.transcript]

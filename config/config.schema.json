@@ -878,7 +878,7 @@
           "type": "number"
         },
         "auto_stop_no_change_runs": {
-          "default": 5,
+          "default": 3,
           "title": "Auto Stop No Change Runs",
           "type": "integer"
         },
