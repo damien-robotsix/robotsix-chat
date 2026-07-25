@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add "Cognee recall retirement" guidance to the system prompt: when a monitor reports terminal state on a ticket, the agent should retire stale knowledge notes that reference obsolete PR numbers, monitor ids, or closed-fix paths, replacing them with fresh entries reflecting the current active path.
 - Added mandatory CI workflow failure diagnosis gate to the implement agent's
   system prompt.  Before editing any ``.github/workflows/*.yml`` file, the
   agent must fetch recent failure logs via the chat-allowlisted
