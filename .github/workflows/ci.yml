@@ -355,6 +355,20 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Verify all gates passed
+        env:
+          LOCKFILE_RESULT: ${{ needs.lockfile.result }}
+          CI_RESULT: ${{ needs.ci.result }}
+          SECURITY_RESULT: ${{ needs.security.result }}
+          PRE_COMMIT_RESULT: ${{ needs.pre-commit.result }}
+          CHECK_SSE_TYPES_RESULT: ${{ needs.check-sse-types.result }}
+          CHECK_SUBSESSION_KINDS_RESULT: ${{ needs.check-subsession-kinds.result }}
+          CHECK_ACTIVITY_KINDS_RESULT: ${{ needs.check-activity-kinds.result }}
+          CHECK_SUBSESSION_STATUSES_RESULT: ${{ needs.check-subsession-statuses.result }}
+          CHECK_AUTONOMOUS_STATES_RESULT: ${{ needs.check-autonomous-states.result }}
+          IMAGE_SCAN_RESULT: ${{ needs.image-scan.result }}
+          CHECK_CONFIG_SCHEMA_RESULT: ${{ needs.check-config-schema.result }}
+          DEPTRY_RESULT: ${{ needs.deptry.result }}
+          PYRIGHT_RESULT: ${{ needs.pyright.result }}
         run: |
           set -euo pipefail
           check() {  # usage: check <result> <label> [allow-skipped]
@@ -371,17 +385,17 @@ jobs:
             return 1
           }
           echo "--- CI gate results ---"
-          check '${{ needs.lockfile.result }}'                    lockfile
-          check '${{ needs.ci.result }}'                          ci                    allow-skipped
-          check '${{ needs.security.result }}'                    security              allow-skipped
-          check '${{ needs.pre-commit.result }}'                  pre-commit
-          check '${{ needs.check-sse-types.result }}'             check-sse-types
-          check '${{ needs.check-subsession-kinds.result }}'      check-subsession-kinds
-          check '${{ needs.check-activity-kinds.result }}'        check-activity-kinds
-          check '${{ needs.check-subsession-statuses.result }}'   check-subsession-statuses
-          check '${{ needs.check-autonomous-states.result }}'     check-autonomous-states
-          check '${{ needs.image-scan.result }}'                  image-scan
-          check '${{ needs.check-config-schema.result }}'         check-config-schema
-          check '${{ needs.deptry.result }}'                      deptry
-          check '${{ needs.pyright.result }}'                     pyright
+          check "$LOCKFILE_RESULT"                    lockfile
+          check "$CI_RESULT"                          ci                    allow-skipped
+          check "$SECURITY_RESULT"                    security              allow-skipped
+          check "$PRE_COMMIT_RESULT"                  pre-commit
+          check "$CHECK_SSE_TYPES_RESULT"             check-sse-types
+          check "$CHECK_SUBSESSION_KINDS_RESULT"      check-subsession-kinds
+          check "$CHECK_ACTIVITY_KINDS_RESULT"        check-activity-kinds
+          check "$CHECK_SUBSESSION_STATUSES_RESULT"   check-subsession-statuses
+          check "$CHECK_AUTONOMOUS_STATES_RESULT"     check-autonomous-states
+          check "$IMAGE_SCAN_RESULT"                  image-scan
+          check "$CHECK_CONFIG_SCHEMA_RESULT"         check-config-schema
+          check "$DEPTRY_RESULT"                      deptry
+          check "$PYRIGHT_RESULT"                     pyright
           echo "All CI checks passed"
