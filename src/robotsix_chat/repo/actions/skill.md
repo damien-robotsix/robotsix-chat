@@ -87,3 +87,16 @@ and inputs with the user in-chat.
 | 403    | Invalid or missing `X-API-Key` header                                  |
 | 404    | Repository not in the GitHub App installation scope                    |
 | 503    | `github_actions` not configured (disabled or missing `deploy_api_key`) |
+
+## Agent tool: `check_workflow_run`
+
+Fetch recent workflow runs and diagnose common CI failure patterns.  This is a read-only agent
+tool (no HTTP endpoint) that inspects workflow runs and detects known failure signatures.
+
+In particular, it detects **private-repo billing failures** — runs that complete with
+`conclusion: "failure"` but have zero jobs, or runs that never started (`run_started_at` is
+null).  These signatures strongly indicate that GitHub Actions billing is not enabled for the
+repository.
+
+**Read-only.**  Does not modify any repository state.  No confirmation gating — safe to call
+anytime to investigate a CI failure.

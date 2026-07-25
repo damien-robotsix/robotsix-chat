@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add `check_workflow_run` agent tool for diagnosing CI failures, including private-repo billing-failure detection (runs with zero jobs or that never started).
 - System prompt (v53): added troubleshooting instruction to fetch live system state (deploy contract, service registry, logs) before hypothesizing causes for user-reported errors, preventing fabricated guesses that waste back-and-forth.
 - **Periodic monitor `consecutive_no_change` counter now persists across server restarts**, preventing the auto-stop and auto-pause thresholds from being defeated by process restarts. Added ``consecutive_no_change`` field to ``SubsessionInfo`` (persisted in the subsession store and restored on resume).
 - **Lowered ``auto_stop_no_change_runs`` default from 5 to 3** so periodic monitors auto-terminate sooner when the watched ticket shows no changes.
