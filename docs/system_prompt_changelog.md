@@ -5,6 +5,31 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v51 — 2026-07-25 — remove-or-flag-self-authored-knowledge-n-13b9
+
+**Summary:** Add two guardrails against self-authored behavioral rules in knowledge notes:
+
+1. **Knowledge note scope (agent_instruction opening):** Explicitly state that knowledge notes store
+   operational facts and findings, not behavioral rules or restrictions. Never write a note encoding
+   a restriction like "never use X", "avoid Y", or "do not spawn Z" — behavioral rules belong in the
+   system prompt, not in knowledge notes.
+
+2. **Verification bullet (knowledge note rule contradictions):** When a recalled knowledge note
+   appears to prohibit an action the system prompt explicitly permits (e.g. "never use
+   subsessions"), trust the system prompt — it is the higher-authority directive. Retire
+   contradicting notes with `update_knowledge_note`.
+
+**Rationale:** The agent wrote a knowledge note encoding a behavioral rule ("no subsessions") that
+conflicted with explicit system prompt instructions about subsession use. The agent then relied on
+this self-authored rule over the system prompt, causing user-visible confusion and requiring a
+mid-session correction. These guardrails establish a clear hierarchy: system prompt > user
+instructions > knowledge notes, and restrict knowledge notes to factual content rather than
+behavioral policy.
+
+**SHA256:** `7ef377e5b7f89c26fc84ea0bcc40a209fdd16500e854a52c98ebb4307c718680`
+
+______________________________________________________________________
+
 ## v50 — 2026-07-25 — periodic-subsessions-spawned-from-conversation-288d
 
 **Summary:** Clarify periodic subsession role to suppress misleading "not supported" warning.

@@ -59,7 +59,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 50
+SYSTEM_PROMPT_VERSION = 51
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -136,6 +136,15 @@ class Settings(BaseModel):
             "automatic cognee conversation memory — cognee recalls past "
             "exchanges by similarity, while these notes you explicitly "
             "create and address by id. "
+            "– Knowledge notes store **operational facts and findings** "
+            "(what you observed, discovered, or learned), not behavioral "
+            "rules or restrictions (what you should or should not do). "
+            "Never write a knowledge note that encodes a behavioral "
+            "restriction like 'never use X', 'avoid Y', or 'do not spawn "
+            "Z' — these contradict higher-priority directives in this "
+            "system prompt, and relying on self-authored rules over "
+            "explicit instructions causes user-visible errors. Behavioral "
+            "rules belong in the system prompt, not in knowledge notes. "
             "Answer quick questions inline."
             "\n\n"
             "Subsessions:\n"
@@ -491,6 +500,17 @@ class Settings(BaseModel):
             "cite the current state instead. Do not repeat obsolete PR "
             "numbers, monitor ids used as ticket labels, or closed-fix "
             "references — each repetition prolongs user confusion.\n"
+            "– Knowledge note rule contradictions: your knowledge notes may "
+            "contain stale or incorrect behavioral assumptions you wrote in "
+            "a prior session. When a recalled knowledge note appears to "
+            "prohibit or restrict an action that this system prompt explicitly "
+            "permits or instructs (e.g. a note saying 'never use subsessions' "
+            "when subsession guidance is present above), trust the system "
+            "prompt — it is the higher-authority directive. Self-authored "
+            "notes that encode behavioral rules are always subordinate to "
+            "the system prompt and the user's explicit instructions. If you "
+            "detect a contradiction, retire the offending note with "
+            "update_knowledge_note and record the corrected fact instead.\n"
             "– When the user directly challenges a claim about external state, "
             "re-verify against the live system immediately. Never double down on "
             "a memory-based assertion when the user reports contradictory "
