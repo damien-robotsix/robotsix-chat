@@ -155,12 +155,11 @@ self-closing after a fixed number of failures.
     process restart (e.g. Watchtower redeploy) with their remaining run budget.
 
     **Auto-closed monitors are also re-spawned on restart.** If a periodic monitor was auto-closed
-    with one of the following reasons — `no_change_auto_stop` (consecutive no-change runs),
-    `paused` (max idle runs), or `human_approval_timeout` — the resume hook re-spawns the worker
-    so it can re-verify the ticket state. The underlying condition (no change, idle, pending
-    approval) may have resolved during the outage; the worker's `_check_resume_status` inspects
-    the current ticket state on its first post-restart tick and closes immediately if conditions
-    have not improved.
+    with one of the following reasons — `no_change_auto_stop` (consecutive no-change runs), `paused`
+    (max idle runs), or `human_approval_timeout` — the resume hook re-spawns the worker so it can
+    re-verify the ticket state. The underlying condition (no change, idle, pending approval) may
+    have resolved during the outage; the worker's `_check_resume_status` inspects the current ticket
+    state on its first post-restart tick and closes immediately if conditions have not improved.
 
     Monitors closed explicitly (e.g. `completed` by the agent, `max_runs` by user cap, or any
     explicit close by the user) are **not** re-spawned — the shutdown was intentional.

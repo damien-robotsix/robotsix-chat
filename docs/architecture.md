@@ -316,12 +316,12 @@ ______________________________________________________________________
 
 State that survives restarts when `/data/` is bind-mounted:
 
-| File                             | Content                                                                                         |
-| -------------------------------- | ----------------------------------------------------------------------------------------------- |
-| `/data/conversations.json`       | Multi-session conversation history (auto-migrated from legacy format)                           |
+| File                             | Content                                                                                                                                                                  |
+| -------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `/data/conversations.json`       | Multi-session conversation history (auto-migrated from legacy format)                                                                                                    |
 | `/data/subsessions.json`         | Subsession state (periodic subsessions resumed on startup; auto-closed monitors are re-spawned so the worker can re-verify ticket state — see `docs/periodic-checks.md`) |
-| `/data/cognee/`                  | Long-term memory storage (cognee)                                                               |
-| `/data/autonomous_sessions.json` | Autonomous session state (resumed on restart — see [Autonomous Sessions](#autonomous-sessions)) |
+| `/data/cognee/`                  | Long-term memory storage (cognee)                                                                                                                                        |
+| `/data/autonomous_sessions.json` | Autonomous session state (resumed on restart — see [Autonomous Sessions](#autonomous-sessions))                                                                          |
 
 ______________________________________________________________________
 
