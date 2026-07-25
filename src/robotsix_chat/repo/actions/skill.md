@@ -99,3 +99,20 @@ These signatures strongly indicate that GitHub Actions billing is not enabled fo
 
 **Read-only.** Does not modify any repository state. No confirmation gating — safe to call anytime
 to investigate a CI failure.
+
+## Agent tool: `fetch_workflow_run_annotations`
+
+Fetch annotations for all check runs in a GitHub Actions workflow run. Annotations are the inline
+diagnostic messages that GitHub Actions surfaces on files — linter warnings, compiler errors, test
+failure details — grouped by check run. Each annotation includes the file path, line range,
+annotation level (`failure`, `warning`, `notice`), title, and the full message text.
+
+Use this when a CI run fails and you need the exact annotation text to diagnose the root cause
+(rather than rendering the entire GitHub Actions UI page, which can produce very large blobs).
+
+Takes a repository name and a workflow run id (the numeric id from the Actions tab URL). Returns
+a Markdown-formatted string with all annotations grouped by check run, or a diagnostic message
+when no annotations are found.
+
+**Read-only.** Does not modify any repository state. No confirmation gating — safe to call anytime
+to investigate a CI failure.
