@@ -1,11 +1,14 @@
 name: Release image
 
-# Publishes the container image to GHCR via the fleet's shared reusable
-# workflow (docker standard: no hand-rolled build/push). The shared workflow
-# handles metadata/tags (main, sha-<short>, X.Y.Z — no `latest`), SBOM +
-# provenance attestation, and a Trivy publish gate (fixable CRITICAL findings
-# block). central-deploy pulls the `main` tag on operator-triggered updates
-# (see deploy/README.md).
+# Publishes the container image to GHCR.  Hand-rolled (not the shared
+# docker-release.yml reusable workflow) because the shared workflow's
+# docker/build-push-action with push: true does NOT load the image into the
+# local Docker daemon — Trivy then has to pull the multi-GB image back from
+# GHCR before scanning, which exhausts the runner's /tmp or triggers
+# preemption on ubuntu-latest runners (4 recurring CI failures: #423, #559,
+# #750, plus this one).  Building with load: true first lets Trivy scan the
+# local image directly; the second build (push: true) reuses the buildx
+# cache and is fast.
 on:
   push:
     branches: ['main']
@@ -42,10 +45,100 @@ jobs:
   publish:
     name: Build, scan, and publish image
     needs: verify
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/docker-release.yml@0234f4b82365d776fc021c774dc104c5e7042c29  # main
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
     permissions:
       contents: read          # checkout the repo
       packages: write         # push image to GHCR
       attestations: write     # provenance / SBOM attestation
       id-token: write         # provenance / SBOM attestation signing
       security-events: write  # Trivy SARIF upload to Code Scanning
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: Setup Docker Buildx
+        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
+
+      - name: Login to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Docker metadata
+        id: meta
+        uses: docker/metadata-action@dc802804100637a589fabce1cb79ff13a1411302  # v6.2.0
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=ref,event=branch
+            type=semver,pattern={{version}}
+            type=sha,prefix=sha-
+
+      - name: Build image (local, for scanning)
+        uses: docker/build-push-action@0f43577c0a17b9967771e09ad1ad4a8eac5cb49a  # v7.3.0
+        with:
+          context: .
+          file: ./Dockerfile
+          load: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          push: false
+          # No GHA layer cache: exporting this multi-GB image's layers to the
+          # cache API takes 45-55 min per run while a cold build takes ~4 min.
+          # Measured 2026-07-03; do not re-add without re-timing.
+
+      - name: Resolve scan image tag
+        id: scan-ref
+        run: |
+          FIRST_TAG="$(echo "${{ steps.meta.outputs.tags }}" | cut -d',' -f1)"
+          echo "image=${FIRST_TAG}" >> "$GITHUB_OUTPUT"
+
+      # Gate policy (docker standard): block only on CRITICAL/HIGH findings
+      # with a released fix — a red gate always means "an upgrade exists,
+      # take it".  Unfixable base-image CVEs stay visible via the SARIF run
+      # below but do not block.
+      - name: Trivy scan (gate)
+        id: trivy-gate
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: ${{ steps.scan-ref.outputs.image }}
+          format: table
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          exit-code: 1
+          vuln-type: os,library
+
+      - name: Trivy scan (SARIF for code-scanning)
+        if: always() && steps.scan-ref.outputs.image != ''
+        continue-on-error: true
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: ${{ steps.scan-ref.outputs.image }}
+          format: sarif
+          output: trivy-results.sarif
+          ignore-unfixed: true
+          vuln-type: os,library
+
+      - name: Upload SARIF
+        if: always() && hashFiles('trivy-results.sarif') != ''
+        continue-on-error: true
+        uses: github/codeql-action/upload-sarif@7188fc363630916deb702c7fdcf4e481b751f97a  # v4.37.1
+        with:
+          sarif_file: trivy-results.sarif
+          category: trivy-release
+
+      - name: Push image to GHCR (with provenance + SBOM)
+        if: steps.trivy-gate.outcome == 'success'
+        uses: docker/build-push-action@0f43577c0a17b9967771e09ad1ad4a8eac5cb49a  # v7.3.0
+        with:
+          context: .
+          file: ./Dockerfile
+          push: true
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          provenance: mode=max
+          sbom: true
