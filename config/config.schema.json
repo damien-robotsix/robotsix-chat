@@ -756,7 +756,7 @@
     },
     "RenderUrlSettings": {
       "additionalProperties": false,
-      "description": "Read-only URL rendering with headless Chromium (Playwright).\n\nWhen enabled, the agent gains a tool that loads a URL in a headless\nChromium browser (via Playwright), takes a full-page screenshot, and\nextracts the accessibility tree \u2014 both returned as structured output.\nNo interactive browsing, form-filling, or navigation beyond the initial\npage load is permitted.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no URL-render tool is offered.\n    timeout: Per-request timeout in seconds for the page load.\n    viewport_width: Browser viewport width in pixels.\n    viewport_height: Browser viewport height in pixels.",
+      "description": "Read-only URL rendering with headless Chromium (Playwright).\n\nWhen enabled, the agent gains a tool that loads a URL in a headless\nChromium browser (via Playwright), takes a full-page screenshot, and\nextracts the ARIA accessibility tree \u2014 both returned as structured output.\nNo interactive browsing, form-filling, or navigation beyond the initial\npage load is permitted.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no URL-render tool is offered.\n    timeout: Per-request timeout in seconds for the page load.\n    viewport_width: Browser viewport width in pixels.\n    viewport_height: Browser viewport height in pixels.",
       "properties": {
         "enabled": {
           "default": true,

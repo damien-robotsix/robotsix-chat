@@ -1,9 +1,9 @@
 """Read-only URL rendering via headless Chromium (Playwright).
 
-Returns a screenshot and accessibility tree so the agent can visually
+Returns a screenshot and ARIA accessibility tree so the agent can visually
 inspect a rendered page.  No state mutation or form submission — strictly
 read-only: the page is loaded, a full-page screenshot is captured, the
-accessibility snapshot (a11y tree) is extracted, and the browser is
+ARIA snapshot (a11y tree) is extracted, and the browser is
 closed immediately.
 
 Requires the ``render-url`` extra (``playwright``) and a Playwright
@@ -57,7 +57,7 @@ def build_render_url_tools(
         """Render a URL in headless Chromium and return the page content.
 
         Loads *url* in a headless Chromium browser, extracts the
-        accessibility tree, and optionally captures a full-page screenshot
+        ARIA accessibility tree, and optionally captures a full-page screenshot
         (PNG, base64-encoded).  Read-only — no clicks, no form fills, no
         state mutation.  The browser is closed immediately after the
         capture.
@@ -77,7 +77,7 @@ def build_render_url_tools(
             A JSON string with ``page_title``, ``page_url``,
             ``screenshot_base64`` (empty when *text_only* is ``True``,
             otherwise the full-page PNG as a base64 data URL),
-            ``accessibility_tree`` (the a11y snapshot as a nested dict),
+            ``accessibility_tree`` (the ARIA snapshot as a YAML-like string),
             and ``error`` (non-empty on failure).
 
         """
@@ -126,9 +126,9 @@ def build_render_url_tools(
                             )
                         )
 
-                    # Accessibility snapshot — Playwright's built-in a11y tree.
-                    a11y_snapshot = await page.accessibility.snapshot()
-                    if a11y_snapshot is not None:
+                    # ARIA accessibility tree snapshot (YAML-like string).
+                    a11y_snapshot = await page.locator("body").aria_snapshot()
+                    if a11y_snapshot:
                         result["accessibility_tree"] = a11y_snapshot
 
                     await context.close()
