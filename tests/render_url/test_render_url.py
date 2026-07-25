@@ -30,22 +30,19 @@ def _settings(**kw: Any) -> RenderUrlSettings:
 
 def _fake_playwright_module() -> Any:
     """Return a mock ``playwright.async_api`` module with a fake browser chain."""
-    a11y_tree: dict[str, Any] = {
-        "role": "WebArea",
-        "name": "Test Page",
-        "children": [
-            {"role": "heading", "name": "Hello", "level": 1},
-            {"role": "link", "name": "Click me"},
-        ],
-    }
+    a11y_tree = '- document\n  - heading "Hello" [level=1]\n  - link "Click me"\n'
     png_bytes = b"\x89PNG\r\n\x1a\nfake"
+
+    # page.locator("body") returns a locator with .aria_snapshot()
+    mock_locator = MagicMock()
+    mock_locator.aria_snapshot = AsyncMock(return_value=a11y_tree)
 
     mock_page = MagicMock()
     mock_page.goto = AsyncMock()
     mock_page.title = AsyncMock(return_value="Test Page Title")
     mock_page.url = "https://example.com/page"
     mock_page.screenshot = AsyncMock(return_value=png_bytes)
-    mock_page.accessibility.snapshot = AsyncMock(return_value=a11y_tree)
+    mock_page.locator = MagicMock(return_value=mock_locator)
 
     mock_context = MagicMock()
     mock_context.new_page = AsyncMock(return_value=mock_page)
@@ -279,9 +276,12 @@ async def test_render_url_navigation_error() -> None:
 
 @pytest.mark.asyncio
 async def test_render_url_missing_accessibility_tree() -> None:
-    """When accessibility snapshot returns None, a11y_tree stays null."""
+    """When ARIA snapshot returns empty, a11y_tree stays null."""
     fake = _install_fake_playwright()
-    fake._test_page.accessibility.snapshot = AsyncMock(return_value=None)
+    # Simulate an empty ARIA snapshot: mock the locator's aria_snapshot.
+    mock_body_locator = MagicMock()
+    mock_body_locator.aria_snapshot = AsyncMock(return_value="")
+    fake._test_page.locator = MagicMock(return_value=mock_body_locator)
     try:
         from robotsix_chat.render_url import build_render_url_tools
 

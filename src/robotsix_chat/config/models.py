@@ -738,7 +738,7 @@ class RenderUrlSettings(BaseModel):
 
     When enabled, the agent gains a tool that loads a URL in a headless
     Chromium browser (via Playwright), takes a full-page screenshot, and
-    extracts the accessibility tree — both returned as structured output.
+    extracts the ARIA accessibility tree — both returned as structured output.
     No interactive browsing, form-filling, or navigation beyond the initial
     page load is permitted.
 
