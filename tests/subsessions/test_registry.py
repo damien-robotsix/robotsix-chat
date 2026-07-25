@@ -976,3 +976,139 @@ def test_create_raises_dedup_error_for_checkpoint_ticket_id_match() -> None:
             title="duplicate-monitor-5f1c",
         )
     assert exc_info.value.existing_id == first.id
+
+
+# ---------------------------------------------------------------------------
+# is_duplicate_ticket_terminal
+# ---------------------------------------------------------------------------
+
+
+def test_is_duplicate_ticket_terminal_true_when_prior_closed_terminal() -> None:
+    """True when another CLOSED subsession already reported the ticket terminal."""
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(registry, kind=SubsessionKind.TASK, title="monitor-1")
+    registry.update_checkpoint(first.id, {"ticket_id": "T-123"})
+    registry.mark_closed(first.id, summary="done", reason="ticket_terminal")
+
+    second = _create(registry, kind=SubsessionKind.TASK, title="monitor-2")
+    registry.update_checkpoint(second.id, {"ticket_id": "T-123"})
+
+    assert registry.is_duplicate_ticket_terminal("T-123", second.id) is True
+
+
+def test_is_duplicate_ticket_terminal_false_for_different_ticket_id() -> None:
+    """Returns False when the prior CLOSED subsession has a different ticket_id."""
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(registry, kind=SubsessionKind.TASK, title="monitor-1")
+    registry.update_checkpoint(first.id, {"ticket_id": "T-AAA"})
+    registry.mark_closed(first.id, summary="done", reason="ticket_terminal")
+
+    second = _create(registry, kind=SubsessionKind.TASK, title="monitor-2")
+    registry.update_checkpoint(second.id, {"ticket_id": "T-BBB"})
+
+    assert registry.is_duplicate_ticket_terminal("T-BBB", second.id) is False
+
+
+def test_is_duplicate_ticket_terminal_false_when_prior_not_closed() -> None:
+    """Returns False when the prior subsession with the same ticket is still active."""
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(registry, kind=SubsessionKind.TASK, title="monitor-1")
+    registry.update_checkpoint(first.id, {"ticket_id": "T-123"})
+
+    second = _create(registry, kind=SubsessionKind.TASK, title="monitor-2")
+    registry.update_checkpoint(second.id, {"ticket_id": "T-123"})
+
+    # first is still RUNNING — not a terminal reporter yet.
+    assert registry.is_duplicate_ticket_terminal("T-123", second.id) is False
+
+
+def test_is_duplicate_ticket_terminal_false_when_prior_closed_non_terminal() -> None:
+    """False when the prior CLOSED subsession closed for a non-terminal reason."""
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(registry, kind=SubsessionKind.TASK, title="monitor-1")
+    registry.update_checkpoint(first.id, {"ticket_id": "T-123"})
+    registry.mark_closed(first.id, summary="paused", reason="paused")
+
+    second = _create(registry, kind=SubsessionKind.TASK, title="monitor-2")
+    registry.update_checkpoint(second.id, {"ticket_id": "T-123"})
+
+    assert registry.is_duplicate_ticket_terminal("T-123", second.id) is False
+
+
+def test_is_duplicate_ticket_terminal_false_when_prior_failed() -> None:
+    """Returns False when the prior subsession with the same ticket is FAILED."""
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(registry, kind=SubsessionKind.TASK, title="monitor-1")
+    registry.update_checkpoint(first.id, {"ticket_id": "T-123"})
+    registry.fail(first.id, error="something went wrong")
+
+    second = _create(registry, kind=SubsessionKind.TASK, title="monitor-2")
+    registry.update_checkpoint(second.id, {"ticket_id": "T-123"})
+
+    assert registry.is_duplicate_ticket_terminal("T-123", second.id) is False
+
+
+def test_is_duplicate_ticket_terminal_false_when_prior_interrupted() -> None:
+    """Returns False when the prior subsession with the same ticket is INTERRUPTED."""
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(registry, kind=SubsessionKind.TASK, title="monitor-1")
+    registry.update_checkpoint(first.id, {"ticket_id": "T-123"})
+    # ``mark_interrupted`` only accepts active subsessions; close it first
+    # via the internal path to set INTERRUPTED directly.
+    registry._close_and_publish(
+        first,
+        status=SubsessionStatus.INTERRUPTED,
+        summary="restarted",
+    )
+
+    second = _create(registry, kind=SubsessionKind.TASK, title="monitor-2")
+    registry.update_checkpoint(second.id, {"ticket_id": "T-123"})
+
+    assert registry.is_duplicate_ticket_terminal("T-123", second.id) is False
+
+
+def test_is_duplicate_ticket_terminal_false_when_no_other_subsession() -> None:
+    """Returns False when the registry contains only the excluded subsession."""
+    registry = SubsessionRegistry(store_path=None)
+    only = _create(registry, kind=SubsessionKind.TASK, title="monitor-1")
+    registry.update_checkpoint(only.id, {"ticket_id": "T-123"})
+
+    assert registry.is_duplicate_ticket_terminal("T-123", only.id) is False
+
+
+def test_is_duplicate_ticket_terminal_false_when_prior_no_checkpoint() -> None:
+    """Returns False when the prior CLOSED subsession has no checkpoint."""
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(registry, kind=SubsessionKind.TASK, title="monitor-1")
+    registry.mark_closed(first.id, summary="done", reason="ticket_terminal")
+
+    second = _create(registry, kind=SubsessionKind.TASK, title="monitor-2")
+    registry.update_checkpoint(second.id, {"ticket_id": "T-123"})
+
+    assert registry.is_duplicate_ticket_terminal("T-123", second.id) is False
+
+
+def test_is_duplicate_ticket_terminal_false_when_prior_ckpt_no_ticket_id() -> None:
+    """False when the prior CLOSED subsession's checkpoint lacks a ticket_id."""
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(registry, kind=SubsessionKind.TASK, title="monitor-1")
+    registry.update_checkpoint(first.id, {"other_key": "value"})
+    registry.mark_closed(first.id, summary="done", reason="ticket_terminal")
+
+    second = _create(registry, kind=SubsessionKind.TASK, title="monitor-2")
+    registry.update_checkpoint(second.id, {"ticket_id": "T-123"})
+
+    assert registry.is_duplicate_ticket_terminal("T-123", second.id) is False
+
+
+def test_is_duplicate_ticket_terminal_true_when_prior_reason_completed() -> None:
+    """Returns True when the prior subsession's close_reason is 'completed'."""
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(registry, kind=SubsessionKind.TASK, title="monitor-1")
+    registry.update_checkpoint(first.id, {"ticket_id": "T-123"})
+    registry.mark_closed(first.id, summary="done", reason="completed")
+
+    second = _create(registry, kind=SubsessionKind.TASK, title="monitor-2")
+    registry.update_checkpoint(second.id, {"ticket_id": "T-123"})
+
+    assert registry.is_duplicate_ticket_terminal("T-123", second.id) is True

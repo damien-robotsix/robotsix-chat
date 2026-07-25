@@ -3,6 +3,11 @@
 - System prompt (v53): added troubleshooting instruction to fetch live system state (deploy contract, service registry, logs) before hypothesizing causes for user-reported errors, preventing fabricated guesses that waste back-and-forth.
 - **Periodic monitor `consecutive_no_change` counter now persists across server restarts**, preventing the auto-stop and auto-pause thresholds from being defeated by process restarts. Added ``consecutive_no_change`` field to ``SubsessionInfo`` (persisted in the subsession store and restored on resume).
 - **Lowered ``auto_stop_no_change_runs`` default from 5 to 3** so periodic monitors auto-terminate sooner when the watched ticket shows no changes.
+- Suppress duplicate terminal-state reports from ticket monitors.  When two
+  periodic monitors track the same ticket and both detect a closed/done
+  state, only the first delivers a completion notice to the parent
+  conversation; the second is suppressed to avoid a redundant (and often
+  verbose) assistant reaction turn.
 - Added `subsessions.pre_authorized_ticket_patterns` config key — a
   list of glob patterns matching ticket IDs that are pre-authorized
   under a standing operator directive.  When a monitored ticket matches

@@ -87,6 +87,15 @@ _REASON_PHRASES: dict[str, str] = {
 _MAX_REACTION_DEPTH = 3
 
 
+def _extract_ticket_id(info: SubsessionInfo) -> str | None:
+    """Return ``ticket_id`` from *info*'s checkpoint, or ``None``."""
+    cp = info.checkpoint
+    if cp is None:
+        return None
+    ticket_id = cp.get("ticket_id")
+    return ticket_id if isinstance(ticket_id, str) else None
+
+
 class ParentDelivery:
     """Deliver subsession outcomes to the conversation that spawned them."""
 
@@ -145,6 +154,22 @@ class ParentDelivery:
         task so the caller (subsession worker / HTTP endpoint) returns
         immediately instead of blocking on the agent's LLM call.
         """
+        # Suppress duplicate terminal reports: when a ticket has already
+        # been reported as terminal by a prior monitor, skip delivery to
+        # avoid a redundant (and often verbose) reaction turn.
+        if reason in ("ticket_terminal", "completed"):
+            ticket_id = _extract_ticket_id(info)
+            if ticket_id is not None and self._registry.is_duplicate_ticket_terminal(
+                ticket_id, info.id
+            ):
+                logger.info(
+                    "Suppressing duplicate terminal report for ticket %s "
+                    "from subsession %s — already reported by a prior monitor.",
+                    ticket_id,
+                    info.id[:8],
+                )
+                return
+
         label = (
             f"[Subsession {info.id[:8]} ({info.kind.value}) '{info.title}' {reason}]"
         )
