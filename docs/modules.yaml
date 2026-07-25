@@ -343,6 +343,8 @@ modules:
       - src/robotsix_chat/ticket_poll/__init__.py
       - src/robotsix_chat/ticket_poll/skill.md
       - docs/ticket-poll/skill.md
+      - tests/ticket_poll/__init__.py
+      - tests/ticket_poll/test_ticket_poll.py
 
   - id: lifecycle
     description: "Read-only deploy-lifecycle API tools for the agent — exposes build_lifecycle_tools() returning tools to list services, check status/health, and read config/env (secrets masked server-side), plus load_lifecycle_skill() for the component skill document."
