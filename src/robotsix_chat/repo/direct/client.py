@@ -855,28 +855,25 @@ class DirectRepoClient:
     ) -> str | None:
         """Inspect recent workflow runs for a private-repo billing failure.
 
-        Heuristic: a run with ``conclusion: "failure"`` and zero jobs
+        Heuristic: a run whose ``run_started_at`` is ``null`` (never started)
         strongly suggests the repo has no GitHub Actions billing enabled.
+
+        Note: zero-job detection is NOT attempted here because the
+        ``/actions/runs`` endpoint does not include per-run job data.
+        That signature is handled by the per-run inspection path in
+        ``check_workflow_run`` (via ``get_workflow_run_jobs``).
+
         Returns a human-readable diagnostic string, or ``None`` when the
         signature is not detected.
         """
         for run in runs:
             conclusion = str(run.get("conclusion", "")).lower()
-            run_id = run.get("id")
-            run_name = run.get("name", str(run_id))
-
             if conclusion != "failure":
                 continue
-
-            # Check for a zero-job run — the billing-failure hallmark.
-            jobs = run.get("jobs")
-            if jobs is None and run_id is not None:
-                jobs = None  # deferred — caller must fetch jobs separately
-            job_count: int | None = None
-            if isinstance(jobs, list):
-                job_count = len(jobs)
-            elif "run_started_at" in run and not run.get("run_started_at"):
-                # Runs that never started also signal billing issues.
+            run_id = run.get("id")
+            run_name = run.get("name", str(run_id))
+            # Runs that never started signal billing issues.
+            if "run_started_at" in run and not run.get("run_started_at"):
                 return (
                     f"Workflow run '{run_name}' (id {run_id}) for "
                     f"{run.get('head_branch', '?')} never started — "
@@ -885,15 +882,4 @@ class DirectRepoClient:
                     f"Enable Actions in the repo's Settings > Actions > General, "
                     f"or add billing at the organisation level."
                 )
-
-            if job_count == 0:
-                return (
-                    f"Workflow run '{run_name}' (id {run_id}) for "
-                    f"{run.get('head_branch', '?')} completed with no jobs — "
-                    f"this is a strong signal that GitHub Actions billing "
-                    f"is not enabled for this private repository. "
-                    f"Check the repo's Settings > Actions > General, "
-                    f"or verify billing at the organisation level."
-                )
-
         return None

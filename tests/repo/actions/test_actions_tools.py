@@ -226,50 +226,6 @@ async def test_check_workflow_run_no_recent_runs(
 
 
 # ---------------------------------------------------------------------------
-# check_workflow_run — billing-failure detection (zero-job runs)
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_check_workflow_run_detects_zero_job_failure(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """Run with conclusion=failure and zero jobs → billing diagnostic."""
-    dr = _direct_repo_settings()
-
-    respx_mock.get(
-        url__startswith=f"{dr.github_api_base_url}/installation/repositories"
-    ).respond(json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]})
-    respx_mock.get(
-        url__startswith=(
-            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo/actions/runs"
-        )
-    ).respond(
-        json={
-            "workflow_runs": [
-                {
-                    "id": 12345,
-                    "name": "CI",
-                    "status": "completed",
-                    "conclusion": "failure",
-                    "head_branch": "main",
-                    "event": "push",
-                    "jobs": [],
-                }
-            ]
-        }
-    )
-
-    tools = build_github_actions_tools(_actions_settings(), dr)
-    check_run = tools[2]
-
-    result = await check_run("test-repo")
-    assert "billing" in result.lower()
-    assert "no jobs" in result.lower()
-    assert "12345" in result
-
-
-# ---------------------------------------------------------------------------
 # check_workflow_run — billing-failure detection (never-started runs)
 # ---------------------------------------------------------------------------
 

@@ -2178,26 +2178,6 @@ async def test_get_workflow_run_jobs_returns_empty_on_error(
 # ---------------------------------------------------------------------------
 
 
-def test_diagnose_billing_failure_zero_jobs() -> None:
-    """Run with conclusion=failure and zero jobs → billing diagnostic."""
-    client = DirectRepoClient(_settings())
-    runs: list[dict[str, object]] = [
-        {
-            "id": 1,
-            "name": "CI",
-            "status": "completed",
-            "conclusion": "failure",
-            "head_branch": "main",
-            "jobs": [],
-        }
-    ]
-    diag = client._diagnose_billing_failure(runs)
-    assert diag is not None
-    assert "billing" in diag.lower()
-    assert "no jobs" in diag.lower()
-    assert "1" in diag
-
-
 def test_diagnose_billing_failure_never_started() -> None:
     """Run with no run_started_at → never-started diagnostic."""
     client = DirectRepoClient(_settings())
