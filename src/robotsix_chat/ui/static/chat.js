@@ -554,7 +554,7 @@
         if (aState === "planning") {
           parts.push("Planning\u2026");
         } else if (aState === "proposal") {
-          parts.push("Awaiting review");
+          parts.push("Plan ready — reply to approve");
           // Show a plan snippet when available.
           if (s.autonomous_plan_text) {
             var preview = s.autonomous_plan_text.substring(0, 80);
@@ -2545,11 +2545,10 @@
           } catch (_) {
             msg = txt || ("HTTP " + response.status);
           }
-          // Special-case 409 (session awaiting approval) with a
-          // friendlier message and prompt to use approve/reject.
+          // Special-case 409 (session is busy / awaiting operator action).
           if (response.status === 409) {
-            msg = "⏳ " + (msg || "Session is awaiting operator approval") +
-                  " — use the Approve/Reject buttons in the sessions panel.";
+            msg = "⏳ " + (msg || "Session is busy") +
+                  " — wait for the current operation to complete, then try again.";
           }
           throw new Error(msg);
         });

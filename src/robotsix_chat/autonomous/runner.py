@@ -335,24 +335,128 @@ class AutonomousRunner:
         self._save_sessions()
         self._publish_state(session_id)
 
-    def on_user_message(self, session_id: str) -> None:
+    # -- conversational approval / rejection detection ---------------------
+
+    _APPROVAL_PHRASES: tuple[str, ...] = (
+        "approved",
+        "approve",
+        "lgtm",
+        "looks good",
+        "go ahead",
+        "proceed",
+        "yes",
+        "ok",
+        "okay",
+        "start",
+        "begin",
+        "execute",
+        "do it",
+        "let's go",
+        "go for it",
+        "sure",
+        "great",
+        "perfect",
+        "agreed",
+        "accepted",
+    )
+    _REJECTION_PHRASES: tuple[str, ...] = (
+        "reject",
+        "rejected",
+        "no",
+        "nope",
+        "try again",
+        "different",
+        "redo",
+        "change",
+        "not this",
+        "stop",
+        "cancel",
+        "something else",
+        "don't",
+        "do not",
+    )
+
+    def on_user_message(self, session_id: str, message: str = "") -> str:
         """Handle a user message to an autonomous session.
 
-        When the session is in ``proposal`` state the operator's message
-        acts as implicit approval — the session transitions to executing
-        and the auto-continue loop begins.  No-op for sessions in any
-        other state or unknown sessions.
+        Analyses the operator's message for conversational approval or
+        rejection when the session is in ``proposal`` state:
+
+        * **Approval** — the session transitions to executing and the
+          auto-continue loop begins.
+        * **Rejection** — the plan subject is recorded in
+          ``rejected_subjects``, the session reverts to ``planning``,
+          and a new planning turn is scheduled.
+        * **Neutral** — the session stays in ``proposal`` so the agent
+          can respond conversationally; the operator can approve or
+          reject later.
+
+        Returns ``"approved"``, ``"rejected"``, or ``"neutral"``.
+        No-op for sessions in any other state or unknown sessions
+        (returns ``"neutral"``).
         """
         aq = self._sessions.get(session_id)
         if aq is None:
-            return
-        if aq.state is AutonomousState.proposal:
+            return "neutral"
+        if aq.state is not AutonomousState.proposal:
+            return "neutral"
+
+        lower = message.strip().lower()
+        # Very short messages with approval keywords are clear approvals.
+        is_approval = any(phrase in lower for phrase in self._APPROVAL_PHRASES)
+        is_rejection = any(phrase in lower for phrase in self._REJECTION_PHRASES)
+
+        if is_rejection and not is_approval:
             logger.info(
-                "Autonomous session %s — operator message received, "
+                "Autonomous session %s — operator rejected the proposal",
+                session_id,
+            )
+            self._handle_rejection(session_id)
+            return "rejected"
+
+        if is_approval:
+            logger.info(
+                "Autonomous session %s — operator approved, "
                 "transitioning from proposal to executing",
                 session_id,
             )
             self._begin_execution(session_id)
+            return "approved"
+
+        # Neutral: the operator is discussing the plan without
+        # explicitly approving or rejecting it.
+        logger.info(
+            "Autonomous session %s — operator message is neutral; staying in proposal",
+            session_id,
+        )
+        return "neutral"
+
+    def _handle_rejection(self, session_id: str) -> None:
+        """Record plan rejection and schedule a fresh planning turn.
+
+        Copies the current ``plan_text`` subject into ``rejected_subjects``
+        so the next planning round avoids it, resets the session to
+        ``planning``, and kicks off a new initial turn.
+        """
+        aq = self._sessions.get(session_id)
+        if aq is None:
+            return
+        # Record the rejected subject.
+        if aq.rejected_subjects is None:
+            aq.rejected_subjects = []
+        if aq.plan_text:
+            # Use the first line as the subject for the rejection list.
+            subject = aq.plan_text.strip().split("\n", 1)[0].strip()
+            if subject:
+                aq.rejected_subjects.append(subject)
+        aq.state = AutonomousState.planning
+        aq.plan_text = ""
+        self._save_sessions()
+        self._publish_state(session_id)
+        # Schedule a fresh planning turn.
+        self._schedule_background(
+            lambda: self._kickoff_initial_turn(session_id, aq.owner_id)
+        )
 
     # -- initial turn kickoff ------------------------------------------------
 
