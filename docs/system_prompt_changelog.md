@@ -20,6 +20,8 @@ when the user reports a specific error.
 auto-mail onboarding failure without first checking the deploy contract, service registry, or logs.
 The user's prompts exposed these as fabricated guesses.
 
+**SHA256:** `2b4d0254251d74796966a338e034e198d8d8dae1621c05bb925d9647af894a56`
+
 ______________________________________________________________________
 
 ## v52 — 2026-07-25 — require-live-notes-and-board-before-planning-c451
