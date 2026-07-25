@@ -94,8 +94,10 @@ jobs:
 
       - name: Tag local image for Trivy scanning
         id: scan-ref
+        env:
+          TAGS: ${{ steps.meta.outputs.tags }}
         run: |
-          FIRST_TAG="$(echo "${{ steps.meta.outputs.tags }}" | head -1)"
+          FIRST_TAG="$(echo "${TAGS}" | head -1)"
           echo "Local image tag: ${FIRST_TAG}"
           docker tag "${FIRST_TAG}" "local/robotsix-chat:scan"
           echo "image=local/robotsix-chat:scan" >> "$GITHUB_OUTPUT"
