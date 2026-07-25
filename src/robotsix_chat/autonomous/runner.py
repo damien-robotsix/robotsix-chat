@@ -26,6 +26,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _rejected_subjects_note(aq: AutonomousSession | None) -> str:
+    """Return a prompt suffix listing previously rejected subjects, or ""."""
+    if aq is None or not aq.rejected_subjects:
+        return ""
+    items = "\n".join(f"  - {s!r}" for s in aq.rejected_subjects)
+    return (
+        "\n\nPREVIOUSLY REJECTED SUBJECTS — do NOT propose any of these "
+        f"subjects again:\n{items}"
+    )
+
+
 class AutonomousRunner:
     """Owns the autonomous-session state machine and drives auto-continue loops."""
 
@@ -77,6 +88,7 @@ class AutonomousRunner:
                     "plan_text": aq.plan_text,
                     "auto_turn_count": aq.auto_turn_count,
                     "completion_suppressed": aq.completion_suppressed,
+                    "rejected_subjects": aq.rejected_subjects or [],
                 }
             self._persist_path.parent.mkdir(parents=True, exist_ok=True)
             self._persist_path.write_text(json.dumps(data, indent=2))
@@ -109,6 +121,7 @@ class AutonomousRunner:
                     plan_text=entry.get("plan_text", ""),
                     auto_turn_count=entry.get("auto_turn_count", 0),
                     completion_suppressed=entry.get("completion_suppressed", False),
+                    rejected_subjects=entry.get("rejected_subjects", []),
                 )
             except Exception:
                 logger.exception("Skipping unparsable autonomous session %s", sid)
@@ -364,6 +377,10 @@ class AutonomousRunner:
         if aq.state is not AutonomousState.awaiting_approval:
             return False, f"session is in state {aq.state.value}, not awaiting_approval"
 
+        if aq.plan_text:
+            if aq.rejected_subjects is None:
+                aq.rejected_subjects = []
+            aq.rejected_subjects.append(aq.plan_text)
         aq.state = AutonomousState.selecting_subject
         aq.plan_text = ""
         self._save_sessions()
@@ -410,16 +427,19 @@ class AutonomousRunner:
                         "autonomous session. "
                     )
                 initial_task = self._settings.autonomous.initial_task
+                rejected_note = _rejected_subjects_note(self._sessions.get(session_id))
                 if initial_task:
                     prompt = (
                         f"{restart_notice}"
                         f"Begin a new autonomous session. Initial task: {initial_task}"
+                        f"{rejected_note}"
                     )
                 else:
                     prompt = (
                         f"{restart_notice}"
                         "Begin a new autonomous session. "
                         "Pick a subject and draft a plan."
+                        f"{rejected_note}"
                     )
                 reply_parts: list[str] = []
                 async for token in agent.stream(

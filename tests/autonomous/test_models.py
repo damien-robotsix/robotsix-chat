@@ -24,13 +24,14 @@ class TestAutonomousSession:
     """AutonomousSession dataclass tests."""
 
     def test_defaults(self) -> None:
-        """Default values for plan_text, state, and auto_turn_count."""
+        """Default values for plan_text, state, turn_count, and rejected_subjects."""
         aq = AutonomousSession(session_id="abc", owner_id="owner1")
         assert aq.session_id == "abc"
         assert aq.owner_id == "owner1"
         assert aq.state is AutonomousState.selecting_subject
         assert aq.plan_text == ""
         assert aq.auto_turn_count == 0
+        assert aq.rejected_subjects is None
 
     def test_custom_state(self) -> None:
         """All fields accept explicit values."""
