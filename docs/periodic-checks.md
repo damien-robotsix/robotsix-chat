@@ -236,7 +236,7 @@ run once and a transient failure would silently lose the work.
 | --------------------------------------------- | ------- | -------------------------------------------------------------------------------------- |
 | `subsessions.transient_error_max_retries`     | `3`     | Max retry attempts (besides the initial try) before the cycle is skipped.              |
 | `subsessions.transient_error_backoff_base`    | `1.0`   | Initial backoff in seconds — doubles each retry.                                       |
-| `subsessions.transient_error_backoff_cap` | `30.0`  | Maximum backoff cap in seconds — backoff never exceeds this.                           |
+| `subsessions.transient_error_backoff_cap`     | `30.0`  | Maximum backoff cap in seconds — backoff never exceeds this.                           |
 
 ## How it works under the hood
 
