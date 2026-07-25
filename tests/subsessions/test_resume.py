@@ -1070,3 +1070,250 @@ async def test_resume_periodic_skips_when_last_known_state_case_insensitive(
     assert info is not None
     assert info.status is SubsessionStatus.CLOSED
     assert periodic.id not in registry2._running
+
+
+# -- auto-close re-spawn on restart ---------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resume_periodic_respawns_auto_closed_no_change(
+    tmp_path: Path,
+) -> None:
+    """Re-spawn auto-closed periodic monitors on restart.
+
+    A periodic monitor auto-closed with 'no_change_auto_stop' is re-spawned
+    so the worker can re-verify the ticket state.
+    """
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    periodic = registry1.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="watch ticket a1b2",
+        prompt="monitor the ticket",
+        model_level=3,
+        interval_seconds=0.05,
+        max_runs=10,
+        checkpoint={"ticket_id": "a1b2", "last_known_state": "in_progress"},
+    )
+    registry1.mark_closed(
+        periodic.id,
+        summary="auto-stopped",
+        reason="no_change_auto_stop",
+        closed_by="system",
+    )
+
+    gate = asyncio.Event()
+    agent = FakeAgent(["resumed after auto-stop"], gate=gate)
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=agent,
+        registry=registry2,
+        settings=make_settings(min_interval_seconds=0.01),
+    )
+    resume_subsessions(env)
+
+    info = registry2.get(periodic.id)
+    assert info is not None
+    assert info.status in (SubsessionStatus.RUNNING, SubsessionStatus.SLEEPING)
+    assert periodic.id in registry2._running
+
+    # Cleanup.
+    worker = registry2._running.get(periodic.id)
+    if worker is not None:
+        registry2.cancel_and_close(periodic.id, reason="teardown", closed_by="system")
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(worker, 2.0)
+
+
+@pytest.mark.asyncio
+async def test_resume_periodic_respawns_auto_closed_paused(
+    tmp_path: Path,
+) -> None:
+    """Re-spawn auto-closed periodics with 'paused' reason on restart.
+
+    A periodic monitor auto-closed with 'paused' (max_idle_runs) is
+    re-spawned on restart.
+    """
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    periodic = registry1.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="watch ticket c3d4",
+        prompt="monitor",
+        model_level=3,
+        interval_seconds=0.05,
+        max_runs=10,
+        checkpoint={"ticket_id": "c3d4", "last_known_state": "open"},
+    )
+    registry1.mark_closed(
+        periodic.id,
+        summary="paused after idle",
+        reason="paused",
+        closed_by="system",
+    )
+
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=FakeAgent(["woke up"]),
+        registry=registry2,
+        settings=make_settings(min_interval_seconds=0.01),
+    )
+    resume_subsessions(env)
+
+    info = registry2.get(periodic.id)
+    assert info is not None
+    assert info.status in (SubsessionStatus.RUNNING, SubsessionStatus.SLEEPING)
+    assert periodic.id in registry2._running
+
+    worker = registry2._running.get(periodic.id)
+    if worker is not None:
+        registry2.cancel_and_close(periodic.id, reason="teardown", closed_by="system")
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(worker, 2.0)
+
+
+@pytest.mark.asyncio
+async def test_resume_periodic_respawns_auto_closed_human_approval_timeout(
+    tmp_path: Path,
+) -> None:
+    """Re-spawn auto-closed periodics with human_approval_timeout.
+
+    A periodic monitor auto-closed with 'human_approval_timeout' is
+    re-spawned on restart.
+    """
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    periodic = registry1.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="watch ticket e5f6",
+        prompt="monitor",
+        model_level=3,
+        interval_seconds=0.05,
+        max_runs=10,
+        checkpoint={
+            "ticket_id": "e5f6",
+            "last_known_state": "human_issue_approval",
+        },
+    )
+    registry1.mark_closed(
+        periodic.id,
+        summary="human approval timeout",
+        reason="human_approval_timeout",
+        closed_by="system",
+    )
+
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=FakeAgent(["approval resolved"]),
+        registry=registry2,
+        settings=make_settings(min_interval_seconds=0.01),
+    )
+    resume_subsessions(env)
+
+    info = registry2.get(periodic.id)
+    assert info is not None
+    assert info.status in (SubsessionStatus.RUNNING, SubsessionStatus.SLEEPING)
+    assert periodic.id in registry2._running
+
+    worker = registry2._running.get(periodic.id)
+    if worker is not None:
+        registry2.cancel_and_close(periodic.id, reason="teardown", closed_by="system")
+        with contextlib.suppress(asyncio.CancelledError):
+            await asyncio.wait_for(worker, 2.0)
+
+
+@pytest.mark.asyncio
+async def test_resume_periodic_does_not_respawn_explicitly_closed(
+    tmp_path: Path,
+) -> None:
+    """Do NOT re-spawn periodics closed explicitly by the agent.
+
+    A periodic monitor closed explicitly by the agent (reason='completed')
+    is NOT re-spawned on restart — the agent intentionally finished it.
+    """
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    periodic = registry1.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="watch done ticket",
+        prompt="monitor",
+        model_level=3,
+        interval_seconds=0.05,
+        max_runs=10,
+        checkpoint={"ticket_id": "done1", "last_known_state": "closed"},
+    )
+    registry1.mark_closed(
+        periodic.id,
+        summary="ticket completed",
+        reason="completed",
+        closed_by="agent",
+    )
+
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=FakeAgent(["should not run"]),
+        registry=registry2,
+        settings=make_settings(min_interval_seconds=0.01),
+    )
+    resume_subsessions(env)
+
+    info = registry2.get(periodic.id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert periodic.id not in registry2._running
+
+
+@pytest.mark.asyncio
+async def test_resume_periodic_does_not_respawn_max_runs(
+    tmp_path: Path,
+) -> None:
+    """Do NOT re-spawn periodics closed due to max_runs.
+
+    A periodic monitor closed due to max_runs is NOT re-spawned —
+    the user deliberately capped its run budget.
+    """
+    store_path = tmp_path / "subsessions.json"
+    registry1 = SubsessionRegistry(store_path=store_path)
+    periodic = registry1.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="watch limited ticket",
+        prompt="monitor",
+        model_level=3,
+        interval_seconds=0.05,
+        max_runs=3,
+        checkpoint={"ticket_id": "lim1", "last_known_state": "open"},
+    )
+    registry1.mark_closed(
+        periodic.id,
+        summary="max runs reached",
+        reason="max_runs",
+        closed_by="system",
+    )
+
+    registry2 = SubsessionRegistry(store_path=store_path)
+    env = build_env(
+        agent=FakeAgent(["should not run"]),
+        registry=registry2,
+        settings=make_settings(min_interval_seconds=0.01),
+    )
+    resume_subsessions(env)
+
+    info = registry2.get(periodic.id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert periodic.id not in registry2._running
