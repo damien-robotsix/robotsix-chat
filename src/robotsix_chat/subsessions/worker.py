@@ -844,6 +844,32 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                     )
                 ]
 
+        # -- component_request availability check ----------------------
+        _cd = getattr(env.settings, "central_deploy", None)
+        _cd_url = getattr(_cd, "url", "") if _cd is not None else ""
+        if info.kind is SubsessionKind.PERIODIC and not _cd_url:
+            logger.warning(
+                "Periodic subsession %s requires component_request but "
+                "central_deploy.url is not configured — the tool is not "
+                "available.  Closing subsession to prevent futile retries.",
+                sub_id,
+            )
+            summary = (
+                "component_request is not available: "
+                "central_deploy.url is not configured. "
+                "The monitor cannot fetch ticket state from the board API "
+                "and would fail every tick."
+            )
+            closed = registry.mark_closed(
+                sub_id,
+                summary=summary,
+                reason="missing_tool",
+                closed_by="system",
+            )
+            if closed is not None:
+                await env.delivery.deliver_summary(closed, summary, "missing_tool")
+            return
+
         while True:
             # -- verify the subsession is still alive --------------------
             info = registry.get(sub_id)

@@ -7,6 +7,7 @@ import contextlib
 import contextvars
 import threading
 from collections.abc import AsyncIterator
+from types import SimpleNamespace
 from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -950,6 +951,42 @@ async def test_spawn_with_duplicate_sub_id_is_idempotent() -> None:
     info = env.registry.get(first_id)
     assert info is not None
     assert info.status is SubsessionStatus.CLOSED
+
+
+# ---------------------------------------------------------------------------
+# component_request availability check
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_periodic_closes_when_component_request_unavailable() -> None:
+    """A periodic subsession closes immediately when central_deploy.url is empty.
+
+    Without component_request the monitor cannot fetch ticket state,
+    so the subsession is closed before the first turn to prevent
+    futile retries and child-task churn.
+    """
+    agent = FakeAgent(["should not be called"])
+    # Settings with no central_deploy URL
+    settings = make_settings()
+    settings.central_deploy = SimpleNamespace(url="")
+    env = build_env(agent=agent, settings=settings)
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+        title="monitor",
+    )
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "missing_tool"
+    assert "component_request" in (info.summary or "")
+    # The agent must never have been called.
+    assert len(agent.calls) == 0
 
 
 # ---------------------------------------------------------------------------
