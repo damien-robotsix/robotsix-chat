@@ -185,6 +185,11 @@ def _build_spawn_and_control_tools(
         was_dedup = False
         if dedup_key is not None:
             was_dedup = env.registry.is_dedup_key_active(dedup_key) is not None
+            if not was_dedup and kind_enum is SubsessionKind.PERIODIC:
+                was_dedup = (
+                    env.registry.find_active_periodic_by_ticket_id(dedup_key)
+                    is not None
+                )
 
         try:
             sub_id = spawn_subsession(

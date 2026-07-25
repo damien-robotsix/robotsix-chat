@@ -417,6 +417,13 @@ class SubsessionRegistry:
                     raise SubsessionDedupError(existing_id)
                 # Stale entry — clean up proactively.
                 self._active_dedup_keys.pop(dedup_key, None)
+            # Cross-reference: a PERIODIC subsession may have been
+            # created without a dedup_key but recorded the watched
+            # ticket_id in its checkpoint after the first run.
+            if kind is SubsessionKind.PERIODIC:
+                cp_match = self.find_active_periodic_by_ticket_id(dedup_key)
+                if cp_match is not None:
+                    raise SubsessionDedupError(cp_match)
             self._active_dedup_keys[dedup_key] = info.id
         self._store.prune_terminal()
         self._publish(owner_session_id, subsession_started_frame(info.snapshot()))
@@ -794,6 +801,31 @@ class SubsessionRegistry:
             self._active_dedup_keys.pop(dedup_key, None)
             return None
         return sub_id
+
+    def find_active_periodic_by_ticket_id(self, ticket_id: str) -> str | None:
+        """Return the id of an active PERIODIC sub whose checkpoint carries *ticket_id*.
+
+        Returns ``None`` when no match is found.
+
+        This is a cross-reference complement to ``is_dedup_key_active``:
+        a periodic monitor may have been spawned without a dedup_key (the
+        agent forgot), but after its first run the checkpoint records the
+        watched ``ticket_id``.  When a new spawn arrives WITH a dedup_key,
+        this method catches the match that ``is_dedup_key_active`` misses
+        because the original dedup_key was never set.
+        """
+        from .models import SubsessionKind as _SubsessionKind
+
+        for info in self._subs.values():
+            if info.kind is not _SubsessionKind.PERIODIC or not info.is_active:
+                continue
+            cp = info.checkpoint
+            if cp is None:
+                continue
+            cp_ticket_id = cp.get("ticket_id")
+            if isinstance(cp_ticket_id, str) and cp_ticket_id == ticket_id:
+                return info.id
+        return None
 
     # ------------------------------------------------------------------
     # helpers
