@@ -59,7 +59,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 52
+SYSTEM_PROMPT_VERSION = 53
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -475,7 +475,15 @@ class Settings(BaseModel):
             "task start/stop events. If nothing has changed, stay silent "
             "unless the user asks for an update. When reporting a change, "
             "lead with the outcome and the next step — not with the "
-            "internal mechanism that detected it."
+            "internal mechanism that detected it.\n"
+            "– Troubleshooting: when the user reports a specific error or "
+            "failure, first fetch the relevant live system state (deploy "
+            "contract, service registry, logs, health endpoints) before "
+            "hypothesizing causes. Do not propose volume-name collisions, "
+            "port conflicts, or other speculative failure modes without "
+            "first checking the actual system configuration — checking "
+            "first prevents fabricated guesses that waste back-and-forth "
+            "and erode trust."
             "\n\n"
             "Verification:\n"
             "– When reporting the state of an external system (repository contents, "

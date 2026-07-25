@@ -5,6 +5,23 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v53 — 2026-07-25 — avoid-fabricating-causes-without-validating-0cb1
+
+**Summary:** Add troubleshooting instruction to fetch live system state before hypothesizing causes
+when the user reports a specific error.
+
+1. **Efficiency section:** New bullet instructs the assistant to first fetch relevant live system
+   state (deploy contract, service registry, logs, health endpoints) before proposing causes for
+   user-reported errors. Do not propose speculative failure modes (volume-name collisions, port
+   conflicts) without checking actual system configuration first — this prevents fabricated guesses
+   that waste back-and-forth and erode trust.
+
+**Rationale:** The assistant proposed volume-name collision and port-conflict theories for an
+auto-mail onboarding failure without first checking the deploy contract, service registry, or logs.
+The user's prompts exposed these as fabricated guesses.
+
+______________________________________________________________________
+
 ## v52 — 2026-07-25 — require-live-notes-and-board-before-planning-c451
 
 **Summary:** Add mandatory pre-planning step to load actual knowledge notes and live board state,
