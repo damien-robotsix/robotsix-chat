@@ -1,1 +1,1 @@
-"""Tests for the public URL fetch tool."""
+"""Tests for the public-fetch URL tool."""

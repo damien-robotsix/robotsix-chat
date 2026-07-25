@@ -900,6 +900,41 @@ class HttpProbeSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class PublicFetchSettings(BaseModel):
+    """Scoped public-repo-fetch tool for the chat agent.
+
+    When enabled, the agent gains a ``fetch_public_url`` tool that performs
+    a plain HTTP(S) GET to a user-provided public URL, returns the raw
+    text/file contents with metadata, and writes an audit-log entry per
+    fetch.  SSRF protection blocks internal/private IP ranges; only
+    public, unauthenticated URLs are allowed.
+
+    Attributes:
+        enabled: Master switch.  When ``False``, no tool is offered.
+        timeout: Per-request HTTP timeout in seconds (default 10 s).
+        max_body_bytes: Maximum bytes of the response body to read and
+            return to the agent (default 1_048_576 — ~1 MB).
+        max_redirects: Maximum number of redirects to follow (default 5).
+        domain_allowlist: Optional list of hostnames (no protocol, no
+            path) that the tool is permitted to fetch.  When empty, any
+            public hostname is allowed (subject to SSRF checks).
+        rate_limit_requests: Maximum number of requests allowed within
+            ``rate_limit_window_seconds`` (default 10).
+        rate_limit_window_seconds: Sliding window in seconds for the
+            rate limiter (default 60.0).
+
+    """
+
+    enabled: bool = True
+    timeout: float = 10.0
+    max_body_bytes: int = 1_048_576
+    max_redirects: int = 5
+    domain_allowlist: list[str] = Field(default_factory=list)
+    rate_limit_requests: int = 10
+    rate_limit_window_seconds: float = 60.0
+    model_config = ConfigDict(extra="forbid")
+
+
 class AutonomousSettings(BaseModel):
     """Native autonomous chat sessions — self-directed agent loops.
 
