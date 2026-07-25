@@ -194,7 +194,7 @@ async def test_fetch_redirect_followed(respx_mock: respx.MockRouter) -> None:
 
 @pytest.mark.asyncio
 async def test_fetch_truncation(respx_mock: respx.MockRouter) -> None:
-    """When body exceeds max_body_bytes, it is truncated and truncated=True."""
+    """When body exceeds max_body_bytes, reading stops at the cap."""
     big_body = "x" * 5000
     respx_mock.get("https://example.com/large").mock(
         return_value=httpx.Response(200, text=big_body)
@@ -208,7 +208,9 @@ async def test_fetch_truncation(respx_mock: respx.MockRouter) -> None:
         result = json.loads(await tools[0]("https://example.com/large"))
 
     assert result["error"] == ""
-    assert result["body_size_bytes"] == 5000
+    # Streaming reads stop at the cap — body_size_bytes reports bytes actually
+    # read (≤ max_body_bytes + chunk_size), not the full remote size.
+    assert 1000 <= result["body_size_bytes"] <= 1000 + 65536
     assert len(result["text"]) == 1000
     assert result["truncated"] is True
 
@@ -341,6 +343,69 @@ async def test_fetch_blocks_link_local() -> None:
     ):
         tools = build_public_fetch_tools(_settings())
         result = json.loads(await tools[0]("http://169.254.169.254/latest/meta-data/"))
+
+    assert "SSRF" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_blocks_ipv4_mapped_ipv6_loopback() -> None:
+    """IPv4-mapped IPv6 loopback (::ffff:127.0.0.1) is blocked."""
+    with mock.patch(
+        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        return_value=[
+            (
+                socket.AF_INET6,
+                socket.SOCK_STREAM,
+                6,
+                "",
+                ("::ffff:127.0.0.1", 0),
+            )
+        ],
+    ):
+        tools = build_public_fetch_tools(_settings())
+        result = json.loads(await tools[0]("http://example.com/"))
+
+    assert "SSRF" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_blocks_ipv4_mapped_ipv6_private_10() -> None:
+    """IPv4-mapped IPv6 10.x (::ffff:10.0.0.1) is blocked."""
+    with mock.patch(
+        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        return_value=[
+            (
+                socket.AF_INET6,
+                socket.SOCK_STREAM,
+                6,
+                "",
+                ("::ffff:10.0.0.1", 0),
+            )
+        ],
+    ):
+        tools = build_public_fetch_tools(_settings())
+        result = json.loads(await tools[0]("http://example.com/"))
+
+    assert "SSRF" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_fetch_blocks_zero_address() -> None:
+    """0.0.0.0 is blocked by SSRF protection."""
+    with mock.patch(
+        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        return_value=[
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                6,
+                "",
+                ("0.0.0.0", 0),
+            )
+        ],
+    ):
+        tools = build_public_fetch_tools(_settings())
+        result = json.loads(await tools[0]("http://0.0.0.0/"))
 
     assert "SSRF" in result["error"]
 

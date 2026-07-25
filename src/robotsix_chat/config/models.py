@@ -925,7 +925,7 @@ class PublicFetchSettings(BaseModel):
 
     """
 
-    enabled: bool = True
+    enabled: bool = False
     timeout: float = 10.0
     max_body_bytes: int = 1_048_576
     max_redirects: int = 5

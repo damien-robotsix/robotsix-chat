@@ -42,6 +42,7 @@ logger = logging.getLogger(__name__)
 # ---------------------------------------------------------------------------
 
 _PRIVATE_NETWORKS: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = (
+    ipaddress.IPv4Network("0.0.0.0/8"),  # "this host on this network"
     ipaddress.IPv4Network("127.0.0.0/8"),  # loopback
     ipaddress.IPv4Network("10.0.0.0/8"),  # private
     ipaddress.IPv4Network("172.16.0.0/12"),  # private
@@ -50,6 +51,22 @@ _PRIVATE_NETWORKS: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = (
     ipaddress.IPv6Network("::1/128"),  # loopback
     ipaddress.IPv6Network("fc00::/7"),  # unique local
     ipaddress.IPv6Network("fe80::/10"),  # link-local
+    ipaddress.IPv6Network("::ffff:0:0/96"),  # IPv4-mapped IPv6
+)
+
+# Sentinel network for explicit IPv4-mapped extraction (defence in depth —
+# the ::ffff:0:0/96 entry above catches mapped addresses directly, but we
+# also unpack the embedded IPv4 and check it against private IPv4 ranges).
+_IPV4_MAPPED = ipaddress.IPv6Network("::ffff:0:0/96")
+
+# Private IPv4 networks for IPv4-mapped extraction check.
+_PRIVATE_V4_NETWORKS: tuple[ipaddress.IPv4Network, ...] = (
+    ipaddress.IPv4Network("0.0.0.0/8"),
+    ipaddress.IPv4Network("127.0.0.0/8"),
+    ipaddress.IPv4Network("10.0.0.0/8"),
+    ipaddress.IPv4Network("172.16.0.0/12"),
+    ipaddress.IPv4Network("192.168.0.0/16"),
+    ipaddress.IPv4Network("169.254.0.0/16"),
 )
 
 
@@ -58,6 +75,12 @@ def _host_is_private(host: str) -> bool:
 
     A host that cannot be resolved at all is treated as unsafe (returns
     ``True``) so the tool rejects it rather than making a blind request.
+
+    IPv4-mapped IPv6 addresses (``::ffff:x.x.x.x``) are handled in two
+    layers: the mapped address itself is checked against the
+    ``::ffff:0:0/96`` entry in ``_PRIVATE_NETWORKS``, **and** the
+    embedded IPv4 is extracted and checked against the private IPv4
+    ranges — defence in depth so a mapped address cannot slip through.
     """
     try:
         addrinfo = socket.getaddrinfo(host, None)
@@ -69,6 +92,14 @@ def _host_is_private(host: str) -> bool:
             ip = ipaddress.ip_address(ip_str)
         except ValueError:
             continue
+        # Defence in depth: extract embedded IPv4 from mapped addresses
+        # and check against private IPv4 ranges.
+        if isinstance(ip, ipaddress.IPv6Address) and ip in _IPV4_MAPPED:
+            ipv4 = ip.ipv4_mapped
+            if ipv4 is not None:
+                for v4net in _PRIVATE_V4_NETWORKS:
+                    if ipv4 in v4net:
+                        return True
         for net in _PRIVATE_NETWORKS:
             if ip in net:
                 return True
@@ -217,6 +248,9 @@ def build_public_fetch_tools(
             return json.dumps(result, ensure_ascii=False)
 
         # --- HTTP GET with manual redirect following (SSRF check on each hop) ---
+        # Uses httpx streaming so the body cap is enforced at the network-
+        # read level — a malicious server cannot exhaust memory by sending
+        # gigabytes before the cap is applied.
         try:
             async with httpx.AsyncClient(
                 timeout=settings.timeout,
@@ -240,79 +274,89 @@ def build_public_fetch_tools(
                         _audit(result, "blocked:ssrf-redirect")
                         return json.dumps(result, ensure_ascii=False)
 
-                    response = await client.get(current_url)
-                    result["final_url"] = str(response.url)
+                    async with client.stream("GET", current_url) as response:
+                        result["final_url"] = str(response.url)
 
-                    # Follow redirect?
-                    if response.status_code in (301, 302, 303, 307, 308):
-                        redirects_followed += 1
-                        if redirects_followed > settings.max_redirects:
-                            result["error"] = (
-                                f"Too many redirects "
-                                f"(max {settings.max_redirects}) for {url}"
+                        # Follow redirect?
+                        if response.status_code in (301, 302, 303, 307, 308):
+                            redirects_followed += 1
+                            if redirects_followed > settings.max_redirects:
+                                result["error"] = (
+                                    f"Too many redirects "
+                                    f"(max {settings.max_redirects}) for {url}"
+                                )
+                                _audit(result, "error:too-many-redirects")
+                                return json.dumps(result, ensure_ascii=False)
+                            next_url = response.headers.get("Location", "")
+                            if not next_url:
+                                result["error"] = (
+                                    f"Redirect ({response.status_code}) "
+                                    "with no Location header"
+                                )
+                                _audit(result, "error:redirect-no-location")
+                                return json.dumps(result, ensure_ascii=False)
+                            # Drain the redirect body to free the connection
+                            async for _ in response.aiter_bytes(8192):
+                                pass
+                            current_url = str(
+                                httpx.URL(current_url).join(httpx.URL(next_url))
                             )
-                            _audit(result, "error:too-many-redirects")
-                            return json.dumps(result, ensure_ascii=False)
-                        next_url = response.headers.get("Location", "")
-                        if not next_url:
-                            result["error"] = (
-                                f"Redirect ({response.status_code}) with no "
-                                "Location header"
-                            )
-                            _audit(result, "error:redirect-no-location")
-                            return json.dumps(result, ensure_ascii=False)
-                        # Resolve relative redirects
-                        current_url = str(
-                            httpx.URL(current_url).join(httpx.URL(next_url))
+                            continue
+
+                        # Final response — stream body with cap
+                        result["status_code"] = response.status_code
+                        result["content_type"] = response.headers.get(
+                            "content-type", ""
                         )
-                        continue
 
-                    # Not a redirect — process the final response
-                    result["status_code"] = response.status_code
-                    result["content_type"] = response.headers.get("content-type", "")
+                        chunks: list[bytes] = []
+                        total = 0
+                        async for chunk in response.aiter_bytes(65536):
+                            total += len(chunk)
+                            if total <= settings.max_body_bytes:
+                                chunks.append(chunk)
+                            else:
+                                # Partial chunk fills the remainder, then stop
+                                already = sum(len(c) for c in chunks)
+                                remaining = settings.max_body_bytes - already
+                                if remaining > 0:
+                                    chunks.append(chunk[:remaining])
+                                result["truncated"] = True
+                                break  # enforce cap at network-read level
 
-                    full_body = response.text
-                    body_size = len(full_body)
-                    result["body_size_bytes"] = body_size
-                    if body_size > settings.max_body_bytes:
-                        result["text"] = full_body[: settings.max_body_bytes]
-                        result["truncated"] = True
-                    else:
-                        result["text"] = full_body
+                        body_bytes = b"".join(chunks)
+                        result["body_size_bytes"] = (
+                            total if not result["truncated"] else len(body_bytes)
+                        )
+                        result["text"] = body_bytes.decode("utf-8", errors="replace")
 
-                    response.raise_for_status()
-                    break  # success — exit the redirect loop
+                        # Handle error status codes
+                        if response.status_code >= 400:
+                            if response.status_code in (401, 403):
+                                result["error"] = (
+                                    f"Server returned "
+                                    f"{response.status_code} — URL requires "
+                                    "authentication. Only public, "
+                                    "unauthenticated URLs are supported."
+                                )
+                            else:
+                                result["error"] = (
+                                    f"HTTP {response.status_code}: "
+                                    f"{response.reason_phrase}"
+                                )
+                            _audit(
+                                result,
+                                f"error:http-{response.status_code}",
+                            )
+                            return json.dumps(result, ensure_ascii=False)
+
+                        # Success
+                        _audit(result, "success")
+                        return json.dumps(result, ensure_ascii=False)
 
         except httpx.TimeoutException:
             result["error"] = f"Request timed out after {settings.timeout}s: {url}"
             _audit(result, "error:timeout")
-            return json.dumps(result, ensure_ascii=False)
-        except httpx.HTTPStatusError as exc:
-            result["status_code"] = exc.response.status_code
-            result["final_url"] = str(exc.response.url)
-            result["content_type"] = exc.response.headers.get("content-type", "")
-            if exc.response.status_code in (401, 403):
-                result["error"] = (
-                    f"Server returned {exc.response.status_code} — "
-                    "URL requires authentication. Only public, "
-                    "unauthenticated URLs are supported."
-                )
-            else:
-                result["error"] = (
-                    f"HTTP {exc.response.status_code}: {exc.response.reason_phrase}"
-                )
-            try:
-                body = exc.response.text
-                body_size = len(body)
-                result["body_size_bytes"] = body_size
-                if body_size > settings.max_body_bytes:
-                    result["text"] = body[: settings.max_body_bytes]
-                    result["truncated"] = True
-                else:
-                    result["text"] = body
-            except Exception:
-                logger.debug("Could not read error response body", exc_info=True)
-            _audit(result, f"error:http-{exc.response.status_code}")
             return json.dumps(result, ensure_ascii=False)
         except Exception as exc:
             logger.exception("fetch_public_url failed for %s", url)
