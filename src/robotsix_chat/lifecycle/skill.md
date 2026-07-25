@@ -60,6 +60,31 @@ attempting a call.
 
 This tool cannot restart other managed services — for those, use `restart_lifecycle_service`.
 
+### URL protocol handling
+
+If `lifecycle.base_url` lacks a URL scheme (e.g. `central-deploy:8100`), the client prepends the
+configured `lifecycle.default_protocol` (default `"http"`). URLs with recognised schemes (`http`,
+`https`) are left unchanged. An empty `base_url` produces a clear error message from
+`self_restart` instead of a cryptic protocol error — configure `lifecycle.base_url` to the
+deploy-lifecycle API address (e.g. `http://central-deploy:8100`) to enable the feature.
+
+### Retry behaviour
+
+On transient failures (server 5xx errors, network timeouts, connection failures) `self_restart`
+retries with exponential backoff before reporting failure. Non-retryable errors (4xx client errors
+such as 403 Forbidden or 404 Not Found) are returned immediately without retrying.
+
+Retry parameters are configurable via the `lifecycle` settings:
+
+| Setting                           | Default | Description                                                              |
+| --------------------------------- | ------- | ------------------------------------------------------------------------ |
+| `lifecycle.self_restart_max_retries`  | `3`  | Maximum retries for transient failures. The initial attempt + retries = `max_retries + 1` total calls. |
+| `lifecycle.self_restart_backoff_base` | `1.0` | Initial backoff delay in seconds, doubled each retry: `base * 2^(attempt-1)`. |
+| `lifecycle.self_restart_backoff_cap`  | `30.0` | Ceiling for the backoff delay — retries never wait longer than this.       |
+
+When all retries are exhausted the method returns a combined error message describing the number
+of attempts made and the last error received.
+
 The following endpoints remain forbidden — no tool exists for them and the agent must not attempt to
 reach them through any other path:
 
