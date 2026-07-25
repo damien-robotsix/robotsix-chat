@@ -8,6 +8,14 @@ are connected to the session.
 **Delivery limitation:** notifications only reach clients that are currently connected. When no
 browser is listening for the session, the notification is silently dropped.
 
+## Fallback agent_message delivery for background task failures
+
+In addition to the `notify_user` tool, the system has built-in fallback notification for subsession
+outcomes. When a periodic monitor or background task auto-stops or fails, the main agent runs a
+reaction turn to inform you. If that LLM call itself fails (e.g. API unreachable), the system
+publishes a fallback `agent_message` frame directly — the connected browser renders it as a normal
+chat bubble, so you still see the outcome without the LLM needing to be available.
+
 ## Allowed operations
 
 | Tool          | Description                                       |
