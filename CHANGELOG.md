@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Strengthened periodic monitor verify-first policy: before reporting any state change or outcome, the monitor must do a live GET of the ticket and compare against previously verified state. Terminal-state claims now require a double-check via the PR API to confirm merge status before reporting.
+- Refined the subsession reaction prompt to eliminate redundant "Acknowledged" responses: the assistant now jumps straight to a delta summary or a single terse sentence instead of echoing the subsession's full report.
 - Deduplicated `DirectRepoClient.get_ticket_state` and `get_ticket_data` by extracting a shared `_fetch_ticket_field` helper (57 duplicated lines → 2 one-liner callers).
 - Add `check_autonomous_states.py` CI gate that verifies `AutonomousState` enum values stay in sync with bare-string comparisons in `chat.js`, following the same pattern as `check_subsession_kinds.py` and `check_activity_kinds.py`.
 - Periodic subsession monitors now include an explicit instruction to re-query the board API for canonical ticket state on every poll tick, preventing stale-state readback where the agent reports a cached `draft` state that diverged from the live board state.
