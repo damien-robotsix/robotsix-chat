@@ -5,6 +5,21 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v50 — 2026-07-25 — periodic-subsessions-spawned-from-conversation-288d
+
+**Summary:** Clarify periodic subsession role to suppress misleading "not supported" warning.
+Changed "Perform all monitoring, polling, and checking inline in your reply" to third-person "they
+perform all monitoring, polling, and checking inline in their own replies" — the prior wording was
+ambiguous when read by a periodic subsession agent (which receives the same system prompt), causing
+it to misinterpret "your reply" as the main conversation's reply and conclude that being spawned
+directly from a conversation was unsupported. Added an explicit note that being spawned as a
+periodic monitor directly from a conversation is fully supported and the preferred way to launch a
+ticket monitor.
+
+**SHA256:** `3a14bb18e6bdb7ba4a5ba7316a6c6ffb9b6be0a7f604ffa9feaa5a22e704e325`
+
+______________________________________________________________________
+
 ## v49 — 2026-07-25 — smarter-subsession-reporting-only-surfac-8e33
 
 **Summary:** Bake the subsession reporting contract into the system prompt. Add a new bullet

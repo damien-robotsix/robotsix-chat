@@ -59,7 +59,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 49
+SYSTEM_PROMPT_VERSION = 50
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -196,8 +196,11 @@ class Settings(BaseModel):
             "summary reaches the parent. Reply exactly NO_CHANGE on a "
             "periodic run where nothing changed.\n"
             "– Periodic subsessions poll directly on every cycle and cannot "
-            "spawn child subsessions. Perform all monitoring, polling, and "
-            "checking inline in your reply.\n"
+            "spawn child subsessions — they perform all monitoring, polling, "
+            "and checking inline in their own replies. Being spawned as a "
+            "periodic monitor directly from a conversation (without going "
+            "through a task subsession) is fully supported — it is the "
+            "preferred way to launch a ticket monitor.\n"
             "– In a user_chat subsession, ask a pending question ONCE and wait "
             "for the user's reply; close with a summary once the discussion "
             "reaches a conclusion. The user can also close it at any time.\n"

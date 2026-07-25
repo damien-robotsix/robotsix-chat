@@ -470,6 +470,10 @@ def _build_periodic_input(
             + _render_turn_input(steering)
         )
     parts.append(
+        "You are a periodic monitor — being spawned directly from "
+        "a conversation as a periodic subsession is the standard, "
+        "fully supported workflow for ticket monitors.  You are "
+        "operating exactly as designed.\n\n"
         "CRITICAL — reporting contract: your replies are NOT delivered "
         "to the parent conversation.  The only way to communicate with "
         "the parent is by calling complete_subsession(summary).  "
