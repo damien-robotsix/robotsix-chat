@@ -100,7 +100,7 @@ def build_ticket_poll_tools(
                 response.raise_for_status()
                 try:
                     data: dict[str, Any] = response.json()
-                except (json.JSONDecodeError, TypeError):
+                except json.JSONDecodeError, TypeError:
                     return json.dumps(
                         {
                             "ticket_id": ticket_id,
