@@ -54,6 +54,12 @@
           "default": 600.0,
           "title": "Pending Subsession Wait Timeout",
           "type": "number"
+        },
+        "stale_monitor_runs_before_completion": {
+          "default": 3,
+          "description": "Number of consecutive NO_CHANGE cycles after which a periodic monitor is considered 'stale' \u2014 the agent may declare the autonomous session complete even while the monitor is still running.  Monitors continue in the background.  Env override: ``AUTONOMOUS_STALE_MONITOR_RUNS_BEFORE_COMPLETION``.",
+          "title": "Stale Monitor Runs Before Completion",
+          "type": "integer"
         }
       },
       "title": "AutonomousSettings",

@@ -1,5 +1,12 @@
 ## 0.0.0 (unreleased)
 
+- Autonomous sessions no longer wait for periodic monitors when deciding
+  whether to continue — only task and user_chat subsessions block the
+  auto-continue loop.  A new config field
+  `autonomous.stale_monitor_runs_before_completion` (default 3) controls
+  how many consecutive NO_CHANGE cycles the agent should observe before
+  it may declare the session complete while leaving the monitors running
+  in the background.
 - Fix `render_url` returning `AttributeError: 'Page' object has no attribute 'accessibility'` — migrated from the removed `page.accessibility.snapshot()` API to the ARIA snapshot API (`page.locator("body").aria_snapshot()`), which returns a YAML-like string instead of a nested dict.
 - Periodic subsessions are now closed immediately at startup when
   ``central_deploy.url`` is not configured, preventing futile retries
