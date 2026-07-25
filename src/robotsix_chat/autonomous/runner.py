@@ -191,8 +191,14 @@ class AutonomousRunner:
 
         if session_id is None:
             session_id = self._store.new_session_id()
-        # Ensure the store has this session.
+        # Ensure the store has this session AND that it is registered under
+        # the owner so it appears in ``list_sessions`` and is persisted.  The
+        # runner records turns out-of-band, so without an explicit
+        # registration the session would stay orphaned from the owner (only
+        # in the store's global map, never in the owner's session set) and be
+        # dropped from ``conversations.json`` on restart.
         self._store.begin(session_id)
+        self._store.register_session(owner_id, session_id, title="Autonomous chat")
         aq = AutonomousSession(
             session_id=session_id,
             owner_id=owner_id,
@@ -686,6 +692,18 @@ class AutonomousRunner:
             aq = self._sessions.get(session_id)
             if aq is None:
                 continue
+
+            # Reconcile the conversation store.  The AutonomousRunner's state
+            # (autonomous_sessions.json) persists independently of the
+            # conversation store (conversations.json).  If the conversation
+            # entry was never persisted — e.g. the session was created and its
+            # turns recorded before the owner existed, so it was never linked
+            # to the owner and thus never written to disk — re-register it so
+            # the session reappears in ``list_sessions`` for its owner.  This
+            # repairs already-orphaned sessions on the next restart.
+            self._store.register_session(
+                aq.owner_id, session_id, title="Autonomous chat"
+            )
 
             if aq.state is AutonomousState.completed:
                 logger.info(

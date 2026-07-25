@@ -633,6 +633,62 @@ class ConversationStore:
         result.sort(key=lambda s: s["last_active"], reverse=True)  # type: ignore[arg-type,return-value]
         return result, owner.active_session_id
 
+    def register_session(
+        self,
+        owner_id: str,
+        session_id: str,
+        *,
+        title: str | None = None,
+        make_active: bool = False,
+    ) -> None:
+        """Ensure *session_id* exists and is registered under *owner_id*.
+
+        Creates the session (if missing) and links it into the owner's
+        ``session_ids`` set (creating the owner entry if needed), then
+        persists.  Idempotent — safe to call repeatedly.
+
+        Unlike :meth:`begin`, which only ensures the session exists in the
+        global registry, this also establishes the owner→session link that
+        :meth:`list_sessions` and persistence rely on.  It exists for
+        out-of-band session drivers (the autonomous runner) that record turns
+        without ever going through the normal ``owner_id``-carrying
+        ``record`` path against an already-registered owner — without an
+        explicit registration such sessions never appear in
+        ``list_sessions`` and are never written to disk (only owner-reachable
+        sessions are persisted), so they vanish on restart.
+
+        *title* is applied only when the session is new or has no turns yet,
+        so it never clobbers a title already derived from real conversation.
+        *make_active* moves the owner's active-session pointer to this
+        session (default ``False`` to preserve the owner's current active
+        session and the single-active-session invariant).
+        """
+        session = self._sessions.get(session_id)
+        if session is None:
+            session = Session(
+                session_id=session_id,
+                title=title if title is not None else _DEFAULT_TITLE,
+                wall_last_active=self._wall_clock(),
+            )
+            self._sessions[session_id] = session
+        elif title is not None and session.turn_count == 0:
+            session.title = title
+        self._sessions.move_to_end(session_id)
+
+        owner = self._owners.get(owner_id)
+        if owner is None:
+            self._owners[owner_id] = _OwnerState(
+                active_session_id=session_id,
+                session_ids={session_id},
+            )
+        else:
+            owner.session_ids.add(session_id)
+            if make_active:
+                owner.active_session_id = session_id
+
+        self._evict_overflow()
+        self._persist()
+
     def create_session(self, owner_id: str) -> dict[str, object]:
         """Create a new empty session for *owner_id*, mark it active.
 
