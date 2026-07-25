@@ -62,15 +62,21 @@ def test_build_github_actions_tools_disabled() -> None:
     )
 
 
-def test_build_github_actions_tools_returns_three_tools() -> None:
-    """Enabled github_actions returns three tools.
+def test_build_github_actions_tools_returns_four_tools() -> None:
+    """Enabled github_actions returns four tools.
 
-    set_actions_secret, dispatch_workflow, and check_workflow_run.
+    set_actions_secret, dispatch_workflow, check_workflow_run,
+    and fetch_workflow_run_annotations.
     """
     tools = build_github_actions_tools(_actions_settings(), _direct_repo_settings())
-    assert len(tools) == 3
+    assert len(tools) == 4
     names = {getattr(f, "__name__", str(f)) for f in tools}
-    assert names == {"set_actions_secret", "dispatch_workflow", "check_workflow_run"}
+    assert names == {
+        "set_actions_secret",
+        "dispatch_workflow",
+        "check_workflow_run",
+        "fetch_workflow_run_annotations",
+    }
 
 
 # ---------------------------------------------------------------------------
@@ -438,3 +444,278 @@ async def test_check_workflow_run_with_branch_filter(
     # Verify branch param was included in the request URL
     last_url = str(runs_route.calls.last.request.url)
     assert "branch=develop" in last_url
+
+
+# ---------------------------------------------------------------------------
+# fetch_workflow_run_annotations — scope check
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_annotations_refuses_out_of_scope_repo(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Repo not in installation scope → refused message."""
+    dr = _direct_repo_settings()
+
+    respx_mock.get(
+        url__startswith=f"{dr.github_api_base_url}/installation/repositories"
+    ).respond(json={"repositories": [{"full_name": "damien-robotsix/allowed-repo"}]})
+
+    tools = build_github_actions_tools(_actions_settings(), dr)
+    fetch_annotations = tools[3]
+
+    result = await fetch_annotations("other-repo", 42)
+    assert "not installed" in result.lower()
+    assert "other-repo" in result
+
+
+# ---------------------------------------------------------------------------
+# fetch_workflow_run_annotations — no check suite
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_annotations_no_check_suite(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Workflow run with no check_suite_id → descriptive message."""
+    dr = _direct_repo_settings()
+
+    respx_mock.get(
+        url__startswith=f"{dr.github_api_base_url}/installation/repositories"
+    ).respond(json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]})
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo/actions/runs/42"
+        )
+    ).respond(
+        json={
+            "id": 42,
+            "name": "CI",
+            "status": "completed",
+            "conclusion": "failure",
+            "check_suite_id": None,
+        }
+    )
+
+    tools = build_github_actions_tools(_actions_settings(), dr)
+    fetch_annotations = tools[3]
+
+    result = await fetch_annotations("test-repo", 42)
+    assert "no associated check suite" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# fetch_workflow_run_annotations — no check runs in suite
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_annotations_no_check_runs(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Check suite with no check runs → descriptive message."""
+    dr = _direct_repo_settings()
+
+    respx_mock.get(
+        url__startswith=f"{dr.github_api_base_url}/installation/repositories"
+    ).respond(json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]})
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo/actions/runs/42"
+        )
+    ).respond(
+        json={
+            "id": 42,
+            "name": "CI",
+            "status": "completed",
+            "conclusion": "failure",
+            "check_suite_id": 500,
+        }
+    )
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/check-suites/500/check-runs"
+        )
+    ).respond(json={"check_runs": []})
+
+    tools = build_github_actions_tools(_actions_settings(), dr)
+    fetch_annotations = tools[3]
+
+    result = await fetch_annotations("test-repo", 42)
+    assert "no check runs" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# fetch_workflow_run_annotations — check runs with zero annotations
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_annotations_zero_annotations(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Check runs exist but all have annotations_count == 0."""
+    dr = _direct_repo_settings()
+
+    respx_mock.get(
+        url__startswith=f"{dr.github_api_base_url}/installation/repositories"
+    ).respond(json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]})
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo/actions/runs/42"
+        )
+    ).respond(
+        json={
+            "id": 42,
+            "name": "CI",
+            "status": "completed",
+            "conclusion": "failure",
+            "check_suite_id": 500,
+        }
+    )
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/check-suites/500/check-runs"
+        )
+    ).respond(
+        json={
+            "check_runs": [
+                {
+                    "id": 700,
+                    "name": "lint",
+                    "conclusion": "failure",
+                    "annotations_count": 0,
+                },
+                {
+                    "id": 701,
+                    "name": "test",
+                    "conclusion": "success",
+                    "annotations_count": 0,
+                },
+            ]
+        }
+    )
+
+    tools = build_github_actions_tools(_actions_settings(), dr)
+    fetch_annotations = tools[3]
+
+    result = await fetch_annotations("test-repo", 42)
+    assert "none with annotations" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# fetch_workflow_run_annotations — successful annotation fetch
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_annotations_success(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Happy path — fetches and formats annotations from check runs."""
+    dr = _direct_repo_settings()
+
+    respx_mock.get(
+        url__startswith=f"{dr.github_api_base_url}/installation/repositories"
+    ).respond(json={"repositories": [{"full_name": "damien-robotsix/test-repo"}]})
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo/actions/runs/42"
+        )
+    ).respond(
+        json={
+            "id": 42,
+            "name": "CI",
+            "status": "completed",
+            "conclusion": "failure",
+            "check_suite_id": 500,
+        }
+    )
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/check-suites/500/check-runs"
+        )
+    ).respond(
+        json={
+            "check_runs": [
+                {
+                    "id": 700,
+                    "name": "lint",
+                    "conclusion": "failure",
+                    "annotations_count": 1,
+                },
+                {
+                    "id": 701,
+                    "name": "test",
+                    "conclusion": "failure",
+                    "annotations_count": 2,
+                },
+            ]
+        }
+    )
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/check-runs/700/annotations"
+        )
+    ).respond(
+        json=[
+            {
+                "annotation_level": "failure",
+                "path": "src/app.py",
+                "start_line": 42,
+                "end_line": 42,
+                "message": "Missing docstring",
+                "title": "pylint",
+            }
+        ]
+    )
+    respx_mock.get(
+        url__startswith=(
+            f"{dr.github_api_base_url}/repos/damien-robotsix/test-repo"
+            "/check-runs/701/annotations"
+        )
+    ).respond(
+        json=[
+            {
+                "annotation_level": "warning",
+                "path": "tests/test_foo.py",
+                "start_line": 10,
+                "end_line": 15,
+                "message": "Test is flaky",
+                "title": "pytest",
+            },
+            {
+                "annotation_level": "failure",
+                "path": "tests/test_bar.py",
+                "start_line": 8,
+                "end_line": 8,
+                "message": "AssertionError: expected True, got False",
+                "title": "",
+            },
+        ]
+    )
+
+    tools = build_github_actions_tools(_actions_settings(), dr)
+    fetch_annotations = tools[3]
+
+    result = await fetch_annotations("test-repo", 42)
+
+    # Verify key content
+    assert "Workflow run 42 annotations" in result
+    assert "3 annotation(s)" in result
+    assert "2 check run(s)" in result
+    assert "lint" in result.lower()
+    assert "test" in result.lower()
+    assert "Missing docstring" in result
+    assert "Test is flaky" in result
+    assert "AssertionError" in result
+    assert "src/app.py:42" in result
+    assert "tests/test_foo.py:10-15" in result
+    assert "pylint" in result
+    assert "pytest" in result

@@ -228,4 +228,45 @@ def build_github_actions_tools(
             )
         return "\n".join(lines)
 
-    return [set_actions_secret, dispatch_workflow, check_workflow_run]
+    async def fetch_workflow_run_annotations(
+        repo_name: str,
+        run_id: int,
+    ) -> str:
+        """Fetch annotations for all check runs in a GitHub Actions workflow run.
+
+        Annotations are the inline diagnostic messages that GitHub Actions
+        surfaces on files in the "Files changed" tab and the workflow run
+        summary — linter warnings, compiler errors, test failure details,
+        etc.  This tool returns them verbatim as Markdown, grouped by
+        check run.
+
+        Use this when a CI run fails and you need the exact annotation
+        text to diagnose the root cause (rather than rendering the entire
+        GitHub Actions UI page, which can produce very large blobs).
+
+        **Read-only.**  Does not modify any repository state.
+
+        Args:
+            repo_name: Repository name (not owner/name) — the org is
+                configured server-side (default ``damien-robotsix``).
+            run_id: The workflow run id (the numeric id shown in the
+                Actions tab URL and returned by ``check_workflow_run``).
+
+        Returns:
+            A Markdown-formatted string with all annotations grouped by
+            check run, or an error/diagnostic message when none are found.
+
+        """
+        repo_full_name = f"{org}/{repo_name}"
+
+        if scope_error := await client.check_installation_scope(repo_full_name):
+            return scope_error
+
+        return await client.get_workflow_run_annotations(repo_full_name, run_id)
+
+    return [
+        set_actions_secret,
+        dispatch_workflow,
+        check_workflow_run,
+        fetch_workflow_run_annotations,
+    ]

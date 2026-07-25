@@ -849,6 +849,145 @@ class DirectRepoClient:
             )
             return []
 
+    async def get_workflow_run_annotations(
+        self,
+        repo_full_name: str,
+        run_id: int,
+        *,
+        max_check_runs: int = 20,
+    ) -> str:
+        """Fetch annotations for all check runs in a workflow run.
+
+        Orchestrates three GitHub API calls:
+        1. ``GET /repos/{owner}/{repo}/actions/runs/{run_id}`` — get the
+           ``check_suite_id`` for the run.
+        2. ``GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs``
+           — list check runs belonging to the suite.
+        3. For each check run with ``annotations_count > 0``,
+           ``GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations``.
+
+        Returns a formatted Markdown string listing all annotations grouped
+        by check run, or a diagnostic message when no annotations are found.
+
+        Args:
+            repo_full_name: ``"owner/name"``.
+            run_id: The workflow run id.
+            max_check_runs: Maximum check runs to inspect (default 20).
+
+        Returns:
+            A Markdown-formatted string with annotations, or an error message.
+
+        Never raises — returns an error string on any failure.
+
+        """
+        try:
+            # 1. Get the workflow run to find the check_suite_id.
+            run = await self._get_json(f"/repos/{repo_full_name}/actions/runs/{run_id}")
+            check_suite_id = run.get("check_suite_id")
+            if check_suite_id is None:
+                return (
+                    f"Workflow run {run_id} on {repo_full_name} has no "
+                    f"associated check suite — annotations are not available."
+                )
+
+            # 2. List check runs for the check suite.
+            suite_data = await self._get_json(
+                f"/repos/{repo_full_name}/check-suites/{check_suite_id}"
+                f"/check-runs?per_page={min(max_check_runs, 100)}"
+                f"&filter=latest"
+            )
+            check_runs: list[dict[str, Any]] = suite_data.get("check_runs", [])
+
+            if not check_runs:
+                return (
+                    f"Workflow run {run_id} on {repo_full_name} has no "
+                    f"check runs in its check suite."
+                )
+
+            # 3. Fetch annotations for each check run that has any.
+            all_annotations: list[dict[str, Any]] = []
+            check_run_summaries: list[str] = []
+
+            for cr in check_runs:
+                cr_id = cr.get("id")
+                cr_name = cr.get("name", str(cr_id))
+                cr_conclusion = cr.get("conclusion", "?")
+                ann_count = cr.get("annotations_count", 0)
+
+                if ann_count == 0:
+                    continue
+
+                try:
+                    annotations = await self._get_json(
+                        f"/repos/{repo_full_name}/check-runs/{cr_id}/annotations"
+                        f"?per_page=100"
+                    )
+                    if isinstance(annotations, list):
+                        all_annotations.extend(annotations)
+                        check_run_summaries.append(
+                            f"{cr_name} (conclusion={cr_conclusion}, "
+                            f"{len(annotations)} annotation(s))"
+                        )
+                except RuntimeError as exc:
+                    logger.warning(
+                        "Failed to fetch annotations for check run %d: %s",
+                        cr_id,
+                        exc,
+                    )
+                    continue
+
+            if not all_annotations:
+                return (
+                    f"Workflow run {run_id} on {repo_full_name} has "
+                    f"{len(check_runs)} check run(s) but none with annotations."
+                )
+
+            # 4. Format the output.
+            lines: list[str] = [
+                f"## Workflow run {run_id} annotations ({repo_full_name})",
+                "",
+                f"**{len(all_annotations)} annotation(s)** across "
+                f"{len(check_run_summaries)} check run(s):",
+                "",
+            ]
+
+            for summary in check_run_summaries:
+                lines.append(f"- {summary}")
+
+            lines.append("")
+            lines.append("### Details")
+            lines.append("")
+
+            for i, ann in enumerate(all_annotations):
+                level = ann.get("annotation_level", "?")
+                path = ann.get("path", "")
+                start_line = ann.get("start_line")
+                end_line = ann.get("end_line")
+                message = ann.get("message", "")
+                title = ann.get("title", "")
+
+                loc = path
+                if start_line is not None:
+                    loc += f":{start_line}"
+                    if end_line is not None and end_line != start_line:
+                        loc += f"-{end_line}"
+
+                lines.append(
+                    f"**{i + 1}.** `{level}` "
+                    + (f"**{title}** — " if title else "")
+                    + f"{message}"
+                )
+                if loc:
+                    lines.append(f"  _Location: {loc}_")
+                lines.append("")
+
+            return "\n".join(lines)
+
+        except RuntimeError as exc:
+            return f"Error fetching workflow run annotations: {exc}"
+        except Exception as exc:
+            return f"Error fetching workflow run annotations: {exc}"
+
     def _diagnose_billing_failure(
         self,
         runs: list[dict[str, Any]],
