@@ -73,17 +73,17 @@ When a **user_chat** (user-facing decision prompt) or **task** (one-shot backgro
 fails with an exception — e.g. a transient Claude SDK error, a timeout, or context loss after a
 server restart — it is automatically retried instead of immediately marked `FAILED`.
 
-| Setting                                      | Default | Description                                                                     |
-| -------------------------------------------- | ------- | ------------------------------------------------------------------------------- |
-| `subsessions.user_chat_max_retries`          | `3`     | Max retries for user_chat and task subsessions.                                 |
+| Setting                             | Default | Description                                     |
+| ----------------------------------- | ------- | ----------------------------------------------- |
+| `subsessions.user_chat_max_retries` | `3`     | Max retries for user_chat and task subsessions. |
 
 ### How retries work
 
 1. The worker catches the exception and calls `_format_worker_error` to produce a readable error
    message (see [Error formatting](#error-formatting) below).
 2. If the subsession kind is `user_chat` or `task` and `retry_count < user_chat_max_retries`:
-   - The retry counter is incremented and persisted immediately to the JSON store so it survives
-     a process crash or restart.
+   - The retry counter is incremented and persisted immediately to the JSON store so it survives a
+     process crash or restart.
    - A `[System note]` is prepended to the subsession's prompt explaining what went wrong on the
      prior attempt and advising the agent to re-fetch any lost external state.
    - The worker re-launches the subsession recursively with the updated prompt.
@@ -109,13 +109,13 @@ This ensures the operator is never left wondering what the question was.
 
 `_format_worker_error` transforms raw exceptions into actionable messages:
 
-| Exception pattern                              | Formatted output                                                                 |
-| ---------------------------------------------- | -------------------------------------------------------------------------------- |
-| Degenerate success frame (SDK bug)             | Explains the self-contradictory `is_error=True` / `subtype="success"` frame      |
-| Usage credits exhausted                        | Clear message about the tier being out of credits                                |
-| Process error (exit code + stderr)             | `Claude CLI process exited with code N` plus truncated stderr                    |
-| Any other exception where type name is absent  | `[TypeName] original message` — e.g. `[TimeoutError] ...`                        |
-| Any other exception where type name is present | Original message unchanged (type name already included)                          |
+| Exception pattern                              | Formatted output                                                            |
+| ---------------------------------------------- | --------------------------------------------------------------------------- |
+| Degenerate success frame (SDK bug)             | Explains the self-contradictory `is_error=True` / `subtype="success"` frame |
+| Usage credits exhausted                        | Clear message about the tier being out of credits                           |
+| Process error (exit code + stderr)             | `Claude CLI process exited with code N` plus truncated stderr               |
+| Any other exception where type name is absent  | `[TypeName] original message` — e.g. `[TimeoutError] ...`                   |
+| Any other exception where type name is present | Original message unchanged (type name already included)                     |
 
 Previously, a generic SDK error like `Claude Code returned an error result: success` was passed
 through verbatim, giving the operator no actionable information. Now every error message includes
