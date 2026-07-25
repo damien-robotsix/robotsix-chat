@@ -7,7 +7,6 @@ returned as concise strings — nothing raises to the agent loop.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
 import logging
@@ -15,6 +14,7 @@ from typing import Any
 
 import httpx
 
+from robotsix_chat.common.github_auth import _build_github_app_auth_headers
 from robotsix_chat.common.http import safe_http_request
 from robotsix_chat.config import DirectRepoSettings, RefDocsSettings
 
@@ -133,27 +133,9 @@ class RefDocsClient:
 
     async def _get_json(self, url: str) -> Any:
         headers: dict[str, str] = {"Accept": "application/vnd.github+json"}
-        if (
-            self._dr.github_app_id
-            and self._dr.github_app_private_key.get_secret_value()
-            and self._dr.github_app_installation_id
-        ):
-            from robotsix_github_auth import mint_installation_token
-
-            try:
-                result = await asyncio.to_thread(
-                    mint_installation_token,
-                    app_id=self._dr.github_app_id,
-                    private_key=self._dr.github_app_private_key.get_secret_value(),
-                    installation_id=self._dr.github_app_installation_id,
-                )
-                headers["Authorization"] = f"Bearer {result.token}"
-            except RuntimeError as exc:
-                logger.warning(
-                    "refdocs: GitHub App token unavailable, "
-                    "falling back to unauthenticated fetch: %s",
-                    exc,
-                )
+        token = await _build_github_app_auth_headers(self._dr, "refdocs:")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
         result = await safe_http_request(
             "GET",
             url,

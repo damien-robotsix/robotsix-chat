@@ -8,12 +8,12 @@ caught and returned as concise strings — nothing raises to the agent loop.
 
 from __future__ import annotations
 
-import asyncio
 import json
 import logging
 import time
 from typing import Any
 
+from robotsix_chat.common.github_auth import _build_github_app_auth_headers
 from robotsix_chat.common.http import safe_http_request
 from robotsix_chat.config import DirectRepoSettings, VersionCheckSettings
 
@@ -129,27 +129,9 @@ class VersionCheckClient:
         headers: dict[str, str] = {
             "Accept": "application/vnd.github+json",
         }
-        if (
-            self._dr.github_app_id
-            and self._dr.github_app_private_key.get_secret_value()
-            and self._dr.github_app_installation_id
-        ):
-            from robotsix_github_auth import mint_installation_token
-
-            try:
-                result = await asyncio.to_thread(
-                    mint_installation_token,
-                    app_id=self._dr.github_app_id,
-                    private_key=self._dr.github_app_private_key.get_secret_value(),
-                    installation_id=self._dr.github_app_installation_id,
-                )
-                headers["Authorization"] = f"Bearer {result.token}"
-            except RuntimeError as exc:
-                logger.warning(
-                    "version_check: GitHub App token unavailable, "
-                    "falling back to unauthenticated fetch: %s",
-                    exc,
-                )
+        token = await _build_github_app_auth_headers(self._dr, "version_check:")
+        if token:
+            headers["Authorization"] = f"Bearer {token}"
 
         url = f"{self._base_url}/repos/{self._s.repo}/releases/latest"
         result = await safe_http_request(

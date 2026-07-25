@@ -3,6 +3,7 @@
 - Add `regenerate-config-schema` pre-commit hook that auto-regenerates
   `config/config.schema.json` when `src/robotsix_chat/config/settings.py` changes.
 - Add `regenerate-config-schema` pre-commit hook that auto-regenerates `config/config.schema.json` whenever `src/robotsix_chat/config/settings.py` changes; the hook exits non-zero so the regenerated schema is staged and the commit must be retried.
+- Extract shared ``_build_github_app_auth_headers`` helper in ``robotsix_chat.common.github_auth``, eliminating duplicate GitHub App token-minting logic from ``refdocs`` and ``version_check`` HTTP clients.
 - Add `check-activity-kinds` Makefile target (`python scripts/check_activity_kinds.py`).
 - Prompt: add deterministic recovery guidance for periodic subsession spawn failures — fall back to inline monitoring immediately instead of presenting options to the user.
 - Added `human_approval_timeout_seconds` (default 300 s / 5 min) — a wall-clock backstop for the `human_issue_approval` stuck-ticket gate. When the checkpoint has carried `last_known_state='human_issue_approval'` for longer than the timeout, the system auto-escalates even if the NO_CHANGE run count has not reached `human_approval_timeout_runs`.

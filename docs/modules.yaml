@@ -180,6 +180,7 @@ modules:
     description: "Shared utilities — provides safe_http_request() for consistent httpx error handling across HTTP clients, and JsonStoreBase for JSON-persisted dataclass stores."
     paths:
       - src/robotsix_chat/common/__init__.py
+      - src/robotsix_chat/common/github_auth.py
       - src/robotsix_chat/common/http.py
       - src/robotsix_chat/common/json_store.py
       - tests/common/__init__.py
