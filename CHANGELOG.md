@@ -138,6 +138,14 @@
   instead of env-var indirection, and ``feedback/runner.py`` to thread
   the deploy API key from settings. Regenerated
   ``config/config.schema.json``.
+- **Operator action required after deploy:** Re-enter deploy-component
+  credentials (``component_credentials`` → per-component
+  ``basic_auth_username``, ``basic_auth_password``, ``header_token``) in
+  the central-deploy dashboard config form. The ``SecretStr`` migration
+  may clear previously-stored plain-text credential values; verify and
+  re-enter them after the config migration lands to unblock component
+  access (e.g., deploy-component endpoint calls that authenticate with
+  these credentials).
 - Session-draft persistence: queued messages and attached images survive
   session switches, page refreshes, and tab focus loss. A new
   `GET/PUT /sessions/{session_id}/draft` endpoint persists the draft
