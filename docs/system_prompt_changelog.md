@@ -16,7 +16,7 @@ directly from a conversation was unsupported. Added an explicit note that being 
 periodic monitor directly from a conversation is fully supported and the preferred way to launch a
 ticket monitor.
 
-**SHA256:** `04baf35a310da23154899d8c8a7bbaa047e1fa83effa16af241fed310cbe8ae1`
+**SHA256:** `3a14bb18e6bdb7ba4a5ba7316a6c6ffb9b6be0a7f604ffa9feaa5a22e704e325`
 
 ______________________________________________________________________
 
