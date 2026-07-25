@@ -6,9 +6,10 @@ name: Release image
 # local Docker daemon — Trivy then has to pull the multi-GB image back from
 # GHCR before scanning, which exhausts the runner's /tmp or triggers
 # preemption on ubuntu-latest runners (4 recurring CI failures: #423, #559,
-# #750, plus this one).  Building with load: true first lets Trivy scan the
-# local image directly; the second build (push: true) reuses the buildx
-# cache and is fast.
+# #750, plus this one).  Building with load: true first and tagging with a
+# plain (non-registry-qualified) tag ensures Trivy resolves via the local
+# Docker daemon instead of pulling from GHCR; the second build (push: true)
+# reuses the buildx cache and is fast.
 on:
   push:
     branches: ['main']
@@ -91,11 +92,13 @@ jobs:
           # cache API takes 45-55 min per run while a cold build takes ~4 min.
           # Measured 2026-07-03; do not re-add without re-timing.
 
-      - name: Resolve scan image tag
+      - name: Tag local image for Trivy scanning
         id: scan-ref
         run: |
           FIRST_TAG="$(echo "${{ steps.meta.outputs.tags }}" | cut -d',' -f1)"
-          echo "image=${FIRST_TAG}" >> "$GITHUB_OUTPUT"
+          echo "Local image tag: ${FIRST_TAG}"
+          docker tag "${FIRST_TAG}" "local/robotsix-chat:scan"
+          echo "image=local/robotsix-chat:scan" >> "$GITHUB_OUTPUT"
 
       # Gate policy (docker standard): block only on CRITICAL/HIGH findings
       # with a released fix — a red gate always means "an upgrade exists,
