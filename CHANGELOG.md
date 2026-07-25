@@ -6,6 +6,10 @@
 - Suppress duplicate restart notices when background-task state is unchanged — the
   dedup check now scans the full conversation history instead of only the last turn,
   so intervening user messages no longer defeat suppression.
+- Add pre-commit hook to auto-regenerate `config/config.schema.json` whenever
+  `src/robotsix_chat/config/settings.py` is modified.  The hook stages the
+  updated schema and fails the commit so the regeneration is included on retry,
+  eliminating the recurring CI `check-config-schema` drift auto-fix cycle.
 - Add `fetch_workflow_run_annotations` agent tool: fetches GitHub Actions CI annotations (linter warnings, test failures, compiler errors) via the Check Runs API. The tool takes a repo name and workflow run ID and returns annotations grouped by check run with file paths, line ranges, and full message text. Uses the existing GitHub App installation for authentication; no new config keys required.
 - Added `central_deploy.component_fallbacks` config — a baked-in map of component_id → base_url that supplements the central-deploy roster when components go missing (e.g. after a redeploy). Monitors and tool calls now survive transient roster gaps without operator intervention. Unknown-component errors include a precise remediation step telling the operator which config key to set. The roster is logged at startup so operators can verify which components are registered.)
 - System prompt v54: add rule requiring the agent to verify source code before advising on component configuration (e.g. central-deploy's `docker_sdk.py` may inject secrets fleet-wide, making per-repo advice incorrect).
