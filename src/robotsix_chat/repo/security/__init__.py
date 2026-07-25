@@ -85,13 +85,8 @@ def build_github_security_tools(
         """
         repo_full_name = f"{org}/{repo_name}"
 
-        allowed = await client.list_installation_repos()
-        if repo_full_name not in allowed:
-            return (
-                f"Refused: repo '{repo_full_name}' is not in the GitHub App "
-                f"installation scope. Allowed repos: "
-                f"{', '.join(sorted(allowed))}"
-            )
+        if scope_error := await client.check_installation_scope(repo_full_name):
+            return scope_error
 
         return await client.set_security_and_analysis(
             repo_full_name,

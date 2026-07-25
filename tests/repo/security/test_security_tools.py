@@ -104,9 +104,8 @@ async def test_refuses_repo_not_in_scope(
     tool = tools[0]
 
     out = await tool(repo_name="my-repo", dependency_graph="enabled")
-    assert "Refused" in out
+    assert "not installed" in out.lower()
     assert "damien-robotsix/my-repo" in out
-    assert "scope" in out.lower()
 
 
 # ---------------------------------------------------------------------------
