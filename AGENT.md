@@ -153,6 +153,16 @@ implement the protocol (`_MockAgent`, `MockAgent`, and any other test-local mock
 Run `mypy` on the full test suite to verify protocol conformance — a mock that lacks a keyword
 argument silently passes structural subtyping at runtime but fails static `mypy --strict` checks.
 
+**Rule:** Use class-level monkeypatch-based fixtures (not instance-level MagicMock assignments) to
+isolate tests from internal I/O in `AutonomousRunner` test fixtures — match the pattern in
+`tests/autonomous/test_runner.py`'s `_mock_persistence` class fixture.
+
+**Rationale:** Instance-level MagicMock assignments on the `autonomous_runner` fixture in
+`tests/chat/server/test_autonomous_endpoints.py` have generated 5+ CI-fix tickets in ~24 hours
+(PRs #784, #820, #823, #824, #828), each patching one more leaky abstraction. The class-level
+`monkeypatch` approach in `tests/autonomous/test_runner.py` has proven stable under xdist without
+follow-up patches.
+
 ## Feature flags and activation
 
 **Rule:** Any feature gated behind a runtime flag (`enabled: false`, a feature toggle, or a config
