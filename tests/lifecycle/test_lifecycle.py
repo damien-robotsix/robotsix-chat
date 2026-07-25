@@ -310,6 +310,7 @@ async def test_self_restart_success(
     client = LifecycleClient(_settings())
     out = await client.self_restart()
     assert '"status": "restarting"' in out
+    assert "## self_restart failure diagnostic" not in out
     assert route.calls.last.request.headers["x-api-key"] == "test-api-key"
 
 
@@ -366,6 +367,7 @@ async def test_self_restart_tool_calls_client_self_restart(
     self_restart_tool = next(t for t in tools if t.__name__ == "self_restart")
     out = await self_restart_tool()
     assert '"status": "restarting"' in out
+    assert "## self_restart failure diagnostic" not in out
     assert route.calls.last.request.headers["x-api-key"] == "test-api-key"
 
 
@@ -689,6 +691,7 @@ async def test_self_restart_succeeds_on_first_attempt(
     client = LifecycleClient(_settings())
     out = await client.self_restart()
     assert '"status": "restarting"' in out
+    assert "## self_restart failure diagnostic" not in out
 
 
 @pytest.mark.asyncio
@@ -711,6 +714,7 @@ async def test_self_restart_retries_on_503_then_succeeds(
     client = LifecycleClient(_settings(self_restart_max_retries=2))
     out = await client.self_restart()
     assert '"status": "restarting"' in out
+    assert "## self_restart failure diagnostic" not in out
     assert call_count[0] == 2  # one retry
 
 
@@ -734,6 +738,7 @@ async def test_self_restart_retries_on_timeout_then_succeeds(
     client = LifecycleClient(_settings(self_restart_max_retries=2))
     out = await client.self_restart()
     assert '"status": "restarting"' in out
+    assert "## self_restart failure diagnostic" not in out
     assert call_count[0] == 2
 
 
@@ -808,6 +813,7 @@ async def test_client_no_scheme_base_url_prepends_protocol(
     )
     out = await client.self_restart()
     assert '"status": "restarting"' in out
+    assert "## self_restart failure diagnostic" not in out
     assert (
         route.calls.last.request.url
         == "http://central-deploy:8100/chat/services/chat/restart"
@@ -828,6 +834,7 @@ async def test_client_no_scheme_uses_https_default(
     )
     out = await client.self_restart()
     assert '"status": "restarting"' in out
+    assert "## self_restart failure diagnostic" not in out
     assert (
         route.calls.last.request.url
         == "https://secure-deploy:8443/chat/services/chat/restart"

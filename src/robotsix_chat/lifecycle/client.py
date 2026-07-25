@@ -390,6 +390,11 @@ class LifecycleClient:
                 last_result = result
                 continue
 
+            # Success responses (valid JSON, not a lifecycle error string)
+            # don't start with "Lifecycle" — return them as-is.
+            if not result.startswith("Lifecycle"):
+                return result
+
             # Non-retryable error (e.g. 4xx, URL protocol) — return a
             # diagnostic report so the agent can self-remediate.
             # attempts_made: if we had transient failures before this
