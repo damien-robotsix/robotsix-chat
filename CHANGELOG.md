@@ -1,6 +1,11 @@
 ## 0.0.0 (unreleased)
 
 - Autonomous sessions now gate completion on active subsessions: the `---AUTONOMOUS COMPLETE---` marker is suppressed when the session still owns any running subsession (including periodic monitors), preventing premature session closure that would lock the agent out of spawning tracking monitors.
+- Persist rejected autonomous session subjects. When an operator rejects
+  a proposed subject, the plan text is recorded in ``rejected_subjects``
+  on the session, persisted to ``autonomous_sessions.json``, and
+  injected into the next subject-selection prompt so the agent is
+  instructed not to re-propose the same subject.
 - System prompt v51: add guardrails preventing self-authored behavioral rules in knowledge notes. Knowledge notes now explicitly limited to operational facts/findings; behavioral restrictions like "never use X" belong in the system prompt. Added verification bullet instructing the agent to trust the system prompt over contradicting knowledge-note rules.
 - Add missing `log_json_format` and `compaction_min_turns` fields to `config/config.json` defaults template so operators can discover them.
 - Autonomous sessions no longer wait for periodic monitors when deciding

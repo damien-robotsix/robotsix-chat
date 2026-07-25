@@ -232,14 +232,18 @@ class TestApprovalGate:
         assert "not found" in reason.lower()
 
     def test_reject_success(self, runner) -> None:
-        """Rejection resets to selecting_subject and clears plan."""
+        """Rejection resets to selecting_subject, clears plan, records rejection."""
         aq = runner.create_session("owner1")
         aq.state = AutonomousState.awaiting_approval
+        aq.plan_text = "Subject: refactor the config loader\nStep 1: ..."
         ok, reason = runner.reject("owner1", aq.session_id)
         assert ok
         assert reason == ""
         assert aq.state is AutonomousState.selecting_subject
         assert aq.plan_text == ""
+        assert aq.rejected_subjects == [
+            "Subject: refactor the config loader\nStep 1: ..."
+        ]
 
     def test_reject_wrong_owner(self, runner) -> None:
         """Rejection with mismatched owner_id fails."""
@@ -1643,3 +1647,108 @@ class TestAutoContinueThrottleAndSubsessionGate:
 
         # Must not raise despite having no registry.
         await runner._wait_before_continue(aq.session_id)
+
+
+# ---------------------------------------------------------------------------
+# _rejected_subjects_note tests
+# ---------------------------------------------------------------------------
+
+
+class TestRejectedSubjectsNote:
+    """Tests for the _rejected_subjects_note helper."""
+
+    def test_none_session(self) -> None:
+        """Returns empty string when session is None."""
+        from robotsix_chat.autonomous.runner import _rejected_subjects_note
+
+        assert _rejected_subjects_note(None) == ""
+
+    def test_no_rejections(self) -> None:
+        """Returns empty string when rejected_subjects is empty/None."""
+        from robotsix_chat.autonomous.models import AutonomousSession
+        from robotsix_chat.autonomous.runner import _rejected_subjects_note
+
+        aq = AutonomousSession(session_id="s1", owner_id="o1")
+        assert _rejected_subjects_note(aq) == ""
+
+    def test_with_rejections(self) -> None:
+        """Returns a formatted note with all rejected subjects."""
+        from robotsix_chat.autonomous.models import AutonomousSession
+        from robotsix_chat.autonomous.runner import _rejected_subjects_note
+
+        aq = AutonomousSession(
+            session_id="s1",
+            owner_id="o1",
+            rejected_subjects=["Subject A", "Subject B"],
+        )
+        note = _rejected_subjects_note(aq)
+        assert "PREVIOUSLY REJECTED SUBJECTS" in note
+        assert "Subject A" in note
+        assert "Subject B" in note
+        assert "do NOT propose" in note
+
+
+class TestRejectAccumulation:
+    """Multiple rejections accumulate in rejected_subjects."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+
+    def test_reject_accumulates(self) -> None:
+        """Each rejection appends to rejected_subjects."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
+        settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
+        settings.autonomous.max_auto_turns = 20
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+        )
+
+        aq = runner.create_session("owner1")
+
+        # First rejection
+        aq.state = AutonomousState.awaiting_approval
+        aq.plan_text = "First subject plan"
+        runner.reject("owner1", aq.session_id)
+        assert aq.rejected_subjects == ["First subject plan"]
+
+        # Second rejection
+        aq.state = AutonomousState.awaiting_approval
+        aq.plan_text = "Second subject plan"
+        runner.reject("owner1", aq.session_id)
+        assert aq.rejected_subjects == [
+            "First subject plan",
+            "Second subject plan",
+        ]
+
+    def test_reject_with_no_plan(self) -> None:
+        """Rejection with empty plan_text does not add to rejected_subjects."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
+        settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
+        settings.autonomous.max_auto_turns = 20
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+        )
+
+        aq = runner.create_session("owner1")
+        aq.state = AutonomousState.awaiting_approval
+        aq.plan_text = ""
+        runner.reject("owner1", aq.session_id)
+        assert aq.rejected_subjects is None

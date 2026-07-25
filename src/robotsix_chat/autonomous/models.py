@@ -25,3 +25,4 @@ class AutonomousSession:
     plan_text: str = ""
     auto_turn_count: int = 0
     completion_suppressed: bool = False
+    rejected_subjects: list[str] | None = None
