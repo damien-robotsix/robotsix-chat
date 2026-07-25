@@ -159,25 +159,6 @@ async def test_deliver_summary_main_chat_parent_records_to_store() -> None:
     registry.enqueue_message.assert_not_called()
 
 
-@pytest.mark.asyncio
-async def test_deliver_result_main_chat_parent_records_to_store() -> None:
-    """When parent_id is None, deliver_result records to the owning session."""
-    store = MagicMock()
-    registry = MagicMock()
-    delivery = _build_delivery(store=store, registry=registry)
-    info = _make_info(parent_id=None)
-
-    await delivery.deliver_result(info, 3, "interim result text")
-    await _await_reaction_tasks(delivery)
-
-    store.record_for_session.assert_called_once()
-    args, _kwargs = store.record_for_session.call_args
-    assert args[0] == "owner-sess-1"
-    assert info.id[:8] in args[1]  # label (id truncated to 8 chars)
-    assert "run 3" in args[1]
-    assert "interim result text" in args[2]
-
-
 # ---------------------------------------------------------------------------
 # deliver_summary — main-chat parent, agent wired (real reaction turn)
 # ---------------------------------------------------------------------------
@@ -319,25 +300,6 @@ async def test_deliver_summary_reaction_turn_failure_degrades_to_passive_record(
     assert frame["type"] == SSE_AGENT_MESSAGE_TYPE
     assert "all done" in frame["text"]
     assert "test-job" in frame["text"]
-
-
-@pytest.mark.asyncio
-async def test_deliver_result_with_agent_runs_reaction_turn() -> None:
-    """deliver_result also runs a real reaction turn when an agent is wired."""
-    store = MagicMock()
-    store.history.return_value = []
-    registry = MagicMock()
-    agent = _fake_agent(["noted"])
-    delivery = _build_delivery(store=store, registry=registry, agent=agent)
-    info = _make_info(parent_id=None)
-
-    await delivery.deliver_result(info, 2, "interim text")
-    await _await_reaction_tasks(delivery)
-
-    store.record_for_session.assert_called_once()
-    args, _kwargs = store.record_for_session.call_args
-    assert "interim text" in args[1]  # prompt mentions the outcome
-    assert args[2] == "noted"
 
 
 # ---------------------------------------------------------------------------
@@ -520,28 +482,8 @@ async def test_deliver_summary_nested_parent_enqueues_message() -> None:
     store.record_for_session.assert_not_called()
 
 
-@pytest.mark.asyncio
-async def test_deliver_result_nested_parent_enqueues_message() -> None:
-    """When parent_id is set and enqueue_message succeeds, no store write."""
-    store = MagicMock()
-    registry = MagicMock()
-    registry.enqueue_message.return_value = True
-    delivery = _build_delivery(store=store, registry=registry)
-    info = _make_info(parent_id="parent-sub-99")
-
-    await delivery.deliver_result(info, 1, "first run result")
-
-    registry.enqueue_message.assert_called_once()
-    args, _kwargs = registry.enqueue_message.call_args
-    assert args[0] == "parent-sub-99"
-    assert args[1] == "parent"
-    assert "first run result" in args[2]
-    assert "run 1" in args[2]
-    store.record_for_session.assert_not_called()
-
-
 # ---------------------------------------------------------------------------
-# deliver_summary / deliver_result — nested parent terminal (degrades to store)
+# deliver_summary — nested parent terminal (degrades to store)
 # ---------------------------------------------------------------------------
 
 
@@ -564,27 +506,8 @@ async def test_deliver_summary_nested_parent_terminal_degrades_to_store() -> Non
     assert "degraded summary" in args[2]
 
 
-@pytest.mark.asyncio
-async def test_deliver_result_nested_parent_terminal_degrades_to_store() -> None:
-    """When enqueue_message returns False, deliver_result degrades to store."""
-    store = MagicMock()
-    registry = MagicMock()
-    registry.enqueue_message.return_value = False
-    delivery = _build_delivery(store=store, registry=registry)
-    info = _make_info(parent_id="parent-sub-terminal")
-
-    await delivery.deliver_result(info, 5, "degraded result")
-    await _await_reaction_tasks(delivery)
-
-    registry.enqueue_message.assert_called_once()
-    store.record_for_session.assert_called_once()
-    args, _kwargs = store.record_for_session.call_args
-    assert args[0] == "owner-sess-1"
-    assert "degraded result" in args[2]
-
-
 # ---------------------------------------------------------------------------
-# deliver_summary / deliver_result — periodic parent (enqueues + reacts)
+# deliver_summary — periodic parent (enqueues + reacts)
 # ---------------------------------------------------------------------------
 
 
@@ -620,34 +543,6 @@ async def test_deliver_summary_periodic_parent_enqueues_and_reacts() -> None:
     registry.get.assert_called_with("parent-periodic")
 
 
-@pytest.mark.asyncio
-async def test_deliver_result_periodic_parent_enqueues_and_reacts() -> None:
-    """When parent is PERIODIC, deliver_result enqueues to parent and reacts."""
-    store = MagicMock()
-    registry = MagicMock()
-    parent = MagicMock()
-    parent.kind = SubsessionKind.PERIODIC
-    registry.get.return_value = parent
-    registry.enqueue_message.return_value = True
-    delivery = _build_delivery(store=store, registry=registry)
-    info = _make_info(parent_id="parent-periodic", kind=SubsessionKind.TASK)
-
-    await delivery.deliver_result(info, 3, "periodic run result")
-    await _await_reaction_tasks(delivery)
-
-    registry.enqueue_message.assert_called_once()
-    args, _kwargs = registry.enqueue_message.call_args
-    assert args[0] == "parent-periodic"
-    assert args[1] == "parent"
-    assert "periodic run result" in args[2]
-    assert "run 3" in args[2]
-
-    store.record_for_session.assert_called_once()
-    store_args, _store_kwargs = store.record_for_session.call_args
-    assert store_args[0] == "owner-sess-1"
-    assert "periodic run result" in store_args[2]
-
-
 # ---------------------------------------------------------------------------
 # exception paths — logged but not raised
 # ---------------------------------------------------------------------------
@@ -674,22 +569,6 @@ async def test_deliver_summary_exception_is_logged_not_raised() -> None:
 
 
 @pytest.mark.asyncio
-async def test_deliver_result_exception_is_logged_not_raised() -> None:
-    """An exception during result delivery is logged but never propagates."""
-    store = MagicMock()
-    store.record_for_session.side_effect = RuntimeError("store is down")
-    registry = MagicMock()
-    delivery = _build_delivery(store=store, registry=registry)
-    info = _make_info(parent_id=None)
-
-    with patch.object(logging.getLogger(_DELIVERY_LOGGER), "exception") as log_exc:
-        await delivery.deliver_result(info, 1, "text")
-        await _await_reaction_tasks(delivery)
-
-    log_exc.assert_called()
-    assert "Reaction task failed for subsession" in log_exc.call_args[0][0]
-
-
 @pytest.mark.asyncio
 async def test_deliver_summary_enqueue_raises_is_logged_not_raised() -> None:
     """When enqueue_message raises, the exception is logged not raised."""
@@ -705,27 +584,6 @@ async def test_deliver_summary_enqueue_raises_is_logged_not_raised() -> None:
     log_exc.assert_called_once()
     # Store must not be called because the exception happened before degradation.
     store.record_for_session.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_deliver_result_enqueue_raises_is_logged_not_raised() -> None:
-    """When enqueue_message raises, deliver_result logs and does not raise."""
-    store = MagicMock()
-    registry = MagicMock()
-    registry.enqueue_message.side_effect = RuntimeError("registry is down")
-    delivery = _build_delivery(store=store, registry=registry)
-    info = _make_info(parent_id="parent-sub-99")
-
-    with patch.object(logging.getLogger(_DELIVERY_LOGGER), "exception") as log_exc:
-        await delivery.deliver_result(info, 1, "text")
-
-    log_exc.assert_called_once()
-    store.record_for_session.assert_not_called()
-
-
-# ---------------------------------------------------------------------------
-# run_serializer lock is acquired for store writes
-# ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio

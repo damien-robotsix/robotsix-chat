@@ -5,6 +5,22 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v49 — 2026-07-25 — smarter-subsession-reporting-only-surfac-8e33
+
+**Summary:** Bake the subsession reporting contract into the system prompt. Add a new bullet
+("Subsession reporting contract") that states subsessions only communicate through
+`complete_subsession` — intermediate progress stays inside the subsession and is never delivered.
+Update the `complete_subsession` guidance to also cover escalation (blocker, decision needed). Make
+the periodic subsystem prompt (worker.py) similarly explicit: the first paragraph of every periodic
+turn now states the reporting contract before any other instructions.
+
+**Rationale:** Intermediate periodic run results were burning main-session tokens on non-actionable
+noise. Enforcing the contract in both the system prompt and the per-turn periodic input ensures the
+LLM knows only terminal summaries and escalations reach the parent, regardless of how the parent
+agent embeds spawn instructions.
+
+**SHA256:** `e451c9c0cbf2baf56ff1b43644ec2d7c0e26e4a5f7c8b6e7caefecee2523c780`
+
 ## v48 — 2026-07-25 — reduce-verbose-status-messages-to-essent-c3b8
 
 **Summary:** Tighten status-reporting conciseness rules in two sections. (1) In the periodic

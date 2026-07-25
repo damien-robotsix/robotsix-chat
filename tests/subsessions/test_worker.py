@@ -290,8 +290,12 @@ def test_periodic_interval_below_minimum_is_rejected() -> None:
 
 
 @pytest.mark.asyncio
-async def test_periodic_run_delivers_result_frame_and_turn() -> None:
-    """Each non-suppressed run is delivered to the store and the event sink."""
+async def test_periodic_run_delivers_result_frame_only() -> None:
+    """Each non-suppressed run publishes a result frame to the event sink.
+
+    Intermediate runs are NOT delivered to the parent conversation store —
+    only the terminal summary (via complete_subsession or auto-close) arrives.
+    """
     sink = RecordingSink()
     agent = FakeAgent(["report 1", "report 2"])
     env = build_env(agent=agent, event_sink=sink)
@@ -320,10 +324,9 @@ async def test_periodic_run_delivers_result_frame_and_turn() -> None:
     ]
 
     history = env.conversation_store.history(OWNER)
-    assert len(history) == 3  # two run results + the terminal summary
-    assert history[0] == (f"[Subsession {sub_id[:8]} 'watch' run 1]", "report 1")
-    assert history[1] == (f"[Subsession {sub_id[:8]} 'watch' run 2]", "report 2")
-    assert "max_runs" in history[2][0]
+    # Only the terminal summary is delivered — intermediate runs stay silent.
+    assert len(history) == 1
+    assert "max_runs" in history[0][0]
 
 
 @pytest.mark.asyncio
@@ -2338,7 +2341,11 @@ def test_is_duplicate_reply_different() -> None:
 
 @pytest.mark.asyncio
 async def test_periodic_duplicate_replies_are_suppressed() -> None:
-    """Verbose replies that repeat verbatim are suppressed like NO_CHANGE."""
+    """Verbose replies that repeat verbatim are suppressed from the event sink.
+
+    Intermediate runs are never delivered to the parent conversation store
+    regardless of suppression — only the terminal summary arrives.
+    """
     agent = FakeAgent(["Status: all clear", "Status: all clear"])
     env = build_env(agent=agent)
 
@@ -2347,15 +2354,10 @@ async def test_periodic_duplicate_replies_are_suppressed() -> None:
     )
     await _await_worker(env, sub_id)
 
-    # First run is delivered (it's new); second run is suppressed (duplicate).
+    # Only the terminal summary is delivered — both intermediate runs stay silent.
     history = env.conversation_store.history(OWNER)
-    # Only the first run result and the terminal summary appear — no second run.
-    assert len(history) == 2
-    assert history[0] == (
-        f"[Subsession {sub_id[:8]} 'job' run 1]",
-        "Status: all clear",
-    )
-    assert "max_runs" in history[1][0]
+    assert len(history) == 1
+    assert "max_runs" in history[0][0]
 
 
 @pytest.mark.asyncio

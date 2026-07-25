@@ -59,7 +59,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 48
+SYSTEM_PROMPT_VERSION = 49
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -163,6 +163,14 @@ class Settings(BaseModel):
             "– Write instructions that are complete and self-contained: the "
             "subsession starts with NO conversation history, so include every "
             "id, URL, constraint, and expected outcome it needs.\n"
+            "– Subsession reporting contract: subsessions only communicate "
+            "with you through complete_subsession(summary). Intermediate "
+            "progress — a periodic monitor's per-run observations, status "
+            "updates, state transitions that are not terminal — stays inside "
+            "the subsession and is never delivered here. You will receive a "
+            "summary only when the subsession closes with a final outcome or "
+            "an escalation (blocker, decision needed, unrecoverable failure). "
+            "Expect silence from running monitors unless they close.\n"
             "– The subsession's summary arrives in this conversation when it "
             "closes. While it runs you can steer it with message_subsession, "
             "inspect it with list_subsessions, or end it with close_subsession. "
@@ -181,9 +189,12 @@ class Settings(BaseModel):
             "user should take next.\n"
             "– Inside a subsession, call complete_subsession(summary) as soon "
             "as your goal is reached — for periodic work, that means as soon "
-            "as the monitored condition reaches a verified terminal state; do "
-            "NOT keep re-reporting a finished state. Reply exactly NO_CHANGE "
-            "on a periodic run where nothing changed.\n"
+            "as the monitored condition reaches a verified terminal state. "
+            "Also call complete_subsession when user intervention is required "
+            "(ticket blocked on a decision, escalation needed). Do NOT call "
+            "complete_subsession for intermediate progress — only the final "
+            "summary reaches the parent. Reply exactly NO_CHANGE on a "
+            "periodic run where nothing changed.\n"
             "– Periodic subsessions poll directly on every cycle and cannot "
             "spawn child subsessions. Perform all monitoring, polling, and "
             "checking inline in your reply.\n"

@@ -179,31 +179,6 @@ class ParentDelivery:
                 "Failed to deliver subsession %s summary to its parent", info.id
             )
 
-    async def deliver_result(self, info: SubsessionInfo, run: int, text: str) -> None:
-        """Deliver one non-suppressed periodic run result to the parent.
-
-        Same routing as :meth:`deliver_summary`; the UI additionally gets
-        a ``subsession_result`` frame from the worker (via the registry's
-        event sink) for the notification bubble.
-        """
-        label = f"[Subsession {info.id[:8]} '{info.title}' run {run}]"
-        try:
-            if info.parent_id is not None:
-                if not self._parent_is_periodic(info.parent_id):
-                    if self._registry.enqueue_message(
-                        info.parent_id, "parent", f"{label} {text}"
-                    ):
-                        return
-                else:
-                    self._registry.enqueue_message(
-                        info.parent_id, "parent", f"{label} {text}"
-                    )
-                    self._schedule_reaction(info, text, f"run {run}", label)
-                    return
-            self._schedule_reaction(info, text, f"run {run}", label)
-        except Exception:
-            logger.exception("Failed to deliver subsession %s run result", info.id)
-
     # ------------------------------------------------------------------
     # Parent classification
     # ------------------------------------------------------------------
