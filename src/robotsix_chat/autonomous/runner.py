@@ -89,6 +89,7 @@ class AutonomousRunner:
                     "auto_turn_count": aq.auto_turn_count,
                     "completion_suppressed": aq.completion_suppressed,
                     "rejected_subjects": aq.rejected_subjects or [],
+                    "recent_user_messages": aq.recent_user_messages or [],
                 }
             self._persist_path.parent.mkdir(parents=True, exist_ok=True)
             self._persist_path.write_text(json.dumps(data, indent=2))
@@ -122,6 +123,7 @@ class AutonomousRunner:
                     auto_turn_count=entry.get("auto_turn_count", 0),
                     completion_suppressed=entry.get("completion_suppressed", False),
                     rejected_subjects=entry.get("rejected_subjects", []),
+                    recent_user_messages=entry.get("recent_user_messages", []),
                 )
             except Exception:
                 logger.exception("Skipping unparsable autonomous session %s", sid)
@@ -390,14 +392,50 @@ class AutonomousRunner:
         * **Neutral** — the session stays in ``proposal`` so the agent
           can respond conversationally; the operator can approve or
           reject later.
+        * **Stalemate** — the same message has been repeated multiple
+          times without the operator engaging with proposals; the
+          caller should prepend a stalemate notice so the agent
+          acknowledges the pattern instead of cycling again.
 
-        Returns ``"approved"``, ``"rejected"``, or ``"neutral"``.
-        No-op for sessions in any other state or unknown sessions
-        (returns ``"neutral"``).
+        Returns ``"approved"``, ``"rejected"``, ``"neutral"``, or
+        ``"stalemate"``.
+        No-op for unknown sessions (returns ``"neutral"``).
         """
         aq = self._sessions.get(session_id)
         if aq is None:
             return "neutral"
+
+        # -- stalemate detection (all states) ------------------------------
+        stripped = message.strip()
+        if aq.recent_user_messages is None:
+            aq.recent_user_messages = []
+        aq.recent_user_messages.append(stripped)
+        # Trim to last N so the list stays bounded.
+        _max_recent = 10
+        if len(aq.recent_user_messages) > _max_recent:
+            aq.recent_user_messages = aq.recent_user_messages[-_max_recent:]
+        self._save_sessions()
+
+        # Count *consecutive* identical messages from the tail — an
+        # intervening different message resets the repeat count.
+        consecutive = 0
+        for m in reversed(aq.recent_user_messages):
+            if m == stripped:
+                consecutive += 1
+            else:
+                break
+
+        # Stalemate: 3+ consecutive occurrences (2 repeats after the first).
+        if consecutive >= 3:
+            logger.warning(
+                "Autonomous session %s — stalemate: user repeated %r "
+                "%d times without engaging with proposals",
+                session_id,
+                stripped[:80],
+                consecutive,
+            )
+            return "stalemate"
+
         if aq.state is not AutonomousState.proposal:
             return "neutral"
 
