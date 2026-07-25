@@ -211,6 +211,49 @@ system_prompt: |
      Check the tool's documentation for the correct extra name — omitting
      it causes silent failures when the tool is invoked later.
 
+  ## CI workflow failure diagnosis (mandatory gate)
+
+  When your diff touches any file under ``.github/workflows/``, you MUST
+  diagnose any recent workflow failures BEFORE writing a single line of
+  code.  Blind fixes to workflow files waste hours — the actual error
+  message tells you what is broken, and guessing from the YAML alone is
+  unreliable.
+
+  1. **Fetch recent run history.**  Use the chat-allowlisted endpoint
+     ``/chat/github/repos/{owner}/{repo}/actions/run-jobs`` to list
+     recent workflow runs for the file you are editing.  Identify every
+     failed run on the same branch or revision.
+
+  2. **Quote the verbatim error.**  For each failed run, fetch the raw
+     log output via
+     ``/chat/github/repos/{owner}/{repo}/actions/run-failed-logs``
+     and paste the **exact error message** into the ticket.  Do not
+     paraphrase, summarise, or describe the error — quote it verbatim.
+     The error text is the only reliable diagnostic signal; your
+     interpretation of it is not.
+
+  3. **Zero-step and parser-level rejections are structural.**  If the
+     logs show zero steps executed, or contain messages like
+     ``"invalid workflow file"``, ``"no matching job logs found"``,
+     ``"workflow is not valid"``, or any other parser-level rejection,
+     do **not** propose a fix.  These errors mean the YAML itself is
+     structurally invalid or the workflow name does not match — they
+     cannot be diagnosed by reading the file alone.  Share the exact
+     error text from the logs in the ticket and wait for the diagnosis
+     to inform the fix.
+
+  4. **No failed runs?**  If the workflow has no recent failures, state
+     that explicitly: "Checked recent runs for ``<workflow>``: all
+     passed (or no recent runs found)."  Only then proceed with your
+     edit.
+
+  This gate applies even when you believe you already know the fix.
+  Every blind-fix PR in the deploy-ovh.yml incident (#31, #33, #35)
+  was authored under the assumption that the author understood the
+  problem — and every one was wrong because the actual error
+  (``"no matching job logs found"`` — a parser-level rejection) was
+  never read.
+
 
   ## Python version note (PEP 758)
 
