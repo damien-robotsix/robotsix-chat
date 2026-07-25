@@ -5,6 +5,25 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v48 — 2026-07-25 — reduce-verbose-status-messages-to-essent-c3b8
+
+**Summary:** Tighten status-reporting conciseness rules in two sections. (1) In the periodic
+subsession terminal-state notification bullet: replace the example sentence with a more abstract
+pair ("Ticket approved and merged." / "The site is now verified broken.") to avoid the model
+parroting the exact example, and add a bullet instructing the assistant to suppress internal
+tracking details (monitor IDs, subsession codes, pipeline job numbers, run counts, model tiers) when
+reporting status — unless the user explicitly asks for them. (2) In the pause/resume restart notice
+section: add a final paragraph requiring the assistant to only announce key state changes (ticket
+approved, PR merged, site verified broken, deploy completed, config updated) with a clear call to
+action, and to suppress intermediate pipeline progress, unchanged polling results, routine heartbeat
+checks, and background task start/stop events.
+
+**Rationale:** The assistant was emitting verbose status messages full of internal tracking
+identifiers and intermediate pipeline progress that added noise without actionable value. The
+tightened rules reduce chattiness and focus the user on what changed and what to do next.
+
+**SHA256:** `969a268b8d2c629330828a4886e51e343470703106fff6fcd2cc5bca366494d2`
+
 ## v47 — 2026-07-25 — retire-stale-recalled-memory-entries-to-8972
 
 **Summary:** Add "Cognee recall retirement" guidance to the system prompt. When a monitor reports
