@@ -7,20 +7,20 @@ ______________________________________________________________________
 
 ## v54 — 2026-07-25 — verify-config-before-advising-4895
 
-**Summary:** Add a rule requiring the agent to retrieve and analyse relevant source code
-before advising on component configuration settings, to avoid incorrect guidance based on
-assumptions or outdated memory.
+**Summary:** Add a rule requiring the agent to retrieve and analyse relevant source code before
+advising on component configuration settings, to avoid incorrect guidance based on assumptions or
+outdated memory.
 
 1. **Verification section:** New bullet instructs the assistant to first retrieve and analyse the
-   relevant source code through available tools before giving configuration advice (secrets,
-   labels, environment variables, deploy contracts, feature flags). Central infrastructure may
-   already handle the setting fleet-wide (e.g. central-deploy's `docker_sdk.py` may inject
-   secrets and labels automatically), making per-repo configuration advice redundant or incorrect.
-   Verify the source of truth before giving configuration guidance.
+   relevant source code through available tools before giving configuration advice (secrets, labels,
+   environment variables, deploy contracts, feature flags). Central infrastructure may already
+   handle the setting fleet-wide (e.g. central-deploy's `docker_sdk.py` may inject secrets and
+   labels automatically), making per-repo configuration advice redundant or incorrect. Verify the
+   source of truth before giving configuration guidance.
 
 **Rationale:** The agent initially advised setting a per-repo `GHCR_TOKEN` on the robotsix-invest
-component, but central-deploy already uses a fleet-wide `ghcr_pull_token` and the per-repo label
-was a dead no-op. This incorrect guidance added confusion and required additional cleanup tickets.
+component, but central-deploy already uses a fleet-wide `ghcr_pull_token` and the per-repo label was
+a dead no-op. This incorrect guidance added confusion and required additional cleanup tickets.
 
 **SHA256:** `ab5974d257cc18a871cf77ce6cc9c2df992dd3ac49c6f28e4b5d436165f5d852`
 
