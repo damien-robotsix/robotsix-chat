@@ -37,6 +37,28 @@ blocking, completion, failure, or transitions requiring user action). After a co
 consecutive `NO_CHANGE` runs (`subsessions.auto_stop_no_change_runs`, default 5) the subsession
 closes itself.
 
+### Auto-stop and failure notifications
+
+When a periodic monitor auto-stops (e.g. after 5 consecutive no-change runs, or after hitting its
+`max_runs` limit) or fails with an API error, the assistant **immediately notifies you** in the
+conversation — you do not need to send a message to learn what happened. The notification is
+delivered via a synthetic reaction turn:
+
+1. **Normal case** — the main agent runs a real LLM turn that processes the outcome and replies
+   with a substantive message explaining what happened, what it means, and what you can do next
+   (e.g. restart the monitor, check the ticket). The prompt instructs the agent to **not** just
+   acknowledge the outcome briefly — it must provide actionable context.
+2. **LLM API failure** — if the reaction turn itself fails (e.g. OpenRouter is unreachable), the
+   system falls back to publishing a plain `agent_message` frame directly into the chat. You see a
+   message like `"[System] Background task 'Monitor ticket T-42' (periodic) auto-stopped after
+   consecutive no-change runs."` with the full outcome included.
+3. **Depth bounding** — if reaction turns chain-react (a close spawns a new subsession that closes
+   and triggers another reaction, etc.), the recursion is capped at 3 nested turns. Beyond that,
+   outcomes are recorded passively without further LLM calls.
+
+Internal reason codes (e.g. `"no_change_auto_stop"`, `"failed"`, `"ticket_terminal"`) are
+automatically translated to human-readable phrases in both the prompt and fallback messages.
+
 ## Listing active checks
 
 Ask:
