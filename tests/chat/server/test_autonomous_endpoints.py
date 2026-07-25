@@ -58,11 +58,6 @@ def autonomous_runner(store, tmp_path, monkeypatch) -> AutonomousRunner:
     # Prevent background tasks (from approve/reject) from leaking across
     # xdist workers or between tests sharing an event loop.
     monkeypatch.setattr(AutonomousRunner, "_schedule_background", MagicMock())
-    # Eliminate filesystem I/O: _save_sessions writes to disk on every
-    # state mutation, which can collide across xdist workers even under
-    # per-test tmp_path when the CI filesystem is overloaded.
-    monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
-    monkeypatch.setattr(AutonomousRunner, "_load_sessions", MagicMock(return_value={}))
     settings = MagicMock()
     settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
     settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
@@ -95,6 +90,13 @@ async def client(mock_agent, store, autonomous_runner):
 
 class TestApproveEndpoint:
     """POST /sessions/{id}/approve tests."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
 
     @pytest.mark.asyncio
     async def test_approve_requires_owner_id(
@@ -154,6 +156,13 @@ class TestApproveEndpoint:
 class TestRejectEndpoint:
     """POST /sessions/{id}/reject tests."""
 
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+
     @pytest.mark.asyncio
     async def test_reject_success(self, client, autonomous_runner, store, owner_id):
         """Valid reject resets to selecting_subject and returns 200."""
@@ -202,6 +211,13 @@ class TestRejectEndpoint:
 
 class TestApprovalGate409:
     """POST /chat returns 409 when autonomous session is awaiting approval."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
 
     @pytest.mark.asyncio
     async def test_chat_returns_409_when_awaiting_approval(
@@ -260,6 +276,13 @@ class TestApprovalGate409:
 class TestRunnerWiring:
     """Verify the autonomous runner is wired into the app correctly."""
 
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+
     @pytest.mark.asyncio
     async def test_runner_on_app_state(self, client):
         """App starts with autonomous runner on state and health passes."""
@@ -269,6 +292,13 @@ class TestRunnerWiring:
 
 class TestSessionsListAutonomousAnnotation:
     """GET /sessions returns autonomous annotations for autonomous sessions."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
 
     @pytest.mark.asyncio
     async def test_sessions_list_includes_autonomous_fields(
