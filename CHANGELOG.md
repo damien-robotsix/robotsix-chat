@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add `check-activity-kinds` Makefile target (`python scripts/check_activity_kinds.py`).
 - Prompt: add deterministic recovery guidance for periodic subsession spawn failures — fall back to inline monitoring immediately instead of presenting options to the user.
 - Add "batch closely related issues" guidance to the implement agent prompt: when discovering multiple incremental issues on the same page/file/component in a single session, combine them into one ticket instead of filing one per issue.
 - Added self-hosted runner guidance to implement agent prompt: prefer self-hosted runners over workflow deletion when CI fails due to runner-minute exhaustion in private repos; distinguish runner minutes from paid/licensed CI as separate concerns.
