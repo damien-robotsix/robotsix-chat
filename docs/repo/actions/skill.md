@@ -90,13 +90,12 @@ and inputs with the user in-chat.
 
 ## Agent tool: `check_workflow_run`
 
-Fetch recent workflow runs and diagnose common CI failure patterns.  This is a read-only agent
-tool (no HTTP endpoint) that inspects workflow runs and detects known failure signatures.
+Fetch recent workflow runs and diagnose common CI failure patterns. This is a read-only agent tool
+(no HTTP endpoint) that inspects workflow runs and detects known failure signatures.
 
 In particular, it detects **private-repo billing failures** — runs that complete with
-`conclusion: "failure"` but have zero jobs, or runs that never started (`run_started_at` is
-null).  These signatures strongly indicate that GitHub Actions billing is not enabled for the
-repository.
+`conclusion: "failure"` but have zero jobs, or runs that never started (`run_started_at` is null).
+These signatures strongly indicate that GitHub Actions billing is not enabled for the repository.
 
-**Read-only.**  Does not modify any repository state.  No confirmation gating — safe to call
-anytime to investigate a CI failure.
+**Read-only.** Does not modify any repository state. No confirmation gating — safe to call anytime
+to investigate a CI failure.
