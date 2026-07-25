@@ -76,6 +76,7 @@ class AutonomousRunner:
                     "state": aq.state.value,
                     "plan_text": aq.plan_text,
                     "auto_turn_count": aq.auto_turn_count,
+                    "completion_suppressed": aq.completion_suppressed,
                 }
             self._persist_path.parent.mkdir(parents=True, exist_ok=True)
             self._persist_path.write_text(json.dumps(data, indent=2))
@@ -107,6 +108,7 @@ class AutonomousRunner:
                     state=AutonomousState(entry["state"]),
                     plan_text=entry.get("plan_text", ""),
                     auto_turn_count=entry.get("auto_turn_count", 0),
+                    completion_suppressed=entry.get("completion_suppressed", False),
                 )
             except Exception:
                 logger.exception("Skipping unparsable autonomous session %s", sid)

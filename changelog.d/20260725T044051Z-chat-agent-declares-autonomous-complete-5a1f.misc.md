@@ -1,1 +1,1 @@
-Chat agent declares AUTONOMOUS COMPLETE while a background subsession is still running
+Suppress AUTONOMOUS COMPLETE marker while background subsessions are still running

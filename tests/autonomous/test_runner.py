@@ -136,6 +136,41 @@ class TestMarkerDetection:
         new_state = runner.check_reply_for_markers(aq.session_id, reply)
         assert new_state is AutonomousState.completed
 
+    def test_completion_suppressed_when_active_subsessions(self) -> None:
+        """Completion marker is ignored when active subsessions are running."""
+        from types import SimpleNamespace
+
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
+        settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
+        settings.autonomous.max_auto_turns = 20
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
+        settings.autonomous.auto_approve = False
+
+        reg = MagicMock()
+        reg.list_for_owner.return_value = [
+            SimpleNamespace(is_active=True, kind="periodic"),
+        ]
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+            subsession_registry=reg,
+        )
+        aq = runner.create_session("owner1")
+        aq.state = AutonomousState.executing
+        reply = "All done!\n\n---AUTONOMOUS COMPLETE---"
+
+        new_state = runner.check_reply_for_markers(aq.session_id, reply)
+        # Completion must be suppressed — no transition.
+        assert new_state is None
+        assert aq.state is AutonomousState.executing
+        assert aq.completion_suppressed is True
+
 
 class TestApprovalGate:
     """Approve/reject endpoint logic tests."""
@@ -376,6 +411,55 @@ class TestAutoContinue:
         aq = runner.create_session("owner1")
         await runner._auto_continue(aq.session_id)
         assert aq.state is AutonomousState.selecting_subject
+
+    @pytest.mark.asyncio
+    async def test_completion_suppressed_feedback_message(self) -> None:
+        """When completion_suppressed is set, the next Continue includes a notice."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.max_auto_turns = 20
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
+        settings.autonomous.approval_marker = "[APPROVAL]"
+        settings.autonomous.completion_marker = "[COMPLETE]"
+        settings.autonomous.auto_approve = False
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        captured_message: list[str] = []
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _capture_stream(message, *args, **kwargs):
+            captured_message.append(str(message))
+            yield "[APPROVAL]"  # triggers awaiting_approval so loop exits
+            return
+
+        agent.stream.side_effect = _capture_stream
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+        )
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        aq.state = AutonomousState.executing
+        aq.plan_text = "plan"
+        aq.auto_turn_count = 1  # non-zero to take the completion_suppressed branch
+        aq.completion_suppressed = True
+        runner._save_sessions = MagicMock()
+
+        await runner._auto_continue(aq.session_id)
+
+        assert len(captured_message) >= 1
+        assert "previous completion marker was ignored" in captured_message[0]
+        assert "active monitoring subsessions" in captured_message[0]
+        assert "list_subsessions" in captured_message[0]
+        # The flag must be cleared after the message is delivered.
+        assert aq.completion_suppressed is False
 
 
 class TestAgentFactoryLoopSafety:
