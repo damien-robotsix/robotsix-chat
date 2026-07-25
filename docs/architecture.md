@@ -205,8 +205,15 @@ in its prompt so it is aware it is resuming rather than starting cold:
         │
         ├─ approve() → executing
         └─ reject()  → selecting_subject (re-kickoff)
-                          │
-                          ▼
+               │            │
+               │            ▼
+          plan_text      previously rejected subjects
+          appended to    are injected into the
+          rejected_      prompt as a "do not propose"
+          subjects       instruction
+               │
+               ▼
+          (persisted to autonomous_sessions.json)
   executing ── _auto_continue() ──► awaiting_approval (blocker)
         │                                   │
         │                                   └─ approve() → executing (re-approval)
@@ -216,6 +223,11 @@ in its prompt so it is aware it is resuming rather than starting cold:
                 ▼
            completed ──► _close_and_respawn() ──► create_session() (back to selecting_subject)
 ```
+
+When the operator rejects a proposed subject, the plan text from that proposal is recorded in the
+session's `rejected_subjects` list, persisted to the sessions JSON file, and injected into the
+agent's prompt on the next subject-selection round as a "do not propose" instruction — preventing
+the same subject from being re-picked until the session ends.
 
 ### Configuration
 
