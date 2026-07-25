@@ -183,7 +183,7 @@ class AutonomousRunner:
         When *schedule_kickoff* is ``True`` (the default), an initial agent
         turn is scheduled as a background task so the session immediately
         begins subject selection.  Pass ``False`` when the caller will handle
-        the kickoff itself (e.g. :meth:`_close_and_respawn`).
+        the kickoff itself (e.g. when the caller will schedule it manually).
 
         Enforces the single-session invariant: if *owner_id* already has an
         open autonomous session (any non-terminal state), the existing session
@@ -217,7 +217,7 @@ class AutonomousRunner:
         aq = AutonomousSession(
             session_id=session_id,
             owner_id=owner_id,
-            state=AutonomousState.selecting_subject,
+            state=AutonomousState.planning,
         )
         self._sessions[session_id] = aq
         self._save_sessions()
@@ -264,10 +264,10 @@ class AutonomousRunner:
         if aq is None:
             return None
 
-        approval_marker = self._settings.autonomous.approval_marker
+        proposal_marker = self._settings.autonomous.proposal_marker
         completion_marker = self._settings.autonomous.completion_marker
 
-        # Check completion first (it terminates the session).
+        # Check completion first (it terminates the execution loop).
         if completion_marker in reply_text:
             # Gate: suppress completion while the session owns any active
             # subsession (including periodic monitors).  Premature completion
@@ -292,46 +292,35 @@ class AutonomousRunner:
             self._publish_state(session_id)
             return AutonomousState.completed
 
-        # Check approval marker.
-        if approval_marker in reply_text:
+        # Check proposal marker.
+        if proposal_marker in reply_text:
             # Plan text is everything before the marker.
-            idx = reply_text.index(approval_marker)
+            idx = reply_text.index(proposal_marker)
             aq.plan_text = reply_text[:idx].strip()
 
-            # Auto-approve: skip the human gate and begin executing straight
-            # away using the exact same transition an operator approval takes.
-            if self._settings.autonomous.auto_approve:
-                logger.info(
-                    "Autonomous session %s auto-approved (auto_approve=true) — "
-                    "starting execution (plan %d chars)",
-                    session_id,
-                    len(aq.plan_text),
-                )
-                self._begin_execution(session_id)
-                return AutonomousState.executing
-
-            aq.state = AutonomousState.awaiting_approval
+            aq.state = AutonomousState.proposal
             logger.info(
-                "Autonomous session %s awaiting approval (plan %d chars)",
+                "Autonomous session %s proposal ready (plan %d chars)",
                 session_id,
                 len(aq.plan_text),
             )
             self._save_sessions()
             self._publish_state(session_id)
-            return AutonomousState.awaiting_approval
+            return AutonomousState.proposal
 
         return None
 
-    # -- approval gate ------------------------------------------------------
+    # -- proposal → execution transition -----------------------------------
 
     def _begin_execution(self, session_id: str) -> None:
         """Transition *session_id* into execution and kick off auto-continue.
 
-        Shared by operator approval (:meth:`approve`) and auto-approval
-        (:meth:`check_reply_for_markers` when ``autonomous.auto_approve`` is
-        ``True``) so both paths behave identically: reset the turn counter,
-        flip to ``executing``, schedule the background auto-continue loop,
-        persist, and publish the new state.  No-op when the session is gone.
+        Shared by :meth:`on_user_message` (when the operator comments on a
+        proposal) and :meth:`_auto_continue` (when the agent re-proposes
+        after hitting a blocker).  Resets the turn counter, flips to
+        ``executing``, schedules the background auto-continue loop,
+        persists, and publishes the new state.  No-op when the session
+        is gone.
         """
         aq = self._sessions.get(session_id)
         if aq is None:
@@ -346,59 +335,24 @@ class AutonomousRunner:
         self._save_sessions()
         self._publish_state(session_id)
 
-    def approve(self, owner_id: str, session_id: str) -> tuple[bool, str]:
-        """Approve the plan for *session_id*.
+    def on_user_message(self, session_id: str) -> None:
+        """Handle a user message to an autonomous session.
 
-        Returns ``(True, "")`` on success; ``(False, reason)`` on failure
-        (unknown session, wrong owner, or wrong state).
+        When the session is in ``proposal`` state the operator's message
+        acts as implicit approval — the session transitions to executing
+        and the auto-continue loop begins.  No-op for sessions in any
+        other state or unknown sessions.
         """
         aq = self._sessions.get(session_id)
         if aq is None:
-            return False, "session not found"
-        if aq.owner_id != owner_id:
-            return False, "owner_id mismatch"
-        if aq.state is not AutonomousState.awaiting_approval:
-            return False, f"session is in state {aq.state.value}, not awaiting_approval"
-
-        self._begin_execution(session_id)
-        logger.info("Autonomous session %s approved — starting execution", session_id)
-        return True, ""
-
-    def reject(self, owner_id: str, session_id: str) -> tuple[bool, str]:
-        """Reject the plan for *session_id*; reset to subject selection.
-
-        Returns ``(True, "")`` on success; ``(False, reason)`` on failure.
-        """
-        aq = self._sessions.get(session_id)
-        if aq is None:
-            return False, "session not found"
-        if aq.owner_id != owner_id:
-            return False, "owner_id mismatch"
-        if aq.state is not AutonomousState.awaiting_approval:
-            return False, f"session is in state {aq.state.value}, not awaiting_approval"
-
-        if aq.plan_text:
-            if aq.rejected_subjects is None:
-                aq.rejected_subjects = []
-            aq.rejected_subjects.append(aq.plan_text)
-        aq.state = AutonomousState.selecting_subject
-        aq.plan_text = ""
-        self._save_sessions()
-        self._publish_state(session_id)
-        logger.info(
-            "Autonomous session %s rejected — reset to subject selection",
-            session_id,
-        )
-
-        # Schedule a fresh initial turn so the session is not left inert
-        # in selecting_subject (mirrors create_session).
-        self._schedule_background(
-            lambda sid=session_id, oid=aq.owner_id: self._kickoff_initial_turn(  # type: ignore[misc]
-                sid, oid
+            return
+        if aq.state is AutonomousState.proposal:
+            logger.info(
+                "Autonomous session %s — operator message received, "
+                "transitioning from proposal to executing",
+                session_id,
             )
-        )
-
-        return True, ""
+            self._begin_execution(session_id)
 
     # -- initial turn kickoff ------------------------------------------------
 
@@ -409,9 +363,9 @@ class AutonomousRunner:
 
         Streams the agent with the autonomous instruction supplement so
         it performs subject selection + plan drafting and (when the model
-        cooperates) emits the approval marker.  After the reply,
+        cooperates) emits the proposal marker.  After the reply,
         :meth:`check_reply_for_markers` transitions the session to
-        ``awaiting_approval`` (or ``completed``).
+        ``proposal`` (or ``completed``).
 
         When *is_restart* is ``True``, the prompt is adjusted to inform
         the agent that the system was restarted and the session is being
@@ -558,11 +512,11 @@ class AutonomousRunner:
                 if aq.auto_turn_count >= max_turns:
                     logger.warning(
                         "Autonomous session %s hit max_auto_turns (%d) — "
-                        "reverting to awaiting_approval",
+                        "reverting to proposal",
                         session_id,
                         max_turns,
                     )
-                    aq.state = AutonomousState.awaiting_approval
+                    aq.state = AutonomousState.proposal
                     self._save_sessions()
                     self._publish_state(session_id)
                     return
@@ -576,12 +530,13 @@ class AutonomousRunner:
                         return
 
                 # Acquire the per-owner run lock.
-                should_respawn = False
                 async with self._run_serializer.for_owner(owner_id):
                     agent = await asyncio.to_thread(self._agent_factory)
                     history = self._store.agent_history(session_id)
 
-                    # First turn after approval: explicit proceed message.
+                    # First turn after proposal approval: the operator's
+                    # message is already in history, so just prompt
+                    # the agent to continue executing its plan.
                     if aq.auto_turn_count == 0:
                         restart_prefix = (
                             "SYSTEM RESTARTED — resuming your autonomous session. "
@@ -590,13 +545,11 @@ class AutonomousRunner:
                         )
                         message = (
                             f"{restart_prefix}"
-                            "OPERATOR APPROVAL RECEIVED. Your plan has been "
-                            "approved. Begin executing the first step of your "
-                            "plan immediately — use your tools to take the "
-                            "action now. Do not describe what you will do; "
-                            "actually perform it. Do not request re-approval "
-                            "unless you encounter a genuine blocker that you "
-                            "cannot resolve on your own."
+                            "The operator has seen your plan and is ready for "
+                            "you to begin. Execute the first step of your plan "
+                            "immediately — use your tools to take the action "
+                            "now. Do not describe what you will do; actually "
+                            "perform it."
                         )
                     else:
                         if aq.completion_suppressed:
@@ -664,20 +617,12 @@ class AutonomousRunner:
                     # Check for lifecycle markers in the reply.
                     new_state = self.check_reply_for_markers(session_id, full_reply)
                     if new_state is AutonomousState.completed:
-                        should_respawn = True
-                    elif new_state is AutonomousState.awaiting_approval:
+                        # Session completed — stay open, operator will close.
+                        return
+                    if new_state is AutonomousState.proposal:
                         # Agent hit a blocker — wait for operator.
                         return
                     # Otherwise continue the loop.
-
-                # Schedule respawn as a background task so the auto-continue
-                # loop can return immediately — the respawn kickoff is also
-                # non-blocking (see _close_and_respawn docstring).
-                if should_respawn:
-                    self._schedule_background(
-                        lambda sid=session_id: self._close_and_respawn(sid)  # type: ignore[misc]
-                    )
-                    return
 
         except asyncio.CancelledError:
             logger.debug("Auto-continue task cancelled for session %s", session_id)
@@ -687,82 +632,16 @@ class AutonomousRunner:
                 session_id,
             )
 
-    # -- completion & respawn -----------------------------------------------
-
-    async def _close_and_respawn(self, session_id: str) -> None:
-        """Close the completed autonomous session and spawn a new one.
-
-        This method is *non-blocking*: the respawn kickoff is scheduled as a
-        background task and this coroutine returns immediately.  Callers must
-        never ``await`` this in startup/lifespan paths — schedule it via
-        :meth:`_schedule_background` instead.
-
-        Enforces the single-session invariant: at most one open autonomous
-        session per owner at any time.
-        """
-        try:
-            aq = self._sessions.get(session_id)
-            if aq is None:
-                return
-
-            owner_id = aq.owner_id
-            logger.info(
-                "Autonomous session %s completed after %d auto-turns — "
-                "closing and spawning next",
-                session_id,
-                aq.auto_turn_count,
-            )
-
-            # Close the completed session and remove it from the in-memory
-            # registry so a concurrent trigger sees ``None`` and exits early
-            # (idempotency guard — prevents double-spawn).
-            self._store.close_session(owner_id, session_id)
-            del self._sessions[session_id]
-
-            # Single-session invariant: never spawn a second open session for
-            # this owner.  (The just-closed session is already gone, so any
-            # match here is a genuine duplicate.)
-            for existing in self._sessions.values():
-                if (
-                    existing.owner_id == owner_id
-                    and existing.state is not AutonomousState.completed
-                ):
-                    logger.warning(
-                        "Cannot spawn new autonomous session for owner %s: "
-                        "session %s is still open (state=%s)",
-                        owner_id,
-                        existing.session_id,
-                        existing.state.value,
-                    )
-                    self._save_sessions()
-                    return
-
-            # Spawn a new autonomous session.  ``schedule_kickoff=True`` kicks
-            # off the initial turn as a background task, so this coroutine
-            # returns immediately — the caller (or the lifespan) is never
-            # blocked waiting for the agent's first reply.
-            new_sid = self._store.new_session_id()
-            self._store.begin(new_sid)
-            self.create_session(owner_id, session_id=new_sid, schedule_kickoff=True)
-        except Exception:
-            logger.exception(
-                "Error in _close_and_respawn for session %s",
-                session_id,
-            )
-
     # -- resume on restart --------------------------------------------------
 
     async def resume_sessions(self) -> None:
         """Handle autonomous sessions on server restart.
 
-        - Sessions in ``completed`` state: auto-close and respawn.
+        - Sessions in ``completed`` state: left as-is (operator closes).
         - Sessions in ``executing`` state: resume auto-continue.
-        - Sessions in ``selecting_subject`` state: re-kickoff the initial
+        - Sessions in ``planning`` state: re-kickoff the initial
           turn (the previous kickoff was lost on restart).
-        - Sessions in ``awaiting_approval`` state: when
-          ``autonomous.auto_approve`` is ``True``, auto-approve and begin
-          executing (clears sessions that got stuck before the gate could be
-          reached in the UI); otherwise leave them for an operator.
+        - Sessions in ``proposal`` state: left for operator review.
         - When no sessions exist at all (e.g. a fresh or wiped store),
           auto-start exactly one bootstrap session so autonomous mode is
           not permanently idle.
@@ -786,11 +665,8 @@ class AutonomousRunner:
 
             if aq.state is AutonomousState.completed:
                 logger.info(
-                    "Resuming: auto-closing completed autonomous session %s",
+                    "Resuming: completed autonomous session %s — leaving as-is",
                     session_id,
-                )
-                self._schedule_background(
-                    lambda sid=session_id: self._close_and_respawn(sid)  # type: ignore[misc]
                 )
 
             elif aq.state is AutonomousState.executing:
@@ -802,7 +678,7 @@ class AutonomousRunner:
                     lambda sid=session_id: self._auto_continue(sid, is_restart=True)  # type: ignore[misc]
                 )
 
-            elif aq.state is AutonomousState.selecting_subject:
+            elif aq.state is AutonomousState.planning:
                 logger.info(
                     "Resuming: re-kickoff initial turn for session %s",
                     session_id,
@@ -813,20 +689,12 @@ class AutonomousRunner:
                     )
                 )
 
-            elif aq.state is AutonomousState.awaiting_approval:
-                if self._settings.autonomous.auto_approve:
-                    logger.info(
-                        "Resuming: auto-approving awaiting-approval session %s "
-                        "(auto_approve=true) — starting execution",
-                        session_id,
-                    )
-                    self._begin_execution(session_id)
-                else:
-                    logger.info(
-                        "Resuming: leaving session %s in awaiting_approval "
-                        "(awaiting operator approval)",
-                        session_id,
-                    )
+            elif aq.state is AutonomousState.proposal:
+                logger.info(
+                    "Resuming: leaving session %s in proposal "
+                    "(awaiting operator review)",
+                    session_id,
+                )
 
         # Bootstrap: when the store is empty (fresh deploy or wiped data),
         # auto-start one session so autonomous mode isn't permanently idle.

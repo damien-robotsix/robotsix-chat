@@ -54,7 +54,7 @@ def _parse_autonomous_states(models_path: Path) -> dict[str, str]:
 # Step 2 — find AutonomousState-looking string literals in chat.js
 # ---------------------------------------------------------------------------
 
-# aState === "selecting_subject"  /  autonomous_state === "awaiting_approval"
+# aState === "planning"  /  autonomous_state === "proposal"
 _STATE_COMPARISON_RE = re.compile(
     r'(?:aState|autonomous_state)\s*[=!]==\s*"(?P<state>[a-z_][a-z_0-9]*)"'
 )

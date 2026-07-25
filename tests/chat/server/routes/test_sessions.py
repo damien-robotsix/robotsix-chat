@@ -14,12 +14,10 @@ from robotsix_chat.chat.server.routes.sessions import (
     _cleanup_session,
     _require_owner_id,
     history_endpoint,
-    sessions_approve_endpoint,
     sessions_close_endpoint,
     sessions_create_endpoint,
     sessions_delete_endpoint,
     sessions_list_endpoint,
-    sessions_reject_endpoint,
     summary_endpoint,
 )
 
@@ -365,7 +363,7 @@ async def test_sessions_create_endpoint_autonomous() -> None:
     mock_runner = MagicMock()
     fake_aq = MagicMock()
     fake_aq.session_id = "auto-sess"
-    fake_aq.state = AutonomousState.selecting_subject
+    fake_aq.state = AutonomousState.planning
     mock_runner.create_session.return_value = fake_aq
 
     state = MagicMock(conversation_store=MagicMock(), autonomous_runner=mock_runner)
@@ -708,236 +706,6 @@ async def test_sessions_close_endpoint_no_feedback_on_empty_history() -> None:
 
 
 # ---------------------------------------------------------------------------
-# sessions_approve_endpoint
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_sessions_approve_endpoint_success() -> None:
-    """Approves an autonomous session and returns success."""
-    mock_runner = MagicMock()
-    mock_runner.approve.return_value = (True, "")
-
-    state = MagicMock(autonomous_runner=mock_runner)
-    request = _make_request(
-        method="POST",
-        query_string="owner_id=alice",
-        path_params={"session_id": "auto-1"},
-        app_state=state,
-    )
-
-    response = await sessions_approve_endpoint(request)
-    assert response.status_code == 200
-    body = json.loads(response.body)  # type: ignore[arg-type]
-    assert body["approved"] is True
-    mock_runner.approve.assert_called_once_with("alice", "auto-1")
-
-
-@pytest.mark.asyncio
-async def test_sessions_approve_endpoint_owner_mismatch() -> None:
-    """Returns 403 when owner_id does not match."""
-    mock_runner = MagicMock()
-    mock_runner.approve.return_value = (False, "owner_id mismatch")
-
-    state = MagicMock(autonomous_runner=mock_runner)
-    request = _make_request(
-        method="POST",
-        query_string="owner_id=eve",
-        path_params={"session_id": "auto-1"},
-        app_state=state,
-    )
-
-    response = await sessions_approve_endpoint(request)
-    assert response.status_code == 403
-    body = json.loads(response.body)  # type: ignore[arg-type]
-    assert body["error"] == "owner_id mismatch"
-
-
-@pytest.mark.asyncio
-async def test_sessions_approve_endpoint_wrong_state() -> None:
-    """Returns 409 when session is not awaiting_approval."""
-    mock_runner = MagicMock()
-    mock_runner.approve.return_value = (
-        False,
-        "session is in state executing, not awaiting_approval",
-    )
-
-    state = MagicMock(autonomous_runner=mock_runner)
-    request = _make_request(
-        method="POST",
-        query_string="owner_id=alice",
-        path_params={"session_id": "auto-1"},
-        app_state=state,
-    )
-
-    response = await sessions_approve_endpoint(request)
-    assert response.status_code == 409
-    body = json.loads(response.body)  # type: ignore[arg-type]
-    assert "executing" in body["error"]
-
-
-@pytest.mark.asyncio
-async def test_sessions_approve_endpoint_not_found() -> None:
-    """Returns 404 when the session is not found by the runner."""
-    mock_runner = MagicMock()
-    mock_runner.approve.return_value = (False, "session not found")
-
-    state = MagicMock(autonomous_runner=mock_runner)
-    request = _make_request(
-        method="POST",
-        query_string="owner_id=alice",
-        path_params={"session_id": "unknown"},
-        app_state=state,
-    )
-
-    response = await sessions_approve_endpoint(request)
-    assert response.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_sessions_approve_endpoint_runner_not_configured() -> None:
-    """Returns 404 when the autonomous runner is not wired."""
-    state = MagicMock(autonomous_runner=None)
-    request = _make_request(
-        method="POST",
-        query_string="owner_id=alice",
-        path_params={"session_id": "auto-1"},
-        app_state=state,
-    )
-
-    response = await sessions_approve_endpoint(request)
-    assert response.status_code == 404
-    body = json.loads(response.body)  # type: ignore[arg-type]
-    assert body["error"] == "autonomous sessions are not enabled"
-
-
-@pytest.mark.asyncio
-async def test_sessions_approve_endpoint_missing_owner_id() -> None:
-    """Raises 400 when owner_id is missing."""
-    request = _make_request(
-        method="POST",
-        query_string="",
-        path_params={"session_id": "auto-1"},
-    )
-    with pytest.raises(HTTPException) as exc_info:
-        await sessions_approve_endpoint(request)
-    assert exc_info.value.status_code == 400
-
-
-# ---------------------------------------------------------------------------
-# sessions_reject_endpoint
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_sessions_reject_endpoint_success() -> None:
-    """Rejects an autonomous session and returns success."""
-    mock_runner = MagicMock()
-    mock_runner.reject.return_value = (True, "")
-
-    state = MagicMock(autonomous_runner=mock_runner)
-    request = _make_request(
-        method="POST",
-        query_string="owner_id=alice",
-        path_params={"session_id": "auto-1"},
-        app_state=state,
-    )
-
-    response = await sessions_reject_endpoint(request)
-    assert response.status_code == 200
-    body = json.loads(response.body)  # type: ignore[arg-type]
-    assert body["rejected"] is True
-    mock_runner.reject.assert_called_once_with("alice", "auto-1")
-
-
-@pytest.mark.asyncio
-async def test_sessions_reject_endpoint_owner_mismatch() -> None:
-    """Returns 403 when owner_id does not match."""
-    mock_runner = MagicMock()
-    mock_runner.reject.return_value = (False, "owner_id mismatch")
-
-    state = MagicMock(autonomous_runner=mock_runner)
-    request = _make_request(
-        method="POST",
-        query_string="owner_id=eve",
-        path_params={"session_id": "auto-1"},
-        app_state=state,
-    )
-
-    response = await sessions_reject_endpoint(request)
-    assert response.status_code == 403
-    body = json.loads(response.body)  # type: ignore[arg-type]
-    assert body["error"] == "owner_id mismatch"
-
-
-@pytest.mark.asyncio
-async def test_sessions_reject_endpoint_wrong_state() -> None:
-    """Returns 409 when session is not awaiting_approval."""
-    mock_runner = MagicMock()
-    mock_runner.reject.return_value = (
-        False,
-        "session is in state executing, not awaiting_approval",
-    )
-
-    state = MagicMock(autonomous_runner=mock_runner)
-    request = _make_request(
-        method="POST",
-        query_string="owner_id=alice",
-        path_params={"session_id": "auto-1"},
-        app_state=state,
-    )
-
-    response = await sessions_reject_endpoint(request)
-    assert response.status_code == 409
-
-
-@pytest.mark.asyncio
-async def test_sessions_reject_endpoint_not_found() -> None:
-    """Returns 404 when the session is not found."""
-    mock_runner = MagicMock()
-    mock_runner.reject.return_value = (False, "session not found")
-
-    state = MagicMock(autonomous_runner=mock_runner)
-    request = _make_request(
-        method="POST",
-        query_string="owner_id=alice",
-        path_params={"session_id": "unknown"},
-        app_state=state,
-    )
-
-    response = await sessions_reject_endpoint(request)
-    assert response.status_code == 404
-
-
-@pytest.mark.asyncio
-async def test_sessions_reject_endpoint_runner_not_configured() -> None:
-    """Returns 404 when the autonomous runner is not wired."""
-    state = MagicMock(autonomous_runner=None)
-    request = _make_request(
-        method="POST",
-        query_string="owner_id=alice",
-        path_params={"session_id": "auto-1"},
-        app_state=state,
-    )
-
-    response = await sessions_reject_endpoint(request)
-    assert response.status_code == 404
-    body = json.loads(response.body)  # type: ignore[arg-type]
-    assert body["error"] == "autonomous sessions are not enabled"
-
-
-@pytest.mark.asyncio
-async def test_sessions_reject_endpoint_missing_owner_id() -> None:
-    """Raises 400 when owner_id is missing."""
-    request = _make_request(
-        method="POST",
-        query_string="",
-        path_params={"session_id": "auto-1"},
-    )
-    with pytest.raises(HTTPException) as exc_info:
-        await sessions_reject_endpoint(request)
-    assert exc_info.value.status_code == 400
-
 
 # ---------------------------------------------------------------------------
 # summary_endpoint

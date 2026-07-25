@@ -59,7 +59,7 @@ def autonomous_runner(store, tmp_path, monkeypatch) -> AutonomousRunner:
     # xdist workers or between tests sharing an event loop.
     monkeypatch.setattr(AutonomousRunner, "_schedule_background", MagicMock())
     settings = MagicMock()
-    settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
+    settings.autonomous.proposal_marker = "---PROPOSAL READY---"
     settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
     settings.autonomous.max_auto_turns = 20
     settings.autonomous.session_color = "#ff0000"
@@ -88,8 +88,8 @@ async def client(mock_agent, store, autonomous_runner):
         yield c
 
 
-class TestApproveEndpoint:
-    """POST /sessions/{id}/approve tests."""
+class TestProposalMessageTriggersExecution:
+    """POST /chat triggers execution when autonomous session is in proposal state."""
 
     @pytest.fixture(autouse=True)
     def _mock_persistence(self, monkeypatch) -> None:
@@ -99,136 +99,15 @@ class TestApproveEndpoint:
         )
 
     @pytest.mark.asyncio
-    async def test_approve_requires_owner_id(
-        self, client, autonomous_runner, store, owner_id
-    ):
-        """Missing owner_id returns 400."""
-        sid = store.create_session(owner_id)["session_id"]
-        aq = autonomous_runner.create_session(owner_id, session_id=sid)
-        aq.state = AutonomousState.awaiting_approval
-        r = await client.post(f"/sessions/{sid}/approve")
-        assert r.status_code == 400
-
-    @pytest.mark.asyncio
-    async def test_approve_success(self, client, autonomous_runner, store, owner_id):
-        """Valid approve transitions to executing and returns 200."""
-        sid = store.create_session(owner_id)["session_id"]
-        aq = autonomous_runner.create_session(owner_id, session_id=sid)
-        aq.state = AutonomousState.awaiting_approval
-        r = await client.post(f"/sessions/{sid}/approve?owner_id={owner_id}")
-        assert r.status_code == 200
-        data = r.json()
-        assert data["approved"] is True
-        assert aq.state is AutonomousState.executing
-
-    @pytest.mark.asyncio
-    async def test_approve_wrong_owner_returns_403(
-        self, client, autonomous_runner, store, owner_id, other_owner_id
-    ):
-        """Mismatched owner_id returns 403."""
-        sid = store.create_session(owner_id)["session_id"]
-        aq = autonomous_runner.create_session(owner_id, session_id=sid)
-        aq.state = AutonomousState.awaiting_approval
-        r = await client.post(f"/sessions/{sid}/approve?owner_id={other_owner_id}")
-        assert r.status_code == 403
-        data = r.json()
-        assert "owner_id mismatch" in data["error"]
-
-    @pytest.mark.asyncio
-    async def test_approve_unknown_session_returns_404(self, client, owner_id):
-        """Unknown session returns 404."""
-        r = await client.post(f"/sessions/nonexistent/approve?owner_id={owner_id}")
-        assert r.status_code == 404
-
-    @pytest.mark.asyncio
-    async def test_approve_wrong_state_returns_409(
-        self, client, autonomous_runner, store, owner_id
-    ):
-        """Approving when not awaiting_approval returns 409."""
-        sid = store.create_session(owner_id)["session_id"]
-        autonomous_runner.create_session(
-            owner_id, session_id=sid, schedule_kickoff=False
-        )
-        r = await client.post(f"/sessions/{sid}/approve?owner_id={owner_id}")
-        assert r.status_code == 409
-
-
-class TestRejectEndpoint:
-    """POST /sessions/{id}/reject tests."""
-
-    @pytest.fixture(autouse=True)
-    def _mock_persistence(self, monkeypatch) -> None:
-        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
-        monkeypatch.setattr(
-            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
-        )
-
-    @pytest.mark.asyncio
-    async def test_reject_success(self, client, autonomous_runner, store, owner_id):
-        """Valid reject resets to selecting_subject and returns 200."""
-        sid = store.create_session(owner_id)["session_id"]
-        aq = autonomous_runner.create_session(owner_id, session_id=sid)
-        aq.state = AutonomousState.awaiting_approval
-        r = await client.post(f"/sessions/{sid}/reject?owner_id={owner_id}")
-        assert r.status_code == 200
-        data = r.json()
-        assert data["rejected"] is True
-        assert aq.state is AutonomousState.selecting_subject
-
-    @pytest.mark.asyncio
-    async def test_reject_wrong_owner_returns_403(
-        self, client, autonomous_runner, store, owner_id, other_owner_id
-    ):
-        """Mismatched owner_id returns 403."""
-        sid = store.create_session(owner_id)["session_id"]
-        aq = autonomous_runner.create_session(
-            owner_id, session_id=sid, schedule_kickoff=False
-        )
-        aq.state = AutonomousState.awaiting_approval
-        r = await client.post(f"/sessions/{sid}/reject?owner_id={other_owner_id}")
-        assert r.status_code == 403
-        data = r.json()
-        assert "owner_id mismatch" in data["error"]
-
-    @pytest.mark.asyncio
-    async def test_reject_unknown_session_returns_404(self, client, owner_id):
-        """Unknown session returns 404."""
-        r = await client.post(f"/sessions/nonexistent/reject?owner_id={owner_id}")
-        assert r.status_code == 404
-
-    @pytest.mark.asyncio
-    async def test_reject_wrong_state_returns_409(
-        self, client, autonomous_runner, store, owner_id
-    ):
-        """Rejecting when not awaiting_approval returns 409."""
-        sid = store.create_session(owner_id)["session_id"]
-        autonomous_runner.create_session(
-            owner_id, session_id=sid, schedule_kickoff=False
-        )
-        r = await client.post(f"/sessions/{sid}/reject?owner_id={owner_id}")
-        assert r.status_code == 409
-
-
-class TestApprovalGate409:
-    """POST /chat returns 409 when autonomous session is awaiting approval."""
-
-    @pytest.fixture(autouse=True)
-    def _mock_persistence(self, monkeypatch) -> None:
-        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
-        monkeypatch.setattr(
-            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
-        )
-
-    @pytest.mark.asyncio
-    async def test_chat_returns_409_when_awaiting_approval(
+    async def test_chat_succeeds_when_proposal(
         self, client, autonomous_runner, store, mock_agent, owner_id
     ):
-        """Messages to an awaiting_approval session are rejected with 409."""
+        """Messages to a proposal session are accepted (triggers execution)."""
         sid = store.create_session(owner_id)["session_id"]
         aq = autonomous_runner.create_session(
             owner_id, session_id=sid, schedule_kickoff=False
         )
-        aq.state = AutonomousState.awaiting_approval
+        aq.state = AutonomousState.proposal
         r = await client.post(
             "/chat",
             json={
@@ -237,10 +116,10 @@ class TestApprovalGate409:
                 "owner_id": owner_id,
             },
         )
-        assert r.status_code == 409
+        assert r.status_code == 200  # proposal sessions accept messages
 
     @pytest.mark.asyncio
-    async def test_chat_allows_when_not_awaiting_approval(
+    async def test_chat_allows_when_not_proposal(
         self, client, autonomous_runner, store, owner_id
     ):
         """Messages to a non-awaiting autonomous session are not blocked."""
@@ -307,7 +186,7 @@ class TestSessionsListAutonomousAnnotation:
         """GET /sessions returns 200 with autonomous annotations."""
         sid = store.create_session(owner_id)["session_id"]
         aq = autonomous_runner.create_session(owner_id, session_id=sid)
-        aq.state = AutonomousState.awaiting_approval
+        aq.state = AutonomousState.proposal
         aq.plan_text = "Draft plan text"
         aq.auto_turn_count = 3
 
@@ -318,7 +197,7 @@ class TestSessionsListAutonomousAnnotation:
         s = sessions[0]
         assert s["session_id"] == sid
         assert s["autonomous"] is True
-        assert s[SSE_AUTONOMOUS_STATE_TYPE] == "awaiting_approval"
+        assert s[SSE_AUTONOMOUS_STATE_TYPE] == "proposal"
         assert s["autonomous_plan_text"] == "Draft plan text"
         assert s["autonomous_turn_count"] == 3
         assert s["autonomous_max_turns"] == 20

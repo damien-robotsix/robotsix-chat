@@ -2,22 +2,16 @@
   "$defs": {
     "AutonomousSettings": {
       "additionalProperties": false,
-      "description": "Native autonomous chat sessions \u2014 self-directed agent loops.\n\nWhen enabled, the agent can run fully autonomous sessions that pick a\nsubject, draft a plan, await operator approval, then execute to\ncompletion with auto-cycling.\n\nAttributes:\n    enabled: Master switch.  Default ``True``.\n    auto_approve: When ``True``, autonomous sessions skip the human\n        approval gate \u2014 a drafted plan is auto-approved and execution\n        begins immediately, with no operator action required.  When\n        ``False`` (the safe default), a drafted plan stops at\n        ``awaiting_approval`` until an operator approves it via the UI.\n    approval_marker: Marker string the agent emits after drafting a plan\n        to signal it is awaiting operator approval.\n    completion_marker: Marker string the agent emits when the plan is\n        complete; triggers auto-close and respawn.\n    max_auto_turns: Maximum number of automatic agent turns during the\n        execution phase before reverting to ``awaiting_approval``.\n    session_color: Optional CSS color string applied as a visual accent\n        on autonomous session rows (e.g. ``\"#ef4444\"`` for red).\n    initial_task: Optional description of the first task to spawn when\n        an autonomous session starts.  When empty, the agent picks its\n        own subject.",
+      "description": "Native autonomous chat sessions \u2014 self-directed agent loops.\n\nWhen enabled, the agent can run fully autonomous sessions that pick a\nsubject, draft a plan, await operator approval, then execute to\ncompletion with auto-cycling.\n\nAttributes:\n    enabled: Master switch.  Default ``True``.\n    proposal_marker: Marker string the agent emits after drafting a plan\n        to signal the plan is ready for operator review.  The session\n        enters the ``proposal`` state and waits for the operator to\n        comment before beginning execution.\n    completion_marker: Marker string the agent emits when the plan is\n        complete.  The session stays open after completion; the operator\n        must explicitly close it.\n    max_auto_turns: Maximum number of automatic agent turns during the\n        execution phase before reverting to ``proposal``.\n    session_color: Optional CSS color string applied as a visual accent\n        on autonomous session rows (e.g. ``\"#ef4444\"`` for red).\n    initial_task: Optional description of the first task to spawn when\n        an autonomous session starts.  When empty, the agent picks its\n        own subject.",
       "properties": {
         "enabled": {
           "default": true,
           "title": "Enabled",
           "type": "boolean"
         },
-        "auto_approve": {
-          "default": false,
-          "description": "When True, autonomous sessions skip the human approval gate: a drafted plan is auto-approved and execution begins immediately with no operator action required. When False (the safe default), a drafted plan stops at awaiting_approval until an operator approves it.",
-          "title": "Auto Approve",
-          "type": "boolean"
-        },
-        "approval_marker": {
-          "default": "---AWAITING APPROVAL---",
-          "title": "Approval Marker",
+        "proposal_marker": {
+          "default": "---PROPOSAL READY---",
+          "title": "Proposal Marker",
           "type": "string"
         },
         "completion_marker": {

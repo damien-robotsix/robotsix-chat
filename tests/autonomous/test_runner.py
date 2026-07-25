@@ -37,9 +37,9 @@ class TestAutonomousRunnerSessionRegistry:
         )
         aq = runner.create_session("owner1")
         assert aq.owner_id == "owner1"
-        assert aq.state is AutonomousState.selecting_subject
+        assert aq.state is AutonomousState.planning
         assert runner.is_autonomous(aq.session_id)
-        assert runner.get_state(aq.session_id) is AutonomousState.selecting_subject
+        assert runner.get_state(aq.session_id) is AutonomousState.planning
 
     def test_create_session_with_id(self) -> None:
         """A custom session_id is honoured."""
@@ -84,12 +84,11 @@ class TestMarkerDetection:
         """Runner with default markers configured."""
         store = ConversationStore()
         settings = MagicMock()
-        settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
+        settings.autonomous.proposal_marker = "---PROPOSAL READY---"
         settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
         settings.autonomous.max_auto_turns = 20
         settings.autonomous.continue_interval_seconds = 0
         settings.autonomous.pending_subsession_wait_timeout = 0
-        settings.autonomous.auto_approve = False
         return AutonomousRunner(
             settings=settings,
             conversation_store=store,
@@ -97,15 +96,15 @@ class TestMarkerDetection:
             run_serializer=MagicMock(),
         )
 
-    def test_approval_marker_transitions_to_awaiting(self, runner) -> None:
-        """Approval marker moves state to awaiting_approval and stores plan."""
+    def test_proposal_marker_transitions_to_awaiting(self, runner) -> None:
+        """Approval marker moves state to proposal and stores plan."""
         aq = runner.create_session("owner1")
-        reply = "Here is my plan:\n1. Do X\n2. Do Y\n\n---AWAITING APPROVAL---"
+        reply = "Here is my plan:\n1. Do X\n2. Do Y\n\n---PROPOSAL READY---"
         new_state = runner.check_reply_for_markers(aq.session_id, reply)
-        assert new_state is AutonomousState.awaiting_approval
-        assert aq.state is AutonomousState.awaiting_approval
+        assert new_state is AutonomousState.proposal
+        assert aq.state is AutonomousState.proposal
         assert "Here is my plan:" in aq.plan_text
-        assert "---AWAITING APPROVAL---" not in aq.plan_text
+        assert "---PROPOSAL READY---" not in aq.plan_text
 
     def test_completion_marker_transitions_to_completed(self, runner) -> None:
         """Completion marker moves state to completed."""
@@ -122,17 +121,17 @@ class TestMarkerDetection:
         reply = "Working on it..."
         new_state = runner.check_reply_for_markers(aq.session_id, reply)
         assert new_state is None
-        assert aq.state is AutonomousState.selecting_subject
+        assert aq.state is AutonomousState.planning
 
     def test_unknown_session_returns_none(self, runner) -> None:
         """Marker scan on unknown session returns None."""
-        result = runner.check_reply_for_markers("unknown", "---AWAITING APPROVAL---")
+        result = runner.check_reply_for_markers("unknown", "---PROPOSAL READY---")
         assert result is None
 
     def test_completion_takes_priority_over_approval(self, runner) -> None:
         """When both markers appear, completion wins."""
         aq = runner.create_session("owner1")
-        reply = "Plan:\n---AWAITING APPROVAL---\nDone:\n---AUTONOMOUS COMPLETE---"
+        reply = "Plan:\n---PROPOSAL READY---\nDone:\n---AUTONOMOUS COMPLETE---"
         new_state = runner.check_reply_for_markers(aq.session_id, reply)
         assert new_state is AutonomousState.completed
 
@@ -172,193 +171,6 @@ class TestMarkerDetection:
         assert aq.completion_suppressed is True
 
 
-class TestApprovalGate:
-    """Approve/reject endpoint logic tests."""
-
-    @pytest.fixture(autouse=True)
-    def _mock_persistence(self, monkeypatch) -> None:
-        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
-        monkeypatch.setattr(
-            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
-        )
-
-    @pytest.fixture
-    def runner(self) -> AutonomousRunner:
-        """Runner with default markers configured."""
-        store = ConversationStore()
-        settings = MagicMock()
-        settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
-        settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
-        settings.autonomous.max_auto_turns = 20
-        settings.autonomous.continue_interval_seconds = 0
-        settings.autonomous.pending_subsession_wait_timeout = 0
-        return AutonomousRunner(
-            settings=settings,
-            conversation_store=store,
-            agent_factory=MagicMock(),
-            run_serializer=MagicMock(),
-        )
-
-    @pytest.mark.asyncio
-    async def test_approve_success(self, runner) -> None:
-        """Approval transitions to executing and schedules auto-continue."""
-        aq = runner.create_session("owner1")
-        aq.state = AutonomousState.awaiting_approval
-        runner._auto_continue = AsyncMock()  # prevent coroutine creation
-        ok, reason = runner.approve("owner1", aq.session_id)
-        assert ok
-        assert reason == ""
-        assert aq.state is AutonomousState.executing
-
-    def test_approve_wrong_owner(self, runner) -> None:
-        """Approval with mismatched owner_id fails."""
-        aq = runner.create_session("owner1")
-        aq.state = AutonomousState.awaiting_approval
-        ok, reason = runner.approve("owner2", aq.session_id)
-        assert not ok
-        assert "owner_id mismatch" in reason
-
-    def test_approve_wrong_state(self, runner) -> None:
-        """Approval when not in awaiting_approval fails."""
-        aq = runner.create_session("owner1")
-        ok, reason = runner.approve("owner1", aq.session_id)
-        assert not ok
-        assert "not awaiting_approval" in reason.lower()
-
-    def test_approve_unknown_session(self, runner) -> None:
-        """Approval of unknown session fails."""
-        ok, reason = runner.approve("owner1", "unknown")
-        assert not ok
-        assert "not found" in reason.lower()
-
-    def test_reject_success(self, runner) -> None:
-        """Rejection resets to selecting_subject, clears plan, records rejection."""
-        aq = runner.create_session("owner1")
-        aq.state = AutonomousState.awaiting_approval
-        aq.plan_text = "Subject: refactor the config loader\nStep 1: ..."
-        ok, reason = runner.reject("owner1", aq.session_id)
-        assert ok
-        assert reason == ""
-        assert aq.state is AutonomousState.selecting_subject
-        assert aq.plan_text == ""
-        assert aq.rejected_subjects == [
-            "Subject: refactor the config loader\nStep 1: ..."
-        ]
-
-    def test_reject_wrong_owner(self, runner) -> None:
-        """Rejection with mismatched owner_id fails."""
-        aq = runner.create_session("owner1")
-        aq.state = AutonomousState.awaiting_approval
-        ok, reason = runner.reject("owner2", aq.session_id)
-        assert not ok
-        assert "owner_id mismatch" in reason
-
-
-class TestAutoApprove:
-    """auto_approve gate: skip the human approval step when enabled."""
-
-    @pytest.fixture(autouse=True)
-    def _mock_persistence(self, monkeypatch) -> None:
-        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
-        monkeypatch.setattr(
-            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
-        )
-
-    @staticmethod
-    def _settings(*, auto_approve: bool) -> MagicMock:
-        settings = MagicMock()
-        settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
-        settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
-        settings.autonomous.max_auto_turns = 20
-        settings.autonomous.continue_interval_seconds = 0
-        settings.autonomous.pending_subsession_wait_timeout = 0
-        settings.autonomous.initial_task = ""
-        settings.autonomous.auto_approve = auto_approve
-        return settings
-
-    def test_auto_approve_false_stops_at_awaiting_approval(self) -> None:
-        """With auto_approve=False a plan halts at awaiting_approval (default)."""
-        store = ConversationStore()
-        runner = AutonomousRunner(
-            settings=self._settings(auto_approve=False),
-            conversation_store=store,
-            agent_factory=MagicMock(),
-            run_serializer=MagicMock(),
-        )
-        aq = runner.create_session("owner1")
-        reply = "My plan:\n1. Do X\n\n---AWAITING APPROVAL---"
-        new_state = runner.check_reply_for_markers(aq.session_id, reply)
-        assert new_state is AutonomousState.awaiting_approval
-        assert aq.state is AutonomousState.awaiting_approval
-
-    @pytest.mark.asyncio
-    async def test_auto_approve_true_transitions_to_executing(self) -> None:
-        """With auto_approve=True a plan is auto-approved and begins executing."""
-        store = ConversationStore()
-        runner = AutonomousRunner(
-            settings=self._settings(auto_approve=True),
-            conversation_store=store,
-            agent_factory=MagicMock(),
-            run_serializer=MagicMock(),
-        )
-        runner._auto_continue = AsyncMock()  # avoid running the loop
-        aq = runner.create_session("owner1")
-        reply = "My plan:\n1. Do X\n\n---AWAITING APPROVAL---"
-
-        # No manual approve() call — the marker alone must start execution.
-        new_state = runner.check_reply_for_markers(aq.session_id, reply)
-        assert new_state is AutonomousState.executing
-        assert aq.state is AutonomousState.executing
-        assert aq.auto_turn_count == 0
-        assert "My plan:" in aq.plan_text
-
-        # The background auto-continue must have been scheduled.
-        await asyncio.sleep(0)
-        assert runner._auto_continue.call_count >= 1
-
-    @pytest.mark.asyncio
-    async def test_resume_auto_approves_stuck_awaiting_session(self) -> None:
-        """resume_sessions auto-approves an awaiting_approval session when enabled."""
-        store = ConversationStore()
-        runner = AutonomousRunner(
-            settings=self._settings(auto_approve=True),
-            conversation_store=store,
-            agent_factory=MagicMock(),
-            run_serializer=MagicMock(),
-        )
-        runner._auto_continue = AsyncMock()
-        aq = runner.create_session("owner1", schedule_kickoff=False)
-        aq.state = AutonomousState.awaiting_approval
-        aq.plan_text = "stuck plan"
-
-        await asyncio.wait_for(runner.resume_sessions(), timeout=0.5)
-        await asyncio.sleep(0)
-
-        assert aq.state is AutonomousState.executing
-        assert runner._auto_continue.call_count >= 1
-
-    @pytest.mark.asyncio
-    async def test_resume_leaves_awaiting_session_when_disabled(self) -> None:
-        """resume_sessions leaves an awaiting_approval session alone when disabled."""
-        store = ConversationStore()
-        runner = AutonomousRunner(
-            settings=self._settings(auto_approve=False),
-            conversation_store=store,
-            agent_factory=MagicMock(),
-            run_serializer=MagicMock(),
-        )
-        runner._auto_continue = AsyncMock()
-        aq = runner.create_session("owner1", schedule_kickoff=False)
-        aq.state = AutonomousState.awaiting_approval
-        aq.plan_text = "stuck plan"
-
-        await asyncio.wait_for(runner.resume_sessions(), timeout=0.5)
-        await asyncio.sleep(0)
-
-        assert aq.state is AutonomousState.awaiting_approval
-        assert runner._auto_continue.call_count == 0
-
-
 class TestAutoContinue:
     """Auto-continue loop tests."""
 
@@ -371,10 +183,10 @@ class TestAutoContinue:
 
     @pytest.mark.asyncio
     async def test_max_turns_enforcement(self) -> None:
-        """When max_auto_turns is reached, revert to awaiting_approval."""
+        """When max_auto_turns is reached, revert to proposal."""
         store = ConversationStore()
         settings = MagicMock()
-        settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
+        settings.autonomous.proposal_marker = "---PROPOSAL READY---"
         settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
         settings.autonomous.max_auto_turns = 2
         settings.autonomous.continue_interval_seconds = 0
@@ -396,7 +208,7 @@ class TestAutoContinue:
 
         await runner._auto_continue(aq.session_id)
 
-        assert aq.state is AutonomousState.awaiting_approval
+        assert aq.state is AutonomousState.proposal
 
     @pytest.mark.asyncio
     async def test_auto_continue_stops_on_non_executing(self) -> None:
@@ -414,7 +226,7 @@ class TestAutoContinue:
         )
         aq = runner.create_session("owner1")
         await runner._auto_continue(aq.session_id)
-        assert aq.state is AutonomousState.selecting_subject
+        assert aq.state is AutonomousState.planning
 
     @pytest.mark.asyncio
     async def test_completion_suppressed_feedback_message(self) -> None:
@@ -693,7 +505,6 @@ class TestConversationStoreRegistration:
 
         store = ConversationStore()
         settings = MagicMock()
-        settings.autonomous.auto_approve = False
         runner = AutonomousRunner(
             settings=settings,
             conversation_store=store,
@@ -831,7 +642,7 @@ class TestAutonomousEventStreaming:
         settings.autonomous.max_auto_turns = 1
         settings.autonomous.continue_interval_seconds = 0
         settings.autonomous.pending_subsession_wait_timeout = 0
-        settings.autonomous.approval_marker = "[APPROVAL_NEEDED]"
+        settings.autonomous.proposal_marker = "[APPROVAL_NEEDED]"
         settings.autonomous.completion_marker = "[COMPLETED]"
         run_serializer = MagicMock()
         run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
@@ -889,182 +700,6 @@ class TestAutonomousEventStreaming:
         assert len(turns) >= 1
 
 
-class TestCloseAndRespawn:
-    """Tests for _close_and_respawn: non-blocking, single-session invariant."""
-
-    @pytest.fixture(autouse=True)
-    def _mock_persistence(self, monkeypatch) -> None:
-        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
-        monkeypatch.setattr(
-            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
-        )
-
-    @pytest.mark.asyncio
-    async def test_close_and_respawn_removes_completed_and_creates_new(self) -> None:
-        """_close_and_respawn removes the completed session and spawns a successor."""
-        store = ConversationStore()
-        settings = MagicMock()
-        settings.autonomous.initial_task = ""
-        settings.autonomous.max_auto_turns = 20
-        settings.autonomous.continue_interval_seconds = 0
-        settings.autonomous.pending_subsession_wait_timeout = 0
-        run_serializer = MagicMock()
-        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
-        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
-
-        runner = AutonomousRunner(
-            settings=settings,
-            conversation_store=store,
-            agent_factory=MagicMock(),
-            run_serializer=run_serializer,
-        )
-        aq = runner.create_session("owner1")
-        aq.state = AutonomousState.completed
-        old_sid = aq.session_id
-
-        await runner._close_and_respawn(old_sid)
-
-        # Old session must be gone from the runner's registry.
-        assert runner.get_session(old_sid) is None
-
-        # A new session must exist for owner1 in a non-terminal state.
-        new_session = None
-        for _sid, session in runner._sessions.items():
-            if session.owner_id == "owner1":
-                new_session = session
-                break
-        assert new_session is not None
-        assert new_session.session_id != old_sid
-        assert new_session.state is AutonomousState.selecting_subject
-
-    @pytest.mark.asyncio
-    async def test_close_and_respawn_is_idempotent(self) -> None:
-        """_close_and_respawn called twice for the same session spawns one successor."""
-        store = ConversationStore()
-        settings = MagicMock()
-        settings.autonomous.initial_task = ""
-        settings.autonomous.max_auto_turns = 20
-        settings.autonomous.continue_interval_seconds = 0
-        settings.autonomous.pending_subsession_wait_timeout = 0
-        run_serializer = MagicMock()
-        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
-        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
-
-        runner = AutonomousRunner(
-            settings=settings,
-            conversation_store=store,
-            agent_factory=MagicMock(),
-            run_serializer=run_serializer,
-        )
-        aq = runner.create_session("owner1")
-        aq.state = AutonomousState.completed
-        old_sid = aq.session_id
-
-        await runner._close_and_respawn(old_sid)
-        # Second call with the same (now-gone) session_id must be a no-op.
-        await runner._close_and_respawn(old_sid)
-
-        # Only one new session should exist for owner1.
-        open_count = sum(
-            1
-            for s in runner._sessions.values()
-            if s.owner_id == "owner1" and s.state is not AutonomousState.completed
-        )
-        assert open_count == 1
-
-    @pytest.mark.asyncio
-    async def test_close_and_respawn_enforces_single_session(self) -> None:
-        """_close_and_respawn refuses to spawn when owner has an open session."""
-        store = ConversationStore()
-        settings = MagicMock()
-        settings.autonomous.initial_task = ""
-        settings.autonomous.max_auto_turns = 20
-        settings.autonomous.continue_interval_seconds = 0
-        settings.autonomous.pending_subsession_wait_timeout = 0
-        run_serializer = MagicMock()
-        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
-        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
-
-        runner = AutonomousRunner(
-            settings=settings,
-            conversation_store=store,
-            agent_factory=MagicMock(),
-            run_serializer=run_serializer,
-        )
-        # Create two sessions for the same owner (bypassing the guard via
-        # direct dict insertion to simulate a pre-existing open session).
-        aq1 = runner.create_session("owner1")
-        aq2 = runner.create_session("owner1")  # returns aq1 due to guard
-        assert aq2.session_id == aq1.session_id  # guard returned existing
-
-        # Manually inject a second open session to simulate a stale/buggy state.
-        from robotsix_chat.autonomous.models import AutonomousSession as ASession
-
-        rogue = ASession(
-            session_id="rogue-1", owner_id="owner1", state=AutonomousState.executing
-        )
-        runner._sessions["rogue-1"] = rogue
-
-        # Mark aq1 as completed, then try to respawn.
-        aq1.state = AutonomousState.completed
-        await runner._close_and_respawn(aq1.session_id)
-
-        # The rogue open session should still be there — no new session spawned.
-        assert "rogue-1" in runner._sessions
-        # aq1 should be gone.
-        assert runner.get_session(aq1.session_id) is None
-        # No new session should have been created (only rogue + aq1-removed).
-        open_sessions = [
-            s
-            for s in runner._sessions.values()
-            if s.owner_id == "owner1" and s.state is not AutonomousState.completed
-        ]
-        assert len(open_sessions) == 1
-        assert open_sessions[0].session_id == "rogue-1"
-
-    @pytest.mark.asyncio
-    async def test_close_and_respawn_unknown_session_is_noop(self) -> None:
-        """_close_and_respawn on an unknown session returns immediately."""
-        store = ConversationStore()
-        runner = AutonomousRunner(
-            settings=MagicMock(),
-            conversation_store=store,
-            agent_factory=MagicMock(),
-            run_serializer=MagicMock(),
-        )
-        # Must not raise.
-        await runner._close_and_respawn("nonexistent")
-
-    @pytest.mark.asyncio
-    async def test_close_and_respawn_kickoff_is_background(self) -> None:
-        """_close_and_respawn returns immediately; kickoff is scheduled, not awaited."""
-        store = ConversationStore()
-        settings = MagicMock()
-        settings.autonomous.initial_task = "test"
-        run_serializer = MagicMock()
-        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
-        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
-
-        runner = AutonomousRunner(
-            settings=settings,
-            conversation_store=store,
-            agent_factory=MagicMock(),
-            run_serializer=run_serializer,
-        )
-        aq = runner.create_session("owner1")
-        aq.state = AutonomousState.completed
-
-        # _close_and_respawn should return without blocking on agent I/O.
-        import asyncio
-
-        await asyncio.wait_for(runner._close_and_respawn(aq.session_id), timeout=0.5)
-
-        # A new session must exist (kickoff is background; session exists immediately).
-        assert len(runner._sessions) == 1
-        new_aq = next(iter(runner._sessions.values()))
-        assert new_aq.state is AutonomousState.selecting_subject
-
-
 class TestCreateSessionSingleSessionInvariant:
     """create_session must refuse to create a second open session for the same owner."""
 
@@ -1085,12 +720,12 @@ class TestCreateSessionSingleSessionInvariant:
             run_serializer=MagicMock(),
         )
         aq1 = runner.create_session("owner1")
-        assert aq1.state is AutonomousState.selecting_subject
+        assert aq1.state is AutonomousState.planning
 
         # Second call must return the existing session, not create a new one.
         aq2 = runner.create_session("owner1")
         assert aq2.session_id == aq1.session_id
-        assert aq2.state is AutonomousState.selecting_subject
+        assert aq2.state is AutonomousState.planning
 
         # Only one session must exist for owner1.
         owner_sessions = [
@@ -1113,7 +748,7 @@ class TestCreateSessionSingleSessionInvariant:
         # Should create a new session because the existing one is terminal.
         aq2 = runner.create_session("owner1")
         assert aq2.session_id != aq1.session_id
-        assert aq2.state is AutonomousState.selecting_subject
+        assert aq2.state is AutonomousState.planning
 
         # Both should be in the registry (one completed, one open).
         owner_sessions = [
@@ -1133,8 +768,8 @@ class TestResumeSessionsNonBlocking:
         )
 
     @pytest.mark.asyncio
-    async def test_resume_completed_schedules_background(self) -> None:
-        """resume_sessions returns immediately; _close_and_respawn is not awaited."""
+    async def test_resume_completed_leaves_as_is(self) -> None:
+        """resume_sessions leaves completed sessions as-is (operator closes)."""
         store = ConversationStore()
         settings = MagicMock()
         settings.autonomous.initial_task = ""
@@ -1160,16 +795,9 @@ class TestResumeSessionsNonBlocking:
 
         await asyncio.wait_for(runner.resume_sessions(), timeout=0.5)
 
-        # Yield control so the background task runs (_close_and_respawn is
-        # non-blocking and completes synchronously within its task).
-        await asyncio.sleep(0)
-
-        # The completed session must be closed and removed, and a new one
-        # spawned.
-        assert runner.get_session(old_sid) is None
-        assert len(runner._sessions) == 1
-        new_aq = next(iter(runner._sessions.values()))
-        assert new_aq.state is AutonomousState.selecting_subject
+        # Completed sessions are left as-is — no auto-close, no respawn.
+        assert runner.get_session(old_sid) is not None
+        assert runner.get_session(old_sid).state is AutonomousState.completed
 
     @pytest.mark.asyncio
     async def test_resume_executing_schedules_auto_continue(self) -> None:
@@ -1228,7 +856,7 @@ class TestResumeSessionsNonBlocking:
         assert len(runner._sessions) == 1
         new_aq = next(iter(runner._sessions.values()))
         assert new_aq.owner_id == "autonomous"
-        assert new_aq.state is AutonomousState.selecting_subject
+        assert new_aq.state is AutonomousState.planning
 
 
 class TestRestartContextInjection:
@@ -1324,9 +952,8 @@ class TestRestartContextInjection:
         settings.autonomous.max_auto_turns = 20  # high enough to not hit the cap
         settings.autonomous.continue_interval_seconds = 0
         settings.autonomous.pending_subsession_wait_timeout = 0
-        settings.autonomous.approval_marker = "[APPROVAL]"
+        settings.autonomous.proposal_marker = "[APPROVAL]"
         settings.autonomous.completion_marker = "[COMPLETE]"
-        settings.autonomous.auto_approve = False
         run_serializer = MagicMock()
         run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
         run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
@@ -1338,7 +965,7 @@ class TestRestartContextInjection:
 
         async def _capture_stream(message, *args, **kwargs):
             captured_message.append(str(message))
-            yield "[APPROVAL]"  # triggers awaiting_approval so loop exits
+            yield "[APPROVAL]"  # triggers proposal so loop exits
             return
 
         agent.stream.side_effect = _capture_stream
@@ -1369,9 +996,8 @@ class TestRestartContextInjection:
         settings.autonomous.max_auto_turns = 20
         settings.autonomous.continue_interval_seconds = 0
         settings.autonomous.pending_subsession_wait_timeout = 0
-        settings.autonomous.approval_marker = "[APPROVAL]"
+        settings.autonomous.proposal_marker = "[APPROVAL]"
         settings.autonomous.completion_marker = "[COMPLETE]"
-        settings.autonomous.auto_approve = False
         run_serializer = MagicMock()
         run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
         run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
@@ -1383,7 +1009,7 @@ class TestRestartContextInjection:
 
         async def _capture_stream(message, *args, **kwargs):
             captured_message.append(str(message))
-            yield "[APPROVAL]"  # triggers awaiting_approval so loop exits
+            yield "[APPROVAL]"  # triggers proposal so loop exits
             return
 
         agent.stream.side_effect = _capture_stream
@@ -1404,7 +1030,7 @@ class TestRestartContextInjection:
 
         assert len(captured_message) >= 1
         assert "SYSTEM RESTARTED" in captured_message[0]
-        assert "OPERATOR APPROVAL RECEIVED" in captured_message[0]
+        assert "The operator has seen your plan" in captured_message[0]
 
     @pytest.mark.asyncio
     async def test_auto_continue_no_restart_has_no_system_restarted(self) -> None:
@@ -1414,9 +1040,8 @@ class TestRestartContextInjection:
         settings.autonomous.max_auto_turns = 20
         settings.autonomous.continue_interval_seconds = 0
         settings.autonomous.pending_subsession_wait_timeout = 0
-        settings.autonomous.approval_marker = "[APPROVAL]"
+        settings.autonomous.proposal_marker = "[APPROVAL]"
         settings.autonomous.completion_marker = "[COMPLETE]"
-        settings.autonomous.auto_approve = False
         run_serializer = MagicMock()
         run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
         run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
@@ -1449,51 +1074,6 @@ class TestRestartContextInjection:
 
         assert len(captured_message) >= 1
         assert "SYSTEM RESTARTED" not in captured_message[0]
-
-
-class TestCloseAndRespawnExceptionLogging:
-    """_close_and_respawn must log exceptions instead of crashing background tasks."""
-
-    @pytest.fixture(autouse=True)
-    def _mock_persistence(self, monkeypatch) -> None:
-        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
-        monkeypatch.setattr(
-            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
-        )
-
-    @pytest.mark.asyncio
-    async def test_close_and_respawn_logs_exception(self) -> None:
-        """Exception inside _close_and_respawn is logged, not raised."""
-        store = ConversationStore()
-        # Make close_session raise to simulate a store error.
-        store.close_session = MagicMock(side_effect=RuntimeError("store failure"))
-
-        runner = AutonomousRunner(
-            settings=MagicMock(),
-            conversation_store=store,
-            agent_factory=MagicMock(),
-            run_serializer=MagicMock(),
-        )
-        aq = runner.create_session("owner1")
-        aq.state = AutonomousState.completed
-
-        # Patch the logger so we can assert the exception was logged.
-        with MagicMock() as mock_logger:
-            # Temporarily swap the module-level logger.
-            import robotsix_chat.autonomous.runner as runner_mod
-
-            orig_logger = runner_mod.logger
-            runner_mod.logger = mock_logger
-            try:
-                # Must not raise.
-                await runner._close_and_respawn(aq.session_id)
-            finally:
-                runner_mod.logger = orig_logger
-
-        # Verify exception was logged.
-        assert mock_logger.exception.called
-        call_args = mock_logger.exception.call_args[0]
-        assert "Error in _close_and_respawn" in call_args[0]
 
 
 class TestAutoContinueThrottleAndSubsessionGate:
@@ -1686,69 +1266,3 @@ class TestRejectedSubjectsNote:
         assert "Subject A" in note
         assert "Subject B" in note
         assert "do NOT propose" in note
-
-
-class TestRejectAccumulation:
-    """Multiple rejections accumulate in rejected_subjects."""
-
-    @pytest.fixture(autouse=True)
-    def _mock_persistence(self, monkeypatch) -> None:
-        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
-        monkeypatch.setattr(
-            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
-        )
-
-    def test_reject_accumulates(self) -> None:
-        """Each rejection appends to rejected_subjects."""
-        store = ConversationStore()
-        settings = MagicMock()
-        settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
-        settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
-        settings.autonomous.max_auto_turns = 20
-        settings.autonomous.continue_interval_seconds = 0
-        settings.autonomous.pending_subsession_wait_timeout = 0
-        runner = AutonomousRunner(
-            settings=settings,
-            conversation_store=store,
-            agent_factory=MagicMock(),
-            run_serializer=MagicMock(),
-        )
-
-        aq = runner.create_session("owner1")
-
-        # First rejection
-        aq.state = AutonomousState.awaiting_approval
-        aq.plan_text = "First subject plan"
-        runner.reject("owner1", aq.session_id)
-        assert aq.rejected_subjects == ["First subject plan"]
-
-        # Second rejection
-        aq.state = AutonomousState.awaiting_approval
-        aq.plan_text = "Second subject plan"
-        runner.reject("owner1", aq.session_id)
-        assert aq.rejected_subjects == [
-            "First subject plan",
-            "Second subject plan",
-        ]
-
-    def test_reject_with_no_plan(self) -> None:
-        """Rejection with empty plan_text does not add to rejected_subjects."""
-        store = ConversationStore()
-        settings = MagicMock()
-        settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
-        settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
-        settings.autonomous.max_auto_turns = 20
-        settings.autonomous.continue_interval_seconds = 0
-        settings.autonomous.pending_subsession_wait_timeout = 0
-        runner = AutonomousRunner(
-            settings=settings,
-            conversation_store=store,
-            agent_factory=MagicMock(),
-            run_serializer=MagicMock(),
-        )
-
-        aq = runner.create_session("owner1")
-        aq.state = AutonomousState.awaiting_approval
-        aq.plan_text = ""
-        runner.reject("owner1", aq.session_id)
-        assert aq.rejected_subjects is None

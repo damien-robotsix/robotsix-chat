@@ -7,6 +7,13 @@
   immediately instead of waiting for the configured timeout.
 - Fix Trivy scanning in release-image.yml: tag locally-loaded image with a non-registry-qualified tag (`local/robotsix-chat:scan`) so Trivy resolves via the Docker daemon instead of pulling from GHCR, eliminating `/tmp` exhaustion in CI
 - Add mandatory pre-planning step to load live knowledge notes and board state before drafting plans; strengthen warnings that recalled session memories may be stale or contain phantom identifiers
+- Redesign autonomous session lifecycle: remove Approve/Reject gate flags.
+  Session spawns in ``planning`` state, transitions to ``proposal`` after the
+  agent drafts a plan, and waits for the operator to comment before executing.
+  After execution the session stays open until the operator explicitly closes
+  it — no more auto-close/respawn. The ``auto_approve`` config flag and
+  ``/sessions/{id}/approve`` / ``/sessions/{id}/reject`` endpoints are removed.
+  Config key ``approval_marker`` renamed to ``proposal_marker``.
 - Autonomous sessions now gate completion on active subsessions: the `---AUTONOMOUS COMPLETE---` marker is suppressed when the session still owns any running subsession (including periodic monitors), preventing premature session closure that would lock the agent out of spawning tracking monitors.
 - Persist rejected autonomous session subjects. When an operator rejects
   a proposed subject, the plan text is recorded in ``rejected_subjects``

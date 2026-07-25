@@ -352,15 +352,14 @@ def autonomous_state_frame(
 
     Published by :class:`~robotsix_chat.autonomous.runner.AutonomousRunner`
     whenever an autonomous session transitions state, so the browser can
-    update the session-row status, plan preview, and approve/reject buttons
-    without polling.
+    update the session-row status and plan preview without polling.
 
     Returns a dict with shape::
 
         {
             "type": "autonomous_state",
             "session_id": <str>,
-            "state": <"selecting_subject|awaiting_approval|executing|completed">,
+            "state": <"planning|proposal|executing|completed">,
             "plan_text": <str>,
             "auto_turn_count": <int>,
             "max_auto_turns": <int>,

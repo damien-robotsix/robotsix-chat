@@ -76,12 +76,10 @@ from .routes import (
     not_found_handler,
     prune_endpoint,
     server_error_handler,
-    sessions_approve_endpoint,
     sessions_close_endpoint,
     sessions_create_endpoint,
     sessions_delete_endpoint,
     sessions_list_endpoint,
-    sessions_reject_endpoint,
     subsessions_close_endpoint,
     subsessions_get_endpoint,
     subsessions_list_endpoint,
@@ -382,16 +380,6 @@ def create_app(
         Route(
             "/sessions/{session_id}/close",
             sessions_close_endpoint,
-            methods=["POST"],
-        ),
-        Route(
-            "/sessions/{session_id}/approve",
-            sessions_approve_endpoint,
-            methods=["POST"],
-        ),
-        Route(
-            "/sessions/{session_id}/reject",
-            sessions_reject_endpoint,
             methods=["POST"],
         ),
         Route(

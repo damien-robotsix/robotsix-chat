@@ -186,7 +186,7 @@
   },
   "autonomous": {
     "enabled": false,
-    "approval_marker": "---AWAITING APPROVAL---",
+    "proposal_marker": "---PROPOSAL READY---",
     "completion_marker": "---AUTONOMOUS COMPLETE---",
     "max_auto_turns": 20,
     "persist_path": "/data/autonomous_sessions.json",
