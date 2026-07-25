@@ -74,6 +74,7 @@ _REASON_PHRASES: dict[str, str] = {
     "ticket_terminal": "completed — monitored ticket reached a terminal state",
     "repeated_blocked": "auto-stopped — ticket repeatedly blocked",
     "mill_unreachable": "failed — mill API unreachable",
+    "ticket_unreachable": "failed — ticket API unreachable",
 }
 
 # Hard cap on how many consecutive reaction turns (triggered by subsession
