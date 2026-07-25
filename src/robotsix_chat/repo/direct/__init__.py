@@ -119,16 +119,18 @@ def build_direct_repo_tools(
     ) -> str | None:
         """Return an error string if preconditions fail, or None if OK.
 
-        Installation scope is checked FIRST — before the ticket state —
-        because a missing app installation is the most common root cause
-        of failures and produces the most actionable error message.
+        Installation scope is checked only when the mill pipeline credential
+        is NOT available (i.e. *component_request* is ``None``).  When the
+        push is orchestrated through the component roster the mill already
+        has its own GitHub access, so the scope check is an unnecessary gate.
         """
-        # --- scope check first: dedicated diagnostic step ---
-        # When the GitHub App is not installed on the target repo the
-        # subsequent GitHub API calls will fail with opaque connectivity
-        # errors.  Checking installation scope first gives the user a
-        # clear, actionable message.
-        if scope_error := await client.check_installation_scope(repo_full_name):
+        # --- scope check: skipped when mill pipeline credential available ---
+        # When component_request is available the mill pipeline is
+        # orchestrating the push with its own credentials — the GitHub App
+        # installation scope check is an unnecessary hurdle.
+        if component_request is None and (
+            scope_error := await client.check_installation_scope(repo_full_name)
+        ):
             return scope_error
 
         if component_request is not None:
