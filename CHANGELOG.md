@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add "batch closely related issues" guidance to the implement agent prompt: when discovering multiple incremental issues on the same page/file/component in a single session, combine them into one ticket instead of filing one per issue.
 - Autonomous sessions now detect repeated identical user prompts (3+ consecutive occurrences) and respond with a stalemate notice that prompts the agent to acknowledge the stalling pattern and suggest alternative interaction modes or offer to abort, instead of cycling through the same plan→proposal loop.
 - Suppress duplicate restart notices when background-task state is unchanged — the
   dedup check now scans the full conversation history instead of only the last turn,

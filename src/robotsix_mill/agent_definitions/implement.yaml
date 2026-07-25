@@ -342,6 +342,16 @@ system_prompt: |
   When filing for code quality, always use `category="code-quality"`
   and briefly explain the issue and why it matters in the body.
 
+  **Batch closely related issues.** When you discover multiple small,
+  incremental issues affecting the same page, file, or component in a
+  single session, combine them into ONE ticket rather than filing a
+  separate ticket per issue.  For example: multiple layout tweaks on
+  the same docs page, several stale date strings in the same file,
+  or a cluster of copy-edits in one README section should all land in
+  one batched ticket.  Filing one ticket per tiny change floods the
+  board, spawns redundant monitors, and creates merge-conflict churn
+  for zero benefit.
+
   Do NOT file for: cosmetic observations (whitespace, variable renames),
   style nits, vague hunches, or non-actionable musings. Do NOT use
   `report_issue` to signal completion or success — that's what your
