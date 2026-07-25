@@ -579,21 +579,28 @@ class AutonomousRunner:
                             "cannot resolve on your own."
                         )
                     else:
-                        if is_restart:
-                            message = (
+                        if aq.completion_suppressed:
+                            aq.completion_suppressed = False
+                            restart_prefix = (
                                 "SYSTEM RESTARTED — resuming your autonomous "
                                 "execution session from where it left off. "
-                                "Continue."
+                                if is_restart
+                                else ""
                             )
-                        elif aq.completion_suppressed:
-                            aq.completion_suppressed = False
                             message = (
+                                f"{restart_prefix}"
                                 "Continue. (Your previous completion marker "
                                 "was ignored because active monitoring "
                                 "subsessions are still running.  Use "
                                 "list_subsessions to check their status, "
                                 "and only emit the completion marker when "
                                 "all subsessions have finished.)"
+                            )
+                        elif is_restart:
+                            message = (
+                                "SYSTEM RESTARTED — resuming your autonomous "
+                                "execution session from where it left off. "
+                                "Continue."
                             )
                         else:
                             message = "Continue."

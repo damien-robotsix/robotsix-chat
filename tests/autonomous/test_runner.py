@@ -461,6 +461,62 @@ class TestAutoContinue:
         # The flag must be cleared after the message is delivered.
         assert aq.completion_suppressed is False
 
+    @pytest.mark.asyncio
+    async def test_completion_suppressed_and_restart_combined(self) -> None:
+        """Deliver both restart notice and suppression feedback when both flags are set.
+
+        When ``is_restart`` and ``completion_suppressed`` are both ``True``,
+        the message must include ``SYSTEM RESTARTED`` *and* the suppressed-
+        completion notice.  The ``completion_suppressed`` flag must be cleared
+        after delivery.
+        """
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.max_auto_turns = 20
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
+        settings.autonomous.approval_marker = "[APPROVAL]"
+        settings.autonomous.completion_marker = "[COMPLETE]"
+        settings.autonomous.auto_approve = False
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        captured_message: list[str] = []
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _capture_stream(message, *args, **kwargs):
+            captured_message.append(str(message))
+            yield "[APPROVAL]"  # triggers awaiting_approval so loop exits
+            return
+
+        agent.stream.side_effect = _capture_stream
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+        )
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        aq.state = AutonomousState.executing
+        aq.plan_text = "plan"
+        aq.auto_turn_count = 2  # non-zero to take else branch
+        aq.completion_suppressed = True
+        runner._save_sessions = MagicMock()
+
+        await runner._auto_continue(aq.session_id, is_restart=True)
+
+        assert len(captured_message) >= 1
+        assert "SYSTEM RESTARTED" in captured_message[0]
+        assert "previous completion marker was ignored" in captured_message[0]
+        assert "active monitoring subsessions" in captured_message[0]
+        assert "list_subsessions" in captured_message[0]
+        # The flag must be cleared after the message is delivered.
+        assert aq.completion_suppressed is False
+
 
 class TestAgentFactoryLoopSafety:
     """Agent factory calling asyncio.run() must not crash inside the event loop."""
