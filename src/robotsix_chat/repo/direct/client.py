@@ -274,6 +274,35 @@ class DirectRepoClient:
 
         return all_repos
 
+    async def check_installation_scope(self, repo_full_name: str) -> str | None:
+        """Check whether *repo_full_name* is in the GitHub App installation scope.
+
+        This is a dedicated diagnostic step that runs before any push/PR/Actions
+        operation.  It queries the GitHub API for the current installation's
+        repository list and returns an actionable error message when the repo
+        is not installed, or ``None`` when the repo is in scope.
+
+        Returns:
+            An error message string suitable for relaying to the user, or
+            ``None`` if the repo is in the installation scope.
+
+        """
+        allowed = await self.list_installation_repos()
+        if repo_full_name in allowed:
+            return None
+        if allowed:
+            return (
+                f"The robotsix-mill GitHub App is not installed on "
+                f"'{repo_full_name}'. Install the app on this repository "
+                f"and try again. Currently installed on: "
+                f"{', '.join(sorted(allowed))}."
+            )
+        return (
+            f"The robotsix-mill GitHub App is not installed on any "
+            f"repository. Install the app on '{repo_full_name}' and "
+            f"try again."
+        )
+
     async def _fetch_ticket_field(
         self, ticket_id: str, label_suffix: str, field: str | None = None
     ) -> Any:

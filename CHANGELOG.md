@@ -6,6 +6,7 @@
   escape hatch), and when the LLM call itself fails a fallback
   ``agent_message`` frame is pushed directly so the user still sees the
   outcome in the chat.
+- **Direct-repo tools**: Installation scope is now checked FIRST (before ticket state), providing a dedicated diagnostic step with an actionable message. The new ``check_installation_scope`` helper on ``DirectRepoClient`` is shared across direct-repo, GitHub Actions, and security tools, replacing duplicated inline checks. Out-of-scope errors now say "install the app on this repository and try again" with the current installation list.
 - Strengthened periodic monitor verify-first policy: before reporting any state change or outcome, the monitor must do a live GET of the ticket and compare against previously verified state. Terminal-state claims now require a double-check via the PR API to confirm merge status before reporting.
 - Strengthened the memory-recall prompt header with explicit guidance about stale action items: recalled text mentioning "pending", "awaiting confirmation", or similar unresolved-state language is often from a past conversation where the action was already completed. The LLM is now instructed to treat conversation history (not recalled memory) as the authoritative record of what is actually pending, and to label unverified recalled items explicitly.
 - Refined the subsession reaction prompt to eliminate redundant "Acknowledged" responses: the assistant now jumps straight to a delta summary or a single terse sentence instead of echoing the subsession's full report.

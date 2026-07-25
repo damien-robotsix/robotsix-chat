@@ -117,7 +117,20 @@ def build_direct_repo_tools(
         ticket_id: str,
         repo_full_name: str,
     ) -> str | None:
-        """Return an error string if preconditions fail, or None if OK."""
+        """Return an error string if preconditions fail, or None if OK.
+
+        Installation scope is checked FIRST — before the ticket state —
+        because a missing app installation is the most common root cause
+        of failures and produces the most actionable error message.
+        """
+        # --- scope check first: dedicated diagnostic step ---
+        # When the GitHub App is not installed on the target repo the
+        # subsequent GitHub API calls will fail with opaque connectivity
+        # errors.  Checking installation scope first gives the user a
+        # clear, actionable message.
+        if scope_error := await client.check_installation_scope(repo_full_name):
+            return scope_error
+
         if component_request is not None:
             state, error = await _get_ticket_state_via_component(
                 component_request, ticket_id
@@ -146,12 +159,6 @@ def build_direct_repo_tools(
                 "Verify the ticket id and board API connectivity."
             )
 
-        allowed = await client.list_installation_repos()
-        if repo_full_name not in allowed:
-            return (
-                f"Refused: repo '{repo_full_name}' is not in the GitHub App "
-                f"installation scope. Allowed repos: {', '.join(sorted(allowed))}"
-            )
         return None
 
     async def push_direct_repo_branch(

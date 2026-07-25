@@ -91,7 +91,7 @@ async def test_set_actions_secret_refuses_out_of_scope_repo(
     set_secret = tools[0]
 
     result = await set_secret("other-repo", "MY_SECRET", "value")
-    assert "Refused" in result
+    assert "not installed" in result.lower()
     assert "other-repo" in result
 
 
@@ -110,7 +110,7 @@ async def test_dispatch_workflow_refuses_out_of_scope_repo(
     dispatch = tools[1]
 
     result = await dispatch("other-repo", "deploy.yml", ref="main")
-    assert "Refused" in result
+    assert "not installed" in result.lower()
     assert "other-repo" in result
 
 
