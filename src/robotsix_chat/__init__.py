@@ -7,6 +7,11 @@ self-contained browser chat UI. Built on Starlette so it can be tested with
 ``httpx.ASGITransport`` without binding a real port.
 """
 
-__version__ = "0.1.0"
+from importlib.metadata import PackageNotFoundError, version
+
+try:
+    __version__ = version("robotsix-chat")
+except PackageNotFoundError:  # pragma: no cover - source tree without install
+    __version__ = "0.0.0+unknown"
 
 PROJECT_TITLE = "robotsix-chat"
