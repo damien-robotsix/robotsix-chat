@@ -91,6 +91,14 @@ async def test_push_branch_rejects_non_blocked_ticket(
     respx_mock: respx.MockRouter,
 ) -> None:
     """Ticket in DRAFT state → push is refused with a descriptive message."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
     respx_mock.get("http://127.0.0.1:8077/tickets/t-1").mock(
         return_value=httpx.Response(
             200, text=json.dumps({"id": "t-1", "state": "draft"})
@@ -124,7 +132,9 @@ async def test_push_branch_allows_blocked_ticket(
             200, text=json.dumps({"id": "t-1", "state": "blocked"})
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
@@ -169,7 +179,9 @@ async def test_push_branch_rejects_repo_not_in_scope(
             200, text=json.dumps({"id": "t-1", "state": "blocked"})
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/other-repo"}]}),
@@ -185,9 +197,9 @@ async def test_push_branch_rejects_repo_not_in_scope(
         branch_name="fix/t-1",
         files_json=json.dumps([{"path": "x.py", "content": "print(1)"}]),
     )
-    assert "Refused" in out
+    assert "not installed" in out.lower()
     assert "org/repo" in out
-    assert "scope" in out.lower()
+    assert "install" in out.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -200,6 +212,14 @@ async def test_open_pr_rejects_non_blocked_ticket(
     respx_mock: respx.MockRouter,
 ) -> None:
     """Ticket not in BLOCKED → PR open is refused."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
     respx_mock.get("http://127.0.0.1:8077/tickets/t-2").mock(
         return_value=httpx.Response(
             200, text=json.dumps({"id": "t-2", "state": "ready"})
@@ -233,7 +253,9 @@ async def test_open_pr_allows_blocked_ticket(
             200, text=json.dumps({"id": "t-2", "state": "blocked"})
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
@@ -355,7 +377,9 @@ async def test_push_branch_rejects_invalid_files_json(
             200, text=json.dumps({"id": "t-1", "state": "blocked"})
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
@@ -396,6 +420,14 @@ async def test_get_ticket_state_returns_none_on_error(
     respx_mock: respx.MockRouter,
 ) -> None:
     """When the board API returns an error, get_ticket_state returns None."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
     respx_mock.get("http://127.0.0.1:8077/tickets/t-err").mock(
         return_value=httpx.Response(500, text="Board API error 500: boom")
     )
@@ -430,7 +462,9 @@ async def test_open_pr_default_body_links_ticket_id(
             200, text=json.dumps({"id": "t-3", "state": "blocked"})
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
@@ -479,7 +513,9 @@ async def test_update_pr_branch_success(
             200, text=json.dumps({"id": "t-up", "state": "blocked"})
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
@@ -513,7 +549,9 @@ async def test_update_pr_branch_conflict(
             200, text=json.dumps({"id": "t-conflict", "state": "blocked"})
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
@@ -546,6 +584,14 @@ async def test_update_pr_branch_rejects_non_blocked(
     respx_mock: respx.MockRouter,
 ) -> None:
     """BLOCKED guard applies to update_pr_branch."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
     respx_mock.get("http://127.0.0.1:8077/tickets/t-nb").mock(
         return_value=httpx.Response(
             200, text=json.dumps({"id": "t-nb", "state": "draft"})
@@ -576,7 +622,9 @@ async def test_update_pr_branch_rejects_out_of_scope(
             200, text=json.dumps({"id": "t-scope", "state": "blocked"})
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/other"}]}),
@@ -591,8 +639,8 @@ async def test_update_pr_branch_rejects_out_of_scope(
         repo_full_name="org/repo",
         pr_number=1,
     )
-    assert "Refused" in out
-    assert "scope" in out.lower()
+    assert "not installed" in out.lower()
+    assert "install" in out.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -612,7 +660,9 @@ async def test_check_pr_merge_conflict_clean(
             200, text=json.dumps({"id": "t-clean", "state": "blocked"})
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
@@ -658,7 +708,9 @@ async def test_check_pr_merge_conflict_dirty(
             200, text=json.dumps({"id": "t-dirty", "state": "blocked"})
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
@@ -703,7 +755,9 @@ async def test_check_pr_merge_conflict_unknown(
             200, text=json.dumps({"id": "t-unk", "state": "blocked"})
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
@@ -739,6 +793,14 @@ async def test_check_pr_merge_conflict_rejects_non_blocked(
     respx_mock: respx.MockRouter,
 ) -> None:
     """BLOCKED guard applies to check_pr_merge_conflict."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
     respx_mock.get("http://127.0.0.1:8077/tickets/t-nb2").mock(
         return_value=httpx.Response(
             200, text=json.dumps({"id": "t-nb2", "state": "ready"})
@@ -774,7 +836,9 @@ async def test_push_branch_uses_ticket_id_in_commit(
             200, text=json.dumps({"id": "t-4", "state": "blocked"})
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
@@ -843,7 +907,9 @@ async def test_push_branch_ensures_changelog_fragment_trailing_newline(
             200, text=json.dumps({"id": "t-cl", "state": "blocked"})
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
@@ -924,7 +990,9 @@ async def test_push_branch_preserves_existing_trailing_newline_in_changelog(
             200, text=json.dumps({"id": "t-cl2", "state": "blocked"})
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
@@ -998,7 +1066,9 @@ async def test_push_branch_ignores_non_md_files_in_changelog_dir(
             200, text=json.dumps({"id": "t-cl3", "state": "blocked"})
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
@@ -1078,7 +1148,9 @@ async def test_list_installation_repos_parses_response(
     """list_installation_repos returns full_names from the API response."""
     settings = _settings()
 
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        "https://api.github.com/installation/repositories?per_page=100&page=1"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps(
@@ -1095,6 +1167,42 @@ async def test_list_installation_repos_parses_response(
     client = DirectRepoClient(settings)
     repos = await client.list_installation_repos()
     assert repos == ["org/repo-a", "org/repo-b"]
+
+
+@pytest.mark.asyncio
+async def test_list_installation_repos_paginates(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """list_installation_repos follows pages and returns all repos."""
+    settings = _settings()
+
+    # Simulate a full first page (100 repos, triggers another request)
+    # and a partial second page (35 repos, which stops the loop).
+    page_1_repos = [{"full_name": f"org/repo-{i}"} for i in range(100)]
+    page_2_repos = [{"full_name": f"org/repo-{i}"} for i in range(100, 135)]
+
+    respx_mock.get(
+        "https://api.github.com/installation/repositories?per_page=100&page=1"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": page_1_repos}),
+        )
+    )
+    respx_mock.get(
+        "https://api.github.com/installation/repositories?per_page=100&page=2"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": page_2_repos}),
+        )
+    )
+
+    client = DirectRepoClient(settings)
+    repos = await client.list_installation_repos()
+
+    expected = [f"org/repo-{i}" for i in range(135)]
+    assert repos == expected
 
 
 # ---------------------------------------------------------------------------
@@ -1154,6 +1262,14 @@ async def test_direct_fix_rejects_non_blocked_ticket(
     respx_mock: respx.MockRouter,
 ) -> None:
     """Ticket not in BLOCKED → direct_fix is refused."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
     respx_mock.get("http://127.0.0.1:8077/tickets/t-df1").mock(
         return_value=httpx.Response(
             200, text=json.dumps({"id": "t-df1", "state": "draft"})
@@ -1194,7 +1310,9 @@ async def test_direct_fix_rejects_few_cycles(
             ),
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
@@ -1241,7 +1359,9 @@ async def test_direct_fix_allows_enough_cycles(
             ),
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
@@ -1297,7 +1417,9 @@ async def test_direct_fix_rejects_out_of_scope(
             ),
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/other-repo"}]}),
@@ -1313,8 +1435,8 @@ async def test_direct_fix_rejects_out_of_scope(
         target_branch="main",
         files_json=json.dumps([{"path": "x.py", "content": "print(1)"}]),
     )
-    assert "Refused" in out
-    assert "scope" in out.lower()
+    assert "not installed" in out.lower()
+    assert "install" in out.lower()
 
 
 @pytest.mark.asyncio
@@ -1343,7 +1465,9 @@ async def test_direct_fix_uses_ticket_id_in_commit_message(
             ),
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
@@ -1417,7 +1541,9 @@ async def test_direct_fix_pushes_to_target_branch(
             ),
         )
     )
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
@@ -1638,8 +1764,9 @@ async def test_github_401_triggers_token_refresh_and_retry(
     _prepopulate_installation_token(settings)
 
     # The installation repos endpoint: first call → 401, second → 200
-    repos_url = "https://api.github.com/installation/repositories"
-    repos_route = respx_mock.get(repos_url).mock(
+    repos_route = respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         side_effect=[
             httpx.Response(401, text=json.dumps({"message": "Bad credentials"})),
             httpx.Response(
@@ -1674,8 +1801,9 @@ async def test_github_401_retry_fails_on_second_401(
     settings = _settings()
     _prepopulate_installation_token(settings)
 
-    repos_url = "https://api.github.com/installation/repositories"
-    repos_route = respx_mock.get(repos_url).mock(
+    repos_route = respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             401, text=json.dumps({"message": "Bad credentials"})
         )

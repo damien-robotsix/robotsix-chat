@@ -1,0 +1,1 @@
+ci_fix: out-of-scope CI failure — Python CI (shared) / Tests — test_reject_wrong_owner_returns_403 in tests/chat/server/test_autonomous_endpoints.py and/or src/robotsix_chat/chat/server/routes (autonomous session reject endpoint)

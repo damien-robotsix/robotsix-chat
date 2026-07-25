@@ -141,6 +141,18 @@ _MEMORY_PROMPT_HEADER = (
     "This is similarity-recalled text — it may be inaccurate, "
     "outdated, or hallucinated. Never act on it without verifying "
     "against live state first. Use only as a hint for what to check.\n"
+    "\n"
+    "CRITICAL — stale action items: recalled text that mentions "
+    '"pending", "awaiting confirmation", "needs operator input", '
+    "or similar unresolved-state language is often from a PAST "
+    "conversation where the action was already completed. Do NOT "
+    "re-report such items as current state. The conversation "
+    "history above (or your own knowledge-base notes) is the "
+    "authoritative record of what is actually pending right now — "
+    "if a recalled action item does not appear there as unresolved, "
+    "it is stale. If you must mention a recalled item whose status "
+    'you have not verified, label it explicitly as "from memory, '
+    'may be resolved."\n'
 )
 _MEMORY_PROMPT_FOOTER = (
     "\n# End of recalled memory\n"

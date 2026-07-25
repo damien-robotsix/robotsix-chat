@@ -6,7 +6,9 @@
     "src/robotsix_chat/repo/direct/__init__.py": "Direct-repo tool factory (push, PR, direct_fix). Tools are nested async functions inside build_direct_repo_tools(). Entry point: build_direct_repo_tools(settings, component_request=None).",
     "src/robotsix_chat/repo/study/workspace.py": "WorkspaceManager class for tarball-based repo study (no git binary). Entry point: build_repo_study_tools(settings, direct_repo_settings). URL-building for tarball downloads at line ~152.",
     "src/robotsix_chat/chat/server/app.py": "Starlette ASGI app. _build_static_tools() at line ~582 assembles all tool lists.",
-    "docs/periodic-checks.md": "User-facing docs for periodic subsessions (monitors). Documents the blocked-resume threshold detection (item 8 under 'How it works under the hood'): 3 consecutive blocked resumes auto-close with repeated_blocked reason.",
+    "docs/periodic-checks.md": "User-facing docs for periodic subsessions (monitors). Documents the blocked-resume threshold detection (item 8 under 'How it works under the hood'): 3 consecutive blocked resumes auto-close with repeated_blocked reason. Also documents auto-stop and failure notifications: the assistant immediately notifies the user when a monitor auto-stops or fails, with a fallback agent_message frame if the LLM call fails.",
+    "docs/notification/skill.md": "User-facing docs for the notify_user tool. Includes delivery limitations and fallback agent_message delivery for background task failures.",
+    "src/robotsix_chat/notification/skill.md": "Source-level skill document for the notify_user tool, loaded into the agent's context. Mirrors docs/notification/skill.md.",
     "docs/architecture.md": "Architecture docs — subpackage inventory mentions blocked-resume threshold in the subsessions/ row."
   },
   "conventions": {

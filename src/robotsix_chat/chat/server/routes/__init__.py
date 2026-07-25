@@ -29,6 +29,10 @@ from .constants import (
     SSE_HEARTBEAT_INTERVAL,
     SSE_TOKEN_TYPE,
 )
+from .diagnostics import (
+    diagnostics_create_endpoint,
+    diagnostics_list_endpoint,
+)
 from .draft import (
     draft_get_endpoint,
     draft_save_endpoint,
@@ -91,6 +95,8 @@ __all__ = [
     "config_rollback_endpoint",
     "config_save_endpoint",
     "config_versions_endpoint",
+    "diagnostics_create_endpoint",
+    "diagnostics_list_endpoint",
     "draft_get_endpoint",
     "draft_save_endpoint",
     "events_endpoint",

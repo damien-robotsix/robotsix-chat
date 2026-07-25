@@ -91,7 +91,9 @@ async def test_refuses_repo_not_in_scope(
     """Repo not in installation scope → refused with a descriptive message."""
     dr_settings = _direct_repo_settings()
 
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps({"repositories": [{"full_name": "damien-robotsix/other"}]}),
@@ -102,9 +104,8 @@ async def test_refuses_repo_not_in_scope(
     tool = tools[0]
 
     out = await tool(repo_name="my-repo", dependency_graph="enabled")
-    assert "Refused" in out
+    assert "not installed" in out.lower()
     assert "damien-robotsix/my-repo" in out
-    assert "scope" in out.lower()
 
 
 # ---------------------------------------------------------------------------
@@ -119,7 +120,9 @@ async def test_enables_dependency_graph(
     """Enabling dependency_graph on a scoped repo calls the PATCH endpoint."""
     dr_settings = _direct_repo_settings()
 
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps(
@@ -168,7 +171,9 @@ async def test_rejects_invalid_toggle_value(
     """Non-'enabled'/'disabled' values are rejected early."""
     dr_settings = _direct_repo_settings()
 
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps(
@@ -198,7 +203,9 @@ async def test_rejects_no_toggles(
     """Passing no toggles (all None) is rejected."""
     dr_settings = _direct_repo_settings()
 
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps(
@@ -226,7 +233,9 @@ async def test_multiple_toggles(
     """Setting multiple features in one call works correctly."""
     dr_settings = _direct_repo_settings()
 
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps(
@@ -282,7 +291,9 @@ async def test_push_protection_toggle(
     """secret_scanning_push_protection toggle is sent correctly."""
     dr_settings = _direct_repo_settings()
 
-    respx_mock.get("https://api.github.com/installation/repositories").mock(
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
         return_value=httpx.Response(
             200,
             text=json.dumps(

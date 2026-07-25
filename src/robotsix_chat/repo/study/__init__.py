@@ -121,6 +121,25 @@ def build_repo_study_tools(
         except WorkspaceError as exc:
             return f"Error: {exc}"
 
+    async def delete_workspace_artifact(workspace_id: str, path: str) -> str:
+        """Delete a single file or directory from a fetched repo workspace.
+
+        Use this to remove a specific artifact (file or subdirectory) without
+        dropping the entire workspace.
+
+        Args:
+            workspace_id: The id returned by ``fetch_repo_for_study``.
+            path: Workspace-relative path to the file or directory to delete.
+
+        Returns:
+            A confirmation, or an error message.
+
+        """
+        try:
+            return manager.delete_artifact(workspace_id, path)
+        except WorkspaceError as exc:
+            return f"Error: {exc}"
+
     async def drop_repo_workspace(workspace_id: str) -> str:
         """Delete a fetched repo workspace as soon as you are done with it.
 
@@ -144,5 +163,6 @@ def build_repo_study_tools(
         list_repo_files,
         read_repo_file,
         search_repo_files,
+        delete_workspace_artifact,
         drop_repo_workspace,
     ]

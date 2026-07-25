@@ -18,6 +18,7 @@ from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus
 from robotsix_chat.config import Settings
 from robotsix_chat.config.constants import level_needs_api_key
+from robotsix_chat.diagnostics import DiagnosticStore
 from robotsix_chat.llm import LlmioChatAgent
 
 from .app import create_agent_from_settings, create_app
@@ -57,6 +58,7 @@ def run_server(
     github_security_settings: Any = None,
     github_actions_settings: Any = None,
     config_path: str | None = None,
+    diagnostic_store: Any = None,
 ) -> None:
     """Start the chat SSE server on ``host:port``.
 
@@ -90,6 +92,7 @@ def run_server(
         github_security_settings=github_security_settings,
         github_actions_settings=github_actions_settings,
         config_path=config_path,
+        diagnostic_store=diagnostic_store,
     )
     uvicorn.run(app, host=host, port=port)
 
@@ -241,6 +244,11 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # subsession summary writes so they never overlap for the same owner.
     run_serializer = RunSerializer()
 
+    # Shared diagnostic store — created once so agent tools and the HTTP
+    # endpoint share the same in-memory instance.  Events posted via the API
+    # are immediately visible to agent tools without a restart.
+    diagnostic_store = DiagnosticStore(settings.diagnostics.store_path)
+
     subsession_registry = SubsessionRegistry(
         event_sink=event_bus,
         store_path=Path(settings.subsessions.store_path),
@@ -269,6 +277,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             subsession_env=env,
             subsession_ctx=ctx,
             subsession_close_state=close_state,
+            diagnostic_store=diagnostic_store,
         )
 
     env = SubsessionEnv(
@@ -295,6 +304,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             model_level=settings.llmio_model_level,
             subsession_env=env,
             event_sink=event_bus,
+            diagnostic_store=diagnostic_store,
         )
 
     # -- autonomous runner -------------------------------------------------
@@ -321,6 +331,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             conversation_store=conversation_store,
             subsession_env=env,
             event_sink=event_bus,
+            diagnostic_store=diagnostic_store,
         )
     # Wire the main agent into ParentDelivery now that both exist (see
     # ParentDelivery.set_agent for why this can't happen at construction
@@ -354,6 +365,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         conversation_store=conversation_store,
         model_level=summary_model_level,
         bare=True,
+        diagnostic_store=diagnostic_store,
     )
 
     # -- feedback runner ---------------------------------------------------
@@ -383,6 +395,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             conversation_store=conversation_store,
             model_level=feedback_model_level,
             bare=True,
+            diagnostic_store=diagnostic_store,
         )
 
         feedback_runner = FeedbackRunner(
@@ -456,4 +469,5 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         direct_repo_settings=settings.direct_repo,
         github_security_settings=settings.github_security,
         github_actions_settings=settings.github_actions,
+        diagnostic_store=diagnostic_store,
     )

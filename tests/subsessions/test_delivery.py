@@ -285,7 +285,9 @@ async def test_deliver_summary_reaction_turn_failure_degrades_to_passive_record(
     """When the reaction turn itself raises, fall back to the old record.
 
     The old passive record of the raw outcome — it must never be silently
-    lost.
+    lost.  Additionally, a fallback agent_message frame is published so the
+    user still sees a live notification even when the LLM API is
+    unavailable.
     """
     store = MagicMock()
     store.history.return_value = []
@@ -305,7 +307,18 @@ async def test_deliver_summary_reaction_turn_failure_degrades_to_passive_record(
     assert args[0] == "owner-sess-1"
     assert info.id[:8] in args[1]  # degraded label form
     assert args[2] == "all done"  # raw outcome, not a generated reply
-    event_sink.publish.assert_not_called()
+
+    # Fallback agent_message frame is published so the user sees the
+    # outcome even when the LLM call fails.
+    event_sink.publish.assert_called_once()
+    call_args, _ = event_sink.publish.call_args
+    assert call_args[0] == "owner-sess-1"
+    frame = call_args[1]
+    from robotsix_chat.chat.events import SSE_AGENT_MESSAGE_TYPE
+
+    assert frame["type"] == SSE_AGENT_MESSAGE_TYPE
+    assert "all done" in frame["text"]
+    assert "test-job" in frame["text"]
 
 
 @pytest.mark.asyncio

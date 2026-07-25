@@ -34,6 +34,12 @@ check-sse-types:
 check-subsession-kinds:
 	python scripts/check_subsession_kinds.py
 
+check-subsession-statuses:
+	python scripts/check_subsession_statuses.py
+
+check-autonomous-states:
+	python scripts/check_autonomous_states.py
+
 spellcheck:          ## Run spell-checking (typos)
 	uv run pre-commit run typos --all-files
 

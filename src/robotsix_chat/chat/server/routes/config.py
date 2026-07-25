@@ -28,6 +28,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from robotsix_chat.config import Settings
+from robotsix_chat.config.settings import ConfigValidationError
 
 from ._shared import _parse_json_body
 from .errors import _error_body
@@ -356,14 +357,29 @@ async def config_save_endpoint(request: Request) -> JSONResponse:
     try:
         Settings.model_validate(merged)
     except ValidationError as exc:
+        # Extract per-precondition failures from the underlying
+        # ConfigValidationError.  Pydantic v2 stores the original
+        # exception in ``ctx["error"]`` of each error entry (not in
+        # ``__cause__``), so we pull it from the first error's context.
+        failures: list[str] = [str(exc)]
+        for err in exc.errors():
+            ctx_error = err.get("ctx", {}).get("error")
+            if isinstance(ctx_error, ConfigValidationError):
+                failures = ctx_error.failures
+                break
+
         logger.warning(
-            "Config save rejected: validation failed — %s",
-            exc,
+            "Config save rejected: validation failed — %d precondition(s): %s",
+            len(failures),
+            failures,
         )
-        return _problem_response(
-            422,
-            "Config Validation Failed",
-            str(exc),
+        return JSONResponse(
+            {
+                "error": "config validation failed",
+                "detail": str(exc),
+                "failures": failures,
+            },
+            status_code=422,
         )
 
     # 5. Compute changed keys for version history.

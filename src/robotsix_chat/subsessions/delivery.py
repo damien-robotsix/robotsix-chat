@@ -53,10 +53,28 @@ logger = logging.getLogger(__name__)
 _REACT_PROMPT_TEMPLATE = (
     "[System notice] Subsession {sub_id} ({kind}) '{title}' {reason} while "
     "you were not actively conversing with the user. Outcome:\n\n{outcome}\n\n"
-    "React to this for the user now — comment on it, continue the work if "
-    "appropriate, or just acknowledge it briefly. This is a real turn: your "
-    "reply will be shown to the user."
+    "If the outcome is already current and needs no action, reply with a single "
+    "terse sentence — do NOT restate what the subsession already reported. "
+    "If there is something new or actionable, jump straight to the delta: what "
+    "changed, what the user should know, or what to do next. Never start with "
+    "'Acknowledged' or echo the subsession's full summary. This is a real turn: "
+    "your reply will be shown to the user."
 )
+
+# Mapping from internal reason codes to human-readable phrases used in the
+# reaction prompt and fallback notification messages.
+_REASON_PHRASES: dict[str, str] = {
+    "completed": "completed",
+    "max_runs": "reached its run limit",
+    "human_approval_timeout": "timed out waiting for operator approval",
+    "paused": "auto-paused after consecutive no-change runs",
+    "no_change_auto_stop": "auto-stopped after consecutive no-change runs",
+    "failed": "failed with an error",
+    "stale_worker": "was terminated (stale worker)",
+    "ticket_terminal": "completed — monitored ticket reached a terminal state",
+    "repeated_blocked": "auto-stopped — ticket repeatedly blocked",
+    "mill_unreachable": "failed — mill API unreachable",
+}
 
 # Hard cap on how many consecutive reaction turns (triggered by subsession
 # closures during prior reactions) can nest for the same session.  Once the
@@ -302,11 +320,12 @@ class ParentDelivery:
                     self._store.record_for_session(session_id, label, outcome)
                 return
 
+            reason_text = _REASON_PHRASES.get(reason, reason)
             prompt = _REACT_PROMPT_TEMPLATE.format(
                 sub_id=info.id[:8],
                 kind=info.kind.value,
                 title=info.title,
-                reason=reason,
+                reason=reason_text,
                 outcome=outcome,
             )
             async with self._run_serializer.for_owner(session_id):
@@ -329,6 +348,19 @@ class ParentDelivery:
                         session_id,
                     )
                     self._store.record_for_session(session_id, label, outcome)
+                    # Push a fallback notification so the user sees the
+                    # outcome even when the LLM API is unavailable — the
+                    # connected browser renders it as a normal chat bubble.
+                    if self._event_sink is not None:
+                        kind_label = info.kind.value
+                        fallback_msg = (
+                            f"[System] Background task '{info.title}' ({kind_label}) "
+                            f"{reason_text}.\n\n{outcome}"
+                        )
+                        self._event_sink.publish(
+                            session_id,
+                            agent_message_frame(fallback_msg, time.time()),
+                        )
                     return
                 reply = "".join(parts)
                 self._store.record_for_session(session_id, prompt, reply)

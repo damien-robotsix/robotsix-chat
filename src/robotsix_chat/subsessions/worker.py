@@ -57,6 +57,68 @@ logger = logging.getLogger(__name__)
 # without bound.
 _MAX_WORKER_HISTORY_TURNS = 20
 
+# The Claude Agent SDK's wording when it collapses a self-contradictory
+# ``is_error=True`` / ``errors=[]`` / ``subtype="success"`` frame into a
+# bare message — a known transient bug, not a real tool failure.
+_DEGENERATE_SUCCESS_SIGNATURE = "returned an error result: success"
+
+# The Claude CLI's wording when a tier's usage credits are exhausted.
+_USAGE_EXHAUSTED_SIGNATURE = "out of usage credits"
+
+
+def _format_worker_error(exc: BaseException) -> str:
+    """Translate known Claude SDK error patterns into clear human-readable messages.
+
+    When *exc* is a :class:`claude_agent_sdk.ProcessError` (the CLI
+    subprocess exited non-zero), the message includes the exit code and
+    stderr output so the operator can diagnose the tool failure without
+    digging through logs.
+    """
+    msg = str(exc)
+
+    # Degenerate success frame — a known transient Claude SDK bug that
+    # can persist across retries.  Not a real tool failure.
+    if _DEGENERATE_SUCCESS_SIGNATURE in msg.lower():
+        return (
+            "The Claude agent encountered a transient internal SDK error "
+            "(degenerate success frame — the SDK reported an error result "
+            "whose subtype is 'success', a self-contradictory frame that "
+            "could not be cleared by retry). This is a known Claude SDK "
+            "bug and does not indicate a real tool failure. "
+            f"Original SDK message: {msg}"
+        )
+
+    # Usage-exhaustion — the tier has no credits left.
+    if _USAGE_EXHAUSTED_SIGNATURE in msg.lower():
+        return (
+            "The Claude agent's usage credits for this tier are exhausted. "
+            "Switch to a different model level, or wait for credits to "
+            "reset. " + msg
+        )
+
+    # ProcessError from claude_agent_sdk carries exit_code and stderr —
+    # surface those so the operator can diagnose without log-diving.
+    exit_code = getattr(exc, "exit_code", None)
+    if exit_code is not None:
+        stderr = getattr(exc, "stderr", None)
+        parts = [f"Claude CLI process exited with code {exit_code}"]
+        if stderr:
+            stderr_text = str(stderr).strip()
+            if stderr_text:
+                parts.append(f"stderr: {_truncate(stderr_text, 500)}")
+        parts.append(msg)
+        return "\n".join(parts)
+
+    return msg
+
+
+def _truncate(text: str, max_len: int) -> str:
+    """Truncate *text* to *max_len* chars, appending ``"..."`` when cut."""
+    if len(text) <= max_len:
+        return text
+    return text[:max_len] + "..."
+
+
 # Reply sentinel a periodic subsession uses to report "nothing changed".
 _NO_CHANGE_SENTINEL = "NO_CHANGE"
 
@@ -100,6 +162,20 @@ _NO_CHANGE_PHRASES: tuple[str, ...] = (
     "NO SIGNIFICANT CHANGE",
     "NO MEANINGFUL CHANGE",
 )
+
+
+def _format_duration(seconds: float) -> str:
+    """Return a human-readable duration string for *seconds*."""
+    if seconds < 60:
+        return f"{int(seconds)}s"
+    if seconds < 3600:
+        minutes = int(seconds / 60)
+        return f"{minutes} min"
+    hours = int(seconds / 3600)
+    minutes = int((seconds % 3600) / 60)
+    if minutes == 0:
+        return f"{hours}h"
+    return f"{hours}h {minutes}m"
 
 
 def _is_no_change(reply: str) -> bool:
@@ -394,16 +470,21 @@ def _build_periodic_input(
             + _render_turn_input(steering)
         )
     parts.append(
-        "IMPORTANT — fetch canonical state on every poll: your "
-        "conversation history may carry stale snapshots from prior "
-        "turns.  Before deciding whether to reply NO_CHANGE, you MUST "
-        "re-query the board API for the current ticket state (e.g. "
-        "fetch the ticket endpoint, re-read the ticket description "
-        "and comments).  Only compare the live board state against "
-        "the previous run's result — never trust a state you only "
-        "recall from an earlier turn.  A state transition that "
-        "happened between polls (e.g. draft → ready → in_progress) "
-        "MUST be detected from the live query, not from your memory.\n\n"
+        "CRITICAL — strict verify-first policy: you are a read-only "
+        "monitor.  You MUST NOT infer, guess, or fabricate any state "
+        "change or outcome.  Before reporting ANY state change, transition, "
+        "or terminal outcome — whether to the parent conversation or in a "
+        "complete_subsession summary — you MUST do a live GET of the ticket "
+        "from the board API (e.g. fetch the ticket endpoint, re-read the "
+        "ticket description and comments) and compare the live response "
+        "against the previously verified state from the prior run's result.  "
+        "Only report what the live API returns — never trust a state you "
+        "only recall from an earlier turn or infer from conversation "
+        "context.  A state transition that happened between polls (e.g. "
+        "draft → ready → in_progress) MUST be detected from the live query, "
+        "not from your memory.  If the live API response conflicts with "
+        "your recollection, the live API response is authoritative — report "
+        "that, and discard the recollection.\n\n"
         f"Reply with the single word {_NO_CHANGE_SENTINEL} — and nothing "
         "else, no punctuation, no commentary — only if genuinely nothing "
         "changed since the previous run: the live board state is identical "
@@ -427,17 +508,19 @@ def _build_periodic_input(
         'direction."  This surfaces the pause recommendation so the '
         "operator can act on it rather than waiting for the auto-stop "
         "timeout.\n\n"
-        "When a ticket reaches a terminal state (done/closed), your "
-        "complete_subsession summary MUST include a note about whether a "
-        "PR was merged for this ticket — check the ticket events/history "
-        "for merge events (look for 'merged', 'auto-merged', 'merge commit', "
-        "or similar). Do NOT report 'no PR URL' as a concern without first "
-        "checking whether a PR was actually merged; a ticket can be closed "
-        "via an auto-merged PR even when the pr_url field is absent or null. "
-        "If a PR was merged, say so; if no PR was involved at all, say "
-        '"closed without a PR" instead of "no PR URL". '
-        "Call complete_subsession when the monitored condition reaches a "
-        "terminal state."
+        "Terminal-state double-check: before reporting a ticket as done "
+        "or closed, you MUST verify from two independent sources — (1) a "
+        "live GET of the ticket endpoint confirming the terminal state, "
+        "and (2) a check of the PR/MR endpoint (e.g. the ticket's linked "
+        "PRs or the merge API) confirming merge status.  Do NOT claim a PR "
+        "was created, merged, or auto-merged unless you have confirmed it "
+        "via the PR API — a terminal ticket state alone does not prove a "
+        "PR exists.  Your complete_subsession summary MUST state which "
+        "sources you checked and what each returned.  If a PR was merged, "
+        "say so with the PR number; if no PR was involved, say 'closed "
+        "without a PR'; if the PR API is unreachable, say 'terminal state "
+        "confirmed via ticket API; PR status could not be verified'.  "
+        "Call complete_subsession only after both checks are complete."
     )
     return "\n\n".join(parts)
 
@@ -609,10 +692,11 @@ async def _run_periodic_turn(
                 sub_id,
                 consecutive_no_change,
             )
+            elapsed = _format_duration(registry.now() - info.created_at)
             summary = (
                 f"Ticket has been stuck at human_issue_approval for "
-                f"{human_approval_cap} consecutive no-change runs — "
-                f"auto-escalating."
+                f"{human_approval_cap} consecutive no-change runs "
+                f"({elapsed} elapsed) — auto-escalating."
             )
             closed = registry.mark_closed(
                 sub_id,
@@ -626,6 +710,26 @@ async def _run_periodic_turn(
                 )
             return None
 
+    idle_cap = env.settings.subsessions.max_idle_runs
+    if idle_cap > 0 and consecutive_no_change >= idle_cap:
+        logger.info(
+            "Subsession %s: auto-pausing after %d consecutive no-change runs. "
+            "The monitor will resume when the ticket state changes or an "
+            "external trigger occurs.",
+            sub_id,
+            consecutive_no_change,
+        )
+        summary = f"Auto-paused after {idle_cap} consecutive no-change runs."
+        closed = registry.mark_closed(
+            sub_id,
+            summary=summary,
+            reason="paused",
+            closed_by="system",
+        )
+        if closed is not None:
+            await env.delivery.deliver_summary(closed, summary, "paused")
+        return None
+
     no_change_cap = env.settings.subsessions.auto_stop_no_change_runs
     if consecutive_no_change >= no_change_cap:
         logger.warning(
@@ -635,7 +739,24 @@ async def _run_periodic_turn(
             sub_id,
             consecutive_no_change,
         )
-        summary = f"Auto-stopped after {no_change_cap} consecutive no-change runs."
+        elapsed = _format_duration(registry.now() - info.created_at)
+        state_context = ""
+        last_known_state = checkpoint.get("last_known_state", "")
+        if isinstance(last_known_state, str) and last_known_state:
+            state_context = (
+                f" Still '{last_known_state}' after {elapsed} — "
+                f"if this is not expected, consider checking step-level "
+                f"logs or the ticket timeline."
+            )
+        else:
+            state_context = (
+                f" No changes detected over {elapsed}. "
+                f"Restart the monitor if continued watching is needed."
+            )
+        summary = (
+            f"Auto-stopped after {no_change_cap} consecutive no-change runs."
+            f"{state_context}"
+        )
         closed = registry.mark_closed(
             sub_id,
             summary=summary,
@@ -843,10 +964,11 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
         raise
     except Exception as exc:
         logger.exception("Subsession %s worker failed", sub_id)
-        failed = registry.fail(sub_id, error=str(exc))
+        error_msg = _format_worker_error(exc)
+        failed = registry.fail(sub_id, error=error_msg)
         if failed is not None:
             await env.delivery.deliver_summary(
-                failed, failed.summary or f"Failed: {exc}", "failed"
+                failed, failed.summary or f"Failed: {error_msg}", "failed"
             )
 
 

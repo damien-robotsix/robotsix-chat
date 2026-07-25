@@ -1,6 +1,22 @@
 ## 0.0.0 (unreleased)
 
+- Background task auto-stop and failure notifications are now more robust:
+  the reaction-prompt template instructs the assistant to always provide a
+  substantive notification (removing the "just acknowledge it briefly"
+  escape hatch), and when the LLM call itself fails a fallback
+  ``agent_message`` frame is pushed directly so the user still sees the
+  outcome in the chat.
+- **Direct-repo tools**: Installation scope is now checked FIRST (before ticket state), providing a dedicated diagnostic step with an actionable message. The new ``check_installation_scope`` helper on ``DirectRepoClient`` is shared across direct-repo, GitHub Actions, and security tools, replacing duplicated inline checks. Out-of-scope errors now say "install the app on this repository and try again" with the current installation list.
+- Strengthened periodic monitor verify-first policy: before reporting any state change or outcome, the monitor must do a live GET of the ticket and compare against previously verified state. Terminal-state claims now require a double-check via the PR API to confirm merge status before reporting.
+- Strengthened the memory-recall prompt header with explicit guidance about stale action items: recalled text mentioning "pending", "awaiting confirmation", or similar unresolved-state language is often from a past conversation where the action was already completed. The LLM is now instructed to treat conversation history (not recalled memory) as the authoritative record of what is actually pending, and to label unverified recalled items explicitly.
+- Refined the subsession reaction prompt to eliminate redundant "Acknowledged" responses: the assistant now jumps straight to a delta summary or a single terse sentence instead of echoing the subsession's full report.
+- Deduplicated `DirectRepoClient.get_ticket_state` and `get_ticket_data` by extracting a shared `_fetch_ticket_field` helper (57 duplicated lines → 2 one-liner callers).
+- Add `check_autonomous_states.py` CI gate that verifies `AutonomousState` enum values stay in sync with bare-string comparisons in `chat.js`, following the same pattern as `check_subsession_kinds.py` and `check_activity_kinds.py`.
 - Periodic subsession monitors now include an explicit instruction to re-query the board API for canonical ticket state on every poll tick, preventing stale-state readback where the agent reports a cached `draft` state that diverged from the live board state.
+- Periodic monitors now auto-pause after `max_idle_runs` consecutive
+  NO_CHANGE runs (default 5), closing with reason ``"paused"`` instead of
+  ``"no_change_auto_stop"``.  Set ``max_idle_runs`` to ``0`` to disable
+  the pause behaviour and fall through to the existing hard auto-stop.
 - Periodic subsessions can no longer spawn task child subsessions to work around
   the nesting restriction. The enforcement gate in `spawn_subsession` now blocks
   periodic→task spawns (periodic→periodic was already blocked). The system prompt
@@ -8,8 +24,18 @@
   directly on every cycle.
 - Changed `GHSA-9xwg-3r6f-jcx2` (pymdown-extensions) advisory suppression from `--ignore` to `--ignore-until-fixed` in both the pre-commit uv-audit hook and CI lockfile job.
 - Periodic monitors now include guidance to recognize decision-blocked tickets (human_issue_approval, awaiting operator choice) and recommend pausing rather than silently emitting NO_CHANGE until the auto-stop timeout.
+- Subsessions that fail due to the Claude Agent SDK's degenerate-success frame
+  (`is_error=True` / `subtype="success"` — a self-contradictory result that can
+  persist across retries) now report a clear human-readable explanation instead of
+  the raw "Claude Code returned an error result: success" text.  ProcessError
+  (non-zero CLI exit) failures now include the exit code and stderr in the
+  failure summary so operators can diagnose tool failures without log-diving.
 - Replace hand-rolled retry loops with robotsix-http
 - Config-ownership standard: `GET /config` now includes `version` and `schema` fields; `PUT /config` returns the new version and increments a monotonic counter; secrets masked as `"**********"` (was `"***"`); blank string on secret fields now also triggers preservation (was only the sentinel); validation errors now use RFC 9457 `application/problem+json`. New `GET /config/versions` and `POST /config/rollback` endpoints for append-only version history and rollback. Chat UI Settings panel updated to handle the new response shapes.
+- Repo-study: add ``delete_workspace_artifact`` tool so the assistant can
+  remove individual files and directories from a fetched workspace without
+  dropping the entire workspace.
+- Config validation now reports **all** precondition failures at once (instead of stopping at the first error), with per-precondition detail in the ``failures`` list of the 422 response. Server-side logging includes the full failure list.
 - Added blocked-resume threshold detection: when a ticket monitor finds the
   ticket BLOCKED on every resume for `_MAX_BLOCKED_RESUMES` (3) consecutive
   attempts, the subsession is automatically closed with reason
@@ -23,12 +49,14 @@
   modifies the merge pipeline itself, auto-merge may be self-referential — escalate
   to the operator for a manual merge rather than looping on merge-now. Extracted
   from the stalled PR #688 (ticket 45b9); motivated by PR #2475's 14-iteration block.
+- Add ``POST /diagnostics/events`` and ``GET /diagnostics/events`` HTTP endpoints so external pipeline stages (e.g. robotsix-mill) can emit diagnostic events (including ``CI_FAILURE``) into the shared ``DiagnosticStore``.  Events posted via the API are immediately visible to agent tools (``list_diagnostic_events``, ``check_recurring_categories``) because the store instance is shared between the HTTP layer and the agent tool closures.
 - Refactor `_inject_skills()` in `app.py`: replace five repeated skill-injection blocks with a table-driven `_skill_entries` loop, and promote the lazy `load_*_skill` imports to module-level (all target modules are lightweight).
 - Fix queued messages never being dispatched after switching session focus in the UI: add a session-backgrounding drain in `switchSession()` and a focus-change drain in `restoreDraft()` so queued messages are dispatched both when leaving a session and when returning to it.
 - System prompt v46: add "Repo creation bootstrap" guidance — proactively seed an initial commit during repo creation to prevent tool-chain deadlocks with empty repos.
 - System prompt v46: added conciseness rule for periodic subsession terminal-state
   notifications — report outcome in one sentence instead of echoing full run history.
 - System prompt v46: added two deduplication rules to prevent redundant subsession creation — periodic subsessions must not spawn task children to perform their own monitoring work, and `list_subsessions` must be checked for existing periodic monitors before spawning a task subsession for the same ticket.
+- System prompt v46: instruct the assistant to spawn periodic monitors directly rather than creating child task subsessions whose only job is to launch a monitor, preventing redundant model round-trips and duplicate spawning logic.
 - Added `search_knowledge_notes` tool to the knowledge base — the agent can now query
   prior diagnostic notes, deployment statuses, and other key facts by content substring
   match, without needing to recall exact note IDs. Results are ranked by relevance
@@ -62,6 +90,13 @@
   any time; `create_session` returns the existing open session when one already exists.
 - Extract `_stream_summary` helper from the duplicated stream-collect-join pattern shared by `_generate_title` and `_generate_idle_summary` in `chat.py`.
 - Deduplicate `sessions_approve_endpoint` and `sessions_reject_endpoint` by extracting a shared `_session_action` helper parameterised by the action verb.
+- Fix queued messages not being dispatched after session focus switch: `restoreDraft()` now calls `drainQueue()` so restored queued messages are dispatched automatically when the user returns to a backgrounded session.
+- Enhanced the auto-stop summary for periodic subsession monitors: when a
+  watcher closes after ``auto_stop_no_change_runs`` consecutive ``NO_CHANGE``
+  runs, the summary now includes the elapsed monitoring time, the last-known
+  checkpoint state, and actionable guidance (e.g. "consider checking
+  step-level logs"). The ``human_approval_timeout`` close reason also
+  includes elapsed time.
 - Add CI check (`check-activity-kinds`) to validate `frame.kind` comparisons in `chat.js` against the canonical `ACTIVITY_KINDS` frozenset in `events.py`, preventing silent frontend breakage when activity frame kinds are added or renamed.
 - Extract shared boilerplate from three GitHub endpoint functions into a ``_github_endpoint`` helper, eliminating ~62 lines of duplicated settings/auth/path-param/body-parse/scope-check code.)
 - DirectRepoClient now automatically detects expired GitHub App installation tokens (HTTP 401) and re-mints the token before retrying the request once. This prevents push failures in long-running sessions where the token expires between clone and push.

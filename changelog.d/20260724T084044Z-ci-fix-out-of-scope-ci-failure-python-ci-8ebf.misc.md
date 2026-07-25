@@ -1,0 +1,1 @@
+ci_fix: out-of-scope CI failure — Python CI (shared) / Tests in tests/chat/test_cli.py — the test_forwards_all_kwargs_to_create_app method needs diagnostic_store=None added to its assert_called_once_with expected kwargs.
