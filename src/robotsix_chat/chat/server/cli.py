@@ -333,6 +333,13 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     else:
         logger.info("Autonomous sessions disabled (autonomous.enabled=false)")
 
+    # Wire the autonomous runner into ParentDelivery now that both exist
+    # (see ParentDelivery.set_autonomous_runner for why this can't happen
+    # at construction time) — reaction prompts then become plan-aware when
+    # the main session has an active autonomous plan.
+    if autonomous_runner is not None:
+        delivery.set_autonomous_runner(autonomous_runner)
+
     if agent is None:
         agent = create_agent_from_settings(
             settings=settings,

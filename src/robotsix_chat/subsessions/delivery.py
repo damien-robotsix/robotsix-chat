@@ -37,11 +37,13 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
+from robotsix_chat.autonomous.models import AutonomousState
 from robotsix_chat.chat.events import agent_message_frame
 
 from .models import SubsessionInfo, SubsessionKind
 
 if TYPE_CHECKING:
+    from robotsix_chat.autonomous.runner import AutonomousRunner
     from robotsix_chat.chat.conversation import ConversationStore
     from robotsix_chat.chat.events import EventSink
     from robotsix_chat.chat.server.routes import ChatAgent, RunSerializer
@@ -62,6 +64,23 @@ _REACT_PROMPT_TEMPLATE = (
     "delta: what changed, what the user should know, or what to do next. "
     "Never start with 'Acknowledged' or echo the subsession's full summary. "
     "This is a real turn: your reply will be shown to the user."
+)
+
+# Template used when the main chat session has an active autonomous plan
+# (proposal awaiting approval or execution in progress).  The agent must
+# acknowledge the subsession outcome WITHOUT requesting re-approval or
+# abandoning the plan.
+_REACT_PROMPT_ACTIVE_PLAN_TEMPLATE = (
+    "[System notice] Subsession {sub_id} ({kind}) '{title}' {reason} while "
+    "you were {autonomous_state_phrase}.\n\n"
+    "Your current plan:\n{plan_text}\n\n"
+    "Outcome:\n{outcome}\n\n"
+    "You are {autonomous_state_phrase}.  Briefly acknowledge this "
+    "notification — incorporate any relevant information from it into your "
+    "work — but DO NOT re-request approval, restart planning, or abandon "
+    "your current plan.  If the outcome is not relevant to your current "
+    "task, acknowledge it in one sentence and move on.  This is a note, not "
+    "a blocker: stay on your plan and continue from where you left off."
 )
 
 # Mapping from internal reason codes to human-readable phrases used in the
@@ -106,6 +125,7 @@ class ParentDelivery:
         registry: SubsessionRegistry,
         run_serializer: RunSerializer,
         event_sink: EventSink | None = None,
+        autonomous_runner: AutonomousRunner | None = None,
     ) -> None:
         """Wire the store, registry, per-owner run serializer, and event sink.
 
@@ -113,11 +133,18 @@ class ParentDelivery:
         time a main-chat-parent reaction turn (see :meth:`_react_in_main_chat`)
         produces a reply, so a connected browser can show it live instead of
         only picking it up on the next ``GET /history``.
+
+        *autonomous_runner*, when given, is consulted before each reaction
+        turn: if the main session has an active autonomous plan (proposal
+        or executing state), the reaction prompt reminds the agent to
+        acknowledge the outcome as a note and stay on its plan, preventing
+        the agent from dropping its work and re-requesting approval.
         """
         self._store = conversation_store
         self._registry = registry
         self._run_serializer = run_serializer
         self._event_sink = event_sink
+        self._autonomous_runner = autonomous_runner
         # Set after construction via set_agent(): the main ChatAgent is built
         # from a SubsessionEnv that itself needs this ParentDelivery, so the
         # two can't be constructed in agent-first order (see set_agent).
@@ -142,6 +169,19 @@ class ParentDelivery:
         record instead of a live reaction turn.
         """
         self._agent = agent
+
+    def set_autonomous_runner(self, runner: AutonomousRunner) -> None:
+        """Wire the autonomous runner for plan-aware reaction prompts.
+
+        Call once, after both ``ParentDelivery`` and the
+        ``AutonomousRunner`` exist — the runner depends on an agent
+        factory that itself depends on the ``SubsessionEnv`` which
+        embeds this ``ParentDelivery``, so the two can't be constructed
+        in runner-first order (see :meth:`set_agent` for the same
+        pattern).  Until this is called, reaction prompts use the
+        default template regardless of autonomous state.
+        """
+        self._autonomous_runner = runner
 
     async def deliver_summary(
         self, info: SubsessionInfo, summary: str, reason: str
@@ -325,13 +365,43 @@ class ParentDelivery:
                 return
 
             reason_text = _REASON_PHRASES.get(reason, reason)
-            prompt = _REACT_PROMPT_TEMPLATE.format(
-                sub_id=info.id[:8],
-                kind=info.kind.value,
-                title=info.title,
-                reason=reason_text,
-                outcome=outcome,
-            )
+
+            # When the main session has an active autonomous plan (awaiting
+            # approval or mid-execution), use the active-plan template so
+            # the agent acknowledges the subsession as a note and stays on
+            # task rather than dropping the plan and re-requesting approval.
+            autonomous_state_phrase: str | None = None
+            plan_text: str | None = None
+            if self._autonomous_runner is not None:
+                aq = self._autonomous_runner.get_session(session_id)
+                if aq is not None:
+                    if aq.state is AutonomousState.proposal:
+                        autonomous_state_phrase = (
+                            "waiting for operator approval of your proposed plan"
+                        )
+                        plan_text = aq.plan_text
+                    elif aq.state is AutonomousState.executing:
+                        autonomous_state_phrase = "executing your approved plan"
+                        plan_text = aq.plan_text
+
+            if autonomous_state_phrase is not None and plan_text:
+                prompt = _REACT_PROMPT_ACTIVE_PLAN_TEMPLATE.format(
+                    sub_id=info.id[:8],
+                    kind=info.kind.value,
+                    title=info.title,
+                    reason=reason_text,
+                    autonomous_state_phrase=autonomous_state_phrase,
+                    plan_text=plan_text,
+                    outcome=outcome,
+                )
+            else:
+                prompt = _REACT_PROMPT_TEMPLATE.format(
+                    sub_id=info.id[:8],
+                    kind=info.kind.value,
+                    title=info.title,
+                    reason=reason_text,
+                    outcome=outcome,
+                )
             async with self._run_serializer.for_owner(session_id):
                 history = self._store.history(session_id)
                 try:
