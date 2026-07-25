@@ -148,6 +148,9 @@ def make_settings(
     mill_recovery_max_backoff_seconds: float = 3600.0,
     mill_recovery_max_retries: int = 10,
     user_chat_max_retries: int = 3,
+    transient_error_max_retries: int = 3,
+    transient_error_backoff_base: float = 0.01,
+    transient_error_backoff_cap: float = 30.0,
     llmio_api_key: str = "",
 ) -> SimpleNamespace:
     """Build a settings stand-in with test-friendly (tiny) intervals.
@@ -178,6 +181,9 @@ def make_settings(
             mill_recovery_max_backoff_seconds=mill_recovery_max_backoff_seconds,
             mill_recovery_max_retries=mill_recovery_max_retries,
             user_chat_max_retries=user_chat_max_retries,
+            transient_error_max_retries=transient_error_max_retries,
+            transient_error_backoff_base=transient_error_backoff_base,
+            transient_error_backoff_cap=transient_error_backoff_cap,
         ),
         central_deploy=SimpleNamespace(url="https://central-deploy.example.com"),
         llmio_api_key=SecretStr(llmio_api_key),

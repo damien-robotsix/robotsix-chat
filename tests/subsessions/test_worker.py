@@ -2645,3 +2645,166 @@ async def test_periodic_no_change_phrases_count_toward_auto_stop() -> None:
     assert info.close_reason == "no_change_auto_stop"
     # Stopped after 2 consecutive no-change runs, not all 3.
     assert len(agent.calls) == 2
+
+
+# -- transient error retry (periodic subsessions) ---------------------------
+
+
+class _FakeTransientError(Exception):
+    """A synthetic transient error for testing retry logic."""
+
+
+@pytest.mark.asyncio
+async def test_periodic_transient_error_retried_then_succeeds() -> None:
+    """Periodic turn retries on transient error, then succeeds on retry."""
+    agent = FakeAgent()
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            transient_error_max_retries=2,
+            transient_error_backoff_base=0.0,
+        ),
+    )
+
+    # First call raises, second succeeds.
+    call_count = 0
+
+    async def _flaky_stream(*args: Any, **kwargs: Any) -> AsyncIterator[str]:
+        nonlocal call_count
+        call_count += 1
+        if call_count == 1:
+            raise _FakeTransientError("upstream hiccup")
+        yield "all good"
+
+    with (
+        patch.object(agent, "stream", _flaky_stream),
+        patch(
+            "robotsix_chat.subsessions.worker.is_openrouter_transient",
+            return_value=True,
+        ),
+    ):
+        sub_id = _spawn(
+            env,
+            kind=SubsessionKind.PERIODIC,
+            interval_seconds=0.02,
+            max_runs=1,
+        )
+        await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # The subsession should NOT be failed — the retry succeeded.
+    assert info.status is not SubsessionStatus.FAILED
+    # Two calls: first failed, second succeeded.
+    assert call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_periodic_transient_error_exhausted_skips_cycle() -> None:
+    """Periodic cycle is skipped (not failed) when transient retries are exhausted."""
+    agent = FakeAgent(error=_FakeTransientError("upstream hiccup"))
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            transient_error_max_retries=1,
+            transient_error_backoff_base=0.0,
+        ),
+    )
+
+    with patch(
+        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        return_value=True,
+    ):
+        sub_id = _spawn(
+            env,
+            kind=SubsessionKind.PERIODIC,
+            interval_seconds=0.02,
+        )
+        # The worker loops forever skipping cycles, so _await_worker
+        # will time out.  That's expected — the subsession should still
+        # be alive, not failed.
+        with pytest.raises(asyncio.TimeoutError):
+            await _await_worker(env, sub_id, timeout=0.5)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # Should NOT be FAILED — cycles were skipped gracefully.
+    assert info.status is not SubsessionStatus.FAILED
+    # The subsession should be alive (the worker task loops forever
+    # skipping cycles).
+    assert info.is_active
+
+
+@pytest.mark.asyncio
+async def test_task_transient_error_not_retried() -> None:
+    """TASK subsessions do NOT retry transient errors — they fail immediately."""
+    agent = FakeAgent(error=_FakeTransientError("upstream hiccup"))
+    env = build_env(agent=agent)
+
+    with patch(
+        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        return_value=True,
+    ):
+        sub_id = _spawn(env, prompt="compute", kind=SubsessionKind.TASK)
+        await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # TASK subsession should be FAILED — no retry for non-periodic.
+    assert info.status is SubsessionStatus.FAILED
+
+
+@pytest.mark.asyncio
+async def test_periodic_non_transient_error_not_retried() -> None:
+    """Periodic subsessions do NOT retry non-transient errors — they fail."""
+    agent = FakeAgent(error=ValueError("not transient"))
+    env = build_env(agent=agent)
+
+    with patch(
+        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        return_value=False,
+    ):
+        sub_id = _spawn(
+            env,
+            kind=SubsessionKind.PERIODIC,
+            interval_seconds=0.02,
+        )
+        await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # Non-transient errors should still fail the subsession.
+    assert info.status is SubsessionStatus.FAILED
+
+
+@pytest.mark.asyncio
+async def test_periodic_transient_error_transcript_recorded() -> None:
+    """When transient retries are exhausted, a transcript entry is recorded."""
+    agent = FakeAgent(error=_FakeTransientError("upstream hiccup"))
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            transient_error_max_retries=0,
+            transient_error_backoff_base=0.0,
+        ),
+    )
+
+    with patch(
+        "robotsix_chat.subsessions.worker.is_openrouter_transient",
+        return_value=True,
+    ):
+        sub_id = _spawn(
+            env,
+            kind=SubsessionKind.PERIODIC,
+            interval_seconds=0.02,
+        )
+        with pytest.raises(asyncio.TimeoutError):
+            await _await_worker(env, sub_id, timeout=0.5)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # Check transcript has a system message about the skipped run.
+    system_entries = [e for e in info.transcript if e.role == "system"]
+    assert any("TRANSIENT_ERROR" in (e.text or "") for e in system_entries) or any(
+        "transient" in (e.text or "").lower() for e in system_entries
+    )

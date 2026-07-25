@@ -201,6 +201,7 @@
   backoff (configurable via `self_restart_max_retries`, `self_restart_backoff_base`,
   `self_restart_backoff_cap`).  An empty `base_url` is logged and produces a
   clear error from `self_restart` instead of raising a protocol error.
+- Periodic subsessions now retry transient API errors (e.g. OpenRouter upstream hiccups) with configurable exponential backoff instead of failing permanently. Three new settings under `subsessions` control the behaviour: `transient_error_max_retries` (default 3), `transient_error_backoff_base` (1.0 s), and `transient_error_backoff_cap` (30.0 s). When all retries are exhausted the cycle is skipped gracefully and the schedule continues.
 - Background task auto-stop and failure notifications are now more robust:
   the reaction-prompt template instructs the assistant to always provide a
   substantive notification (removing the "just acknowledge it briefly"

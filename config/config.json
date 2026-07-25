@@ -120,7 +120,10 @@
     "mill_recovery_max_backoff_seconds": 3600.0,
     "mill_recovery_max_retries": 10,
     "paused_monitor_poll_interval_seconds": 60.0,
-    "user_chat_max_retries": 3
+    "user_chat_max_retries": 3,
+    "transient_error_max_retries": 3,
+    "transient_error_backoff_base": 1.0,
+    "transient_error_backoff_cap": 30.0
   },
   "direct_repo": {
     "enabled": false,

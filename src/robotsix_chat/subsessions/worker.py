@@ -27,6 +27,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+from robotsix_llmio.openrouter import is_openrouter_transient
+
 from robotsix_chat.chat.events import subsession_result_frame
 
 from .delivery import ParentDelivery
@@ -610,6 +612,83 @@ def _build_periodic_input(
     return "\n\n".join(parts)
 
 
+async def _run_turn_with_transient_retry(
+    env: SubsessionEnv,
+    agent: ChatAgent,
+    turn_input: str,
+    history: list[tuple[str, str]],
+    sub_id: str,
+    info: SubsessionInfo,
+) -> str:
+    """Run one agent turn, retrying on transient API errors for periodic subsessions.
+
+    For PERIODIC subsessions only: transient errors (e.g. OpenRouter
+    upstream hiccups) are retried with exponential backoff.  When all
+    retries are exhausted the function raises :class:`_TransientExhaustedError`
+    so the worker loop can skip the cycle gracefully instead of permanently
+    failing the subsession.
+
+    For TASK / USER_CHAT subsessions the error propagates unchanged —
+    the outer handler will fail the subsession.
+    """
+    settings = env.settings.subsessions
+    max_retries = settings.transient_error_max_retries
+    base = settings.transient_error_backoff_base
+    cap = settings.transient_error_backoff_cap
+
+    last_exc: BaseException | None = None
+    for attempt in range(max_retries + 1):
+        try:
+            return await _run_turn_with_timeout(
+                env, agent, turn_input, history, sub_id, info
+            )
+        except _RunTimeoutError:
+            raise  # timeout is handled separately; never retried
+        except Exception as exc:
+            last_exc = exc
+            is_periodic = info.kind is SubsessionKind.PERIODIC
+            is_transient = is_openrouter_transient(exc)
+            if not is_periodic or not is_transient:
+                raise
+
+            if attempt < max_retries:
+                delay = min(base * (2**attempt), cap)
+                logger.warning(
+                    "Subsession %s run %d: transient error on attempt %d/%d — "
+                    "retrying in %.1fs. Error: %s",
+                    sub_id,
+                    info.runs + 1,
+                    attempt + 1,
+                    max_retries + 1,
+                    delay,
+                    exc,
+                )
+                await asyncio.sleep(delay)
+                continue
+
+    # All retries exhausted for a periodic subsession — raise a sentinel
+    # so the worker loop can skip this cycle instead of failing permanently.
+    logger.error(
+        "Subsession %s run %d: all %d transient-error retries exhausted "
+        "(last error: %s) — skipping this cycle.",
+        sub_id,
+        info.runs + 1,
+        max_retries + 1,
+        last_exc,
+    )
+    raise _TransientExhaustedError(
+        f"transient error persisted across {max_retries + 1} attempts"
+    ) from last_exc
+
+
+class _TransientExhaustedError(Exception):
+    """Sentinel raised when all transient-error retries are exhausted.
+
+    Caught by the worker loop for periodic subsessions to skip the cycle
+    gracefully rather than permanently failing the subsession.
+    """
+
+
 async def _run_turn(
     agent: ChatAgent,
     turn_input: str,
@@ -1059,7 +1138,7 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
             first_turn = False
 
             try:
-                reply = await _run_turn_with_timeout(
+                reply = await _run_turn_with_transient_retry(
                     env,
                     agent,
                     turn_input,
@@ -1109,6 +1188,55 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                     consecutive_no_change += 1
                     info.consecutive_no_change = consecutive_no_change
                     # Sleep until next tick, waking early on steering.
+                    woke = await registry.wait_for_inbox(
+                        sub_id,
+                        timeout=info.interval_seconds or 60.0,
+                    )
+                    pending = registry.drain_inbox(sub_id) if woke else []
+                    env.registry.reap_orphans()
+                    continue
+                # TASK / USER_CHAT: let the outer handler fail the subsession.
+                raise
+            except _TransientExhaustedError:
+                # Periodic runs whose transient errors could not be cleared
+                # skip this cycle and continue the schedule instead of
+                # failing permanently.
+                if info.kind is SubsessionKind.PERIODIC:
+                    logger.warning(
+                        "Periodic subsession %s run %d: transient errors "
+                        "exhausted; skipping this cycle.",
+                        sub_id,
+                        info.runs + 1,
+                    )
+                    registry.append_transcript(
+                        sub_id,
+                        "system",
+                        "Run skipped — transient API errors persisted "
+                        "across all retry attempts.",
+                    )
+                    runs = info.runs + 1
+                    registry.set_status(
+                        sub_id,
+                        SubsessionStatus.SLEEPING,
+                        runs=runs,
+                        next_run_at=registry.now() + (info.interval_seconds or 60.0),
+                        last_result="TRANSIENT_ERROR",
+                    )
+                    if env.event_sink is not None:
+                        env.event_sink.publish(
+                            info.owner_session_id,
+                            subsession_result_frame(
+                                sub_id,
+                                info.kind.value,
+                                info.title,
+                                runs,
+                                "TRANSIENT_ERROR",
+                                info.parent_id,
+                            ),
+                        )
+                    if not info.include_previous_result:
+                        previous_result = None
+                    consecutive_no_change += 1
                     woke = await registry.wait_for_inbox(
                         sub_id,
                         timeout=info.interval_seconds or 60.0,
