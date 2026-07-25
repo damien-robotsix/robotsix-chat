@@ -219,8 +219,8 @@ reachable but the LLM provider itself hiccups.
 When a periodic subsession's agent turn fails with a recognised transient error:
 
 1. The turn is retried with **exponential backoff** — the first retry sleeps
-   `subsessions.transient_error_backoff_base` (default 1.0 s), then doubles on each subsequent
-   retry up to `subsessions.transient_error_backoff_cap` (default 30.0 s).
+   `subsessions.transient_error_backoff_base` (default 1.0 s), then doubles on each subsequent retry
+   up to `subsessions.transient_error_backoff_cap` (default 30.0 s).
 2. A warning is logged with the error details for debugging.
 3. If the turn succeeds on a retry, the periodic cycle continues normally — no result is lost.
 4. If all retries are exhausted (`subsessions.transient_error_max_retries + 1` total attempts), the
@@ -232,11 +232,11 @@ This behaviour applies **only** to `PERIODIC` subsessions. `TASK` and `USER_CHAT
 propagate transient errors immediately and fail — they are not retried, because those subsessions
 run once and a transient failure would silently lose the work.
 
-| Config key                                    | Default | Description                                                                            |
-| --------------------------------------------- | ------- | -------------------------------------------------------------------------------------- |
-| `subsessions.transient_error_max_retries`     | `3`     | Max retry attempts (besides the initial try) before the cycle is skipped.              |
-| `subsessions.transient_error_backoff_base`    | `1.0`   | Initial backoff in seconds — doubles each retry.                                       |
-| `subsessions.transient_error_backoff_cap`     | `30.0`  | Maximum backoff cap in seconds — backoff never exceeds this.                           |
+| Config key                                 | Default | Description                                                               |
+| ------------------------------------------ | ------- | ------------------------------------------------------------------------- |
+| `subsessions.transient_error_max_retries`  | `3`     | Max retry attempts (besides the initial try) before the cycle is skipped. |
+| `subsessions.transient_error_backoff_base` | `1.0`   | Initial backoff in seconds — doubles each retry.                          |
+| `subsessions.transient_error_backoff_cap`  | `30.0`  | Maximum backoff cap in seconds — backoff never exceeds this.              |
 
 ## How it works under the hood
 
