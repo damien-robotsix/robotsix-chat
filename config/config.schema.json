@@ -91,6 +91,14 @@
           },
           "title": "Component Credentials",
           "type": "object"
+        },
+        "component_fallbacks": {
+          "additionalProperties": {
+            "type": "string"
+          },
+          "description": "Baked-in fallback base URLs for components that may be missing from the central-deploy roster (e.g. after a redeploy). Keyed by component id (e.g. \"robotsix-mill\"). When the roster returned by central-deploy is missing a component, the fallback URL is used instead. This keeps monitors running through transient roster gaps.",
+          "title": "Component Fallbacks",
+          "type": "object"
         }
       },
       "title": "CentralDeploySettings",

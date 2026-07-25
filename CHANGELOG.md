@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Add `fetch_workflow_run_annotations` agent tool: fetches GitHub Actions CI annotations (linter warnings, test failures, compiler errors) via the Check Runs API. The tool takes a repo name and workflow run ID and returns annotations grouped by check run with file paths, line ranges, and full message text. Uses the existing GitHub App installation for authentication; no new config keys required.
+- Added `central_deploy.component_fallbacks` config — a baked-in map of component_id → base_url that supplements the central-deploy roster when components go missing (e.g. after a redeploy). Monitors and tool calls now survive transient roster gaps without operator intervention. Unknown-component errors include a precise remediation step telling the operator which config key to set. The roster is logged at startup so operators can verify which components are registered.)
 - Remove dead `.robotsix-mill/periodic/state_sync.yaml` and `security_posture.yaml` name-only files that were silently rejected by the loader.
 - Autonomous chat sessions now use conversational approval/rejection instead of UI buttons: the agent proposes a plan directly in the chat, and the operator approves or rejects by writing in natural language (e.g. "approved", "reject"). The "Awaiting review" state label is replaced with "Plan ready — reply to approve".
 - Add `check_workflow_run` agent tool for diagnosing CI failures, including private-repo billing-failure detection (runs with zero jobs or that never started).

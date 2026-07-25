@@ -115,10 +115,17 @@ async def _component_request_impl(
 
     if entry is None:
         known = [e.get("id", "?") for e in non_error]
-        return (
+        msg = (
             f"Error: unknown component_id '{component_id}'. "
-            f"Known components: {', '.join(known) if known else '(none)'}"
+            f"Known components: {', '.join(known) if known else '(none)'}."
         )
+        msg += (
+            " To add a fallback for this component, set "
+            f"central_deploy.component_fallbacks.{component_id} "
+            "to its base URL in your config file "
+            '(e.g. "http://mill:8080").'
+        )
+        return msg
 
     if entry.get("_error"):
         return f"Error: roster unavailable — {entry.get('_error', 'unknown error')}"
