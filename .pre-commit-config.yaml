@@ -112,6 +112,16 @@ repos:
         language: system
         pass_filenames: false
 
+  - repo: local
+    hooks:
+      - id: regenerate-config-schema
+        name: regenerate config schema
+        entry: bash -c "uv run scripts/regenerate_schema.py && git add config/config.schema.json"
+        language: system
+        files: ^src/robotsix_chat/config/settings\.py$
+        pass_filenames: false
+        fail_fast: true
+
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: v0.23.1
     hooks:

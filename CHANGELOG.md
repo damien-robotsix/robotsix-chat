@@ -1,5 +1,7 @@
 ## 0.0.0 (unreleased)
 
+- Add `regenerate-config-schema` pre-commit hook that auto-regenerates
+  `config/config.schema.json` when `src/robotsix_chat/config/settings.py` changes.
 - Add `regenerate-config-schema` pre-commit hook that auto-regenerates `config/config.schema.json` whenever `src/robotsix_chat/config/settings.py` changes; the hook exits non-zero so the regenerated schema is staged and the commit must be retried.
 - Add `check-activity-kinds` Makefile target (`python scripts/check_activity_kinds.py`).
 - Prompt: add deterministic recovery guidance for periodic subsession spawn failures — fall back to inline monitoring immediately instead of presenting options to the user.
