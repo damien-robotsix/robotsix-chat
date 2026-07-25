@@ -5,6 +5,7 @@
   before returning the error to the agent. This prevents the agent from
   busy-polling long rate-limit windows (e.g. 300 s disk-reclaim
   endpoints) inside its own conversation loop.
+- Clarified periodic subsession role in system prompt and turn input to suppress misleading "not supported" warning when a monitor is spawned directly from a conversation.
 - Re-spawn auto-closed periodic monitors on restart when the close reason
   was `no_change_auto_stop`, `paused`, or `human_approval_timeout`.  These
   monitors were previously restored as terminal (CLOSED) and never re-spawned
