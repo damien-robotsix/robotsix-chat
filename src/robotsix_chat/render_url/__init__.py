@@ -53,22 +53,30 @@ def build_render_url_tools(
 
     timeout_ms = settings.timeout * 1000
 
-    async def render_url(url: str) -> str:
-        """Render a URL in headless Chromium and return a screenshot + a11y tree.
+    async def render_url(url: str, text_only: bool = False) -> str:
+        """Render a URL in headless Chromium and return the page content.
 
-        Loads *url* in a headless Chromium browser, captures a full-page
-        screenshot (PNG, base64-encoded), extracts the accessibility tree,
-        and returns both as a structured JSON text block.  Read-only —
-        no clicks, no form fills, no state mutation.  The browser is
-        closed immediately after the capture.
+        Loads *url* in a headless Chromium browser, extracts the
+        accessibility tree, and optionally captures a full-page screenshot
+        (PNG, base64-encoded).  Read-only — no clicks, no form fills, no
+        state mutation.  The browser is closed immediately after the
+        capture.
+
+        When *text_only* is ``True`` the screenshot is omitted, producing
+        a compact response suitable for subsessions that lack file-slicing
+        tools and cannot handle large base64 blobs.
 
         Args:
             url: The fully-qualified http(s) URL to render (e.g.
                 ``https://example.com/page``).
+            text_only: When ``True``, skip the full-page screenshot and
+                return only the textual content (page title, URL, a11y
+                tree).  Defaults to ``False``.
 
         Returns:
             A JSON string with ``page_title``, ``page_url``,
-            ``screenshot_base64`` (the full-page PNG as a base64 data URL),
+            ``screenshot_base64`` (empty when *text_only* is ``True``,
+            otherwise the full-page PNG as a base64 data URL),
             ``accessibility_tree`` (the a11y snapshot as a nested dict),
             and ``error`` (non-empty on failure).
 
@@ -105,12 +113,18 @@ def build_render_url_tools(
                     result["page_title"] = await page.title()
                     result["page_url"] = page.url
 
-                    # Full-page screenshot as base64 data URL.
-                    screenshot_bytes = await page.screenshot(full_page=True)
-                    result["screenshot_base64"] = (
-                        "data:image/png;base64,"
-                        + base64.b64encode(screenshot_bytes).decode("ascii")
-                    )
+                    # Full-page screenshot as base64 data URL (skipped in
+                    # text-only mode to keep the response compact).
+                    if not text_only:
+                        screenshot_bytes = await page.screenshot(
+                            full_page=True,
+                        )
+                        result["screenshot_base64"] = (
+                            "data:image/png;base64,"
+                            + base64.b64encode(screenshot_bytes).decode(
+                                "ascii",
+                            )
+                        )
 
                     # Accessibility snapshot — Playwright's built-in a11y tree.
                     a11y_snapshot = await page.accessibility.snapshot()
