@@ -12,7 +12,7 @@ follows redirects (up to the configured limit), and returns the raw text content
 
 ## Allowed operation
 
-| Tool               | Description                                                   |
+| Tool | Description |
 | ------------------ | ------------------------------------------------------------- |
 | `fetch_public_url` | HTTP(S) GET against a public URL; returns raw text + metadata |
 
