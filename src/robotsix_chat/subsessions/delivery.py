@@ -53,12 +53,15 @@ logger = logging.getLogger(__name__)
 _REACT_PROMPT_TEMPLATE = (
     "[System notice] Subsession {sub_id} ({kind}) '{title}' {reason} while "
     "you were not actively conversing with the user. Outcome:\n\n{outcome}\n\n"
-    "If the outcome is already current and needs no action, reply with a single "
-    "terse sentence — do NOT restate what the subsession already reported. "
-    "If there is something new or actionable, jump straight to the delta: what "
-    "changed, what the user should know, or what to do next. Never start with "
-    "'Acknowledged' or echo the subsession's full summary. This is a real turn: "
-    "your reply will be shown to the user."
+    "If the outcome reports no change (the subsession auto-stopped, auto-paused, "
+    "or reported NO_CHANGE / nothing changed), reply with a single brief "
+    "acknowledgment like 'No change — monitor paused' or 'No change detected.' "
+    "Do NOT re-list the ticket ID, current state, timestamp, or expected next "
+    "path — the user already knows the monitored state and restating it adds "
+    "noise. If there is something new or actionable, jump straight to the "
+    "delta: what changed, what the user should know, or what to do next. "
+    "Never start with 'Acknowledged' or echo the subsession's full summary. "
+    "This is a real turn: your reply will be shown to the user."
 )
 
 # Mapping from internal reason codes to human-readable phrases used in the

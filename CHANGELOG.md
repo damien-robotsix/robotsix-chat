@@ -2,6 +2,7 @@
 
 - Derive `__version__` from installed distribution metadata instead of
   hard-coding it, so `pyproject.toml` is the single source of truth.
+- Strengthen the subsession reaction prompt to suppress redundant state restatements: when a subsession reports no change (auto-stopped, auto-paused, or explicit NO_CHANGE), the parent agent now replies with a brief acknowledgment instead of re-listing the ticket ID, status, and timestamp.
 - Revised system prompt to suppress internal tracking details (monitor IDs, subsession codes, pipeline job numbers) and report only key state changes with a clear call to action, unless the user explicitly requests detail.
 - Added `ticket_poll` tool — a direct board-API fallback that lets periodic ticket monitors check state even when `component_request` is unavailable. The tool queries the mill board API directly via HTTP, bypassing the component roster. A corresponding skill document is injected into the agent instruction when the board API URL is configured.
 - Add "Cognee recall retirement" guidance to the system prompt: when a monitor reports terminal state on a ticket, the agent should retire stale knowledge notes that reference obsolete PR numbers, monitor ids, or closed-fix paths, replacing them with fresh entries reflecting the current active path.
