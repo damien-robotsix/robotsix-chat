@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Revised system prompt to suppress internal tracking details (monitor IDs, subsession codes, pipeline job numbers) and report only key state changes with a clear call to action, unless the user explicitly requests detail.
+- Added `ticket_poll` tool — a direct board-API fallback that lets periodic ticket monitors check state even when `component_request` is unavailable. The tool queries the mill board API directly via HTTP, bypassing the component roster. A corresponding skill document is injected into the agent instruction when the board API URL is configured.
 - Add "Cognee recall retirement" guidance to the system prompt: when a monitor reports terminal state on a ticket, the agent should retire stale knowledge notes that reference obsolete PR numbers, monitor ids, or closed-fix paths, replacing them with fresh entries reflecting the current active path.
 - Add missing `"ticket_unreachable"` human-readable phrase to `_REASON_PHRASES` in subsession delivery, preventing the raw snake_case code from appearing in user-facing reaction prompts.
 - Added mandatory CI workflow failure diagnosis gate to the implement agent's

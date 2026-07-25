@@ -47,6 +47,7 @@ from robotsix_chat.repo.direct import build_direct_repo_tools
 from robotsix_chat.repo.security import build_github_security_tools, load_github_skill
 from robotsix_chat.repo.study import build_repo_study_tools
 from robotsix_chat.selfreview import build_recent_activity_tools
+from robotsix_chat.ticket_poll import build_ticket_poll_tools, load_ticket_poll_skill
 from robotsix_chat.version_check import build_version_check_tools
 
 from .idempotency import MessageIdempotencyStore
@@ -571,6 +572,11 @@ def _inject_skills(
         (settings.http_probe.enabled, "http_probe", load_http_probe_skill),
         (settings.github_security.enabled, "github_security", load_github_skill),
         (settings.github_actions.enabled, "github_actions", load_github_actions_skill),
+        (
+            bool(settings.direct_repo.board_api_base_url.strip()),
+            "ticket_poll",
+            load_ticket_poll_skill,
+        ),
     ]
 
     for enabled, _name, loader in _skill_entries:
@@ -617,6 +623,7 @@ def _build_static_tools(
         *build_lifecycle_tools(settings.lifecycle),
         *build_render_url_tools(settings.render_url),
         *build_http_probe_tools(settings.http_probe),
+        *build_ticket_poll_tools(settings),
     ]
 
 
