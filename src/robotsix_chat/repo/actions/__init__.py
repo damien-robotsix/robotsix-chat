@@ -1,8 +1,8 @@
 """GitHub Actions tools for the chat agent.
 
 Exposes :func:`build_github_actions_tools` — a factory returning LLM tools
-for managing repository Actions secrets and dispatching workflows via the
-GitHub App installation.
+for managing repository Actions secrets, dispatching workflows, and
+diagnosing CI failures via the GitHub App installation.
 
 Also exposes :func:`load_github_actions_skill` which returns the component
 skill markdown — a description of the Actions endpoints, their auth requirements,
@@ -144,4 +144,88 @@ def build_github_actions_tools(
             inputs=parsed_inputs,
         )
 
-    return [set_actions_secret, dispatch_workflow]
+    async def check_workflow_run(
+        repo_name: str,
+        *,
+        branch: str | None = None,
+        run_id: int | None = None,
+    ) -> str:
+        """Fetch recent workflow runs and diagnose common failure patterns.
+
+        Use this to investigate a CI failure that has no obvious cause.
+        The tool inspects recent workflow runs and detects known failure
+        signatures — in particular, private-repo billing failures where
+        GitHub Actions jobs never start.
+
+        **Read-only.**  Does not modify any repository state.
+
+        Args:
+            repo_name: Repository name (not owner/name).
+            branch: Optional branch filter (e.g. ``"main"``).
+            run_id: Optional specific run ID to inspect in detail.
+                When omitted the most recent runs are checked.
+
+        Returns:
+            A diagnostic summary: either a recognised failure pattern, a
+            summary of recent runs, or an error message.
+
+        """
+        repo_full_name = f"{org}/{repo_name}"
+
+        if scope_error := await client.check_installation_scope(repo_full_name):
+            return scope_error
+
+        if run_id is not None:
+            # Single-run deep inspection
+            jobs = await client.get_workflow_run_jobs(repo_full_name, run_id)
+            if not jobs:
+                return (
+                    f"Workflow run {run_id} on {repo_full_name} has no jobs — "
+                    f"this is a strong signal that GitHub Actions billing "
+                    f"is not enabled for this private repository. "
+                    f"Check the repo's Settings > Actions > General, "
+                    f"or verify billing at the organisation level."
+                )
+            lines: list[str] = [
+                f"Workflow run {run_id} on {repo_full_name} — {len(jobs)} job(s):"
+            ]
+            for j in jobs:
+                lines.append(
+                    f"  - {j.get('name', '?')}: "
+                    f"status={j.get('status')}, "
+                    f"conclusion={j.get('conclusion')}"
+                )
+            return "\n".join(lines)
+
+        # Broad scan of recent runs
+        runs = await client.list_workflow_runs(
+            repo_full_name, branch=branch, per_page=5
+        )
+        if not runs:
+            return (
+                f"No recent workflow runs found for {repo_full_name}"
+                + (f" on branch '{branch}'" if branch else "")
+                + "."
+            )
+
+        # Check for billing-failure signature first
+        billing_diag = client._diagnose_billing_failure(runs)
+        if billing_diag:
+            return billing_diag
+
+        # Otherwise summarise recent runs
+        lines = [
+            f"Recent workflow runs for {repo_full_name}"
+            + (f" on '{branch}'" if branch else "")
+            + ":"
+        ]
+        for r in runs[:5]:
+            lines.append(
+                f"  - {r.get('name', '?')} (id {r.get('id')}): "
+                f"status={r.get('status')}, "
+                f"conclusion={r.get('conclusion')}, "
+                f"event={r.get('event')}"
+            )
+        return "\n".join(lines)
+
+    return [set_actions_secret, dispatch_workflow, check_workflow_run]
