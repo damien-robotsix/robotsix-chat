@@ -827,6 +827,34 @@ class SubsessionRegistry:
                 return info.id
         return None
 
+    def is_duplicate_ticket_terminal(self, ticket_id: str, exclude_sub_id: str) -> bool:
+        """Check for a duplicate terminal report for *ticket_id*.
+
+        Returns ``True`` when a different (already-CLOSED) subsession has
+        already reported the same ticket as terminal — when a prior monitor
+        has already reported the ticket as closed/done, a second monitor's
+        completion notice for that ticket is a duplicate and should be
+        suppressed to avoid a redundant (and often verbose) reaction turn
+        in the parent conversation.
+        """
+        for info in self._subs.values():
+            if info.id == exclude_sub_id:
+                continue
+            if info.status is not SubsessionStatus.CLOSED:
+                continue
+            cp = info.checkpoint
+            if cp is None:
+                continue
+            cp_ticket_id = cp.get("ticket_id")
+            if not isinstance(cp_ticket_id, str) or cp_ticket_id != ticket_id:
+                continue
+            # Only count a prior subsession as a terminal reporter when
+            # its close_reason indicates it actually reported the terminal
+            # state (not a non-terminal close like pause / max_runs).
+            if info.close_reason in ("ticket_terminal", "completed"):
+                return True
+        return False
+
     # ------------------------------------------------------------------
     # helpers
     # ------------------------------------------------------------------
