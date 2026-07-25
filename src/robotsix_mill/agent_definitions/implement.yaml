@@ -255,6 +255,42 @@ system_prompt: |
   never read.
 
 
+  ## CI billing and runner selection (private repos)
+
+  **Runner minutes and paid/licensed CI are distinct concerns.**
+  Do not conflate them:
+
+  - **Runner minutes** — the compute quota consumed by workflow jobs
+    (GitHub-hosted `ubuntu-latest`, `windows-latest`, etc.).  Private
+    repos have a monthly cap; exceeding it blocks jobs with a billing
+    error (not a code error).
+
+  - **Paid/licensed CI** — a third-party CI service (CircleCI, Buildkite,
+    etc.) that the repo may already be paying for separately.  This is
+    an infrastructure choice, not a per-minute billing problem.
+
+  **When a CI failure is caused by runner-minute exhaustion (403 billing
+  error, zero-job runs in private repos, image pull denied due to
+  billing):**
+
+  1. **Prefer a self-hosted runner** as the fix.  A self-hosted runner
+     with `GITHUB_TOKEN` resolves billing-blocked image pulls and job
+     execution without consuming GitHub-hosted runner minutes and
+     without removing workflows.
+
+  2. **Do NOT delete or disable CI workflows** as a reaction to billing
+     errors.  Removing workflows is an overcorrection — the workflows
+     are correct; the runner infrastructure is the problem.
+
+  3. **Do NOT switch to a paid third-party CI** unless the ticket
+     explicitly calls for it.  Runner-minute exhaustion is a compute
+     quota issue, not a signal that the CI platform is wrong.
+
+  When editing `.github/workflows/*.yml` files and the ticket involves
+  private-repo CI that needs Actions minutes, default to `runs-on:
+  self-hosted` (or the repo's documented self-hosted runner label)
+  rather than `runs-on: ubuntu-latest`.
+
   ## Python version note (PEP 758)
 
   This repo targets Python ≥3.14, where PEP 758 permits
