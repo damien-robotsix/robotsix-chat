@@ -513,6 +513,13 @@ class SubsessionsSettings(BaseModel):
             ``human_approval_timeout``) after this many consecutive
             ``NO_CHANGE`` runs.  Default ``5``.
             Env override: ``SUBSESSIONS_HUMAN_APPROVAL_TIMEOUT_RUNS``.
+        pre_authorized_ticket_patterns: Glob patterns (``fnmatch``) matching
+            ticket IDs that are pre-authorized under a standing operator
+            directive.  When a monitored ticket's ID matches any pattern,
+            the ``human_issue_approval`` gate is bypassed — the system
+            auto-escalates immediately (reason ``pre_authorized_approval``)
+            instead of waiting for ``human_approval_timeout_runs``.
+            Default ``[]``.
         run_timeout_seconds: Hard per-run timeout for a single subsession
             agent turn (recall + LLM call + delivery).  On expiry the run
             is marked failed and the schedule continues instead of staying
@@ -543,6 +550,17 @@ class SubsessionsSettings(BaseModel):
     auto_stop_no_change_runs: int = 5
     max_idle_runs: int = 5
     human_approval_timeout_runs: int = 5
+    pre_authorized_ticket_patterns: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Glob patterns (fnmatch) matching ticket IDs that are "
+            "pre-authorized under a standing operator directive.  When a "
+            "monitored ticket's ID matches any pattern, the "
+            "human_issue_approval gate is bypassed — the system "
+            "auto-escalates immediately (reason 'pre_authorized_approval') "
+            "instead of waiting for human_approval_timeout_runs."
+        ),
+    )
     run_timeout_seconds: float = 600.0
     store_path: str = "/data/subsessions.json"
     transcript_max_entries: int = 200

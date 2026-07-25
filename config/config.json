@@ -106,6 +106,7 @@
     "auto_stop_no_change_runs": 5,
     "max_idle_runs": 5,
     "human_approval_timeout_runs": 5,
+    "pre_authorized_ticket_patterns": [],
     "run_timeout_seconds": 600.0,
     "store_path": "/data/subsessions.json",
     "transcript_max_entries": 200,

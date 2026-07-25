@@ -1,5 +1,10 @@
 ## 0.0.0 (unreleased)
 
+- Added `subsessions.pre_authorized_ticket_patterns` config key — a
+  list of glob patterns matching ticket IDs that are pre-authorized
+  under a standing operator directive.  When a monitored ticket matches
+  a pattern and enters `human_issue_approval`, the system auto-escalates
+  immediately instead of waiting for the configured timeout.
 - Fix Trivy scanning in release-image.yml: tag locally-loaded image with a non-registry-qualified tag (`local/robotsix-chat:scan`) so Trivy resolves via the Docker daemon instead of pulling from GHCR, eliminating `/tmp` exhaustion in CI
 - Add mandatory pre-planning step to load live knowledge notes and board state before drafting plans; strengthen warnings that recalled session memories may be stale or contain phantom identifiers
 - Autonomous sessions now gate completion on active subsessions: the `---AUTONOMOUS COMPLETE---` marker is suppressed when the session still owns any running subsession (including periodic monitors), preventing premature session closure that would lock the agent out of spawning tracking monitors.
