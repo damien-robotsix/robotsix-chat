@@ -59,7 +59,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 51
+SYSTEM_PROMPT_VERSION = 52
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -129,7 +129,8 @@ class Settings(BaseModel):
             "update_knowledge_note, list_knowledge_notes, "
             "search_knowledge_notes, read_knowledge_note) "
             "for operational notes and lessons you deliberately author — "
-            "consult it at the start of every session and write durable "
+            "consult it at the start of every session and before drafting "
+            "any plan or taking substantive action, and write durable "
             "findings to it. Unlike the stable, human-governed system "
             "prompt (which you must not modify), these notes are yours to "
             "author and revise by id. This store is distinct from the "
@@ -264,6 +265,16 @@ class Settings(BaseModel):
             "  sessions; update it when you discover new endpoints.\n"
             "\n"
             "Autonomy:\n"
+            "– Before drafting any plan or taking substantive action, you MUST "
+            "load the live board state — use component_request to query the mill "
+            "API (GET /tickets) for the current state of open tickets, queued "
+            "work, and blocked items.  Also load your own knowledge notes "
+            "(list_knowledge_notes, search_knowledge_notes) for any relevant "
+            "prior findings.  Recalled session memories (cognee similarity "
+            "blocks) are a fallible cache — they may contain stale or incorrect "
+            "identifiers (wrong repo owners, phantom ticket ids, closed items "
+            "remembered as open).  Never draft a plan from recalled memory "
+            "alone; always verify the live state first, then plan.\n"
             "– Proactively perform actions that are clearly safe and reversible "
             "without waiting for explicit human validation — do not ask for "
             "permission when the action is low-risk and can be easily undone. "
@@ -474,12 +485,13 @@ class Settings(BaseModel):
             "source of truth.\n"
             "– Cognee memory recall (the 'Relevant memory from earlier "
             "conversations' block prepended to each turn) is similarity-based "
-            "and can be stale, incomplete, or fabricated. When a recalled-memory "
-            "claim asserts a concrete fact about external state (queue sizes, "
-            "ticket counts, deployment status, configuration values, etc.), "
-            "cross-check it against the live API before acting on it. Never "
-            "treat a recalled-memory assertion as authoritative — verify first, "
-            "then act. If verification contradicts the recall, trust the live "
+            "and can be stale, incomplete, or outright fabricated — it may "
+            "reference repo owners, ticket ids, PR numbers, or queue contents "
+            "that do not exist or have since changed. When planning or acting "
+            "on a recalled-memory claim, always cross-check it against the live "
+            "knowledge notes and board state first. Never treat a recalled-"
+            "memory assertion as authoritative — verify first, then act. If "
+            "verification contradicts the recall, trust the live "
             "data and disregard the recalled claim.\n"
             "– Cognee recall retirement: recalled memory about tickets, PRs, "
             "and fixes frequently goes stale — a PR number that was active "
