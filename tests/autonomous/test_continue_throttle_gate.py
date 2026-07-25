@@ -78,6 +78,61 @@ def test_has_pending_subsessions_mixed_kinds() -> None:
     assert _runner(reg)._has_pending_subsessions("s1") is True
 
 
+def test_has_active_subsessions_none_registry() -> None:
+    """No registry wired → never reports active (gate is a no-op)."""
+    assert _runner(None)._has_active_subsessions("s1") is False
+
+
+def test_has_active_subsessions_detects_active() -> None:
+    """An active subsession of any kind (including periodic) is reported."""
+    reg = MagicMock()
+    reg.list_for_owner.return_value = [
+        SimpleNamespace(is_active=False, kind="task"),
+        SimpleNamespace(is_active=True, kind="task"),
+    ]
+    assert _runner(reg)._has_active_subsessions("s1") is True
+
+
+def test_has_active_subsessions_all_terminal() -> None:
+    """Only terminal subsessions → not active."""
+    reg = MagicMock()
+    reg.list_for_owner.return_value = [SimpleNamespace(is_active=False, kind="task")]
+    assert _runner(reg)._has_active_subsessions("s1") is False
+
+
+def test_has_active_subsessions_registry_error_is_safe() -> None:
+    """A registry that raises must not break the gate (treated as not active)."""
+    reg = MagicMock()
+    reg.list_for_owner.side_effect = RuntimeError("boom")
+    assert _runner(reg)._has_active_subsessions("s1") is False
+
+
+def test_has_active_subsessions_includes_periodic() -> None:
+    """Active periodic subsessions ARE reported — unlike _has_pending_subsessions.
+
+    This is the key difference from _has_pending_subsessions: periodic
+    monitors run indefinitely, so they must block completion (the session
+    is not "complete" while a periodic monitor is still running).
+    """
+    reg = MagicMock()
+    reg.list_for_owner.return_value = [
+        SimpleNamespace(is_active=True, kind="periodic"),
+    ]
+    assert _runner(reg)._has_active_subsessions("s1") is True
+
+
+def test_has_active_subsessions_mixed_kinds() -> None:
+    """Any active subsession — periodic, task, or user_chat — counts."""
+    reg = MagicMock()
+    reg.list_for_owner.return_value = [
+        SimpleNamespace(is_active=True, kind="periodic"),
+        SimpleNamespace(is_active=False, kind="task"),
+        SimpleNamespace(is_active=True, kind="user_chat"),
+        SimpleNamespace(is_active=False, kind="periodic"),
+    ]
+    assert _runner(reg)._has_active_subsessions("s1") is True
+
+
 @pytest.mark.asyncio
 async def test_wait_before_continue_throttles(monkeypatch: pytest.MonkeyPatch) -> None:
     """Throttle: waits at least one interval even with no pending work."""

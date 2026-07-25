@@ -24,3 +24,4 @@ class AutonomousSession:
     state: AutonomousState = AutonomousState.selecting_subject
     plan_text: str = ""
     auto_turn_count: int = 0
+    completion_suppressed: bool = False
