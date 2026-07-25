@@ -5,6 +5,23 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v47 — 2026-07-25 — retire-stale-recalled-memory-entries-to-8972
+
+**Summary:** Add "Cognee recall retirement" guidance to the system prompt. When a monitor reports
+terminal state on a ticket (CLOSED/DONE), the agent should retire stale knowledge notes that
+reference obsolete PR numbers, monitor ids, or closed-fix paths, replacing them with fresh entries
+reflecting the current active path. Before citing a recalled-memory claim about a ticket or PR, the
+agent must check knowledge notes for a retirement entry — if a note explicitly retires the recalled
+detail, trust the note and cite the current state instead.
+
+**Rationale:** Cognee recall frequently returns stale entries referencing obsolete PR numbers,
+monitor ids misremembered as ticket ids, and closed-fix paths that are no longer active. The agent
+was repeating these obsolete references across conversations, prolonging user confusion. This
+guidance teaches the agent to retire stale entries proactively and to cross-check recalled claims
+against retirement notes before citing them.
+
+**SHA256:** `12ab468991b4b279450f8f45b6875bd8eb99d21403dce1a65d433781e80c63e9`
+
 ## v46 — 2026-07-24 — periodic-monitor-spawns-nested-child-sub-c9c4
 
 **Summary:** Tighten periodic subsession child-spawn rule: remove the "if a one-off check beyond
