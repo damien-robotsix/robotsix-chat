@@ -780,14 +780,13 @@ def _mock_autonomous_runner(
 ) -> MagicMock:
     """Build an AutonomousRunner stub with a session in *state*."""
     runner = MagicMock()
-    runner._sessions = {
-        session_id: AutonomousSession(
-            session_id=session_id,
-            owner_id=session_id,
-            state=state,
-            plan_text=plan_text,
-        ),
-    }
+    session = AutonomousSession(
+        session_id=session_id,
+        owner_id=session_id,
+        state=state,
+        plan_text=plan_text,
+    )
+    runner.get_session.return_value = session
     return runner
 
 
@@ -812,7 +811,7 @@ async def test_reaction_with_autonomous_executing_uses_active_plan_template() ->
     args, _kwargs = store.record_for_session.call_args
     prompt = args[1]
     # The active-plan template must be used, not the default one.
-    assert "executing an operator-approved plan" in prompt
+    assert "executing your approved plan" in prompt
     assert "Close the misfiled ticket" in prompt
     assert "DO NOT re-request approval" in prompt
     assert "P1 outage resolved" in prompt

@@ -37,6 +37,7 @@ import logging
 import time
 from typing import TYPE_CHECKING
 
+from robotsix_chat.autonomous.models import AutonomousState
 from robotsix_chat.chat.events import agent_message_frame
 
 from .models import SubsessionInfo, SubsessionKind
@@ -71,10 +72,10 @@ _REACT_PROMPT_TEMPLATE = (
 # abandoning the plan.
 _REACT_PROMPT_ACTIVE_PLAN_TEMPLATE = (
     "[System notice] Subsession {sub_id} ({kind}) '{title}' {reason} while "
-    "you were {autonomous_state} an operator-approved plan.\n\n"
+    "you were {autonomous_state_phrase}.\n\n"
     "Your current plan:\n{plan_text}\n\n"
     "Outcome:\n{outcome}\n\n"
-    "You are {autonomous_state} an approved plan.  Briefly acknowledge this "
+    "You are {autonomous_state_phrase}.  Briefly acknowledge this "
     "notification — incorporate any relevant information from it into your "
     "work — but DO NOT re-request approval, restart planning, or abandon "
     "your current plan.  If the outcome is not relevant to your current "
@@ -372,15 +373,15 @@ class ParentDelivery:
             autonomous_state_phrase: str | None = None
             plan_text: str | None = None
             if self._autonomous_runner is not None:
-                aq = self._autonomous_runner._sessions.get(session_id)
+                aq = self._autonomous_runner.get_session(session_id)
                 if aq is not None:
-                    from robotsix_chat.autonomous.models import AutonomousState
-
                     if aq.state is AutonomousState.proposal:
-                        autonomous_state_phrase = "waiting for operator approval of"
+                        autonomous_state_phrase = (
+                            "waiting for operator approval of your proposed plan"
+                        )
                         plan_text = aq.plan_text
                     elif aq.state is AutonomousState.executing:
-                        autonomous_state_phrase = "executing"
+                        autonomous_state_phrase = "executing your approved plan"
                         plan_text = aq.plan_text
 
             if autonomous_state_phrase is not None and plan_text:
@@ -389,7 +390,7 @@ class ParentDelivery:
                     kind=info.kind.value,
                     title=info.title,
                     reason=reason_text,
-                    autonomous_state=autonomous_state_phrase,
+                    autonomous_state_phrase=autonomous_state_phrase,
                     plan_text=plan_text,
                     outcome=outcome,
                 )
