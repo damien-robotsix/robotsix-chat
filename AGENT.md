@@ -38,6 +38,11 @@ of values; model field defaults fill the gaps.
 `model_config = ConfigDict(extra="forbid")` to reject unknown JSON keys at load time rather than
 silently ignoring them.
 
+**Rule:** When modifying `src/robotsix_chat/config/settings.py`, regenerate
+`config/config.schema.json` by running `uv run scripts/regenerate_schema.py` before committing. The
+CI `check-config-schema` job will catch drift, but regenerating before commit avoids a wasteful CI
+rebuild cycle.
+
 ## Deploy stack structure
 
 Two compose files with different jobs (component standard):
