@@ -334,6 +334,12 @@ modules:
       - tests/http_probe/__init__.py
       - tests/http_probe/test_http_probe.py
 
+  - id: ticket-poll
+    description: "Direct board-API ticket poll tool — fallback when component_request is unavailable. Exposes build_ticket_poll_tools() returning a ticket_poll tool that queries the mill board API directly via HTTP, plus load_ticket_poll_skill() for the component skill document."
+    paths:
+      - src/robotsix_chat/ticket_poll/__init__.py
+      - src/robotsix_chat/ticket_poll/skill.md
+
   - id: lifecycle
     description: "Read-only deploy-lifecycle API tools for the agent — exposes build_lifecycle_tools() returning tools to list services, check status/health, and read config/env (secrets masked server-side), plus load_lifecycle_skill() for the component skill document."
     paths:
