@@ -80,7 +80,7 @@ jobs:
             type=sha,prefix=sha-
 
       - name: Build image (local, for scanning)
-        uses: docker/build-push-action@0f43577c0a17b9967771e09ad1ad4a8eac5cb49a  # v7.3.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
         with:
           context: .
           file: ./Dockerfile
@@ -95,7 +95,7 @@ jobs:
       - name: Tag local image for Trivy scanning
         id: scan-ref
         run: |
-          FIRST_TAG="$(echo "${{ steps.meta.outputs.tags }}" | cut -d',' -f1)"
+          FIRST_TAG="$(echo "${{ steps.meta.outputs.tags }}" | head -1)"
           echo "Local image tag: ${FIRST_TAG}"
           docker tag "${FIRST_TAG}" "local/robotsix-chat:scan"
           echo "image=local/robotsix-chat:scan" >> "$GITHUB_OUTPUT"
@@ -136,7 +136,7 @@ jobs:
 
       - name: Push image to GHCR (with provenance + SBOM)
         if: steps.trivy-gate.outcome == 'success'
-        uses: docker/build-push-action@0f43577c0a17b9967771e09ad1ad4a8eac5cb49a  # v7.3.0
+        uses: docker/build-push-action@53b7df96c91f9c12dcc8a07bcb9ccacbed38856a  # v7.3.0
         with:
           context: .
           file: ./Dockerfile
