@@ -199,6 +199,21 @@ self-closing after a fixed number of failures.
     waiting for the `auto_stop_no_change_runs` timeout to close the subsession. The guidance is
     embedded in the prompt built by `_build_periodic_input` in `worker.py`.
 
+    **Wall-clock backstop.** In addition to the run-count gate
+    (`human_approval_timeout_runs`), the system tracks how long the checkpoint has carried
+    `last_known_state='human_issue_approval'` using a `human_approval_since` timestamp stored
+    in the checkpoint. If the wall-clock time spent in the `human_issue_approval` state exceeds
+    `human_approval_timeout_seconds` (default 300 s / 5 minutes), the subsession automatically
+    escalates (reason `human_approval_timeout`) — even if the agent never emitted a `NO_CHANGE`
+    reply. This catches the case where the agent follows the system prompt (calling
+    `complete_subsession` instead of replying `NO_CHANGE`) but the call fails, avoiding an
+    indefinite stall.
+
+    | Config key                                          | Default  | Description                                                                                     |
+    | --------------------------------------------------- | -------- | ----------------------------------------------------------------------------------------------- |
+    | `subsessions.human_approval_timeout_runs`           | `5`      | Consecutive `NO_CHANGE` runs in `human_issue_approval` state before auto-escalate.             |
+    | `subsessions.human_approval_timeout_seconds`        | `300.0`  | Wall-clock seconds in `human_issue_approval` state before auto-escalate (5 minutes).           |
+
 10. **Mill-recovery mode.** If the mill is unreachable, the monitor enters a recovery loop with
     exponential backoff (see [Mill-recovery behaviour](#mill-recovery-behaviour) above), probing the
     mill health endpoint and resuming automatically when it recovers.
