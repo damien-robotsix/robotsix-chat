@@ -1,5 +1,11 @@
 ## 0.0.0 (unreleased)
 
+- Lifecycle `self_restart` now validates the `base_url` at init time, applies a
+  configurable default protocol (`default_protocol`, default `"http"`) when the
+  URL is missing a scheme, and retries transient failures with exponential
+  backoff (configurable via `self_restart_max_retries`, `self_restart_backoff_base`,
+  `self_restart_backoff_cap`).  An empty `base_url` is logged and produces a
+  clear error from `self_restart` instead of raising a protocol error.
 - Background task auto-stop and failure notifications are now more robust:
   the reaction-prompt template instructs the assistant to always provide a
   substantive notification (removing the "just acknowledge it briefly"
