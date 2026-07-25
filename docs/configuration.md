@@ -364,6 +364,27 @@ default.
 
 ______________________________________________________________________
 
+### Autonomous
+
+Autonomous sessions that pick a subject, draft a plan, await operator approval, then execute to
+completion with auto-cycling. Enabled by default.
+
+| JSON key                                   | Type      | Default  | Description                                                                                                                                                                                                                             |
+| ------------------------------------------ | --------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `autonomous.enabled`                       | `boolean` | `true`   | Master switch.                                                                                                                                                                                                                          |
+| `autonomous.auto_approve`                  | `boolean` | `false`  | When `true`, skip the human approval gate — a drafted plan is auto-approved immediately.                                                                                                                                                |
+| `autonomous.approval_marker`               | `string`  | `"---AWAITING APPROVAL---"` | Marker string the agent emits after drafting a plan to signal it is awaiting operator approval.                                                                                                                          |
+| `autonomous.completion_marker`             | `string`  | `"---AUTONOMOUS COMPLETE---"` | Marker string the agent emits when the plan is complete; triggers auto-close and respawn.                                                                                                                                 |
+| `autonomous.max_auto_turns`                | `integer` | `20`     | Maximum automatic agent turns during the execution phase before reverting to ``awaiting_approval``.                                                                                                                                     |
+| `autonomous.persist_path`                  | `string`  | `"/data/autonomous_sessions.json"` | Path to the autonomous-session persistence file.                                                                                                                                                                          |
+| `autonomous.session_color`                 | `string`  | `""`     | Optional CSS color string for a visual accent on autonomous session rows (e.g. `"#ef4444"`).                                                                                                                                            |
+| `autonomous.initial_task`                  | `string`  | `""`     | Optional description of the first task to spawn. When empty, the agent picks its own subject.                                                                                                                                           |
+| `autonomous.continue_interval_seconds`     | `number`  | `45.0`   | Pacing interval (seconds) between auto-continue loop iterations.                                                                                                                                                                        |
+| `autonomous.pending_subsession_wait_timeout` | `number`| `600.0`  | Maximum time (seconds) the auto-continue loop waits for pending non-periodic subsessions to complete before giving up and continuing.                                                                                                   |
+| `autonomous.stale_monitor_runs_before_completion` | `integer` | `3` | Number of consecutive `NO_CHANGE` cycles after which a periodic monitor is considered "stale" — the agent may declare the autonomous session complete even while the monitor is still running. Monitors continue in the background. |
+
+______________________________________________________________________
+
 ### Render URL
 
 Read-only URL rendering via headless Chromium (Playwright). Loads a URL in a headless browser,

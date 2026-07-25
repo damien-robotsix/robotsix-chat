@@ -201,3 +201,28 @@ self-closing after a fixed number of failures.
 
 11. Concurrency is bounded by `subsessions.max_concurrent` (default 8, across all subsession kinds);
     exceeding it returns a friendly refusal rather than raising.
+
+## Autonomous-session interaction
+
+In **autonomous sessions**, periodic monitors no longer block session completion. Previously, the
+auto-continue loop waited for *all* active subsessions — including long-running periodic monitors —
+which caused the agent to loop indefinitely on stable tickets, never declaring the session complete.
+
+The runner's `_has_pending_subsessions` check now **excludes** periodic subsessions; only `task`
+and `user_chat` subsessions (which have finite lifetimes) block the loop. The agent is instructed
+(via the system prompt) to emit the completion marker while periodic monitors are still running,
+provided:
+
+- All active periodic monitors have been reporting `NO_CHANGE` for at least
+  `autonomous.stale_monitor_runs_before_completion` (default 3) consecutive cycles.
+- No other pending actions remain (no in-flight task or user_chat subsessions, no unaddressed
+  operator decisions).
+
+Monitors continue running in the background after the autonomous session closes; their terminal
+summaries are delivered to the next session.
+
+| Config key                                          | Default | Description                                                                     |
+| --------------------------------------------------- | ------- | ------------------------------------------------------------------------------- |
+| `autonomous.stale_monitor_runs_before_completion`   | `3`     | Consecutive `NO_CHANGE` cycles before a periodic monitor is considered stale.   |
+
+See [Configuration](configuration.md#autonomous) for the full autonomous settings reference.
