@@ -882,3 +882,97 @@ def test_create_raises_dedup_error_for_active_dedup_key() -> None:
             title="duplicate-monitor-5f1c",
         )
     assert exc_info.value.existing_id == first.id
+
+
+# ---------------------------------------------------------------------------
+# find_active_periodic_by_ticket_id
+# ---------------------------------------------------------------------------
+
+
+def test_find_active_periodic_by_ticket_id_returns_match_via_checkpoint() -> None:
+    """Return sub id when a PERIODIC monitor's checkpoint carries the ticket_id."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        title="monitor-5f1c",
+    )
+    # Simulate the first run setting the checkpoint.
+    registry.update_checkpoint(
+        info.id, {"ticket_id": "5f1c", "last_known_state": "open"}
+    )
+
+    result = registry.find_active_periodic_by_ticket_id("5f1c")
+    assert result == info.id
+
+
+def test_find_active_periodic_by_ticket_id_returns_none_when_no_match() -> None:
+    """Return None when no active PERIODIC sub has the ticket_id in its checkpoint."""
+    registry = SubsessionRegistry(store_path=None)
+    _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        title="monitor-5f1c",
+    )
+    # No checkpoint set, and ticket_id doesn't match anyway.
+    result = registry.find_active_periodic_by_ticket_id("7691")
+    assert result is None
+
+
+def test_find_active_periodic_by_ticket_id_skips_terminal_subsessions() -> None:
+    """A terminal PERIODIC sub is not returned even if its checkpoint matches."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        title="monitor-5f1c",
+    )
+    registry.update_checkpoint(info.id, {"ticket_id": "5f1c"})
+    registry.mark_closed(info.id, summary="done", reason="completed")
+
+    result = registry.find_active_periodic_by_ticket_id("5f1c")
+    assert result is None
+
+
+def test_find_active_periodic_by_ticket_id_skips_non_periodic() -> None:
+    """A TASK sub with a matching checkpoint ticket_id is not returned."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.TASK,
+        title="task-with-checkpoint",
+    )
+    registry.update_checkpoint(info.id, {"ticket_id": "5f1c"})
+
+    result = registry.find_active_periodic_by_ticket_id("5f1c")
+    assert result is None
+
+
+def test_create_raises_dedup_error_for_checkpoint_ticket_id_match() -> None:
+    """``create`` raises ``SubsessionDedupError`` on checkpoint ticket_id match.
+
+    The original PERIODIC monitor was spawned without a dedup_key, but
+    its checkpoint carries the watched ticket_id after the first run.
+    A second spawn WITH a matching dedup_key must be caught.
+    """
+    from robotsix_chat.subsessions import SubsessionDedupError
+
+    registry = SubsessionRegistry(store_path=None)
+    first = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        title="monitor-5f1c",
+        # No dedup_key — agent forgot to set it.
+    )
+    # After first run, checkpoint carries the watched ticket_id.
+    registry.update_checkpoint(first.id, {"ticket_id": "5f1c"})
+
+    # A second spawn for the same ticket WITH dedup_key should be caught.
+    with pytest.raises(SubsessionDedupError) as exc_info:
+        _create(
+            registry,
+            kind=SubsessionKind.PERIODIC,
+            dedup_key="5f1c",
+            title="duplicate-monitor-5f1c",
+        )
+    assert exc_info.value.existing_id == first.id

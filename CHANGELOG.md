@@ -5,6 +5,10 @@
   volume using stdlib ``shutil.disk_usage`` (no disk writes, survives a full
   disk).  ``/admin/prune`` triggers available cleanup methods on the
   conversation store and subsession registry to free space in an emergency.
+- Periodic monitor deduplication: `spawn_subsession` now cross-references
+  active PERIODIC subsessions' `checkpoint.ticket_id` against the new
+  spawn's `dedup_key`, so a duplicate monitor for the same ticket is
+  caught even when the original was spawned without a dedup_key.
 - `component_request` tool: when a component returns HTTP 429 with a
   ``Retry-After`` header, wait the full cooldown window and retry once
   before returning the error to the agent. This prevents the agent from

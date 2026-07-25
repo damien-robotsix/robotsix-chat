@@ -302,6 +302,13 @@ def spawn_subsession(
         existing_id = env.registry.is_dedup_key_active(dedup_key)
         if existing_id is not None:
             return existing_id
+        # Cross-reference: an existing PERIODIC monitor may have been
+        # spawned without a dedup_key but recorded the watched ticket_id
+        # in its checkpoint after the first run.  Scan for that match.
+        if kind is SubsessionKind.PERIODIC:
+            cp_match = env.registry.find_active_periodic_by_ticket_id(dedup_key)
+            if cp_match is not None:
+                return cp_match
 
     cfg = env.settings.subsessions
     if env.registry.count_active() >= cfg.max_concurrent:
