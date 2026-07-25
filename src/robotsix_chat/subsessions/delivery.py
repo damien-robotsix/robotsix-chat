@@ -63,7 +63,8 @@ _REACT_PROMPT_TEMPLATE = (
     "noise. If there is something new or actionable, jump straight to the "
     "delta: what changed, what the user should know, or what to do next. "
     "Never start with 'Acknowledged' or echo the subsession's full summary. "
-    "This is a real turn: your reply will be shown to the user."
+    "This is a real turn: your reply will be shown to the user.\n\n"
+    "If you have recently reported other periodic subsession outcomes in the conversation above, consolidate this outcome with those earlier ones into ONE grouped update. Group by state (NO_CHANGE, PROGRESS, GATE_PENDING) and omit trivial NO_CHANGE runs from duplicate monitor cycles. Prefer a single consolidated message over a stream of individual notices."
 )
 
 # Template used when the main chat session has an active autonomous plan
