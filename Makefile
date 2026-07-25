@@ -1,4 +1,4 @@
-.PHONY: install test lint lint-md format fmt-md format-check typecheck spellcheck check-sse-types clean all
+.PHONY: install test lint lint-md format fmt-md format-check typecheck spellcheck check-sse-types check-activity-kinds clean all
 
 SOURCES = src/robotsix_chat tests
 
@@ -39,6 +39,9 @@ check-subsession-statuses:
 
 check-autonomous-states:
 	python scripts/check_autonomous_states.py
+
+check-activity-kinds:
+	python scripts/check_activity_kinds.py
 
 spellcheck:          ## Run spell-checking (typos)
 	uv run pre-commit run typos --all-files
