@@ -1123,7 +1123,9 @@ def test_create_agent_from_settings_explicit() -> None:
 
     assert isinstance(agent, LlmioChatAgent)
     assert agent._model_level == 2
-    assert agent._instruction == "Be concise."
+    # Default-enabled capabilities append skill supplements; the base
+    # instruction is still wired in as the prefix.
+    assert agent._instruction.startswith("Be concise.")
     # Level 2 → openrouter (key-bearing), so the key is forwarded.
     assert agent._api_key == "sk-from-settings"  # pragma: allowlist secret
 
@@ -1145,7 +1147,9 @@ def test_create_agent_from_settings_instruction_from_config() -> None:
 
     agent = create_agent_from_settings(settings=settings)
 
-    assert agent._instruction == "You are terse."
+    # Default-enabled capabilities append skill supplements; the base
+    # instruction from config is still wired in as the prefix.
+    assert agent._instruction.startswith("You are terse.")
 
 
 def test_create_agent_from_settings_bare_skips_memory_and_tools() -> None:
@@ -1252,7 +1256,7 @@ async def test_run_server_from_config_creates_agent_from_settings(
         feedback_runner = call_args[1].pop("feedback_runner")
         assert feedback_runner is None
         autonomous_runner = call_args[1].pop("autonomous_runner")
-        assert autonomous_runner is None  # disabled by default
+        assert autonomous_runner is not None  # enabled by default
         on_startup_async = call_args[1].pop("on_startup_async")
         assert callable(on_startup_async)
         on_shutdown = call_args[1].pop("on_shutdown")

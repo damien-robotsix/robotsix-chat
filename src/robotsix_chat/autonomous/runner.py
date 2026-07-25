@@ -262,6 +262,19 @@ class AutonomousRunner:
             # Plan text is everything before the marker.
             idx = reply_text.index(approval_marker)
             aq.plan_text = reply_text[:idx].strip()
+
+            # Auto-approve: skip the human gate and begin executing straight
+            # away using the exact same transition an operator approval takes.
+            if self._settings.autonomous.auto_approve:
+                logger.info(
+                    "Autonomous session %s auto-approved (auto_approve=true) — "
+                    "starting execution (plan %d chars)",
+                    session_id,
+                    len(aq.plan_text),
+                )
+                self._begin_execution(session_id)
+                return AutonomousState.executing
+
             aq.state = AutonomousState.awaiting_approval
             logger.info(
                 "Autonomous session %s awaiting approval (plan %d chars)",
@@ -275,6 +288,28 @@ class AutonomousRunner:
         return None
 
     # -- approval gate ------------------------------------------------------
+
+    def _begin_execution(self, session_id: str) -> None:
+        """Transition *session_id* into execution and kick off auto-continue.
+
+        Shared by operator approval (:meth:`approve`) and auto-approval
+        (:meth:`check_reply_for_markers` when ``autonomous.auto_approve`` is
+        ``True``) so both paths behave identically: reset the turn counter,
+        flip to ``executing``, schedule the background auto-continue loop,
+        persist, and publish the new state.  No-op when the session is gone.
+        """
+        aq = self._sessions.get(session_id)
+        if aq is None:
+            return
+
+        aq.state = AutonomousState.executing
+        aq.auto_turn_count = 0
+
+        # Schedule auto-continue as a background task.
+        self._schedule_background(lambda: self._auto_continue(session_id))
+
+        self._save_sessions()
+        self._publish_state(session_id)
 
     def approve(self, owner_id: str, session_id: str) -> tuple[bool, str]:
         """Approve the plan for *session_id*.
@@ -290,14 +325,7 @@ class AutonomousRunner:
         if aq.state is not AutonomousState.awaiting_approval:
             return False, f"session is in state {aq.state.value}, not awaiting_approval"
 
-        aq.state = AutonomousState.executing
-        aq.auto_turn_count = 0
-
-        # Schedule auto-continue as a background task.
-        self._schedule_background(lambda: self._auto_continue(session_id))
-
-        self._save_sessions()
-        self._publish_state(session_id)
+        self._begin_execution(session_id)
         logger.info("Autonomous session %s approved — starting execution", session_id)
         return True, ""
 
@@ -646,6 +674,10 @@ class AutonomousRunner:
         - Sessions in ``executing`` state: resume auto-continue.
         - Sessions in ``selecting_subject`` state: re-kickoff the initial
           turn (the previous kickoff was lost on restart).
+        - Sessions in ``awaiting_approval`` state: when
+          ``autonomous.auto_approve`` is ``True``, auto-approve and begin
+          executing (clears sessions that got stuck before the gate could be
+          reached in the UI); otherwise leave them for an operator.
         - When no sessions exist at all (e.g. a fresh or wiped store),
           auto-start exactly one bootstrap session so autonomous mode is
           not permanently idle.
@@ -683,6 +715,21 @@ class AutonomousRunner:
                         sid, oid, is_restart=True
                     )
                 )
+
+            elif aq.state is AutonomousState.awaiting_approval:
+                if self._settings.autonomous.auto_approve:
+                    logger.info(
+                        "Resuming: auto-approving awaiting-approval session %s "
+                        "(auto_approve=true) — starting execution",
+                        session_id,
+                    )
+                    self._begin_execution(session_id)
+                else:
+                    logger.info(
+                        "Resuming: leaving session %s in awaiting_approval "
+                        "(awaiting operator approval)",
+                        session_id,
+                    )
 
         # Bootstrap: when the store is empty (fresh deploy or wiped data),
         # auto-start one session so autonomous mode isn't permanently idle.

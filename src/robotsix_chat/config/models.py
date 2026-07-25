@@ -422,7 +422,7 @@ class SelfReviewSettings(BaseModel):
 
     """
 
-    enabled: bool = False
+    enabled: bool = True
     recent_activity_limit: int = 20
     model_config = ConfigDict(extra="forbid")
 
@@ -688,7 +688,7 @@ class NotificationSettings(BaseModel):
 
     """
 
-    enabled: bool = False
+    enabled: bool = True
     model_config = ConfigDict(extra="forbid")
 
 
@@ -746,7 +746,7 @@ class RenderUrlSettings(BaseModel):
 
     """
 
-    enabled: bool = False
+    enabled: bool = True
     timeout: float = 30.0
     viewport_width: int = 1280
     viewport_height: int = 720
@@ -774,7 +774,7 @@ class HttpProbeSettings(BaseModel):
 
     """
 
-    enabled: bool = False
+    enabled: bool = True
     timeout: float = 10.0
     allowlist: list[str] = Field(
         default_factory=lambda: ["www.robotsix.net", "robotsix.net"]
@@ -792,7 +792,12 @@ class AutonomousSettings(BaseModel):
     completion with auto-cycling.
 
     Attributes:
-        enabled: Master switch.  Default ``False``.
+        enabled: Master switch.  Default ``True``.
+        auto_approve: When ``True``, autonomous sessions skip the human
+            approval gate — a drafted plan is auto-approved and execution
+            begins immediately, with no operator action required.  When
+            ``False`` (the safe default), a drafted plan stops at
+            ``awaiting_approval`` until an operator approves it via the UI.
         approval_marker: Marker string the agent emits after drafting a plan
             to signal it is awaiting operator approval.
         completion_marker: Marker string the agent emits when the plan is
@@ -807,7 +812,17 @@ class AutonomousSettings(BaseModel):
 
     """
 
-    enabled: bool = False
+    enabled: bool = True
+    auto_approve: bool = Field(
+        default=False,
+        description=(
+            "When True, autonomous sessions skip the human approval gate: a "
+            "drafted plan is auto-approved and execution begins immediately "
+            "with no operator action required. When False (the safe default), "
+            "a drafted plan stops at awaiting_approval until an operator "
+            "approves it."
+        ),
+    )
     approval_marker: str = "---AWAITING APPROVAL---"
     completion_marker: str = "---AUTONOMOUS COMPLETE---"
     max_auto_turns: int = 20
