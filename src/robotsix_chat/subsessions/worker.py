@@ -773,6 +773,49 @@ async def _run_periodic_turn(
                 )
             return None
 
+        # Track how long the checkpoint has carried human_issue_approval
+        # so we can auto-escalate on wall-clock time even when the agent
+        # never emits NO_CHANGE (e.g. it follows the system prompt and
+        # calls complete_subsession instead, but the call fails).
+        now = registry.now()
+        human_approval_since_raw = checkpoint.get("human_approval_since")
+        if isinstance(human_approval_since_raw, (int, float)):
+            human_approval_since = float(human_approval_since_raw)
+        else:
+            human_approval_since = now
+            checkpoint["human_approval_since"] = now
+            registry.update_checkpoint(sub_id, checkpoint)
+
+        human_approval_timeout_s = (
+            env.settings.subsessions.human_approval_timeout_seconds
+        )
+        if now - human_approval_since >= human_approval_timeout_s:
+            logger.warning(
+                "Subsession %s: auto-escalating after %.0f s in "
+                "human_issue_approval state (%.0f s total elapsed).",
+                sub_id,
+                now - human_approval_since,
+                now - info.created_at,
+            )
+            elapsed = _format_duration(now - info.created_at)
+            stuck_for = _format_duration(now - human_approval_since)
+            summary = (
+                f"Ticket has been stuck at human_issue_approval for "
+                f"{stuck_for} ({elapsed} total elapsed) — "
+                f"auto-escalating (wall-clock timeout)."
+            )
+            closed = registry.mark_closed(
+                sub_id,
+                summary=summary,
+                reason="human_approval_timeout",
+                closed_by="system",
+            )
+            if closed is not None:
+                await env.delivery.deliver_summary(
+                    closed, summary, "human_approval_timeout"
+                )
+            return None
+
         human_approval_cap = env.settings.subsessions.human_approval_timeout_runs
         if consecutive_no_change >= human_approval_cap:
             logger.warning(

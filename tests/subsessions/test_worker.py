@@ -22,6 +22,7 @@ from robotsix_chat.subsessions import (
     SubsessionKind,
     SubsessionLevelError,
     SubsessionPeriodicSpawnError,
+    SubsessionRegistry,
     SubsessionStatus,
     spawn_subsession,
 )
@@ -43,6 +44,7 @@ from robotsix_chat.subsessions.worker_mill import (
 from tests.common.subsession_fakes import (
     CapturingAgentFactory,
     FakeAgent,
+    FakeClock,
     RecordingSink,
     build_env,
     make_settings,
@@ -588,6 +590,63 @@ async def test_periodic_pre_authorized_empty_patterns_uses_timeout() -> None:
     assert info.status is SubsessionStatus.CLOSED
     assert info.close_reason == "human_approval_timeout"
     assert len(agent.calls) == 2
+
+
+@pytest.mark.asyncio
+async def test_periodic_human_approval_timeout_by_wall_clock() -> None:
+    """Wall-clock timeout escalates even when the agent never emits NO_CHANGE.
+
+    The run-count gate requires consecutive NO_CHANGE replies, but the
+    system prompt tells the agent to call complete_subsession instead
+    when stuck — the wall-clock backstop catches the case where the
+    agent follows the prompt (producing non-NO_CHANGE output each run)
+    but never actually calls complete_subsession to close the ticket.
+    """
+    clock = FakeClock(start=1000.0)
+    agent = FakeAgent(["still waiting for approval", "still waiting for approval"] * 5)
+    registry = SubsessionRegistry(
+        event_sink=RecordingSink(),
+        store_path=None,
+        clock=clock,
+    )
+    env = build_env(
+        agent=agent,
+        registry=registry,
+        settings=make_settings(
+            auto_stop_no_change_runs=999,
+            human_approval_timeout_runs=999,
+            human_approval_timeout_seconds=300.0,
+        ),
+    )
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+        checkpoint={
+            "last_known_state": "human_issue_approval",
+            "ticket_id": "TICKET-1",
+        },
+    )
+
+    # Let the first run complete — it sets human_approval_since in the
+    # checkpoint and then the worker sleeps for the inter-run interval.
+    await wait_until(lambda: env.registry.get(sub_id).runs >= 1)  # type: ignore[union-attr]
+
+    # Advance the clock past the wall-clock timeout so the *next* run
+    # sees the ticket has been stuck too long.
+    clock.advance(301.0)
+
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "human_approval_timeout"
+    # Escalated by wall-clock timeout, not by run count — the agent
+    # never said NO_CHANGE, so the run-count gate (capped at 999) was
+    # never reached.
+    assert "wall-clock timeout" in (info.summary or "")
 
 
 @pytest.mark.asyncio

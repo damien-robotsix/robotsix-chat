@@ -141,6 +141,7 @@ def make_settings(
     auto_stop_no_change_runs: int = 3,
     max_idle_runs: int = 0,
     human_approval_timeout_runs: int = 3,
+    human_approval_timeout_seconds: float = 300.0,
     pre_authorized_ticket_patterns: list[str] | None = None,
     run_timeout_seconds: float = 600.0,
     mill_recovery_initial_backoff_seconds: float = 0.01,
@@ -165,6 +166,7 @@ def make_settings(
             auto_stop_no_change_runs=auto_stop_no_change_runs,
             max_idle_runs=max_idle_runs,
             human_approval_timeout_runs=human_approval_timeout_runs,
+            human_approval_timeout_seconds=human_approval_timeout_seconds,
             pre_authorized_ticket_patterns=(
                 pre_authorized_ticket_patterns
                 if pre_authorized_ticket_patterns is not None
