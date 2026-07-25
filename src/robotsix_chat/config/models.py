@@ -69,6 +69,19 @@ class MemorySettings(BaseModel):
     Attributes:
         enabled: When ``True``, the agent recalls before and persists after each
             reply. Requires the ``memory`` extra (cognee) installed.
+        subsession_enabled: When ``False`` (default), subsession agents
+            (task / periodic / user_chat workers) get a ``NullMemory`` — they
+            neither recall nor cognify.  ``enabled`` alone only gates the
+            interactive main-chat agent; these background agents run
+            continuously (periodic subsessions fire on a timer with no user
+            present) and each turn otherwise pays a recall + a full cognify
+            extraction pipeline, so cognee cost accrues 24/7.  Turn this on
+            only if background agents genuinely need cross-run memory.
+        autonomous_enabled: When ``False`` (default), the autonomous
+            auto-continue agent gets a ``NullMemory`` for the same reason —
+            auto-continue turns run unattended and would otherwise cognify
+            every turn.  Independent of ``subsession_enabled`` so the two
+            background classes can be gated separately.
         data_dir: Directory for cognee's stores (relative to the working dir).
             Put it under the persistent ``.data`` mount so memory survives
             container redeploys.
@@ -128,6 +141,8 @@ class MemorySettings(BaseModel):
     """
 
     enabled: bool = False
+    subsession_enabled: bool = False
+    autonomous_enabled: bool = False
     data_dir: str = "/data/cognee"
     recall_search_type: str = "GRAPH_COMPLETION"
     recall_timeout_seconds: float = 60.0

@@ -277,6 +277,10 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             subsession_env=env,
             subsession_ctx=ctx,
             subsession_close_state=close_state,
+            # Background subsession workers run unattended; long-term cognee
+            # memory is gated off by default (memory.subsession_enabled) so
+            # they don't recall + cognify every turn around the clock.
+            memory_enabled=s.memory.subsession_enabled,
             diagnostic_store=diagnostic_store,
         )
 
@@ -304,6 +308,10 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             model_level=settings.llmio_model_level,
             subsession_env=env,
             event_sink=event_bus,
+            # Autonomous auto-continue turns run unattended; long-term cognee
+            # memory is gated off by default (memory.autonomous_enabled) so
+            # they don't cognify every turn around the clock.
+            memory_enabled=settings.memory.autonomous_enabled,
             diagnostic_store=diagnostic_store,
         )
 

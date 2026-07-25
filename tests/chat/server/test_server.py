@@ -1170,6 +1170,43 @@ def test_create_agent_from_settings_bare_skips_memory_and_tools() -> None:
     assert agent._instruction == "Be terse."
 
 
+def test_create_agent_from_settings_memory_disabled_skips_cognee() -> None:
+    """``memory_enabled=False`` yields a NullMemory without building cognee.
+
+    Background agents (subsession workers, autonomous auto-continue) run
+    unattended and would otherwise recall + cognify on every turn around the
+    clock — the cost bleed this gate exists to stop.  Unlike ``bare``, tools
+    and subsession wiring are retained; only long-term memory is dropped.
+    """
+    settings = Settings(agent_instruction="Be terse.")
+
+    with patch(
+        "robotsix_chat.chat.server.app.build_memory",
+        side_effect=AssertionError("build_memory must not be called when gated"),
+    ):
+        agent = create_agent_from_settings(settings=settings, memory_enabled=False)
+
+    assert isinstance(agent._memory, NullMemory)
+
+
+def test_create_agent_from_settings_memory_enabled_builds_memory() -> None:
+    """The default (``memory_enabled=True``) routes through ``build_memory``.
+
+    Guards against a gate that accidentally disables memory for the
+    interactive main-chat agent too.
+    """
+    settings = Settings(agent_instruction="Be terse.")
+    sentinel = NullMemory()
+
+    with patch(
+        "robotsix_chat.chat.server.app.build_memory", return_value=sentinel
+    ) as build:
+        agent = create_agent_from_settings(settings=settings)
+
+    build.assert_called_once_with(settings.memory)
+    assert agent._memory is sentinel
+
+
 @pytest.mark.asyncio
 async def test_create_agent_from_settings_uses_load_when_none(
     monkeypatch: pytest.MonkeyPatch,
