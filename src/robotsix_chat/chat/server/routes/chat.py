@@ -678,12 +678,12 @@ async def chat_endpoint(
 
     lock_key = client_id or session_id
 
-    # -- Autonomous proposal → execution transition ------------------------
-    # When the session is in proposal state and the operator sends a
-    # message, treat it as implicit approval and transition to executing.
+    # -- Autonomous proposal approval / rejection --------------------------
+    # Analyse the operator's message for conversational approval or
+    # rejection when the session is in proposal state.
     autonomous_runner = request.app.state.autonomous_runner
     if autonomous_runner is not None:
-        autonomous_runner.on_user_message(session_id)
+        autonomous_runner.on_user_message(session_id, message)
 
     # -- Submit to the message coalescer ----------------------------------
 
