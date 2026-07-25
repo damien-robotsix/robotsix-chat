@@ -323,3 +323,28 @@ class TestSessionsListAutonomousAnnotation:
         assert s["autonomous_turn_count"] == 3
         assert s["autonomous_max_turns"] == 20
         assert s["autonomous_session_color"] == "#ff0000"
+
+    @pytest.mark.asyncio
+    async def test_autonomous_session_listed_without_prior_store_session(
+        self, client, autonomous_runner, store, owner_id
+    ):
+        """An autonomous session appears in GET /sessions with no prior store session.
+
+        Regression for the UI-invisibility bug: the runner used to only call
+        ``store.begin`` (global registration, not owner-linked), so unless an
+        ordinary store session already existed for the owner, the autonomous
+        session never showed up in ``list_sessions``.  Creating it via the
+        runner alone must be enough.
+        """
+        # NOTE: no store.create_session(owner_id) here — the runner must
+        # register the session under the owner by itself.
+        aq = autonomous_runner.create_session(
+            owner_id, session_id=None, schedule_kickoff=False
+        )
+
+        r = await client.get(f"/sessions?owner_id={owner_id}")
+        assert r.status_code == 200
+        sessions = r.json()["sessions"]
+        match = [s for s in sessions if s["session_id"] == aq.session_id]
+        assert len(match) == 1
+        assert match[0]["autonomous"] is True

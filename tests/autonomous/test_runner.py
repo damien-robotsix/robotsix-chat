@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import time
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -464,6 +465,115 @@ class TestStorePublicMethods:
         for sid, session in sessions.items():
             assert isinstance(sid, str)
             assert isinstance(session, Session)
+
+
+class TestConversationStoreRegistration:
+    """Autonomous sessions must appear in ``store.list_sessions`` for their owner.
+
+    Regression tests for the UI-invisibility bug: the AutonomousRunner's own
+    persistence (autonomous_sessions.json) survived restarts, but the
+    conversation-store entry (conversations.json) was missing, so
+    ``list_sessions`` never returned the session and the UI never showed it.
+    """
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+
+    def test_create_session_registers_in_conversation_store(self) -> None:
+        """Creating an autonomous session makes it appear in list_sessions.
+
+        Crucially this holds even when no ordinary store session was created
+        for the owner first — the runner must register the session under the
+        owner itself (previously it only called ``begin``, which registers
+        globally but not under the owner, so ``list_sessions`` never returned
+        it).
+        """
+        store = ConversationStore()
+        runner = AutonomousRunner(
+            settings=MagicMock(),
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+        )
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+
+        sessions, _active = store.list_sessions("owner1")
+        session_ids = [s["session_id"] for s in sessions]
+        assert aq.session_id in session_ids
+        # And the runner still reports it as autonomous (drives the UI badge /
+        # the `autonomous=True` annotation on the list endpoint).
+        assert runner.is_autonomous(aq.session_id)
+
+    def test_create_session_persists_owner_link(self) -> None:
+        """The owner→session link is written to disk so it survives a restart.
+
+        A store whose only registration path was ``record`` (with an existing
+        owner) would never persist the autonomous session — persistence only
+        writes sessions reachable through an owner.  Registering on create
+        fixes that.
+        """
+        import json
+        import tempfile
+
+        with tempfile.TemporaryDirectory() as td:
+            persist = Path(td) / "conversations.json"
+            store = ConversationStore(persist_path=persist)
+            runner = AutonomousRunner(
+                settings=MagicMock(),
+                conversation_store=store,
+                agent_factory=MagicMock(),
+                run_serializer=MagicMock(),
+            )
+            aq = runner.create_session("owner1", schedule_kickoff=False)
+
+            # The persisted file must contain the owner with this session.
+            raw = json.loads(persist.read_text())
+            assert "owner1" in raw
+            persisted_ids = {s["session_id"] for s in raw["owner1"]["sessions"]}
+            assert aq.session_id in persisted_ids
+
+    @pytest.mark.asyncio
+    async def test_resume_reconciles_orphaned_session(self) -> None:
+        """resume_sessions re-registers a session missing from the store.
+
+        Simulates the live incident: the AutonomousRunner state (loaded from
+        autonomous_sessions.json) has a session that the conversation store
+        (conversations.json) lacks entirely.  On resume, the runner must
+        reconcile it back into the store so it reappears in list_sessions.
+        """
+        from robotsix_chat.autonomous.models import AutonomousSession as ASession
+
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.auto_approve = False
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+        )
+        # Prevent the resumed executing session from actually driving a loop.
+        runner._auto_continue = AsyncMock()
+
+        # Inject an orphaned autonomous session directly (as if loaded from
+        # autonomous_sessions.json) with NO corresponding store entry.
+        runner._sessions["orphan-1"] = ASession(
+            session_id="orphan-1",
+            owner_id="owner-x",
+            state=AutonomousState.executing,
+        )
+        assert store.get_session("orphan-1") is None
+
+        await asyncio.wait_for(runner.resume_sessions(), timeout=0.5)
+        await asyncio.sleep(0)
+
+        sessions, _active = store.list_sessions("owner-x")
+        session_ids = [s["session_id"] for s in sessions]
+        assert "orphan-1" in session_ids
 
 
 class TestAutonomousEventStreaming:
