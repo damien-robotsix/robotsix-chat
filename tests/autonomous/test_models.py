@@ -10,14 +10,14 @@ class TestAutonomousState:
 
     def test_values(self) -> None:
         """Each enum member equals its string value."""
-        assert AutonomousState.selecting_subject == "selecting_subject"
-        assert AutonomousState.awaiting_approval == "awaiting_approval"
+        assert AutonomousState.planning == "planning"
+        assert AutonomousState.proposal == "proposal"
         assert AutonomousState.executing == "executing"
         assert AutonomousState.completed == "completed"
 
     def test_is_str_enum(self) -> None:
         """AutonomousState is a string enum (comparable directly to str)."""
-        assert isinstance(AutonomousState.selecting_subject, str)
+        assert isinstance(AutonomousState.planning, str)
 
 
 class TestAutonomousSession:
@@ -28,7 +28,7 @@ class TestAutonomousSession:
         aq = AutonomousSession(session_id="abc", owner_id="owner1")
         assert aq.session_id == "abc"
         assert aq.owner_id == "owner1"
-        assert aq.state is AutonomousState.selecting_subject
+        assert aq.state is AutonomousState.planning
         assert aq.plan_text == ""
         assert aq.auto_turn_count == 0
         assert aq.rejected_subjects is None

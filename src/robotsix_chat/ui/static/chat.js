@@ -511,28 +511,6 @@
     });
   }
 
-  function approveSession(sid) {
-    var url = apiBase() + "/sessions/" + encodeURIComponent(sid) +
-              "/approve?owner_id=" + encodeURIComponent(clientId);
-    return fetch(url, { method: "POST" }).then(function (r) {
-      return r.json().then(function (body) {
-        if (!r.ok) throw new Error(body.error || "approve failed");
-        return body;
-      });
-    });
-  }
-
-  function rejectSession(sid) {
-    var url = apiBase() + "/sessions/" + encodeURIComponent(sid) +
-              "/reject?owner_id=" + encodeURIComponent(clientId);
-    return fetch(url, { method: "POST" }).then(function (r) {
-      return r.json().then(function (body) {
-        if (!r.ok) throw new Error(body.error || "reject failed");
-        return body;
-      });
-    });
-  }
-
   // ---- Session list rendering -----------------------------------------
   function renderSessionList(data) {
     if (!data || !Array.isArray(data.sessions)) return;
@@ -573,10 +551,10 @@
       // Per-state autonomous feedback (Fix 2).
       if (s.autonomous) {
         var aState = s.autonomous_state || "";
-        if (aState === "selecting_subject") {
-          parts.push("Selecting a subject\u2026");
-        } else if (aState === "awaiting_approval") {
-          parts.push("Awaiting approval");
+        if (aState === "planning") {
+          parts.push("Planning\u2026");
+        } else if (aState === "proposal") {
+          parts.push("Awaiting review");
           // Show a plan snippet when available.
           if (s.autonomous_plan_text) {
             var preview = s.autonomous_plan_text.substring(0, 80);
@@ -607,55 +585,6 @@
       }
       metaDiv.textContent = parts.join(" · ");
       row.appendChild(metaDiv);
-
-      // Approve / Reject buttons for autonomous sessions awaiting approval.
-      if (s.autonomous_state === "awaiting_approval") {
-        var actionWrap = document.createElement("div");
-        actionWrap.className = "session-auto-actions";
-
-        var approveBtn = document.createElement("button");
-        approveBtn.className = "session-approve-btn";
-        approveBtn.type = "button";
-        approveBtn.title = "Approve plan and start execution";
-        approveBtn.textContent = "✓ Approve";
-        actionWrap.appendChild(approveBtn);
-
-        var rejectBtn = document.createElement("button");
-        rejectBtn.className = "session-reject-btn";
-        rejectBtn.type = "button";
-        rejectBtn.title = "Reject plan and return to subject selection";
-        rejectBtn.textContent = "✗ Reject";
-        actionWrap.appendChild(rejectBtn);
-
-        row.appendChild(actionWrap);
-
-        (function (sid) {
-          approveBtn.addEventListener("click", function (ev) {
-            ev.stopPropagation();
-            approveBtn.disabled = true;
-            rejectBtn.disabled = true;
-            approveSession(sid).then(function () {
-              refreshSessions();
-            }).catch(function (err) {
-              showError("Approve failed: " + err.message);
-              approveBtn.disabled = false;
-              rejectBtn.disabled = false;
-            });
-          });
-          rejectBtn.addEventListener("click", function (ev) {
-            ev.stopPropagation();
-            approveBtn.disabled = true;
-            rejectBtn.disabled = true;
-            rejectSession(sid).then(function () {
-              refreshSessions();
-            }).catch(function (err) {
-              showError("Reject failed: " + err.message);
-              approveBtn.disabled = false;
-              rejectBtn.disabled = false;
-            });
-          });
-        })(s.session_id);
-      }
 
       // Delete (close) button — appears on hover; stops the session's
       // subsessions and deletes its history (after a confirm()).

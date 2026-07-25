@@ -830,17 +830,15 @@ class AutonomousSettings(BaseModel):
 
     Attributes:
         enabled: Master switch.  Default ``True``.
-        auto_approve: When ``True``, autonomous sessions skip the human
-            approval gate — a drafted plan is auto-approved and execution
-            begins immediately, with no operator action required.  When
-            ``False`` (the safe default), a drafted plan stops at
-            ``awaiting_approval`` until an operator approves it via the UI.
-        approval_marker: Marker string the agent emits after drafting a plan
-            to signal it is awaiting operator approval.
+        proposal_marker: Marker string the agent emits after drafting a plan
+            to signal the plan is ready for operator review.  The session
+            enters the ``proposal`` state and waits for the operator to
+            comment before beginning execution.
         completion_marker: Marker string the agent emits when the plan is
-            complete; triggers auto-close and respawn.
+            complete.  The session stays open after completion; the operator
+            must explicitly close it.
         max_auto_turns: Maximum number of automatic agent turns during the
-            execution phase before reverting to ``awaiting_approval``.
+            execution phase before reverting to ``proposal``.
         session_color: Optional CSS color string applied as a visual accent
             on autonomous session rows (e.g. ``"#ef4444"`` for red).
         initial_task: Optional description of the first task to spawn when
@@ -850,17 +848,7 @@ class AutonomousSettings(BaseModel):
     """
 
     enabled: bool = True
-    auto_approve: bool = Field(
-        default=False,
-        description=(
-            "When True, autonomous sessions skip the human approval gate: a "
-            "drafted plan is auto-approved and execution begins immediately "
-            "with no operator action required. When False (the safe default), "
-            "a drafted plan stops at awaiting_approval until an operator "
-            "approves it."
-        ),
-    )
-    approval_marker: str = "---AWAITING APPROVAL---"
+    proposal_marker: str = "---PROPOSAL READY---"
     completion_marker: str = "---AUTONOMOUS COMPLETE---"
     max_auto_turns: int = 20
     persist_path: str = "/data/autonomous_sessions.json"
