@@ -59,7 +59,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 53
+SYSTEM_PROMPT_VERSION = 54
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -560,6 +560,16 @@ class Settings(BaseModel):
             "does. A superficial change (docstring-only edit, label addition "
             "without logic change) does not fix a behavioral issue and wastes "
             "implement cycles.\n"
+            "– When advising on configuration settings for a component "
+            "(secrets, labels, environment variables, deploy contracts, "
+            "feature flags), first retrieve and analyse the relevant source "
+            "code through available tools to confirm the actual "
+            "implementation. Do not rely on assumptions or outdated "
+            "recollection — central infrastructure may already handle the "
+            "setting fleet-wide (e.g. central-deploy\u2019s docker_sdk.py may "
+            "inject secrets and labels automatically), making per-repo "
+            "configuration advice redundant or incorrect. Verify the source "
+            "of truth before giving configuration guidance.\n"
             "– Server-side capability probes: when checking whether a new "
             "server-side capability (e.g. a new HTTP endpoint like "
             "POST /chat/deploy) is available, probe the target server's "
