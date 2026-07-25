@@ -2,6 +2,11 @@
 
 - Autonomous chat sessions now use conversational approval/rejection instead of UI buttons: the agent proposes a plan directly in the chat, and the operator approves or rejects by writing in natural language (e.g. "approved", "reject"). The "Awaiting review" state label is replaced with "Plan ready — reply to approve".
 - Add `check_workflow_run` agent tool for diagnosing CI failures, including private-repo billing-failure detection (runs with zero jobs or that never started).
+- Subsessions: reaction turns are now plan-aware when the main session has an active
+  autonomous plan. When a subsession completes while the session is in proposal or
+  executing state, the reaction prompt reminds the agent to acknowledge the outcome
+  as a note and stay on its plan — preventing the agent from dropping approved work
+  and re-requesting approval.
 - System prompt (v53): added troubleshooting instruction to fetch live system state (deploy contract, service registry, logs) before hypothesizing causes for user-reported errors, preventing fabricated guesses that waste back-and-forth.
 - **Periodic monitor `consecutive_no_change` counter now persists across server restarts**, preventing the auto-stop and auto-pause thresholds from being defeated by process restarts. Added ``consecutive_no_change`` field to ``SubsessionInfo`` (persisted in the subsession store and restored on resume).
 - **Lowered ``auto_stop_no_change_runs`` default from 5 to 3** so periodic monitors auto-terminate sooner when the watched ticket shows no changes.

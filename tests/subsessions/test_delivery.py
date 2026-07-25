@@ -8,6 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from robotsix_chat.autonomous.models import AutonomousSession, AutonomousState
 from robotsix_chat.subsessions.delivery import ParentDelivery
 from robotsix_chat.subsessions.models import (
     SubsessionInfo,
@@ -767,3 +768,145 @@ async def test_deliver_summary_no_suppression_when_check_returns_false() -> None
     registry.is_duplicate_ticket_terminal.assert_called_once_with("T-789", info.id)
     # Delivery proceeded (no agent wired → passive record).
     store.record_for_session.assert_called()
+
+
+# ---------------------------------------------------------------------------
+# Reaction prompt — active autonomous plan detection
+# ---------------------------------------------------------------------------
+
+
+def _mock_autonomous_runner(
+    session_id: str, state: AutonomousState, plan_text: str = "test plan"
+) -> MagicMock:
+    """Build an AutonomousRunner stub with a session in *state*."""
+    runner = MagicMock()
+    runner._sessions = {
+        session_id: AutonomousSession(
+            session_id=session_id,
+            owner_id=session_id,
+            state=state,
+            plan_text=plan_text,
+        ),
+    }
+    return runner
+
+
+@pytest.mark.asyncio
+async def test_reaction_with_autonomous_executing_uses_active_plan_template() -> None:
+    """Reaction prompt uses the active-plan template when the session is executing."""
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["Noted — continuing the plan."])
+    runner = _mock_autonomous_runner(
+        "owner-sess-1", AutonomousState.executing, "Close the misfiled ticket"
+    )
+    delivery = _build_delivery(store=store, registry=registry, agent=agent)
+    delivery.set_autonomous_runner(runner)
+    info = _make_info(parent_id=None)
+
+    await delivery.deliver_summary(info, "P1 outage resolved", "completed")
+    await _await_reaction_tasks(delivery)
+
+    store.record_for_session.assert_called_once()
+    args, _kwargs = store.record_for_session.call_args
+    prompt = args[1]
+    # The active-plan template must be used, not the default one.
+    assert "executing an operator-approved plan" in prompt
+    assert "Close the misfiled ticket" in prompt
+    assert "DO NOT re-request approval" in prompt
+    assert "P1 outage resolved" in prompt
+    # The default template's "not actively conversing" phrase must be absent.
+    assert "not actively conversing" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_reaction_with_autonomous_proposal_uses_active_plan_template() -> None:
+    """Reaction prompt uses the active-plan template when the session is in proposal."""
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["Noted."])
+    runner = _mock_autonomous_runner(
+        "owner-sess-1", AutonomousState.proposal, "Proposed: close misfiled ticket"
+    )
+    delivery = _build_delivery(store=store, registry=registry, agent=agent)
+    delivery.set_autonomous_runner(runner)
+    info = _make_info(parent_id=None)
+
+    await delivery.deliver_summary(info, "P1 outage resolved", "completed")
+    await _await_reaction_tasks(delivery)
+
+    store.record_for_session.assert_called_once()
+    args, _kwargs = store.record_for_session.call_args
+    prompt = args[1]
+    assert "waiting for operator approval of" in prompt
+    assert "Proposed: close misfiled ticket" in prompt
+    assert "DO NOT re-request approval" in prompt
+    assert "not actively conversing" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_reaction_with_autonomous_planning_uses_default_template() -> None:
+    """Default template is used when the session is still in planning state."""
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["ok"])
+    runner = _mock_autonomous_runner("owner-sess-1", AutonomousState.planning)
+    delivery = _build_delivery(store=store, registry=registry, agent=agent)
+    delivery.set_autonomous_runner(runner)
+    info = _make_info(parent_id=None)
+
+    await delivery.deliver_summary(info, "some outcome", "completed")
+    await _await_reaction_tasks(delivery)
+
+    store.record_for_session.assert_called_once()
+    args, _kwargs = store.record_for_session.call_args
+    prompt = args[1]
+    assert "not actively conversing" in prompt
+    assert "DO NOT re-request approval" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_reaction_without_autonomous_runner_uses_default_template() -> None:
+    """Default template is used when no autonomous runner is wired (backward compat)."""
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["got it"])
+    delivery = _build_delivery(store=store, registry=registry, agent=agent)
+    # Intentionally not calling set_autonomous_runner.
+    info = _make_info(parent_id=None)
+
+    await delivery.deliver_summary(info, "some outcome", "completed")
+    await _await_reaction_tasks(delivery)
+
+    store.record_for_session.assert_called_once()
+    args, _kwargs = store.record_for_session.call_args
+    prompt = args[1]
+    assert "not actively conversing" in prompt
+    assert "DO NOT re-request approval" not in prompt
+
+
+@pytest.mark.asyncio
+async def test_reaction_unknown_session_uses_default_template() -> None:
+    """Default template is used when the runner has no record for this session."""
+    store = MagicMock()
+    store.history.return_value = []
+    registry = MagicMock()
+    agent = _fake_agent(["ok"])
+    runner = MagicMock()
+    runner._sessions = {}  # no sessions
+    delivery = _build_delivery(store=store, registry=registry, agent=agent)
+    delivery.set_autonomous_runner(runner)
+    info = _make_info(parent_id=None)
+
+    await delivery.deliver_summary(info, "outcome", "completed")
+    await _await_reaction_tasks(delivery)
+
+    store.record_for_session.assert_called_once()
+    args, _kwargs = store.record_for_session.call_args
+    prompt = args[1]
+    assert "not actively conversing" in prompt
+    assert "DO NOT re-request approval" not in prompt
