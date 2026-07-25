@@ -8,6 +8,7 @@ from pathlib import Path
 
 import pytest
 
+from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.subsessions import (
     SubsessionInfo,
     SubsessionKind,
@@ -1070,6 +1071,117 @@ async def test_resume_periodic_skips_when_last_known_state_case_insensitive(
     assert info is not None
     assert info.status is SubsessionStatus.CLOSED
     assert periodic.id not in registry2._running
+
+
+# -- duplicate consecutive restart notice suppression ----------------------
+
+
+def test_restart_notice_suppressed_when_identical_to_previous(
+    tmp_path: Path,
+) -> None:
+    """A duplicate consecutive restart notice is suppressed.
+
+    When the chat service restarts and the background-task state is
+    unchanged, the new restart notice is identical to the one already
+    present in the conversation.  The second injection must be a no-op
+    — the transcript must still contain exactly one restart notice.
+    """
+    from robotsix_chat.subsessions.resume import _inject_restart_notice, _ResumeFate
+
+    store = ConversationStore()
+    registry = SubsessionRegistry(store_path=tmp_path / "subsessions.json")
+    env = build_env(store=store, registry=registry)
+
+    owner_id = "sess-dup-test"
+    fates: list[_ResumeFate] = [
+        _ResumeFate(
+            owner_session_id=owner_id,
+            sub_id="abc12345-1111-2222-3333-444444444444",
+            kind="periodic",
+            title="watch CI",
+            fate="resumed",
+            detail="Will continue ticking on its normal schedule.",
+        ),
+    ]
+
+    # First injection — the notice is written.
+    _inject_restart_notice(env, owner_id, fates)
+    history = env.conversation_store.history(owner_id)
+    notices = [
+        label for label, _ in history if "the chat service was restarted" in label
+    ]
+    assert len(notices) == 1
+    assert "watch CI" in notices[0]
+
+    # Second injection with identical fates — must be suppressed.
+    _inject_restart_notice(env, owner_id, fates)
+    history = env.conversation_store.history(owner_id)
+    notices = [
+        label for label, _ in history if "the chat service was restarted" in label
+    ]
+    assert len(notices) == 1, "duplicate identical restart notice was not suppressed"
+
+
+def test_restart_notice_not_suppressed_when_different_from_previous(
+    tmp_path: Path,
+) -> None:
+    """A restart notice with new information is NOT suppressed.
+
+    When the background-task state changes between restarts (e.g. a new
+    subsession appeared), the new notice carries different content and
+    must be written — the transcript should contain both notices.
+    """
+    from robotsix_chat.subsessions.resume import _inject_restart_notice, _ResumeFate
+
+    store = ConversationStore()
+    registry = SubsessionRegistry(store_path=tmp_path / "subsessions.json")
+    env = build_env(store=store, registry=registry)
+
+    owner_id = "sess-diff-test"
+
+    # First restart: one periodic subsession.
+    fates_v1: list[_ResumeFate] = [
+        _ResumeFate(
+            owner_session_id=owner_id,
+            sub_id="abc12345-1111-2222-3333-444444444444",
+            kind="periodic",
+            title="watch CI",
+            fate="resumed",
+            detail="Will continue ticking on its normal schedule.",
+        ),
+    ]
+    _inject_restart_notice(env, owner_id, fates_v1)
+
+    # Second restart: a new task subsession appeared.
+    fates_v2: list[_ResumeFate] = [
+        _ResumeFate(
+            owner_session_id=owner_id,
+            sub_id="abc12345-1111-2222-3333-444444444444",
+            kind="periodic",
+            title="watch CI",
+            fate="resumed",
+            detail="Will continue ticking on its normal schedule.",
+        ),
+        _ResumeFate(
+            owner_session_id=owner_id,
+            sub_id="def67890-aaaa-bbbb-cccc-dddddddddddd",
+            kind="task",
+            title="new task",
+            fate="resumed",
+            detail="Re-enqueued — the task will restart from its original prompt.",
+        ),
+    ]
+    _inject_restart_notice(env, owner_id, fates_v2)
+
+    history = env.conversation_store.history(owner_id)
+    notices = [
+        label for label, _ in history if "the chat service was restarted" in label
+    ]
+    assert len(notices) == 2, (
+        "a different restart notice should NOT have been suppressed"
+    )
+    assert "new task" in notices[1]
+    assert "watch CI" in notices[0]
 
 
 # -- auto-close re-spawn on restart ---------------------------------------

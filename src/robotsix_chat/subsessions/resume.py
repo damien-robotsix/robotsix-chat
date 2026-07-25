@@ -409,6 +409,20 @@ def _inject_restart_notice(
             f"{verb} — {detail}"
         )
     notice = "\n".join(lines)
+
+    # Suppress duplicate consecutive restart notices: if the last turn in
+    # this conversation is already an identical restart notice, the
+    # service was restarted with no change in background-task state — skip
+    # injection to avoid flooding the transcript with noise.
+    history = env.conversation_store.history(owner_id)
+    if history and history[-1][0] == notice:
+        logger.debug(
+            "Skipping duplicate restart notice for owner %s — "
+            "identical notice already present in conversation.",
+            owner_id,
+        )
+        return
+
     env.conversation_store.record_for_session(owner_id, notice, "")
 
 

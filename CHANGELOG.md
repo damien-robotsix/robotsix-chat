@@ -21,6 +21,7 @@
   under a standing operator directive.  When a monitored ticket matches
   a pattern and enters `human_issue_approval`, the system auto-escalates
   immediately instead of waiting for the configured timeout.
+- Suppress duplicate consecutive restart notices: when the chat service restarts with no change in background-task state, the system notice is now skipped instead of being written again — eliminates noise from repeated identical restart notices.
 - Fix Trivy scanning in release-image.yml: tag locally-loaded image with a non-registry-qualified tag (`local/robotsix-chat:scan`) so Trivy resolves via the Docker daemon instead of pulling from GHCR, eliminating `/tmp` exhaustion in CI
 - Add mandatory pre-planning step to load live knowledge notes and board state before drafting plans; strengthen warnings that recalled session memories may be stale or contain phantom identifiers
 - Redesign autonomous session lifecycle: remove Approve/Reject gate flags.
