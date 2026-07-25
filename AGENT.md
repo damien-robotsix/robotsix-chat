@@ -39,9 +39,9 @@ of values; model field defaults fill the gaps.
 silently ignoring them.
 
 **Rule:** When modifying `src/robotsix_chat/config/settings.py`, regenerate
-`config/config.schema.json` by running `uv run scripts/regenerate_schema.py` before committing.
-The CI `check-config-schema` job will catch drift, but regenerating before commit avoids a wasteful
-CI rebuild cycle.
+`config/config.schema.json` by running `uv run scripts/regenerate_schema.py` before committing. The
+CI `check-config-schema` job will catch drift, but regenerating before commit avoids a wasteful CI
+rebuild cycle.
 
 ## Deploy stack structure
 
@@ -181,10 +181,10 @@ Every ticket for a flag-gated feature must cover:
    (e.g. `feedback.enabled: true`, `feedback.board_url: "<url>"`). The committed
    `config/config.json` template may carry `"enabled": false` as a safe default; the ticket must
    still specify what an operator changes to activate.
-2. **Live-proof step** — a concrete verification that the feature fires after activation (e.g.
+1. **Live-proof step** — a concrete verification that the feature fires after activation (e.g.
    "verify FeedbackRunner fires after idle compaction", "check the log for
    `FeedbackRunner started`").
-3. **Post-deploy follow-up** — a task or checklist item to revisit the config after the deploy
+1. **Post-deploy follow-up** — a task or checklist item to revisit the config after the deploy
    settles (closed-loop: did the feature actually turn on in production?).
 
 The implementing agent is responsible for including these in the ticket's acceptance criteria or in
