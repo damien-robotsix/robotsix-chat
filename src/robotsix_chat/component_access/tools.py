@@ -43,7 +43,7 @@ def _parse_retry_after(headers: httpx.Headers) -> float | None:
     Per :rfc:`7231 §7.1.3` the value is either a delay in integer seconds
     or an HTTP-date.  Returns the number of seconds to wait, clamped to
     ≥ 0 (a past date yields 0.0), or ``None`` when the header is missing
-    or unparseable.
+    or unparsable.
     """
     value = headers.get("Retry-After")
     if value is None:
