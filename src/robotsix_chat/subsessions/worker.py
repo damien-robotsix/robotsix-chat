@@ -470,61 +470,70 @@ def _build_periodic_input(
             + _render_turn_input(steering)
         )
     parts.append(
+        "CRITICAL — reporting contract: your replies are NOT delivered "
+        "to the parent conversation.  The only way to communicate with "
+        "the parent is by calling complete_subsession(summary).  "
+        "Intermediate progress — state transitions, status updates, "
+        "observations, commentary — stays inside this subsession and is "
+        "never seen by the parent.  Call complete_subsession ONLY when:\n"
+        "  1. A final, verified terminal state is reached (ticket done, "
+        "merged, closed), or\n"
+        "  2. User intervention is required (ticket blocked on a decision, "
+        "escalation needed, unrecoverable failure).\n"
+        "For all other runs — including state transitions that do not "
+        f"reach a terminal state — reply {_NO_CHANGE_SENTINEL} if nothing "
+        "changed, or reply with a concise acknowledgment if something did "
+        "change (the parent will not see it, but the transcript records "
+        "what you observed).\n\n"
         "CRITICAL — strict verify-first policy: you are a read-only "
         "monitor.  You MUST NOT infer, guess, or fabricate any state "
         "change or outcome.  Before reporting ANY state change, transition, "
-        "or terminal outcome — whether to the parent conversation or in a "
-        "complete_subsession summary — you MUST do a live GET of the ticket "
-        "from the board API (e.g. fetch the ticket endpoint, re-read the "
-        "ticket description and comments) and compare the live response "
-        "against the previously verified state from the prior run's result.  "
-        "Only report what the live API returns — never trust a state you "
-        "only recall from an earlier turn or infer from conversation "
-        "context.  A state transition that happened between polls (e.g. "
-        "draft → ready → in_progress) MUST be detected from the live query, "
-        "not from your memory.  If the live API response conflicts with "
-        "your recollection, the live API response is authoritative — report "
-        "that, and discard the recollection.\n\n"
+        "or terminal outcome in a complete_subsession summary, you MUST do "
+        "a live GET of the ticket from the board API (e.g. fetch the ticket "
+        "endpoint, re-read the ticket description and comments) and compare "
+        "the live response against the previously verified state from the "
+        "prior run's result.  Only report what the live API returns — never "
+        "trust a state you only recall from an earlier turn or infer from "
+        "conversation context.  A state transition that happened between "
+        "polls (e.g. draft → ready → in_progress) MUST be detected from the "
+        "live query, not from your memory.  If the live API response "
+        "conflicts with your recollection, the live API response is "
+        "authoritative — report that, and discard the recollection.\n\n"
         "Tool fallback: use the component_request tool to fetch ticket "
         "state from the board API.  If component_request is not among "
         "your tools, use the ticket_poll tool instead — it queries the "
-        "same board API directly.  If neither tool is available, report "
-        "the gap clearly and recommend pausing the monitor.\n\n"
+        "same board API directly.  If neither tool is available, call "
+        "complete_subsession with a summary recommending the monitor be "
+        "paused — do not silently loop.\n\n"
         f"Reply with the single word {_NO_CHANGE_SENTINEL} — and nothing "
         "else, no punctuation, no commentary — only if genuinely nothing "
         "changed since the previous run: the live board state is identical "
         "to the prior run's observed state. If any state transition occurred "
         "(e.g. draft → implement_complete, in_progress → done, ready → "
-        "in_progress), DO NOT reply NO_CHANGE. Instead, acknowledge the "
-        "change with a concise line summarising what changed and, when "
-        'appropriate, offer a next step (e.g. "Ticket 5f1c has moved to '
-        "implement_complete; PR #654 is open. Let me know if you'd like "
-        'me to check on the review status."). '
-        "Reserve multi-paragraph "
-        "reports for substantive changes: first-time blocking, completion, "
-        "failure, or transitions requiring user action.\n\n"
+        "in_progress) but the ticket has NOT reached a terminal state, reply "
+        "with a concise acknowledgment of the change (the parent will not "
+        "see this — it is for the transcript only).  DO NOT reply NO_CHANGE "
+        "when a transition occurred.\n\n"
         "Decision-blocked tickets: when the monitored ticket is awaiting an "
         "operator decision — stuck in human_issue_approval, waiting on an "
         '"Option A or B?" choice, or otherwise blocked on a human '
         "direction — do NOT silently reply NO_CHANGE run after run.  "
-        "Instead, report the blocked state with a concise note that "
-        'recommends pausing: "Ticket is awaiting operator decision. '
-        "Consider pausing this monitor until the operator provides "
-        'direction."  This surfaces the pause recommendation so the '
-        "operator can act on it rather than waiting for the auto-stop "
-        "timeout.\n\n"
-        "Terminal-state double-check: before reporting a ticket as done "
-        "or closed, you MUST verify from two independent sources — (1) a "
-        "live GET of the ticket endpoint confirming the terminal state, "
-        "and (2) a check of the PR/MR endpoint (e.g. the ticket's linked "
-        "PRs or the merge API) confirming merge status.  Do NOT claim a PR "
-        "was created, merged, or auto-merged unless you have confirmed it "
-        "via the PR API — a terminal ticket state alone does not prove a "
-        "PR exists.  Your complete_subsession summary MUST state which "
-        "sources you checked and what each returned.  If a PR was merged, "
-        "say so with the PR number; if no PR was involved, say 'closed "
-        "without a PR'; if the PR API is unreachable, say 'terminal state "
-        "confirmed via ticket API; PR status could not be verified'.  "
+        "Instead, call complete_subsession with a summary recommending "
+        "pause and explaining what decision is needed.  This surfaces the "
+        "blocker so the operator can act on it rather than waiting for the "
+        "auto-stop timeout.\n\n"
+        "Terminal-state double-check: before calling complete_subsession "
+        "for a done or closed ticket, you MUST verify from two independent "
+        "sources — (1) a live GET of the ticket endpoint confirming the "
+        "terminal state, and (2) a check of the PR/MR endpoint (e.g. the "
+        "ticket's linked PRs or the merge API) confirming merge status.  "
+        "Do NOT claim a PR was created, merged, or auto-merged unless you "
+        "have confirmed it via the PR API — a terminal ticket state alone "
+        "does not prove a PR exists.  Your complete_subsession summary MUST "
+        "state which sources you checked and what each returned.  If a PR "
+        "was merged, say so with the PR number; if no PR was involved, say "
+        "'closed without a PR'; if the PR API is unreachable, say 'terminal "
+        "state confirmed via ticket API; PR status could not be verified'.  "
         "Call complete_subsession only after both checks are complete."
     )
     return "\n\n".join(parts)
@@ -657,20 +666,18 @@ async def _run_periodic_turn(
         next_run_at=registry.now() + info.interval_seconds,
         last_result=reply,
     )
-    if not suppressed:
-        if env.event_sink is not None:
-            env.event_sink.publish(
-                info.owner_session_id,
-                subsession_result_frame(
-                    sub_id,
-                    info.kind.value,
-                    info.title,
-                    runs,
-                    reply,
-                    info.parent_id,
-                ),
-            )
-        await env.delivery.deliver_result(info, runs, reply)
+    if not suppressed and env.event_sink is not None:
+        env.event_sink.publish(
+            info.owner_session_id,
+            subsession_result_frame(
+                sub_id,
+                info.kind.value,
+                info.title,
+                runs,
+                reply,
+                info.parent_id,
+            ),
+        )
     previous_result = reply
 
     if info.max_runs is not None and runs >= info.max_runs:

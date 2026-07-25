@@ -6,6 +6,12 @@
   after a restart, requiring manual re-creation by the operator.  The worker's
   built-in `_check_resume_status` re-verifies the ticket state on the first
   post-restart tick and closes immediately if conditions have not improved.
+- Suppress intermediate periodic subsession run results from the main
+  chat — only terminal summaries (complete_subsession) and escalations
+  now reach the parent conversation.  The reporting contract is baked
+  into both the system prompt (v49) and every periodic turn's input.
+  `ParentDelivery.deliver_result` is removed; the `subsession_result`
+  SSE frame still fires for UI notification bubbles.
 - Derive `__version__` from installed distribution metadata instead of
   hard-coding it, so `pyproject.toml` is the single source of truth.
 - Strengthen the subsession reaction prompt to suppress redundant state restatements: when a subsession reports no change (auto-stopped, auto-paused, or explicit NO_CHANGE), the parent agent now replies with a brief acknowledgment instead of re-listing the ticket ID, status, and timestamp.
