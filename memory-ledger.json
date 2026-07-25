@@ -9,7 +9,11 @@
     "docs/periodic-checks.md": "User-facing docs for periodic subsessions (monitors). Documents the blocked-resume threshold detection (item 8 under 'How it works under the hood'): 3 consecutive blocked resumes auto-close with repeated_blocked reason. Also documents auto-stop and failure notifications: the assistant immediately notifies the user when a monitor auto-stops or fails, with a fallback agent_message frame if the LLM call fails.",
     "docs/notification/skill.md": "User-facing docs for the notify_user tool. Includes delivery limitations and fallback agent_message delivery for background task failures.",
     "src/robotsix_chat/notification/skill.md": "Source-level skill document for the notify_user tool, loaded into the agent's context. Mirrors docs/notification/skill.md.",
-    "docs/architecture.md": "Architecture docs — subpackage inventory mentions blocked-resume threshold in the subsessions/ row."
+    "docs/architecture.md": "Architecture docs — subpackage inventory mentions blocked-resume threshold in the subsessions/ row.",
+    "docs/chat/server.md": "Auto-generated mkdocstrings stub for robotsix_chat.chat.server module.",
+    "docs/chat/server/routes/admin.md": "New doc page for admin routes (disk monitoring + emergency prune). Added for disk-full resilience feature.",
+    "mkdocs.yml": "MkDocs config with nav including API Reference section. New entry added at 'robotsix_chat.chat.server.routes.admin: chat/server/routes/admin.md'.",
+    "src/robotsix_chat/chat/server/routes/admin.py": "Admin endpoints — GET /admin/disk (shutil.disk_usage, no disk writes) and POST /admin/prune (calls _evict_overflow on conversation_store, prune_terminal on subsession_registry, _clear_degraded on memory backend). Returns JSON with cleaned/skipped/errors lists."
   },
   "conventions": {
     "changelog": "CHANGELOG.md has unreleased section at top; changes listed as markdown bullets.",
