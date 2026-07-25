@@ -5,16 +5,16 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
-## v50 — 2026-07-25 — periodic-subsessions-spawned-from-conver-288d
+## v50 — 2026-07-25 — periodic-subsessions-spawned-from-conversation-288d
 
 **Summary:** Clarify periodic subsession role to suppress misleading "not supported" warning.
-Changed "Perform all monitoring, polling, and checking inline in your reply" to third-person
-"they perform all monitoring, polling, and checking inline in their own replies" — the prior
-wording was ambiguous when read by a periodic subsession agent (which receives the same system
-prompt), causing it to misinterpret "your reply" as the main conversation's reply and conclude
-that being spawned directly from a conversation was unsupported. Added an explicit note that
-being spawned as a periodic monitor directly from a conversation is fully supported and the
-preferred way to launch a ticket monitor.
+Changed "Perform all monitoring, polling, and checking inline in your reply" to third-person "they
+perform all monitoring, polling, and checking inline in their own replies" — the prior wording was
+ambiguous when read by a periodic subsession agent (which receives the same system prompt), causing
+it to misinterpret "your reply" as the main conversation's reply and conclude that being spawned
+directly from a conversation was unsupported. Added an explicit note that being spawned as a
+periodic monitor directly from a conversation is fully supported and the preferred way to launch a
+ticket monitor.
 
 **SHA256:** `04baf35a310da23154899d8c8a7bbaa047e1fa83effa16af241fed310cbe8ae1`
 
