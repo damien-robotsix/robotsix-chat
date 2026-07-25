@@ -8,6 +8,9 @@
   on the session, persisted to ``autonomous_sessions.json``, and
   injected into the next subject-selection prompt so the agent is
   instructed not to re-propose the same subject.
+- Suppress AUTONOMOUS COMPLETE marker when non-periodic subsessions are still
+  active, preventing premature session closure that would block spawning new
+  lifecycle-tracker subsessions.
 - System prompt v51: add guardrails preventing self-authored behavioral rules in knowledge notes. Knowledge notes now explicitly limited to operational facts/findings; behavioral restrictions like "never use X" belong in the system prompt. Added verification bullet instructing the agent to trust the system prompt over contradicting knowledge-note rules.
 - Add missing `log_json_format` and `compaction_min_turns` fields to `config/config.json` defaults template so operators can discover them.
 - Autonomous sessions no longer wait for periodic monitors when deciding
