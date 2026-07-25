@@ -7,31 +7,30 @@ ______________________________________________________________________
 
 ## v52 — 2026-07-25 — require-live-notes-and-board-before-planning-c451
 
-**Summary:** Add mandatory pre-planning step to load actual knowledge notes and live board
-state, and strengthen warnings that recalled session memories may be stale.
+**Summary:** Add mandatory pre-planning step to load actual knowledge notes and live board state,
+and strengthen warnings that recalled session memories may be stale.
 
 1. **Autonomous plan drafting (`autonomous/prompts.py`):** Step 2 (PLAN DRAFTING) now requires
    loading knowledge notes and live board state via the mill API *before* drafting the plan.
-   Recalled session memories are explicitly called out as similarity-based, potentially stale,
-   and likely to reference phantom identifiers.
+   Recalled session memories are explicitly called out as similarity-based, potentially stale, and
+   likely to reference phantom identifiers.
 
-2. **Agent instruction opening:** "consult it at the start of every session" →
-   "consult it at the start of every session and before drafting any plan or taking
-   substantive action".
+2. **Agent instruction opening:** "consult it at the start of every session" → "consult it at the
+   start of every session and before drafting any plan or taking substantive action".
 
 3. **Autonomy section:** Added a mandatory pre-action bullet: load live board state via
-   `GET /tickets` and knowledge notes before drafting any plan. Recalled session memories
-   are a fallible cache — verify live state first.
+   `GET /tickets` and knowledge notes before drafting any plan. Recalled session memories are a
+   fallible cache — verify live state first.
 
-4. **Verification section (Cognee recall):** Strengthened the stale-memory warning —
-   explicitly calls out phantom identifiers (wrong repo owners, non-existent ticket ids,
-   closed items remembered as open) and requires cross-checking against both knowledge notes
-   and board state, not just the live API.
+4. **Verification section (Cognee recall):** Strengthened the stale-memory warning — explicitly
+   calls out phantom identifiers (wrong repo owners, non-existent ticket ids, closed items
+   remembered as open) and requires cross-checking against both knowledge notes and board state, not
+   just the live API.
 
-**Rationale:** The assistant opened a plan based on recalled notes that included a wrong repo
-owner and phantom approval-queue ticket ids that did not exist on the board. It then spent
-several turns fetching live state to correct these misconceptions. A mandatory notes + board
-load before planning eliminates this entire class of error.
+**Rationale:** The assistant opened a plan based on recalled notes that included a wrong repo owner
+and phantom approval-queue ticket ids that did not exist on the board. It then spent several turns
+fetching live state to correct these misconceptions. A mandatory notes + board load before planning
+eliminates this entire class of error.
 
 **SHA256:** `3ef0fc15c18fd655521d840603a68c03f6769c9f6a7f6c64e1d7add0bab5298e`
 
