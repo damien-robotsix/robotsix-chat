@@ -254,6 +254,20 @@ class AutonomousRunner:
 
         # Check completion first (it terminates the session).
         if completion_marker in reply_text:
+            # Gate: suppress completion while the session owns any active
+            # subsession (including periodic monitors).  Premature completion
+            # closes the session and locks the agent out of spawning tracking
+            # monitors, leaving newly-filed tickets untracked.
+            if self._has_active_subsessions(session_id):
+                logger.warning(
+                    "Autonomous session %s attempted completion while "
+                    "active subsessions are still running — suppressing",
+                    session_id,
+                )
+                aq.completion_suppressed = True
+                self._save_sessions()
+                return None
+
             aq.state = AutonomousState.completed
             logger.info(
                 "Autonomous session %s completed",
@@ -441,6 +455,22 @@ class AutonomousRunner:
 
     # -- auto-continue loop -------------------------------------------------
 
+    def _has_active_subsessions(self, session_id: str) -> bool:
+        """Return True when the session has *any* active subsession.
+
+        Unlike :meth:`_has_pending_subsessions`, this includes periodic
+        monitors — used as a pre-completion gate so the session is never
+        marked completed while owned background work is still running.
+        """
+        reg = self._subsession_registry
+        if reg is None:
+            return False
+        try:
+            subs = reg.list_for_owner(session_id)
+        except Exception:
+            return False
+        return any(getattr(s, "is_active", False) for s in subs)
+
     def _has_pending_subsessions(self, session_id: str) -> bool:
         """Return True when the session has active non-periodic subsessions.
 
@@ -552,6 +582,16 @@ class AutonomousRunner:
                                 "SYSTEM RESTARTED — resuming your autonomous "
                                 "execution session from where it left off. "
                                 "Continue."
+                            )
+                        elif aq.completion_suppressed:
+                            aq.completion_suppressed = False
+                            message = (
+                                "Continue. (Your previous completion marker "
+                                "was ignored because active monitoring "
+                                "subsessions are still running.  Use "
+                                "list_subsessions to check their status, "
+                                "and only emit the completion marker when "
+                                "all subsessions have finished.)"
                             )
                         else:
                             message = "Continue."
