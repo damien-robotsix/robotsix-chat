@@ -1053,3 +1053,106 @@ async def test_patch_is_non_idempotent_no_retry_on_any_response(
     )
     assert "HTTP 503" in result
     assert route.call_count == 1
+
+
+# -- 429 retry-after -------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_429_with_retry_after_seconds_sleeps_and_retries_get(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """429 with Retry-After (seconds) — RetryClient exhausts, then retry succeeds.
+
+    RetryClient already retries 429 for GET (idempotent), but its
+    backoff is capped at 10 s and it only makes 3 total attempts.
+    After it gives up our handler catches the 429, honours the full
+    Retry-After window, and retries once with the raw client.
+    """
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    # 3 attempts exhaust RetryClient (max_retries=2 → 3 total);
+    # the 4th is our manual post-wait retry.
+    _r429 = httpx.Response(
+        429,
+        json={"error": "rate-limited"},
+        headers={"Retry-After": "0.001"},
+    )
+    route = respx_mock.get("http://m:8080/tickets").mock(
+        side_effect=[
+            _r429,
+            _r429,
+            _r429,
+            httpx.Response(200, json={"ok": True}),
+        ]
+    )
+    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
+    assert "HTTP 200" in result
+    assert route.call_count == 4
+
+
+@pytest.mark.asyncio
+async def test_429_with_retry_after_retry_fails(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """429 with Retry-After — retry also fails, error message includes both details."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    _r429 = httpx.Response(
+        429,
+        json={"error": "rate-limited"},
+        headers={"Retry-After": "0.001"},
+    )
+    route = respx_mock.get("http://m:8080/tickets").mock(
+        side_effect=[
+            _r429,
+            _r429,
+            _r429,
+            httpx.ConnectError("still down"),
+        ]
+    )
+    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
+    assert "HTTP 429" in result
+    assert "retry failed" in result
+    assert route.call_count == 4
+
+
+@pytest.mark.asyncio
+async def test_429_without_retry_after_returns_immediately(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """429 without Retry-After header — returns error after RetryClient exhausts."""
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    route = respx_mock.get("http://m:8080/tickets").mock(
+        return_value=httpx.Response(429, json={"error": "rate-limited"})
+    )
+    result = await _component_request_impl(roster, "mill", "GET", "/tickets")
+    assert "HTTP 429" in result
+    assert "rate-limited" in result
+    # RetryClient makes 3 total attempts (max_retries=2 + initial).
+    assert route.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_429_with_retry_after_post_retries(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """429 with Retry-After on POST — non-idempotent method still gets retry-after wait.
+
+    RetryClient won't retry POST on any HTTP response, so our handler
+    does the single post-wait retry.
+    """
+    roster = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    route = respx_mock.post("http://m:8080/tickets").mock(
+        side_effect=[
+            httpx.Response(
+                429,
+                json={"error": "rate-limited"},
+                headers={"Retry-After": "0.001"},
+            ),
+            httpx.Response(201, json={"created": True}),
+        ]
+    )
+    result = await _component_request_impl(
+        roster, "mill", "POST", "/tickets", {"title": "test"}
+    )
+    assert "HTTP 201" in result
+    assert route.call_count == 2

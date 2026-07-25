@@ -1,5 +1,10 @@
 ## 0.0.0 (unreleased)
 
+- `component_request` tool: when a component returns HTTP 429 with a
+  ``Retry-After`` header, wait the full cooldown window and retry once
+  before returning the error to the agent. This prevents the agent from
+  busy-polling long rate-limit windows (e.g. 300 s disk-reclaim
+  endpoints) inside its own conversation loop.
 - Re-spawn auto-closed periodic monitors on restart when the close reason
   was `no_change_auto_stop`, `paused`, or `human_approval_timeout`.  These
   monitors were previously restored as terminal (CLOSED) and never re-spawned
