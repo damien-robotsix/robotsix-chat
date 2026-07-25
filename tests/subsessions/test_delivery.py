@@ -620,3 +620,150 @@ async def test_deliver_summary_nested_enqueue_skips_lock() -> None:
 
     lock.__aenter__.assert_not_awaited()
     lock.__aexit__.assert_not_awaited()
+
+
+# ---------------------------------------------------------------------------
+# deliver_summary — duplicate terminal-report suppression
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_suppresses_duplicate_ticket_terminal() -> None:
+    """When is_duplicate_ticket_terminal returns True, delivery is skipped entirely."""
+    store = MagicMock()
+    registry = MagicMock()
+    registry.is_duplicate_ticket_terminal.return_value = True
+    delivery = _build_delivery(store=store, registry=registry)
+    info = _make_info(parent_id=None)
+    info.checkpoint = {"ticket_id": "T-123"}
+
+    with patch.object(logging.getLogger(_DELIVERY_LOGGER), "info") as log_info:
+        await delivery.deliver_summary(info, "all done", "ticket_terminal")
+
+    # No reaction tasks scheduled — the early return happens synchronously.
+    assert len(delivery._reaction_tasks) == 0
+
+    # Store must NOT be called (no passive record, no reaction turn).
+    store.record_for_session.assert_not_called()
+    store.history.assert_not_called()
+
+    # Registry enqueue must NOT be called.
+    registry.enqueue_message.assert_not_called()
+
+    # Suppression log message was emitted with correct ticket_id.
+    log_info.assert_called_once()
+    log_args = log_info.call_args[0]
+    assert "Suppressing duplicate terminal report" in log_args[0]
+    assert log_args[1] == "T-123"  # ticket_id as first %s arg
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_suppresses_duplicate_with_reason_completed() -> None:
+    """Duplicate suppression also fires when reason is 'completed'."""
+    store = MagicMock()
+    registry = MagicMock()
+    registry.is_duplicate_ticket_terminal.return_value = True
+    delivery = _build_delivery(store=store, registry=registry)
+    info = _make_info(parent_id=None)
+    info.checkpoint = {"ticket_id": "T-456"}
+
+    with patch.object(logging.getLogger(_DELIVERY_LOGGER), "info") as log_info:
+        await delivery.deliver_summary(info, "done", "completed")
+
+    assert len(delivery._reaction_tasks) == 0
+    store.record_for_session.assert_not_called()
+    log_info.assert_called_once()
+    log_args = log_info.call_args[0]
+    assert log_args[1] == "T-456"  # ticket_id
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_no_check_on_non_terminal_reason() -> None:
+    """When reason is not 'ticket_terminal'/'completed', delivery proceeds normally.
+
+    is_duplicate_ticket_terminal is never consulted.
+    """
+    store = MagicMock()
+    registry = MagicMock()
+    delivery = _build_delivery(store=store, registry=registry)
+    info = _make_info(parent_id=None)
+
+    await delivery.deliver_summary(info, "paused", "paused")
+    await _await_reaction_tasks(delivery)
+
+    # is_duplicate_ticket_terminal must NOT be called.
+    registry.is_duplicate_ticket_terminal.assert_not_called()
+    # Delivery proceeded (passive record because no agent wired).
+    store.record_for_session.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_no_check_when_ticket_id_is_none() -> None:
+    """When _extract_ticket_id returns None, the duplicate check is skipped.
+
+    This covers: no checkpoint, or checkpoint without a ticket_id key.
+    """
+    store = MagicMock()
+    registry = MagicMock()
+    delivery = _build_delivery(store=store, registry=registry)
+    # info has no checkpoint by default — _extract_ticket_id returns None.
+    info = _make_info(parent_id=None)
+
+    await delivery.deliver_summary(info, "all done", "ticket_terminal")
+    await _await_reaction_tasks(delivery)
+
+    # is_duplicate_ticket_terminal must NOT be called.
+    registry.is_duplicate_ticket_terminal.assert_not_called()
+    # Delivery proceeded normally.
+    store.record_for_session.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_no_check_when_checkpoint_lacks_ticket_id() -> None:
+    """When checkpoint exists but ticket_id is missing, duplicate check is skipped."""
+    store = MagicMock()
+    registry = MagicMock()
+    delivery = _build_delivery(store=store, registry=registry)
+    info = _make_info(parent_id=None)
+    info.checkpoint = {"other_key": "value"}  # no ticket_id
+
+    await delivery.deliver_summary(info, "all done", "completed")
+    await _await_reaction_tasks(delivery)
+
+    registry.is_duplicate_ticket_terminal.assert_not_called()
+    store.record_for_session.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_no_check_when_ticket_id_is_not_string() -> None:
+    """When checkpoint ticket_id is not a str, duplicate check is skipped."""
+    store = MagicMock()
+    registry = MagicMock()
+    delivery = _build_delivery(store=store, registry=registry)
+    info = _make_info(parent_id=None)
+    info.checkpoint = {"ticket_id": 12345}  # int, not str
+
+    await delivery.deliver_summary(info, "all done", "ticket_terminal")
+    await _await_reaction_tasks(delivery)
+
+    registry.is_duplicate_ticket_terminal.assert_not_called()
+    store.record_for_session.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_no_suppression_when_check_returns_false() -> None:
+    """When is_duplicate_ticket_terminal returns False, delivery proceeds normally."""
+    store = MagicMock()
+    registry = MagicMock()
+    registry.is_duplicate_ticket_terminal.return_value = False
+    delivery = _build_delivery(store=store, registry=registry)
+    info = _make_info(parent_id=None)
+    info.checkpoint = {"ticket_id": "T-789"}
+
+    await delivery.deliver_summary(info, "all done", "ticket_terminal")
+    await _await_reaction_tasks(delivery)
+
+    # is_duplicate_ticket_terminal was consulted.
+    registry.is_duplicate_ticket_terminal.assert_called_once_with("T-789", info.id)
+    # Delivery proceeded (no agent wired → passive record).
+    store.record_for_session.assert_called()
