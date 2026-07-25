@@ -7,13 +7,13 @@ ______________________________________________________________________
 
 ## v55 — 2026-07-25 — periodic-subsession-spawning-restriction-7981
 
-**Summary:** Add a new bullet to the Subsessions section instructing periodic subsessions on how
-to handle "periodic subsessions cannot spawn" errors. When a periodic subsession attempts
+**Summary:** Add a new bullet to the Subsessions section instructing periodic subsessions on how to
+handle "periodic subsessions cannot spawn" errors. When a periodic subsession attempts
 spawn_subsession and receives this error, it must not present options to the user or ask how to
 proceed — it is a hard code-level restriction, not a transient failure. The subsession should fall
 back immediately to performing the work inline in the current reply, spreading across multiple
-cycles with NO_CHANGE replies if needed. The user should never see the error or be asked to choose
-a recovery path.
+cycles with NO_CHANGE replies if needed. The user should never see the error or be asked to choose a
+recovery path.
 
 **Rationale:** Periodic subsessions were surfacing spawning-restriction errors to users and offering
 recovery options, but this is a hard restriction that cannot be bypassed. The new guidance provides
