@@ -144,20 +144,21 @@ are `completed`.
 ### Lifecycle (spawn → proposal → execute → operator closes)
 
 Sessions no longer auto-close or respawn. After completion the session stays open until the operator
-manually closes it via the UI. A new session is only created when the operator explicitly starts one.
+manually closes it via the UI. A new session is only created when the operator explicitly starts
+one.
 
 ### Non-blocking startup (never blocks chat)
 
 All autonomous lifecycle work is moved off the startup/lifespan critical path:
 
-| Operation                         | Where it runs                              | Blocking? |
-| --------------------------------- | ------------------------------------------ | --------- |
-| Resume completed sessions         | Left as-is (operator closes)               | Never     |
-| Resume executing sessions         | Background task via `_schedule_background` | Never     |
-| Resume planning sessions          | Background task via `_schedule_background` | Never     |
-| Resume proposal sessions          | Left for operator review                   | Never     |
-| Initial turn kickoff              | Background task via `_schedule_background` | Never     |
-| Auto-continue loop                | Background task via `_schedule_background` | Never     |
+| Operation                 | Where it runs                              | Blocking? |
+| ------------------------- | ------------------------------------------ | --------- |
+| Resume completed sessions | Left as-is (operator closes)               | Never     |
+| Resume executing sessions | Background task via `_schedule_background` | Never     |
+| Resume planning sessions  | Background task via `_schedule_background` | Never     |
+| Resume proposal sessions  | Left for operator review                   | Never     |
+| Initial turn kickoff      | Background task via `_schedule_background` | Never     |
+| Auto-continue loop        | Background task via `_schedule_background` | Never     |
 
 `resume_sessions()` (called from the lifespan) iterates persisted autonomous sessions and schedules
 each one's handling as a background task, then returns immediately. Chat becomes available

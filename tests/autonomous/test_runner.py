@@ -1266,5 +1266,3 @@ class TestRejectedSubjectsNote:
         assert "Subject A" in note
         assert "Subject B" in note
         assert "do NOT propose" in note
-
-
