@@ -1,6 +1,10 @@
 ## 0.0.0 (unreleased)
 
 - Fix `render_url` returning `AttributeError: 'Page' object has no attribute 'accessibility'` — migrated from the removed `page.accessibility.snapshot()` API to the ARIA snapshot API (`page.locator("body").aria_snapshot()`), which returns a YAML-like string instead of a nested dict.
+- Periodic subsessions are now closed immediately at startup when
+  ``central_deploy.url`` is not configured, preventing futile retries
+  and child-task churn.  The missing tool is logged as a diagnostic
+  warning.
 - Add ``GET /admin/disk`` and ``POST /admin/prune`` endpoints for disk-full
   resilience.  ``/admin/disk`` reports free/total/used bytes on the data
   volume using stdlib ``shutil.disk_usage`` (no disk writes, survives a full

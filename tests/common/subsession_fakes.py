@@ -169,6 +169,7 @@ def make_settings(
             mill_recovery_max_backoff_seconds=mill_recovery_max_backoff_seconds,
             mill_recovery_max_retries=mill_recovery_max_retries,
         ),
+        central_deploy=SimpleNamespace(url="https://central-deploy.example.com"),
         llmio_api_key=SecretStr(llmio_api_key),
     )
 

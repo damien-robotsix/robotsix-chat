@@ -1,0 +1,1 @@
+Handle component_request tool being temporarily unavailable gracefully
