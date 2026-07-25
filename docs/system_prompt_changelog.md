@@ -19,7 +19,7 @@ noise. Enforcing the contract in both the system prompt and the per-turn periodi
 LLM knows only terminal summaries and escalations reach the parent, regardless of how the parent
 agent embeds spawn instructions.
 
-**SHA256:** `<to be filled>`
+**SHA256:** `e451c9c0cbf2baf56ff1b43644ec2d7c0e26e4a5f7c8b6e7caefecee2523c780`
 
 ## v48 — 2026-07-25 — reduce-verbose-status-messages-to-essent-c3b8
 
