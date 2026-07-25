@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Remove dead `.robotsix-mill/periodic/state_sync.yaml` and `security_posture.yaml` name-only files that were silently rejected by the loader.
 - Autonomous chat sessions now use conversational approval/rejection instead of UI buttons: the agent proposes a plan directly in the chat, and the operator approves or rejects by writing in natural language (e.g. "approved", "reject"). The "Awaiting review" state label is replaced with "Plan ready — reply to approve".
 - Add `check_workflow_run` agent tool for diagnosing CI failures, including private-repo billing-failure detection (runs with zero jobs or that never started).
 - Subsessions: reaction turns are now plan-aware when the main session has an active
