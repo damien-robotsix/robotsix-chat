@@ -497,6 +497,100 @@ async def test_periodic_human_approval_timeout_uses_own_threshold() -> None:
 
 
 @pytest.mark.asyncio
+async def test_periodic_pre_authorized_escalates_immediately() -> None:
+    """Pre-authorized ticket in human_issue_approval escalates on first NO_CHANGE."""
+    agent = FakeAgent(["NO_CHANGE"])
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            auto_stop_no_change_runs=10,
+            human_approval_timeout_runs=5,
+            pre_authorized_ticket_patterns=["TICKET-*"],
+        ),
+    )
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+        checkpoint={
+            "last_known_state": "human_issue_approval",
+            "ticket_id": "TICKET-1",
+        },
+    )
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "pre_authorized_approval"
+    assert "pre-authorized" in (info.summary or "").lower()
+    assert len(agent.calls) == 1  # Escalated on first run, not 5.
+
+
+@pytest.mark.asyncio
+async def test_periodic_pre_authorized_no_match_uses_timeout() -> None:
+    """Non-matching ticket still uses the normal human_approval_timeout."""
+    agent = FakeAgent(["NO_CHANGE", "NO_CHANGE", "NO_CHANGE"])
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            auto_stop_no_change_runs=10,
+            human_approval_timeout_runs=3,
+            pre_authorized_ticket_patterns=["OTHER-*"],
+        ),
+    )
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+        checkpoint={
+            "last_known_state": "human_issue_approval",
+            "ticket_id": "TICKET-1",
+        },
+    )
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "human_approval_timeout"
+    assert len(agent.calls) == 3
+
+
+@pytest.mark.asyncio
+async def test_periodic_pre_authorized_empty_patterns_uses_timeout() -> None:
+    """Empty patterns list falls through to normal human_approval_timeout."""
+    agent = FakeAgent(["NO_CHANGE", "NO_CHANGE"])
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            auto_stop_no_change_runs=10,
+            human_approval_timeout_runs=2,
+            pre_authorized_ticket_patterns=[],
+        ),
+    )
+
+    sub_id = _spawn(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=0.02,
+        checkpoint={
+            "last_known_state": "human_issue_approval",
+            "ticket_id": "TICKET-1",
+        },
+    )
+    await _await_worker(env, sub_id)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.CLOSED
+    assert info.close_reason == "human_approval_timeout"
+    assert len(agent.calls) == 2
+
+
+@pytest.mark.asyncio
 async def test_periodic_steering_message_wakes_the_sleep_early() -> None:
     """A queued message interrupts the inter-run sleep and feeds the run."""
     agent = FakeAgent(["baseline", "focused report"])
@@ -2003,6 +2097,54 @@ async def test_check_resume_status_human_issue_approval_injects_context():
     assert updated is not None
     assert updated.checkpoint is not None
     assert updated.checkpoint.get("last_known_state") == "human_issue_approval"
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_pre_authorized_escalates_immediately():
+    """Pre-authorized ticket in human_issue_approval escalates on resume."""
+    env = _env_with_board()
+    # Set pre_authorized_ticket_patterns on the subsession settings.
+    env.settings.subsessions.pre_authorized_ticket_patterns = ["TICKET-*"]
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+    )
+
+    mock = _mock_async_client(response_json={"state": "human_issue_approval"})
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is False
+    assert context_msg is not None
+    assert "pre-authorized" in (context_msg or "").lower()
+    assert "TICKET-1" in (context_msg or "")
+
+    # Subsessions should be closed.
+    closed_info = env.registry.get(info.id)
+    assert closed_info is not None
+    assert closed_info.status is SubsessionStatus.CLOSED
+    assert closed_info.close_reason == "pre_authorized_approval"
+
+
+@pytest.mark.asyncio
+async def test_check_resume_status_pre_authorized_no_match_injects_context():
+    """Non-matching pre-authorized pattern falls through to normal context injection."""
+    env = _env_with_board()
+    env.settings.subsessions.pre_authorized_ticket_patterns = ["OTHER-*"]
+    info = _make_checkpoint_info(
+        env,
+        ticket_id="TICKET-1",
+        last_known_state="open",
+    )
+
+    mock = _mock_async_client(response_json={"state": "human_issue_approval"})
+    with patch("httpx.AsyncClient", mock):
+        should_continue, context_msg = await _check_resume_status(env, info, info.id)
+
+    assert should_continue is True
+    assert context_msg is not None
+    assert "HUMAN_ISSUE_APPROVAL" in context_msg
 
 
 @pytest.mark.asyncio

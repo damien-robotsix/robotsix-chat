@@ -21,6 +21,7 @@ from __future__ import annotations
 
 import asyncio
 import contextvars
+import fnmatch
 import logging
 from collections.abc import Callable
 from dataclasses import dataclass, field
@@ -197,6 +198,22 @@ def _is_duplicate_reply(reply: str, previous: str | None) -> bool:
     if previous is None:
         return False
     return reply.strip().casefold() == previous.strip().casefold()
+
+
+def _is_ticket_pre_authorized(
+    ticket_id: str,
+    patterns: list[str],
+) -> bool:
+    """Return ``True`` if *ticket_id* matches any glob pattern in *patterns*.
+
+    Uses :func:`fnmatch.fnmatch` for case-sensitive glob matching.
+    An empty *patterns* list always returns ``False``.
+    """
+    if not patterns:
+        return False
+    if not ticket_id:
+        return False
+    return any(fnmatch.fnmatch(ticket_id, p) for p in patterns)
 
 
 @dataclass(frozen=True)
@@ -466,6 +483,7 @@ def _build_periodic_input(
     info: SubsessionInfo,
     previous_result: str | None,
     steering: list[InboxMessage],
+    pre_authorized_patterns: list[str] | None = None,
 ) -> str:
     """Compose one periodic tick's turn input."""
     parts = [info.prompt]
@@ -533,6 +551,19 @@ def _build_periodic_input(
         "pause and explaining what decision is needed.  This surfaces the "
         "blocker so the operator can act on it rather than waiting for the "
         "auto-stop timeout.\n\n"
+    )
+    if pre_authorized_patterns:
+        ticket_id_raw = info.checkpoint.get("ticket_id") if info.checkpoint else None
+        ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+        if ticket_id and _is_ticket_pre_authorized(ticket_id, pre_authorized_patterns):
+            parts.append(
+                "PRE-AUTHORIZED TICKET: this ticket has been pre-authorized "
+                "under a standing operator directive.  The "
+                "human_issue_approval gate does NOT apply — do not treat "
+                "this ticket as decision-blocked.  Continue monitoring "
+                "normally as if the approval were already granted."
+            )
+    parts.append(
         "Terminal-state double-check: before calling complete_subsession "
         "for a done or closed ticket, you MUST verify from two independent "
         "sources — (1) a live GET of the ticket endpoint confirming the "
@@ -704,9 +735,44 @@ async def _run_periodic_turn(
     # human_issue_approval and the subsession has produced enough
     # consecutive NO_CHANGE runs, auto-escalate by closing with a
     # distinct reason so the parent agent can act on it.
+    #
+    # Pre-authorized fast-path: when the monitored ticket matches a
+    # pre_authorized_ticket_patterns entry, escalate immediately on the
+    # first NO_CHANGE run instead of waiting for the full timeout.
     checkpoint = info.checkpoint or {}
     last_known = checkpoint.get("last_known_state", "")
     if isinstance(last_known, str) and last_known.lower() == "human_issue_approval":
+        patterns = env.settings.subsessions.pre_authorized_ticket_patterns
+        ticket_id_raw = checkpoint.get("ticket_id")
+        ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+        pre_authorized = _is_ticket_pre_authorized(ticket_id, patterns)
+
+        if pre_authorized and consecutive_no_change >= 1:
+            logger.info(
+                "Subsession %s: pre-authorized ticket %s in "
+                "human_issue_approval — auto-escalating immediately.",
+                sub_id,
+                ticket_id,
+            )
+            elapsed = _format_duration(registry.now() - info.created_at)
+            summary = (
+                f"Pre-authorized ticket {ticket_id} entered "
+                f"human_issue_approval — auto-escalating immediately "
+                f"under standing operator directive "
+                f"({elapsed} elapsed)."
+            )
+            closed = registry.mark_closed(
+                sub_id,
+                summary=summary,
+                reason="pre_authorized_approval",
+                closed_by="system",
+            )
+            if closed is not None:
+                await env.delivery.deliver_summary(
+                    closed, summary, "pre_authorized_approval"
+                )
+            return None
+
         human_approval_cap = env.settings.subsessions.human_approval_timeout_runs
         if consecutive_no_change >= human_approval_cap:
             logger.warning(
@@ -903,7 +969,12 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                     continue
 
                 steering = pending
-                turn_input = _build_periodic_input(info, previous_result, steering)
+                turn_input = _build_periodic_input(
+                    info,
+                    previous_result,
+                    steering,
+                    pre_authorized_patterns=env.settings.subsessions.pre_authorized_ticket_patterns,
+                )
             elif first_turn:
                 turn_input = info.prompt
                 if info.kind is SubsessionKind.USER_CHAT:
