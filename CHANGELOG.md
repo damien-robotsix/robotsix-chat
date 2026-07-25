@@ -10,6 +10,11 @@
   active PERIODIC subsessions' `checkpoint.ticket_id` against the new
   spawn's `dedup_key`, so a duplicate monitor for the same ticket is
   caught even when the original was spawned without a dedup_key.
+- Allow push/PR operations to bypass the GitHub App installation scope
+  check when the mill pipeline credential (``component_request``) is
+  available.  When a request comes through the component roster the mill
+  already has its own GitHub access, so the scope check is an unnecessary
+  gate.  The scope check is still enforced for direct board-API calls.
 - `component_request` tool: when a component returns HTTP 429 with a
   ``Retry-After`` header, wait the full cooldown window and retry once
   before returning the error to the agent. This prevents the agent from

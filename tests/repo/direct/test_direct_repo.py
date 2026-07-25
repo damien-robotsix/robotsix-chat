@@ -1878,3 +1878,130 @@ async def test_push_commit_to_branch_updates_ref(
     patch_body = json.loads(patch_route.calls.last.request.content.decode())
     assert patch_body["sha"] == "new-commit-sha"
     assert patch_body["force"] is False
+
+
+# ---------------------------------------------------------------------------
+# Scope-check bypass — mill pipeline credential (component_request) available
+# ---------------------------------------------------------------------------
+
+
+async def _mock_component_request_blocked(
+    _component_id: str,
+    _method: str,
+    _path: str,
+    **_kw: Any,
+) -> str:
+    """Mock ``component_request`` that always returns BLOCKED state."""
+    return "HTTP 200\n" + json.dumps({"state": "blocked"})
+
+
+@pytest.mark.asyncio
+async def test_push_branch_bypasses_scope_when_component_request_available(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Repo NOT in installation scope, but component_request is available.
+
+    The scope check is skipped and the push proceeds.
+    """
+    settings = _settings()
+
+    # Scope check would reject: only org/other-repo is installed
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/other-repo"}]}),
+        )
+    )
+    # Catch-all for remaining GitHub API calls during push
+    respx_mock.get(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
+    respx_mock.post(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
+
+    tools = build_direct_repo_tools(
+        settings, component_request=_mock_component_request_blocked
+    )
+    push_fn = [t for t in tools if t.__name__ == "push_direct_repo_branch"][0]
+
+    out = await push_fn(
+        ticket_id="t-1",
+        repo_full_name="org/repo",
+        branch_name="fix/t-1",
+        files_json=json.dumps([{"path": "x.py", "content": "print(1)"}]),
+    )
+    # Scope check must NOT have blocked the push — the result
+    # should come from the GitHub push attempt, not from the scope guard.
+    assert "not installed" not in out.lower()
+    assert "Error pushing branch" in out or "pushed successfully" in out
+
+
+@pytest.mark.asyncio
+async def test_direct_fix_bypasses_scope_when_component_request_available(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Repo NOT in installation scope, but component_request is available.
+
+    The scope check is skipped and direct_fix proceeds.
+    """
+    settings = _settings(direct_fix_enabled=True)
+
+    # Scope check would reject: only org/other-repo is installed
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/other-repo"}]}),
+        )
+    )
+    # Ticket with ≥3 implement cycles (required for direct_fix)
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-df").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "id": "t-df",
+                    "state": "blocked",
+                    "events": [
+                        {"type": "implement_start"},
+                        {"type": "implement_complete"},
+                        {"type": "implement_start"},
+                        {"type": "implement_complete"},
+                        {"type": "implement_start"},
+                        {"type": "implement_complete"},
+                    ],
+                }
+            ),
+        )
+    )
+    # Catch-all for remaining GitHub API calls
+    respx_mock.get(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
+    respx_mock.post(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
+    respx_mock.patch(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
+
+    tools = build_direct_repo_tools(
+        settings, component_request=_mock_component_request_blocked
+    )
+    df_fn = [t for t in tools if t.__name__ == "direct_fix"][0]
+
+    out = await df_fn(
+        ticket_id="t-df",
+        repo_full_name="org/repo",
+        target_branch="main",
+        files_json=json.dumps([{"path": "x.py", "content": "print(1)"}]),
+    )
+    # Scope check must NOT have blocked the push.
+    assert "not installed" not in out.lower()
+    # Should have attempted the push (we see an error because we returned
+    # empty JSON for all GitHub API calls, but the guards passed).
+    assert "Error pushing commit" in out or "pushed successfully" in out

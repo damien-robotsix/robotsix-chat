@@ -119,16 +119,18 @@ def build_direct_repo_tools(
     ) -> str | None:
         """Return an error string if preconditions fail, or None if OK.
 
-        Installation scope is checked FIRST — before the ticket state —
-        because a missing app installation is the most common root cause
-        of failures and produces the most actionable error message.
+        Installation scope is checked only when the mill pipeline credential
+        is NOT available (i.e. *component_request* is ``None``).  When the
+        push is orchestrated through the component roster the mill already
+        has its own GitHub access, so the scope check is an unnecessary gate.
         """
-        # --- scope check first: dedicated diagnostic step ---
-        # When the GitHub App is not installed on the target repo the
-        # subsequent GitHub API calls will fail with opaque connectivity
-        # errors.  Checking installation scope first gives the user a
-        # clear, actionable message.
-        if scope_error := await client.check_installation_scope(repo_full_name):
+        # --- scope check: skipped when mill pipeline credential available ---
+        # When component_request is available the mill pipeline is
+        # orchestrating the push with its own credentials — the GitHub App
+        # installation scope check is an unnecessary hurdle.
+        if component_request is None and (
+            scope_error := await client.check_installation_scope(repo_full_name)
+        ):
             return scope_error
 
         if component_request is not None:
@@ -177,9 +179,12 @@ def build_direct_repo_tools(
         **Precondition:** The ticket identified by *ticket_id* MUST be in
         BLOCKED state.  This tool will verify that and refuse otherwise.
 
-        **Scope:** The *repo_full_name* must be within the robotsix-mill
-        GitHub App's current installation scope (checked dynamically at
-        call time).
+        **Scope:** When called through the component roster (i.e. the
+        ``component_request`` credential is available) the GitHub App
+        installation scope check is bypassed — the mill already has its
+        own GitHub access.  For direct board-API calls, *repo_full_name*
+        must be within the robotsix-mill GitHub App's current installation
+        scope (checked dynamically at call time).
 
         Args:
             ticket_id: The blocked ticket this branch addresses (e.g.
@@ -248,9 +253,12 @@ def build_direct_repo_tools(
         **Precondition:** The ticket identified by *ticket_id* MUST be in
         BLOCKED state.  This tool will verify that and refuse otherwise.
 
-        **Scope:** The *repo_full_name* must be within the robotsix-mill
-        GitHub App's current installation scope (checked dynamically at
-        call time).
+        **Scope:** When called through the component roster (i.e. the
+        ``component_request`` credential is available) the GitHub App
+        installation scope check is bypassed — the mill already has its
+        own GitHub access.  For direct board-API calls, *repo_full_name*
+        must be within the robotsix-mill GitHub App's current installation
+        scope (checked dynamically at call time).
 
         Args:
             ticket_id: The blocked ticket this PR addresses.
@@ -294,9 +302,12 @@ def build_direct_repo_tools(
         **Precondition:** The ticket identified by *ticket_id* MUST be in
         BLOCKED state.  This tool will verify that and refuse otherwise.
 
-        **Scope:** The *repo_full_name* must be within the robotsix-mill
-        GitHub App's current installation scope (checked dynamically at
-        call time).
+        **Scope:** When called through the component roster (i.e. the
+        ``component_request`` credential is available) the GitHub App
+        installation scope check is bypassed — the mill already has its
+        own GitHub access.  For direct board-API calls, *repo_full_name*
+        must be within the robotsix-mill GitHub App's current installation
+        scope (checked dynamically at call time).
 
         Args:
             ticket_id: The blocked ticket the PR belongs to (e.g.
@@ -331,9 +342,12 @@ def build_direct_repo_tools(
         **Precondition:** The ticket identified by *ticket_id* MUST be in
         BLOCKED state.  This tool will verify that and refuse otherwise.
 
-        **Scope:** The *repo_full_name* must be within the robotsix-mill
-        GitHub App's current installation scope (checked dynamically at
-        call time).
+        **Scope:** When called through the component roster (i.e. the
+        ``component_request`` credential is available) the GitHub App
+        installation scope check is bypassed — the mill already has its
+        own GitHub access.  For direct board-API calls, *repo_full_name*
+        must be within the robotsix-mill GitHub App's current installation
+        scope (checked dynamically at call time).
 
         Args:
             ticket_id: The blocked ticket the PR belongs to.
@@ -417,7 +431,12 @@ def build_direct_repo_tools(
             **Preconditions (all enforced by the tool):**
             1. Ticket MUST be in BLOCKED state.
             2. Ticket MUST have ≥3 implement cycles (verified via board API).
-            3. *repo_full_name* MUST be in the GitHub App installation scope.
+            3. When called through the component roster (i.e. the
+               ``component_request`` credential is available) the GitHub App
+               installation scope check is bypassed — the mill already has
+               its own GitHub access.  For direct board-API calls,
+               *repo_full_name* MUST be in the GitHub App installation
+               scope.
 
             **Auditability:** Every invocation is logged at WARNING level
             with the ticket id, repo, branch, and file paths.
