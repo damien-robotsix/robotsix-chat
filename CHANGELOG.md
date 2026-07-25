@@ -1,5 +1,13 @@
 ## 0.0.0 (unreleased)
 
+- Added mandatory CI workflow failure diagnosis gate to the implement agent's
+  system prompt.  Before editing any ``.github/workflows/*.yml`` file, the
+  agent must fetch recent failure logs via the chat-allowlisted
+  ``/actions/run-jobs`` and ``/actions/run-failed-logs`` endpoints, quote
+  the verbatim error in the ticket, and refrain from proposing fixes for
+  zero-step or parser-level rejections until the exact error text is shared.
+  This prevents blind-fix loops like the deploy-ovh.yml incident (PRs #31,
+  #33, #35).
 - Lifecycle `self_restart` now validates the `base_url` at init time, applies a
   configurable default protocol (`default_protocol`, default `"http"`) when the
   URL is missing a scheme, and retries transient failures with exponential
