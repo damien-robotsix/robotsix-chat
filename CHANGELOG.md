@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - System prompt v51: add guardrails preventing self-authored behavioral rules in knowledge notes. Knowledge notes now explicitly limited to operational facts/findings; behavioral restrictions like "never use X" belong in the system prompt. Added verification bullet instructing the agent to trust the system prompt over contradicting knowledge-note rules.
+- Add missing `log_json_format` and `compaction_min_turns` fields to `config/config.json` defaults template so operators can discover them.
 - Autonomous sessions no longer wait for periodic monitors when deciding
   whether to continue — only task and user_chat subsessions block the
   auto-continue loop.  A new config field

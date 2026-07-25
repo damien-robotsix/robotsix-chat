@@ -5,8 +5,10 @@
   "server_port": 8000,
   "idle_timeout_minutes": 30,
   "log_level": "INFO",
+  "log_json_format": true,
   "cors_allow_origins": [],
   "correlation_id_header": "X-Request-ID",
+  "compaction_min_turns": 3,
   "langfuse": {
     "public_key": "",
     "secret_key": "",
