@@ -105,7 +105,7 @@ def _remove_fake_playwright() -> None:
 def test_render_url_settings_defaults() -> None:
     """Default RenderUrlSettings has sensible values."""
     s = RenderUrlSettings()
-    assert s.enabled is False
+    assert s.enabled is True
     assert s.timeout == 30.0
     assert s.viewport_width == 1280
     assert s.viewport_height == 720

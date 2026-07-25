@@ -88,6 +88,7 @@ class TestMarkerDetection:
         settings.autonomous.max_auto_turns = 20
         settings.autonomous.continue_interval_seconds = 0
         settings.autonomous.pending_subsession_wait_timeout = 0
+        settings.autonomous.auto_approve = False
         return AutonomousRunner(
             settings=settings,
             conversation_store=store,
@@ -211,6 +212,111 @@ class TestApprovalGate:
         ok, reason = runner.reject("owner2", aq.session_id)
         assert not ok
         assert "owner_id mismatch" in reason
+
+
+class TestAutoApprove:
+    """auto_approve gate: skip the human approval step when enabled."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+
+    @staticmethod
+    def _settings(*, auto_approve: bool) -> MagicMock:
+        settings = MagicMock()
+        settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
+        settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
+        settings.autonomous.max_auto_turns = 20
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
+        settings.autonomous.initial_task = ""
+        settings.autonomous.auto_approve = auto_approve
+        return settings
+
+    def test_auto_approve_false_stops_at_awaiting_approval(self) -> None:
+        """With auto_approve=False a plan halts at awaiting_approval (default)."""
+        store = ConversationStore()
+        runner = AutonomousRunner(
+            settings=self._settings(auto_approve=False),
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+        )
+        aq = runner.create_session("owner1")
+        reply = "My plan:\n1. Do X\n\n---AWAITING APPROVAL---"
+        new_state = runner.check_reply_for_markers(aq.session_id, reply)
+        assert new_state is AutonomousState.awaiting_approval
+        assert aq.state is AutonomousState.awaiting_approval
+
+    @pytest.mark.asyncio
+    async def test_auto_approve_true_transitions_to_executing(self) -> None:
+        """With auto_approve=True a plan is auto-approved and begins executing."""
+        store = ConversationStore()
+        runner = AutonomousRunner(
+            settings=self._settings(auto_approve=True),
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+        )
+        runner._auto_continue = AsyncMock()  # avoid running the loop
+        aq = runner.create_session("owner1")
+        reply = "My plan:\n1. Do X\n\n---AWAITING APPROVAL---"
+
+        # No manual approve() call — the marker alone must start execution.
+        new_state = runner.check_reply_for_markers(aq.session_id, reply)
+        assert new_state is AutonomousState.executing
+        assert aq.state is AutonomousState.executing
+        assert aq.auto_turn_count == 0
+        assert "My plan:" in aq.plan_text
+
+        # The background auto-continue must have been scheduled.
+        await asyncio.sleep(0)
+        assert runner._auto_continue.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_resume_auto_approves_stuck_awaiting_session(self) -> None:
+        """resume_sessions auto-approves an awaiting_approval session when enabled."""
+        store = ConversationStore()
+        runner = AutonomousRunner(
+            settings=self._settings(auto_approve=True),
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+        )
+        runner._auto_continue = AsyncMock()
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        aq.state = AutonomousState.awaiting_approval
+        aq.plan_text = "stuck plan"
+
+        await asyncio.wait_for(runner.resume_sessions(), timeout=0.5)
+        await asyncio.sleep(0)
+
+        assert aq.state is AutonomousState.executing
+        assert runner._auto_continue.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_resume_leaves_awaiting_session_when_disabled(self) -> None:
+        """resume_sessions leaves an awaiting_approval session alone when disabled."""
+        store = ConversationStore()
+        runner = AutonomousRunner(
+            settings=self._settings(auto_approve=False),
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+        )
+        runner._auto_continue = AsyncMock()
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        aq.state = AutonomousState.awaiting_approval
+        aq.plan_text = "stuck plan"
+
+        await asyncio.wait_for(runner.resume_sessions(), timeout=0.5)
+        await asyncio.sleep(0)
+
+        assert aq.state is AutonomousState.awaiting_approval
+        assert runner._auto_continue.call_count == 0
 
 
 class TestAutoContinue:
@@ -966,6 +1072,7 @@ class TestRestartContextInjection:
         settings.autonomous.pending_subsession_wait_timeout = 0
         settings.autonomous.approval_marker = "[APPROVAL]"
         settings.autonomous.completion_marker = "[COMPLETE]"
+        settings.autonomous.auto_approve = False
         run_serializer = MagicMock()
         run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
         run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
@@ -1010,6 +1117,7 @@ class TestRestartContextInjection:
         settings.autonomous.pending_subsession_wait_timeout = 0
         settings.autonomous.approval_marker = "[APPROVAL]"
         settings.autonomous.completion_marker = "[COMPLETE]"
+        settings.autonomous.auto_approve = False
         run_serializer = MagicMock()
         run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
         run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
@@ -1054,6 +1162,7 @@ class TestRestartContextInjection:
         settings.autonomous.pending_subsession_wait_timeout = 0
         settings.autonomous.approval_marker = "[APPROVAL]"
         settings.autonomous.completion_marker = "[COMPLETE]"
+        settings.autonomous.auto_approve = False
         run_serializer = MagicMock()
         run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
         run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
