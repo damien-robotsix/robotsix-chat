@@ -16,6 +16,7 @@ from robotsix_chat.config import LifecycleSettings
 from robotsix_chat.lifecycle import build_lifecycle_tools, load_lifecycle_skill
 from robotsix_chat.lifecycle.client import (
     LifecycleClient,
+    _diagnose_self_restart_failure,
     _ensure_url_scheme,
     _is_transient_error,
 )
@@ -316,7 +317,7 @@ async def test_self_restart_success(
 async def test_self_restart_error_returns_string(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """A server error on self_restart is returned as a string, not raised."""
+    """A server error on self_restart is returned as a diagnostic report, not raised."""
     respx_mock.post("http://lifecycle:9000/chat/services/chat/restart").mock(
         return_value=httpx.Response(
             500,
@@ -326,6 +327,11 @@ async def test_self_restart_error_returns_string(
 
     client = LifecycleClient(_settings())
     out = await client.self_restart()
+    # 500 is transient — with 3 retries it exhausts and returns a diagnostic.
+    assert "## self_restart failure diagnostic" in out
+    assert "### What happened" in out
+    assert "### Next steps" in out
+    assert "### Raw error" in out
     assert "Lifecycle" in out
     assert "500" in out
 
@@ -735,14 +741,15 @@ async def test_self_restart_retries_on_timeout_then_succeeds(
 async def test_self_restart_all_retries_exhausted(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """When all retries are exhausted, a combined error message is returned."""
+    """When all retries are exhausted, a diagnostic report is returned."""
     respx_mock.post("http://lifecycle:9000/chat/services/chat/restart").mock(
         return_value=httpx.Response(503, json={"error": "still down"})
     )
 
     client = LifecycleClient(_settings(self_restart_max_retries=1))
     out = await client.self_restart()
-    assert "failed after 2 attempts" in out
+    assert "## self_restart failure diagnostic" in out
+    assert "attempted **2** time(s)" in out
     assert "503" in out
 
 
@@ -750,7 +757,7 @@ async def test_self_restart_all_retries_exhausted(
 async def test_self_restart_does_not_retry_4xx(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """A 4xx error is returned immediately — no retries."""
+    """A 4xx error returns a diagnostic report immediately — no retries."""
     call_count = [0]
 
     def handler(request: httpx.Request) -> httpx.Response:
@@ -763,7 +770,7 @@ async def test_self_restart_does_not_retry_4xx(
 
     client = LifecycleClient(_settings(self_restart_max_retries=3))
     out = await client.self_restart()
-    assert "Lifecycle" in out
+    assert "## self_restart failure diagnostic" in out
     assert "403" in out
     assert call_count[0] == 1  # no retries
 
@@ -825,3 +832,99 @@ async def test_client_no_scheme_uses_https_default(
         route.calls.last.request.url
         == "https://secure-deploy:8443/chat/services/chat/restart"
     )
+
+
+# ---------------------------------------------------------------------------
+# _diagnose_self_restart_failure — unit tests
+# ---------------------------------------------------------------------------
+
+
+def test_diagnose_400_error() -> None:
+    """A 400 error diagnostic references service_name configuration."""
+    result = (
+        "Lifecycle error 400 for POST "
+        "http://deploy:8100/chat/services/chat/restart: bad request"
+    )
+    out = _diagnose_self_restart_failure(result, attempts=1, max_retries=3)
+    assert "## self_restart failure diagnostic" in out
+    assert "### What happened" in out
+    assert "malformed" in out.lower()
+    assert "### Next steps" in out
+    assert "service_name" in out
+    assert "### Raw error" in out
+    assert result in out
+
+
+def test_diagnose_401_error() -> None:
+    """A 401 error diagnostic references the API key."""
+    result = (
+        "Lifecycle error 401 for POST "
+        "http://deploy:8100/chat/services/chat/restart: unauthorized"
+    )
+    out = _diagnose_self_restart_failure(result, attempts=1, max_retries=3)
+    assert "authentication failed" in out.lower()
+    assert "api_key" in out.lower()
+
+
+def test_diagnose_403_error() -> None:
+    """A 403 error diagnostic references the per-repo access toggle."""
+    result = (
+        "Lifecycle error 403 for POST "
+        "http://deploy:8100/chat/services/chat/restart: forbidden"
+    )
+    out = _diagnose_self_restart_failure(result, attempts=1, max_retries=3)
+    assert "chat-agent restart toggle" in out.lower() or "chat_agent_mutatable" in out
+    assert "operator" in out.lower()
+
+
+def test_diagnose_404_error() -> None:
+    """A 404 error diagnostic suggests running list_lifecycle_services."""
+    result = (
+        "Lifecycle error 404 for POST "
+        "http://deploy:8100/chat/services/chat/restart: not found"
+    )
+    out = _diagnose_self_restart_failure(result, attempts=1, max_retries=3)
+    assert "service name" in out.lower()
+    assert "list_lifecycle_services" in out
+
+
+def test_diagnose_timeout_error() -> None:
+    """A timeout error diagnostic references network/firewall issues."""
+    result = "Lifecycle request timed out after 30.0s: http://deploy:8100/chat/services/chat/restart"
+    out = _diagnose_self_restart_failure(result, attempts=3, max_retries=2)
+    assert "did not respond in time" in out.lower()
+    assert "firewall" in out.lower()
+    assert "base_url" in out
+    # Multi-attempt wording.
+    assert "attempted **3** time(s)" in out
+
+
+def test_diagnose_connection_failure() -> None:
+    """A connection/protocol failure diagnostic references URL validity."""
+    result = "Lifecycle request failed: [Errno 111] Connection refused"
+    out = _diagnose_self_restart_failure(result, attempts=1, max_retries=3)
+    assert "could not be completed" in out.lower()
+    assert "base_url" in out
+    assert "http" in out.lower()
+
+
+def test_diagnose_single_attempt_wording() -> None:
+    """Single-attempt failures mention 'first attempt' wording."""
+    result = (
+        "Lifecycle error 403 for POST "
+        "http://deploy:8100/chat/services/chat/restart: forbidden"
+    )
+    out = _diagnose_self_restart_failure(result, attempts=1, max_retries=3)
+    assert "first attempt" in out.lower()
+    assert "not retryable" in out.lower()
+
+
+def test_diagnose_unclassified_error_fallback() -> None:
+    """An unrecognised error string uses the generic fallback diagnostic."""
+    result = (
+        "Lifecycle error 418 for POST "
+        "http://deploy:8100/chat/services/chat/restart: I'm a teapot"
+    )
+    out = _diagnose_self_restart_failure(result, attempts=1, max_retries=3)
+    assert "unexpected error" in out.lower()
+    assert "base_url" in out.lower()

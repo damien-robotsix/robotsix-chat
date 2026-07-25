@@ -7,6 +7,12 @@
   how many consecutive NO_CHANGE cycles the agent should observe before
   it may declare the session complete while leaving the monitors running
   in the background.
+- `self_restart` failures now return a structured diagnostic report with
+  plain-language explanation and actionable next steps (e.g. "check
+  lifecycle.base_url", "verify the API key"), replacing raw HTTP error
+  strings.  The retry + backoff mechanism continues to handle transient
+  errors; non-retryable failures and exhausted retries both receive the
+  new diagnostic format.
 - Fix `render_url` returning `AttributeError: 'Page' object has no attribute 'accessibility'` — migrated from the removed `page.accessibility.snapshot()` API to the ARIA snapshot API (`page.locator("body").aria_snapshot()`), which returns a YAML-like string instead of a nested dict.
 - Periodic subsessions are now closed immediately at startup when
   ``central_deploy.url`` is not configured, preventing futile retries

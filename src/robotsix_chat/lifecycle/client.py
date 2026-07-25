@@ -72,6 +72,140 @@ def _is_transient_error(result: str) -> bool:
     return "Lifecycle request failed:" in result
 
 
+# -- self_restart diagnostic report ---------------------------------------
+
+# Mapping of error substrings to (plain_language, next_steps) pairs.
+# Ordered by specificity: more specific patterns are checked first.
+_SELF_RESTART_DIAGNOSTICS: list[tuple[str, str, str]] = [
+    (
+        "Lifecycle error 400",
+        "The deploy server rejected the restart request as malformed.",
+        (
+            "Verify that lifecycle.service_name is set to the exact "
+            "service identifier registered with central-deploy (check "
+            "list_lifecycle_services for the correct name)."
+        ),
+    ),
+    (
+        "Lifecycle error 401",
+        "The deploy server rejected the API key — authentication failed.",
+        (
+            "Check that lifecycle.api_key is set correctly in the "
+            "chat server's configuration and that the key has not "
+            "expired or been revoked in central-deploy."
+        ),
+    ),
+    (
+        "Lifecycle error 403",
+        "The deploy server denied the restart — the chat-agent restart "
+        "toggle is not enabled for this service.",
+        (
+            "Ask the operator to enable the chat_agent_mutatable flag "
+            "in central-deploy for this component, or restart the "
+            "service manually via the central-deploy dashboard."
+        ),
+    ),
+    (
+        "Lifecycle error 404",
+        "The deploy server does not recognise this service name.",
+        (
+            "Check that lifecycle.service_name matches a registered "
+            "service in central-deploy.  Run list_lifecycle_services "
+            "to see the available service identifiers."
+        ),
+    ),
+    (
+        "Lifecycle request timed out",
+        "The deploy server did not respond in time — "
+        "a network or firewall issue may be blocking the request.",
+        (
+            "Verify that the deploy server is reachable from this "
+            "host (check lifecycle.base_url) and that no firewall "
+            "rules are blocking outbound HTTP to the deploy server's "
+            "port."
+        ),
+    ),
+    (
+        "Lifecycle request failed:",
+        "The HTTP request to the deploy server could not be completed — "
+        "this may be a network error, DNS failure, or a URL protocol "
+        "configuration problem.",
+        (
+            "Check that lifecycle.base_url is a valid HTTP URL "
+            "(e.g. http://central-deploy:8100) and that the deploy "
+            "server hostname resolves from this container.  If the "
+            "base_url has an unrecognised scheme, fix it to http "
+            "or https."
+        ),
+    ),
+]
+
+
+def _diagnose_self_restart_failure(
+    result: str,
+    attempts: int,
+    max_retries: int,
+) -> str:
+    """Build a diagnostic report for a failed ``self_restart`` call.
+
+    *result* is the last error string returned by the lifecycle API call.
+    The report categorises the failure and includes plain-language
+    explanation and actionable next steps so the agent (or operator) can
+    self-remediate without reading raw HTTP logs.
+    """
+    # Categorise the error.
+    explanation = ""
+    next_steps = ""
+    for pattern, expl, steps in _SELF_RESTART_DIAGNOSTICS:
+        if pattern in result:
+            explanation = expl
+            next_steps = steps
+            break
+
+    if not explanation:
+        # Generic fallback for unexpected / unclassified errors.
+        explanation = (
+            "The deploy server returned an unexpected error during the restart request."
+        )
+        next_steps = (
+            "Inspect the raw error below.  Check that lifecycle.base_url "
+            "points to the correct deploy-lifecycle API address and that "
+            "the deploy server is reachable and healthy."
+        )
+
+    # Build the report.
+    parts: list[str] = []
+    parts.append("## self_restart failure diagnostic")
+    parts.append("")
+
+    if attempts > 1:
+        parts.append(
+            f"The restart was attempted **{attempts}** time(s) "
+            f"(max retries: {max_retries}) and every attempt failed."
+        )
+    else:
+        parts.append(
+            "The restart failed on the first attempt — the error is not "
+            "retryable so no further attempts were made."
+        )
+    parts.append("")
+
+    parts.append("### What happened")
+    parts.append(explanation)
+    parts.append("")
+
+    parts.append("### Next steps")
+    parts.append(next_steps)
+    parts.append("")
+
+    parts.append("### Raw error")
+    parts.append("```")
+    parts.append(result)
+    parts.append("```")
+
+    return "\n".join(parts)
+
+
 class LifecycleClient:
     """HTTP client for the deploy-lifecycle API.
 
@@ -256,7 +390,12 @@ class LifecycleClient:
                 last_result = result
                 continue
 
-            return result
+            # Non-retryable error (e.g. 4xx, URL protocol) — return a
+            # diagnostic report so the agent can self-remediate.
+            # attempts_made: if we had transient failures before this
+            # non-transient one, count all attempts; otherwise just 1.
+            attempts_made = (attempt + 1) if last_result is not None else 1
+            return _diagnose_self_restart_failure(result, attempts_made, max_retries)
 
         # All retries exhausted.
         logger.error(
@@ -265,9 +404,10 @@ class LifecycleClient:
             max_retries,
             last_result,
         )
-        return (
-            f"self_restart failed after {max_retries + 1} attempts. "
-            f"Last error: {last_result}"
+        return _diagnose_self_restart_failure(
+            last_result or "(unknown error)",
+            max_retries + 1,
+            max_retries,
         )
 
     async def update_service_config(
