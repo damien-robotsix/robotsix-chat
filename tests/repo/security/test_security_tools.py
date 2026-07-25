@@ -14,7 +14,7 @@ import pytest
 import respx
 
 from robotsix_chat.config import DirectRepoSettings, GitHubSecuritySettings
-from robotsix_chat.repo.security import build_github_security_tools
+from robotsix_chat.repo.security import build_github_security_tools, load_github_skill
 
 # ---------------------------------------------------------------------------
 # helpers
@@ -54,6 +54,31 @@ def _mock_github_auth(monkeypatch: pytest.MonkeyPatch) -> None:
     fake = SimpleNamespace()
     fake.mint_installation_token = _fake_mint
     monkeypatch.setitem(sys.modules, "robotsix_github_auth", fake)
+
+
+# ---------------------------------------------------------------------------
+# load_github_skill
+# ---------------------------------------------------------------------------
+
+
+def test_load_github_skill_returns_non_empty_markdown() -> None:
+    """The shipped skill.md is loadable and contains expected markers."""
+    skill = load_github_skill()
+    assert len(skill) > 100
+    assert "github" in skill.lower()
+    assert "security" in skill.lower()
+    assert "repository" in skill.lower()
+    assert "PATCH" in skill
+
+
+def test_load_github_skill_missing_returns_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """When skill.md is missing, returns empty string without raising."""
+    import robotsix_chat.repo.security as sec
+
+    monkeypatch.setattr(sec, "__file__", "/nonexistent/__init__.py")
+    assert load_github_skill() == ""
 
 
 # ---------------------------------------------------------------------------
