@@ -63,6 +63,7 @@ from .routes import (
     config_versions_endpoint,
     diagnostics_create_endpoint,
     diagnostics_list_endpoint,
+    disk_usage_endpoint,
     draft_get_endpoint,
     draft_save_endpoint,
     events_endpoint,
@@ -73,6 +74,7 @@ from .routes import (
     history_endpoint,
     http_exception_handler,
     not_found_handler,
+    prune_endpoint,
     server_error_handler,
     sessions_approve_endpoint,
     sessions_close_endpoint,
@@ -363,6 +365,8 @@ def create_app(
     """
     routes: list[Route | Mount] = [
         Route("/health", health_endpoint, methods=["GET"]),
+        Route("/admin/disk", disk_usage_endpoint, methods=["GET"]),
+        Route("/admin/prune", prune_endpoint, methods=["POST"]),
         Route("/chat", chat_endpoint, methods=["POST"]),
         Route("/chat/queue/cancel", cancel_queued_endpoint, methods=["POST"]),
         Route("/events", events_endpoint, methods=["GET"]),

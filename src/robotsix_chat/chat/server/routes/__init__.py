@@ -7,6 +7,10 @@ from ._shared import (
     health_endpoint,
     ui_endpoint,
 )
+from .admin import (
+    disk_usage_endpoint,
+    prune_endpoint,
+)
 from .chat import (
     ChatAgent,
     MessageCoalescer,
@@ -97,6 +101,7 @@ __all__ = [
     "config_versions_endpoint",
     "diagnostics_create_endpoint",
     "diagnostics_list_endpoint",
+    "disk_usage_endpoint",
     "draft_get_endpoint",
     "draft_save_endpoint",
     "events_endpoint",
@@ -107,6 +112,7 @@ __all__ = [
     "history_endpoint",
     "http_exception_handler",
     "not_found_handler",
+    "prune_endpoint",
     "server_error_handler",
     "sessions_approve_endpoint",
     "sessions_close_endpoint",
