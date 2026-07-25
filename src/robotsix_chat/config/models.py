@@ -513,6 +513,14 @@ class SubsessionsSettings(BaseModel):
             ``human_approval_timeout``) after this many consecutive
             ``NO_CHANGE`` runs.  Default ``5``.
             Env override: ``SUBSESSIONS_HUMAN_APPROVAL_TIMEOUT_RUNS``.
+        human_approval_timeout_seconds: Wall-clock backstop for the
+            ``human_issue_approval`` stuck-ticket gate.  When the checkpoint
+            has carried ``last_known_state='human_issue_approval'`` for
+            longer than this many seconds, auto-escalate (close with reason
+            ``human_approval_timeout``) even if the ``NO_CHANGE`` run count
+            has not yet reached ``human_approval_timeout_runs``.  Default
+            ``300`` (5 minutes).
+            Env override: ``SUBSESSIONS_HUMAN_APPROVAL_TIMEOUT_SECONDS``.
         pre_authorized_ticket_patterns: Glob patterns (``fnmatch``) matching
             ticket IDs that are pre-authorized under a standing operator
             directive.  When a monitored ticket's ID matches any pattern,
@@ -550,6 +558,7 @@ class SubsessionsSettings(BaseModel):
     auto_stop_no_change_runs: int = 3
     max_idle_runs: int = 5
     human_approval_timeout_runs: int = 5
+    human_approval_timeout_seconds: float = 300.0
     pre_authorized_ticket_patterns: list[str] = Field(
         default_factory=list,
         description=(

@@ -477,6 +477,7 @@ async def _check_resume_status(
             f"approval.]"
         )
         checkpoint["last_known_state"] = current_state_str
+        checkpoint.setdefault("human_approval_since", env.registry.now())
         env.registry.update_checkpoint(sub_id, checkpoint)
         logger.info(
             "Subsession %s (ticket %s): human_issue_approval on resume "
