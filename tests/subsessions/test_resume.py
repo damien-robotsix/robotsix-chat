@@ -1184,6 +1184,63 @@ def test_restart_notice_not_suppressed_when_different_from_previous(
     assert "watch CI" in notices[0]
 
 
+def test_restart_notice_suppressed_with_intervening_messages(
+    tmp_path: Path,
+) -> None:
+    """Duplicate restart notices are suppressed even with intervening messages.
+
+    When the server restarts, a restart notice is injected.  If the user
+    then sends messages and the server restarts again with the same
+    background-task state, the second notice must still be suppressed —
+    the previous turn-only check missed duplicates separated by normal
+    conversation turns.
+    """
+    from robotsix_chat.subsessions.resume import _inject_restart_notice, _ResumeFate
+
+    store = ConversationStore()
+    registry = SubsessionRegistry(store_path=tmp_path / "subsessions.json")
+    env = build_env(store=store, registry=registry)
+
+    owner_id = "sess-intervening-test"
+    fates: list[_ResumeFate] = [
+        _ResumeFate(
+            owner_session_id=owner_id,
+            sub_id="abc12345-1111-2222-3333-444444444444",
+            kind="periodic",
+            title="watch CI",
+            fate="resumed",
+            detail="Will continue ticking on its normal schedule.",
+        ),
+    ]
+
+    # First restart — notice is injected.
+    _inject_restart_notice(env, owner_id, fates)
+    history = env.conversation_store.history(owner_id)
+    notices = [
+        label for label, _ in history if "the chat service was restarted" in label
+    ]
+    assert len(notices) == 1
+
+    # User sends a message and gets a reply — intervening turns.
+    env.conversation_store.record_for_session(
+        owner_id, "Hello, are you there?", "Yes, I'm here!"
+    )
+    env.conversation_store.record_for_session(
+        owner_id, "What's the status?", "All systems operational."
+    )
+
+    # Second restart with identical fates — must still be suppressed.
+    _inject_restart_notice(env, owner_id, fates)
+    history = env.conversation_store.history(owner_id)
+    notices = [
+        label for label, _ in history if "the chat service was restarted" in label
+    ]
+    assert len(notices) == 1, (
+        "duplicate restart notice was not suppressed — intervening messages "
+        "should not defeat dedup"
+    )
+
+
 # -- auto-close re-spawn on restart ---------------------------------------
 
 
