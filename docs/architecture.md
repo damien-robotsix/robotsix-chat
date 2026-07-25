@@ -127,35 +127,24 @@ ______________________________________________________________________
 
 ## Autonomous Sessions
 
-The autonomous subsystem lets the agent independently pick a subject, draft a plan, seek operator
-approval, and execute the plan through tool calls — cycling back to subject selection after
-completion. It was redesigned around a **single, continuous session** model to eliminate production
-outages caused by blocking startup and accumulating sessions.
+The autonomous subsystem lets the agent independently pick a subject, draft a plan including a
+step-by-step proposal, present that proposal to the operator, and — when the operator comments on
+the plan — execute it through tool calls. After execution the session stays open until the operator
+explicitly closes it; there is no auto-close or respawn.
 
 ### Single-session model
 
 When `autonomous.enabled=true`, there is **at most one open** autonomous session per owner at any
-instant. "Open" means any non-terminal state (`selecting_subject`, `awaiting_approval`,
-`executing`). Terminal states are `completed` (and any existing failed/cancelled terminal states).
+instant. "Open" means any non-terminal state (`planning`, `proposal`, `executing`). Terminal states
+are `completed`.
 
 - `create_session()` enforces this invariant: if the owner already has an open session, the existing
   session is returned unchanged and no new session is created.
-- `_close_and_respawn()` checks the same invariant before spawning a successor, guarding against
-  stale/duplicate sessions.
 
-### Continuous respawn (complete → new session)
+### Lifecycle (spawn → proposal → execute → operator closes)
 
-When the current open session reaches `completed`, a new autonomous session is automatically spawned
-— the system maintains a continuous cycle while `autonomous.enabled=true`:
-
-1. The `_auto_continue` loop detects the `completion_marker` in the agent's reply.
-2. It schedules `_close_and_respawn` as a **detached background task** (never awaited).
-3. `_close_and_respawn` removes the completed session, enforces the single-session invariant, and
-   calls `create_session(…, schedule_kickoff=True)` which kicks off a fresh subject-selection → plan
-   → approval → execution cycle.
-
-The respawn is **idempotent**: after removing the completed session from the in-memory registry, a
-concurrent duplicate trigger sees `None` and exits early.
+Sessions no longer auto-close or respawn. After completion the session stays open until the operator
+manually closes it via the UI. A new session is only created when the operator explicitly starts one.
 
 ### Non-blocking startup (never blocks chat)
 
@@ -163,10 +152,10 @@ All autonomous lifecycle work is moved off the startup/lifespan critical path:
 
 | Operation                         | Where it runs                              | Blocking? |
 | --------------------------------- | ------------------------------------------ | --------- |
-| Resume completed sessions         | Background task via `_schedule_background` | Never     |
+| Resume completed sessions         | Left as-is (operator closes)               | Never     |
 | Resume executing sessions         | Background task via `_schedule_background` | Never     |
-| Resume selecting-subject sessions | Background task via `_schedule_background` | Never     |
-| Close + respawn on completion     | Background task via `_schedule_background` | Never     |
+| Resume planning sessions          | Background task via `_schedule_background` | Never     |
+| Resume proposal sessions          | Left for operator review                   | Never     |
 | Initial turn kickoff              | Background task via `_schedule_background` | Never     |
 | Auto-continue loop                | Background task via `_schedule_background` | Never     |
 
@@ -180,14 +169,14 @@ caught and logged via `logger.exception`; they never propagate into the lifespan
 When a session is resumed after a process restart, the agent receives a `"SYSTEM RESTARTED"` notice
 in its prompt so it is aware it is resuming rather than starting cold:
 
-- **`selecting_subject` sessions** — the restart notice is prepended to the initial-turn prompt
+- **`planning` sessions** — the restart notice is prepended to the initial-turn prompt
   (`_kickoff_initial_turn(…, is_restart=True)`).
-- **`executing` sessions with `auto_turn_count == 0`** (first turn after approval) — the restart
-  notice is prepended to the "OPERATOR APPROVAL RECEIVED" proceed message.
+- **`executing` sessions with `auto_turn_count == 0`** (first turn after proposal) — the restart
+  notice is prepended to the "The operator has seen your plan" proceed message.
 - **`executing` sessions with `auto_turn_count > 0`** (mid-execution) — the restart notice is
   prepended to the "Continue." message.
-- **`completed` sessions** — handled by `_close_and_respawn` which spawns a fresh session with no
-  restart notice needed (the new session starts cold).
+- **`proposal` sessions** — left for operator review; no restart notice needed.
+- **`completed` sessions** — left as-is; the operator closes them when ready.
 
 ### Session lifecycle
 
@@ -195,33 +184,20 @@ in its prompt so it is aware it is resuming rather than starting cold:
   create_session()
         │
         ▼
-  selecting_subject  ◄── reject
-        │                 (reset after rejection)
-        ▼
-   _kickoff_initial_turn()
+      planning  ──► _kickoff_initial_turn()
         │
         ▼
-  awaiting_approval  ◄── max_auto_turns hit
+     proposal  ◄── max_auto_turns hit
         │
-        ├─ approve() → executing
-        └─ reject()  → selecting_subject (re-kickoff)
-               │            │
-               │            ▼
-          plan_text      previously rejected subjects
-          appended to    are injected into the
-          rejected_      prompt as a "do not propose"
-          subjects       instruction
-               │
-               ▼
-          (persisted to autonomous_sessions.json)
-  executing ── _auto_continue() ──► awaiting_approval (blocker)
-        │                                   │
-        │                                   └─ approve() → executing (re-approval)
-        │
-        └─ completion_marker detected
+        └─ operator sends a message
                 │
                 ▼
-           completed ──► _close_and_respawn() ──► create_session() (back to selecting_subject)
+           executing ── _auto_continue() ──► proposal (blocker)
+                │
+                └─ completion_marker detected
+                        │
+                        ▼
+                   completed  ──► operator explicitly closes via UI
 ```
 
 When the operator rejects a proposed subject, the plan text from that proposal is recorded in the
@@ -232,15 +208,18 @@ the same subject from being re-picked until the session ends.
 ### Configuration
 
 All autonomous behaviour is gated by the `autonomous.enabled` boolean config key (default `false`).
-No new config keys were added for this redesign. See `docs/configuration.md` for the full autonomous
-settings reference.
+See `docs/configuration.md` for the full autonomous settings reference.
 
 ### UI changes
 
 The "🤖 New autonomous" button previously shown in the sessions sidebar when `autonomous.enabled` was
-`true` has been **removed**. With the single-session + continuous-respawn model, manual creation is
-redundant and can violate the single-session invariant. The code path that checked `GET /config` to
-conditionally show the button has also been removed from `chat.js`.
+`true` has been **removed**. With the single-session model, manual creation is redundant and can
+violate the single-session invariant. The code path that checked `GET /config` to conditionally show
+the button has also been removed from `chat.js`.
+
+The Approve / Reject buttons that appeared when a session was awaiting approval have been removed.
+Sessions in `proposal` state display "Awaiting review" with a plan snippet. The operator comments on
+the plan in the chat to begin execution.
 
 ______________________________________________________________________
 
