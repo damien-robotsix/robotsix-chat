@@ -1,5 +1,11 @@
 ## 0.0.0 (unreleased)
 
+- Re-spawn auto-closed periodic monitors on restart when the close reason
+  was `no_change_auto_stop`, `paused`, or `human_approval_timeout`.  These
+  monitors were previously restored as terminal (CLOSED) and never re-spawned
+  after a restart, requiring manual re-creation by the operator.  The worker's
+  built-in `_check_resume_status` re-verifies the ticket state on the first
+  post-restart tick and closes immediately if conditions have not improved.
 - Derive `__version__` from installed distribution metadata instead of
   hard-coding it, so `pyproject.toml` is the single source of truth.
 - Strengthen the subsession reaction prompt to suppress redundant state restatements: when a subsession reports no change (auto-stopped, auto-paused, or explicit NO_CHANGE), the parent agent now replies with a brief acknowledgment instead of re-listing the ticket ID, status, and timestamp.

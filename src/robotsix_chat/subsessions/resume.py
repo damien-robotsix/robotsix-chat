@@ -169,6 +169,16 @@ def _entry_last_assistant_text(entry: Mapping[str, object]) -> str:
 # -- kind-specific resume helpers -----------------------------------------
 
 
+# Close reasons that indicate the system auto-stopped the monitor
+# (not the user or agent explicitly).  These monitors are re-spawned
+# on restart so the worker can re-verify the ticket state — the
+# underlying condition (no change / idle / pending approval) may have
+# resolved during the outage.
+_AUTO_CLOSE_REASONS: frozenset[str] = frozenset(
+    {"no_change_auto_stop", "paused", "human_approval_timeout"}
+)
+
+
 def _resume_periodic_entry(
     env: SubsessionEnv,
     entry: Mapping[str, object],
@@ -326,14 +336,28 @@ def _resume_entry(
     owner = _entry_str(entry, "owner_session_id")
     if not sub_id or not owner:
         return None
-    if status not in {s.value for s in ACTIVE_STATUSES}:
-        _restore_entry(env.registry, entry)
-        return None
-
     title = _entry_str(entry, "title")
 
     if kind is SubsessionKind.PERIODIC:
+        if status not in {s.value for s in ACTIVE_STATUSES}:
+            # CLOSED periodic subsessions: only re-spawn those that
+            # were auto-closed (not explicitly closed by the user or
+            # the agent).  The worker's _check_resume_status will
+            # verify the ticket state on its first post-restart tick
+            # and close immediately if conditions have not improved.
+            if (
+                status == "closed"
+                and _entry_str(entry, "close_reason") in _AUTO_CLOSE_REASONS
+            ):
+                return _resume_periodic_entry(env, entry, sub_id, owner, title)
+            _restore_entry(env.registry, entry)
+            return None
         return _resume_periodic_entry(env, entry, sub_id, owner, title)
+
+    # Non-periodic kinds: terminal entries are restored without a worker.
+    if status not in {s.value for s in ACTIVE_STATUSES}:
+        _restore_entry(env.registry, entry)
+        return None
 
     if kind is SubsessionKind.USER_CHAT:
         return _resume_user_chat_entry(env, entry, sub_id, owner, title)
