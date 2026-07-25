@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add mandatory pre-planning step to load live knowledge notes and board state before drafting plans; strengthen warnings that recalled session memories may be stale or contain phantom identifiers
 - Autonomous sessions now gate completion on active subsessions: the `---AUTONOMOUS COMPLETE---` marker is suppressed when the session still owns any running subsession (including periodic monitors), preventing premature session closure that would lock the agent out of spawning tracking monitors.
 - Persist rejected autonomous session subjects. When an operator rejects
   a proposed subject, the plan text is recorded in ``rejected_subjects``
