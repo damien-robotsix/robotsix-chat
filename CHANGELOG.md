@@ -1,5 +1,11 @@
 ## 0.0.0 (unreleased)
 
+- Background task auto-stop and failure notifications are now more robust:
+  the reaction-prompt template instructs the assistant to always provide a
+  substantive notification (removing the "just acknowledge it briefly"
+  escape hatch), and when the LLM call itself fails a fallback
+  ``agent_message`` frame is pushed directly so the user still sees the
+  outcome in the chat.
 - Strengthened periodic monitor verify-first policy: before reporting any state change or outcome, the monitor must do a live GET of the ticket and compare against previously verified state. Terminal-state claims now require a double-check via the PR API to confirm merge status before reporting.
 - Strengthened the memory-recall prompt header with explicit guidance about stale action items: recalled text mentioning "pending", "awaiting confirmation", or similar unresolved-state language is often from a past conversation where the action was already completed. The LLM is now instructed to treat conversation history (not recalled memory) as the authoritative record of what is actually pending, and to label unverified recalled items explicitly.
 - Refined the subsession reaction prompt to eliminate redundant "Acknowledged" responses: the assistant now jumps straight to a delta summary or a single terse sentence instead of echoing the subsession's full report.
