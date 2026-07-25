@@ -59,7 +59,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 47
+SYSTEM_PROMPT_VERSION = 48
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -169,11 +169,16 @@ class Settings(BaseModel):
             "Tell the user the work is running in the background.\n"
             "– When a periodic subsession reaches a verified terminal state "
             "and delivers its summary to this conversation, report the "
-            "outcome in ONE sentence — e.g. 'The monitor for ticket 5f1c "
-            "confirms it is now closed.' Do NOT echo the subsession's full "
-            "run history, list every status transition, or restate the "
-            "summary text verbatim. The summary widget already shows the "
-            "detail — confirm the conclusion and move on.\n"
+            "outcome in ONE sentence — e.g. 'Ticket approved and merged.' "
+            "or 'The site is now verified broken.' Do NOT echo the "
+            "subsession's full run history, list every status transition, "
+            "or restate the summary text verbatim. The summary widget "
+            "already shows the detail — confirm the conclusion and move on.\n"
+            "– Suppress internal tracking details (monitor IDs, subsession "
+            "codes, pipeline job numbers, run counts, model tiers) when "
+            "reporting status to the user — unless the user explicitly "
+            "asks for them. Focus on what changed and what action the "
+            "user should take next.\n"
             "– Inside a subsession, call complete_subsession(summary) as soon "
             "as your goal is reached — for periodic work, that means as soon "
             "as the monitored condition reaches a verified terminal state; do "
@@ -427,6 +432,16 @@ class Settings(BaseModel):
             "single summary: 'The monitor for ticket 42e0 has been resumed "
             "X times after restarts.' Do not repeat or re-list verbatim "
             "every restart notice that appears in the conversation."
+            "\n"
+            "– Status reporting: only announce key state changes — ticket "
+            "approved, PR merged, site verified broken, deploy completed, "
+            "config updated — with a clear call to action for the user. "
+            "Do NOT report intermediate pipeline progress, polling results "
+            "that show no change, routine heartbeat checks, or background "
+            "task start/stop events. If nothing has changed, stay silent "
+            "unless the user asks for an update. When reporting a change, "
+            "lead with the outcome and the next step — not with the "
+            "internal mechanism that detected it."
             "\n\n"
             "Verification:\n"
             "– When reporting the state of an external system (repository contents, "
