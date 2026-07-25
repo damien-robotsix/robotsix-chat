@@ -7,6 +7,7 @@ network calls.
 
 from __future__ import annotations
 
+from importlib.metadata import version
 from typing import Any
 
 import httpx
@@ -20,6 +21,8 @@ from robotsix_chat.version_check.client import (
     _parse_version,
     compare_versions,
 )
+
+_INSTALLED_VERSION = version("robotsix-chat")
 
 
 def _settings(**kw: Any) -> VersionCheckSettings:
@@ -331,7 +334,7 @@ async def test_check_for_updates_up_to_date(
 ) -> None:
     """The tool returns an up-to-date summary when current == latest."""
     respx_mock.get("https://api.github.com/repos/org/my-repo/releases/latest").mock(
-        return_value=httpx.Response(200, json={"tag_name": "0.1.0"})
+        return_value=httpx.Response(200, json={"tag_name": _INSTALLED_VERSION})
     )
 
     tools = build_version_check_tools(_settings(), _direct_repo())
@@ -339,7 +342,7 @@ async def test_check_for_updates_up_to_date(
     result = await tool()
 
     assert "up to date" in result.lower() or "running the latest" in result.lower()
-    assert "0.1.0" in result
+    assert _INSTALLED_VERSION in result
 
 
 @pytest.mark.asyncio
@@ -348,7 +351,7 @@ async def test_check_for_updates_out_of_date(
 ) -> None:
     """The tool warns when the deployment is behind."""
     respx_mock.get("https://api.github.com/repos/org/my-repo/releases/latest").mock(
-        return_value=httpx.Response(200, json={"tag_name": "0.2.0"})
+        return_value=httpx.Response(200, json={"tag_name": "99.0.0"})
     )
 
     tools = build_version_check_tools(_settings(), _direct_repo())
@@ -356,7 +359,7 @@ async def test_check_for_updates_out_of_date(
     result = await tool()
 
     assert "out of date" in result.lower()
-    assert "0.2.0" in result
+    assert "99.0.0" in result
     assert "releases/latest" in result
 
 
@@ -374,7 +377,7 @@ async def test_check_for_updates_api_failure(
     result = await tool()
 
     assert "could not determine" in result.lower()
-    assert "0.1.0" in result
+    assert _INSTALLED_VERSION in result
 
 
 # ---------------------------------------------------------------------------
