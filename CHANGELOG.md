@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- System prompt (v53): added troubleshooting instruction to fetch live system state (deploy contract, service registry, logs) before hypothesizing causes for user-reported errors, preventing fabricated guesses that waste back-and-forth.
 - Added `subsessions.pre_authorized_ticket_patterns` config key — a
   list of glob patterns matching ticket IDs that are pre-authorized
   under a standing operator directive.  When a monitored ticket matches
