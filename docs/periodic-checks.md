@@ -57,10 +57,9 @@ delivered via a synthetic reaction turn:
    and triggers another reaction, etc.), the recursion is capped at 3 nested turns. Beyond that,
    outcomes are recorded passively without further LLM calls.
 4. **Plan-aware prompts** — if the main conversation has an active autonomous plan (awaiting
-   approval or mid-execution), the reaction prompt includes the current plan and instructs the
-   agent to acknowledge the subsession outcome as a note and continue without re-requesting
-   approval or restarting planning. This prevents subsession notifications from derailing
-   approved work.
+   approval or mid-execution), the reaction prompt includes the current plan and instructs the agent
+   to acknowledge the subsession outcome as a note and continue without re-requesting approval or
+   restarting planning. This prevents subsession notifications from derailing approved work.
 
 Internal reason codes (e.g. `"no_change_auto_stop"`, `"failed"`, `"ticket_terminal"`) are
 automatically translated to human-readable phrases in both the prompt and fallback messages.
