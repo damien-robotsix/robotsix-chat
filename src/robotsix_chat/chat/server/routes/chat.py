@@ -683,7 +683,17 @@ async def chat_endpoint(
     # rejection when the session is in proposal state.
     autonomous_runner = request.app.state.autonomous_runner
     if autonomous_runner is not None:
-        autonomous_runner.on_user_message(session_id, message)
+        disposition = autonomous_runner.on_user_message(session_id, message)
+        if disposition == "stalemate":
+            message = (
+                "[STALEMATE NOTICE: The user has sent this same message "
+                "multiple times without responding to your previous "
+                "proposals. Instead of generating another plan, acknowledge "
+                "the stalling pattern. Ask whether they want to proceed "
+                "with a default action, suggest alternative interaction "
+                "modes (e.g. a direct question), or offer to abort the "
+                "session.]\n\n"
+            ) + message
 
     # -- Submit to the message coalescer ----------------------------------
 

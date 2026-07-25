@@ -1266,3 +1266,109 @@ class TestRejectedSubjectsNote:
         assert "Subject A" in note
         assert "Subject B" in note
         assert "do NOT propose" in note
+
+
+class TestStalemateDetection:
+    """Stalemate detection in ``on_user_message`` — repeated identical messages."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+
+    def _make_runner(self) -> AutonomousRunner:
+        store = ConversationStore()
+        settings = MagicMock()
+        return AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+        )
+
+    def test_no_stalemate_on_first_message(self) -> None:
+        """The first occurrence of a message never triggers stalemate."""
+        runner = self._make_runner()
+        aq = runner.create_session("owner1")
+        # Move to proposal so on_user_message processes it.
+        aq.state = AutonomousState.proposal
+
+        result = runner.on_user_message(aq.session_id, "Hello")
+        assert result == "neutral"
+
+    def test_no_stalemate_on_second_identical(self) -> None:
+        """Two identical messages do NOT yet trigger stalemate (need 3+)."""
+        runner = self._make_runner()
+        aq = runner.create_session("owner1")
+        aq.state = AutonomousState.proposal
+
+        runner.on_user_message(aq.session_id, "Hello")
+        result = runner.on_user_message(aq.session_id, "Hello")
+        assert result == "neutral"
+
+    def test_stalemate_on_third_identical(self) -> None:
+        """The third identical message triggers stalemate (repeat_count >= 2)."""
+        runner = self._make_runner()
+        aq = runner.create_session("owner1")
+        aq.state = AutonomousState.proposal
+
+        runner.on_user_message(aq.session_id, "Hello")
+        runner.on_user_message(aq.session_id, "Hello")
+        result = runner.on_user_message(aq.session_id, "Hello")
+        assert result == "stalemate"
+
+    def test_stalemate_reset_by_different_message(self) -> None:
+        """A different message between repeats prevents stalemate on the third."""
+        runner = self._make_runner()
+        aq = runner.create_session("owner1")
+        aq.state = AutonomousState.proposal
+
+        runner.on_user_message(aq.session_id, "Hello")
+        runner.on_user_message(aq.session_id, "Something else entirely")
+        runner.on_user_message(aq.session_id, "Hello")
+        # Only 1 prior "Hello" in recent list (the first one), so no stalemate.
+        result = runner.on_user_message(aq.session_id, "Hello")
+        assert result == "neutral"
+
+    def test_stalemate_after_fourth_identical(self) -> None:
+        """Stalemate persists on the fourth identical message."""
+        runner = self._make_runner()
+        aq = runner.create_session("owner1")
+        aq.state = AutonomousState.proposal
+
+        runner.on_user_message(aq.session_id, "Hello")
+        runner.on_user_message(aq.session_id, "Hello")
+        runner.on_user_message(aq.session_id, "Hello")  # stalemate
+        result = runner.on_user_message(aq.session_id, "Hello")  # still stalemate
+        assert result == "stalemate"
+
+    def test_stalemate_detection_in_planning_state(self) -> None:
+        """Stalemate detection works even when session is not in proposal state."""
+        runner = self._make_runner()
+        aq = runner.create_session("owner1")
+        # Stays in planning (default).
+
+        runner.on_user_message(aq.session_id, "Begin a new autonomous session")
+        runner.on_user_message(aq.session_id, "Begin a new autonomous session")
+        result = runner.on_user_message(aq.session_id, "Begin a new autonomous session")
+        assert result == "stalemate"
+
+    def test_unknown_session_returns_neutral(self) -> None:
+        """on_user_message on unknown session always returns neutral."""
+        runner = self._make_runner()
+        result = runner.on_user_message("unknown", "Hello")
+        assert result == "neutral"
+
+    def test_recent_messages_stored_on_session(self) -> None:
+        """recent_user_messages is populated on the AutonomousSession object."""
+        runner = self._make_runner()
+        aq = runner.create_session("owner1")
+        aq.state = AutonomousState.proposal
+
+        runner.on_user_message(aq.session_id, "msg1")
+        runner.on_user_message(aq.session_id, "msg2")
+        runner.on_user_message(aq.session_id, "msg1")
+
+        assert aq.recent_user_messages == ["msg1", "msg2", "msg1"]
