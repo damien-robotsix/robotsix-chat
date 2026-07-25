@@ -159,8 +159,8 @@ isolate tests from internal I/O in `AutonomousRunner` test fixtures — match th
 
 **Rationale:** Instance-level MagicMock assignments on the `autonomous_runner` fixture in
 `tests/chat/server/test_autonomous_endpoints.py` have generated 5+ CI-fix tickets in ~24 hours
-(spanning PRs #784, #820, #823, #824, #828), each patching one more leaky abstraction.
-The class-level `monkeypatch` approach in `tests/autonomous/test_runner.py` has proven stable under
+(spanning PRs #784, #820, #823, #824, #828), each patching one more leaky abstraction. The
+class-level `monkeypatch` approach in `tests/autonomous/test_runner.py` has proven stable under
 xdist without follow-up patches.
 
 ## Feature flags and activation
