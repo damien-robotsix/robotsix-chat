@@ -835,6 +835,16 @@ class AutonomousSettings(BaseModel):
     initial_task: str = ""
     continue_interval_seconds: float = 45.0
     pending_subsession_wait_timeout: float = 600.0
+    stale_monitor_runs_before_completion: int = Field(
+        default=3,
+        description=(
+            "Number of consecutive NO_CHANGE cycles after which a periodic "
+            "monitor is considered 'stale' — the agent may declare the "
+            "autonomous session complete even while the monitor is still "
+            "running.  Monitors continue in the background.  "
+            "Env override: ``AUTONOMOUS_STALE_MONITOR_RUNS_BEFORE_COMPLETION``."
+        ),
+    )
     model_config = ConfigDict(extra="forbid")
 
 

@@ -442,7 +442,13 @@ class AutonomousRunner:
     # -- auto-continue loop -------------------------------------------------
 
     def _has_pending_subsessions(self, session_id: str) -> bool:
-        """Return True when the session has active/pending subsessions."""
+        """Return True when the session has active non-periodic subsessions.
+
+        Periodic subsessions run indefinitely by design — they are not
+        "pending" work that the runner should wait for.  Only task and
+        user_chat subsessions (which have finite lifetimes) block the
+        auto-continue loop.
+        """
         reg = self._subsession_registry
         if reg is None:
             return False
@@ -450,7 +456,11 @@ class AutonomousRunner:
             subs = reg.list_for_owner(session_id)
         except Exception:
             return False
-        return any(getattr(s, "is_active", False) for s in subs)
+        return any(
+            getattr(s, "is_active", False)
+            and getattr(s, "kind", None) not in (None, "periodic")
+            for s in subs
+        )
 
     async def _wait_before_continue(self, session_id: str) -> None:
         """Pace the continue loop and pause while pending subsessions exist.

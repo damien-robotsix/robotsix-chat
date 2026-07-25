@@ -33,11 +33,11 @@ def test_has_pending_subsessions_none_registry() -> None:
 
 
 def test_has_pending_subsessions_detects_active() -> None:
-    """An active subsession for the session is reported as pending."""
+    """An active non-periodic subsession for the session is reported as pending."""
     reg = MagicMock()
     reg.list_for_owner.return_value = [
-        SimpleNamespace(is_active=False),
-        SimpleNamespace(is_active=True),
+        SimpleNamespace(is_active=False, kind="task"),
+        SimpleNamespace(is_active=True, kind="task"),
     ]
     assert _runner(reg)._has_pending_subsessions("s1") is True
 
@@ -45,7 +45,7 @@ def test_has_pending_subsessions_detects_active() -> None:
 def test_has_pending_subsessions_all_terminal() -> None:
     """Only terminal subsessions → not pending."""
     reg = MagicMock()
-    reg.list_for_owner.return_value = [SimpleNamespace(is_active=False)]
+    reg.list_for_owner.return_value = [SimpleNamespace(is_active=False, kind="task")]
     assert _runner(reg)._has_pending_subsessions("s1") is False
 
 
@@ -54,6 +54,28 @@ def test_has_pending_subsessions_registry_error_is_safe() -> None:
     reg = MagicMock()
     reg.list_for_owner.side_effect = RuntimeError("boom")
     assert _runner(reg)._has_pending_subsessions("s1") is False
+
+
+def test_has_pending_subsessions_excludes_periodic() -> None:
+    """Active periodic subsessions are NOT reported as pending — they run forever."""
+    reg = MagicMock()
+    reg.list_for_owner.return_value = [
+        SimpleNamespace(is_active=True, kind="periodic"),
+        SimpleNamespace(is_active=True, kind="periodic"),
+    ]
+    assert _runner(reg)._has_pending_subsessions("s1") is False
+
+
+def test_has_pending_subsessions_mixed_kinds() -> None:
+    """Only the non-periodic active subsessions count as pending."""
+    reg = MagicMock()
+    reg.list_for_owner.return_value = [
+        SimpleNamespace(is_active=True, kind="periodic"),
+        SimpleNamespace(is_active=True, kind="task"),
+        SimpleNamespace(is_active=True, kind="user_chat"),
+        SimpleNamespace(is_active=False, kind="task"),
+    ]
+    assert _runner(reg)._has_pending_subsessions("s1") is True
 
 
 @pytest.mark.asyncio
@@ -82,9 +104,9 @@ async def test_wait_before_continue_gates_until_clear(
     reg = MagicMock()
     # pending for the first two checks after the throttle, then clear
     reg.list_for_owner.side_effect = [
-        [SimpleNamespace(is_active=True)],
-        [SimpleNamespace(is_active=True)],
-        [SimpleNamespace(is_active=False)],
+        [SimpleNamespace(is_active=True, kind="task")],
+        [SimpleNamespace(is_active=True, kind="task")],
+        [SimpleNamespace(is_active=False, kind="task")],
     ]
     monkeypatch.setattr("robotsix_chat.autonomous.runner.asyncio.sleep", fake_sleep)
     await _runner(reg, interval=1.0, timeout=100.0)._wait_before_continue("s1")
@@ -103,7 +125,9 @@ async def test_wait_before_continue_bounded_by_timeout(
         slept.append(d)
 
     reg = MagicMock()
-    reg.list_for_owner.return_value = [SimpleNamespace(is_active=True)]  # never clears
+    reg.list_for_owner.return_value = [
+        SimpleNamespace(is_active=True, kind="task")  # never clears
+    ]
     monkeypatch.setattr("robotsix_chat.autonomous.runner.asyncio.sleep", fake_sleep)
     await _runner(reg, interval=1.0, timeout=3.0)._wait_before_continue("s1")
     # throttle(1) + gate sleeps until waited >= timeout(3): total sleeps bounded

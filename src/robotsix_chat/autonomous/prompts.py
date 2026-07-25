@@ -17,6 +17,7 @@ def build_autonomous_instruction(settings: Settings) -> str:
     """
     approval_marker = settings.autonomous.approval_marker
     completion_marker = settings.autonomous.completion_marker
+    stale_threshold = settings.autonomous.stale_monitor_runs_before_completion
 
     return (
         "\n\n"
@@ -53,6 +54,19 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "consolidated re-implementation ticket that carries the full scope "
         "on a fresh workspace — splitting corrective work only works when "
         "the base implementation already exists on main.\n"
+        "\n"
+        "Stale monitor completion: you may emit the completion marker while "
+        "periodic monitors are still running.  If all your active periodic "
+        f"monitors have been reporting no changes for {stale_threshold} or "
+        "more consecutive cycles and you have no other pending actions "
+        "(no in-flight task/user_chat subsessions, no unaddressed operator "
+        "decisions), complete the session — do NOT keep looping waiting for "
+        "monitors that may never produce a terminal result.  Monitors "
+        "continue running in the background after the session closes; their "
+        "terminal summaries will be delivered to the next session.  Before "
+        "completing, call list_subsessions to confirm only periodic monitors "
+        "remain and they have been running long enough to exceed the stale "
+        "threshold given their intervals.\n"
         "\n"
         "5. CLOSURE — When the plan is complete (goal reached, or all "
         "actions taken and no further progress is possible), emit this "

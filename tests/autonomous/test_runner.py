@@ -1369,9 +1369,14 @@ class TestAutoContinueThrottleAndSubsessionGate:
 
     @staticmethod
     def _make_subsession_info(is_active: bool = True) -> MagicMock:
-        """Return a mock SubsessionInfo with controllable is_active."""
+        """Return a mock SubsessionInfo with controllable is_active.
+
+        The mock defaults to ``kind="task"`` so it counts as a pending
+        (blocking) subsession in ``_has_pending_subsessions``.
+        """
         info = MagicMock()
         info.is_active = is_active
+        info.kind = "task"
         return info
 
     @staticmethod
