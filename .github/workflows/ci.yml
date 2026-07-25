@@ -341,6 +341,47 @@ jobs:
   check:
     name: All CI checks passed
     needs: [lockfile, ci, security, pre-commit, check-sse-types, check-subsession-kinds, check-activity-kinds, check-subsession-statuses, check-autonomous-states, image-scan, check-config-schema, deptry, pyright]
+    # Use !cancelled() so the job still runs when a reusable-workflow call
+    # (ci, security) is misreported as "skipped" due to a known GitHub
+    # Actions edge case: when a reusable workflow has conditionally-skipped
+    # nested jobs (e.g. the lint/typecheck/test jobs inside python-ci.yml
+    # with `if: inputs.job_split`), the caller's `needs` resolution can
+    # treat the whole reusable call as skipped/cancelled even though every
+    # job that *ran* succeeded.  !cancelled() (like always()) overrides the
+    # implicit needs skip/cancel cascade but still respects workflow-level
+    # cancellation.  Explicit per-need checks below recover the correct
+    # pass/fail signal.
+    if: ${{ !cancelled() }}
     runs-on: ubuntu-latest
     steps:
-      - run: echo "All CI checks passed"
+      - name: Verify all gates passed
+        run: |
+          set -euo pipefail
+          check() {  # usage: check <result> <label> [allow-skipped]
+            case "$1" in
+              success) return 0 ;;
+              skipped)
+                if [ "${3:-}" = "allow-skipped" ]; then
+                  echo "  (skipped — allowed for reusable-workflow call)"
+                  return 0
+                fi
+                ;;
+            esac
+            echo "::error::$2=$1 (expected success)"
+            return 1
+          }
+          echo "--- CI gate results ---"
+          check '${{ needs.lockfile.result }}'                    lockfile
+          check '${{ needs.ci.result }}'                          ci                    allow-skipped
+          check '${{ needs.security.result }}'                    security              allow-skipped
+          check '${{ needs.pre-commit.result }}'                  pre-commit
+          check '${{ needs.check-sse-types.result }}'             check-sse-types
+          check '${{ needs.check-subsession-kinds.result }}'      check-subsession-kinds
+          check '${{ needs.check-activity-kinds.result }}'        check-activity-kinds
+          check '${{ needs.check-subsession-statuses.result }}'   check-subsession-statuses
+          check '${{ needs.check-autonomous-states.result }}'     check-autonomous-states
+          check '${{ needs.image-scan.result }}'                  image-scan
+          check '${{ needs.check-config-schema.result }}'         check-config-schema
+          check '${{ needs.deptry.result }}'                      deptry
+          check '${{ needs.pyright.result }}'                     pyright
+          echo "All CI checks passed"
