@@ -696,6 +696,7 @@ def create_agent_from_settings(
     subsession_close_state: CloseState | None = None,
     tool_wrapper: Callable[[list[Any]], list[Any]] | None = None,
     bare: bool = False,
+    memory_enabled: bool = True,
     event_sink: EventSink | None = None,
     diagnostic_store: Any = None,
 ) -> LlmioChatAgent:
@@ -715,6 +716,13 @@ def create_agent_from_settings(
     subsession wiring, and memory — the agent gets a ``NullMemory`` and no
     tools.  Use it for bounded text-transformation calls (e.g. the
     ``POST /summary`` agent).
+
+    *memory_enabled* (default ``True``) gates only long-term (cognee) memory
+    while leaving tools and subsession wiring intact.  Set ``False`` for
+    unattended background agents (subsession workers, autonomous
+    auto-continue) that would otherwise recall + cognify every turn around
+    the clock; they get a ``NullMemory``.  The interactive main-chat agent
+    keeps the default.  ``bare`` already implies no memory regardless.
 
     Subsession wiring (*subsession_env*):
 
@@ -782,16 +790,26 @@ def create_agent_from_settings(
         model_level=effective_level,
         instruction=instruction,
         api_key=api_key,
-        memory=NullMemory() if bare else build_memory(settings.memory),
+        memory=(
+            build_memory(settings.memory)
+            if not bare and memory_enabled
+            else NullMemory()
+        ),
         tools=tools,
         request_tools_factory=request_tools_factory,
         event_sink=event_sink,
     )
     # Wire guarded auto-recovery (self-restart) for the top-level chat agent's
-    # memory only — never for bare summary agents or subsession children.  It
-    # needs the lifecycle transport; without it a freeze is still surfaced (via
-    # ERROR log + GET /health) but not auto-healed.
-    if not bare and subsession_ctx is None and settings.lifecycle.enabled:
+    # memory only — never for bare summary agents, subsession children, or any
+    # agent whose memory was gated off (a NullMemory has nothing to recover).
+    # It needs the lifecycle transport; without it a freeze is still surfaced
+    # (via ERROR log + GET /health) but not auto-healed.
+    if (
+        not bare
+        and memory_enabled
+        and subsession_ctx is None
+        and settings.lifecycle.enabled
+    ):
         from robotsix_chat.lifecycle.client import LifecycleClient
 
         agent.memory.set_recovery_callback(
