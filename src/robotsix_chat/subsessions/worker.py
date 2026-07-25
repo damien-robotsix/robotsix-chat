@@ -890,7 +890,7 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
         # the agent picks up with its prior context instead of blank.
         history: list[tuple[str, str]] = list(info.turn_history)
         previous_result: str | None = None
-        consecutive_no_change = 0
+        consecutive_no_change = info.consecutive_no_change
         first_turn = True
         pending: list[InboxMessage] = []
 
@@ -1032,6 +1032,7 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                     if not info.include_previous_result:
                         previous_result = None
                     consecutive_no_change += 1
+                    info.consecutive_no_change = consecutive_no_change
                     # Sleep until next tick, waking early on steering.
                     woke = await registry.wait_for_inbox(
                         sub_id,
@@ -1077,6 +1078,7 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
             if continuation is None:
                 return
             pending, previous_result, consecutive_no_change = continuation
+            info.consecutive_no_change = consecutive_no_change
 
     except asyncio.CancelledError:
         # External close already set the terminal state and (if wanted)

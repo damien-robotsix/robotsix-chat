@@ -454,6 +454,7 @@ def _restore_entry(
             completed_runs=_rebuild_completed_runs(entry),
             checkpoint=_rebuild_checkpoint(entry),
             dedup_key=_entry_opt_str(entry, "dedup_key"),
+            consecutive_no_change=_entry_int(entry, "consecutive_no_change"),
         )
     except ValueError:
         logger.warning("Skipping malformed persisted subsession %r", sub_id)

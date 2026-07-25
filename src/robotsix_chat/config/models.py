@@ -547,7 +547,7 @@ class SubsessionsSettings(BaseModel):
     max_depth: int = 3
     default_model_level: int = 2
     min_interval_seconds: float = 60.0
-    auto_stop_no_change_runs: int = 5
+    auto_stop_no_change_runs: int = 3
     max_idle_runs: int = 5
     human_approval_timeout_runs: int = 5
     pre_authorized_ticket_patterns: list[str] = Field(
