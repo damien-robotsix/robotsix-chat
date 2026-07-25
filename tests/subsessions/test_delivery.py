@@ -314,7 +314,9 @@ async def test_deliver_summary_reaction_turn_failure_degrades_to_passive_record(
     call_args, _ = event_sink.publish.call_args
     assert call_args[0] == "owner-sess-1"
     frame = call_args[1]
-    assert frame["type"] == "agent_message"
+    from robotsix_chat.chat.events import SSE_AGENT_MESSAGE_TYPE
+
+    assert frame["type"] == SSE_AGENT_MESSAGE_TYPE
     assert "all done" in frame["text"]
     assert "test-job" in frame["text"]
 
