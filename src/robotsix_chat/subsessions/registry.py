@@ -632,6 +632,56 @@ class SubsessionRegistry:
             closed_by=closed_by,
         )
 
+    def reopen(self, sub_id: str) -> SubsessionInfo | None:
+        """Transition a paused periodic subsession back to ``RUNNING``.
+
+        Only reopens records whose status is ``CLOSED`` and
+        ``close_reason`` is ``"paused"`` — other terminal records are
+        left untouched.  Returns the updated record or ``None`` when the
+        subsession is unknown, not paused, or already active.
+        """
+        info = self._subs.get(sub_id)
+        if info is None or info.is_active:
+            return None
+        if (
+            info.status is not SubsessionStatus.CLOSED
+            or info.kind is not SubsessionKind.PERIODIC
+            or info.close_reason != "paused"
+        ):
+            return None
+        info.status = SubsessionStatus.RUNNING
+        info.last_activity_at = self._clock()
+        info.close_reason = None
+        info.summary = None
+        self._publish(
+            info.owner_session_id,
+            subsession_updated_frame(
+                sub_id,
+                status="running",
+                runs=info.runs,
+                last_activity_at=info.last_activity_at,
+                last_result=info.last_result,
+            ),
+        )
+        self._store.persist()
+        return info
+
+    def find_paused_periodic(self) -> list[SubsessionInfo]:
+        """Return every paused periodic subsession (``CLOSED``, reason ``"paused"``).
+
+        These are monitors that were auto-paused by ``max_idle_runs``
+        and are waiting for a ticket-state change to resume.
+        """
+        result: list[SubsessionInfo] = []
+        for info in self._subs.values():
+            if (
+                info.status is SubsessionStatus.CLOSED
+                and info.kind is SubsessionKind.PERIODIC
+                and info.close_reason == "paused"
+            ):
+                result.append(info)
+        return result
+
     def cancel_and_close(
         self, sub_id: str, *, reason: str, closed_by: str
     ) -> SubsessionInfo | None:

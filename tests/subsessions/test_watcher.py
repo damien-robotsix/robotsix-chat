@@ -1,0 +1,316 @@
+"""Tests for the paused-monitor watcher (``watch_paused_monitors``)."""
+
+from __future__ import annotations
+
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
+
+import httpx
+import pytest
+
+from robotsix_chat.subsessions import (
+    SubsessionKind,
+    SubsessionStatus,
+)
+from robotsix_chat.subsessions.watcher import (
+    _query_ticket_state,
+    _resume_paused_monitor,
+    watch_paused_monitors,
+)
+from tests.common.subsession_fakes import build_env, make_settings
+
+OWNER = "sess-main"
+
+
+# -- _query_ticket_state ---------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_query_ticket_state_returns_state_string() -> None:
+    """Returns the 'state' field from a valid ticket response."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"state": "in_progress"}
+    mock_response.raise_for_status.return_value = None
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
+        state = await _query_ticket_state(
+            "https://mill.example.com", "TICKET-1", "sub-1"
+        )
+
+    assert state == "in_progress"
+
+
+@pytest.mark.asyncio
+async def test_query_ticket_state_returns_none_on_http_error() -> None:
+    """Returns None when the mill returns a 4xx/5xx status."""
+    mock_response = MagicMock()
+    mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
+        "not found", request=MagicMock(), response=MagicMock(status_code=404)
+    )
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
+        state = await _query_ticket_state(
+            "https://mill.example.com", "TICKET-1", "sub-1"
+        )
+
+    assert state is None
+
+
+@pytest.mark.asyncio
+async def test_query_ticket_state_returns_none_on_timeout() -> None:
+    """Returns None when the mill times out."""
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
+        state = await _query_ticket_state(
+            "https://mill.example.com", "TICKET-1", "sub-1"
+        )
+
+    assert state is None
+
+
+@pytest.mark.asyncio
+async def test_query_ticket_state_returns_none_on_bad_url() -> None:
+    """Returns None when the board URL is malformed."""
+    state = await _query_ticket_state("not a url", "TICKET-1", "sub-1")
+    assert state is None
+
+
+# -- _resume_paused_monitor ------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resume_paused_monitor_reopens_and_spawns_worker() -> None:
+    """``_resume_paused_monitor`` reopens the record and spawns a worker task."""
+    env = build_env()
+    info = env.registry.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="ticket monitor",
+        prompt="monitor",
+        model_level=3,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "T-1", "last_known_state": "open"},
+    )
+    env.registry.mark_closed(
+        info.id, summary="paused", reason="paused", closed_by="system"
+    )
+
+    await _resume_paused_monitor(env, info.id)
+
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.RUNNING
+    assert reopened.close_reason is None
+
+    # A worker task should have been spawned.
+    assert info.id in env.registry._running
+
+
+@pytest.mark.asyncio
+async def test_resume_paused_monitor_noop_for_unknown_id() -> None:
+    """``_resume_paused_monitor`` is a no-op for unknown subsessions."""
+    env = build_env()
+    await _resume_paused_monitor(env, "nonexistent")
+    # Should not raise or create any tasks.
+    assert len(env.registry._running) == 0
+
+
+@pytest.mark.asyncio
+async def test_resume_paused_monitor_noop_for_non_paused() -> None:
+    """``_resume_paused_monitor`` does nothing when the sub wasn't paused."""
+    env = build_env()
+    info = env.registry.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="ticket monitor",
+        prompt="monitor",
+        model_level=3,
+        interval_seconds=60.0,
+    )
+    env.registry.mark_closed(
+        info.id, summary="done", reason="max_runs", closed_by="system"
+    )
+
+    await _resume_paused_monitor(env, info.id)
+
+    # Still CLOSED.
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.CLOSED
+
+
+# -- watch_paused_monitors -------------------------------------------------
+
+
+def _make_paused_monitor(env, ticket_id="TICKET-1", last_known="open", title="mon"):
+    """Create a paused periodic monitor in *env*'s registry."""
+    info = env.registry.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title=title,
+        prompt="monitor",
+        model_level=3,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": ticket_id, "last_known_state": last_known},
+    )
+    env.registry.mark_closed(
+        info.id, summary="paused", reason="paused", closed_by="system"
+    )
+    return info
+
+
+def _mock_ticket_client(*, state="open"):
+    """Build a mock ``httpx.AsyncClient`` returning the given ticket state."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {"state": state}
+    mock_response.raise_for_status.return_value = None
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    return MagicMock(return_value=mock_instance)
+
+
+@pytest.mark.asyncio
+async def test_watcher_resumes_when_state_changes() -> None:
+    """The watcher resumes a paused monitor whose ticket state changed."""
+    settings = make_settings()
+    settings.direct_repo = type(
+        "_ns", (), {"board_api_base_url": "https://mill.example.com"}
+    )()
+    # Short poll interval so the test doesn't hang.
+    settings.subsessions.paused_monitor_poll_interval_seconds = 0.01
+    env = build_env(settings=settings)
+
+    info = _make_paused_monitor(env, ticket_id="T-1", last_known="open")
+
+    # Mock the mill to return a changed state.
+    mock_client = _mock_ticket_client(state="in_progress")
+
+    # Run the watcher for a couple of ticks to let it detect the change.
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with patch("httpx.AsyncClient", mock_client):
+        # Give the watcher time to poll and resume.
+        await asyncio.sleep(0.15)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # The monitor should now be active (RUNNING or SLEEPING).
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.is_active
+
+
+@pytest.mark.asyncio
+async def test_watcher_keeps_paused_when_state_unchanged() -> None:
+    """The watcher leaves a monitor paused when the ticket state is unchanged."""
+    settings = make_settings()
+    settings.direct_repo = type(
+        "_ns", (), {"board_api_base_url": "https://mill.example.com"}
+    )()
+    settings.subsessions.paused_monitor_poll_interval_seconds = 0.01
+    env = build_env(settings=settings)
+
+    info = _make_paused_monitor(env, ticket_id="T-1", last_known="open")
+
+    # Mock the mill to return the SAME state.
+    mock_client = _mock_ticket_client(state="open")
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with patch("httpx.AsyncClient", mock_client):
+        await asyncio.sleep(0.15)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # The monitor should still be CLOSED.
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.CLOSED
+
+
+@pytest.mark.asyncio
+async def test_watcher_skips_when_no_board_url() -> None:
+    """The watcher returns immediately when board_api_base_url is not configured."""
+    settings = make_settings()
+    settings.direct_repo = type("_ns", (), {"board_api_base_url": ""})()
+    env = build_env(settings=settings)
+
+    _make_paused_monitor(env)
+
+    # The watcher should return immediately (not loop).
+    task = asyncio.create_task(watch_paused_monitors(env))
+    await asyncio.wait_for(task, timeout=0.5)
+
+    # The monitor should still be paused.
+    paused = env.registry.find_paused_periodic()
+    assert len(paused) == 1
+
+
+@pytest.mark.asyncio
+async def test_watcher_handles_mill_unreachable_gracefully() -> None:
+    """The watcher does not crash when the mill is unreachable."""
+    settings = make_settings()
+    settings.direct_repo = type(
+        "_ns", (), {"board_api_base_url": "https://mill.example.com"}
+    )()
+    settings.subsessions.paused_monitor_poll_interval_seconds = 0.01
+    env = build_env(settings=settings)
+
+    _make_paused_monitor(env, ticket_id="T-1", last_known="open")
+
+    # Mock the mill to raise a connection error.
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(side_effect=httpx.ConnectError("refused"))
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
+        await asyncio.sleep(0.15)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # The monitor should still be paused (no crash, no resume).
+    paused = env.registry.find_paused_periodic()
+    assert len(paused) == 1

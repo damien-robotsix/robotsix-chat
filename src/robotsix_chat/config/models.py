@@ -576,6 +576,18 @@ class SubsessionsSettings(BaseModel):
     mill_recovery_initial_backoff_seconds: float = 60.0
     mill_recovery_max_backoff_seconds: float = 3600.0
     mill_recovery_max_retries: int = 10
+    paused_monitor_poll_interval_seconds: float = Field(
+        default=60.0,
+        description=(
+            "Interval (seconds) between polls of paused periodic "
+            "monitors.  The background watcher checks each paused "
+            "monitor's ticket state via the mill API; when the "
+            "ticket's state differs from the checkpoint's "
+            "``last_known_state`` the monitor is reopened and "
+            "re-spawned.  Set to ``0`` to disable runtime polling "
+            "(paused monitors only resume on service restart)."
+        ),
+    )
     model_config = ConfigDict(extra="forbid")
 
 

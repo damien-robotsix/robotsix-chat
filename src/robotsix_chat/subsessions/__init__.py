@@ -25,6 +25,7 @@ from .models import (
 from .registry import SubsessionRegistry
 from .resume import resume_subsessions
 from .tools import build_subsession_tools
+from .watcher import watch_paused_monitors
 from .worker import (
     CloseState,
     SubsessionContext,
@@ -54,4 +55,5 @@ __all__ = [
     "build_subsession_tools",
     "resume_subsessions",
     "spawn_subsession",
+    "watch_paused_monitors",
 ]
