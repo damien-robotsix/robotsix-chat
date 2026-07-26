@@ -137,6 +137,16 @@ component in the `uses:` value) must use the full 40-character commit SHA of the
 current HEAD on its default branch. Never use mutable refs (`@main`, `@master`, `@v1`, `@latest`).
 Add a trailing version comment for readability (e.g. `# v0.2.0` or `# main`).
 
+**Tool:** Use `scripts/resolve_github_sha.py` to resolve a GitHub `owner/repo` + ref to a 40-char
+commit SHA via `git ls-remote`:
+
+```bash
+uv run scripts/resolve_github_sha.py damien-robotsix/robotsix-github-workflows main
+uv run scripts/resolve_github_sha.py actions/checkout v4.2.2
+```
+
+The script handles annotated tags (peeled to the underlying commit), branches, and bare refs.
+
 **Rule:** The `image-scan` job in `ci.yml` is deliberately hand-rolled (not the shared
 `docker-pr-scan.yml`): the shared workflow uses the GHA layer cache, which was measured at 45-55 min
 per run on this multi-GB image vs ~4 min cold. Do not switch back without timing both paths (docker
