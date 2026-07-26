@@ -2264,6 +2264,29 @@ class TestExportLangfuseEnv:
         for var in self._VARS:
             assert var not in os.environ
 
+    def test_overrides_pre_existing_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """Config values overwrite pre-existing env vars (setdefault→direct)."""
+        monkeypatch.setenv("LANGFUSE_PUBLIC_KEY", "pk-stale")
+        monkeypatch.setenv("LANGFUSE_SECRET_KEY", "sk-stale")
+        monkeypatch.setenv("LANGFUSE_HOST", "https://stale.example.com")
+        monkeypatch.setenv("LANGFUSE_BASE_URL", "https://stale.example.com")
+
+        sk = "sk-config"  # pragma: allowlist secret
+        settings = Settings(
+            langfuse=LangfuseSettings(
+                public_key=SecretStr("pk-config"),
+                secret_key=SecretStr(sk),
+                host="https://config.example.com",
+            )
+        )
+
+        _export_langfuse_env(settings)
+
+        assert os.environ["LANGFUSE_PUBLIC_KEY"] == "pk-config"
+        assert os.environ["LANGFUSE_SECRET_KEY"] == sk
+        assert os.environ["LANGFUSE_HOST"] == "https://config.example.com"
+        assert os.environ["LANGFUSE_BASE_URL"] == "https://config.example.com"
+
 
 # ---------------------------------------------------------------------------
 # Chat endpoint — client disconnect resilience
