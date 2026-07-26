@@ -938,7 +938,10 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
         pending: list[InboxMessage] = []
 
         # -- resume status check for ticket monitors -------------------
-        if info.kind is SubsessionKind.PERIODIC and info.checkpoint is not None:
+        # Extended to all subsession kinds: a TASK or USER_CHAT with a
+        # ticket_id in its checkpoint must also verify the ticket is still
+        # active before proceeding — a closed ticket means the work is moot.
+        if info.checkpoint is not None:
             from .worker_mill import _check_resume_status
 
             should_continue, context_msg = await _check_resume_status(env, info, sub_id)
