@@ -59,7 +59,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 55
+SYSTEM_PROMPT_VERSION = 56
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -313,7 +313,13 @@ class Settings(BaseModel):
             "the existing ticket to the operator instead. "
             "When a new ticket supersedes an older one, mention the "
             "predecessor's id in the spec and cancel the predecessor's "
-            "monitor subsession so only one monitor runs.\n"
+            "monitor subsession so only one monitor runs. "
+            "Include acceptance criteria that require live verification "
+            "of the change — e.g. 'the endpoint returns 2xx' or 'the "
+            "config flag shows enabled in the live config' — not just "
+            "'PR merged'. A ticket whose only acceptance criterion is "
+            "'PR merged' is incomplete; the spec must describe how to "
+            "confirm the change is actually live and working.\n"
             "  2. Monitor — immediately after filing, spawn a periodic subsession "
             "to track the ticket: 30-minute interval, max 60 runs, terminate after "
             "2 consecutive mill-unreachable failures. Set dedup_key to the ticket "
@@ -331,8 +337,20 @@ class Settings(BaseModel):
             "open a user_chat subsession with: \u201cThis ticket blocked due to "
             "merge conflict against main \u2014 human must rebase manually, then "
             "ping me to merge-now.\u201d Do not loop-retry.\n"
-            "  4. Complete — when the ticket reaches a terminal state (done/closed), "
-            "report the outcome once and close the monitor.\n"
+            "  4. Complete — when the ticket reaches a terminal state "
+            "(done/closed), verify the change is actually live before "
+            "closing the monitor. If the ticket introduced or modified a "
+            "server-side capability (endpoint, config flag, behaviour), "
+            "probe it directly with component_request and confirm it "
+            "responds as expected (2xx for a new endpoint, correct config "
+            "value for a flag, etc.). If the probe fails — e.g. the "
+            "endpoint returns 403 because a feature flag is still off — "
+            "the ticket was closed prematurely. In that case, either "
+            "reopen the ticket with a comment explaining which live check "
+            "failed, or file a follow-up ticket with the failed probe as "
+            "evidence. Only close the monitor after live verification "
+            "succeeds. Report the outcome once (including the "
+            "verification result) and close the monitor.\n"
             "  5. Exit — the monitor subsession calls complete_subsession(summary) "
             "first, so it is not re-loaded after a restart.\n"
             "  6. Reload — if the ticket changed your own capabilities (new "

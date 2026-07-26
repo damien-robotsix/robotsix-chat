@@ -340,7 +340,7 @@ jobs:
 
   check:
     name: All CI checks passed
-    needs: [lockfile, ci, security, pre-commit, check-sse-types, check-subsession-kinds, check-activity-kinds, check-subsession-statuses, check-autonomous-states, image-scan, check-config-schema, deptry, pyright]
+    needs: [lockfile, ci, security, changelog, pre-commit, check-sse-types, check-subsession-kinds, check-activity-kinds, check-subsession-statuses, check-autonomous-states, image-scan, check-config-schema, deptry, pyright]
     # Use !cancelled() so the job still runs when a reusable-workflow call
     # (ci, security) is misreported as "skipped" due to a known GitHub
     # Actions edge case: when a reusable workflow has conditionally-skipped
@@ -359,6 +359,7 @@ jobs:
           LOCKFILE_RESULT: ${{ needs.lockfile.result }}
           CI_RESULT: ${{ needs.ci.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
+          CHANGELOG_RESULT: ${{ needs.changelog.result }}
           PRE_COMMIT_RESULT: ${{ needs.pre-commit.result }}
           CHECK_SSE_TYPES_RESULT: ${{ needs.check-sse-types.result }}
           CHECK_SUBSESSION_KINDS_RESULT: ${{ needs.check-subsession-kinds.result }}
@@ -388,6 +389,7 @@ jobs:
           check "$LOCKFILE_RESULT"                    lockfile
           check "$CI_RESULT"                          ci                    allow-skipped
           check "$SECURITY_RESULT"                    security              allow-skipped
+          check "$CHANGELOG_RESULT"                  changelog             allow-skipped
           check "$PRE_COMMIT_RESULT"                  pre-commit
           check "$CHECK_SSE_TYPES_RESULT"             check-sse-types
           check "$CHECK_SUBSESSION_KINDS_RESULT"      check-subsession-kinds
