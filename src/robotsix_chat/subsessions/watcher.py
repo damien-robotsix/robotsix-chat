@@ -123,7 +123,8 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
         subsessions_cfg, "paused_monitor_poll_interval_seconds", 60.0
     )
     if poll_interval <= 0:
-        poll_interval = 60.0
+        logger.info("Watcher: polling disabled — paused monitors will not auto-resume.")
+        return
 
     logger.info(
         "Watcher: started (poll interval %.0f s, board_url=%s)",
