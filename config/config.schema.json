@@ -737,6 +737,34 @@
       "title": "NotificationSettings",
       "type": "object"
     },
+    "PublicFetchSettings": {
+      "additionalProperties": false,
+      "description": "Public URL fetch tool \u2014 read raw content from any public forge.\n\nWhen enabled, the chat agent gains a ``fetch_public_url`` tool that\nperforms a plain HTTP GET to an arbitrary public URL and returns the\nbody text up to *max_body_bytes*.  SSRF protection blocks private,\nloopback, link-local, and multicast addresses via DNS resolution on\nevery redirect hop.  No authentication is used \u2014 only public hosts\nare reachable.\n\nDesigned for reading files from public forges (GitLab, Bitbucket,\ncodeberg, university GitLabs, etc.) not covered by the GitHub-scoped\nrepo-study tools.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no fetch tool is offered.\n    timeout: Per-request HTTP timeout in seconds (default 30 s).\n    max_body_bytes: Maximum bytes of the response body returned to the\n        agent (default 1 MiB).\n    max_redirects: Maximum number of redirects to follow (default 5).",
+      "properties": {
+        "enabled": {
+          "default": false,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "timeout": {
+          "default": 30.0,
+          "title": "Timeout",
+          "type": "number"
+        },
+        "max_body_bytes": {
+          "default": 1048576,
+          "title": "Max Body Bytes",
+          "type": "integer"
+        },
+        "max_redirects": {
+          "default": 5,
+          "title": "Max Redirects",
+          "type": "integer"
+        }
+      },
+      "title": "PublicFetchSettings",
+      "type": "object"
+    },
     "RefDocsSettings": {
       "additionalProperties": false,
       "description": "Read-only reference-docs tool for the agent.\n\nLets the agent fetch documentation from allowlisted GitHub repos on\ndemand. Primarily used to consult the board-workflow reference repo\nwhen deciding whether a ticket needs manual human action. The tool is\nstrictly read-only, fetches are on-demand (no bulk ingestion), and only\nrepos in the *repos* allowlist are reachable.\n\nAttributes:\n    enabled: Master switch. When ``False``, no refdocs tools are offered.\n    repos: Allowlist of ``owner/name`` GitHub repos the agent may read.\n        The board-workflow reference repo goes here. The tool refuses\n        any repo not in this list.\n    ref: Default git ref/branch to read from (``\"main\"``).\n    base_url: Overridable base URL for GitHub Enterprise.\n    timeout: Per-request HTTP timeout in seconds.\n\nAuthentication reuses the ``direct_repo`` GitHub App credentials when\nthey are configured; without them only public repositories are reachable.",
@@ -1137,6 +1165,10 @@
     },
     "http_probe": {
       "$ref": "#/$defs/HttpProbeSettings",
+      "advanced": true
+    },
+    "public_fetch": {
+      "$ref": "#/$defs/PublicFetchSettings",
       "advanced": true
     },
     "feedback": {

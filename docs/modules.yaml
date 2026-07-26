@@ -377,3 +377,10 @@ modules:
       - docs/notification/skill.md
       - tests/notification/__init__.py
       - tests/notification/test_notification.py
+
+  - id: public-fetch
+    description: "Public URL fetch tool — read raw content from any public forge with SSRF protection, size limits, and no authentication. Exposes build_public_fetch_tools() returning a fetch_public_url tool for fetching files from public forges (GitLab, Bitbucket, codeberg, etc.) not covered by the GitHub-scoped repo-study tools."
+    paths:
+      - src/robotsix_chat/public_fetch/__init__.py
+      - tests/public_fetch/__init__.py
+      - tests/public_fetch/test_public_fetch.py

@@ -1,18 +1,19 @@
 {
-  "llmio_model_level": 3,
-  "llmio_api_key": "",
-  "server_host": "0.0.0.0",
-  "server_port": 8000,
-  "idle_timeout_minutes": 30,
-  "log_level": "INFO",
-  "log_json_format": true,
-  "cors_allow_origins": [],
-  "correlation_id_header": "X-Request-ID",
-  "compaction_min_turns": 3,
-  "langfuse": {
-    "public_key": "",
-    "secret_key": "",
-    "host": "https://cloud.langfuse.com"
+    "llmio_model_level": 3,
+    "llmio_api_key": "",
+    "server_host": "0.0.0.0",
+    "server_port": 8000,
+    "idle_timeout_minutes": 30,
+    "log_level": "INFO",
+    "log_json_format": true,
+    "cors_allow_origins": [],
+    "correlation_id_header": "X-Request-ID",
+    "compaction_min_turns": 3,
+    "langfuse": {
+      "public_key": "",
+      "secret_key": "",
+      "host": "https://cloud.langfuse.com"
+    }
   },
   "memory": {
     "enabled": false,
@@ -171,6 +172,12 @@
       "robotsix.net"
     ],
     "max_body_bytes": 2048,
+    "max_redirects": 5
+  },
+  "public_fetch": {
+    "enabled": false,
+    "timeout": 30.0,
+    "max_body_bytes": 1048576,
     "max_redirects": 5
   },
   "render_url": {
