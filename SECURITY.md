@@ -75,4 +75,3 @@ We aim to patch or mitigate dependency vulnerabilities within the response timel
 
 [gh-advisory]: https://github.com/robotsix/robotsix-chat/security/advisories/new
 [security-email]: mailto:security@robotsix.com
-ix.com
