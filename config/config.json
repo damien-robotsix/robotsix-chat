@@ -73,7 +73,7 @@
       "secret_key": "",
       "host": "https://cloud.langfuse.com"
     }
-  }, (mill: Implement tool to fetch public repo content from non-GitHub forges (20260725T112315Z-implement-tool-to-fetch-public-repo-cont-5a5f))
+  },
   "central_deploy": {
     "url": "",
     "api_token": "",
@@ -145,7 +145,7 @@
     "mill_recovery_initial_backoff_seconds": 60.0,
     "mill_recovery_max_backoff_seconds": 3600.0,
     "mill_recovery_max_retries": 10,
-    "paused_monitor_poll_interval_seconds": 60.0 (mill: Implement tool to fetch public repo content from non-GitHub forges (20260725T112315Z-implement-tool-to-fetch-public-repo-cont-5a5f))
+    "paused_monitor_poll_interval_seconds": 60.0
   },
   "direct_repo": {
     "enabled": false,
