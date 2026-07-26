@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Ticket lifecycle policy (system prompt v56): monitors now require live endpoint verification before closing. When a ticket reaches done/closed, the monitor probes the relevant endpoint with `component_request` and only closes after confirming the change is live. Ticket specs must include acceptance criteria that verify the change works (e.g., "endpoint returns 2xx"), not just "PR merged".
 - Add `regenerate-config-schema` pre-commit hook that auto-regenerates
   `config/config.schema.json` when `src/robotsix_chat/config/settings.py` changes.
 - Add `regenerate-config-schema` pre-commit hook that auto-regenerates `config/config.schema.json` whenever `src/robotsix_chat/config/settings.py` changes; the hook exits non-zero so the regenerated schema is staged and the commit must be retried.
