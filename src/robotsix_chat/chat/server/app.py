@@ -37,6 +37,7 @@ from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.mail import build_mail_tools
 from robotsix_chat.memory import NullMemory, build_memory
 from robotsix_chat.notification import build_notification_tools, load_notification_skill
+from robotsix_chat.public_fetch import build_public_fetch_tools
 from robotsix_chat.refdocs import build_refdocs_tools
 from robotsix_chat.render_url import build_render_url_tools
 from robotsix_chat.repo.actions import (
@@ -615,6 +616,7 @@ def _build_static_tools(
         *build_lifecycle_tools(settings.lifecycle),
         *build_render_url_tools(settings.render_url),
         *build_http_probe_tools(settings.http_probe),
+        *build_public_fetch_tools(settings.public_fetch),
         *build_ticket_poll_tools(settings),
     ]
 

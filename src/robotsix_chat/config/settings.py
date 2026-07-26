@@ -31,6 +31,7 @@ from robotsix_chat.config.models import (
     MailSettings,
     MemorySettings,
     NotificationSettings,
+    PublicFetchSettings,
     RefDocsSettings,
     RenderUrlSettings,
     RepoStudySettings,
@@ -758,6 +759,9 @@ class Settings(BaseModel):
     http_probe: HttpProbeSettings = Field(
         default_factory=HttpProbeSettings, json_schema_extra={"advanced": True}
     )
+    public_fetch: PublicFetchSettings = Field(
+        default_factory=PublicFetchSettings, json_schema_extra={"advanced": True}
+    )
     feedback: FeedbackSettings = Field(
         default_factory=FeedbackSettings, json_schema_extra={"advanced": True}
     )
@@ -968,6 +972,7 @@ class Settings(BaseModel):
             "lifecycle",
             "notification",
             "http_probe",
+            "public_fetch",
             "feedback",
             "autonomous",
         )

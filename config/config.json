@@ -173,6 +173,12 @@
     "max_body_bytes": 2048,
     "max_redirects": 5
   },
+  "public_fetch": {
+    "enabled": false,
+    "timeout": 30.0,
+    "max_body_bytes": 1048576,
+    "max_redirects": 5
+  },
   "render_url": {
     "enabled": false,
     "timeout": 30.0,
