@@ -199,6 +199,61 @@ async def test_fetch_rejects_bare_ipv6_bracketed() -> None:
 
 
 # ---------------------------------------------------------------------------
+# SSRF protection — unspecified addresses (0.0.0.0, ::)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_rejects_unspecified_ipv4() -> None:
+    """Hostname resolving to 0.0.0.0 (unspecified) is blocked."""
+    tools = build_public_fetch_tools(_settings())
+    result = await tools[0]("http://0.0.0.0/admin")
+
+    assert "SSRF check failed" in result
+    assert "Bare IP" in result
+
+
+@pytest.mark.asyncio
+async def test_fetch_rejects_unspecified_ipv6() -> None:
+    """Hostname resolving to :: (unspecified) is blocked."""
+    tools = build_public_fetch_tools(_settings())
+    result = await tools[0]("http://[::]/admin")
+
+    assert "SSRF check failed" in result
+    assert "Bare IP" in result
+
+
+@pytest.mark.asyncio
+async def test_fetch_rejects_dns_to_unspecified() -> None:
+    """A hostname resolving to 0.0.0.0 is blocked by DNS SSRF check.
+
+    Uses a DNS mock that returns the unspecified address 0.0.0.0.
+    """
+    url = "https://unspecified.example.com/secret"
+
+    def _unspecified_addrinfo(
+        host: str, port: Any = None, *args: Any, **kwargs: Any
+    ) -> list[tuple[Any, ...]]:
+        return [
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                6,
+                "",
+                ("0.0.0.0", 0),
+            )
+        ]
+
+    tools = build_public_fetch_tools(_settings())
+    with patch("socket.getaddrinfo", side_effect=_unspecified_addrinfo):
+        result = await tools[0](url)
+
+    assert "SSRF check failed" in result
+    assert "non-public IP" in result
+    assert "0.0.0.0" in result
+
+
+# ---------------------------------------------------------------------------
 # SSRF protection — DNS resolution (mocked)
 # ---------------------------------------------------------------------------
 

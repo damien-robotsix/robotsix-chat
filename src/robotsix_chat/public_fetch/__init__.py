@@ -60,20 +60,8 @@ def _check_host_public(hostname: str) -> str:
             ip = ipaddress.ip_address(ip_str)
         except ValueError:
             return f"Invalid IP address {ip_str!r} resolved for {hostname!r}"
-        if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_multicast:
-            category = (
-                "private"
-                if ip.is_private
-                else "loopback"
-                if ip.is_loopback
-                else "link-local"
-                if ip.is_link_local
-                else "multicast"
-            )
-            return (
-                f"Hostname {hostname!r} resolves to non-public IP "
-                f"{ip_str!r} ({category})"
-            )
+        if not ip.is_global:
+            return f"Hostname {hostname!r} resolves to non-public IP {ip_str!r}"
     return ""
 
 

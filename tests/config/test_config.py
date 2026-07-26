@@ -782,3 +782,29 @@ class TestUnknownKeys:
         """Unknown key inside a list-field sub-model is rejected."""
         with pytest.raises(ValidationError, match="unknown_field"):
             ComponentClientSettings(enabled=True, unknown_field=[])  # type: ignore[call-arg]
+
+
+# ---------------------------------------------------------------------------
+# Real config/config.json round-trip
+# ---------------------------------------------------------------------------
+
+
+def test_real_config_json_is_valid_and_loads() -> None:
+    """The shipped ``config/config.json`` is valid JSON and parses as Settings.
+
+    A previous reformatting accidentally introduced trailing commas which
+    Python's stdlib ``json`` rejects.  This test guards against regressions.
+    """
+    import json
+
+    repo_root = Path(__file__).resolve().parent.parent.parent
+    config_path = repo_root / "config" / "config.json"
+    assert config_path.is_file(), f"config/config.json not found at {config_path}"
+
+    raw = config_path.read_text()
+    data = json.loads(raw)
+
+    # Verify the full model loads (strict, extra="forbid" on sub-models).
+    settings = Settings.model_validate(data)
+    assert settings.public_fetch.enabled is False
+    assert settings.public_fetch.max_body_bytes == 1_048_576
