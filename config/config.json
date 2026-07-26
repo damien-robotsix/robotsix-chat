@@ -159,7 +159,7 @@
     "self_restart_backoff_cap": 30.0
   },
   "notification": {
-    "enabled": false
+    "enabled": true
   },
   "http_probe": {
     "enabled": false,
