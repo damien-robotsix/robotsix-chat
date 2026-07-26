@@ -283,6 +283,27 @@ async def test_watcher_skips_when_no_board_url() -> None:
 
 
 @pytest.mark.asyncio
+async def test_watcher_exits_when_poll_interval_zero() -> None:
+    """The watcher returns immediately when poll interval is set to 0."""
+    settings = make_settings()
+    settings.direct_repo = type(
+        "_ns", (), {"board_api_base_url": "https://mill.example.com"}
+    )()
+    settings.subsessions.paused_monitor_poll_interval_seconds = 0
+    env = build_env(settings=settings)
+
+    _make_paused_monitor(env)
+
+    # The watcher should return immediately (not loop).
+    task = asyncio.create_task(watch_paused_monitors(env))
+    await asyncio.wait_for(task, timeout=0.5)
+
+    # The monitor should still be paused.
+    paused = env.registry.find_paused_periodic()
+    assert len(paused) == 1
+
+
+@pytest.mark.asyncio
 async def test_watcher_handles_mill_unreachable_gracefully() -> None:
     """The watcher does not crash when the mill is unreachable."""
     settings = make_settings()
