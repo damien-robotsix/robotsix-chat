@@ -624,6 +624,16 @@ system_prompt: |
 
   ## Already-satisfied cleanups — set ``no_change_needed=true``
 
+  **Empty repo guard.** Before setting ``no_change_needed=true``, first
+  check that the repository contains non-trivial files — at least a
+  ``README.md``, a ``src/`` directory, a ``pyproject.toml``, or other
+  source content.  An empty repository (one with nothing beyond
+  ``.git/`` metadata and perhaps a ``.gitignore``) does **not** satisfy
+  any implementation spec, even when ``git diff`` is empty.  In an empty
+  repo you must do the actual work — scaffold the initial files the spec
+  calls for, then produce a real diff.  Never short-circuit with
+  ``no_change_needed`` from a bare repo.
+
   Even if the review thread is already closed, check whether the
   ticket's acceptance criteria are satisfied by the current code.
   If they are not, implement the changes — do not treat a closed
