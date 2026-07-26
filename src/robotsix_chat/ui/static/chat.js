@@ -693,6 +693,9 @@
   }
 
   function deleteSession(sid) {
+    // Tear down any background event stream for this session.
+    closeBackgroundEventStream(sid);
+
     var url = apiBase() + "/sessions/" + encodeURIComponent(sid) +
               "?owner_id=" + encodeURIComponent(ownerFor(sid));
     return fetch(url, { method: "DELETE" }).then(function (r) {
@@ -829,32 +832,19 @@
     //    BUT: if the outgoing session has queued messages, don't close
     //    its /events channel — keep it alive as a background stream so
     //    we still receive chat_turn_done and can drain the queue.
+    // Close the foreground stream normally.
+    closeEventStream();
+
+    // If the outgoing session has queued messages, open a dedicated
+    // background event stream so we still receive chat_turn_done (or
+    // chat_turn_error) and can drain the queue — even while another
+    // session is focused.  The background stream has its own generation
+    // counter and watchdog; it never checks the foreground
+    // eventStreamGeneration so frames are not dropped.
     if (hasQueued && oldSessionId) {
-      // Move the current event stream to a background stream for the
-      // old session.  The foreground openEventStream() below will create
-      // a fresh AbortController; the old one must survive so the
-      // background fetch stays alive.
-      if (eventStreamAbortController) {
-        backgroundStreams[oldSessionId] = {
-          abortController: eventStreamAbortController,
-          generation: eventStreamGeneration
-        };
-        eventStreamAbortController = null;
-      }
-      // Don't increment the generation — the background stream's pump
-      // callbacks still read it and must not be invalidated.
-      // Do clear the shared timers (they belong to the foreground).
-      if (eventStreamReconnectTimer) {
-        clearTimeout(eventStreamReconnectTimer);
-        eventStreamReconnectTimer = null;
-      }
-      if (eventStreamWatchdogTimer) {
-        clearInterval(eventStreamWatchdogTimer);
-        eventStreamWatchdogTimer = null;
-      }
-    } else {
-      closeEventStream();
+      openBackgroundEventStream(oldSessionId);
     }
+
     openEventStream();
 
     // 4. Load history for the new session.
@@ -1016,8 +1006,132 @@
   function closeBackgroundEventStream(sessionId) {
     var entry = backgroundStreams[sessionId];
     if (!entry) return;
+    if (entry._watchdogTimer) {
+      clearInterval(entry._watchdogTimer);
+      entry._watchdogTimer = null;
+    }
     try { entry.abortController.abort(); } catch (_) {}
     delete backgroundStreams[sessionId];
+  }
+
+  // Open a standalone /events channel for a session the user left with
+  // queued messages.  Unlike the foreground stream (openEventStream) this
+  // one has its own generation counter and watchdog so it is never
+  // invalidated by the foreground stream's lifecycle.  It only listens for
+  // chat_turn_done / chat_turn_error — when the turn completes the queued
+  // messages are drained via drainBackgroundSession().
+  function openBackgroundEventStream(sessionId) {
+    // Ensure an entry exists.
+    if (!backgroundStreams[sessionId]) {
+      backgroundStreams[sessionId] = {};
+    }
+    var entry = backgroundStreams[sessionId];
+
+    // Bump this stream's own generation to invalidate any previous
+    // background stream for the same session.
+    entry.generation = (entry.generation || 0) + 1;
+    var gen = entry.generation;
+
+    // Clean up any prior background stream.
+    if (entry.abortController) {
+      try { entry.abortController.abort(); } catch (_) {}
+    }
+    if (entry._watchdogTimer) {
+      clearInterval(entry._watchdogTimer);
+      entry._watchdogTimer = null;
+    }
+
+    entry.abortController = new AbortController();
+    var abortController = entry.abortController;
+
+    var eventsUrl = apiBase() + "/events" +
+                    "?session_id=" + encodeURIComponent(sessionId) +
+                    "&owner_id=" + encodeURIComponent(ownerFor(sessionId));
+
+    var lastActivity = Date.now();
+
+    var controller = {
+      onActivity: function () {
+        lastActivity = Date.now();
+      },
+      onData: function (raw) {
+        // Bail out if a newer background stream superseded this one.
+        if (gen !== entry.generation) return;
+        var frame;
+        try { frame = JSON.parse(raw); }
+        catch (_) { return; }
+
+        if (frame.type === "chat_turn_done") {
+          if (frame.session_id === sessionId) {
+            drainBackgroundSession(sessionId);
+          }
+        } else if (frame.type === "chat_turn_error") {
+          // A turn that errored won't produce chat_turn_done — drain
+          // anyway so queued messages aren't stuck forever.
+          if (frame.session_id === sessionId) {
+            drainBackgroundSession(sessionId);
+          }
+        }
+        // Ignore all other frame types — background streams only care
+        // about turn completion.
+      },
+      onDone: function () {
+        if (gen !== entry.generation) return;
+        // Server closed the stream — reconnect after a short delay.
+        scheduleBackgroundReconnect(sessionId);
+      },
+      error: function (err) {
+        if (gen !== entry.generation) return;
+        if (err && err.name === "AbortError") return;
+        scheduleBackgroundReconnect(sessionId);
+      }
+    };
+
+    function scheduleBackgroundReconnect(sid) {
+      // Don't reconnect if the entry was removed (session focused / deleted).
+      var e = backgroundStreams[sid];
+      if (!e || e.generation !== gen) return;
+      if (e._reconnectTimer) return;
+      e._reconnectTimer = setTimeout(function () {
+        if (backgroundStreams[sid]) {
+          backgroundStreams[sid]._reconnectTimer = null;
+        }
+        openBackgroundEventStream(sid);
+      }, 5000);
+    }
+
+    fetch(eventsUrl, {
+      method: "GET",
+      signal: abortController.signal
+    }).then(function (response) {
+      if (gen !== entry.generation) return;
+      if (!response.ok) {
+        scheduleBackgroundReconnect(sessionId);
+        return;
+      }
+      var contentType = response.headers.get("content-type") || "";
+      if (contentType.indexOf("text/event-stream") === -1) {
+        scheduleBackgroundReconnect(sessionId);
+        return;
+      }
+      lastActivity = Date.now();
+      // Watchdog: if no bytes arrive for 20 s the connection is dead.
+      entry._watchdogTimer = setInterval(function () {
+        if (gen !== entry.generation) return;
+        if (Date.now() - lastActivity > 20000) {
+          clearInterval(entry._watchdogTimer);
+          entry._watchdogTimer = null;
+          try { abortController.abort(); } catch (_) {}
+          scheduleBackgroundReconnect(sessionId);
+        }
+      }, 5000);
+      var parser = processSSEStream(response.body, controller);
+      parser.start();
+    }).catch(function (err) {
+      if (gen !== entry.generation) return;
+      if (err && err.name === "AbortError") return;
+      scheduleBackgroundReconnect(sessionId);
+    });
   }
 
   // Drain queued messages for a session whose turn just completed while
@@ -1040,37 +1154,41 @@
         // We don't render bubbles (the user is on a different session); the
         // replies will be in history when they return.
         for (var i = 0; i < queue.length; i++) {
-          var item = queue[i];
-          if (!item.text && (!item.images || item.images.length === 0)) continue;
+          // IIFE captures each item by value — avoids the classic
+          // var-in-loop closure bug where every .then() sees only the
+          // last item.
+          (function (item) {
+            if (!item.text && (!item.images || item.images.length === 0)) return;
 
-          var imagesForSend = [];
-          if (Array.isArray(item.images)) {
-            for (var j = 0; j < item.images.length; j++) {
-              var pi = _base64ToPendingImage(
-                item.images[j].data, item.images[j].media_type,
-                item.images[j].filename || "image"
-              );
-              if (pi) imagesForSend.push(pi);
+            var imagesForSend = [];
+            if (Array.isArray(item.images)) {
+              for (var j = 0; j < item.images.length; j++) {
+                var pi = _base64ToPendingImage(
+                  item.images[j].data, item.images[j].media_type,
+                  item.images[j].filename || "image"
+                );
+                if (pi) imagesForSend.push(pi);
+              }
             }
-          }
 
-          var encodePromise = imagesForSend.length > 0
-            ? encodeImagesFromList(imagesForSend)
-            : Promise.resolve([]);
-          encodePromise.then(function (encodedImages) {
-            var body = {
-              message: item.text || "",
-              session_id: sessionId,
-              owner_id: clientId
-            };
-            if (item.messageId) body.message_id = item.messageId;
-            if (encodedImages.length > 0) body.images = encodedImages;
-            fetch(serverUrl(), {
-              method: "POST",
-              headers: { "Content-Type": "application/json" },
-              body: JSON.stringify(body)
-            }).catch(function () { /* best-effort */ });
-          });
+            var encodePromise = imagesForSend.length > 0
+              ? encodeImagesFromList(imagesForSend)
+              : Promise.resolve([]);
+            encodePromise.then(function (encodedImages) {
+              var body = {
+                message: item.text || "",
+                session_id: sessionId,
+                owner_id: ownerFor(sessionId)
+              };
+              if (item.messageId) body.message_id = item.messageId;
+              if (encodedImages.length > 0) body.images = encodedImages;
+              fetch(serverUrl(), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body)
+              }).catch(function () { /* best-effort */ });
+            });
+          })(queue[i]);
         }
 
         // Clear the draft so restoreDraft() on return finds an empty queue.
