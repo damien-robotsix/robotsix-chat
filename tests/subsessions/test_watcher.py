@@ -226,7 +226,7 @@ async def test_watcher_resumes_when_state_changes() -> None:
 
     watcher_task.cancel()
     with pytest.raises(asyncio.CancelledError):
-        await watcher_task
+        _ = await watcher_task
 
     # The monitor should now be active (RUNNING or SLEEPING).
     reopened = env.registry.get(info.id)
@@ -256,7 +256,7 @@ async def test_watcher_keeps_paused_when_state_unchanged() -> None:
 
     watcher_task.cancel()
     with pytest.raises(asyncio.CancelledError):
-        await watcher_task
+        _ = await watcher_task
 
     # The monitor should still be CLOSED.
     reopened = env.registry.get(info.id)
@@ -309,7 +309,7 @@ async def test_watcher_handles_mill_unreachable_gracefully() -> None:
 
     watcher_task.cancel()
     with pytest.raises(asyncio.CancelledError):
-        await watcher_task
+        _ = await watcher_task
 
     # The monitor should still be paused (no crash, no resume).
     paused = env.registry.find_paused_periodic()
