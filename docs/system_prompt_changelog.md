@@ -5,6 +5,25 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v57 — 2026-07-26 — handle-conflicting-user-instructions-gra-dde5
+
+**Summary:** Add a "Conflict Resolution" section to the system prompt. When a user gives an
+instruction that conflicts with an existing pending ticket, the assistant must now automatically
+attempt to resolve the conflict rather than simply flagging it and waiting for manual intervention.
+
+The new section prescribes a five-step resolution workflow: (1) read the existing ticket's full
+spec; (2) determine whether the new instruction is compatible or fundamentally incompatible; (3) if
+compatible, merge the new instruction into the ticket — either by updating the ticket spec through
+the mill API or, when no update endpoint is available, by closing the old ticket and filing a
+replacement with the merged spec; (4) if incompatible, present a structured choice to the user
+summarising both instructions, explaining the conflict, and asking which should take priority
+(defaulting to the most recent instruction); (5) report the resolution in one sentence.
+
+Additional guidance ensures the assistant preserves the existing ticket's context when merging and
+does not discard the original scope unless the user explicitly asks to replace it.
+
+**SHA256:** `3ffc9dca71b645d586ed2e11951c53a119124d9694d629a0625828912432249d`
+
 ## v56 — 2026-07-26 — improve-accuracy-of-interpreting-user-re-86e2
 
 **Summary:** Add an "Ambiguous field references" bullet to the Verification section. When a user
