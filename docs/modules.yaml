@@ -283,13 +283,15 @@ modules:
       - src/robotsix_chat/subsessions/worker_mill.py
       - src/robotsix_chat/subsessions/resume.py
       - src/robotsix_chat/subsessions/tools.py
+      - src/robotsix_chat/subsessions/watcher.py
       - tests/subsessions/__init__.py
+      - tests/subsessions/test_delivery.py
       - tests/subsessions/test_models.py
       - tests/subsessions/test_registry.py
-      - tests/subsessions/test_worker.py
-      - tests/subsessions/test_tools.py
       - tests/subsessions/test_resume.py
-      - tests/subsessions/test_delivery.py
+      - tests/subsessions/test_tools.py
+      - tests/subsessions/test_watcher.py
+      - tests/subsessions/test_worker.py
 
   - id: refdocs
     description: "Read-only reference-docs tool — lets the chat agent read team repos."

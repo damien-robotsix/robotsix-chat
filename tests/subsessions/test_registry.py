@@ -1112,3 +1112,133 @@ def test_is_duplicate_ticket_terminal_true_when_prior_reason_completed() -> None
     registry.update_checkpoint(second.id, {"ticket_id": "T-123"})
 
     assert registry.is_duplicate_ticket_terminal("T-123", second.id) is True
+
+
+# -- reopen ---------------------------------------------------------------
+
+
+def test_reopen_transitions_paused_to_running() -> None:
+    """``reopen`` transitions a paused CLOSED subsession back to RUNNING."""
+    sink = RecordingSink()
+    registry = SubsessionRegistry(event_sink=sink, store_path=None)
+    info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+    registry.mark_closed(
+        info.id, summary="paused after idle", reason="paused", closed_by="system"
+    )
+
+    # Clear frames so we only see the reopen frame.
+    sink.frames.clear()
+
+    reopened = registry.reopen(info.id)
+
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.RUNNING
+    assert reopened.close_reason is None
+    assert reopened.summary is None
+    # Verify the updated frame was published.
+    updates = sink.of_type(SSE_SUBSESSION_UPDATED_TYPE)
+    assert len(updates) == 1
+    _, frame = updates[0]
+    assert frame["subsession_id"] == info.id
+    assert frame["status"] == "running"
+
+
+def test_reopen_returns_none_for_unknown_id() -> None:
+    """``reopen`` returns None for an unknown subsession id."""
+    registry = SubsessionRegistry(store_path=None)
+    assert registry.reopen("nonexistent") is None
+
+
+def test_reopen_returns_none_for_active_subsession() -> None:
+    """``reopen`` returns None when the subsession is still active."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+
+    assert registry.reopen(info.id) is None
+
+
+def test_reopen_returns_none_for_non_paused_closed() -> None:
+    """``reopen`` returns None when closed with a reason other than 'paused'."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+    registry.mark_closed(info.id, summary="done", reason="max_runs", closed_by="system")
+
+    assert registry.reopen(info.id) is None
+
+
+def test_reopen_returns_none_for_non_periodic() -> None:
+    """``reopen`` returns None for a non-periodic paused subsession."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.TASK)
+    # Manually set it to CLOSED with reason paused (simulating a corner case)
+    info.status = SubsessionStatus.CLOSED
+    info.close_reason = "paused"
+
+    assert registry.reopen(info.id) is None
+
+
+def test_reopen_is_idempotent() -> None:
+    """Reopening an already-reopened subsession returns None."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+    registry.mark_closed(
+        info.id, summary="paused after idle", reason="paused", closed_by="system"
+    )
+
+    first = registry.reopen(info.id)
+    assert first is not None
+
+    second = registry.reopen(info.id)
+    assert second is None
+
+
+# -- find_paused_periodic --------------------------------------------------
+
+
+def test_find_paused_periodic_returns_paused_monitors() -> None:
+    """Returns periodic subsessions that are CLOSED with reason 'paused'."""
+    registry = SubsessionRegistry(store_path=None)
+    p1 = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        title="monitor-1",
+    )
+    p2 = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        title="monitor-2",
+    )
+    # Non-periodic — should not appear.
+    t1 = _create(registry, kind=SubsessionKind.TASK, title="task-1")
+    # Active periodic — should not appear.
+    p3 = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        title="monitor-3",
+    )
+
+    # Pause two of the periodic monitors.
+    registry.mark_closed(p1.id, summary="paused", reason="paused", closed_by="system")
+    registry.mark_closed(p2.id, summary="paused", reason="paused", closed_by="system")
+    # Close the task with max_runs (not paused).
+    registry.mark_closed(t1.id, summary="done", reason="max_runs", closed_by="system")
+
+    paused = registry.find_paused_periodic()
+    paused_ids = {info.id for info in paused}
+
+    assert len(paused) == 2
+    assert p1.id in paused_ids
+    assert p2.id in paused_ids
+    assert p3.id not in paused_ids
+    assert t1.id not in paused_ids
+
+
+def test_find_paused_periodic_empty_when_no_paused() -> None:
+    """Returns an empty list when no subsessions are paused."""
+    registry = SubsessionRegistry(store_path=None)
+    _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+
+    assert registry.find_paused_periodic() == []

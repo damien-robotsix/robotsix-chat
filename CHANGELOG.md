@@ -1,6 +1,11 @@
 ## 0.0.0 (unreleased)
 
 - Extend subsession ticket-state pre-check from PERIODIC-only to all subsession kinds (TASK, USER_CHAT). A subsession with a `ticket_id` in its checkpoint now verifies the ticket is still in a non-terminal state before proceeding — if the ticket was closed during an outage the subsession aborts immediately with a clear explanation instead of silently doing nothing on a stale branch.
+- Implement resume mechanism for paused periodic monitors: a background
+  watcher (`watch_paused_monitors`) polls paused monitors' ticket states
+  via the mill API and reopens + re-spawns them when the state changes.
+  Adds `SubsessionRegistry.reopen()` method and
+  `paused_monitor_poll_interval_seconds` config key (default 60 s).
 - Migrate hand-rolled HTTP retry and backoff to shared `robotsix-http` library: delegate mill-recovery exponential-backoff math to `RetryConfig`, wrap roster fetch and ticket-poll requests in `RetryClient` for transient-error resilience.
 - Fix background event stream for queued-message draining on session switch: replace stream-preservation hack with dedicated ``openBackgroundEventStream()`` that has its own generation counter, watchdog, and reconnect logic — the old approach reused the foreground stream's stale callbacks which dropped every frame. Also fix a ``var``-in-loop closure bug in ``drainBackgroundSession`` that caused only the last queued message to be posted.
 - Queued messages on a session are now drained when that session's turn

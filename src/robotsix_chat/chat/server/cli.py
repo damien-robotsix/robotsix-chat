@@ -8,6 +8,7 @@ app via ``create_app`` and starts uvicorn).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from collections.abc import Callable
@@ -427,11 +428,23 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         """Resume periodic subsessions; report interrupted one-shot work."""
         resume_subsessions(env)
 
+    # -- background watcher for paused monitors ---------------------------
+    async def _start_watcher() -> None:
+        """Launch the paused-monitor watcher as a background task."""
+        from robotsix_chat.subsessions import watch_paused_monitors
+
+        task = asyncio.create_task(watch_paused_monitors(env))
+        env._tasks.add(task)
+        task.add_done_callback(env._tasks.discard)
+        logger.info("Paused-monitor watcher started.")
+
     # -- resume autonomous sessions on restart -----------------------------
     async def _resume_autonomous() -> None:
         """Auto-close completed autonomous sessions and resume executing ones."""
         if autonomous_runner is not None:
             await autonomous_runner.resume_sessions()
+        # Start the paused-monitor watcher.
+        await _start_watcher()
 
     # -- flush pending traces on shutdown ----------------------------------
     async def _flush_traces() -> None:

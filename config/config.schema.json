@@ -942,6 +942,12 @@
           "default": 10,
           "title": "Mill Recovery Max Retries",
           "type": "integer"
+        },
+        "paused_monitor_poll_interval_seconds": {
+          "default": 60.0,
+          "description": "Interval (seconds) between polls of paused periodic monitors.  The background watcher checks each paused monitor's ticket state via the mill API; when the ticket's state differs from the checkpoint's ``last_known_state`` the monitor is reopened and re-spawned.  Set to ``0`` to disable runtime polling (paused monitors only resume on service restart).",
+          "title": "Paused Monitor Poll Interval Seconds",
+          "type": "number"
         }
       },
       "title": "SubsessionsSettings",
