@@ -6,6 +6,7 @@
   completes, even if the user has switched focus to another session.
   Returning to a session with stale queued messages also re-triggers
   pickup defensively.
+- Add a "Conflict Resolution" instruction to the system prompt: when a user gives an instruction that conflicts with an existing pending ticket, the assistant now automatically attempts to merge the instruction into the ticket rather than just flagging the conflict and waiting for manual intervention.
 - Ticket lifecycle policy (system prompt v56): monitors now require live endpoint verification before closing. When a ticket reaches done/closed, the monitor probes the relevant endpoint with `component_request` and only closes after confirming the change is live. Ticket specs must include acceptance criteria that verify the change works (e.g., "endpoint returns 2xx"), not just "PR merged".
 - System prompt v56: add "Ambiguous field references" verification rule — when a user describes a desired change to a form field or UI element, confirm the specific field(s) before filing a ticket rather than assuming which field they mean.
 - Add empty-repo guard to the implement agent's ``no_change_needed`` logic: an empty

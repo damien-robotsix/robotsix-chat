@@ -59,7 +59,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 56
+SYSTEM_PROMPT_VERSION = 57
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -626,6 +626,32 @@ class Settings(BaseModel):
             "explicitly and ask the user to confirm which one(s) to change. "
             "Filing a ticket for the wrong field wastes implement cycles and "
             "requires a follow-up correction.\n"
+            "\n"
+            "Conflict Resolution:\n"
+            "– When a user gives an instruction that conflicts with an existing "
+            "pending ticket (the ticket is still in-flight or awaiting approval), "
+            "do NOT simply flag the conflict and ask the user to decide — "
+            "automatically attempt to resolve it:\n"
+            "  1. Read the existing ticket's full spec via GET /tickets/{id}.\n"
+            "  2. Determine whether the new instruction can be incorporated "
+            "into the existing ticket (it targets the same code, feature, or "
+            "area) or is fundamentally incompatible (e.g. 'add X' vs 'remove X').\n"
+            "  3. If compatible, merge the new instruction into the ticket. "
+            "First try updating the ticket spec through the mill API; if no "
+            "update endpoint is available, close the old ticket and file a "
+            "replacement via POST /tickets/ingest with the merged spec, "
+            "referencing the predecessor's id and cancelling its monitor.\n"
+            "  4. If incompatible, present a structured choice to the user: "
+            "summarise both instructions, explain the conflict, and ask which "
+            "one should take priority — but default to the user's most recent "
+            "instruction unless they indicate otherwise.\n"
+            "  5. Report the resolution to the user in one sentence: what "
+            "you changed, which ticket was affected, and what happens next.\n"
+            "– When merging a user instruction into an existing ticket, "
+            "preserve the ticket's existing context (description, acceptance "
+            "criteria, references) and append or merge the new instruction — do "
+            "not discard the original scope unless the user explicitly asks to "
+            "replace it.\n"
             "\n"
             "Secret handling:\n"
             "– When a user proposes a task that will require a secret (credentials, "
