@@ -1010,6 +1010,10 @@
       clearInterval(entry._watchdogTimer);
       entry._watchdogTimer = null;
     }
+    if (entry._reconnectTimer) {
+      clearTimeout(entry._reconnectTimer);
+      entry._reconnectTimer = null;
+    }
     try { entry.abortController.abort(); } catch (_) {}
     delete backgroundStreams[sessionId];
   }
@@ -1039,6 +1043,10 @@
     if (entry._watchdogTimer) {
       clearInterval(entry._watchdogTimer);
       entry._watchdogTimer = null;
+    }
+    if (entry._reconnectTimer) {
+      clearTimeout(entry._reconnectTimer);
+      entry._reconnectTimer = null;
     }
 
     entry.abortController = new AbortController();
@@ -1139,6 +1147,12 @@
   // queued message to the server, then clears the draft so the messages
   // are not re-dispatched when the user returns.
   function drainBackgroundSession(sessionId) {
+    var entry = backgroundStreams[sessionId];
+    // Guard against concurrent drains: if already draining or the entry
+    // is gone (closed by foreground handler), stop.
+    if (!entry || entry._draining) return;
+    entry._draining = true;
+
     closeBackgroundEventStream(sessionId);
 
     fetch(apiBase() + "/sessions/" + encodeURIComponent(sessionId) + "/draft")
