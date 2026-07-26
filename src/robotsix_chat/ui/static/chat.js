@@ -384,6 +384,21 @@
   var activeSessionId = null;
   var sessionsList = [];        // cached session list from server
 
+  // Autonomous sessions are owned by a fixed pseudo-owner ("autonomous"),
+  // not by this browser's clientId. They are surfaced in the list (see
+  // fetchSessions) and every per-session request must be scoped to their
+  // real owner so history, replies, and the event stream reach them.
+  var AUTONOMOUS_OWNER = "autonomous";
+  function ownerFor(sid) {
+    for (var oi = 0; oi < sessionsList.length; oi++) {
+      if (sessionsList[oi] && sessionsList[oi].session_id === sid &&
+          sessionsList[oi].autonomous) {
+        return AUTONOMOUS_OWNER;
+      }
+    }
+    return clientId;
+  }
+
   function getActiveSessionId() {
     try { return localStorage.getItem(ACTIVE_SESSION_KEY) || null; }
     catch (_) { return null; }
@@ -492,10 +507,42 @@
   }
 
   function fetchSessions() {
-    var url = apiBase() + "/sessions?owner_id=" + encodeURIComponent(clientId);
-    return fetch(url, { method: "GET" }).then(function (r) {
+    var base = apiBase();
+    var mine = fetch(
+      base + "/sessions?owner_id=" + encodeURIComponent(clientId),
+      { method: "GET" }
+    ).then(function (r) {
       if (!r.ok) throw new Error("Failed to fetch sessions");
       return r.json();
+    });
+    // Autonomous sessions live under the "autonomous" owner, not this
+    // client — fetch them too so the operator can see and reply to them.
+    // Best-effort: never let their absence break the normal session list.
+    var auto = fetch(
+      base + "/sessions?owner_id=" + encodeURIComponent(AUTONOMOUS_OWNER),
+      { method: "GET" }
+    ).then(function (r) {
+      return r.ok ? r.json() : { sessions: [] };
+    }).catch(function () { return { sessions: [] }; });
+    return Promise.all([mine, auto]).then(function (res) {
+      var a = res[0] || {}, b = res[1] || {};
+      var seen = {}, merged = [];
+      var lists = [a.sessions || [], b.sessions || []];
+      for (var li = 0; li < lists.length; li++) {
+        for (var i = 0; i < lists[li].length; i++) {
+          var s = lists[li][i];
+          if (s && s.session_id && !seen[s.session_id]) {
+            seen[s.session_id] = true;
+            merged.push(s);
+          }
+        }
+      }
+      merged.sort(function (x, y) {
+        return (y.last_active || 0) - (x.last_active || 0);
+      });
+      // active_session_id stays the client's own — an autonomous session
+      // must never silently become the default active view.
+      return { sessions: merged, active_session_id: a.active_session_id };
     });
   }
 
@@ -647,7 +694,7 @@
 
   function deleteSession(sid) {
     var url = apiBase() + "/sessions/" + encodeURIComponent(sid) +
-              "?owner_id=" + encodeURIComponent(clientId);
+              "?owner_id=" + encodeURIComponent(ownerFor(sid));
     return fetch(url, { method: "DELETE" }).then(function (r) {
       if (!r.ok && r.status !== 404) throw new Error("delete failed");
       return r.json().catch(function () { return {}; });
@@ -1946,7 +1993,10 @@
     fetch(url, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ session_id: activeSessionId, owner_id: clientId }),
+      body: JSON.stringify({
+        session_id: activeSessionId,
+        owner_id: ownerFor(activeSessionId)
+      }),
       signal: ctrl.signal
     }).then(function (response) {
       summaryFetchController = null;
@@ -2064,7 +2114,7 @@
     }
     var eventsUrl = apiBase() + "/events" +
                     "?session_id=" + encodeURIComponent(activeSessionId) +
-                    "&owner_id=" + encodeURIComponent(clientId);
+                    "&owner_id=" + encodeURIComponent(ownerFor(activeSessionId));
 
     // Read-liveness watchdog: the server writes a keepalive comment every
     // 5s, so a healthy stream always produces reads. A silently-dead TCP
@@ -2219,7 +2269,7 @@
   function loadHistory() {
     var historyUrl = apiBase() + "/history" +
                      "?session_id=" + encodeURIComponent(activeSessionId) +
-                     "&owner_id=" + encodeURIComponent(clientId);
+                     "&owner_id=" + encodeURIComponent(ownerFor(activeSessionId));
 
     fetch(historyUrl, { method: "GET" }).then(function (response) {
       if (!response.ok) return;
@@ -2523,7 +2573,11 @@
 
     var url = serverUrl();
 
-    var body = { message: message, session_id: activeSessionId, owner_id: clientId };
+    var body = {
+      message: message,
+      session_id: activeSessionId,
+      owner_id: ownerFor(activeSessionId)
+    };
     if (messageId) body.message_id = messageId;
     if (encodedImages.length > 0) {
       body.images = encodedImages;
