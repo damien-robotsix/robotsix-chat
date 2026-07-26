@@ -693,6 +693,9 @@
   }
 
   function deleteSession(sid) {
+    // Tear down any background event stream for this session.
+    closeBackgroundEventStream(sid);
+
     var url = apiBase() + "/sessions/" + encodeURIComponent(sid) +
               "?owner_id=" + encodeURIComponent(ownerFor(sid));
     return fetch(url, { method: "DELETE" }).then(function (r) {
@@ -778,6 +781,16 @@
     // are restored — and re-attached to any ongoing turn — when we return.
     saveDraft();
 
+    // If the outgoing session has queued messages, open a background event
+    // stream so we can drain them when its turn completes — even while
+    // another session is focused.
+    var oldSessionId = activeSessionId;
+    var hasQueued = messageQueue.length > 0;
+
+    // Clear the now-persisted queue so it does not leak into the new session.
+    messageQueue = [];
+    updateCancelQueuedButton();
+
     // Abandon the outgoing session's foreground POST stream. Its turn keeps
     // running server-side; we re-attach to it via /events (chat_turn_resume)
     // if we come back. Aborting stops its onData from rendering into the
@@ -787,14 +800,27 @@
       activePostAbort = null;
       activePostSessionId = null;
     }
+
+    // Reset per-turn state — when we return to this session later,
+    // restoreDraft() must be able to call drainQueue() without isBusy()
+    // blocking it (the abandoned POST left state as "sending"/"streaming").
+    state = "idle";
+    updateSendBusy();
     reattachActive = false;
     reattachTurnId = null;
+    hideTypingIndicator();
 
     // 1. Persist the new active session_id.
     setActiveSessionId(sessionId);
 
     // 1b. Clear unread highlight for this session.
     markSessionRead(sessionId);
+
+    // If switching back to a session that has a background event stream,
+    // close it — the foreground /events channel (opened below) takes over.
+    if (backgroundStreams[sessionId]) {
+      closeBackgroundEventStream(sessionId);
+    }
 
     // 2. Clear the chat DOM bubbles.
     clearChatBubbles();
@@ -803,7 +829,22 @@
     clearSubsessions();
 
     // 3. Close the current event stream and re-open for new session.
+    //    BUT: if the outgoing session has queued messages, don't close
+    //    its /events channel — keep it alive as a background stream so
+    //    we still receive chat_turn_done and can drain the queue.
+    // Close the foreground stream normally.
     closeEventStream();
+
+    // If the outgoing session has queued messages, open a dedicated
+    // background event stream so we still receive chat_turn_done (or
+    // chat_turn_error) and can drain the queue — even while another
+    // session is focused.  The background stream has its own generation
+    // counter and watchdog; it never checks the foreground
+    // eventStreamGeneration so frames are not dropped.
+    if (hasQueued && oldSessionId) {
+      openBackgroundEventStream(oldSessionId);
+    }
+
     openEventStream();
 
     // 4. Load history for the new session.
@@ -939,6 +980,12 @@
   var eventStreamGeneration = 0;
   var eventStreamWatchdogTimer = null;
 
+  // Background /events channels kept alive for sessions with queued messages
+  // after the user switches focus away.  When chat_turn_done arrives on one
+  // of these, the queued messages are drained server-side without waiting for
+  // the user to return.
+  var backgroundStreams = {};   // { sessionId: { abortController, generation } }
+
   function closeEventStream() {
     eventsStreamIntentionallyClosed = true;
     eventStreamGeneration++;
@@ -954,6 +1001,219 @@
       eventStreamAbortController.abort();
       eventStreamAbortController = null;
     }
+  }
+
+  function closeBackgroundEventStream(sessionId) {
+    var entry = backgroundStreams[sessionId];
+    if (!entry) return;
+    if (entry._watchdogTimer) {
+      clearInterval(entry._watchdogTimer);
+      entry._watchdogTimer = null;
+    }
+    if (entry._reconnectTimer) {
+      clearTimeout(entry._reconnectTimer);
+      entry._reconnectTimer = null;
+    }
+    try { entry.abortController.abort(); } catch (_) {}
+    delete backgroundStreams[sessionId];
+  }
+
+  // Open a standalone /events channel for a session the user left with
+  // queued messages.  Unlike the foreground stream (openEventStream) this
+  // one has its own generation counter and watchdog so it is never
+  // invalidated by the foreground stream's lifecycle.  It only listens for
+  // chat_turn_done / chat_turn_error — when the turn completes the queued
+  // messages are drained via drainBackgroundSession().
+  function openBackgroundEventStream(sessionId) {
+    // Ensure an entry exists.
+    if (!backgroundStreams[sessionId]) {
+      backgroundStreams[sessionId] = {};
+    }
+    var entry = backgroundStreams[sessionId];
+
+    // Bump this stream's own generation to invalidate any previous
+    // background stream for the same session.
+    entry.generation = (entry.generation || 0) + 1;
+    var gen = entry.generation;
+
+    // Clean up any prior background stream.
+    if (entry.abortController) {
+      try { entry.abortController.abort(); } catch (_) {}
+    }
+    if (entry._watchdogTimer) {
+      clearInterval(entry._watchdogTimer);
+      entry._watchdogTimer = null;
+    }
+    if (entry._reconnectTimer) {
+      clearTimeout(entry._reconnectTimer);
+      entry._reconnectTimer = null;
+    }
+
+    entry.abortController = new AbortController();
+    var abortController = entry.abortController;
+
+    var eventsUrl = apiBase() + "/events" +
+                    "?session_id=" + encodeURIComponent(sessionId) +
+                    "&owner_id=" + encodeURIComponent(ownerFor(sessionId));
+
+    var lastActivity = Date.now();
+
+    var controller = {
+      onActivity: function () {
+        lastActivity = Date.now();
+      },
+      onData: function (raw) {
+        // Bail out if a newer background stream superseded this one.
+        if (gen !== entry.generation) return;
+        var frame;
+        try { frame = JSON.parse(raw); }
+        catch (_) { return; }
+
+        if (frame.type === "chat_turn_done") {
+          if (frame.session_id === sessionId) {
+            drainBackgroundSession(sessionId);
+          }
+        } else if (frame.type === "chat_turn_error") {
+          // A turn that errored won't produce chat_turn_done — drain
+          // anyway so queued messages aren't stuck forever.
+          if (frame.session_id === sessionId) {
+            drainBackgroundSession(sessionId);
+          }
+        }
+        // Ignore all other frame types — background streams only care
+        // about turn completion.
+      },
+      onDone: function () {
+        if (gen !== entry.generation) return;
+        // Server closed the stream — reconnect after a short delay.
+        scheduleBackgroundReconnect(sessionId);
+      },
+      error: function (err) {
+        if (gen !== entry.generation) return;
+        if (err && err.name === "AbortError") return;
+        scheduleBackgroundReconnect(sessionId);
+      }
+    };
+
+    function scheduleBackgroundReconnect(sid) {
+      // Don't reconnect if the entry was removed (session focused / deleted).
+      var e = backgroundStreams[sid];
+      if (!e || e.generation !== gen) return;
+      if (e._reconnectTimer) return;
+      e._reconnectTimer = setTimeout(function () {
+        if (backgroundStreams[sid]) {
+          backgroundStreams[sid]._reconnectTimer = null;
+        }
+        openBackgroundEventStream(sid);
+      }, 5000);
+    }
+
+    fetch(eventsUrl, {
+      method: "GET",
+      signal: abortController.signal
+    }).then(function (response) {
+      if (gen !== entry.generation) return;
+      if (!response.ok) {
+        scheduleBackgroundReconnect(sessionId);
+        return;
+      }
+      var contentType = response.headers.get("content-type") || "";
+      if (contentType.indexOf("text/event-stream") === -1) {
+        scheduleBackgroundReconnect(sessionId);
+        return;
+      }
+      lastActivity = Date.now();
+      // Watchdog: if no bytes arrive for 20 s the connection is dead.
+      entry._watchdogTimer = setInterval(function () {
+        if (gen !== entry.generation) return;
+        if (Date.now() - lastActivity > 20000) {
+          clearInterval(entry._watchdogTimer);
+          entry._watchdogTimer = null;
+          try { abortController.abort(); } catch (_) {}
+          scheduleBackgroundReconnect(sessionId);
+        }
+      }, 5000);
+      var parser = processSSEStream(response.body, controller);
+      parser.start();
+    }).catch(function (err) {
+      if (gen !== entry.generation) return;
+      if (err && err.name === "AbortError") return;
+      scheduleBackgroundReconnect(sessionId);
+    });
+  }
+
+  // Drain queued messages for a session whose turn just completed while
+  // the user was focused elsewhere.  Fetches the saved draft, POSTs each
+  // queued message to the server, then clears the draft so the messages
+  // are not re-dispatched when the user returns.
+  function drainBackgroundSession(sessionId) {
+    var entry = backgroundStreams[sessionId];
+    // Guard against concurrent drains: if already draining or the entry
+    // is gone (closed by foreground handler), stop.
+    if (!entry || entry._draining) return;
+    entry._draining = true;
+
+    closeBackgroundEventStream(sessionId);
+
+    fetch(apiBase() + "/sessions/" + encodeURIComponent(sessionId) + "/draft")
+      .then(function (r) {
+        if (!r.ok) return null;
+        return r.json();
+      })
+      .then(function (draft) {
+        if (!draft || !Array.isArray(draft.queue) || draft.queue.length === 0) return;
+
+        var queue = draft.queue;
+        // POST each queued message directly to the session's chat endpoint.
+        // We don't render bubbles (the user is on a different session); the
+        // replies will be in history when they return.
+        for (var i = 0; i < queue.length; i++) {
+          // IIFE captures each item by value — avoids the classic
+          // var-in-loop closure bug where every .then() sees only the
+          // last item.
+          (function (item) {
+            if (!item.text && (!item.images || item.images.length === 0)) return;
+
+            var imagesForSend = [];
+            if (Array.isArray(item.images)) {
+              for (var j = 0; j < item.images.length; j++) {
+                var pi = _base64ToPendingImage(
+                  item.images[j].data, item.images[j].media_type,
+                  item.images[j].filename || "image"
+                );
+                if (pi) imagesForSend.push(pi);
+              }
+            }
+
+            var encodePromise = imagesForSend.length > 0
+              ? encodeImagesFromList(imagesForSend)
+              : Promise.resolve([]);
+            encodePromise.then(function (encodedImages) {
+              var body = {
+                message: item.text || "",
+                session_id: sessionId,
+                owner_id: ownerFor(sessionId)
+              };
+              if (item.messageId) body.message_id = item.messageId;
+              if (encodedImages.length > 0) body.images = encodedImages;
+              fetch(serverUrl(), {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify(body)
+              }).catch(function () { /* best-effort */ });
+            });
+          })(queue[i]);
+        }
+
+        // Clear the draft so restoreDraft() on return finds an empty queue.
+        fetch(apiBase() + "/sessions/" + encodeURIComponent(sessionId) + "/draft", {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ pending_images: [], queue: [] }),
+          keepalive: true
+        }).catch(function () { /* best-effort */ });
+      })
+      .catch(function () { /* best-effort */ });
   }
 
   // Schedule exactly one reconnect. Without the guard, stacked onDone/error
@@ -2196,8 +2456,21 @@
         } else if (frame.type === "chat_token") {
           handleReattachToken(frame);
         } else if (frame.type === "chat_turn_done") {
+          // If this session has a background event stream (the user queued
+          // messages, then switched away), drain those messages now that
+          // the turn completed — even though the session isn't focused.
+          var bgSid = frame.session_id;
+          if (bgSid && backgroundStreams[bgSid]) {
+            drainBackgroundSession(bgSid);
+          }
           handleReattachDone(frame);
         } else if (frame.type === "chat_turn_error") {
+          // A turn that errored won't produce chat_turn_done — drain any
+          // background queued messages so they're not stuck forever.
+          var bgSidErr = frame.session_id;
+          if (bgSidErr && backgroundStreams[bgSidErr]) {
+            drainBackgroundSession(bgSidErr);
+          }
           handleReattachError(frame);
         }
         // ignore unknown types gracefully

@@ -1,5 +1,10 @@
 ## 0.0.0 (unreleased)
 
+- Fix background event stream for queued-message draining on session switch: replace stream-preservation hack with dedicated ``openBackgroundEventStream()`` that has its own generation counter, watchdog, and reconnect logic — the old approach reused the foreground stream's stale callbacks which dropped every frame. Also fix a ``var``-in-loop closure bug in ``drainBackgroundSession`` that caused only the last queued message to be posted.
+- Queued messages on a session are now drained when that session's turn
+  completes, even if the user has switched focus to another session.
+  Returning to a session with stale queued messages also re-triggers
+  pickup defensively.
 - Ticket lifecycle policy (system prompt v56): monitors now require live endpoint verification before closing. When a ticket reaches done/closed, the monitor probes the relevant endpoint with `component_request` and only closes after confirming the change is live. Ticket specs must include acceptance criteria that verify the change works (e.g., "endpoint returns 2xx"), not just "PR merged".
 - System prompt v56: add "Ambiguous field references" verification rule — when a user describes a desired change to a form field or UI element, confirm the specific field(s) before filing a ticket rather than assuming which field they mean.
 - Add empty-repo guard to the implement agent's ``no_change_needed`` logic: an empty
