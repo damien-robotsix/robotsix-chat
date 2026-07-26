@@ -14,6 +14,7 @@ import logging
 from typing import TYPE_CHECKING
 
 import httpx
+from robotsix_http import RetryConfig
 
 from .models import SubsessionInfo, SubsessionStatus
 
@@ -563,10 +564,19 @@ async def _handle_mill_unreachable(
         )
         return False
 
-    # Compute backoff and sleep.
+    # Compute backoff via RetryConfig, delegating exponential-backoff
+    # math to the shared library while preserving the mill-specific
+    # initial-delay scaling and health-probe-before-retry pattern.
+    retry_config = RetryConfig(
+        max_retries=cfg.mill_recovery_max_retries,
+        backoff_base=2.0,
+        backoff_cap=cfg.mill_recovery_max_backoff_seconds,
+        jitter_factor=0.0,
+    )
     backoff = min(
-        cfg.mill_recovery_initial_backoff_seconds * (2**retry_num),
-        cfg.mill_recovery_max_backoff_seconds,
+        cfg.mill_recovery_initial_backoff_seconds
+        * (retry_config.backoff_base**retry_num),
+        retry_config.backoff_cap,
     )
     logger.info(
         "Subsession %s: mill unreachable — entering recovery "

@@ -23,6 +23,7 @@ import time
 from typing import Any
 
 import httpx
+from robotsix_http import RetryClient, RetryConfig
 
 from robotsix_chat.config import CentralDeploySettings
 
@@ -33,6 +34,15 @@ _cache: tuple[float, list[dict[str, Any]]] | None = None
 
 # Last non-empty roster — preserved across empty fetches as a stale fallback.
 _last_non_empty_cache: tuple[float, list[dict[str, Any]]] | None = None
+
+# Retry configuration for roster fetches — transient network blips or
+# upstream 5xx should not poison the cache for a full TTL.
+_ROSTER_RETRY_CONFIG = RetryConfig(
+    max_retries=2,
+    backoff_base=1.0,
+    backoff_cap=10.0,
+    jitter_factor=0.5,
+)
 
 
 def _cache_valid(ttl: float) -> bool:
@@ -131,7 +141,8 @@ async def fetch_roster(
     roster_url = f"{settings.url.rstrip('/')}/chat/components"
     try:
         async with httpx.AsyncClient(timeout=30.0) as client:
-            resp = await client.get(roster_url, headers=headers)
+            retry_client = RetryClient(client, config=_ROSTER_RETRY_CONFIG)
+            resp = await retry_client.get(roster_url, headers=headers)
             resp.raise_for_status()
             entries = resp.json()
     except Exception as exc:
