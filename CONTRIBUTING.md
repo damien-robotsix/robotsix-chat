@@ -8,7 +8,7 @@
 ## Setup
 
 ```bash
-git clone https://github.com/robotsix/robotsix-chat.git
+git clone https://github.com/damien-robotsix/robotsix-chat.git
 cd robotsix-chat
 make install          # or: uv sync --all-extras
 pre-commit install

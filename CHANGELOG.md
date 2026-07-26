@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Fix remaining `robotsix` org URLs in SECURITY.md and CONTRIBUTING.md, correcting to `damien-robotsix` (follow-up to PR #936).
 - Fixed wrong GitHub org (`robotsix` → `damien-robotsix`) and outdated Python version (`3.12` → `3.14`) in SECURITY.md and CONTRIBUTING.md.
 - Honour ``paused_monitor_poll_interval_seconds=0`` semantic: the watcher now exits early (logging "polling disabled") instead of clamping 0 to 60s, so paused monitors only resume on service restart as documented.
 - Added `scripts/resolve_github_sha.py` — resolves a GitHub `owner/repo` + ref to a 40-char commit SHA via `git ls-remote`. Callable as `uv run scripts/resolve_github_sha.py <owner/repo> <ref>`.
