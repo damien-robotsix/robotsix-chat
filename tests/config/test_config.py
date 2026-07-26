@@ -795,8 +795,6 @@ def test_real_config_json_is_valid_and_loads() -> None:
     A previous reformatting accidentally introduced trailing commas which
     Python's stdlib ``json`` rejects.  This test guards against regressions.
     """
-    import json
-
     repo_root = Path(__file__).resolve().parent.parent.parent
     config_path = repo_root / "config" / "config.json"
     assert config_path.is_file(), f"config/config.json not found at {config_path}"
