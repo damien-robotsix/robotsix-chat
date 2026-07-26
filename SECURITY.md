@@ -73,5 +73,5 @@ Dependencies are scanned automatically via:
 
 We aim to patch or mitigate dependency vulnerabilities within the response timeline above.
 
-[gh-advisory]: https://github.com/robotsix/robotsix-chat/security/advisories/new
+[gh-advisory]: https://github.com/damien-robotsix/robotsix-chat/security/advisories/new
 [security-email]: mailto:security@robotsix.com
