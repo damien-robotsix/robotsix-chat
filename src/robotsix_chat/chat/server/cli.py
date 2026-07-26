@@ -122,19 +122,25 @@ def _setup_observability() -> None:
 
 
 def _export_langfuse_env(settings: Settings) -> None:
-    """Export main-agent Langfuse config to process env before SDK init."""
+    """Export main-agent Langfuse config to process env before SDK init.
+
+    Uses direct assignment (not ``setdefault``) so config.json values always
+    win — even when stale deploy-plane env vars linger during a migration
+    window.  Per the config-ownership standard (Rule 1), first-party
+    credentials must live in ``config/config.json``, not in the deploy
+    plane.
+    """
     pk = settings.langfuse.public_key.get_secret_value()
     if pk:
-        os.environ.setdefault("LANGFUSE_PUBLIC_KEY", pk)
-        os.environ.setdefault(
-            "LANGFUSE_SECRET_KEY",
-            settings.langfuse.secret_key.get_secret_value(),
+        os.environ["LANGFUSE_PUBLIC_KEY"] = pk
+        os.environ["LANGFUSE_SECRET_KEY"] = (
+            settings.langfuse.secret_key.get_secret_value()
         )
         # llmio's setup_langfuse_tracing reads LANGFUSE_BASE_URL and falls back
         # to Langfuse Cloud US when it is absent; LANGFUSE_HOST is the langfuse
         # SDK / cognee name. Export both so every consumer sees the same host.
-        os.environ.setdefault("LANGFUSE_BASE_URL", settings.langfuse.host)
-        os.environ.setdefault("LANGFUSE_HOST", settings.langfuse.host)
+        os.environ["LANGFUSE_BASE_URL"] = settings.langfuse.host
+        os.environ["LANGFUSE_HOST"] = settings.langfuse.host
 
 
 def _configure_logging(settings: Settings) -> None:
