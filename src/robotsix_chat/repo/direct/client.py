@@ -7,12 +7,12 @@ gracefully: all errors become short strings the assistant can relay.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
+from robotsix_chat.common.github_auth import _build_github_app_auth_headers
 from robotsix_chat.common.http import safe_http_request
 
 if TYPE_CHECKING:
@@ -42,24 +42,18 @@ _INSTALLATION_TOKEN_CACHE: dict[str, str] = {}
 async def _get_installation_token(settings: DirectRepoSettings) -> str:
     """Mint a short-lived GitHub App installation access token.
 
-    Delegates to the shared ``robotsix_github_auth`` library — no in-container
-    JWT logic remains.  Results are cached by installation id.
+    Delegates to the shared ``_build_github_app_auth_headers`` helper.
+    Results are cached by installation id.
     """
-    iid = settings.github_app_installation_id
-    cached = _INSTALLATION_TOKEN_CACHE.get(iid)
-    if cached is not None:
-        return cached
-
-    from robotsix_github_auth import mint_installation_token
-
-    result = await asyncio.to_thread(
-        mint_installation_token,
-        app_id=settings.github_app_id,
-        private_key=settings.github_app_private_key.get_secret_value(),
-        installation_id=settings.github_app_installation_id,
+    token = await _build_github_app_auth_headers(
+        settings, "direct_repo:", token_cache=_INSTALLATION_TOKEN_CACHE
     )
-    token = cast(str, result.token)
-    _INSTALLATION_TOKEN_CACHE[iid] = token
+    if token is None:
+        raise RuntimeError(
+            "Failed to mint GitHub App installation token. "
+            "Check that github_app_id, github_app_private_key, "
+            "and github_app_installation_id are correct."
+        )
     return token
 
 
