@@ -205,6 +205,27 @@ class TestChatJsFunctions:
         """Token append function exists (``appendToken``)."""
         assert "appendToken" in self._functions_in(static_js)
 
+    def test_owner_for_helper_exists(self, static_js: str) -> None:
+        """``ownerFor`` + ``AUTONOMOUS_OWNER`` scope per-session requests.
+
+        Autonomous sessions are owned by the fixed ``"autonomous"`` owner,
+        not the browser's clientId; per-session requests must resolve the
+        real owner so the operator can view and reply to them.
+        """
+        assert "ownerFor" in self._functions_in(static_js)
+        assert "AUTONOMOUS_OWNER" in self._vars_in(static_js)
+        assert '"autonomous"' in static_js
+
+    def test_fetch_sessions_includes_autonomous(self, static_js: str) -> None:
+        """``fetchSessions`` also fetches the autonomous-owned sessions.
+
+        Regression: previously it only queried ``owner_id=<clientId>``, so
+        autonomous sessions were invisible in the UI.
+        """
+        assert "AUTONOMOUS_OWNER" in static_js
+        # both the client's own list and the autonomous list are fetched
+        assert static_js.count("/sessions?owner_id=") >= 2
+
     def test_show_error_function(self, static_js: str) -> None:
         """Error display function exists (``showError``)."""
         assert "showError" in self._functions_in(static_js)
