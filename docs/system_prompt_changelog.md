@@ -5,6 +5,24 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v56 — 2026-07-26 — improve-accuracy-of-interpreting-user-re-86e2
+
+**Summary:** Add an "Ambiguous field references" bullet to the Verification section. When a user
+describes a desired change to a form field, UI element, or displayed value, the assistant must
+confirm the specific field(s) the user is referring to before filing a ticket — do not assume which
+field they mean, as a form or page may contain multiple similar fields (date pickers, timestamps,
+select dropdowns, formatted displays). Before filing, restate the field's label, location, and
+current vs. desired format. If multiple fields could match, list them explicitly and ask the user to
+confirm which one(s) to change.
+
+**Rationale:** The user asked for "Date et heure fields to be displayed in a french format
+19/02/2027 17:00 instead of 02/19/2027 05:00 PM" and the assistant filed a ticket targeting the
+"créneau horaire" select field — not what the user wanted. This misunderstanding led to unnecessary
+work and required a follow-up correction. The new rule ensures the assistant verifies the specific
+target field(s) before creating tickets for UI formatting changes.
+
+**SHA256:** `4bd5ab4250ce43ac588970ee4faa9ebe83bccdd6868dac304cae36a227e7455d`
+
 ## v56 — 2026-07-26 — require-live-endpoint-verification-before-closing-monitor-754d
 
 **Summary:** Add live-verification requirements to the ticket lifecycle policy so monitors do not
@@ -25,24 +43,6 @@ is not enabled on this server."). The monitor treated board-closed as terminal w
 feature was actually live.
 
 **SHA256:** `d965f15a4a7f5a53ac0cf97e5efe93a0ea467607fbdc9a0f20777fe23dd70acb`
-
-## v56 — 2026-07-26 — improve-accuracy-of-interpreting-user-re-86e2
-
-**Summary:** Add an "Ambiguous field references" bullet to the Verification section. When a user
-describes a desired change to a form field, UI element, or displayed value, the assistant must
-confirm the specific field(s) the user is referring to before filing a ticket — do not assume which
-field they mean, as a form or page may contain multiple similar fields (date pickers, timestamps,
-select dropdowns, formatted displays). Before filing, restate the field's label, location, and
-current vs. desired format. If multiple fields could match, list them explicitly and ask the user to
-confirm which one(s) to change.
-
-**Rationale:** The user asked for "Date et heure fields to be displayed in a french format
-19/02/2027 17:00 instead of 02/19/2027 05:00 PM" and the assistant filed a ticket targeting the
-"créneau horaire" select field — not what the user wanted. This misunderstanding led to unnecessary
-work and required a follow-up correction. The new rule ensures the assistant verifies the specific
-target field(s) before creating tickets for UI formatting changes.
-
-**SHA256:** `dcfc7b07d4bf0427dfaddf2458727491d5790cb4c3664738eb5d8f58147a7833`
 
 ______________________________________________________________________
 
