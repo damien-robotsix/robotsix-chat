@@ -7,7 +7,6 @@ gracefully: all errors become short strings the assistant can relay.
 
 from __future__ import annotations
 
-import asyncio
 import base64
 import json
 import logging

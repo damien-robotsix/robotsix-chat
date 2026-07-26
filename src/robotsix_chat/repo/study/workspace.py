@@ -12,7 +12,6 @@ configured; otherwise only public repositories are reachable.
 
 from __future__ import annotations
 
-import asyncio
 import io
 import json
 import logging
