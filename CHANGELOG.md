@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Fixed wrong GitHub org (`robotsix` → `damien-robotsix`) and outdated Python version (`3.12` → `3.14`) in SECURITY.md and CONTRIBUTING.md.
 - Honour ``paused_monitor_poll_interval_seconds=0`` semantic: the watcher now exits early (logging "polling disabled") instead of clamping 0 to 60s, so paused monitors only resume on service restart as documented.
 - Added `scripts/resolve_github_sha.py` — resolves a GitHub `owner/repo` + ref to a 40-char commit SHA via `git ls-remote`. Callable as `uv run scripts/resolve_github_sha.py <owner/repo> <ref>`.
 - Switch `_export_langfuse_env` from `setdefault` to direct assignment so config.json values always win over stale deploy-plane env vars (config-ownership Rule 1).

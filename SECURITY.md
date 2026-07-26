@@ -9,7 +9,7 @@ applied to the `main` branch. There are no backport or LTS branches at this stag
 | ------- | ------------------ |
 | main    | :white_check_mark: |
 
-We target the latest stable Python release (≥ 3.12). Older Python versions are not tested and are
+We target the latest stable Python release (≥ 3.14). Older Python versions are not tested and are
 out of scope for vulnerability reports.
 
 ## Reporting a vulnerability
