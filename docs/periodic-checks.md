@@ -98,11 +98,11 @@ POST /subsessions/{subsession_id}/close
 
 When a periodic monitor accumulates `subsessions.auto_stop_no_change_runs` consecutive `NO_CHANGE`
 replies, the subsession pauses itself by closing with reason `"paused"` (calling
-`registry.mark_closed(reason="paused")`).  Once paused, the monitor stops ticking and remains
+`registry.mark_closed(reason="paused")`). Once paused, the monitor stops ticking and remains
 terminal — **until the monitored ticket's state changes**.
 
 A background **watcher** task (`watch_paused_monitors` in `subsessions/watcher.py`) runs for the
-lifetime of the server process.  On every poll tick it:
+lifetime of the server process. On every poll tick it:
 
 1. Queries the registry for all paused periodic subsessions (`find_paused_periodic()`).
 2. For each paused monitor, fetches the current ticket state from the mill API via the
@@ -113,22 +113,22 @@ lifetime of the server process.  On every poll tick it:
 
 The poll interval is controlled by:
 
-| Config key                                         | Default | Description                                                                                                                           |
-| -------------------------------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------- |
-| `subsessions.paused_monitor_poll_interval_seconds` | `60.0`  | Seconds between watcher polls.  Set to `0` to disable runtime polling; paused monitors then only resume on the next service restart. |
+| Config key                                         | Default | Description                                                                                                                         |
+| -------------------------------------------------- | ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
+| `subsessions.paused_monitor_poll_interval_seconds` | `60.0`  | Seconds between watcher polls. Set to `0` to disable runtime polling; paused monitors then only resume on the next service restart. |
 
 When no paused monitors exist, the watcher sleeps for 30 seconds before checking again (avoiding
-busy-wait).  If the mill endpoint is unreachable during a poll tick, the watcher logs a debug
-message and tries again on the next tick — no paused monitor is resumed until the mill responds.
+busy-wait). If the mill endpoint is unreachable during a poll tick, the watcher logs a debug message
+and tries again on the next tick — no paused monitor is resumed until the mill responds.
 
 The watcher is started automatically during the server's `startup` phase (in `cli.py`'s
-`_resume_autonomous` lifespan hook).  If `board_api_base_url` is not configured, the watcher returns
+`_resume_autonomous` lifespan hook). If `board_api_base_url` is not configured, the watcher returns
 immediately with a debug log line and does not loop.
 
 The `reopen()` method on `SubsessionRegistry` only transitions records that are `CLOSED` with
-`close_reason == "paused"` and `kind == PERIODIC`.  All other terminal records (completed,
-max_runs, explicit close, etc.) are left untouched — the watcher will never accidentally revive a
-deliberately closed subsession.
+`close_reason == "paused"` and `kind == PERIODIC`. All other terminal records (completed, max_runs,
+explicit close, etc.) are left untouched — the watcher will never accidentally revive a deliberately
+closed subsession.
 
 ## Mill-recovery behaviour
 
