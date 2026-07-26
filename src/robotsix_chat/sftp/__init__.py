@@ -149,19 +149,23 @@ def build_sftp_tools(
         """Check whether a file or directory exists on the remote SFTP server.
 
         Returns ``"true"`` or ``"false"`` — suitable for use as a
-        pre-check before attempting a write or restore.
+        pre-check before attempting a write or restore.  When the
+        check itself fails (e.g. connection error), returns an error
+        description string.
 
         Args:
             remote_path: Path to check on the remote server.
 
         Returns:
-            ``"true"`` when the path exists, ``"false"`` otherwise.
+            ``"true"`` when the path exists, ``"false"`` when it does
+            not, or an error description when the check could not be
+            completed.
 
         """
         try:
             exists = await client.file_exists(remote_path)
-        except SftpError, SftpPathError:
-            return "false"
+        except (SftpError, SftpPathError) as exc:
+            return f"SFTP exists check failed: {exc}"
         except ImportError:
             return (
                 "SFTP tools require the ``asyncssh`` package. "
