@@ -22,6 +22,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 import httpx
+from robotsix_http import RetryClient, RetryConfig
 
 if TYPE_CHECKING:
     from robotsix_chat.config import Settings
@@ -29,6 +30,15 @@ if TYPE_CHECKING:
 __all__ = ["build_ticket_poll_tools", "load_ticket_poll_skill"]
 
 logger = logging.getLogger(__name__)
+
+# Retry configuration for ticket poll requests — transient network blips
+# should not surface as "board API unreachable" to the agent.
+_TICKET_POLL_RETRY_CONFIG = RetryConfig(
+    max_retries=2,
+    backoff_base=1.0,
+    backoff_cap=10.0,
+    jitter_factor=0.5,
+)
 
 
 def load_ticket_poll_skill() -> str:
@@ -96,7 +106,8 @@ def build_ticket_poll_tools(
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
-                response = await client.get(url, headers=headers)
+                retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
+                response = await retry_client.get(url, headers=headers)
                 response.raise_for_status()
                 try:
                     data: dict[str, Any] = response.json()

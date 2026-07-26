@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Migrate hand-rolled HTTP retry and backoff to shared `robotsix-http` library: delegate mill-recovery exponential-backoff math to `RetryConfig`, wrap roster fetch and ticket-poll requests in `RetryClient` for transient-error resilience.
 - Fix background event stream for queued-message draining on session switch: replace stream-preservation hack with dedicated ``openBackgroundEventStream()`` that has its own generation counter, watchdog, and reconnect logic — the old approach reused the foreground stream's stale callbacks which dropped every frame. Also fix a ``var``-in-loop closure bug in ``drainBackgroundSession`` that caused only the last queued message to be posted.
 - Queued messages on a session are now drained when that session's turn
   completes, even if the user has switched focus to another session.
