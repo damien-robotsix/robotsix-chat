@@ -5,6 +5,29 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v56 — 2026-07-26 — require-live-endpoint-verification-before-closing-monitor-754d
+
+**Summary:** Add live-verification requirements to the ticket lifecycle policy so monitors do not
+close prematurely when a ticket reaches "done/closed" on the board but the change is not yet live.
+
+1. **Step 1 (Initiate):** New guidance requires ticket specs to include acceptance criteria that
+   verify the change is live and working — e.g. "the endpoint returns 2xx" — not just "PR merged".
+
+2. **Step 4 (Complete):** The monitor must now probe the change directly with `component_request`
+   before closing. If a server-side capability (endpoint, config flag, behaviour) does not respond
+   as expected — e.g. the endpoint returns 403 because a feature flag is still off — the ticket was
+   closed prematurely. The monitor should either reopen the ticket or file a follow-up. Only close
+   the monitor after live verification succeeds.
+
+**Rationale:** Ticket 20260725T105809Z-enable-chat-agent-component-registration-03d7 was closed as
+soon as PR #607 merged, but the registration endpoint still returned 403 ("Chat agent registration
+is not enabled on this server."). The monitor treated board-closed as terminal without verifying the
+feature was actually live.
+
+**SHA256:** `d965f15a4a7f5a53ac0cf97e5efe93a0ea467607fbdc9a0f20777fe23dd70acb`
+
+______________________________________________________________________
+
 ## v55 — 2026-07-25 — periodic-subsession-spawning-restriction-7981
 
 **Summary:** Add a new bullet to the Subsessions section instructing periodic subsessions on how to
