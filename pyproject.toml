@@ -72,6 +72,10 @@ render-url = ["playwright"]
 # sealed-box).  Required by the ``set_actions_secret`` tool; when absent,
 # the tool returns a clear install-instruction error without crashing.
 github-actions = ["pynacl"]
+# sftp: asyncssh for the SFTP config-restore tools (sftp_read_file,
+# sftp_write_file, sftp_list_directory, sftp_file_exists).  When absent,
+# the tools return a clear install-instruction error without crashing.
+sftp = ["asyncssh"]
 
 [project.scripts]
 robotsix-chat = "robotsix_chat.chat.server:run_server_from_config"
@@ -226,6 +230,11 @@ ignore_missing_imports = true
 # robotsix-mill is an external fleet package that ships no type information.
 [[tool.mypy.overrides]]
 module = ["robotsix_mill", "robotsix_mill.*"]
+ignore_missing_imports = true
+
+# asyncssh is an optional dependency (the `sftp` extra); may lack type stubs.
+[[tool.mypy.overrides]]
+module = ["asyncssh", "asyncssh.*"]
 ignore_missing_imports = true
 
 [tool.pyright]

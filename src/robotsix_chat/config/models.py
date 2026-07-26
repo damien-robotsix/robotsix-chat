@@ -1059,3 +1059,47 @@ class CentralDeploySettings(BaseModel):
             "transient roster gaps."
         ),
     )
+
+
+class SftpSettings(BaseModel):
+    """SFTP config-restore settings.
+
+    Provides credentials and connection parameters for the SFTP config-restore
+    capability.  When enabled, the agent gains tools to read, list, and
+    (confirmation-gated) write files on a remote SFTP server — used to
+    restore known-good configuration files when diagnostics detect they are
+    missing.
+
+    Attributes:
+        enabled: Master switch.  When ``False`` (default), no SFTP tools
+            are registered and the agent runs exactly as before.
+        host: SFTP server hostname or IP address.
+        port: SFTP server port (default 22).
+        username: SFTP username for authentication.
+        password: Password for password-based authentication.  Leave empty
+            when using key-based auth.
+        private_key: OpenSSH-format private key for key-based
+            authentication.  Leave empty when using password auth.
+        private_key_passphrase: Passphrase for *private_key*, if the key
+            is encrypted.
+        known_hosts: OpenSSH-format known-hosts entries (one or more lines)
+            for host key verification.  When empty, host key verification
+            is skipped (insecure — only suitable for isolated networks).
+        remote_root: Optional base directory on the remote server to
+            restrict all operations under (e.g. ``/var/www``).  When set,
+            paths are resolved relative to this root and traversal outside
+            it is refused.
+
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    enabled: bool = False
+    host: str = ""
+    port: int = 22
+    username: str = ""
+    password: SecretStr = SecretStr("")
+    private_key: SecretStr = SecretStr("")
+    private_key_passphrase: SecretStr = SecretStr("")
+    known_hosts: str = ""
+    remote_root: str = ""

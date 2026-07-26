@@ -37,6 +37,7 @@ from robotsix_chat.config.models import (
     RenderUrlSettings,
     RepoStudySettings,
     SelfReviewSettings,
+    SftpSettings,
     SubsessionsSettings,
     VersionCheckSettings,
 )
@@ -899,6 +900,9 @@ class Settings(BaseModel):
     public_fetch: PublicFetchSettings = Field(
         default_factory=PublicFetchSettings, json_schema_extra={"advanced": True}
     )
+    sftp: SftpSettings = Field(
+        default_factory=SftpSettings, json_schema_extra={"advanced": True}
+    )
     feedback: FeedbackSettings = Field(
         default_factory=FeedbackSettings, json_schema_extra={"advanced": True}
     )
@@ -1100,6 +1104,7 @@ class Settings(BaseModel):
             "render_url",
             "knowledge",
             "self_review",
+            "sftp",
             "version_check",
             "component_client",
             "subsessions",
