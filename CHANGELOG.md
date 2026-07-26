@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Added `scripts/resolve_github_sha.py` — resolves a GitHub `owner/repo` + ref to a 40-char commit SHA via `git ls-remote`. Callable as `uv run scripts/resolve_github_sha.py <owner/repo> <ref>`.
 - Extend subsession ticket-state pre-check from PERIODIC-only to all subsession kinds (TASK, USER_CHAT). A subsession with a `ticket_id` in its checkpoint now verifies the ticket is still in a non-terminal state before proceeding — if the ticket was closed during an outage the subsession aborts immediately with a clear explanation instead of silently doing nothing on a stale branch.
 - Implement resume mechanism for paused periodic monitors: a background
   watcher (`watch_paused_monitors`) polls paused monitors' ticket states
