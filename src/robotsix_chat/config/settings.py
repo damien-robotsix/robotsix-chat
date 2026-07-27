@@ -26,6 +26,7 @@ from robotsix_chat.config.models import (
     GitHubSecuritySettings,
     HttpProbeSettings,
     KnowledgeSettings,
+    LangfuseInspectSettings,
     LangfuseSettings,
     LifecycleSettings,
     MailSettings,
@@ -108,6 +109,9 @@ class Settings(BaseModel):
         correlation_id_header: HTTP header name used for the correlation /
             request-id (both inbound and outbound). Default ``X-Request-ID``.
         langfuse: Main-agent Langfuse observability credentials.
+        langfuse_inspect: Langfuse trace-inspection tool — lets the agent
+            fetch and summarise recent implement traces for a given ticket
+            or trace id.  Default-disabled.
         feedback: Automated feedback analysis that files improvement
             tickets at compaction and session-end boundaries.
         max_images_per_message: Maximum number of images a client may attach to
@@ -730,6 +734,9 @@ class Settings(BaseModel):
         default="X-Request-ID", json_schema_extra={"advanced": True}
     )
     langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)
+    langfuse_inspect: LangfuseInspectSettings = Field(
+        default_factory=LangfuseInspectSettings, json_schema_extra={"advanced": True}
+    )
     memory: MemorySettings = Field(
         default_factory=MemorySettings, json_schema_extra={"advanced": True}
     )
@@ -981,6 +988,7 @@ class Settings(BaseModel):
         # Top-level object fields — tolerate "" and JS sentinels → {}
         _object_keys = (
             "langfuse",
+            "langfuse_inspect",
             "memory",
             "central_deploy",
             "mail",

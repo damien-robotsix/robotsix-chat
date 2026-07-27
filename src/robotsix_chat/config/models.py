@@ -18,6 +18,25 @@ class LangfuseSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class LangfuseInspectSettings(BaseModel):
+    """Langfuse trace-inspection tool — lets the agent query recent traces.
+
+    Reuses the main ``langfuse`` credentials (public key + secret key + host)
+    for API authentication — no separate credential fields.  When enabled, the
+    agent gains an ``inspect_langfuse_trace`` tool that fetches and summarises
+    recent implement traces for a given ticket or trace id.
+
+    Attributes:
+        enabled: Master switch.  Default ``False``.
+        max_traces: Maximum number of traces returned per query.  Default ``5``.
+
+    """
+
+    enabled: bool = False
+    max_traces: int = 5
+    model_config = ConfigDict(extra="forbid")
+
+
 class MemoryLlmSettings(BaseModel):
     """Extraction-LLM config for cognee memory (OpenRouter via litellm).
 

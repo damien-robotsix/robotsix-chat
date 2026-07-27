@@ -245,6 +245,14 @@ modules:
       - tests/knowledge/__init__.py
       - tests/knowledge/test_knowledge.py
 
+  - id: langfuse
+    description: "Langfuse trace-inspection tool — lets the agent fetch and summarise recent traces by trace id or ticket id via the Langfuse public API."
+    paths:
+      - src/robotsix_chat/langfuse/__init__.py
+      - src/robotsix_chat/langfuse/skill.md
+      - tests/langfuse/__init__.py
+      - tests/langfuse/test_inspect.py
+
   - id: llm
     description: "LLM-powered agent — streaming wrapper around llmio.Agent."
     paths:
