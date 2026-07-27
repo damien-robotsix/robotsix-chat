@@ -499,6 +499,45 @@ class DirectRepoClient:
         """
         return await self._get_json(f"/repos/{repo_full_name}/pulls/{pr_number}")
 
+    async def delete_ticket_artifact(self, ticket_id: str, artifact_path: str) -> bool:
+        """Delete an artifact on the board API for *ticket_id*.
+
+        Sends ``DELETE /tickets/{ticket_id}/artifacts/{artifact_path}``.
+        Returns ``True`` on success (HTTP 2xx), ``False`` on any error
+        (logged as a warning).
+        """
+        board_url = self._s.board_api_base_url.rstrip("/")
+        url = f"{board_url}/tickets/{ticket_id}/artifacts/{artifact_path}"
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if self._s.board_api_token.get_secret_value():
+            headers["Authorization"] = (
+                f"Bearer {self._s.board_api_token.get_secret_value()}"
+            )
+        result = await safe_http_request(
+            "DELETE",
+            url,
+            headers=headers,
+            timeout=self._s.timeout,
+            label=f"Board API (artifact {artifact_path})",
+        )
+        if result.error:
+            logger.warning(
+                "Failed to delete artifact %s for ticket %s: %s",
+                artifact_path,
+                ticket_id,
+                result.error,
+            )
+            return False
+        if result.status_code and result.status_code >= 400:
+            logger.warning(
+                "Board API returned %d for DELETE artifact %s on ticket %s",
+                result.status_code,
+                artifact_path,
+                ticket_id,
+            )
+            return False
+        return True
+
     async def get_ticket_data(self, ticket_id: str) -> dict[str, Any] | None:
         """Return the full ticket JSON from the board API, or None on failure.
 
