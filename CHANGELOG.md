@@ -537,6 +537,7 @@
   match, without needing to recall exact note IDs. Results are ranked by relevance
   (exact topic match > topic contains > content contains).
 - Add pytest-benchmark microbenchmarks for the chat server's critical request paths (SSE streaming, /health, / UI), gated behind `--benchmark-only` and run on push to main only.
+- Added 28 unit tests for ``subsessions.py`` route handlers covering all error branches (503, 404, 400, 409) and the idempotent close flow.
 - `push_direct_repo_branch` ticket-state verification now uses the same roster-based board connectivity as `component_request`, fixing failures when `board_api_base_url` differs from the roster-provided mill URL. Error messages now include the connectivity path or URL tried for direct diagnosis. `fetch_repo_for_study` URL-encodes branch refs containing slashes (e.g. `mill/20260723T...`), fixing 404 errors on such refs.
 - Fix stale `SYSTEM_PROMPT_VERSION` in `docs/configuration.md` (v38 → v45). Add CI governance test to prevent future drift.
 - Subsessions: guarantee delivery of `complete_subsession` outcomes to the parent
