@@ -3,6 +3,24 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v64 — 2026-07-27 — expose-deploy-image-digest-and-health-st-ae07
+
+**Summary:** Add a "deploy status tracking" bullet to the Subsessions section. When monitoring a
+ticket that involves a code change deployed to a component, periodic subsessions must now track
+deploy status alongside board status: check the running image digest via
+`get_lifecycle_service_config`, confirm rollout completion via `get_lifecycle_service_status`, and
+verify component health via `component_request GET /health`. A merged PR whose image is not yet
+deployed is not a terminal state — the monitor must stay open until deploy is confirmed live.
+
+**Rationale:** Periodic monitors for tickets like 244c and 90b5 tracked fix merge but not deploy
+status, so the assistant later needed live deploy checks to discover the fix was already deployed.
+Adding deploy image digest, rollout status, and health to periodic monitoring prevents redundant fix
+proposals for issues already resolved in the running image, accelerating deadlock resolution.
+
+**SHA256:** `45e04e8c1aa771858e20cf0dd6fa247d741a659184b5efa91d6fa51bd2e97dd9`
+
+______________________________________________________________________
+
 ## v63 — 2026-07-28 — introduce-model-policy-abstraction-for-d-42d5
 
 **Summary:** Add a "Model Policy" section defining named tier labels for the existing model levels
@@ -91,7 +109,6 @@ directs action, re-asking for confirmation is redundant friction. This change ma
 respect explicit user directives without weakening safety for ambiguous cases.
 
 **SHA256:** `ab8e8246f0e2ec6d64e0a4008f4aac061a4ee7cafb4387a12d2899e4c950e548`
-
 ## v58 — 2026-07-27 — guidance-for-hand-authoring-prs-as-escap-1b2e
 
 **Summary:** Add a "Hand-authoring PRs as a mill-failure escape hatch" bullet to the Mill & Deploy
