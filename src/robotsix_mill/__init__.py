@@ -59,7 +59,7 @@ if _LOCAL_STAGES not in robotsix_mill.stages.__path__:
 #     agent guidance (e.g. add a CI workflow edit checklist) without
 #     forking the entire mill package.
 # ---------------------------------------------------------------------------
-import robotsix_mill.agents.yaml_loader  # type: ignore[import-untyped]  # noqa: E402
+import robotsix_mill.agents.yaml_loader  # noqa: E402
 
 _original_load_agent_definition = robotsix_mill.agents.yaml_loader.load_agent_definition
 _LOCAL_AGENT_DEFINITIONS = str(_LOCAL_DIR / "agent_definitions")

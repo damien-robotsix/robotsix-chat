@@ -15,6 +15,7 @@ from __future__ import annotations
 import logging
 import subprocess
 from pathlib import Path
+from typing import Any
 
 from ..agents.documenting import DocClassifierResult, DocResult
 from ..config import target_branch_for
@@ -101,7 +102,7 @@ def _run_mdformat_on_changed_md_files(repo_dir: Path) -> None:
     log.debug("mdformat: no available runner — skipping")
 
 
-class DocumentStage(Stage):
+class DocumentStage(Stage):  # type: ignore[misc]  # Stage is from untyped robotsix_mill
     """Update project documentation from the implemented code changes."""
 
     name = "document"
@@ -305,8 +306,8 @@ class DocumentStage(Stage):
     def _run_doc_agent(
         self,
         *,
-        settings,
-        repo_dir,
+        settings: Any,
+        repo_dir: Path,
         diff: str,
         spec: str,
         extra_roots: list[Path] | None = None,
@@ -333,7 +334,7 @@ class DocumentStage(Stage):
     def _run_doc_classifier(
         self,
         *,
-        settings,
+        settings: Any,
         diff: str,
         spec: str,
     ) -> DocClassifierResult:
