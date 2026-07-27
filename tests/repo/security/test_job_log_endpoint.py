@@ -6,7 +6,6 @@
 from __future__ import annotations
 
 import json
-import time
 from typing import Any
 
 import httpx
@@ -191,7 +190,7 @@ async def test_job_log_404_when_repo_not_in_scope(
     gh = _gh_sec_settings()
     dr = _direct_repo_settings()
 
-    _token_cache["67890"] = (time.monotonic(), "ghs_test_token")
+    _token_cache["67890"] = "ghs_test_token"
 
     respx_mock.get("https://api.github.com/installation/repositories").mock(
         return_value=httpx.Response(
@@ -225,7 +224,7 @@ async def test_job_log_404_when_job_not_found(
     gh = _gh_sec_settings()
     dr = _direct_repo_settings()
 
-    _token_cache["67890"] = (time.monotonic(), "ghs_test_token")
+    _token_cache["67890"] = "ghs_test_token"
 
     respx_mock.get("https://api.github.com/installation/repositories").mock(
         return_value=httpx.Response(
@@ -264,7 +263,7 @@ async def test_job_log_200_returns_log_text(
     dr = _direct_repo_settings()
     log_content = "Run lftp deploy...\nTransfer complete.\nDone."
 
-    _token_cache["67890"] = (time.monotonic(), "ghs_test_token")
+    _token_cache["67890"] = "ghs_test_token"
 
     respx_mock.get("https://api.github.com/installation/repositories").mock(
         return_value=httpx.Response(
@@ -311,7 +310,7 @@ async def test_job_log_200_different_org(
     dr = _direct_repo_settings()
     log_content = "Build output here."
 
-    _token_cache["67890"] = (time.monotonic(), "ghs_test_token")
+    _token_cache["67890"] = "ghs_test_token"
 
     respx_mock.get("https://api.github.com/installation/repositories").mock(
         return_value=httpx.Response(

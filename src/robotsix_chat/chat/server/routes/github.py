@@ -74,7 +74,7 @@ async def _github_endpoint(
     # -- body --------------------------------------------------------------
     try:
         body = await request.json()
-    except (json.JSONDecodeError, ValueError):
+    except json.JSONDecodeError, ValueError:
         raise HTTPException(status_code=400, detail="invalid JSON body") from None
     if not isinstance(body, dict):
         raise HTTPException(status_code=400, detail="expected a JSON object")
@@ -330,6 +330,8 @@ async def github_actions_workflow_endpoint(request: Request) -> JSONResponse:
             "message": result,
         }
     )
+
+
 async def github_job_log_endpoint(request: Request) -> PlainTextResponse:
     """Handle ``GET /chat/github/repos/{owner}/{repo}/actions/jobs/{job_id}/logs``.
 
