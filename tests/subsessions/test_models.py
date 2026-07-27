@@ -69,6 +69,7 @@ def test_snapshot_round_trips_every_field() -> None:
         "checkpoint": None,
         "dedup_key": None,
         "consecutive_no_change": 0,
+        "retry_count": 0,
     }
 
 
