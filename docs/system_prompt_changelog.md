@@ -294,26 +294,7 @@ stay current without manual rework.
 
 ______________________________________________________________________
 
-## v63 — 2026-07-27 — validate-proposed-solutions-against-live-7756
 
-**Summary:** Add a mandatory live-deploy-state pre-check to the "Hand-authoring PRs as a
-mill-failure escape hatch" section. Before proposing any mill-targeting fix (hand-authored PR,
-ticket, or rework), the assistant must first verify the live mill deploy state: use the deploy API
-to check the running image digest and commit on the mill service, then check the mill repo's
-recently merged PRs to confirm the defect has not already been fixed in a deploy that occurred since
-the assistant last checked. A defect observed hours ago — or that surfaced in recalled memory or a
-periodic-note summary — may already be resolved; building a fix on outdated live-state assumptions
-wastes implementation effort and delays actual remediation.
-
-**Rationale:** Session 8b03ed2ca8f946629bdee029f2efaaa7 showed the assistant proposing a manual PR
-to fix a fleet-wide implement-stage bug without first verifying the current deploy state. Live
-checks later revealed the fix was already merged on mill main. The assistant built a plan on
-recalled/periodic notes without cross-referencing live deploy status, leading to a delayed
-correction.
-
-**SHA256:** `1aaee2880866d65b25fea2d6856a9b5204a429c5b492b5d7928ad863836ec2bb`
-
-______________________________________________________________________
 
 ## v62 — 2026-07-25 — unify-periodic-sub-session-summaries-int-6dc6
 
@@ -353,6 +334,7 @@ re-verify.
 
 ______________________________________________________________________
 
+
 ## v60 — 2026-07-21 — add-automatic-pr-merge-verification-befo-2329
 
 **Summary:** Add a "Deploy pre-check" bullet to the Deploy system guidance in the Autonomy section.
@@ -370,6 +352,7 @@ merge verification a required pre-deploy step.
 **SHA256:** `a5bba5bbcdf3db34f1f0db3213c34081d37b1cb094755e7da93083b9e7ad42d5`
 
 ______________________________________________________________________
+
 
 ## v59 — 2026-07-27 — do-not-ask-for-permission-for-trivial-cl-70b7
 
@@ -485,6 +468,7 @@ feature was actually live.
 
 ______________________________________________________________________
 
+
 ## v55 — 2026-07-25 — periodic-subsession-spawning-restriction-7981
 
 **Summary:** Add a new bullet to the Subsessions section instructing periodic subsessions on how to
@@ -502,6 +486,7 @@ a clear fallback path and keeps the error hidden from the user.
 **SHA256:** `7e7b00fb717a05d749d2ff38259914fd6e15540cbc826f9ca7618b4be7acd521`
 
 ______________________________________________________________________
+
 
 ## v54 — 2026-07-25 — verify-config-before-advising-4895
 
@@ -524,6 +509,7 @@ a dead no-op. This incorrect guidance added confusion and required additional cl
 
 ______________________________________________________________________
 
+
 ## v53 — 2026-07-25 — avoid-fabricating-causes-without-validating-0cb1
 
 **Summary:** Add troubleshooting instruction to fetch live system state before hypothesizing causes
@@ -542,6 +528,7 @@ The user's prompts exposed these as fabricated guesses.
 **SHA256:** `2b4d0254251d74796966a338e034e198d8d8dae1621c05bb925d9647af894a56`
 
 ______________________________________________________________________
+
 
 ## v52 — 2026-07-25 — require-live-notes-and-board-before-planning-c451
 
@@ -574,6 +561,7 @@ eliminates this entire class of error.
 
 ______________________________________________________________________
 
+
 ## v51 — 2026-07-25 — remove-or-flag-self-authored-knowledge-n-13b9
 
 **Summary:** Add two guardrails against self-authored behavioral rules in knowledge notes:
@@ -599,6 +587,7 @@ behavioral policy.
 
 ______________________________________________________________________
 
+
 ## v50 — 2026-07-25 — periodic-subsessions-spawned-from-conversation-288d
 
 **Summary:** Clarify periodic subsession role to suppress misleading "not supported" warning.
@@ -613,6 +602,7 @@ ticket monitor.
 **SHA256:** `3a14bb18e6bdb7ba4a5ba7316a6c6ffb9b6be0a7f604ffa9feaa5a22e704e325`
 
 ______________________________________________________________________
+
 
 ## v49 — 2026-07-25 — smarter-subsession-reporting-only-surfac-8e33
 
@@ -784,6 +774,7 @@ stay current without manual rework.
 
 ______________________________________________________________________
 
+
 ## v45 — 2026-07-22 — hallucinated-memory-summary-causes-redun-f44a
 
 **Summary:** Add a cognee memory recall verification bullet to the Verification section. Cognee
@@ -801,6 +792,7 @@ memory is treated as a hint requiring verification, not as ground truth.
 **SHA256:** `00d9b5881eae6c49dd793826344f2d11b3d42edac990d08babf0d19b23c361ce`
 
 ______________________________________________________________________
+
 
 ## v44 — 2026-07-21 — do-not-assume-a-generic-one-shot-deploy-45a0
 
@@ -860,6 +852,7 @@ information to work from.
 
 ______________________________________________________________________
 
+
 ## v42 — 2026-07-21 — add-prompt-guidance-for-self-mutation-bo-0461
 
 **Summary:** Add a "Self-mutation bootstrap" bullet to the Autonomy / ticket-lifecycle section
@@ -878,6 +871,7 @@ direct the operator to the one-time action that breaks the loop.
 **SHA256:** `3a5f2afe0de0c7655fd83baeea3828a5bb1eb3601c70283ef10efa8560e0a8f2`
 
 ______________________________________________________________________
+
 
 ## v41 — 2026-07-21 — fix-guard-paragraph-contradicts-network-tools
 
@@ -940,6 +934,7 @@ broader check prevents symptom-vs.-cause duplicate filing.
 
 ______________________________________________________________________
 
+
 ## v39 — 2026-07-20 — add-bootstrap-deadlock-guidance-to-system-prompt-7f94
 
 **Summary:** Add a "Bootstrap deadlock" bullet to the Merge/PR management section of the agent
@@ -956,6 +951,7 @@ clean standalone addition.
 **SHA256:** `346af495da125fc27d3225d7f6a5d9699ff6aba8206c987782a203b3d5dd6ed1`
 
 ______________________________________________________________________
+
 
 ## v39 — 2026-07-20 — add-deploy-server-restart-capability-for-144c
 
@@ -976,6 +972,7 @@ needs to self-restart after picking up new capabilities.
 
 ______________________________________________________________________
 
+
 ## v38 — 2026-07-20 — decision-chat-subsessions-must-embed-full-77c1
 
 **Summary:** Add an option-label restatement rule to the user_chat subsession guidance. When
@@ -994,6 +991,7 @@ operator-facing turns.
 **SHA256:** `501a7f57365d705c6bbf7b250196da279c238c2a31977017df4cfc60a6e38e6d`
 
 ______________________________________________________________________
+
 
 ## v37 — 2026-07-20 — direct-fix-capability-chat-agent-can-push-validated-fixes
 
@@ -1015,7 +1013,9 @@ requirement.
 
 ______________________________________________________________________
 
+
 ______________________________________________________________________
+
 
 ## v36 — 2026-07-20 — contract-version-troubleshooting-guide
 
@@ -1053,6 +1053,7 @@ existing lifecycle base URL and auth, so the agent can reach these endpoints dir
 
 ______________________________________________________________________
 
+
 ## v34 — 2026-07-20 — improve-handling-of-rebase-conflicts-avo-8b37
 
 **Summary:** Enhance the Remediate step of the Ticket lifecycle with explicit merge/rebase conflict
@@ -1068,6 +1069,7 @@ failures, surface substantive blockers with a specific diagnosis.
 **SHA256:** `28625c3b503d2496e6bb56372fdf94d8ebe7bbdb24de179831ec35e376710c53`
 
 ______________________________________________________________________
+
 
 ## v33 — 2026-07-20 — correct-mistaken-understanding-of-centra-0b5b
 
@@ -1088,6 +1090,7 @@ API-driven deploy system from git-driven workflows.
 **SHA256:** `50aa4a754a18b4a2de813a876a73923a73c179966687a32514be46c68e8a05a9`
 
 ______________________________________________________________________
+
 
 ## v32 — 2026-07-20 — document-mill-merge-now-endpoint-and-add-feda
 
@@ -1121,6 +1124,7 @@ one reply rather than inspecting every MR individually, reducing back-and-forth.
 
 ______________________________________________________________________
 
+
 ## v30 — 2026-07-20 — handle-ambiguous-single-word-commands-wi-1d61
 
 **Summary:** Add a pick-list instruction to the Autonomy section: when multiple unowned, actionable
@@ -1136,6 +1140,7 @@ back-and-forth and cognitive load.
 **SHA256:** `f0aa4c393e144fffcbc9f053d9ac7937444ddf996beb373b0cdb3248f9e6d553`
 
 ______________________________________________________________________
+
 
 ## v29 — 2026-07-19 — prevent-creation-of-duplicate-monitors-f-8af3 & cross-reference-historical-claims-with-live-state-11ec
 
@@ -1167,6 +1172,7 @@ state as the source of truth and distrust memory when it conflicts with live obs
 
 ______________________________________________________________________
 
+
 ## v28 — 2026-07-19 — document-merge-capability-via-mill-api-d1a3
 
 **Summary:** Add a "Merge / PR management" bullet to the Autonomy section documenting that
@@ -1185,6 +1191,7 @@ endpoints first.
 
 ______________________________________________________________________
 
+
 ## v27 — 2026-07-19 — deduplicate-known-broken-asyncio-run-err-54ea
 
 **Summary:** Add dedup_key guidance to the agent_instruction default. When spawning a user_chat to
@@ -1196,6 +1203,7 @@ what is already running.
 **SHA256:** `00cf8271575ee7a1d9965eb9c4429bf7947def9e5e5aaaf6c72880fe80f4c771`
 
 ______________________________________________________________________
+
 
 ## v26 — 2026-07-19 — simplify-credential-handling-avoid-expos-a275
 
@@ -1216,6 +1224,7 @@ up afterward.
 
 ______________________________________________________________________
 
+
 ## v25 — 2026-07-19 — prevent-redundant-ticket-creation-when-a-652b
 
 **Summary:** Extend the Initiate step in the Ticket lifecycle with deduplication guidance: before
@@ -1227,9 +1236,11 @@ cancel the predecessor's monitor subsession so only one monitor runs for the sam
 
 ______________________________________________________________________
 
+
 ## v24 — 2026-07-19 — improve-clarity-of-system-notices-for-re-1d76
 
 ______________________________________________________________________
+
 
 ## v22 — 2026-07-12 — add-one-subsession-per-subject-rule-to-s-efab
 
@@ -1241,6 +1252,7 @@ subsession. Each subsession should have a single, coherent goal and close when t
 **SHA256:** `c9da8ee6d80ebf1f9c1f243638e519172453db5e20e1d98581609fefca53e895`
 
 ______________________________________________________________________
+
 
 ## v21 — 2026-07-11 — formalize-autonomous-ticket-lifecycle
 
@@ -1255,6 +1267,7 @@ for fingerprint-guarded hard-stuck tickets.
 
 ______________________________________________________________________
 
+
 ## v20 — 2026-07-07 — self-upgrade-capability-via-tickets
 
 **Summary:** Add a bullet to the Autonomy section documenting that the agent upgrades its own
@@ -1265,6 +1278,7 @@ deploy component to pick up newly registered capabilities.
 **SHA256:** `a3a77a1426baf3da4a300b107e7a9401f6325490d6878d0374753c741fa97ab4`
 
 ______________________________________________________________________
+
 
 ## v19 — 2026-07-05 — subsession-prefer-level-2-for-general-work
 
@@ -1279,6 +1293,7 @@ retry at level 3 if a level 1-2 spawn errors for a missing API key.
 
 ______________________________________________________________________
 
+
 ## v18 — 2026-07-04 — default-prompt-promises-component-request-cc62
 
 **Summary:** Remove the "Component access" section from the default `agent_instruction`. It is now
@@ -1290,6 +1305,7 @@ deployment where no central-deploy roster is wired.
 
 ______________________________________________________________________
 
+
 ## v17 — 2026-07-04 — knowledge-tool-names-in-system-prompt
 
 **Summary:** Update the knowledge-base tool names in the agent system prompt from shorthand
@@ -1299,6 +1315,7 @@ ______________________________________________________________________
 **SHA256:** `efb12c78d114b5ea64d3bb79c4522b74c6e1c82a4203abe79c69e4d56ceca041`
 
 ______________________________________________________________________
+
 
 ## Governance policy
 
@@ -1337,6 +1354,7 @@ prompt:
 
 ______________________________________________________________________
 
+
 ## v16 — 2026-07-04 — generic-component-access-roster-skills
 
 **Summary:** Replace the Board/mill rules and Calendar/task tools sections with a new "Component
@@ -1348,6 +1366,7 @@ all component interaction now goes through the single generic tool.
 **SHA256:** `d6067ea41ef447564913d75031059f476e86c1817e601a4d395801fbad76a161`
 
 ______________________________________________________________________
+
 
 ## v15 — 2026-07-02 — subsession-redesign
 
@@ -1507,6 +1526,7 @@ board-read gate. The new bullet is defense-in-depth alongside the programmatic g
 **SHA256:** `2188c9422da9d5a9db8cf024095d8717b0e779391b25903c91482109ceff75ff`
 
 ______________________________________________________________________
+
 
 ## v4 — 2026-06-24 — 20260623T204239Z-robotsix-chat-give-the-assistant-a-writa-ff6c
 
