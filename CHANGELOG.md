@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Exclude `CHANGELOG.md` from `markdownlint-cli2` in pre-commit hooks via `.markdownlint-cli2.jsonc` `ignores`, preventing the auto-generated changelog from being reformatted and causing spurious pre-commit failures on main.
 - Deduplicate installation scope check in `github_job_log_endpoint` by delegating to `_check_installation_scope()` instead of inlining the identical logic (~15 lines removed).
 - Removed `[tool.uv] exclude-newer = "7 days"` from `pyproject.toml` — the relative-date format is incompatible with uv ≥0.8.15, which requires an absolute ISO-8601 date. The `uv.lock` already carries the equivalent constraint (`exclude-newer-span = "P7D"`) in a valid format.
 - Fix: `AutonomousRunner.create_session` no longer logs a warning for idempotent re-creation of an already-tracked session (same `session_id`).
