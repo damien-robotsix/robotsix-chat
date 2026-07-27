@@ -161,6 +161,12 @@ _MEMORY_PROMPT_HEADER = (
     "it is stale. If you must mention a recalled item whose status "
     'you have not verified, label it explicitly as "from memory, '
     'may be resolved."\n'
+    "**Suppress disproven memory.** If a recalled claim (diagnosis, "
+    "theory, hypothesis) has already been refuted or contradicted by "
+    "evidence in the current conversation, do NOT repeat it — even "
+    "as background or context. Present only what has not been ruled "
+    "out. Repeating a disproven diagnosis wastes attention and risks "
+    "confusion.\n"
 )
 _MEMORY_PROMPT_FOOTER = (
     "\n# End of recalled memory\n"
