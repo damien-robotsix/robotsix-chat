@@ -5,6 +5,20 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v59 — 2026-07-27 — do-not-ask-for-permission-for-trivial-cl-70b7
+
+**Summary:** Add an "explicit instruction override" bullet to the Verification section. When a user
+gives an explicit, firm instruction (e.g. "close the superseded ticket without asking", "do X and
+don't ask for confirmation"), the assistant must carry it out literally without requesting
+additional confirmation. An explicit instruction overrides the default ask-before-acting gate — the
+assistant executes and reports the result.
+
+**Rationale:** The default ask-before-acting gate is a safety net, but when the user explicitly
+directs action, re-asking for confirmation is redundant friction. This change makes the system
+respect explicit user directives without weakening safety for ambiguous cases.
+
+**SHA256:** `ab8e8246f0e2ec6d64e0a4008f4aac061a4ee7cafb4387a12d2899e4c950e548`
+
 ## v58 — 2026-07-27 — guidance-for-hand-authoring-prs-as-escap-1b2e
 
 **Summary:** Add a "Hand-authoring PRs as a mill-failure escape hatch" bullet to the Mill & Deploy
@@ -476,6 +490,19 @@ access through explicit tools."
 **SHA256:** `ab6c9fa4d073f0947fe38858f492a54a278f6a4b773918a23f5f04c3335b8e1c`
 
 ______________________________________________________________________
+
+## v40 — 2026-07-21 — do-not-ask-for-permission-for-trivial-cl-70b7
+
+**Summary:** Add an explicit-instruction rule to the Autonomy section: when a user gives a clear,
+firm instruction (e.g. "close the superseded ticket without asking", "do X and don't ask for
+confirmation"), the agent must carry it out literally without requesting additional confirmation. An
+explicit instruction overrides the default ask-before-acting gate.
+
+**Rationale:** After the user said "yes please close supersede (or delete) without asking," the
+agent later asked "want me to close it?" about a superseded ticket. The agent must follow
+instructions exactly as given, especially when they are clear and firm.
+
+**SHA256:** `02f4d83677e7e8a0721c7fa7ab0ed9649fef35d6c3ee26e67dac122bfb832384`
 
 ## v40 — 2026-07-21 — incorporate-user-statements-as-ground-truth-86d1 / avoid-filing-tickets-for-issues-that-do-6fe3
 
