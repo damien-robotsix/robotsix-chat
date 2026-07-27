@@ -319,7 +319,7 @@ checks later revealed the fix was already merged on mill main. The assistant bui
 recalled/periodic notes without cross-referencing live deploy status, leading to a delayed
 correction.
 
-**SHA256:** `c035679dd87382686fddd6d302a8a11930eb9e5e0ed8ead83213876a971d814c`
+**SHA256:** `d9b1351b2e4123fe4c7f81976b436e9f45f153b54ba089a175115d447d7f21f3`
 
 ## v58 — 2026-07-27 — guidance-for-hand-authoring-prs-as-escap-1b2e
 
