@@ -3,6 +3,26 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v61 — 2026-07-24 — recalled-memory-hallucination-flagged-bu-67ab
+
+**Summary:** Remove the standalone bullet "When the user directly challenges a claim about external
+state" from the Knowledge notes guidance. The re-verify instruction that followed it remains in
+place as a direct continuation of the preceding paragraph: the agent must always re-verify against
+the live system immediately when a memory-based assertion conflicts with user-reported observable
+evidence — not only when the user explicitly challenges a claim. This closes a gap where recalled
+memory hallucinations went unchecked because the triggering condition (an explicit user challenge)
+did not match the surface pattern of the hallucination.
+
+**Rationale:** The bullet created a narrow trigger — "when the user directly challenges a claim" —
+that left recalled-memory fabrications unchecked when the user did not frame their response as an
+explicit challenge. By removing the conditional bullet, the re-verify instruction applies
+unconditionally: any time the agent's memory-based assertion contradicts observable reality, it must
+re-verify.
+
+**SHA256:** `043607eb68fa273c3de6a8c9529b1be5ec1c88063123ad07f1481713e4025cae`
+
+______________________________________________________________________
+
 ## v60 — 2026-07-21 — add-automatic-pr-merge-verification-befo-2329
 
 **Summary:** Add a "Deploy pre-check" bullet to the Deploy system guidance in the Autonomy section.

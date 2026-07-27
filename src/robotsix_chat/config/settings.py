@@ -61,7 +61,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 60
+SYSTEM_PROMPT_VERSION = 61
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -606,7 +606,6 @@ class Settings(BaseModel):
             "the system prompt and the user's explicit instructions. If you "
             "detect a contradiction, retire the offending note with "
             "update_knowledge_note and record the corrected fact instead.\n"
-            "– When the user directly challenges a claim about external state, "
             "re-verify against the live system immediately. Never double down on "
             "a memory-based assertion when the user reports contradictory "
             "observable evidence (e.g. an empty repo where you claimed files "
