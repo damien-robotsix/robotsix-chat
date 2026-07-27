@@ -85,6 +85,7 @@ dev = [
     "pre-commit",
     "pytest",
     "pytest-asyncio",
+    "pytest-benchmark",
     "pytest-cov",
     "pytest-xdist[psutil]",
     "respx",
@@ -329,7 +330,13 @@ markers = [
     "live: needs network access or real credentials; excluded from the default run",
 ]
 testpaths = ["tests"]
-filterwarnings = ["error"]
+filterwarnings = [
+    "error",
+    # pytest-benchmark emits a PytestBenchmarkWarning when xdist is active
+    # (benchmarks auto-skip in parallel).  Don't let the blanket `error`
+    # filter turn this informational warning into a fatal INTERNALERROR.
+    "default::pytest_benchmark.logger.PytestBenchmarkWarning",
+]
 
 
 [tool.coverage.run]

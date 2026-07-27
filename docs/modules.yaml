@@ -26,6 +26,8 @@ modules:
       - tests/__init__.py
       - tests/conftest.py
       - tests/common/test_smoke.py
+      - tests/benchmarks/__init__.py
+      - tests/benchmarks/test_chat_performance.py
       - docs/index.md
       - docs/architecture.md
       - docs/getting-started.md
