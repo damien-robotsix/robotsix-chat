@@ -92,14 +92,15 @@ ______________________________________________________________________
 
 ### Server
 
-| JSON key                | Type            | Default          | Description                                          |
-| ----------------------- | --------------- | ---------------- | ---------------------------------------------------- |
-| `server_host`           | `string`        | `"0.0.0.0"`      | Host the server binds to.                            |
-| `server_port`           | `integer`       | `8000`           | Port the server listens on.                          |
-| `idle_timeout_minutes`  | `integer`       | `30`             | Minutes of inactivity before closing the connection. |
-| `log_level`             | `string`        | `"INFO"`         | Python logging level.                                |
-| `cors_allow_origins`    | `array[string]` | `[]`             | Origins allowed to call `/chat` cross-origin.        |
-| `correlation_id_header` | `string`        | `"X-Request-ID"` | Header name for request correlation ids.             |
+| JSON key                | Type            | Default          | Description                                                                                        |
+| ----------------------- | --------------- | ---------------- | -------------------------------------------------------------------------------------------------- |
+| `server_host`           | `string`        | `"0.0.0.0"`      | Host the server binds to.                                                                          |
+| `server_port`           | `integer`       | `8000`           | Port the server listens on.                                                                        |
+| `idle_timeout_minutes`  | `integer`       | `30`             | Minutes of inactivity before closing the connection.                                               |
+| `log_level`             | `string`        | `"INFO"`         | Python logging level.                                                                              |
+| `log_json_format`       | `boolean`       | `true`           | When `true`, log lines are structured JSON (structlog); `false` for human-readable console output. |
+| `cors_allow_origins`    | `array[string]` | `[]`             | Origins allowed to call `/chat` cross-origin.                                                      |
+| `correlation_id_header` | `string`        | `"X-Request-ID"` | Header name for request correlation ids.                                                           |
 
 ### Langfuse (tracing)
 
@@ -330,6 +331,28 @@ Push-branch and open-PR as the robotsix-mill GitHub App. Disabled by default.
 | `direct_repo.board_api_token`            | `string` (secret) | `""`                       | Optional bearer token for the board API.              |
 | `direct_repo.timeout`                    | `number`          | `30.0`                     | Per-request HTTP timeout (seconds).                   |
 
+### GitHub Security
+
+Repository security-feature toggle via the GitHub App installation. Disabled by default.
+
+| JSON key                         | Type              | Default             | Description                                                              |
+| -------------------------------- | ----------------- | ------------------- | ------------------------------------------------------------------------ |
+| `github_security.enabled`        | `boolean`         | `false`             | Master switch.                                                           |
+| `github_security.github_org`     | `string`          | `"damien-robotsix"` | GitHub organisation name whose repos are in scope.                       |
+| `github_security.deploy_api_key` | `string` (secret) | `""`                | API key for the security-feature endpoint. Empty → endpoint returns 503. |
+| `github_security.timeout`        | `number`          | `30.0`              | Per-request HTTP timeout (seconds).                                      |
+
+### GitHub Actions
+
+GitHub Actions secrets and workflow dispatch via the GitHub App installation. Disabled by default.
+
+| JSON key                        | Type              | Default             | Description                                                  |
+| ------------------------------- | ----------------- | ------------------- | ------------------------------------------------------------ |
+| `github_actions.enabled`        | `boolean`         | `false`             | Master switch.                                               |
+| `github_actions.github_org`     | `string`          | `"damien-robotsix"` | GitHub organisation name whose repos are in scope.           |
+| `github_actions.deploy_api_key` | `string` (secret) | `""`                | API key for Actions endpoints. Empty → endpoint returns 503. |
+| `github_actions.timeout`        | `number`          | `30.0`              | Per-request HTTP timeout (seconds).                          |
+
 ### Repo Study
 
 Temporary local repo snapshots the agent can fetch (GitHub tarball — no `git` binary) and study with
@@ -368,6 +391,27 @@ default.
 | `lifecycle.self_restart_backoff_cap`  | `number`          | `30.0`   | Maximum exponential-backoff delay in seconds (ceiling). Retries never wait longer than this.                                                            |
 
 ______________________________________________________________________
+
+### Notification
+
+Browser notification settings — lets the agent alert the user proactively via the `notify_user`
+tool. Enabled by default.
+
+| JSON key               | Type      | Default | Description                                                    |
+| ---------------------- | --------- | ------- | -------------------------------------------------------------- |
+| `notification.enabled` | `boolean` | `true`  | Master switch. When `false`, no `notify_user` tool is offered. |
+
+### HTTP Probe
+
+Read-only HTTP uptime/render-probe tool for the agent. Enabled by default.
+
+| JSON key                    | Type            | Default                                | Description                                                                  |
+| --------------------------- | --------------- | -------------------------------------- | ---------------------------------------------------------------------------- |
+| `http_probe.enabled`        | `boolean`       | `true`                                 | Master switch. When `false`, no `http_probe` tool is offered.                |
+| `http_probe.timeout`        | `number`        | `10.0`                                 | Per-request HTTP timeout (seconds).                                          |
+| `http_probe.allowlist`      | `array[string]` | `["www.robotsix.net", "robotsix.net"]` | Hostnames the tool is permitted to probe. Empty permits any public hostname. |
+| `http_probe.max_body_bytes` | `integer`       | `2048`                                 | Maximum bytes of the response body to return (~2 KB).                        |
+| `http_probe.max_redirects`  | `integer`       | `5`                                    | Maximum number of redirects to follow.                                       |
 
 ### Autonomous
 
