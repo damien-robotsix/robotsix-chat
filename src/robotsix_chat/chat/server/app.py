@@ -32,6 +32,10 @@ from robotsix_chat.config import Settings, level_needs_api_key
 from robotsix_chat.diagnostics import build_diagnostics_tools
 from robotsix_chat.http_probe import build_http_probe_tools, load_http_probe_skill
 from robotsix_chat.knowledge import build_knowledge_tools
+from robotsix_chat.langfuse import (
+    build_langfuse_inspect_tools,
+    load_langfuse_inspect_skill,
+)
 from robotsix_chat.lifecycle import build_lifecycle_tools, load_lifecycle_skill
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.mail import build_mail_tools
@@ -563,6 +567,11 @@ def _inject_skills(
         (settings.lifecycle.enabled, "lifecycle", load_lifecycle_skill),
         (settings.notification.enabled, "notification", load_notification_skill),
         (settings.http_probe.enabled, "http_probe", load_http_probe_skill),
+        (
+            settings.langfuse_inspect.enabled,
+            "langfuse_inspect",
+            load_langfuse_inspect_skill,
+        ),
         (settings.github_security.enabled, "github_security", load_github_skill),
         (settings.github_actions.enabled, "github_actions", load_github_actions_skill),
         (
@@ -617,6 +626,7 @@ def _build_static_tools(
         *build_render_url_tools(settings.render_url),
         *build_http_probe_tools(settings.http_probe),
         *build_public_fetch_tools(settings.public_fetch),
+        *build_langfuse_inspect_tools(settings.langfuse_inspect, settings.langfuse),
         *build_ticket_poll_tools(settings),
     ]
 
