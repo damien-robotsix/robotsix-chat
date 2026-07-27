@@ -3,6 +3,25 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v63 — 2026-07-28 — introduce-model-policy-abstraction-for-d-42d5
+
+**Summary:** Add a "Model Policy" section defining named tier labels for the existing model levels
+(1 = 'cheap-high-perf', 2 = 'default', 3 = 'strong-reasoning', 4 = 'primary-frontier'). Update the
+subsession model_level guidance to cross-reference the tier labels. Instruct the assistant to use
+these tier labels (e.g. 'primary-frontier') rather than hardcoded model names when filing tickets
+that specify model requirements — agent configurations, tool defaults, deployment specs, subsession
+spawning defaults. The resolver at deploy-time maps tier labels to concrete models based on the
+current central policy, keeping configurations evergreen without rework.
+
+**Rationale:** The assistant occasionally hardcoded specific model names (e.g. 'GPT current-tier',
+'Kimi K2') when creating default agent configuration tickets, causing staleness as frontier models
+evolve. The named-tier abstraction decouples ticket specs from concrete models so configurations
+stay current without manual rework.
+
+**SHA256:** `54ea4a939c89c287887567d0b1c05c16cf9ad4b16e80b34af18182126689632e`
+
+______________________________________________________________________
+
 ## v62 — 2026-07-25 — unify-periodic-sub-session-summaries-int-6dc6
 
 **Summary:** Add a consolidation rule for periodic subsession outcomes. When multiple periodic
@@ -18,6 +37,8 @@ still saw a long list of fragmented individual notices before consolidation. The
 the agent to batch outcomes proactively, reducing noise when the user is not actively conversing.
 
 **SHA256:** `cc09561088cbb302d4a4dd8a37d4089d063272d12cf720dcd0002ca3ebbbd01f`
+
+______________________________________________________________________
 
 ## v61 — 2026-07-24 — recalled-memory-hallucination-flagged-bu-67ab
 
@@ -425,6 +446,27 @@ missing from its context. The new search capability eliminates the fragile-id-re
 **SHA256:** `b0e205017f02e8e2a90707f2b6fbaf51f356e5ab7362124803eb79602ba13050` (mill: Prevent
 periodic monitors from spawning redundant child monitor-launch tasks
 (20260722T135418Z-prevent-periodic-monitors-from-spawning-24b0))
+
+## v46 — 2026-07-23 — introduce-model-policy-abstraction-for-d-42d5
+
+> **Note:** Version v46 is also claimed by three entries above (2026-07-22); these are parallel
+> branches that landed at the same version stamp. The PR author should bump to a fresh version
+> number and update the SHA256 hash before merge.
+
+**Summary:** Add a "Model Policy" section defining named tier labels for the existing model levels
+(1 = 'cheap-high-perf', 2 = 'default', 3 = 'strong-reasoning', 4 = 'primary-frontier'). Update the
+subsession model_level guidance to cross-reference the tier labels. Instruct the assistant to use
+these tier labels (e.g. 'primary-frontier') rather than hardcoded model names when filing tickets
+that specify model requirements — agent configurations, tool defaults, deployment specs, subsession
+spawning defaults. The resolver at deploy-time maps tier labels to concrete models based on the
+current central policy, keeping configurations evergreen without rework.
+
+**Rationale:** The assistant occasionally hardcoded specific model names (e.g. 'GPT current-tier',
+'Kimi K2') when creating default agent configuration tickets, causing staleness as frontier models
+evolve. The named-tier abstraction decouples ticket specs from concrete models so configurations
+stay current without manual rework.
+
+**SHA256:** `c27c3b532a4338aaa51d9a0a943a81538a60ff94e487209e0925ace0a59669df`
 
 ______________________________________________________________________
 
