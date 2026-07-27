@@ -839,36 +839,6 @@ class RenderUrlSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class PublicFetchSettings(BaseModel):
-    """Public URL fetch tool — read raw content from any public forge.
-
-    When enabled, the chat agent gains a ``fetch_public_url`` tool that
-    performs a plain HTTP GET to an arbitrary public URL and returns the
-    body text up to *max_body_bytes*.  SSRF protection blocks private,
-    loopback, link-local, and multicast addresses via DNS resolution on
-    every redirect hop.  No authentication is used — only public hosts
-    are reachable.
-
-    Designed for reading files from public forges (GitLab, Bitbucket,
-    codeberg, university GitLabs, etc.) not covered by the GitHub-scoped
-    repo-study tools.
-
-    Attributes:
-        enabled: Master switch.  When ``False``, no fetch tool is offered.
-        timeout: Per-request HTTP timeout in seconds (default 30 s).
-        max_body_bytes: Maximum bytes of the response body returned to the
-            agent (default 1 MiB).
-        max_redirects: Maximum number of redirects to follow (default 5).
-
-    """
-
-    enabled: bool = False
-    timeout: float = 30.0
-    max_body_bytes: int = 1_048_576
-    max_redirects: int = 5
-    model_config = ConfigDict(extra="forbid")
-
-
 class HttpProbeSettings(BaseModel):
     """Read-only HTTP uptime/render-probe tool for the agent.
 
