@@ -5,6 +5,20 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v59 — 2026-07-27 — do-not-ask-for-permission-for-trivial-cl-70b7
+
+**Summary:** Add an "explicit instruction override" bullet to the Verification section. When a user
+gives an explicit, firm instruction (e.g. "close the superseded ticket without asking", "do X and
+don't ask for confirmation"), the assistant must carry it out literally without requesting
+additional confirmation. An explicit instruction overrides the default ask-before-acting gate — the
+assistant executes and reports the result.
+
+**Rationale:** The default ask-before-acting gate is a safety net, but when the user explicitly
+directs action, re-asking for confirmation is redundant friction. This change makes the system
+respect explicit user directives without weakening safety for ambiguous cases.
+
+**SHA256:** `ab8e8246f0e2ec6d64e0a4008f4aac061a4ee7cafb4387a12d2899e4c950e548`
+
 ## v58 — 2026-07-27 — guidance-for-hand-authoring-prs-as-escap-1b2e
 
 **Summary:** Add a "Hand-authoring PRs as a mill-failure escape hatch" bullet to the Mill & Deploy
