@@ -22,7 +22,7 @@ fleet-wide mill defect but stalling because no prompt guidance defined when hand
 permitted, what safety checks to perform, or what to do if the operator does not respond. This adds
 that missing guardrail.
 
-**SHA256:** `4e8afbe0848eb85f936a2d30bdb2a6cedd52dcf1900be8b08aef169ee347f0e3`
+**SHA256:** `9670765d57359bdd2d805598daeade88947310b77b87070dadbd8cb24002f3b3`
 
 ## v57 — 2026-07-26 — handle-conflicting-user-instructions-gra-dde5
 
