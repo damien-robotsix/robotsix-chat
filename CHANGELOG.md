@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Add "Hand-authoring PRs as a mill-failure escape hatch" guidance to the system prompt (v58). Defines qualifying criteria (≥5 tickets across ≥2 repos blocked by the same mill defect), mandatory pre-checks (no existing PR, unique branch name, minimal scope), and a structured escalation path with an explicit expiry-and-move-on rule when the operator does not respond.
+- Added `POST /chat/github/repos` endpoint to create GitHub repositories under the configured organisation. Repos are created with `auto_init: true` by default so they have an initial commit and are immediately cloneable.
 - Added ``reset_implement_spawn_counter`` tool to the direct-repo capability, allowing the chat agent to delete the ``implement_spawn_count`` board artifact and unblock tickets stuck at the implement spawn limit.  Includes ``delete_ticket_artifact`` board API method in ``DirectRepoClient``.
 - Add `langfuse_inspect` tool: the agent can now fetch and summarise Langfuse traces by ticket or trace id via `inspect_langfuse_trace(trace_id=..., ticket_id=...)`. Gated behind `langfuse_inspect.enabled` (default `false`); reuses existing `langfuse` credentials for API auth. This lets the assistant self-diagnose implement-stage failures without human-in-the-loop trace inspection.
 - Fix remaining `robotsix` org URLs in SECURITY.md and CONTRIBUTING.md, correcting to `damien-robotsix` (follow-up to PR #936).
