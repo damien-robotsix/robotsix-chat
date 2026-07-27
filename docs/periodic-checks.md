@@ -159,7 +159,7 @@ When a **user_chat** subsession exhausts its retry budget, the summary delivered
 conversation includes the original decision prompt so the operator can answer the question directly
 in the main chat — the side-chat panel is no longer available:
 
-```
+```text
 The side-chat could not be delivered after 3 retries.
 You can answer the original decision here:
 
@@ -183,7 +183,8 @@ This ensures the operator is never left wondering what the question was.
 Previously, a generic SDK error like `Claude Code returned an error result: success` was passed
 through verbatim, giving the operator no actionable information. Now every error message includes
 the exception type name when the SDK's own message omits it, so you can distinguish a `TimeoutError`
-from a `RuntimeError` at a glance. (mill(docs): Side-chat subsessions for user decisions fail with uninformative error on restart (20260723T235114Z-side-chat-subsessions-for-user-decisions-903d))
+from a `RuntimeError` at a glance. (mill(docs): Side-chat subsessions for user decisions fail with
+uninformative error on restart (20260723T235114Z-side-chat-subsessions-for-user-decisions-903d))
 
 ## Mill-recovery behaviour
 
