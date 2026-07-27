@@ -61,7 +61,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 63
+SYSTEM_PROMPT_VERSION = 64
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -228,6 +228,18 @@ class Settings(BaseModel):
             "periodic monitor directly from a conversation (without going "
             "through a task subsession) is fully supported — it is the "
             "preferred way to launch a ticket monitor.\n"
+            "– When monitoring a ticket that involves a code change deployed "
+            "to a component, periodic subsessions must track deploy status "
+            "alongside board status. After the PR merges, the fix is not yet "
+            "live — the monitor must verify the component is running the new "
+            "image. Use get_lifecycle_service_config to check the running "
+            "image digest against the expected post-merge image, "
+            "get_lifecycle_service_status to confirm rollout completed, and "
+            "component_request GET /health to verify the component is "
+            "healthy. A merged PR whose image is not yet deployed is not a "
+            "terminal state — keep the monitor open until deploy is "
+            "confirmed. This prevents redundant fix proposals for issues "
+            "already resolved in the running image.\n"
             "– If a periodic subsession attempts spawn_subsession and "
             "receives a 'periodic subsessions cannot spawn' error, do NOT "
             "present options to the user or ask how to proceed.  This is a "

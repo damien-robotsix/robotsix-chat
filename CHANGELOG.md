@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Fix: `AutonomousRunner.create_session` no longer logs a warning for idempotent re-creation of an already-tracked session (same `session_id`).
+- System prompt v59: Periodic subsessions now track deploy status (image digest, rollout, health) alongside board status when monitoring code-change tickets, preventing redundant fix proposals for already-deployed changes.
 - Add "Hand-authoring PRs as a mill-failure escape hatch" guidance to the system prompt (v58). Defines qualifying criteria (≥5 tickets across ≥2 repos blocked by the same mill defect), mandatory pre-checks (no existing PR, unique branch name, minimal scope), and a structured escalation path with an explicit expiry-and-move-on rule when the operator does not respond.
 - Added `POST /chat/github/repos` endpoint to create GitHub repositories under the configured organisation. Repos are created with `auto_init: true` by default so they have an initial commit and are immediately cloneable.
 - Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions. (mill: Unify periodic sub-session summaries into one consolidated monitor view (20260725T010746Z-unify-periodic-sub-session-summaries-int-6dc6))
