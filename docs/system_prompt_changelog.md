@@ -3,6 +3,22 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v62 — 2026-07-25 — unify-periodic-sub-session-summaries-int-6dc6
+
+**Summary:** Add a consolidation rule for periodic subsession outcomes. When multiple periodic
+subsessions deliver outcomes in quick succession (especially while the user is idle), the agent must
+consolidate them into ONE grouped summary, grouping tickets by state (NO_CHANGE, PROGRESS,
+GATE_PENDING) and hiding trivial NO_CHANGE runs from duplicate monitor cycles. Also update the
+reaction prompt template (`_REACT_PROMPT_TEMPLATE` in `delivery.py`) to instruct the agent to
+consolidate when it has recently reported other periodic outcomes.
+
+**Rationale:** Multiple periodic monitors running concurrently (e.g. monitors for cbe3, aaa6, ccfd)
+were each producing separate outcome notices. The assistant would manually merge them, but the user
+still saw a long list of fragmented individual notices before consolidation. The new rule teaches
+the agent to batch outcomes proactively, reducing noise when the user is not actively conversing.
+
+**SHA256:** `0971fff6b75c796bf47674d1d813002a8b6a5802356c4dd44eece65a81a40f69`
+
 ## v61 — 2026-07-24 — recalled-memory-hallucination-flagged-bu-67ab
 
 **Summary:** Remove the standalone bullet "When the user directly challenges a claim about external
@@ -297,24 +313,6 @@ identifiers and intermediate pipeline progress that added noise without actionab
 tightened rules reduce chattiness and focus the user on what changed and what to do next.
 
 **SHA256:** `969a268b8d2c629330828a4886e51e343470703106fff6fcd2cc5bca366494d2`
-
-## v48 — 2026-07-25 — unify-periodic-sub-session-summaries-int-6dc6
-
-**Summary:** Add a consolidation rule for periodic subsession outcomes. When multiple periodic
-subsessions deliver outcomes in quick succession (especially while the user is idle), the agent must
-consolidate them into ONE grouped summary, grouping tickets by state (NO_CHANGE, PROGRESS,
-GATE_PENDING) and hiding trivial NO_CHANGE runs from duplicate monitor cycles. Also update the
-reaction prompt template (`_REACT_PROMPT_TEMPLATE` in `delivery.py`) to instruct the agent to
-consolidate when it has recently reported other periodic outcomes.
-
-**Rationale:** Multiple periodic monitors running concurrently (e.g. monitors for cbe3, aaa6, ccfd)
-were each producing separate outcome notices. The assistant would manually merge them, but the user
-still saw a long list of fragmented individual notices before consolidation. The new rule teaches
-the agent to batch outcomes proactively, reducing noise when the user is not actively conversing.
-
-**SHA256:** `5bde0d3d3286d676b79b01c80c90bba0531c7a6b8c5cb3ead1ac358a60a9a857`
-
-______________________________________________________________________
 
 ## v47 — 2026-07-25 — retire-stale-recalled-memory-entries-to-8972
 
