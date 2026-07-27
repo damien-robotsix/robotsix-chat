@@ -429,7 +429,7 @@ periodic monitors from spawning redundant child monitor-launch tasks
 ## v46 — 2026-07-23 — introduce-model-policy-abstraction-for-d-42d5
 
 > **Note:** Version v46 is also claimed by three entries above (2026-07-22); these are parallel
-> branches that landed at the same version stamp.  The PR author should bump to a fresh version
+> branches that landed at the same version stamp. The PR author should bump to a fresh version
 > number and update the SHA256 hash before merge.
 
 **Summary:** Add a "Model Policy" section defining named tier labels for the existing model levels
@@ -445,7 +445,7 @@ current central policy, keeping configurations evergreen without rework.
 evolve. The named-tier abstraction decouples ticket specs from concrete models so configurations
 stay current without manual rework.
 
-**SHA256:** `4ba9ad1dee11ff81649c09227fd6dfb25aef87dc19fa2cf3379b0236a0b9c412`
+**SHA256:** `c27c3b532a4338aaa51d9a0a943a81538a60ff94e487209e0925ace0a59669df`
 
 ______________________________________________________________________
 
