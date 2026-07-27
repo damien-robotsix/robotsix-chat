@@ -3,6 +3,22 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v47 — 2026-07-21 — add-automatic-pr-merge-verification-befo-2329
+
+**Summary:** Add a "Deploy pre-check" bullet to the Deploy system guidance in the Autonomy section.
+When a user requests deployment after a migration or fix ticket is marked done, the agent must first
+verify the associated PR is merged — query its status via the mill's ticket endpoint or check the PR
+on GitHub directly, rather than asking the user for confirmation. If the PR is not yet merged, the
+agent must explain the blocker clearly and offer to wait or escalate. Only after confirming the
+merge is complete should the agent proceed with the deploy (restart or watch_service_redeploy).
+
+**Rationale:** The agent was asking the user for manual confirmation before proceeding with
+deployment, creating unnecessary friction. The user expects the agent to automatically verify PR
+merge status and only proceed when safe. The new instruction closes this gap by making automated
+merge verification a required pre-deploy step.
+
+**SHA256:** `8d50e14cb7a288103fab5b2a46043c536de54e9ea594c6e4468003e2d734cad5`
+
 ______________________________________________________________________
 
 ## v59 — 2026-07-27 — do-not-ask-for-permission-for-trivial-cl-70b7
@@ -488,6 +504,7 @@ refusing to use those tools. The revision separates "no inherent/implicit capabi
 access through explicit tools."
 
 **SHA256:** `ab6c9fa4d073f0947fe38858f492a54a278f6a4b773918a23f5f04c3335b8e1c`
+
 ## v41 — 2026-07-21 — add-automatic-pr-merge-verification-befo-2329
 
 **Summary:** Add a "Deploy pre-check" bullet to the Deploy system guidance in the Autonomy section.
