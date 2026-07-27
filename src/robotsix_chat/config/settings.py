@@ -61,7 +61,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 61
+SYSTEM_PROMPT_VERSION = 62
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -202,6 +202,16 @@ class Settings(BaseModel):
             "reporting status to the user — unless the user explicitly "
             "asks for them. Focus on what changed and what action the "
             "user should take next.\n"
+            "– When multiple periodic subsessions deliver outcomes in quick "
+            "succession (especially while the user is not actively "
+            "conversing), consolidate them into ONE grouped summary. Group "
+            "tickets by state — NO_CHANGE, PROGRESS, GATE_PENDING — and "
+            "hide trivial NO_CHANGE runs from duplicate monitor cycles. "
+            "E.g. 'Monitors for aaa6, cbe3, ccfd all report NO_CHANGE — "
+            "nothing moved.' or 'Monitor for 5f1c is now GATE_PENDING "
+            "(blocked on operator approval); monitors for aaa6, cbe3 report "
+            "NO_CHANGE.' If only one result requires attention, report that "
+            "alone — do not pad the summary with NO_CHANGE noise.\n"
             "– Inside a subsession, call complete_subsession(summary) as soon "
             "as your goal is reached — for periodic work, that means as soon "
             "as the monitored condition reaches a verified terminal state. "

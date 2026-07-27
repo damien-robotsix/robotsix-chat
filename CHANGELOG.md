@@ -2,45 +2,60 @@
 
 - Add "Hand-authoring PRs as a mill-failure escape hatch" guidance to the system prompt (v58). Defines qualifying criteria (≥5 tickets across ≥2 repos blocked by the same mill defect), mandatory pre-checks (no existing PR, unique branch name, minimal scope), and a structured escalation path with an explicit expiry-and-move-on rule when the operator does not respond.
 - Added `POST /chat/github/repos` endpoint to create GitHub repositories under the configured organisation. Repos are created with `auto_init: true` by default so they have an initial commit and are immediately cloneable.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions. (mill: Unify periodic sub-session summaries into one consolidated monitor view (20260725T010746Z-unify-periodic-sub-session-summaries-int-6dc6))
 - Added ``reset_implement_spawn_counter`` tool to the direct-repo capability, allowing the chat agent to delete the ``implement_spawn_count`` board artifact and unblock tickets stuck at the implement spawn limit.  Includes ``delete_ticket_artifact`` board API method in ``DirectRepoClient``.
 - Add `langfuse_inspect` tool: the agent can now fetch and summarise Langfuse traces by ticket or trace id via `inspect_langfuse_trace(trace_id=..., ticket_id=...)`. Gated behind `langfuse_inspect.enabled` (default `false`); reuses existing `langfuse` credentials for API auth. This lets the assistant self-diagnose implement-stage failures without human-in-the-loop trace inspection.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Fix remaining `robotsix` org URLs in SECURITY.md and CONTRIBUTING.md, correcting to `damien-robotsix` (follow-up to PR #936).
 - Fixed wrong GitHub org (`robotsix` → `damien-robotsix`) and outdated Python version (`3.12` → `3.14`) in SECURITY.md and CONTRIBUTING.md.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Honour ``paused_monitor_poll_interval_seconds=0`` semantic: the watcher now exits early (logging "polling disabled") instead of clamping 0 to 60s, so paused monitors only resume on service restart as documented.
 - Added `scripts/resolve_github_sha.py` — resolves a GitHub `owner/repo` + ref to a 40-char commit SHA via `git ls-remote`. Callable as `uv run scripts/resolve_github_sha.py <owner/repo> <ref>`.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Switch `_export_langfuse_env` from `setdefault` to direct assignment so config.json values always win over stale deploy-plane env vars (config-ownership Rule 1).
 - Extend subsession ticket-state pre-check from PERIODIC-only to all subsession kinds (TASK, USER_CHAT). A subsession with a `ticket_id` in its checkpoint now verifies the ticket is still in a non-terminal state before proceeding — if the ticket was closed during an outage the subsession aborts immediately with a clear explanation instead of silently doing nothing on a stale branch.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Implement resume mechanism for paused periodic monitors: a background
   watcher (`watch_paused_monitors`) polls paused monitors' ticket states
   via the mill API and reopens + re-spawns them when the state changes.
   Adds `SubsessionRegistry.reopen()` method and
   `paused_monitor_poll_interval_seconds` config key (default 60 s).
 - New ``public_fetch`` tool: ``fetch_public_url`` fetches raw content from any public URL with SSRF protection (DNS-level IP filtering on every redirect hop), size limits, and no authentication. Designed for reading files from public forges (GitLab, Bitbucket, codeberg, etc.) not covered by the GitHub-scoped repo-study tools. Disabled by default — set ``public_fetch.enabled`` to ``true`` to activate. (mill: Implement tool to fetch public repo content from non-GitHub forges (20260725T112315Z-implement-tool-to-fetch-public-repo-cont-5a5f))
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Migrate hand-rolled HTTP retry and backoff to shared `robotsix-http` library: delegate mill-recovery exponential-backoff math to `RetryConfig`, wrap roster fetch and ticket-poll requests in `RetryClient` for transient-error resilience.
 - Fix background event stream for queued-message draining on session switch: replace stream-preservation hack with dedicated ``openBackgroundEventStream()`` that has its own generation counter, watchdog, and reconnect logic — the old approach reused the foreground stream's stale callbacks which dropped every frame. Also fix a ``var``-in-loop closure bug in ``drainBackgroundSession`` that caused only the last queued message to be posted.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Queued messages on a session are now drained when that session's turn
   completes, even if the user has switched focus to another session.
   Returning to a session with stale queued messages also re-triggers
   pickup defensively.
 - Add a "Conflict Resolution" instruction to the system prompt: when a user gives an instruction that conflicts with an existing pending ticket, the assistant now automatically attempts to merge the instruction into the ticket rather than just flagging the conflict and waiting for manual intervention.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Enable the `notify_user` browser notification tool by default (`notification.enabled: true` in the config template).  The agent can now proactively push alerts to connected browsers when background tasks complete, escalate, or need user attention.)
 - Ticket lifecycle policy (system prompt v56): monitors now require live endpoint verification before closing. When a ticket reaches done/closed, the monitor probes the relevant endpoint with `component_request` and only closes after confirming the change is live. Ticket specs must include acceptance criteria that verify the change works (e.g., "endpoint returns 2xx"), not just "PR merged".
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - System prompt v56: add "Ambiguous field references" verification rule — when a user describes a desired change to a form field or UI element, confirm the specific field(s) before filing a ticket rather than assuming which field they mean.
 - Add empty-repo guard to the implement agent's ``no_change_needed`` logic: an empty
   repository (no source files beyond ``.git/`` metadata) must never be short-circuited
   as "already satisfied".  The implement agent now checks for non-trivial file presence
   (a README, ``src/`` directory, or similar) before declaring ``no_change_needed=true``.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Add `regenerate-config-schema` pre-commit hook that auto-regenerates
   `config/config.schema.json` when `src/robotsix_chat/config/settings.py` changes.
 - Add `regenerate-config-schema` pre-commit hook that auto-regenerates `config/config.schema.json` whenever `src/robotsix_chat/config/settings.py` changes; the hook exits non-zero so the regenerated schema is staged and the commit must be retried.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Extract shared ``_build_github_app_auth_headers`` helper in ``robotsix_chat.common.github_auth``, eliminating duplicate GitHub App token-minting logic from ``refdocs``, ``version_check``, ``repo/direct/client``, and ``repo/study/workspace`` HTTP clients.  The helper accepts an optional ``token_cache`` dict for callers that need per-installation-id caching.
 - Add `check-activity-kinds` Makefile target (`python scripts/check_activity_kinds.py`).
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Prompt: add deterministic recovery guidance for periodic subsession spawn failures — fall back to inline monitoring immediately instead of presenting options to the user.
 - Added `human_approval_timeout_seconds` (default 300 s / 5 min) — a wall-clock backstop for the `human_issue_approval` stuck-ticket gate. When the checkpoint has carried `last_known_state='human_issue_approval'` for longer than the timeout, the system auto-escalates even if the NO_CHANGE run count has not reached `human_approval_timeout_runs`.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Strengthen memory-recall prompt header with explicit stale-identifier guidance: ticket IDs, task IDs, subsession IDs, and other structured identifiers in recalled text are from past sessions and must be verified against the current conversation before being presented as current work.
 - Add "batch closely related issues" guidance to the implement agent prompt: when discovering multiple incremental issues on the same page/file/component in a single session, combine them into one ticket instead of filing one per issue.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Added self-hosted runner guidance to implement agent prompt: prefer self-hosted runners over workflow deletion when CI fails due to runner-minute exhaustion in private repos; distinguish runner minutes from paid/licensed CI as separate concerns.
 - Autonomous sessions now detect repeated identical user prompts (3+ consecutive occurrences) and respond with a stalemate notice that prompts the agent to acknowledge the stalling pattern and suggest alternative interaction modes or offer to abort, instead of cycling through the same plan→proposal loop.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Suppress duplicate restart notices when background-task state is unchanged — the
   dedup check now scans the full conversation history instead of only the last turn,
   so intervening user messages no longer defeat suppression.
@@ -48,20 +63,26 @@
   `src/robotsix_chat/config/settings.py` is modified.  The hook stages the
   updated schema and fails the commit so the regeneration is included on retry,
   eliminating the recurring CI `check-config-schema` drift auto-fix cycle.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Add `fetch_workflow_run_annotations` agent tool: fetches GitHub Actions CI annotations (linter warnings, test failures, compiler errors) via the Check Runs API. The tool takes a repo name and workflow run ID and returns annotations grouped by check run with file paths, line ranges, and full message text. Uses the existing GitHub App installation for authentication; no new config keys required.
 - Added `central_deploy.component_fallbacks` config — a baked-in map of component_id → base_url that supplements the central-deploy roster when components go missing (e.g. after a redeploy). Monitors and tool calls now survive transient roster gaps without operator intervention. Unknown-component errors include a precise remediation step telling the operator which config key to set. The roster is logged at startup so operators can verify which components are registered.)
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - System prompt v54: add rule requiring the agent to verify source code before advising on component configuration (e.g. central-deploy's `docker_sdk.py` may inject secrets fleet-wide, making per-repo advice incorrect).
 - Remove dead `.robotsix-mill/periodic/state_sync.yaml` and `security_posture.yaml` name-only files that were silently rejected by the loader.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Autonomous chat sessions now use conversational approval/rejection instead of UI buttons: the agent proposes a plan directly in the chat, and the operator approves or rejects by writing in natural language (e.g. "approved", "reject"). The "Awaiting review" state label is replaced with "Plan ready — reply to approve".
 - Add `check_workflow_run` agent tool for diagnosing CI failures, including private-repo billing-failure detection (runs with zero jobs or that never started).
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Subsessions: reaction turns are now plan-aware when the main session has an active
   autonomous plan. When a subsession completes while the session is in proposal or
   executing state, the reaction prompt reminds the agent to acknowledge the outcome
   as a note and stay on its plan — preventing the agent from dropping approved work
   and re-requesting approval.
 - System prompt (v53): added troubleshooting instruction to fetch live system state (deploy contract, service registry, logs) before hypothesizing causes for user-reported errors, preventing fabricated guesses that waste back-and-forth.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - **Periodic monitor `consecutive_no_change` counter now persists across server restarts**, preventing the auto-stop and auto-pause thresholds from being defeated by process restarts. Added ``consecutive_no_change`` field to ``SubsessionInfo`` (persisted in the subsession store and restored on resume).
 - **Lowered ``auto_stop_no_change_runs`` default from 5 to 3** so periodic monitors auto-terminate sooner when the watched ticket shows no changes.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Suppress duplicate terminal-state reports from ticket monitors.  When two
   periodic monitors track the same ticket and both detect a closed/done
   state, only the first delivers a completion notice to the parent
@@ -72,8 +93,10 @@
   under a standing operator directive.  When a monitored ticket matches
   a pattern and enters `human_issue_approval`, the system auto-escalates
   immediately instead of waiting for the configured timeout.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Suppress duplicate consecutive restart notices: when the chat service restarts with no change in background-task state, the system notice is now skipped instead of being written again — eliminates noise from repeated identical restart notices.
 - Fix Trivy scanning in release-image.yml: tag locally-loaded image with a non-registry-qualified tag (`local/robotsix-chat:scan`) so Trivy resolves via the Docker daemon instead of pulling from GHCR, eliminating `/tmp` exhaustion in CI
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Add mandatory pre-planning step to load live knowledge notes and board state before drafting plans; strengthen warnings that recalled session memories may be stale or contain phantom identifiers
 - Redesign autonomous session lifecycle: remove Approve/Reject gate flags.
   Session spawns in ``planning`` state, transitions to ``proposal`` after the
@@ -82,16 +105,19 @@
   it — no more auto-close/respawn. The ``auto_approve`` config flag and
   ``/sessions/{id}/approve`` / ``/sessions/{id}/reject`` endpoints are removed.
   Config key ``approval_marker`` renamed to ``proposal_marker``.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Autonomous sessions now gate completion on active subsessions: the `---AUTONOMOUS COMPLETE---` marker is suppressed when the session still owns any running subsession (including periodic monitors), preventing premature session closure that would lock the agent out of spawning tracking monitors.
 - Persist rejected autonomous session subjects. When an operator rejects
   a proposed subject, the plan text is recorded in ``rejected_subjects``
   on the session, persisted to ``autonomous_sessions.json``, and
   injected into the next subject-selection prompt so the agent is
   instructed not to re-propose the same subject.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Suppress AUTONOMOUS COMPLETE marker when non-periodic subsessions are still
   active, preventing premature session closure that would block spawning new
   lifecycle-tracker subsessions.
 - System prompt v51: add guardrails preventing self-authored behavioral rules in knowledge notes. Knowledge notes now explicitly limited to operational facts/findings; behavioral restrictions like "never use X" belong in the system prompt. Added verification bullet instructing the agent to trust the system prompt over contradicting knowledge-note rules.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Add missing `log_json_format` and `compaction_min_turns` fields to `config/config.json` defaults template so operators can discover them.
 - Autonomous sessions no longer wait for periodic monitors when deciding
   whether to continue — only task and user_chat subsessions block the
@@ -100,6 +126,7 @@
   how many consecutive NO_CHANGE cycles the agent should observe before
   it may declare the session complete while leaving the monitors running
   in the background.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - `self_restart` failures now return a structured diagnostic report with
   plain-language explanation and actionable next steps (e.g. "check
   lifecycle.base_url", "verify the API key"), replacing raw HTTP error
@@ -108,6 +135,7 @@
   new diagnostic format.
 - Document five previously-undocumented config groups in `docs/configuration.md`: GitHub Security, GitHub Actions, Notification, HTTP Probe, and Autonomous. Add `log_json_format` to the Server table.
 - Fix `render_url` returning `AttributeError: 'Page' object has no attribute 'accessibility'` — migrated from the removed `page.accessibility.snapshot()` API to the ARIA snapshot API (`page.locator("body").aria_snapshot()`), which returns a YAML-like string instead of a nested dict.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Periodic subsessions are now closed immediately at startup when
   ``central_deploy.url`` is not configured, preventing futile retries
   and child-task churn.  The missing tool is logged as a diagnostic
@@ -117,6 +145,7 @@
   volume using stdlib ``shutil.disk_usage`` (no disk writes, survives a full
   disk).  ``/admin/prune`` triggers available cleanup methods on the
   conversation store and subsession registry to free space in an emergency.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Periodic monitor deduplication: `spawn_subsession` now cross-references
   active PERIODIC subsessions' `checkpoint.ticket_id` against the new
   spawn's `dedup_key`, so a duplicate monitor for the same ticket is
@@ -126,12 +155,14 @@
   available.  When a request comes through the component roster the mill
   already has its own GitHub access, so the scope check is an unnecessary
   gate.  The scope check is still enforced for direct board-API calls.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - `component_request` tool: when a component returns HTTP 429 with a
   ``Retry-After`` header, wait the full cooldown window and retry once
   before returning the error to the agent. This prevents the agent from
   busy-polling long rate-limit windows (e.g. 300 s disk-reclaim
   endpoints) inside its own conversation loop.
 - Clarified periodic subsession role in system prompt and turn input to suppress misleading "not supported" warning when a monitor is spawned directly from a conversation.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Re-spawn auto-closed periodic monitors on restart when the close reason
   was `no_change_auto_stop`, `paused`, or `human_approval_timeout`.  These
   monitors were previously restored as terminal (CLOSED) and never re-spawned
@@ -144,11 +175,14 @@
   into both the system prompt (v49) and every periodic turn's input.
   `ParentDelivery.deliver_result` is removed; the `subsession_result`
   SSE frame still fires for UI notification bubbles.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - `render_url`: add `text_only` parameter — when `True` the full-page screenshot is skipped, producing a compact (text-only) response suitable for subsessions that lack file-slicing tools.
 - Derive `__version__` from installed distribution metadata instead of
   hard-coding it, so `pyproject.toml` is the single source of truth.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Strengthen the subsession reaction prompt to suppress redundant state restatements: when a subsession reports no change (auto-stopped, auto-paused, or explicit NO_CHANGE), the parent agent now replies with a brief acknowledgment instead of re-listing the ticket ID, status, and timestamp.
 - Revised system prompt to suppress internal tracking details (monitor IDs, subsession codes, pipeline job numbers) and report only key state changes with a clear call to action, unless the user explicitly requests detail.
+- Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Added `ticket_poll` tool — a direct board-API fallback that lets periodic ticket monitors check state even when `component_request` is unavailable. The tool queries the mill board API directly via HTTP, bypassing the component roster. A corresponding skill document is injected into the agent instruction when the board API URL is configured.
 - Add "Cognee recall retirement" guidance to the system prompt: when a monitor reports terminal state on a ticket, the agent should retire stale knowledge notes that reference obsolete PR numbers, monitor ids, or closed-fix paths, replacing them with fresh entries reflecting the current active path.
 - Add missing `"ticket_unreachable"` human-readable phrase to `_REASON_PHRASES` in subsession delivery, preventing the raw snake_case code from appearing in user-facing reaction prompts.

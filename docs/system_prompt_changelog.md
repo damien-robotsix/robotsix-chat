@@ -3,6 +3,22 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v62 — 2026-07-25 — unify-periodic-sub-session-summaries-int-6dc6
+
+**Summary:** Add a consolidation rule for periodic subsession outcomes. When multiple periodic
+subsessions deliver outcomes in quick succession (especially while the user is idle), the agent must
+consolidate them into ONE grouped summary, grouping tickets by state (NO_CHANGE, PROGRESS,
+GATE_PENDING) and hiding trivial NO_CHANGE runs from duplicate monitor cycles. Also update the
+reaction prompt template (`_REACT_PROMPT_TEMPLATE` in `delivery.py`) to instruct the agent to
+consolidate when it has recently reported other periodic outcomes.
+
+**Rationale:** Multiple periodic monitors running concurrently (e.g. monitors for cbe3, aaa6, ccfd)
+were each producing separate outcome notices. The assistant would manually merge them, but the user
+still saw a long list of fragmented individual notices before consolidation. The new rule teaches
+the agent to batch outcomes proactively, reducing noise when the user is not actively conversing.
+
+**SHA256:** `cc09561088cbb302d4a4dd8a37d4089d063272d12cf720dcd0002ca3ebbbd01f`
+
 ## v61 — 2026-07-24 — recalled-memory-hallucination-flagged-bu-67ab
 
 **Summary:** Remove the standalone bullet "When the user directly challenges a claim about external
