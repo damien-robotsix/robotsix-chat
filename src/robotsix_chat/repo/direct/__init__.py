@@ -401,11 +401,43 @@ def build_direct_repo_tools(
 
         return "\n".join(lines)
 
+    async def reset_implement_spawn_counter(ticket_id: str) -> str:
+        """Reset the implement-agent spawn counter for a blocked ticket.
+
+        Deletes the ``implement_spawn_count`` artifact on the board API,
+        clearing the spawn-limit block so the implement agent can be
+        re-spawned against this ticket.  Use when a ticket is blocked at
+        the implement spawn limit and the ``resume-blocked`` mechanism
+        has proven unreliable.
+
+        Args:
+            ticket_id: The blocked ticket whose counter to reset
+                (e.g. ``"20250624T020652Z-my-ticket-a1b2"``).
+
+        Returns:
+            A status message — success confirmation or an error describing
+            why the reset failed.
+
+        """
+        board_url = client._s.board_api_base_url.rstrip("/")
+        ok = await client.delete_ticket_artifact(ticket_id, "implement_spawn_count")
+        if ok:
+            return (
+                f"Implement spawn counter reset for ticket {ticket_id}. "
+                "The ticket can now be re-spawned."
+            )
+        return (
+            f"Error: could not reset implement spawn counter for ticket "
+            f"{ticket_id}.  Verify the ticket id and board API connectivity "
+            f"({board_url})."
+        )
+
     tools: list[Callable[..., Any]] = [
         push_direct_repo_branch,
         open_direct_repo_pr,
         update_pr_branch,
         check_pr_merge_conflict,
+        reset_implement_spawn_counter,
     ]
 
     # ------------------------------------------------------------------

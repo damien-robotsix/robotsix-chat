@@ -70,15 +70,16 @@ def test_build_direct_repo_tools_disabled() -> None:
     assert build_direct_repo_tools(DirectRepoSettings(enabled=False)) == []
 
 
-def test_build_direct_repo_tools_returns_four_tools() -> None:
-    """Verify that enabled direct_repo returns the four expected tools."""
+def test_build_direct_repo_tools_returns_five_tools() -> None:
+    """Verify that enabled direct_repo returns the five expected tools."""
     tools = build_direct_repo_tools(_settings())
-    assert len(tools) == 4
+    assert len(tools) == 5
     names = [t.__name__ for t in tools]
     assert "push_direct_repo_branch" in names
     assert "open_direct_repo_pr" in names
     assert "update_pr_branch" in names
     assert "check_pr_merge_conflict" in names
+    assert "reset_implement_spawn_counter" in names
 
 
 # ---------------------------------------------------------------------------
@@ -313,11 +314,12 @@ def test_no_merge_tool_returned() -> None:
     assert merge_named == ["check_pr_merge_conflict"], (
         f"Unexpected merge-named tools: {merge_named}"
     )
-    # Expected set: push, open_pr, update_branch, check_merge_conflict
+    # Expected set: push, open_pr, update_branch, check_merge_conflict, reset
     assert sorted(names) == [
         "check_pr_merge_conflict",
         "open_direct_repo_pr",
         "push_direct_repo_branch",
+        "reset_implement_spawn_counter",
         "update_pr_branch",
     ]
 
@@ -1238,6 +1240,46 @@ def test_tool_docstrings_forbid_merge() -> None:
 
 
 # ============================================================================
+# reset_implement_spawn_counter
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_reset_implement_spawn_counter_success(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Successful DELETE → tool returns success message."""
+    respx_mock.delete(
+        "http://127.0.0.1:8077/tickets/t-reset/artifacts/implement_spawn_count"
+    ).mock(return_value=httpx.Response(204))
+
+    tools = build_direct_repo_tools(_settings())
+    reset_fn = [t for t in tools if t.__name__ == "reset_implement_spawn_counter"][0]
+
+    out = await reset_fn(ticket_id="t-reset")
+    assert "reset" in out
+    assert "t-reset" in out
+    assert "Error" not in out
+
+
+@pytest.mark.asyncio
+async def test_reset_implement_spawn_counter_failure(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Board API error → tool returns error message."""
+    respx_mock.delete(
+        "http://127.0.0.1:8077/tickets/t-bad/artifacts/implement_spawn_count"
+    ).mock(return_value=httpx.Response(500))
+
+    tools = build_direct_repo_tools(_settings())
+    reset_fn = [t for t in tools if t.__name__ == "reset_implement_spawn_counter"][0]
+
+    out = await reset_fn(ticket_id="t-bad")
+    assert "Error" in out
+    assert "t-bad" in out
+
+
+# ============================================================================
 # direct_fix
 # ============================================================================
 
@@ -1254,7 +1296,7 @@ def test_direct_fix_available_when_enabled() -> None:
     tools = build_direct_repo_tools(_settings(direct_fix_enabled=True))
     names = [t.__name__ for t in tools]
     assert "direct_fix" in names
-    assert len(tools) == 5  # 4 base + direct_fix
+    assert len(tools) == 6  # 5 base + direct_fix
 
 
 @pytest.mark.asyncio

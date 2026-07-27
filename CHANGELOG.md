@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Added ``reset_implement_spawn_counter`` tool to the direct-repo capability, allowing the chat agent to delete the ``implement_spawn_count`` board artifact and unblock tickets stuck at the implement spawn limit.  Includes ``delete_ticket_artifact`` board API method in ``DirectRepoClient``.
 - Fix remaining `robotsix` org URLs in SECURITY.md and CONTRIBUTING.md, correcting to `damien-robotsix` (follow-up to PR #936).
 - Fixed wrong GitHub org (`robotsix` → `damien-robotsix`) and outdated Python version (`3.12` → `3.14`) in SECURITY.md and CONTRIBUTING.md.
 - Honour ``paused_monitor_poll_interval_seconds=0`` semantic: the watcher now exits early (logging "polling disabled") instead of clamping 0 to 60s, so paused monitors only resume on service restart as documented.
