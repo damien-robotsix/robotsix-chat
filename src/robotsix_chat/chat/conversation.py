@@ -592,20 +592,31 @@ class ConversationStore:
         self._persist()
         return True
 
-    def list_sessions(self, owner_id: str) -> tuple[list[dict[str, object]], str]:
+    def list_sessions(
+        self, owner_id: str, *, create_default: bool = True
+    ) -> tuple[list[dict[str, object]], str]:
         """Return ``(sessions, active_session_id)`` for *owner_id*.
 
         *sessions* is a list of session-metadata dicts sorted by
         ``last_active`` descending.  Each dict contains ``session_id``,
         ``title``, ``last_active`` (wall-clock float), and ``turn_count``.
 
-        If the owner has zero sessions, a default empty session is lazily
-        created, marked active, and returned (so the list is never empty
-        and the client always has a default active session).  This
-        side effect is idempotent.
+        If the owner has zero sessions and *create_default* is ``True`` (the
+        default), a default empty session is lazily created, marked active,
+        and returned (so the list is never empty and the client always has a
+        default active session).  This side effect is idempotent.
+
+        Pass ``create_default=False`` for pseudo-owners that must never get a
+        lazily-created browser session (e.g. the autonomous runner's fixed
+        owner) — an empty ``([], "")`` is returned instead.  Otherwise the
+        husk would surface in the operator's merged session list as an empty,
+        un-closable "New chat" (it is owned by the pseudo-owner, not the
+        browser client).
         """
         owner = self._owners.get(owner_id)
         if owner is None:
+            if not create_default:
+                return ([], "")
             # Lazy default session on first access.
             sid = self._session_factory()
             new_session = Session(
@@ -715,15 +726,25 @@ class ConversationStore:
 
         return _session_metadata(session)
 
-    def delete_session(self, owner_id: str, session_id: str) -> dict[str, object]:
+    def delete_session(
+        self,
+        owner_id: str,
+        session_id: str,
+        *,
+        create_replacement: bool = True,
+    ) -> dict[str, object]:
         """Delete *session_id* (and its history) for *owner_id*.
 
         When the deleted session was the owner's active session, the
         most-recently-active remaining session becomes active; if none remain
-        a fresh empty session is created so the owner always has an active
-        session.  Returns ``{"deleted": bool, "active_session_id": str}`` —
-        ``deleted`` is ``False`` (no-op) when the owner is unknown or the
-        session is not owned by it.
+        and *create_replacement* is ``True`` (the default) a fresh empty
+        session is created so the owner always has an active session.  Pass
+        ``create_replacement=False`` for pseudo-owners (e.g. the autonomous
+        runner's fixed owner) so no empty "New chat" husk is spawned — the
+        active pointer is cleared to ``""`` instead.  Returns
+        ``{"deleted": bool, "active_session_id": str}`` — ``deleted`` is
+        ``False`` (no-op) when the owner is unknown or the session is not
+        owned by it.
 
         Note: this only removes conversation state.  Stopping the session's
         background tasks / check loops is the caller's responsibility (the
@@ -746,6 +767,10 @@ class ConversationStore:
             if remaining:
                 newest = max(remaining, key=lambda s: s.wall_last_active)
                 owner.active_session_id = newest.session_id
+            elif not create_replacement:
+                # Pseudo-owner: leave the owner with no active session rather
+                # than spawning an empty husk.
+                owner.active_session_id = ""
             else:
                 # No sessions left — create a fresh empty active session so the
                 # owner always has one (mirrors list_sessions' lazy default).

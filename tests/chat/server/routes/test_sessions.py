@@ -232,7 +232,7 @@ async def test_sessions_list_endpoint_basic() -> None:
     body = json.loads(response.body)  # type: ignore[arg-type]
     assert body["sessions"] == [{"session_id": "s1", "title": "Chat 1"}]
     assert body["active_session_id"] == "s1"
-    mock_store.list_sessions.assert_called_once_with("alice")
+    mock_store.list_sessions.assert_called_once_with("alice", create_default=True)
 
 
 @pytest.mark.asyncio
@@ -410,6 +410,7 @@ async def test_sessions_delete_endpoint_success() -> None:
         conversation_store=mock_store,
         subsession_registry=None,
         feedback_runner=None,
+        autonomous_runner=None,
     )
     request = _make_request(
         method="DELETE",
@@ -424,7 +425,9 @@ async def test_sessions_delete_endpoint_success() -> None:
     assert body["deleted"] is True
     assert body["active_session_id"] == "other-sess"
     assert body["subsessions_closed"] == 0
-    mock_store.delete_session.assert_called_once_with("alice", "sess-1")
+    mock_store.delete_session.assert_called_once_with(
+        "alice", "sess-1", create_replacement=True
+    )
 
 
 @pytest.mark.asyncio
@@ -813,3 +816,126 @@ async def test_summary_endpoint_agent_error() -> None:
 
     assert exc_info.value.status_code == 500
     assert exc_info.value.detail == "summary generation failed"
+
+
+# ---------------------------------------------------------------------------
+# Autonomous pseudo-owner handling (lifecycle + closability fix)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_endpoint_no_lazy_default_for_autonomous_owner() -> None:
+    """The autonomous pseudo-owner never gets a lazily-created husk session."""
+    mock_store = MagicMock()
+    mock_store.list_sessions.return_value = ([], "")
+    mock_runner = MagicMock()
+    mock_runner.bootstrap_owner = "autonomous"
+    mock_runner.is_autonomous.return_value = False
+
+    state = MagicMock(conversation_store=mock_store, autonomous_runner=mock_runner)
+    request = _make_query_request("owner_id=autonomous")
+    request.scope["app"] = type("FakeApp", (), {"state": state})()
+
+    response = await sessions_list_endpoint(request)
+    assert response.status_code == 200
+    mock_store.list_sessions.assert_called_once_with("autonomous", create_default=False)
+
+
+@pytest.mark.asyncio
+async def test_delete_autonomous_session_forgets_and_restarts() -> None:
+    """Deleting an autonomous session purges the runner and auto-restarts."""
+    mock_store = MagicMock()
+    mock_store.history.return_value = []
+    mock_store.delete_session.return_value = {
+        "deleted": True,
+        "active_session_id": "",
+    }
+    mock_runner = MagicMock()
+    mock_runner.bootstrap_owner = "autonomous"
+    mock_runner.is_autonomous.return_value = True
+
+    state = MagicMock(
+        conversation_store=mock_store,
+        subsession_registry=None,
+        feedback_runner=None,
+        autonomous_runner=mock_runner,
+    )
+    request = _make_request(
+        method="DELETE",
+        query_string="owner_id=autonomous",
+        path_params={"session_id": "auto-1"},
+        app_state=state,
+    )
+
+    response = await sessions_delete_endpoint(request)
+    assert response.status_code == 200
+    # No empty husk spawned for the pseudo-owner.
+    mock_store.delete_session.assert_called_once_with(
+        "autonomous", "auto-1", create_replacement=False
+    )
+    mock_runner.forget_session.assert_called_once_with("auto-1")
+    mock_runner.ensure_active_session.assert_called_once_with("autonomous")
+
+
+@pytest.mark.asyncio
+async def test_close_autonomous_session_forgets_and_restarts() -> None:
+    """Closing an autonomous session purges the runner and auto-restarts."""
+    mock_store = MagicMock()
+    mock_store.history.return_value = []
+    mock_store.close_session.return_value = {"closed": True}
+    mock_runner = MagicMock()
+    mock_runner.bootstrap_owner = "autonomous"
+    mock_runner.is_autonomous.return_value = True
+
+    state = MagicMock(
+        conversation_store=mock_store,
+        subsession_registry=None,
+        feedback_runner=None,
+        autonomous_runner=mock_runner,
+    )
+    request = _make_request(
+        method="POST",
+        query_string="owner_id=autonomous",
+        path_params={"session_id": "auto-1"},
+        app_state=state,
+    )
+
+    response = await sessions_close_endpoint(request)
+    assert response.status_code == 200
+    mock_runner.forget_session.assert_called_once_with("auto-1")
+    mock_runner.ensure_active_session.assert_called_once_with("autonomous")
+
+
+@pytest.mark.asyncio
+async def test_delete_non_autonomous_session_leaves_runner_untouched() -> None:
+    """A plain browser session delete does not trigger autonomous cleanup."""
+    mock_store = MagicMock()
+    mock_store.history.return_value = []
+    mock_store.delete_session.return_value = {
+        "deleted": True,
+        "active_session_id": "other",
+    }
+    mock_runner = MagicMock()
+    mock_runner.bootstrap_owner = "autonomous"
+    mock_runner.is_autonomous.return_value = False
+
+    state = MagicMock(
+        conversation_store=mock_store,
+        subsession_registry=None,
+        feedback_runner=None,
+        autonomous_runner=mock_runner,
+    )
+    request = _make_request(
+        method="DELETE",
+        query_string="owner_id=alice",
+        path_params={"session_id": "sess-1"},
+        app_state=state,
+    )
+
+    response = await sessions_delete_endpoint(request)
+    assert response.status_code == 200
+    mock_store.delete_session.assert_called_once_with(
+        "alice", "sess-1", create_replacement=True
+    )
+    mock_runner.forget_session.assert_not_called()
+    mock_runner.ensure_active_session.assert_not_called()

@@ -391,9 +391,17 @@
   var AUTONOMOUS_OWNER = "autonomous";
   function ownerFor(sid) {
     for (var oi = 0; oi < sessionsList.length; oi++) {
-      if (sessionsList[oi] && sessionsList[oi].session_id === sid &&
-          sessionsList[oi].autonomous) {
-        return AUTONOMOUS_OWNER;
+      var s = sessionsList[oi];
+      if (s && s.session_id === sid) {
+        // Prefer the owner the session was actually fetched under (tagged in
+        // fetchSessions). Resolving from the `autonomous` flag alone is
+        // fragile: a session owned by the "autonomous" pseudo-owner but not
+        // flagged (e.g. a completed/closed run the runner no longer tracks)
+        // would otherwise be attributed to this browser's clientId, so every
+        // delete/close would 404 and the session would be un-closable.
+        if (s._owner) return s._owner;
+        if (s.autonomous) return AUTONOMOUS_OWNER;
+        return clientId;
       }
     }
     return clientId;
@@ -527,12 +535,21 @@
     return Promise.all([mine, auto]).then(function (res) {
       var a = res[0] || {}, b = res[1] || {};
       var seen = {}, merged = [];
-      var lists = [a.sessions || [], b.sessions || []];
+      // Tag each list with the owner it was fetched under so ownerFor(sid)
+      // can route per-session requests (history, events, delete, ...) to the
+      // correct owner regardless of the `autonomous` annotation.
+      var lists = [
+        { owner: clientId, sessions: a.sessions || [] },
+        { owner: AUTONOMOUS_OWNER, sessions: b.sessions || [] }
+      ];
       for (var li = 0; li < lists.length; li++) {
-        for (var i = 0; i < lists[li].length; i++) {
-          var s = lists[li][i];
+        var ownerId = lists[li].owner;
+        var arr = lists[li].sessions;
+        for (var i = 0; i < arr.length; i++) {
+          var s = arr[i];
           if (s && s.session_id && !seen[s.session_id]) {
             seen[s.session_id] = true;
+            s._owner = ownerId;
             merged.push(s);
           }
         }

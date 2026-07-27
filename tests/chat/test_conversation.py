@@ -442,6 +442,29 @@ def test_delete_last_session_creates_fresh_active() -> None:
     assert sessions[0]["turn_count"] == 0
 
 
+def test_delete_last_session_no_replacement_clears_active() -> None:
+    """``create_replacement=False`` leaves no husk; active is cleared to ''."""
+    store = _store()
+    only = str(store.create_session("o1")["session_id"])
+
+    result = store.delete_session("o1", only, create_replacement=False)
+
+    assert result["deleted"] is True
+    assert result["active_session_id"] == ""
+    sessions, active = store.list_sessions("o1", create_default=False)
+    assert sessions == []
+    assert active == ""
+
+
+def test_list_sessions_no_default_for_unknown_owner() -> None:
+    """``create_default=False`` returns an empty list for an unknown owner."""
+    store = _store()
+
+    sessions, active = store.list_sessions("ghost", create_default=False)
+    assert sessions == []
+    assert active == ""
+
+
 def test_delete_session_unknown_is_noop() -> None:
     """Deleting an unknown owner/session returns deleted=False."""
     store = _store()
