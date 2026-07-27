@@ -1372,3 +1372,128 @@ class TestStalemateDetection:
         runner.on_user_message(aq.session_id, "msg1")
 
         assert aq.recent_user_messages == ["msg1", "msg2", "msg1"]
+
+
+async def _drain_tasks(runner: AutonomousRunner) -> None:
+    """Await every background task the runner scheduled, following cascades.
+
+    A scheduled task (e.g. auto-restart) may itself schedule another (the
+    fresh session's kickoff), so drain repeatedly until the set is quiet.
+    """
+    for _ in range(20):
+        pending = [t for t in list(runner._auto_tasks) if not t.done()]
+        if not pending:
+            break
+        await asyncio.gather(*pending, return_exceptions=True)
+
+
+class TestEnsureActiveSessionAutoRestart:
+    """`ensure_active_session`, `forget_session`, and auto-restart-always."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+
+    def _make_runner(self) -> AutonomousRunner:
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
+        settings.autonomous.proposal_marker = "---PROPOSAL READY---"
+        settings.autonomous.max_auto_turns = 20
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
+        return AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+        )
+
+    def test_bootstrap_owner_property(self) -> None:
+        """The bootstrap owner id is the fixed 'autonomous' pseudo-owner."""
+        runner = self._make_runner()
+        assert runner.bootstrap_owner == "autonomous"
+
+    def test_forget_session_removes_and_reports(self) -> None:
+        """forget_session drops the record and returns whether it existed."""
+        runner = self._make_runner()
+        aq = runner.create_session("autonomous", schedule_kickoff=False)
+        assert runner.forget_session(aq.session_id) is True
+        assert not runner.is_autonomous(aq.session_id)
+        # Second call is a no-op.
+        assert runner.forget_session(aq.session_id) is False
+
+    def test_ensure_active_returns_existing_open_session(self) -> None:
+        """When an open session exists, ensure_active_session is a no-op."""
+        runner = self._make_runner()
+        existing = runner.create_session("autonomous", schedule_kickoff=False)
+        result = runner.ensure_active_session("autonomous", schedule_kickoff=False)
+        assert result.session_id == existing.session_id
+        # Exactly one session tracked.
+        assert len(runner._sessions) == 1
+
+    def test_ensure_active_retires_completed_and_starts_fresh(self) -> None:
+        """A completed-only owner gets its stale session retired + a fresh run."""
+        runner = self._make_runner()
+        done = runner.create_session("autonomous", schedule_kickoff=False)
+        done.state = AutonomousState.completed
+
+        fresh = runner.ensure_active_session("autonomous", schedule_kickoff=False)
+
+        assert fresh.session_id != done.session_id
+        assert fresh.state is AutonomousState.planning
+        # The completed session is gone from both runner and store.
+        assert not runner.is_autonomous(done.session_id)
+        sessions, _ = runner._store.list_sessions("autonomous", create_default=False)
+        ids = {s["session_id"] for s in sessions}
+        assert done.session_id not in ids
+        assert fresh.session_id in ids
+
+    @pytest.mark.asyncio
+    async def test_completion_schedules_auto_restart(self) -> None:
+        """Hitting the completion marker starts a fresh run (auto-restart)."""
+        runner = self._make_runner()
+        # Stub the agent kickoff so the fresh run doesn't drive a real turn.
+        runner._kickoff_initial_turn = AsyncMock()  # type: ignore[method-assign]
+        aq = runner.create_session("autonomous", schedule_kickoff=False)
+        aq.state = AutonomousState.executing
+
+        new_state = runner.check_reply_for_markers(
+            aq.session_id, "done\n\n---AUTONOMOUS COMPLETE---"
+        )
+        assert new_state is AutonomousState.completed
+
+        # The auto-restart background task was scheduled; let it (and any
+        # kickoff task it spawns) run to completion.
+        await _drain_tasks(runner)
+
+        # The completed session has been retired and a fresh open one started.
+        open_sessions = [
+            s
+            for s in runner._sessions.values()
+            if s.state is not AutonomousState.completed
+        ]
+        assert len(open_sessions) == 1
+        assert open_sessions[0].session_id != aq.session_id
+
+    @pytest.mark.asyncio
+    async def test_resume_starts_fresh_when_only_completed(self) -> None:
+        """resume_sessions guarantees one open run even if all were completed."""
+        runner = self._make_runner()
+        runner._kickoff_initial_turn = AsyncMock()  # type: ignore[method-assign]
+        done = runner.create_session("autonomous", schedule_kickoff=False)
+        done.state = AutonomousState.completed
+
+        await runner.resume_sessions()
+        await _drain_tasks(runner)
+
+        open_sessions = [
+            s
+            for s in runner._sessions.values()
+            if s.state is not AutonomousState.completed
+        ]
+        assert len(open_sessions) == 1
+        assert open_sessions[0].session_id != done.session_id

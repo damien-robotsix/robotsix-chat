@@ -83,10 +83,15 @@ async def sessions_list_endpoint(request: Request) -> JSONResponse:
     owner_id = _require_owner_id(request)
 
     store: ConversationStore = request.app.state.conversation_store
-    sessions, active_id = store.list_sessions(owner_id)
+    runner = request.app.state.autonomous_runner
+
+    # Never lazily create a browser default session for the autonomous
+    # pseudo-owner — that husk would surface in the operator's merged list as
+    # an empty, un-closable "New chat".  The runner owns this owner's sessions.
+    create_default = runner is None or owner_id != runner.bootstrap_owner
+    sessions, active_id = store.list_sessions(owner_id, create_default=create_default)
 
     # Annotate autonomous sessions so the UI can render the [AUTONOMOUS] badge.
-    runner = request.app.state.autonomous_runner
     if runner is not None:
         for s in sessions:
             sid = s.get("session_id")
@@ -172,6 +177,10 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
     session_id = request.path_params["session_id"]
     owner_id = _require_owner_id(request)
 
+    runner = request.app.state.autonomous_runner
+    is_autonomous = runner is not None and runner.is_autonomous(session_id)
+    is_autonomous_owner = runner is not None and owner_id == runner.bootstrap_owner
+
     # 1. Close the session's subsessions.
     subsessions_closed = _cleanup_session(session_id, request)
 
@@ -181,7 +190,11 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
     # Capture history before deletion (for the feedback run).
     deletion_turns = store.history(session_id)
 
-    result = store.delete_session(owner_id, session_id)
+    # Never spawn an empty husk under the autonomous pseudo-owner; the runner
+    # starts a fresh, properly-tracked replacement below instead.
+    result = store.delete_session(
+        owner_id, session_id, create_replacement=not is_autonomous_owner
+    )
 
     if not result.get("deleted"):
         return JSONResponse(
@@ -197,6 +210,12 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
     feedback_runner = request.app.state.feedback_runner
     if feedback_runner is not None and deletion_turns:
         feedback_runner.schedule("session_end", session_id, deletion_turns)
+
+    # Autonomous cleanup: forget the runner's record and auto-restart so the
+    # operator always has one live autonomous run (auto-restart always).
+    if is_autonomous and runner is not None:
+        runner.forget_session(session_id)
+        runner.ensure_active_session(owner_id)
 
     return JSONResponse(
         {
@@ -232,6 +251,9 @@ async def sessions_close_endpoint(request: Request) -> JSONResponse:
     session_id = request.path_params["session_id"]
     owner_id = _require_owner_id(request)
 
+    runner = request.app.state.autonomous_runner
+    is_autonomous = runner is not None and runner.is_autonomous(session_id)
+
     # 1. Close the session's subsessions.
     subsessions_closed = _cleanup_session(session_id, request)
 
@@ -255,6 +277,13 @@ async def sessions_close_endpoint(request: Request) -> JSONResponse:
         turns = store.history(session_id)
         if turns:
             feedback_runner.schedule("session_end", session_id, turns)
+
+    # Autonomous cleanup: forget the runner's record (the store keeps the
+    # closed history) and auto-restart so the operator always has one live
+    # autonomous run (auto-restart always).
+    if is_autonomous and runner is not None:
+        runner.forget_session(session_id)
+        runner.ensure_active_session(owner_id)
 
     return JSONResponse(
         {

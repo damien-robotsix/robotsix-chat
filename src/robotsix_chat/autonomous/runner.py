@@ -25,6 +25,13 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+# Fixed pseudo-owner id under which auto-bootstrapped autonomous sessions live.
+# Autonomous sessions are not owned by any browser client, so they are
+# registered under this stable owner id and the UI surfaces them by fetching
+# ``GET /sessions?owner_id=autonomous``.  MUST match ``AUTONOMOUS_OWNER`` in
+# ui/static/chat.js.
+BOOTSTRAP_OWNER = "autonomous"
+
 
 def _rejected_subjects_note(aq: AutonomousSession | None) -> str:
     """Return a prompt suffix listing previously rejected subjects, or ""."""
@@ -73,6 +80,11 @@ class AutonomousRunner:
     def session_color(self) -> str:
         """Colour string for autonomous session UI badge."""
         return self._settings.autonomous.session_color
+
+    @property
+    def bootstrap_owner(self) -> str:
+        """Fixed pseudo-owner id under which autonomous sessions are surfaced."""
+        return BOOTSTRAP_OWNER
 
     # -- persistence ------------------------------------------------------
 
@@ -256,6 +268,79 @@ class AutonomousRunner:
         aq = self._sessions.get(session_id)
         return aq.owner_id if aq else None
 
+    def forget_session(self, session_id: str) -> bool:
+        """Drop *session_id* from the runner registry and persist.
+
+        Used when the operator deletes or closes an autonomous session so the
+        runner stops tracking stale state.  Without this, a
+        deleted/closed session lingers in the registry — blocking the
+        single-session invariant and (for completed sessions) never being
+        retired — so ``ensure_active_session`` could never start a fresh run.
+        Returns ``True`` when a session was actually removed.
+        """
+        if session_id in self._sessions:
+            del self._sessions[session_id]
+            self._save_sessions()
+            return True
+        return False
+
+    def ensure_active_session(
+        self,
+        owner_id: str = BOOTSTRAP_OWNER,
+        *,
+        schedule_kickoff: bool = True,
+    ) -> AutonomousSession:
+        """Guarantee *owner_id* has exactly one open (non-completed) session.
+
+        Implements the "auto-restart always" guarantee: the operator always
+        has one live autonomous run.  When an open session already exists it
+        is returned unchanged.  Otherwise any completed sessions for
+        *owner_id* are retired — dropped from both the runner registry and the
+        conversation store (with ``create_replacement=False`` so the store
+        does not spawn an empty "New chat" husk) — and a fresh autonomous
+        session is started.
+        """
+        for aq in self._sessions.values():
+            if aq.owner_id == owner_id and aq.state is not AutonomousState.completed:
+                return aq
+
+        # No open session — retire completed ones so they neither accumulate
+        # nor leave an orphaned store entry that the UI cannot resolve.
+        stale = [
+            sid
+            for sid, aq in self._sessions.items()
+            if aq.owner_id == owner_id and aq.state is AutonomousState.completed
+        ]
+        for sid in stale:
+            self._sessions.pop(sid, None)
+            try:
+                self._store.delete_session(owner_id, sid, create_replacement=False)
+            except Exception:
+                logger.exception(
+                    "Failed to retire completed autonomous session %s", sid
+                )
+        if stale:
+            self._save_sessions()
+
+        return self.create_session(owner_id, schedule_kickoff=schedule_kickoff)
+
+    async def _auto_restart(self, owner_id: str) -> None:
+        """Throttle, then ensure *owner_id* has a fresh open autonomous session.
+
+        Scheduled after a session completes.  The throttle (reusing
+        ``continue_interval_seconds``) prevents a hot restart loop when a
+        session completes almost immediately.
+        """
+        delay = max(0.0, self._settings.autonomous.continue_interval_seconds)
+        try:
+            if delay:
+                await asyncio.sleep(delay)
+            self.ensure_active_session(owner_id)
+        except asyncio.CancelledError:
+            logger.debug("Auto-restart task cancelled for owner %s", owner_id)
+        except Exception:
+            logger.exception("Auto-restart failed for owner %s", owner_id)
+
     # -- marker detection ---------------------------------------------------
 
     def check_reply_for_markers(
@@ -297,6 +382,10 @@ class AutonomousRunner:
             )
             self._save_sessions()
             self._publish_state(session_id)
+            # Auto-restart always: schedule a fresh autonomous run (throttled)
+            # so the operator always has one live session.
+            owner_id = aq.owner_id
+            self._schedule_background(lambda: self._auto_restart(owner_id))
             return AutonomousState.completed
 
         # Check proposal marker.
@@ -843,11 +932,13 @@ class AutonomousRunner:
                     session_id,
                 )
 
-        # Bootstrap: when the store is empty (fresh deploy or wiped data),
-        # auto-start one session so autonomous mode isn't permanently idle.
-        if not self._sessions:
-            logger.info(
-                "No autonomous sessions found — bootstrapping one "
-                "for owner 'autonomous'"
-            )
-            self.create_session("autonomous", schedule_kickoff=True)
+        # Auto-restart always: guarantee the bootstrap owner has exactly one
+        # open autonomous session after resume.  Covers a fresh/wiped store as
+        # well as the case where the only surviving sessions were completed or
+        # closed (which would otherwise leave autonomous mode permanently
+        # idle).  Retires leftover completed sessions and starts a fresh run.
+        logger.info(
+            "Ensuring one open autonomous session for owner %r after resume",
+            BOOTSTRAP_OWNER,
+        )
+        self.ensure_active_session(BOOTSTRAP_OWNER)
