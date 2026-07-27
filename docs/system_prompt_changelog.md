@@ -5,6 +5,25 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ______________________________________________________________________
 
+## v58 — 2026-07-27 — guidance-for-hand-authoring-prs-as-escap-1b2e
+
+**Summary:** Add a "Hand-authoring PRs as a mill-failure escape hatch" bullet to the Mill & Deploy
+Endpoints section. When the assistant identifies a fleet-wide mill defect blocking ≥5 critical
+self-improvement tickets across ≥2 repos, it may propose hand-authoring a PR against the mill repo
+as an extraordinary escape hatch. The new guidance defines qualifying criteria (systemic failure,
+mill-repo target, no existing PR/branch), mandatory pre-checks (verify no open PR, unique branch
+name, minimal scope), and a structured escalation path: propose to the operator via user_chat with a
+three-option choice; if the operator does not respond within the subsession's idle window, the
+proposal expires — do not proceed unilaterally and do not re-propose. Instead, file a prompt ticket
+documenting the blocked batch and move on.
+
+**Rationale:** Session 8b03ed2ca8f946629bdee029f2efaaa7 showed the assistant correctly identifying a
+fleet-wide mill defect but stalling because no prompt guidance defined when hand-authoring is
+permitted, what safety checks to perform, or what to do if the operator does not respond. This adds
+that missing guardrail.
+
+**SHA256:** `9670765d57359bdd2d805598daeade88947310b77b87070dadbd8cb24002f3b3`
+
 ## v57 — 2026-07-26 — handle-conflicting-user-instructions-gra-dde5
 
 **Summary:** Add a "Conflict Resolution" section to the system prompt. When a user gives an
