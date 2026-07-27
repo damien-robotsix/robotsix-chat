@@ -34,6 +34,8 @@ from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
+from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE
+
 if TYPE_CHECKING:
     from robotsix_chat.chat.events import EventSink
     from robotsix_chat.config.models import NotificationSettings
@@ -117,7 +119,7 @@ def build_notification_tools(
             urgency = "default"
 
         frame: dict[str, object] = {
-            "type": "notification",
+            "type": SSE_NOTIFICATION_TYPE,
             "title": title,
             "body": body,
             "urgency": urgency,

@@ -55,6 +55,9 @@ SSE_CHAT_TURN_DONE_TYPE = "chat_turn_done"
 SSE_CHAT_TURN_ERROR_TYPE = "chat_turn_error"
 SSE_CHAT_TURN_RESUME_TYPE = "chat_turn_resume"
 
+# Browser push notification (via notify_user tool → EventBus → SSE).
+SSE_NOTIFICATION_TYPE = "notification"
+
 # ---------------------------------------------------------------------------
 # EventSink — structural Protocol for dependency injection
 # ---------------------------------------------------------------------------
