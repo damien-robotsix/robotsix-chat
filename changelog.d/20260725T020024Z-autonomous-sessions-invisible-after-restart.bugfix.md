@@ -1,1 +1,0 @@
-Register autonomous sessions in the conversation store on create and reconcile them on resume, so they appear in `list_sessions` for their owner and survive restarts (previously the runner only registered them globally, leaving them absent from `conversations.json` and invisible in the UI).

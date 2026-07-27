@@ -1,1 +1,0 @@
-Deduplicate _check_installation_scope call in github_job_log_endpoint

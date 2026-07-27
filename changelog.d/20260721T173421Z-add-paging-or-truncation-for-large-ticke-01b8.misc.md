@@ -1,1 +1,0 @@
-Add paging or truncation for large ticket history reads

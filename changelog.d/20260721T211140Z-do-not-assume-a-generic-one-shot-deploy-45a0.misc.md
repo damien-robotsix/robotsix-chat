@@ -1,1 +1,0 @@
-Do not assume a generic one-shot deploy endpoint matches the UI's multi-service onboard flow

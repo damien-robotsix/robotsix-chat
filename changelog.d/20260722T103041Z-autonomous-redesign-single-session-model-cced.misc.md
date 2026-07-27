@@ -1,1 +1,0 @@
-Autonomous redesign: single-session model + NON-BLOCKING resume (resume currently blocks chat startup → prod outage) + remove New-autonomous button + restart context message

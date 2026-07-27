@@ -1,1 +1,0 @@
-Extract stale-worker handling from \_check_resume_status in subsessions/worker.py

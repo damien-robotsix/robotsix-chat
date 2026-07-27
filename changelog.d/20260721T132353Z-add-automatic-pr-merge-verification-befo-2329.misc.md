@@ -1,1 +1,0 @@
-Add automatic PR merge verification before deployment offers

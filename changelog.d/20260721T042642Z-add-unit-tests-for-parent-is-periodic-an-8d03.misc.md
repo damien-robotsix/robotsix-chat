@@ -1,1 +1,0 @@
-Add unit tests for _parent_is_periodic and periodic-parent delivery in delivery.py

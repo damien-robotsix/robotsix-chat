@@ -1,1 +1,0 @@
-Autonomous sessions lack subsession/notify tooling (spawn_subsession, user_chat, notify_user, list_subsessions)

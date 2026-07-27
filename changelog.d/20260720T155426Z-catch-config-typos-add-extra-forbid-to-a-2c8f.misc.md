@@ -1,1 +1,0 @@
-Catch config typos: add extra="forbid" to all Pydantic config sub-models

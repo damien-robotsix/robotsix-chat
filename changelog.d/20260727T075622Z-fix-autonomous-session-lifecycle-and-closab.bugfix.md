@@ -1,1 +1,0 @@
-Fix autonomous sessions being invisible after completion and leaving an un-closable empty "New chat" behind: deleting/closing an autonomous run now purges the runner and auto-starts a fresh one (auto-restart always), the autonomous pseudo-owner no longer spawns empty session husks, and the UI resolves each session's true owner so delete/close never 404s.

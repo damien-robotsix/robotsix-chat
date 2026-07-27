@@ -1,1 +1,0 @@
-Extract _git_push_files helper from duplicated Git-database-API logic in repo/direct/client.py

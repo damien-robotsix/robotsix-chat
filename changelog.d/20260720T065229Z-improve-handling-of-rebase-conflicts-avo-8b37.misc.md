@@ -1,1 +1,0 @@
-Improve handling of rebase conflicts: avoid infinite retries and surface clear guidance

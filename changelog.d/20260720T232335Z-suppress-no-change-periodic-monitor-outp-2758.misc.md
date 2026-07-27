@@ -1,1 +1,0 @@
-Suppress no-change periodic monitor outputs after first few polls

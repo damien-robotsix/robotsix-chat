@@ -1,1 +1,0 @@
-Handle stuck human_issue_approval tickets gracefully

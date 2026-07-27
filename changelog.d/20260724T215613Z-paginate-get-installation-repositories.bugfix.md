@@ -1,1 +1,0 @@
-Fixed `list_installation_repos` returning only the first 30 repos; now paginates through all installed repos so direct-repo tools (push branch, open PR, security tools) work for every repo in the installation scope.

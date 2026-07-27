@@ -1,1 +1,0 @@
-Assert timestamp field in chat done SSE frame test

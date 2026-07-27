@@ -1,1 +1,0 @@
-Autonomous sessions display nothing in the UI — kickoff plan + execution turns are never written to the session transcript / streamed to the browser

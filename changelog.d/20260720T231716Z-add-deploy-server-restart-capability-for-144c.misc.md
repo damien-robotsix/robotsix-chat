@@ -1,1 +1,0 @@
-Add deploy-server restart capability for self-managed services
