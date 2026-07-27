@@ -109,6 +109,7 @@ directs action, re-asking for confirmation is redundant friction. This change ma
 respect explicit user directives without weakening safety for ambiguous cases.
 
 **SHA256:** `ab8e8246f0e2ec6d64e0a4008f4aac061a4ee7cafb4387a12d2899e4c950e548`
+
 ## v58 — 2026-07-27 — guidance-for-hand-authoring-prs-as-escap-1b2e
 
 **Summary:** Add a "Hand-authoring PRs as a mill-failure escape hatch" bullet to the Mill & Deploy
