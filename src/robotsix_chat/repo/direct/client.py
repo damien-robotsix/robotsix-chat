@@ -268,36 +268,6 @@ class DirectRepoClient:
 
         return all_repos
 
-    async def create_repo(
-        self,
-        org_name: str,
-        repo_name: str,
-        *,
-        auto_init: bool = True,
-    ) -> str:
-        """Create a new repository under *org_name*.
-
-        Calls ``POST /orgs/{org}/repos``.  By default sets ``auto_init``
-        so the new repo has an initial commit and is immediately cloneable.
-
-        Never raises — returns a success/error message string.
-        """
-        body: dict[str, Any] = {
-            "name": repo_name,
-            "auto_init": auto_init,
-        }
-        try:
-            data = await self._post_json(f"/orgs/{org_name}/repos", body)
-            html_url = data.get("html_url", "")
-            return (
-                f"Repository '{org_name}/{repo_name}' created successfully.\n"
-                f"URL: {html_url}"
-            )
-        except RuntimeError as exc:
-            return f"Error creating repo: {exc}"
-        except Exception as exc:
-            return f"Error creating repo: {exc}"
-
     async def check_installation_scope(self, repo_full_name: str) -> str | None:
         """Check whether *repo_full_name* is in the GitHub App installation scope.
 
