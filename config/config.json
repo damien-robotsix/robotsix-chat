@@ -180,9 +180,12 @@
   },
   "public_fetch": {
     "enabled": false,
-    "timeout": 30.0,
+    "timeout": 10.0,
     "max_body_bytes": 1048576,
-    "max_redirects": 5
+    "max_redirects": 5,
+    "domain_allowlist": [],
+    "rate_limit_requests": 10,
+    "rate_limit_window_seconds": 60.0
   },
   "render_url": {
     "enabled": false,

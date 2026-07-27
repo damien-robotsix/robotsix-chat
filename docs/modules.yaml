@@ -351,6 +351,14 @@ modules:
       - tests/http_probe/__init__.py
       - tests/http_probe/test_http_probe.py
 
+  - id: public-fetch
+    description: "Scoped public-URL fetch tool for the chat agent — exposes build_public_fetch_tools() returning a fetch_public_url tool that performs a plain HTTP(S) GET with SSRF protection, size cap, rate limiting, and audit logging, plus load_public_fetch_skill() for the component skill document."
+    paths:
+      - src/robotsix_chat/public_fetch/__init__.py
+      - src/robotsix_chat/public_fetch/skill.md
+      - tests/public_fetch/__init__.py
+      - tests/public_fetch/test_public_fetch.py
+
   - id: ticket-poll
     description: "Direct board-API ticket poll tool — fallback when component_request is unavailable. Exposes build_ticket_poll_tools() returning a ticket_poll tool that queries the mill board API directly via HTTP, plus load_ticket_poll_skill() for the component skill document."
     paths:
@@ -386,10 +394,3 @@ modules:
       - docs/notification/skill.md
       - tests/notification/__init__.py
       - tests/notification/test_notification.py
-
-  - id: public-fetch
-    description: "Public URL fetch tool — read raw content from any public forge with SSRF protection, size limits, and no authentication. Exposes build_public_fetch_tools() returning a fetch_public_url tool for fetching files from public forges (GitLab, Bitbucket, codeberg, etc.) not covered by the GitHub-scoped repo-study tools."
-    paths:
-      - src/robotsix_chat/public_fetch/__init__.py
-      - tests/public_fetch/__init__.py
-      - tests/public_fetch/test_public_fetch.py

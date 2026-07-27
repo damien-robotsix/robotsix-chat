@@ -757,7 +757,7 @@
     },
     "PublicFetchSettings": {
       "additionalProperties": false,
-      "description": "Public URL fetch tool \u2014 read raw content from any public forge.\n\nWhen enabled, the chat agent gains a ``fetch_public_url`` tool that\nperforms a plain HTTP GET to an arbitrary public URL and returns the\nbody text up to *max_body_bytes*.  SSRF protection blocks private,\nloopback, link-local, and multicast addresses via DNS resolution on\nevery redirect hop.  No authentication is used \u2014 only public hosts\nare reachable.\n\nDesigned for reading files from public forges (GitLab, Bitbucket,\ncodeberg, university GitLabs, etc.) not covered by the GitHub-scoped\nrepo-study tools.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no fetch tool is offered.\n    timeout: Per-request HTTP timeout in seconds (default 30 s).\n    max_body_bytes: Maximum bytes of the response body returned to the\n        agent (default 1 MiB).\n    max_redirects: Maximum number of redirects to follow (default 5).",
+      "description": "Scoped public-repo-fetch tool for the chat agent.\n\nWhen enabled, the agent gains a ``fetch_public_url`` tool that performs\na plain HTTP(S) GET to a user-provided public URL, returns the raw\ntext/file contents with metadata, and writes an audit-log entry per\nfetch.  SSRF protection blocks internal/private IP ranges; only\npublic, unauthenticated URLs are allowed.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no tool is offered.\n    timeout: Per-request HTTP timeout in seconds (default 10 s).\n    max_body_bytes: Maximum bytes of the response body to read and\n        return to the agent (default 1_048_576 \u2014 ~1 MB).\n    max_redirects: Maximum number of redirects to follow (default 5).\n    domain_allowlist: Optional list of hostnames (no protocol, no\n        path) that the tool is permitted to fetch.  When empty, any\n        public hostname is allowed (subject to SSRF checks).\n    rate_limit_requests: Maximum number of requests allowed within\n        ``rate_limit_window_seconds`` (default 10).\n    rate_limit_window_seconds: Sliding window in seconds for the\n        rate limiter (default 60.0).",
       "properties": {
         "enabled": {
           "default": false,
@@ -765,7 +765,7 @@
           "type": "boolean"
         },
         "timeout": {
-          "default": 30.0,
+          "default": 10.0,
           "title": "Timeout",
           "type": "number"
         },
@@ -778,6 +778,23 @@
           "default": 5,
           "title": "Max Redirects",
           "type": "integer"
+        },
+        "domain_allowlist": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Domain Allowlist",
+          "type": "array"
+        },
+        "rate_limit_requests": {
+          "default": 10,
+          "title": "Rate Limit Requests",
+          "type": "integer"
+        },
+        "rate_limit_window_seconds": {
+          "default": 60.0,
+          "title": "Rate Limit Window Seconds",
+          "type": "number"
         }
       },
       "title": "PublicFetchSettings",

@@ -1,98 +1,158 @@
-"""Public URL fetch tool — read raw content from any public forge.
+"""Scoped public-URL fetch tool for the chat agent.
 
-Fetches raw content from arbitrary public URLs with SSRF protection,
-size limits, and no authentication. Designed for reading files from
-public forges (GitLab, Bitbucket, codeberg, university GitLabs, etc.)
-that are not covered by the GitHub-scoped repo-study tools.
+Performs a plain HTTP(S) GET to a user-provided public URL, returns the
+raw text/file contents plus metadata (final URL, HTTP status, Content-Type,
+byte length, truncated flag, fetch timestamp), and writes an audit-log entry
+per fetch.
 
-Safe by construction: DNS-level SSRF check on every redirect hop,
-scheme restricted to http/https, bare IP addresses rejected, response
-body size-capped, short timeout.
+Safe by construction: only GET, SSRF protection blocks internal/private IP
+ranges, body read is size-capped, configurable domain allowlist, rate
+limiting, one request per call, short timeout.  Only public, unauthenticated
+URLs are allowed — 401/403 responses are reported clearly.
 
 Exposes :func:`build_public_fetch_tools` — a factory returning the LLM tool.
-Returns no tools when disabled, so the chat runs exactly as before.
+Returns no tools when disabled.  Also exposes :func:`load_public_fetch_skill`
+which returns the component skill markdown.
 """
 
 from __future__ import annotations
 
+import hashlib
 import ipaddress
+import json
 import logging
 import socket
+import time
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
-from urllib.parse import urljoin, urlparse
+from urllib.parse import urlparse
 
 import httpx
 
 if TYPE_CHECKING:
     from robotsix_chat.config import PublicFetchSettings
 
-__all__ = ["build_public_fetch_tools"]
+__all__ = ["build_public_fetch_tools", "load_public_fetch_skill"]
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# SSRF protection — private / internal IP ranges
+# ---------------------------------------------------------------------------
 
-def _check_host_public(hostname: str) -> str:
-    """Resolve *hostname* and verify all resolved IPs are public.
+_PRIVATE_NETWORKS: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = (
+    ipaddress.IPv4Network("0.0.0.0/8"),  # "this host on this network"
+    ipaddress.IPv4Network("127.0.0.0/8"),  # loopback
+    ipaddress.IPv4Network("10.0.0.0/8"),  # private
+    ipaddress.IPv4Network("172.16.0.0/12"),  # private
+    ipaddress.IPv4Network("192.168.0.0/16"),  # private
+    ipaddress.IPv4Network("169.254.0.0/16"),  # link-local
+    ipaddress.IPv6Network("::1/128"),  # loopback
+    ipaddress.IPv6Network("fc00::/7"),  # unique local
+    ipaddress.IPv6Network("fe80::/10"),  # link-local
+    ipaddress.IPv6Network("::ffff:0:0/96"),  # IPv4-mapped IPv6
+)
 
-    Returns an empty string on success, or an error message describing
-    what was blocked and why.
+# Sentinel network for explicit IPv4-mapped extraction (defence in depth —
+# the ::ffff:0:0/96 entry above catches mapped addresses directly, but we
+# also unpack the embedded IPv4 and check it against private IPv4 ranges).
+_IPV4_MAPPED = ipaddress.IPv6Network("::ffff:0:0/96")
+
+# Private IPv4 networks for IPv4-mapped extraction check.
+_PRIVATE_V4_NETWORKS: tuple[ipaddress.IPv4Network, ...] = (
+    ipaddress.IPv4Network("0.0.0.0/8"),
+    ipaddress.IPv4Network("127.0.0.0/8"),
+    ipaddress.IPv4Network("10.0.0.0/8"),
+    ipaddress.IPv4Network("172.16.0.0/12"),
+    ipaddress.IPv4Network("192.168.0.0/16"),
+    ipaddress.IPv4Network("169.254.0.0/16"),
+)
+
+
+def _host_is_private(host: str) -> bool:
+    """Return ``True`` when *host* resolves to any private/internal IP.
+
+    A host that cannot be resolved at all is treated as unsafe (returns
+    ``True``) so the tool rejects it rather than making a blind request.
+
+    IPv4-mapped IPv6 addresses (``::ffff:x.x.x.x``) are handled in two
+    layers: the mapped address itself is checked against the
+    ``::ffff:0:0/96`` entry in ``_PRIVATE_NETWORKS``, **and** the
+    embedded IPv4 is extracted and checked against the private IPv4
+    ranges — defence in depth so a mapped address cannot slip through.
     """
-    # Reject bare IPv6 addresses in brackets.
-    if hostname.startswith("[") and hostname.endswith("]"):
-        return f"Bare IP addresses are not allowed: {hostname!r}"
-
-    # Reject bare IPv4 / IPv6 addresses.
     try:
-        ipaddress.ip_address(hostname)
-        return f"Bare IP addresses are not allowed: {hostname!r}"
-    except ValueError:
-        pass  # Not a bare IP — a hostname; proceed to DNS check.
-
-    try:
-        addrs = socket.getaddrinfo(hostname, None)
-    except OSError as exc:
-        return f"DNS resolution failed for {hostname!r}: {exc}"
-
-    for addr in addrs:
-        ip_str = addr[4][0]
+        addrinfo = socket.getaddrinfo(host, None)
+    except socket.gaierror:
+        return True  # can't resolve — treat as unsafe
+    for _, _, _, _, sockaddr in addrinfo:
+        ip_str = sockaddr[0]
         try:
             ip = ipaddress.ip_address(ip_str)
         except ValueError:
-            return f"Invalid IP address {ip_str!r} resolved for {hostname!r}"
-        if not ip.is_global:
-            return f"Hostname {hostname!r} resolves to non-public IP {ip_str!r}"
-    return ""
+            continue
+        # Defence in depth: extract embedded IPv4 from mapped addresses
+        # and check against private IPv4 ranges.
+        if isinstance(ip, ipaddress.IPv6Address) and ip in _IPV4_MAPPED:
+            ipv4 = ip.ipv4_mapped
+            if ipv4 is not None:
+                for v4net in _PRIVATE_V4_NETWORKS:
+                    if ipv4 in v4net:
+                        return True
+        for net in _PRIVATE_NETWORKS:
+            if ip in net:
+                return True
+    return False
 
 
-def _validate_url(url: str) -> str:
-    """Validate *url* for scheme, hostname, and SSRF safety.
+# ---------------------------------------------------------------------------
+# Rate limiter — simple in-process sliding window
+# ---------------------------------------------------------------------------
 
-    Returns an empty string on success, or an error message.
+
+class _RateLimiter:
+    """Simple sliding-window rate limiter for a single tool.
+
+    Not thread-safe — the chat server runs async single-threaded, so a
+    plain list of timestamps is sufficient.
     """
-    parsed = urlparse(url)
-    hostname = parsed.hostname or ""
 
-    if parsed.scheme not in ("http", "https"):
-        return (
-            f"Unsupported URL scheme {parsed.scheme!r} — "
-            "only http and https are allowed."
-        )
+    def __init__(self, max_requests: int, window_seconds: float) -> None:
+        self._max: int = max_requests
+        self._window: float = window_seconds
+        self._timestamps: list[float] = []
 
-    if not hostname:
-        return f"URL {url!r} has no hostname."
+    def allow(self, now: float | None = None) -> bool:
+        """Return ``True`` when another request is allowed right now."""
+        if self._max <= 0:
+            return False
+        ts = now or time.monotonic()
+        cutoff = ts - self._window
+        # Prune expired entries
+        self._timestamps = [t for t in self._timestamps if t > cutoff]
+        if len(self._timestamps) >= self._max:
+            return False
+        self._timestamps.append(ts)
+        return True
 
-    return _check_host_public(hostname)
+
+def load_public_fetch_skill() -> str:
+    """Return the public-fetch component skill markdown."""
+    skill_path = Path(__file__).parent / "skill.md"
+    try:
+        return skill_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ""
 
 
 def build_public_fetch_tools(
     settings: PublicFetchSettings,
 ) -> list[Callable[..., Any]]:
-    """Return the ``fetch_public_url`` tool, or ``[]`` when disabled.
+    """Return the ``fetch_public_url`` tool, or an empty list when disabled.
 
     Args:
-        settings: PublicFetch configuration (``enabled`` master switch,
-            timeout, body cap, max redirects).
+        settings: PublicFetch configuration.
 
     Returns:
         A single-element list containing the ``fetch_public_url`` async
@@ -102,89 +162,240 @@ def build_public_fetch_tools(
     if not settings.enabled:
         return []
 
+    allowed_hosts: set[str] = set(settings.domain_allowlist)
+    rate_limiter = _RateLimiter(
+        settings.rate_limit_requests, settings.rate_limit_window_seconds
+    )
+
     async def fetch_public_url(url: str) -> str:
-        """Fetch raw content from a public URL.
+        """Fetch a public URL and return raw text contents with metadata.
 
-        Downloads the content at *url* and returns the body text.
-        Only public-internet hosts are reachable — private, loopback,
-        link-local, and multicast addresses are blocked to prevent SSRF.
-        The response body is capped at the configured size limit
-        (default 1 MB).
+        Performs a single HTTP(S) GET to *url*, following redirects, and
+        returns the final HTTP status code, the final URL after any
+        redirects, ``Content-Type`` header, response body size (bytes),
+        the raw body text (truncated at the configured cap), a truncated
+        flag, and a fetch timestamp.
 
-        Use this to read a raw file, document, or repository listing
-        from any public forge (GitLab, Bitbucket, codeberg, university
-        GitLabs, etc.) — anything not covered by the GitHub-scoped
-        fetch_repo_for_study.
+        Safety: only public URLs on the open internet are allowed — SSRF
+        protection blocks internal/private IP ranges.  Only GET, no auth
+        headers.  401/403 responses are reported clearly.  Every fetch is
+        audited at WARNING log level.
 
         Args:
-            url: The fully-qualified http:// or https:// URL to fetch.
+            url: The fully-qualified http(s):// URL to fetch.
 
         Returns:
-            The body text (up to the size limit), prefixed by a status
-            summary line, or an error message.
+            A JSON string with ``url``, ``final_url``, ``status_code``,
+            ``content_type``, ``body_size_bytes``, ``text`` (the raw body,
+            possibly truncated), ``truncated`` (bool), ``fetched_at``
+            (ISO-8601 UTC), and ``error`` (empty on success).
 
         """
-        # --- Initial URL validation ---
-        err = _validate_url(url)
-        if err:
-            return f"SSRF check failed: {err}"
+        result: dict[str, Any] = {
+            "url": url,
+            "final_url": url,
+            "status_code": None,
+            "content_type": None,
+            "body_size_bytes": 0,
+            "text": "",
+            "truncated": False,
+            "fetched_at": _utcnow_iso(),
+            "error": "",
+        }
 
+        # --- URL scheme validation ---
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            result["error"] = (
+                f"Unsupported URL scheme {parsed.scheme!r} — "
+                "only http and https are allowed."
+            )
+            _audit(result, "blocked:scheme")
+            return json.dumps(result, ensure_ascii=False)
+
+        hostname = parsed.hostname or ""
+        if not hostname:
+            result["error"] = "URL has no hostname — cannot fetch."
+            _audit(result, "blocked:no-hostname")
+            return json.dumps(result, ensure_ascii=False)
+
+        # --- Hostname allowlist check ---
+        if allowed_hosts and hostname not in allowed_hosts:
+            result["error"] = (
+                f"Hostname {hostname!r} is not in the public_fetch domain "
+                f"allowlist. Allowed hosts: {sorted(allowed_hosts)}"
+            )
+            _audit(result, "blocked:allowlist")
+            return json.dumps(result, ensure_ascii=False)
+
+        # --- SSRF check (initial hostname) ---
+        if _host_is_private(hostname):
+            result["error"] = (
+                f"Hostname {hostname!r} resolves to a private/internal IP "
+                "address — SSRF protection blocked the request."
+            )
+            _audit(result, "blocked:ssrf")
+            return json.dumps(result, ensure_ascii=False)
+
+        # --- Rate limiting ---
+        if not rate_limiter.allow():
+            result["error"] = (
+                f"Rate limit exceeded — "
+                f"{settings.rate_limit_requests} requests per "
+                f"{settings.rate_limit_window_seconds:.0f}s window."
+            )
+            _audit(result, "blocked:rate-limit")
+            return json.dumps(result, ensure_ascii=False)
+
+        # --- HTTP GET with manual redirect following (SSRF check on each hop) ---
+        # Uses httpx streaming so the body cap is enforced at the network-
+        # read level — a malicious server cannot exhaust memory by sending
+        # gigabytes before the cap is applied.
         try:
             async with httpx.AsyncClient(
                 timeout=settings.timeout,
                 follow_redirects=False,
             ) as client:
                 current_url = url
-                redirect_count = 0
+                redirects_followed = 0
 
-                while redirect_count <= settings.max_redirects:
-                    response = await client.get(current_url)
+                while True:
+                    parsed_current = urlparse(current_url)
+                    current_host = parsed_current.hostname or ""
 
-                    # Follow redirects manually, checking each target.
-                    if response.status_code in (301, 302, 303, 307, 308):
-                        location = response.headers.get("Location", "")
-                        if not location:
-                            return (
-                                f"Redirect ({response.status_code}) "
-                                f"without a Location header for {current_url}."
+                    # SSRF check on every hop (redirect targets included)
+                    if _host_is_private(current_host):
+                        result["error"] = (
+                            f"Hostname {current_host!r} resolves to a "
+                            "private/internal IP address — SSRF protection "
+                            "blocked the request."
+                        )
+                        result["final_url"] = current_url
+                        _audit(result, "blocked:ssrf-redirect")
+                        return json.dumps(result, ensure_ascii=False)
+
+                    async with client.stream("GET", current_url) as response:
+                        result["final_url"] = str(response.url)
+
+                        # Follow redirect?
+                        if response.status_code in (301, 302, 303, 307, 308):
+                            redirects_followed += 1
+                            if redirects_followed > settings.max_redirects:
+                                result["error"] = (
+                                    f"Too many redirects "
+                                    f"(max {settings.max_redirects}) for {url}"
+                                )
+                                _audit(result, "error:too-many-redirects")
+                                return json.dumps(result, ensure_ascii=False)
+                            next_url = response.headers.get("Location", "")
+                            if not next_url:
+                                result["error"] = (
+                                    f"Redirect ({response.status_code}) "
+                                    "with no Location header"
+                                )
+                                _audit(result, "error:redirect-no-location")
+                                return json.dumps(result, ensure_ascii=False)
+                            # Drain the redirect body to free the connection
+                            async for _ in response.aiter_bytes(8192):
+                                pass
+                            current_url = str(
+                                httpx.URL(current_url).join(httpx.URL(next_url))
                             )
-                        # Resolve relative redirect targets.
-                        next_url = urljoin(current_url, location)
-                        err = _validate_url(next_url)
-                        if err:
-                            return f"Redirect target rejected for {current_url}: {err}"
-                        redirect_count += 1
-                        current_url = next_url
-                        continue
+                            continue
 
-                    # Not a redirect — process the final response.
-                    response.raise_for_status()
+                        # Final response — stream body with cap
+                        result["status_code"] = response.status_code
+                        result["content_type"] = response.headers.get(
+                            "content-type", ""
+                        )
 
-                    content_type = response.headers.get("content-type", "")
-                    raw_body = response.text[: settings.max_body_bytes]
-                    body_size = len(response.text)
+                        chunks: list[bytes] = []
+                        total = 0
+                        async for chunk in response.aiter_bytes(65536):
+                            total += len(chunk)
+                            if total <= settings.max_body_bytes:
+                                chunks.append(chunk)
+                            else:
+                                # Partial chunk fills the remainder, then stop
+                                already = sum(len(c) for c in chunks)
+                                remaining = settings.max_body_bytes - already
+                                if remaining > 0:
+                                    chunks.append(chunk[:remaining])
+                                result["truncated"] = True
+                                break  # enforce cap at network-read level
 
-                    summary = (
-                        f"Fetched {response.url}\n"
-                        f"Status: {response.status_code}\n"
-                        f"Content-Type: {content_type}\n"
-                        f"Body size: {body_size} bytes"
-                    )
-                    if body_size > settings.max_body_bytes:
-                        summary += f" (truncated to {settings.max_body_bytes} bytes)"
-                    return f"{summary}\n\n{raw_body}"
+                        body_bytes = b"".join(chunks)
+                        result["body_size_bytes"] = (
+                            total if not result["truncated"] else len(body_bytes)
+                        )
+                        result["text"] = body_bytes.decode("utf-8", errors="replace")
 
-                return f"Too many redirects (max {settings.max_redirects}) for {url}"
+                        # Handle error status codes
+                        if response.status_code >= 400:
+                            if response.status_code in (401, 403):
+                                result["error"] = (
+                                    f"Server returned "
+                                    f"{response.status_code} — URL requires "
+                                    "authentication. Only public, "
+                                    "unauthenticated URLs are supported."
+                                )
+                            else:
+                                result["error"] = (
+                                    f"HTTP {response.status_code}: "
+                                    f"{response.reason_phrase}"
+                                )
+                            _audit(
+                                result,
+                                f"error:http-{response.status_code}",
+                            )
+                            return json.dumps(result, ensure_ascii=False)
+
+                        # Success
+                        _audit(result, "success")
+                        return json.dumps(result, ensure_ascii=False)
 
         except httpx.TimeoutException:
-            return f"Request timed out after {settings.timeout}s: {url}"
-        except httpx.HTTPStatusError as exc:
-            return (
-                f"HTTP {exc.response.status_code} for {exc.response.url}\n"
-                f"{exc.response.text[: settings.max_body_bytes]}"
-            )
+            result["error"] = f"Request timed out after {settings.timeout}s: {url}"
+            _audit(result, "error:timeout")
+            return json.dumps(result, ensure_ascii=False)
         except Exception as exc:
             logger.exception("fetch_public_url failed for %s", url)
-            return f"{type(exc).__name__}: {exc}"
+            result["error"] = f"{type(exc).__name__}: {exc}"
+            _audit(result, "error:exception")
+            return json.dumps(result, ensure_ascii=False)
 
     return [fetch_public_url]
+
+
+# ---------------------------------------------------------------------------
+# Helpers
+# ---------------------------------------------------------------------------
+
+
+def _utcnow_iso() -> str:
+    """Return current UTC time as an ISO-8601 string with ``Z`` suffix."""
+    return time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+
+
+def _audit(result: dict[str, Any], disposition: str) -> None:
+    """Write an audit-log entry at WARNING level.
+
+    The log line carries the URL, final URL, status code, body size, a
+    SHA-256 hash of the response text (empty on error), and the disposition
+    tag so operators can trace every fetch.
+    """
+    text = result.get("text") or ""
+    sha = (
+        hashlib.sha256(text.encode("utf-8", errors="replace")).hexdigest()
+        if text
+        else ""
+    )
+    logger.warning(
+        "public_fetch: disposition=%s url=%s final_url=%s status=%s size=%s sha256=%s",
+        disposition,
+        result.get("url", ""),
+        result.get("final_url", ""),
+        result.get("status_code"),
+        result.get("body_size_bytes", 0),
+        sha,
+    )
