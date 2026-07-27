@@ -471,24 +471,7 @@ async def github_job_log_endpoint(request: Request) -> PlainTextResponse:
     repo_full_name = f"{owner}/{repo}"
 
     # -- call --------------------------------------------------------------
-    client = DirectRepoClient(direct_repo)
-
-    # Check installation scope (404 if repo not accessible).
-    try:
-        allowed = await client.list_installation_repos()
-    except Exception as exc:
-        logger.exception("Failed to list installation repos")
-        raise HTTPException(
-            status_code=502, detail=f"GitHub API error: {exc}"
-        ) from None
-
-    if repo_full_name not in allowed:
-        raise HTTPException(
-            status_code=404,
-            detail=(
-                f"repo '{repo_full_name}' is not in the GitHub App installation scope"
-            ),
-        )
+    client = await _check_installation_scope(request, repo_full_name)
 
     try:
         log_text = await client.get_job_log(repo_full_name, job_id)
