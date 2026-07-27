@@ -1,0 +1,1 @@
+ci_fix: out-of-scope CI failure — Python CI (shared) / Tests — test_chat_returns_409_when_awaiting_approval in tests/chat/server/test_autonomous_endpoints.py (autonomous_runner fixture — needs a non-existent persist_path) or src/robotsix_chat/autonomous/runner.py (_load_sessions — defensively handle non-real paths)
