@@ -209,6 +209,35 @@ self-closing after a fixed number of failures.
 | `subsessions.mill_recovery_max_backoff_seconds`     | `3600.0` | Maximum backoff cap (seconds) — backoff never exceeds this.                     |
 | `subsessions.mill_recovery_max_retries`             | `10`     | Max retries before the subsession is permanently closed.                        |
 
+## Transient-error retry behaviour
+
+Periodic subsessions that talk to an external LLM API (e.g. OpenRouter) may encounter **transient**
+upstream errors — a Pydantic validation error from the chat-completions endpoint, a 503, or a
+dropped connection. These are distinct from mill-recovery errors (see above) because the mill is
+reachable but the LLM provider itself hiccups.
+
+When a periodic subsession's agent turn fails with a recognised transient error:
+
+1. The turn is retried with **exponential backoff** — the first retry sleeps
+   `subsessions.transient_error_backoff_base` (default 1.0 s), then doubles on each subsequent retry
+   up to `subsessions.transient_error_backoff_cap` (default 30.0 s).
+2. A warning is logged with the error details for debugging.
+3. If the turn succeeds on a retry, the periodic cycle continues normally — no result is lost.
+4. If all retries are exhausted (`subsessions.transient_error_max_retries + 1` total attempts), the
+   run is **skipped gracefully**: the subsession stays alive (status `SLEEPING`), a
+   `"TRANSIENT_ERROR"` result is recorded, and the schedule continues with the next interval. The
+   subsession is **not** permanently failed — it will retry on its next scheduled tick.
+
+This behaviour applies **only** to `PERIODIC` subsessions. `TASK` and `USER_CHAT` subsessions
+propagate transient errors immediately and fail — they are not retried, because those subsessions
+run once and a transient failure would silently lose the work.
+
+| Config key                                 | Default | Description                                                               |
+| ------------------------------------------ | ------- | ------------------------------------------------------------------------- |
+| `subsessions.transient_error_max_retries`  | `3`     | Max retry attempts (besides the initial try) before the cycle is skipped. |
+| `subsessions.transient_error_backoff_base` | `1.0`   | Initial backoff in seconds — doubles each retry.                          |
+| `subsessions.transient_error_backoff_cap`  | `30.0`  | Maximum backoff cap in seconds — backoff never exceeds this.              |
+
 ## How it works under the hood
 
 01. `spawn_subsession(kind="periodic", ...)` launches an asyncio worker that runs one agent turn per
