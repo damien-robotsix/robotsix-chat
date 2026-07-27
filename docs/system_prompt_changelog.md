@@ -17,7 +17,7 @@ were each producing separate outcome notices. The assistant would manually merge
 still saw a long list of fragmented individual notices before consolidation. The new rule teaches
 the agent to batch outcomes proactively, reducing noise when the user is not actively conversing.
 
-**SHA256:** `0971fff6b75c796bf47674d1d813002a8b6a5802356c4dd44eece65a81a40f69`
+**SHA256:** `cc09561088cbb302d4a4dd8a37d4089d063272d12cf720dcd0002ca3ebbbd01f`
 
 ## v61 — 2026-07-24 — recalled-memory-hallucination-flagged-bu-67ab
 
