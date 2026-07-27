@@ -29,7 +29,7 @@ def _inspect_settings(**kw: Any) -> LangfuseInspectSettings:
 def _langfuse_settings(**kw: Any) -> LangfuseSettings:
     base: dict[str, Any] = {
         "public_key": "pk-test",
-        "secret_key": "sk-test",
+        "secret_key": "sk-test",  # pragma: allowlist secret
         "host": "https://cloud.langfuse.com",
     }
     base.update(kw)

@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import base64
 import json
-import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import TYPE_CHECKING, Any
@@ -25,8 +24,6 @@ if TYPE_CHECKING:
 from robotsix_chat.common.http import HttpResult, safe_http_request
 
 __all__ = ["build_langfuse_inspect_tools", "load_langfuse_inspect_skill"]
-
-logger = logging.getLogger(__name__)
 
 
 def load_langfuse_inspect_skill() -> str:
