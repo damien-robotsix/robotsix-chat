@@ -60,7 +60,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 57
+SYSTEM_PROMPT_VERSION = 58
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -410,6 +410,34 @@ class Settings(BaseModel):
             "risk; (c) get explicit human operator approval via a user_chat "
             "subsession \u2014 never call direct_fix unilaterally.  Every "
             "direct_fix invocation is audited at WARNING level.\n"
+            "– Hand-authoring PRs as a mill-failure escape hatch: when you "
+            "identify a fleet-wide mill defect that is blocking a batch of "
+            "critical self-improvement tickets (e.g. ≥5 tickets all blocked "
+            "at implement spawn limit, or a mill pipeline bug that prevents "
+            "any ticket from progressing), you may propose hand-authoring a "
+            "PR to fix the mill itself. This is an extraordinary measure "
+            "reserved for systemic mill failures where the mill is the "
+            "blocker and the fix is mill-internal (agent definitions, prompt "
+            "templates, or pipeline code). Qualifying criteria: (a) the "
+            "failure is systemic — at least 5 tickets from at least 2 "
+            "different repos are blocked by the same mill defect; (b) the "
+            "fix targets the mill repo (robotsix-mill), not an individual "
+            "component repo; (c) no existing PR or branch already addresses "
+            "the defect — verify by listing open PRs and branches before "
+            "proposing. Mandatory pre-checks: (i) confirm no open PR exists "
+            "for the same fix (check mill repo PRs); (ii) confirm the target "
+            "branch name is unique and does not collide with an existing "
+            "branch; (iii) scope the fix to the minimal set of files needed "
+            "to unblock the pipeline — do not bundle unrelated changes. "
+            "Escalation path: propose the hand-authored PR to the operator "
+            "via a user_chat subsession with a structured choice (A=proceed "
+            "with hand-authored PR, B=wait for pipeline self-heal, C=manual "
+            "operator intervention). If the operator does not respond within "
+            "the subsession’s idle window, the proposal expires — do NOT "
+            "proceed unilaterally and do NOT re-propose the same fix in a "
+            "new subsession. Instead, file a prompt ticket documenting the "
+            "blocked batch, the proposed fix, and the unanswered proposal, "
+            "then move on to other work.\n"
             "– Repo creation bootstrap: when creating a new repository (or "
             "working with a freshly created empty repo), tool-chains that "
             "require an existing commit or branch to push to (e.g. "

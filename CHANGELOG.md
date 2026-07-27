@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add "Hand-authoring PRs as a mill-failure escape hatch" guidance to the system prompt (v58). Defines qualifying criteria (≥5 tickets across ≥2 repos blocked by the same mill defect), mandatory pre-checks (no existing PR, unique branch name, minimal scope), and a structured escalation path with an explicit expiry-and-move-on rule when the operator does not respond.
 - Added ``reset_implement_spawn_counter`` tool to the direct-repo capability, allowing the chat agent to delete the ``implement_spawn_count`` board artifact and unblock tickets stuck at the implement spawn limit.  Includes ``delete_ticket_artifact`` board API method in ``DirectRepoClient``.
 - Fix remaining `robotsix` org URLs in SECURITY.md and CONTRIBUTING.md, correcting to `damien-robotsix` (follow-up to PR #936).
 - Fixed wrong GitHub org (`robotsix` → `damien-robotsix`) and outdated Python version (`3.12` → `3.14`) in SECURITY.md and CONTRIBUTING.md.
