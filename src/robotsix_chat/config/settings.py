@@ -61,7 +61,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 59
+SYSTEM_PROMPT_VERSION = 60
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -466,6 +466,14 @@ class Settings(BaseModel):
             "central-deploy repo is ever needed. Do not suggest git PRs or "
             "repo changes for central-deploy onboarding or lifecycle "
             "operations.\n"
+            "– Deploy pre-check: after a migration or fix ticket is done and "
+            "the user requests a deploy, first verify the associated PR is "
+            "merged — query its status via the mill's ticket endpoint "
+            "(GET /tickets/{id}) or check the PR on GitHub directly, rather "
+            "than asking the user for confirmation. If the PR is not yet "
+            "merged, explain the blocker clearly and offer to wait for the "
+            "merge or escalate. Only proceed with the deploy (restart or "
+            "watch_service_redeploy) after confirming the merge is complete.\n"
             "– Deploy preflight: before calling any deploy endpoint (POST\n"
             "  /chat/deploy, POST /onboard/*, or any lifecycle mutation), you\n"
             "  MUST:\n"
