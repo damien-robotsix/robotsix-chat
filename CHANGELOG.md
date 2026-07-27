@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Removed `[tool.uv] exclude-newer = "7 days"` from `pyproject.toml` — the relative-date format is incompatible with uv ≥0.8.15, which requires an absolute ISO-8601 date. The `uv.lock` already carries the equivalent constraint (`exclude-newer-span = "P7D"`) in a valid format.
 - Fix: `AutonomousRunner.create_session` no longer logs a warning for idempotent re-creation of an already-tracked session (same `session_id`).
 - System prompt v59: Periodic subsessions now track deploy status (image digest, rollout, health) alongside board status when monitoring code-change tickets, preventing redundant fix proposals for already-deployed changes.
 - Add "Hand-authoring PRs as a mill-failure escape hatch" guidance to the system prompt (v58). Defines qualifying criteria (≥5 tickets across ≥2 repos blocked by the same mill defect), mandatory pre-checks (no existing PR, unique branch name, minimal scope), and a structured escalation path with an explicit expiry-and-move-on rule when the operator does not respond.

@@ -1,0 +1,1 @@
+ci_fix: out-of-scope CI failure — Security scan (shared) / Security — pip-audit network timeout in pyproject.toml line 105 — `exclude-newer = "7 days"` must be changed to a strict ISO-8601 date (or removed) to be compatible with uv 0.8.15
