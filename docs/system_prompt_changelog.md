@@ -300,6 +300,27 @@ respect explicit user directives without weakening safety for ambiguous cases.
 
 **SHA256:** `ab8e8246f0e2ec6d64e0a4008f4aac061a4ee7cafb4387a12d2899e4c950e548`
 
+______________________________________________________________________
+
+## v59 — 2026-07-27 — validate-proposed-solutions-against-live-7756
+
+**Summary:** Add a mandatory live-deploy-state pre-check to the "Hand-authoring PRs as a
+mill-failure escape hatch" section. Before proposing any mill-targeting fix (hand-authored PR,
+ticket, or rework), the assistant must first verify the live mill deploy state: use the deploy API
+to check the running image digest and commit on the mill service, then check the mill repo's
+recently merged PRs to confirm the defect has not already been fixed in a deploy that occurred since
+the assistant last checked. A defect observed hours ago — or that surfaced in recalled memory or a
+periodic-note summary — may already be resolved; building a fix on outdated live-state assumptions
+wastes implementation effort and delays actual remediation.
+
+**Rationale:** Session 8b03ed2ca8f946629bdee029f2efaaa7 showed the assistant proposing a manual PR
+to fix a fleet-wide implement-stage bug without first verifying the current deploy state. Live
+checks later revealed the fix was already merged on mill main. The assistant built a plan on
+recalled/periodic notes without cross-referencing live deploy status, leading to a delayed
+correction.
+
+**SHA256:** `c035679dd87382686fddd6d302a8a11930eb9e5e0ed8ead83213876a971d814c`
+
 ## v58 — 2026-07-27 — guidance-for-hand-authoring-prs-as-escap-1b2e
 
 **Summary:** Add a "Hand-authoring PRs as a mill-failure escape hatch" bullet to the Mill & Deploy
