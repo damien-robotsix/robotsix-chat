@@ -494,6 +494,29 @@ def build_direct_repo_tools(
                 f"Implement spawn counter reset for ticket {ticket_id}. "
                 "The ticket can now be re-spawned."
             )
+
+        # Fall back to the roster-based path when available.
+        if component_request is not None:
+            logger.info(
+                "reset_implement_spawn_counter direct path failed for %s; "
+                "falling back to roster path",
+                ticket_id,
+            )
+            resp = await component_request(
+                "mill",
+                "DELETE",
+                f"/tickets/{ticket_id}/artifacts/implement_spawn_count",
+            )
+            if resp.startswith("HTTP 2"):
+                return (
+                    f"Implement spawn counter reset for ticket {ticket_id} "
+                    "(via roster path). The ticket can now be re-spawned."
+                )
+            return (
+                f"Error: could not reset implement spawn counter for ticket "
+                f"{ticket_id} via roster path: {resp}"
+            )
+
         return (
             f"Error: could not reset implement spawn counter for ticket "
             f"{ticket_id}.  Verify the ticket id and board API connectivity "

@@ -362,7 +362,7 @@ class DirectRepoSettings(BaseModel):
     github_app_private_key: SecretStr = SecretStr("")
     github_app_installation_id: str = ""
     github_api_base_url: str = "https://api.github.com"
-    board_api_base_url: str = "http://127.0.0.1:8077"
+    board_api_base_url: str = "http://mill:8077"
     board_api_token: SecretStr = SecretStr("")
     timeout: float = 30.0
     model_config = ConfigDict(extra="forbid")
