@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Extracted shared `_request` helper method in `LifecycleClient`, replacing duplicated boilerplate across `_get`, `_get_raw`, `_post`, and `_put`.
+- Extract `_list_subsessions` helper from duplicate registry-check boilerplate in `autonomous/runner.py`.
 - System prompt: added guidance to compress monitor outcomes to delta-only when the user was recently told about a ticket's state, suppressing stale IDs, timestamps, PR URLs, and lifecycle chains.
 - Add block cascade triage instruction to the system prompt: when a periodic monitor reports a stabilized cascade (≥10 blocked tickets across ≥2 boards, no change for ≥3 runs), the assistant must not bulk-resume and instead present a categorized failure-mode summary grouped by root cause, with severity labels, and ask the operator to choose between per-board triage or individual-ticket focus. (prompt v65)
 - Add bulk-resume failure-mode classification heuristic to the system prompt (v65). Before bulk-resuming blocked tickets, the assistant must now query each ticket's history to infer failure categories and abort if >2 distinct modes are detected, surfacing a categorized diagnosis instead.

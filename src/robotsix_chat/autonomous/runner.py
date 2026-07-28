@@ -8,7 +8,7 @@ import logging
 import time
 from collections.abc import Callable, Coroutine
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 from robotsix_chat.autonomous.models import AutonomousSession, AutonomousState
 from robotsix_chat.chat.events import (
@@ -667,6 +667,21 @@ class AutonomousRunner:
 
     # -- auto-continue loop -------------------------------------------------
 
+    def _list_subsessions(self, session_id: str) -> list[Any]:
+        """Return the subsession list owned by *session_id*, or an empty list.
+
+        Guards against a missing registry or a registry error — callers
+        receive an empty list on any failure path so ``any()`` predicates
+        evaluate to ``False``.
+        """
+        reg = self._subsession_registry
+        if reg is None:
+            return []
+        try:
+            return cast("list[Any]", reg.list_for_owner(session_id))
+        except Exception:
+            return []
+
     def _has_active_subsessions(self, session_id: str) -> bool:
         """Return True when the session has *any* active subsession.
 
@@ -674,14 +689,9 @@ class AutonomousRunner:
         monitors — used as a pre-completion gate so the session is never
         marked completed while owned background work is still running.
         """
-        reg = self._subsession_registry
-        if reg is None:
-            return False
-        try:
-            subs = reg.list_for_owner(session_id)
-        except Exception:
-            return False
-        return any(getattr(s, "is_active", False) for s in subs)
+        return any(
+            getattr(s, "is_active", False) for s in self._list_subsessions(session_id)
+        )
 
     def _has_pending_subsessions(self, session_id: str) -> bool:
         """Return True when the session has active non-periodic subsessions.
@@ -691,17 +701,10 @@ class AutonomousRunner:
         user_chat subsessions (which have finite lifetimes) block the
         auto-continue loop.
         """
-        reg = self._subsession_registry
-        if reg is None:
-            return False
-        try:
-            subs = reg.list_for_owner(session_id)
-        except Exception:
-            return False
         return any(
             getattr(s, "is_active", False)
             and getattr(s, "kind", None) not in (None, "periodic")
-            for s in subs
+            for s in self._list_subsessions(session_id)
         )
 
     async def _wait_before_continue(self, session_id: str) -> None:
