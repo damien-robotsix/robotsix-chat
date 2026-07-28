@@ -18,7 +18,6 @@ from robotsix_chat.chat.events import (
     autonomous_token_frame,
 )
 from robotsix_chat.subsessions.worker import _is_no_change
-from robotsix_chat.subsessions.worker import _is_no_change
 
 if TYPE_CHECKING:
     from robotsix_chat.chat.conversation import ConversationStore
