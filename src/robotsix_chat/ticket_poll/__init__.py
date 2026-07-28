@@ -2,12 +2,12 @@
 
 Provides ``ticket_poll(ticket_id)``, a dedicated tool that queries the mill
 board API directly via HTTP (bypassing the component roster) and returns the
-ticket's current state.  The tool is always available when
-``board_api_base_url`` is configured, so periodic ticket monitors have a
-reliable fallback when ``component_request`` is absent from the agent's tool
-list.
+ticket's current state.  Also provides ``ticket_poll_batch(ticket_ids)`` for
+bulk read-only triage — fetches full ticket data (state, events, history,
+cycle_count) for multiple tickets concurrently, enabling failure-mode
+classification without N sequential round-trips.
 
-Exposes :func:`build_ticket_poll_tools` — a factory returning the LLM tool.
+Exposes :func:`build_ticket_poll_tools` — a factory returning the LLM tools.
 Returns no tools when ``board_api_base_url`` is empty.  Also exposes
 :func:`load_ticket_poll_skill` which returns the component skill markdown
 for injection into the agent instruction.
@@ -15,6 +15,7 @@ for injection into the agent instruction.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import Callable
