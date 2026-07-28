@@ -1075,6 +1075,240 @@ class DirectRepoClient:
         except Exception as exc:
             return f"Error fetching workflow run annotations: {exc}"
 
+    # -- file-content helpers (for apply_patch_to_file) -------------------
+
+    async def get_file_content(
+        self,
+        repo_full_name: str,
+        path: str,
+        ref: str | None = None,
+    ) -> tuple[str, str]:
+        """Fetch a single file's content and blob SHA from the GitHub Contents API.
+
+        Calls ``GET /repos/{owner}/{repo}/contents/{path}``.
+
+        Args:
+            repo_full_name: ``"owner/name"``.
+            path: File path relative to the repo root.
+            ref: Optional branch/commit SHA (defaults to the repo default branch).
+
+        Returns:
+            ``(decoded_text_content, blob_sha)``.
+
+        Raises:
+            RuntimeError: On any API or decoding failure.
+            ValueError: If the path is a directory, not a file.
+
+        """
+        api_path = f"/repos/{repo_full_name}/contents/{path}"
+        if ref:
+            api_path += f"?ref={ref}"
+        data = await self._get_json(api_path)
+
+        # GitHub returns a JSON array for directories.
+        if isinstance(data, list):
+            raise ValueError(
+                f"Path '{path}' in {repo_full_name} is a directory, not a file."
+            )
+
+        encoding = data.get("encoding", "")
+        content_b64 = data.get("content", "")
+        sha: str = data.get("sha", "")
+
+        if encoding != "base64":
+            raise RuntimeError(
+                f"Unexpected encoding '{encoding}' for {path} in {repo_full_name}."
+            )
+
+        try:
+            text = _b64decode(content_b64).decode("utf-8")
+        except (ValueError, UnicodeDecodeError) as exc:
+            raise RuntimeError(
+                f"Failed to decode content for {path} in {repo_full_name}: {exc}"
+            ) from exc
+
+        return text, sha
+
+    @staticmethod
+    def apply_patch(original: str, patch_text: str) -> str:
+        """Apply a unified diff to *original* and return the patched content.
+
+        Supports the standard unified diff format produced by ``diff -u``
+        and ``git diff``::
+
+            --- a/path
+            +++ b/path
+            @@ -start,count +start,count @@
+             context
+            -removed
+            +added
+             context
+
+        Multiple hunks (multiple ``@@`` headers) are supported.
+
+        Args:
+            original: The original file content.
+            patch_text: The unified diff to apply.
+
+        Returns:
+            The patched file content.
+
+        Raises:
+            ValueError: If a hunk cannot be applied (context mismatch).
+
+        """
+        import re
+
+        orig_lines = original.splitlines(keepends=True)
+        patch_lines = patch_text.splitlines(keepends=True)
+
+        result = list(orig_lines)
+        cumulative_offset = 0  # net lines added (positive) or removed (negative)
+
+        idx = 0
+        while idx < len(patch_lines):
+            line = patch_lines[idx]
+
+            # Skip file headers (--- / +++)
+            if line.startswith("--- ") or line.startswith("+++ "):
+                idx += 1
+                continue
+
+            # Parse hunk header: @@ -old_start,old_count +new_start,new_count @@
+            m = re.match(
+                r"^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@",
+                line,
+            )
+            if not m:
+                idx += 1
+                continue
+
+            old_start = int(m.group(1))
+            idx += 1
+
+            # Collect hunk body lines
+            hunk_lines: list[str] = []
+            while idx < len(patch_lines) and not patch_lines[idx].startswith("@@"):
+                hunk_lines.append(patch_lines[idx])
+                idx += 1
+
+            # Apply the hunk
+            orig_pos = old_start - 1 + cumulative_offset  # 0-indexed in *result*
+            hunk_offset_add = 0
+            hunk_offset_del = 0
+            hj = 0
+            while hj < len(hunk_lines):
+                hl = hunk_lines[hj]
+                if hl.startswith(" "):  # context line
+                    if orig_pos >= len(result):
+                        raise ValueError(
+                            f"Hunk at line {old_start}: context line {hj + 1} "
+                            f"exceeds file length ({len(result)} lines)."
+                        )
+                    actual = result[orig_pos].rstrip("\n")
+                    expected = hl[1:].rstrip("\n")
+                    if actual != expected:
+                        raise ValueError(
+                            f"Hunk at line {old_start}: context mismatch at "
+                            f"file line {orig_pos + 1}. "
+                            f"Expected: {expected!r}, got: {actual!r}"
+                        )
+                    orig_pos += 1
+                    hj += 1
+                elif hl.startswith("-"):  # remove line
+                    if orig_pos >= len(result):
+                        raise ValueError(
+                            f"Hunk at line {old_start}: removal at line {hj + 1} "
+                            f"exceeds file length ({len(result)} lines)."
+                        )
+                    actual = result[orig_pos].rstrip("\n")
+                    expected = hl[1:].rstrip("\n")
+                    if actual != expected:
+                        raise ValueError(
+                            f"Hunk at line {old_start}: removal mismatch at "
+                            f"file line {orig_pos + 1}. "
+                            f"Expected to remove: {expected!r}, got: {actual!r}"
+                        )
+                    del result[orig_pos]
+                    hunk_offset_del += 1
+                    # Don't advance orig_pos — line was removed
+                    hj += 1
+                elif hl.startswith("+"):  # add line
+                    result.insert(orig_pos, hl[1:])
+                    orig_pos += 1
+                    hunk_offset_add += 1
+                    hj += 1
+                elif hl == "\n" or hl == "":
+                    # Empty context line (no leading space)
+                    if orig_pos < len(result):
+                        actual = result[orig_pos]
+                        if actual not in ("\n", ""):
+                            raise ValueError(
+                                f"Hunk at line {old_start}: expected empty "
+                                f"context line, got: {actual!r}"
+                            )
+                    orig_pos += 1
+                    hj += 1
+                elif hl.startswith("\\"):  # "No newline at end of file" marker
+                    hj += 1
+                else:
+                    # Unknown line — skip
+                    hj += 1
+
+            cumulative_offset += hunk_offset_add - hunk_offset_del
+
+        return "".join(result)
+
+    async def push_patched_file(
+        self,
+        *,
+        repo_full_name: str,
+        branch_name: str,
+        file_path: str,
+        patch_text: str,
+        commit_message: str,
+        ticket_id: str,
+    ) -> str:
+        """Fetch a file, apply a unified diff, and push the result as a commit.
+
+        Steps:
+        1. Fetch the current file content from *branch_name* via the
+           GitHub Contents API.
+        2. Apply *patch_text* (unified diff) to the content.
+        3. Push the patched content as a commit on *branch_name*.
+
+        Never raises — returns a success/error message string.
+        """
+        try:
+            original, _sha = await self.get_file_content(
+                repo_full_name, file_path, ref=branch_name
+            )
+        except (RuntimeError, ValueError) as exc:
+            return f"Error fetching file '{file_path}' from {repo_full_name}: {exc}"
+
+        try:
+            patched = self.apply_patch(original, patch_text)
+        except ValueError as exc:
+            return (
+                f"Error applying patch to '{file_path}' in {repo_full_name}: {exc}"
+            )
+
+        if patched == original:
+            return (
+                f"Patch applied to '{file_path}' in {repo_full_name} produced "
+                f"no changes — the file is already in the desired state."
+            )
+
+        result = await self.push_commit_to_branch(
+            repo_full_name=repo_full_name,
+            branch_name=branch_name,
+            files=[{"path": file_path, "content": patched}],
+            commit_message=commit_message,
+            ticket_id=ticket_id,
+        )
+
+        return result
+
     def _diagnose_billing_failure(
         self,
         runs: list[dict[str, Any]],

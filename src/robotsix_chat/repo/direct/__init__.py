@@ -432,12 +432,110 @@ def build_direct_repo_tools(
             f"({board_url})."
         )
 
+    async def apply_patch_to_file(
+        ticket_id: str,
+        repo_full_name: str,
+        branch_name: str,
+        file_path: str,
+        patch_content: str,
+        commit_message: str = "",
+    ) -> str:
+        """Push a patched file to a new branch using a unified diff.
+
+        Fetches the current *file_path* from the repo's default branch,
+        applies *patch_content* (a unified diff), and pushes the result
+        as a commit on a new branch named *branch_name*.  This avoids
+        the need to reconstruct the entire file content — only the diff
+        is required.
+
+        **Precondition:** The ticket identified by *ticket_id* MUST be in
+        BLOCKED state.  This tool will verify that and refuse otherwise.
+
+        **Scope:** When called through the component roster the GitHub App
+        installation scope check is bypassed.  For direct board-API calls,
+        *repo_full_name* must be within the robotsix-mill GitHub App's
+        installation scope.
+
+        **Patch format:** Standard unified diff (as produced by ``diff -u``
+        or ``git diff``)::
+
+            --- a/path
+            +++ b/path
+            @@ -start,count +start,count @@
+             context
+            -removed
+            +added
+
+        Args:
+            ticket_id: The blocked ticket this patch addresses (e.g.
+                ``"20250624T020652Z-my-ticket-a1b2"``).
+            repo_full_name: GitHub ``owner/name`` (e.g.
+                ``"robotsix/robotsix-chat"``).
+            branch_name: Name for the new branch (e.g.
+                ``"fix/20250624T020652Z-my-ticket-a1b2"``).
+            file_path: Path to the file to patch, relative to the repo
+                root (e.g. ``"src/dashboard.js"``).
+            patch_content: The unified diff to apply.  Must include at
+                least one ``@@`` hunk header with context lines.
+            commit_message: Commit message.  Defaults to a message that
+                references the *ticket_id*.
+
+        Returns:
+            A status message with the branch URL on success, or an error
+            message describing why the patch was refused or failed.
+
+        """
+        if error := await _assert_blocked_and_scoped(
+            client, ticket_id, repo_full_name
+        ):
+            return error
+
+        msg = commit_message or (
+            f"fix: patch {file_path} for blocked ticket {ticket_id}"
+        )
+
+        try:
+            # Fetch the file from the default branch
+            repo = await client._get_json(f"/repos/{repo_full_name}")
+            default_branch: str = repo.get("default_branch", "main")
+
+            original, _sha = await client.get_file_content(
+                repo_full_name, file_path, ref=default_branch
+            )
+        except (RuntimeError, ValueError) as exc:
+            return (
+                f"Error fetching file '{file_path}' from "
+                f"{repo_full_name}/{default_branch}: {exc}"
+            )
+
+        try:
+            patched = DirectRepoClient.apply_patch(original, patch_content)
+        except ValueError as exc:
+            return (
+                f"Error applying patch to '{file_path}' in {repo_full_name}: {exc}"
+            )
+
+        if patched == original:
+            return (
+                f"Patch applied to '{file_path}' in {repo_full_name} produced "
+                f"no changes — the file may already be in the desired state."
+            )
+
+        return await client.push_branch(
+            repo_full_name=repo_full_name,
+            branch_name=branch_name,
+            files=[{"path": file_path, "content": patched}],
+            commit_message=msg,
+            ticket_id=ticket_id,
+        )
+
     tools: list[Callable[..., Any]] = [
         push_direct_repo_branch,
         open_direct_repo_pr,
         update_pr_branch,
         check_pr_merge_conflict,
         reset_implement_spawn_counter,
+        apply_patch_to_file,
     ]
 
     # ------------------------------------------------------------------
