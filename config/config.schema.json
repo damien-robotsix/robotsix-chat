@@ -49,6 +49,12 @@
           "title": "Pending Subsession Wait Timeout",
           "type": "number"
         },
+        "max_idle_auto_turns": {
+          "default": 5,
+          "description": "Maximum number of consecutive NO_CHANGE / idle auto-continue turns before the loop halts (reverts to proposal).  A turn is idle when the agent reply is a recognised no-op sentinel (NO_CHANGE, nothing changed, \u2026).  Set to 0 to disable the idle cap and only rely on max_auto_turns.",
+          "title": "Max Idle Auto Turns",
+          "type": "integer"
+        },
         "stale_monitor_runs_before_completion": {
           "default": 3,
           "description": "Number of consecutive NO_CHANGE cycles after which a periodic monitor is considered 'stale' \u2014 the agent may declare the autonomous session complete even while the monitor is still running.  Monitors continue in the background.  Env override: ``AUTONOMOUS_STALE_MONITOR_RUNS_BEFORE_COMPLETION``.",

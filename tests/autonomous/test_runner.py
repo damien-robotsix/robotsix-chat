@@ -136,7 +136,7 @@ class TestMarkerDetection:
         assert new_state is AutonomousState.completed
 
     def test_completion_suppressed_when_active_subsessions(self) -> None:
-        """Completion marker is ignored when active subsessions are running."""
+        """Completion marker is ignored when non-periodic subsessions are running."""
         from types import SimpleNamespace
 
         store = ConversationStore()
@@ -147,6 +147,44 @@ class TestMarkerDetection:
         settings.autonomous.continue_interval_seconds = 0
         settings.autonomous.pending_subsession_wait_timeout = 0
         settings.autonomous.auto_approve = False
+
+        reg = MagicMock()
+        reg.list_for_owner.return_value = [
+            SimpleNamespace(is_active=True, kind="task"),
+        ]
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+            subsession_registry=reg,
+        )
+        aq = runner.create_session("owner1")
+        aq.state = AutonomousState.executing
+        reply = "All done!\n\n---AUTONOMOUS COMPLETE---"
+
+        new_state = runner.check_reply_for_markers(aq.session_id, reply)
+        # Completion must be suppressed — no transition.
+        assert new_state is None
+        assert aq.state is AutonomousState.executing
+        assert aq.completion_suppressed is True
+
+    def test_completion_not_suppressed_with_only_periodic_subsessions(self) -> None:
+        """Completion is NOT suppressed when only periodic monitors are active.
+
+        Periodic monitors run indefinitely by design; they must not deadlock
+        session completion.  Only task / user_chat subsessions block completion.
+        """
+        from types import SimpleNamespace
+
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.proposal_marker = "---PROPOSAL READY---"
+        settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
+        settings.autonomous.max_auto_turns = 20
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
 
         reg = MagicMock()
         reg.list_for_owner.return_value = [
@@ -165,7 +203,40 @@ class TestMarkerDetection:
         reply = "All done!\n\n---AUTONOMOUS COMPLETE---"
 
         new_state = runner.check_reply_for_markers(aq.session_id, reply)
-        # Completion must be suppressed — no transition.
+        # Completion must succeed — periodic monitors are not pending.
+        assert new_state is AutonomousState.completed
+        assert aq.state is AutonomousState.completed
+
+    def test_completion_suppressed_with_pending_task_subsession(self) -> None:
+        """Completion is suppressed when a non-periodic (task) subsession is active."""
+        from types import SimpleNamespace
+
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.proposal_marker = "---PROPOSAL READY---"
+        settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
+        settings.autonomous.max_auto_turns = 20
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
+
+        reg = MagicMock()
+        reg.list_for_owner.return_value = [
+            SimpleNamespace(is_active=True, kind="task"),
+        ]
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+            subsession_registry=reg,
+        )
+        aq = runner.create_session("owner1")
+        aq.state = AutonomousState.executing
+        reply = "All done!\n\n---AUTONOMOUS COMPLETE---"
+
+        new_state = runner.check_reply_for_markers(aq.session_id, reply)
+        # Completion must be suppressed — task subsession is still pending.
         assert new_state is None
         assert aq.state is AutonomousState.executing
         assert aq.completion_suppressed is True
@@ -332,6 +403,207 @@ class TestAutoContinue:
         assert "list_subsessions" in captured_message[0]
         # The flag must be cleared after the message is delivered.
         assert aq.completion_suppressed is False
+
+    @pytest.mark.asyncio
+    async def test_no_change_reply_not_published_to_event_sink(self) -> None:
+        """A NO_CHANGE / idle reply is recorded but NOT published to the event sink."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.max_auto_turns = 20
+        settings.autonomous.max_idle_auto_turns = 5
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
+        settings.autonomous.proposal_marker = "[APPROVAL]"
+        settings.autonomous.completion_marker = "[COMPLETE]"
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        event_sink = MagicMock()
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _noop_stream(*args, **kwargs):
+            yield "NO_CHANGE\n[APPROVAL]"  # no-op sentinel + marker to exit loop
+            return
+
+        agent.stream.return_value = _noop_stream()
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+            event_sink=event_sink,
+        )
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        aq.state = AutonomousState.executing
+        aq.plan_text = "plan"
+        runner._save_sessions = MagicMock()
+
+        await runner._auto_continue(aq.session_id)
+
+        # Token frames are still published (streaming).
+        token_calls = [
+            c
+            for c in event_sink.publish.call_args_list
+            if c[0][1].get("type") == SSE_AUTONOMOUS_TOKEN_TYPE
+        ]
+        assert len(token_calls) >= 1
+
+        # agent_message_frame must NOT be published for a no-op reply.
+        agent_msg_calls = [
+            c
+            for c in event_sink.publish.call_args_list
+            if c[0][1].get("type") == SSE_AGENT_MESSAGE_TYPE
+        ]
+        assert len(agent_msg_calls) == 0
+
+        # The exchange is still recorded in history.
+        turns = store.history(aq.session_id)
+        assert len(turns) >= 1
+
+        # consecutive_no_change must be incremented.
+        assert aq.consecutive_no_change == 1
+
+    @pytest.mark.asyncio
+    async def test_idle_cap_halts_loop(self) -> None:
+        """After max_idle_auto_turns consecutive NO_CHANGE replies, halt loop."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.max_auto_turns = 20
+        settings.autonomous.max_idle_auto_turns = 2
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
+        settings.autonomous.proposal_marker = "[APPROVAL]"
+        settings.autonomous.completion_marker = "[COMPLETE]"
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _noop_stream(*args, **kwargs):
+            yield "NO_CHANGE"
+            return
+
+        agent.stream.return_value = _noop_stream()
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+        )
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        aq.state = AutonomousState.executing
+        aq.plan_text = "plan"
+        # Simulate already having one idle turn.
+        aq.consecutive_no_change = 1
+        runner._save_sessions = MagicMock()
+
+        await runner._auto_continue(aq.session_id)
+
+        # After one more NO_CHANGE (making 2 consecutive), must revert to proposal.
+        assert aq.state is AutonomousState.proposal
+
+    @pytest.mark.asyncio
+    async def test_non_no_change_reply_resets_consecutive_counter(self) -> None:
+        """A real (non-NO_CHANGE) reply resets the consecutive idle counter."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.max_auto_turns = 20
+        settings.autonomous.max_idle_auto_turns = 5
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
+        settings.autonomous.proposal_marker = "[APPROVAL]"
+        settings.autonomous.completion_marker = "[COMPLETE]"
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        event_sink = MagicMock()
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _real_stream(*args, **kwargs):
+            yield "Working on task — updated config file.\n[APPROVAL]"
+            return
+
+        agent.stream.return_value = _real_stream()
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+            event_sink=event_sink,
+        )
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        aq.state = AutonomousState.executing
+        aq.plan_text = "plan"
+        aq.consecutive_no_change = 3  # was idle, but now real work
+        runner._save_sessions = MagicMock()
+
+        await runner._auto_continue(aq.session_id)
+
+        # Counter must reset to 0 after a real reply.
+        assert aq.consecutive_no_change == 0
+
+        # agent_message_frame must be published for a real reply.
+        agent_msg_calls = [
+            c
+            for c in event_sink.publish.call_args_list
+            if c[0][1].get("type") == SSE_AGENT_MESSAGE_TYPE
+        ]
+        assert len(agent_msg_calls) == 1
+
+    @pytest.mark.asyncio
+    async def test_max_idle_zero_disables_idle_cap(self) -> None:
+        """When max_idle_auto_turns is 0, the idle cap is disabled."""
+        store = ConversationStore()
+        settings = MagicMock()
+        settings.autonomous.max_auto_turns = 20
+        settings.autonomous.max_idle_auto_turns = 0  # disabled
+        settings.autonomous.continue_interval_seconds = 0
+        settings.autonomous.pending_subsession_wait_timeout = 0
+        settings.autonomous.proposal_marker = "[APPROVAL]"
+        settings.autonomous.completion_marker = "[COMPLETE]"
+        run_serializer = MagicMock()
+        run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+        run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+        agent = MagicMock()
+        agent.stream = MagicMock()
+
+        async def _noop_stream(*args, **kwargs):
+            yield "NO_CHANGE\n[APPROVAL]"
+            return
+
+        agent.stream.return_value = _noop_stream()
+
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=store,
+            agent_factory=lambda: agent,
+            run_serializer=run_serializer,
+        )
+        aq = runner.create_session("owner1", schedule_kickoff=False)
+        aq.state = AutonomousState.executing
+        aq.plan_text = "plan"
+        aq.consecutive_no_change = 99  # way past any reasonable cap
+        runner._save_sessions = MagicMock()
+
+        await runner._auto_continue(aq.session_id)
+
+        # Should NOT have halted on the idle cap (which is disabled).
+        # The loop exits via the proposal marker, not the idle cap.
+        assert aq.state is AutonomousState.proposal
+        # consecutive_no_change still incremented by the no-op turn
+        # (idle cap didn't intervene — we exited via the marker instead).
 
 
 class TestAgentFactoryLoopSafety:
