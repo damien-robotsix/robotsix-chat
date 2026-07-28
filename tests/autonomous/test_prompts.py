@@ -25,6 +25,8 @@ class TestBuildAutonomousInstruction:
         assert "COMPLETION" in result
         assert "Stale monitor completion" in result
         assert "3 or more consecutive cycles" in result
+        assert "MUTATION AUTHORIZATION" in result
+        assert "read-only work" in result
 
     def test_custom_markers(self) -> None:
         """Custom marker strings are injected, defaults are absent."""
