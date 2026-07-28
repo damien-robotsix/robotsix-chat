@@ -33,6 +33,8 @@ if TYPE_CHECKING:
 
 __all__ = ["build_direct_repo_tools"]
 
+logger = logging.getLogger(__name__)
+
 
 def build_direct_repo_tools(
     settings: DirectRepoSettings,
@@ -461,10 +463,11 @@ def build_direct_repo_tools(
         the implement spawn limit and the ``resume-blocked`` mechanism
         has proven unreliable.
 
-        When *component_request* is available the tool routes the DELETE
-        through the roster-based component connectivity (same path as
-        ticket-state verification).  Otherwise it falls back to the direct
-        ``board_api_base_url``.
+        Tries the component roster path first when *component_request*
+        is available (resolving ``"mill"`` via the central-deploy roster
+        or component fallbacks); on failure falls back to the direct
+        ``board_api_base_url`` path.  When *component_request* is
+        unavailable the direct path is used directly.
 
         Args:
             ticket_id: The blocked ticket whose counter to reset
@@ -475,33 +478,8 @@ def build_direct_repo_tools(
             why the reset failed.
 
         """
+        # Try roster path first when available.
         if component_request is not None:
-            success, error = await _delete_artifact_via_component(
-                component_request, ticket_id, "implement_spawn_count"
-            )
-            if success:
-                return (
-                    f"Implement spawn counter reset for ticket {ticket_id}. "
-                    "The ticket can now be re-spawned."
-                )
-            if error is not None:
-                return error
-
-        board_url = client._s.board_api_base_url.rstrip("/")
-        ok = await client.delete_ticket_artifact(ticket_id, "implement_spawn_count")
-        if ok:
-            return (
-                f"Implement spawn counter reset for ticket {ticket_id}. "
-                "The ticket can now be re-spawned."
-            )
-
-        # Fall back to the roster-based path when available.
-        if component_request is not None:
-            logger.info(
-                "reset_implement_spawn_counter direct path failed for %s; "
-                "falling back to roster path",
-                ticket_id,
-            )
             resp = await component_request(
                 "mill",
                 "DELETE",
@@ -512,9 +490,19 @@ def build_direct_repo_tools(
                     f"Implement spawn counter reset for ticket {ticket_id} "
                     "(via roster path). The ticket can now be re-spawned."
                 )
+            logger.info(
+                "reset_implement_spawn_counter roster path failed for %s; "
+                "falling back to direct board API",
+                ticket_id,
+            )
+
+        # Fall back to the direct board API path.
+        board_url = client._s.board_api_base_url.rstrip("/")
+        ok = await client.delete_ticket_artifact(ticket_id, "implement_spawn_count")
+        if ok:
             return (
-                f"Error: could not reset implement spawn counter for ticket "
-                f"{ticket_id} via roster path: {resp}"
+                f"Implement spawn counter reset for ticket {ticket_id}. "
+                "The ticket can now be re-spawned."
             )
 
         return (

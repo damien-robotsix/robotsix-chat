@@ -7,6 +7,7 @@ run without a real network and never touch the board API.
 from __future__ import annotations
 
 import json
+from collections.abc import Callable
 from typing import Any
 
 import httpx
@@ -25,6 +26,29 @@ def _settings(**kw: Any) -> Settings:
     }
     base.update(kw)
     return Settings(direct_repo=DirectRepoSettings(**base))
+
+
+def _component_request_success(
+    ticket_id: str,
+    state: str = "DONE",
+) -> Callable[..., Any]:
+    """Return an async mock that returns a successful roster-style response."""
+
+    async def _req(component: str, method: str, path: str) -> str:
+        return "HTTP 200 OK\n" + json.dumps({"state": state, "ticket_id": ticket_id})
+
+    return _req
+
+
+def _component_request_error(
+    error_msg: str = "Error: connection refused",
+) -> Callable[..., Any]:
+    """Return an async mock that returns a roster-style error."""
+
+    async def _req(component: str, method: str, path: str) -> str:
+        return error_msg
+
+    return _req
 
 
 # ---------------------------------------------------------------------------
@@ -216,7 +240,7 @@ async def test_ticket_poll_connect_error(respx_mock: respx.MockRouter) -> None:
 
     assert result["ticket_id"] == "conn-fail"
     assert result["state"] is None
-    assert "connection refused" in result["error"]
+    assert "timed out" in result["error"].lower()
 
 
 @pytest.mark.asyncio
@@ -253,6 +277,81 @@ async def test_ticket_poll_empty_body_json_decode_failure(
     assert result["ticket_id"] == "empty-body"
     assert result["state"] is None
     assert "Non-JSON" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# roster-first behaviour (component_request available)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_roster_first_success() -> None:
+    """When component_request is available, use it first and return result."""
+    tools = build_ticket_poll_tools(
+        _settings(),
+        component_request=_component_request_success("t-roster", state="BLOCKED"),
+    )
+    result = json.loads(await tools[0]("t-roster"))
+
+    assert result["ticket_id"] == "t-roster"
+    assert result["state"] == "BLOCKED"
+    assert result["error"] == ""
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_roster_first_falls_back_to_direct(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When roster path fails, fall back to the direct board API URL."""
+    route = respx_mock.get("http://board:8077/tickets/t-fallback").mock(
+        return_value=httpx.Response(200, json={"state": "OPEN"})
+    )
+
+    tools = build_ticket_poll_tools(
+        _settings(),
+        component_request=_component_request_error("Error: connection refused"),
+    )
+    result = json.loads(await tools[0]("t-fallback"))
+
+    assert route.called
+    assert result["ticket_id"] == "t-fallback"
+    assert result["state"] == "OPEN"
+    assert result["error"] == ""
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_roster_error_non_json_falls_back(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When roster returns non-success status, fall back to direct."""
+    route = respx_mock.get("http://board:8077/tickets/t-rost-err").mock(
+        return_value=httpx.Response(200, json={"state": "DONE"})
+    )
+
+    tools = build_ticket_poll_tools(
+        _settings(),
+        component_request=_component_request_error("HTTP 502 Bad Gateway"),
+    )
+    result = json.loads(await tools[0]("t-rost-err"))
+
+    assert route.called
+    assert result["state"] == "DONE"
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_no_component_request_uses_direct_only(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Without component_request, the direct path is used directly (regression)."""
+    route = respx_mock.get("http://board:8077/tickets/t-direct-only").mock(
+        return_value=httpx.Response(200, json={"state": "IN_PROGRESS"})
+    )
+
+    tools = build_ticket_poll_tools(_settings())  # component_request=None
+    result = json.loads(await tools[0]("t-direct-only"))
+
+    assert route.called
+    assert result["state"] == "IN_PROGRESS"
 
 
 # ---------------------------------------------------------------------------
