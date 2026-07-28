@@ -52,6 +52,7 @@ from robotsix_chat.repo.direct import build_direct_repo_tools
 from robotsix_chat.repo.security import build_github_security_tools, load_github_skill
 from robotsix_chat.repo.study import build_repo_study_tools
 from robotsix_chat.selfreview import build_recent_activity_tools
+from robotsix_chat.sftp import build_sftp_tools
 from robotsix_chat.ticket_poll import build_ticket_poll_tools, load_ticket_poll_skill
 from robotsix_chat.version_check import build_version_check_tools
 
@@ -640,6 +641,7 @@ def _build_static_tools(
         *build_http_probe_tools(settings.http_probe),
         *build_public_fetch_tools(settings.public_fetch),
         *build_langfuse_inspect_tools(settings.langfuse_inspect, settings.langfuse),
+        *build_sftp_tools(settings.sftp),
         *build_ticket_poll_tools(settings),
     ]
 

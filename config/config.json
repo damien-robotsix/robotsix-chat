@@ -188,6 +188,17 @@
     "rate_limit_requests": 10,
     "rate_limit_window_seconds": 60.0
   },
+  "sftp": {
+    "enabled": false,
+    "host": "",
+    "port": 22,
+    "username": "",
+    "password": "",
+    "private_key": "",
+    "private_key_passphrase": "",
+    "known_hosts": "",
+    "remote_root": ""
+  },
   "render_url": {
     "enabled": false,
     "timeout": 30.0,
