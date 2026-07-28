@@ -31,7 +31,7 @@ assuming a single implement-stage fix was sufficient. The monitor later revealed
 9 distinct root causes. Pre-classifying failure modes before bulk-resume prevents re-block cycles
 and wasted implement cycles when a batch spans multiple unrelated root causes.
 
-**SHA256:** `TODO — computed after commit`
+**SHA256:** `f0882f7e2e093b0dfb94edbd9dfc2948bb43d065fdd06c01666c26a8f6ce38d8`
 
 ______________________________________________________________________
 
