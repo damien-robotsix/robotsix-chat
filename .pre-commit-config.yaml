@@ -122,6 +122,16 @@ repos:
         pass_filenames: false
         fail_fast: true
 
+  - repo: local
+    hooks:
+      - id: update-changelog-sha256
+        name: update changelog SHA256
+        entry: bash -c "uv run scripts/update_changelog_sha256.py && git add docs/system_prompt_changelog.md"
+        language: system
+        files: ^src/robotsix_chat/config/settings\.py$
+        pass_filenames: false
+        fail_fast: true
+
   - repo: https://github.com/DavidAnson/markdownlint-cli2
     rev: v0.23.1
     hooks:
