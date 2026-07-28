@@ -43,6 +43,11 @@ silently ignoring them.
 CI `check-config-schema` job will catch drift, but regenerating before commit avoids a wasteful CI
 rebuild cycle.
 
+**Rule:** When removing a field from a Pydantic `BaseModel` with
+`model_config = ConfigDict(extra="forbid")`, add a `model_validator(mode="before")` that strips the
+removed key from the input dict before validation. This prevents production startup crashes when
+deployed config files still carry the legacy key (serialized before the removal).
+
 ## Deploy stack structure
 
 Two compose files with different jobs (component standard):
