@@ -28,22 +28,19 @@ from robotsix_chat.repo.direct.client import DirectRepoClient
 logger = logging.getLogger(__name__)
 
 
-async def _github_endpoint(
+def _check_settings_and_auth(
     request: Request,
     settings: GitHubSecuritySettings | GitHubActionsSettings,
     detail_prefix: str,
-) -> tuple[str, str, dict[str, object]]:
-    """Shared boilerplate for GitHub endpoints.
+) -> None:
+    """Shared settings-and-auth boilerplate for GitHub endpoints.
 
     Handles:
     1. Settings check (503)
     2. API key auth (403)
-    3. Path-param extraction (owner, repo) (400)
-    4. JSON body parse + dict validation (400)
 
-    Returns ``(owner, repo, body)``.  Does **not** perform the
-    installation scope check — callers must call
-    ``_check_installation_scope`` after their own body validation.
+    Does **not** parse path params or the request body — callers
+    must handle those steps themselves.
     """
     direct_repo = request.app.state.direct_repo_settings
 
@@ -61,6 +58,26 @@ async def _github_endpoint(
     presented = request.headers.get("X-API-Key", "")
     if not presented or presented != api_key:
         raise HTTPException(status_code=403, detail="invalid or missing X-API-Key")
+
+
+async def _github_endpoint(
+    request: Request,
+    settings: GitHubSecuritySettings | GitHubActionsSettings,
+    detail_prefix: str,
+) -> tuple[str, str, dict[str, object]]:
+    """Shared boilerplate for GitHub endpoints.
+
+    Handles:
+    1. Settings check (503) — delegated to ``_check_settings_and_auth``
+    2. API key auth (403) — delegated to ``_check_settings_and_auth``
+    3. Path-param extraction (owner, repo) (400)
+    4. JSON body parse + dict validation (400)
+
+    Returns ``(owner, repo, body)``.  Does **not** perform the
+    installation scope check — callers must call
+    ``_check_installation_scope`` after their own body validation.
+    """
+    _check_settings_and_auth(request, settings, detail_prefix)
 
     # -- path params -------------------------------------------------------
     owner = request.path_params.get("owner", "").strip()
@@ -207,26 +224,12 @@ async def github_create_repo_endpoint(request: Request) -> JSONResponse:
         200 — repository created successfully.
         400 — invalid body or missing name.
         403 — invalid or missing X-API-Key.
+        404 — org is not in the GitHub App installation scope.
         503 — github_security not configured (disabled or missing key).
 
     """
     settings = request.app.state.github_security_settings
-
-    # -- 503: unconfigured -------------------------------------------------
-    direct_repo = request.app.state.direct_repo_settings
-    if not settings.enabled or not direct_repo.enabled:
-        raise HTTPException(status_code=503, detail="github_security is not enabled")
-    api_key = settings.deploy_api_key.get_secret_value()
-    if not api_key:
-        raise HTTPException(
-            status_code=503,
-            detail="github_security.deploy_api_key is not configured",
-        )
-
-    # -- 403: auth ---------------------------------------------------------
-    presented = request.headers.get("X-API-Key", "")
-    if not presented or presented != api_key:
-        raise HTTPException(status_code=403, detail="invalid or missing X-API-Key")
+    _check_settings_and_auth(request, settings, "github_security")
 
     # -- body --------------------------------------------------------------
     try:
@@ -251,12 +254,27 @@ async def github_create_repo_endpoint(request: Request) -> JSONResponse:
             detail="'auto_init' must be a boolean",
         )
 
-    # -- action ------------------------------------------------------------
+    # -- scope check -------------------------------------------------------
     direct_repo = request.app.state.direct_repo_settings
     client = DirectRepoClient(direct_repo)
+    try:
+        allowed = await client.list_installation_repos()
+    except Exception as exc:
+        logger.exception("Failed to list installation repos")
+        raise HTTPException(
+            status_code=502, detail=f"GitHub API error: {exc}"
+        ) from None
 
+    org = settings.github_org
+    if not any(r.startswith(f"{org}/") for r in allowed):
+        raise HTTPException(
+            status_code=404,
+            detail=f"org '{org}' is not in the GitHub App installation scope",
+        )
+
+    # -- action ------------------------------------------------------------
     result = await client.create_repo(
-        org_name=settings.github_org,
+        org_name=org,
         repo_name=repo_name,
         auto_init=auto_init,
     )
@@ -267,7 +285,7 @@ async def github_create_repo_endpoint(request: Request) -> JSONResponse:
     return JSONResponse(
         {
             "status": "ok",
-            "repo": f"{settings.github_org}/{repo_name}",
+            "repo": f"{org}/{repo_name}",
             "message": result,
         }
     )
@@ -434,24 +452,7 @@ async def github_job_log_endpoint(request: Request) -> PlainTextResponse:
 
     """
     settings = request.app.state.github_security_settings
-    direct_repo = request.app.state.direct_repo_settings
-
-    # -- 503: unconfigured -------------------------------------------------
-    if not settings.enabled:
-        raise HTTPException(status_code=503, detail="github_security is not enabled")
-    if not direct_repo.enabled:
-        raise HTTPException(status_code=503, detail="direct_repo is not enabled")
-    api_key = settings.deploy_api_key.get_secret_value()
-    if not api_key:
-        raise HTTPException(
-            status_code=503,
-            detail="github_security.deploy_api_key is not configured",
-        )
-
-    # -- 403: auth ---------------------------------------------------------
-    presented = request.headers.get("X-API-Key", "")
-    if not presented or presented != api_key:
-        raise HTTPException(status_code=403, detail="invalid or missing X-API-Key")
+    _check_settings_and_auth(request, settings, "github_security")
 
     # -- path params -------------------------------------------------------
     owner = request.path_params.get("owner", "").strip()
