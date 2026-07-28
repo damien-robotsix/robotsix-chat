@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add block cascade triage instruction to the system prompt: when a periodic monitor reports a stabilized cascade (≥10 blocked tickets across ≥2 boards, no change for ≥3 runs), the assistant must not bulk-resume and instead present a categorized failure-mode summary grouped by root cause, with severity labels, and ask the operator to choose between per-board triage or individual-ticket focus. (prompt v65)
 - Exclude `CHANGELOG.md` from `markdownlint-cli2` in pre-commit hooks via `.markdownlint-cli2.jsonc` `ignores`, preventing the auto-generated changelog from being reformatted and causing spurious pre-commit failures on main.
 - Fix markdownlint MD012 (multiple consecutive blank lines) in CHANGELOG.md that caused pre-commit hooks to fail on the release commit, blocking the release-image workflow.
 - Deduplicate installation scope check in `github_job_log_endpoint` by delegating to `_check_installation_scope()` instead of inlining the identical logic (~15 lines removed).

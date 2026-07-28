@@ -3,6 +3,23 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v65 — 2026-07-28 — provide-explicit-guidance-for-handling-s-6120
+
+**Summary:** Add a "Block cascade triage" bullet to the Autonomy section. When a periodic monitor
+reports a stabilized cascade (≥10 blocked tickets across ≥2 boards, no change for ≥3 consecutive
+runs), the assistant must not bulk-resume; instead, present a categorized failure-mode summary
+(grouped by root cause with severity) and ask the operator to choose between per-board triage or
+individual-ticket focus.
+
+**Rationale:** In session 8b03ed2, a monitor correctly identified a 41-ticket cascade across 9
+boards but the assistant lacked guidance to halt further bulk actions and offer structured triage.
+Adding this directive prevents wasteful bulk-resume attempts against systemic, stabilized block
+cascades and routes the operator directly to a categorized triage decision.
+
+**SHA256:** `3165c8baea9a40eb074f5fb3afa560371ebd4f6dd7ed54293b7b65057af478f8`
+
+______________________________________________________________________
+
 ## v64 — 2026-07-27 — expose-deploy-image-digest-and-health-st-ae07
 
 **Summary:** Add a "deploy status tracking" bullet to the Subsessions section. When monitoring a
