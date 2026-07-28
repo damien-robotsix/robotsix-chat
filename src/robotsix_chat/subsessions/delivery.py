@@ -64,11 +64,15 @@ _REACT_PROMPT_TEMPLATE = (
     "delta: what changed, what the user should know, or what to do next. "
     "Never start with 'Acknowledged' or echo the subsession's full summary. "
     "This is a real turn: your reply will be shown to the user.\n\n"
-    "If you have recently reported other periodic subsession outcomes in the "
-    "conversation above, consolidate this outcome with those earlier ones into "
-    "ONE grouped update. Group by state (NO_CHANGE, PROGRESS, GATE_PENDING) and "
-    "omit trivial NO_CHANGE runs from duplicate monitor cycles. Prefer a single "
-    "consolidated message over a stream of individual notices."
+    "CONSOLIDATION RULE: If you have recently reported other subsession "
+    "outcomes in the conversation above, synthesize ALL of them — this new "
+    "one PLUS the earlier ones — into ONE cohesive narrative paragraph. "
+    "Group by theme (what was checked, what changed, what is recommended), "
+    "NOT by subsession id.  Omit trivial NO_CHANGE runs entirely.  Never "
+    "output a raw bullet list or enumeration of '[id] kind=... status=...' "
+    "lines — that reads like debug output, not a polished reply.  Prefer a "
+    "single synthesized update over individual notices or plain "
+    "enumerations."
 )
 
 # Template used when the main chat session has an active autonomous plan
@@ -85,7 +89,10 @@ _REACT_PROMPT_ACTIVE_PLAN_TEMPLATE = (
     "work — but DO NOT re-request approval, restart planning, or abandon "
     "your current plan.  If the outcome is not relevant to your current "
     "task, acknowledge it in one sentence and move on.  This is a note, not "
-    "a blocker: stay on your plan and continue from where you left off."
+    "a blocker: stay on your plan and continue from where you left off.\n\n"
+    "When acknowledging multiple subsession outcomes, synthesize them into "
+    "ONE brief sentence — never output a raw bullet list or enumeration of "
+    "'[id] kind=... status=...' lines."
 )
 
 # Mapping from internal reason codes to human-readable phrases used in the
