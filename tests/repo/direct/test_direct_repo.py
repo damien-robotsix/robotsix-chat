@@ -70,10 +70,10 @@ def test_build_direct_repo_tools_disabled() -> None:
     assert build_direct_repo_tools(DirectRepoSettings(enabled=False)) == []
 
 
-def test_build_direct_repo_tools_returns_five_tools() -> None:
-    """Verify that enabled direct_repo returns the five expected tools."""
+def test_build_direct_repo_tools_returns_six_tools() -> None:
+    """Verify that enabled direct_repo returns the six expected tools."""
     tools = build_direct_repo_tools(_settings())
-    assert len(tools) == 5
+    assert len(tools) == 6
     names = [t.__name__ for t in tools]
     assert "push_direct_repo_branch" in names
     assert "open_direct_repo_pr" in names
@@ -316,6 +316,7 @@ def test_no_merge_tool_returned() -> None:
     )
     # Expected set: push, open_pr, update_branch, check_merge_conflict, reset
     assert sorted(names) == [
+        "apply_patch_to_file",
         "check_pr_merge_conflict",
         "open_direct_repo_pr",
         "push_direct_repo_branch",
@@ -1296,7 +1297,7 @@ def test_direct_fix_available_when_enabled() -> None:
     tools = build_direct_repo_tools(_settings(direct_fix_enabled=True))
     names = [t.__name__ for t in tools]
     assert "direct_fix" in names
-    assert len(tools) == 6  # 5 base + direct_fix
+    assert len(tools) == 8  # 6 base + direct_fix + patch_direct_repo_file
 
 
 @pytest.mark.asyncio
@@ -2276,3 +2277,209 @@ def test_diagnose_billing_failure_empty_runs() -> None:
     client = DirectRepoClient(_settings())
     diag = client._diagnose_billing_failure([])
     assert diag is None
+
+
+# ---------------------------------------------------------------------------
+# patch_direct_repo_file
+# ---------------------------------------------------------------------------
+
+
+def test_patch_direct_repo_file_not_available_by_default() -> None:
+    """patch_direct_repo_file not in tool list when direct_fix_enabled is False."""
+    tools = build_direct_repo_tools(_settings())
+    names = [t.__name__ for t in tools]
+    assert "patch_direct_repo_file" not in names
+
+
+def test_patch_direct_repo_file_available_when_enabled() -> None:
+    """patch_direct_repo_file is in the tool list when direct_fix_enabled is True."""
+    tools = build_direct_repo_tools(_settings(direct_fix_enabled=True))
+    names = [t.__name__ for t in tools]
+    assert "patch_direct_repo_file" in names
+
+
+@pytest.mark.asyncio
+async def test_patch_direct_repo_file_rejects_non_blocked_ticket(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Ticket not in BLOCKED → patch_direct_repo_file is refused."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-pf1").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-pf1", "state": "draft"})
+        )
+    )
+
+    tools = build_direct_repo_tools(_settings(direct_fix_enabled=True))
+    pf_fn = [t for t in tools if t.__name__ == "patch_direct_repo_file"][0]
+
+    out = await pf_fn(
+        ticket_id="t-pf1",
+        repo_full_name="org/repo",
+        target_branch="main",
+        file_path="x.py",
+        patch_content="@@ -1,1 +1,1 @@\n-old\n+new\n",
+    )
+    assert "Refused" in out
+    assert "BLOCKED" in out
+
+
+@pytest.mark.asyncio
+async def test_patch_direct_repo_file_rejects_few_cycles(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Ticket has <3 implement cycles → patch_direct_repo_file is refused."""
+    settings = _settings(direct_fix_enabled=True)
+
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-pf2").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "id": "t-pf2",
+                    "state": "blocked",
+                    "events": [
+                        {"type": "implement_start", "timestamp": "..."},
+                    ],
+                }
+            ),
+        )
+    )
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    pf_fn = [t for t in tools if t.__name__ == "patch_direct_repo_file"][0]
+
+    out = await pf_fn(
+        ticket_id="t-pf2",
+        repo_full_name="org/repo",
+        target_branch="main",
+        file_path="x.py",
+        patch_content="@@ -1,1 +1,1 @@\n-old\n+new\n",
+    )
+    assert "Refused" in out
+    assert "implement" in out.lower()
+    assert "1" in out  # cycle count
+
+
+@pytest.mark.asyncio
+async def test_patch_direct_repo_file_allows_enough_cycles(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Ticket has ≥3 implement cycles → patch_direct_repo_file proceeds."""
+    settings = _settings(direct_fix_enabled=True)
+
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-pf3").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "id": "t-pf3",
+                    "state": "blocked",
+                    "events": [
+                        {"type": "implement_start"},
+                        {"type": "implement_complete"},
+                        {"type": "implement_start"},
+                        {"type": "implement_complete"},
+                        {"type": "implement_start"},
+                        {"type": "implement_complete"},
+                    ],
+                }
+            ),
+        )
+    )
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    # Catch-all for remaining GitHub API calls (get_file_content + push)
+    respx_mock.get(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
+    respx_mock.post(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
+    respx_mock.patch(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
+
+    tools = build_direct_repo_tools(settings)
+    pf_fn = [t for t in tools if t.__name__ == "patch_direct_repo_file"][0]
+
+    out = await pf_fn(
+        ticket_id="t-pf3",
+        repo_full_name="org/repo",
+        target_branch="main",
+        file_path="x.py",
+        patch_content="@@ -1,1 +1,1 @@\n-old\n+new\n",
+    )
+    # Should have attempted the push (may fail on mock but should not be
+    # a guard refusal)
+    assert "Refused" not in out
+
+
+@pytest.mark.asyncio
+async def test_patch_direct_repo_file_rejects_out_of_scope(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Repo not in installation scope → patch_direct_repo_file is refused."""
+    settings = _settings(direct_fix_enabled=True)
+
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-pf4").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "id": "t-pf4",
+                    "state": "blocked",
+                    "events": [
+                        {"type": "implement_start"},
+                        {"type": "implement_complete"},
+                        {"type": "implement_start"},
+                        {"type": "implement_complete"},
+                        {"type": "implement_start"},
+                        {"type": "implement_complete"},
+                    ],
+                }
+            ),
+        )
+    )
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/other-repo"}]}),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    pf_fn = [t for t in tools if t.__name__ == "patch_direct_repo_file"][0]
+
+    out = await pf_fn(
+        ticket_id="t-pf4",
+        repo_full_name="org/repo",
+        target_branch="main",
+        file_path="x.py",
+        patch_content="@@ -1,1 +1,1 @@\n-old\n+new\n",
+    )
+    assert "not installed" in out.lower()
+    assert "install" in out.lower()

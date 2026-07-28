@@ -485,9 +485,7 @@ def build_direct_repo_tools(
             message describing why the patch was refused or failed.
 
         """
-        if error := await _assert_blocked_and_scoped(
-            client, ticket_id, repo_full_name
-        ):
+        if error := await _assert_blocked_and_scoped(client, ticket_id, repo_full_name):
             return error
 
         msg = commit_message or (
@@ -511,9 +509,7 @@ def build_direct_repo_tools(
         try:
             patched = DirectRepoClient.apply_patch(original, patch_content)
         except ValueError as exc:
-            return (
-                f"Error applying patch to '{file_path}' in {repo_full_name}: {exc}"
-            )
+            return f"Error applying patch to '{file_path}' in {repo_full_name}: {exc}"
 
         if patched == original:
             return (
@@ -666,6 +662,123 @@ def build_direct_repo_tools(
 
             return result
 
+        async def patch_direct_repo_file(
+            ticket_id: str,
+            repo_full_name: str,
+            target_branch: str,
+            file_path: str,
+            patch_content: str,
+            commit_message: str = "",
+        ) -> str:
+            """Apply a unified diff to a file and push directly to a branch.
+
+            Fetches *file_path* from *target_branch*, applies *patch_content*
+            (a unified diff), and pushes the patched content as a commit on
+            the same branch — without requiring full-file reconstruction.
+            This is the diff-based counterpart to ``direct_fix`` for large
+            files where reproducing the entire file content is impractical.
+
+            **Preconditions (all enforced by the tool):**
+            1. Ticket MUST be in BLOCKED state.
+            2. Ticket MUST have ≥3 implement cycles (verified via board API).
+            3. When called through the component roster (i.e. the
+               ``component_request`` credential is available) the GitHub App
+               installation scope check is bypassed — the mill already has
+               its own GitHub access.  For direct board-API calls,
+               *repo_full_name* MUST be in the GitHub App installation
+               scope.
+
+            **Auditability:** Every invocation is logged at WARNING level
+            with the ticket id, repo, branch, and file path.
+
+            **Patch format:** Standard unified diff (as produced by ``diff -u``
+            or ``git diff``)::
+
+                --- a/path
+                +++ b/path
+                @@ -start,count +start,count @@
+                 context
+                -removed
+                +added
+
+            Args:
+                ticket_id: The blocked, mill-exhausted ticket this patch
+                    addresses (e.g. ``"20250624T020652Z-my-ticket-a1b2"``).
+                repo_full_name: GitHub ``owner/name`` (e.g.
+                    ``"robotsix/robotsix-chat"``).
+                target_branch: Branch to push directly to (e.g. ``"main"``).
+                file_path: Path to the file to patch, relative to the repo
+                    root (e.g. ``"src/dashboard.js"``).
+                patch_content: The unified diff to apply.  Must include at
+                    least one ``@@`` hunk header with context lines.
+                commit_message: Commit message.  Defaults to a message that
+                    references the *ticket_id*.
+
+            Returns:
+                A status message with the commit SHA on success, or an error
+                message describing why the patch was refused or failed.
+
+            """
+            _logger = logging.getLogger(__name__)
+
+            # --- guard 1+2: BLOCKED + scope ---
+            if error := await _assert_blocked_and_scoped(
+                client, ticket_id, repo_full_name
+            ):
+                return error
+
+            # --- guard 3: ≥3 implement cycles ---
+            cycles = await client.count_implement_cycles(ticket_id)
+            if cycles is None:
+                return (
+                    f"Error: could not fetch ticket data for {ticket_id}. "
+                    "Verify the ticket id and board API connectivity."
+                )
+            if cycles < 3:
+                return (
+                    f"Refused: ticket {ticket_id} has only {cycles} implement "
+                    f"cycle(s).  patch_direct_repo_file requires ≥3 implement "
+                    f"cycles (mill exhaustion).  Use apply_patch_to_file + "
+                    "open_direct_repo_pr for the standard PR flow."
+                )
+
+            # --- audit log ---
+            _logger.warning(
+                "patch_direct_repo_file: ticket=%s repo=%s branch=%s file=%s",
+                ticket_id,
+                repo_full_name,
+                target_branch,
+                file_path,
+            )
+
+            # --- apply patch and push ---
+            msg = commit_message or (
+                f"fix: patched {file_path} for blocked ticket {ticket_id} "
+                f"(mill exhausted after {cycles} implement cycles)"
+            )
+            result = await client.push_patched_file(
+                repo_full_name=repo_full_name,
+                branch_name=target_branch,
+                file_path=file_path,
+                patch_text=patch_content,
+                commit_message=msg,
+                ticket_id=ticket_id,
+            )
+
+            if "Error" in result or "error" in result.lower():
+                _logger.error(
+                    "patch_direct_repo_file FAILED: ticket=%s repo=%s "
+                    "branch=%s file=%s: %s",
+                    ticket_id,
+                    repo_full_name,
+                    target_branch,
+                    file_path,
+                    result,
+                )
+
+            return result
+
         tools.append(direct_fix)
+        tools.append(patch_direct_repo_file)
 
     return tools

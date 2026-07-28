@@ -1,6 +1,11 @@
 ## 0.0.0 (unreleased)
 
 - Subsessions: require the assistant to synthesize multiple subsession outcomes into a single cohesive narrative paragraph, never outputting raw `[id] kind=...` bullet-list enumerations. Trivial no-change monitors are now explicitly omitted from reporting.
+- Added ``patch_direct_repo_file`` tool to the direct-repo tool set
+  (gated on ``direct_fix_enabled``).  Accepts a file path and a unified
+  diff, fetches the current file content from the target branch, applies
+  the patch, and pushes the result as a commit — enabling targeted edits
+  on large files without full-file reconstruction.
 - Add mutation-authorization guard to the autonomous session prompt: the agent must now verify operator authorization before performing state-changing actions (resume-blocked, merge-now, ingest, config/deploy/restart). When told to perform read-only work, the agent is instructed to hold all mutations and output a blocking message until explicitly authorized.
 - Autonomous sessions: periodic monitors no longer deadlock session completion; NO_CHANGE / idle auto-continue replies are suppressed from the browser; a new `max_idle_auto_turns` config (default 5) halts the loop after N consecutive idle turns instead of spinning to `max_auto_turns`.
 - Added `step-security/harden-runner` egress monitor to `docs.yml`, `release.yml`, `release-image.yml`, and `dependency-review.yml` workflows, matching the pattern already used in `ci.yml`.
