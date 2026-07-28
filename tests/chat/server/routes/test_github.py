@@ -493,6 +493,7 @@ async def test_200_disabled_feature() -> None:
         dependency_graph=None,
         advanced_security=None,
         secret_scanning="disabled",  # pragma: allowlist secret
+        secret_scanning_push_protection=None,
     )
 
 
