@@ -18,6 +18,21 @@ cascades and routes the operator directly to a categorized triage decision.
 
 **SHA256:** `3165c8baea9a40eb074f5fb3afa560371ebd4f6dd7ed54293b7b65057af478f8`
 
+## v65 — 2026-07-28 — add-failure-mode-classification-to-bulk-0839
+
+**Summary:** Add a "Bulk-resume failure-mode classification" bullet to the ticket lifecycle's
+Remediate step (3). Before bulk-resuming multiple blocked tickets, the assistant must now query each
+ticket's history and comments to infer the failure-mode category (e.g. 'unavailable tools', 'CI
+typecheck', 'git checkout failure'). If more than 2 distinct failure modes are detected, abort the
+bulk-resume and surface a categorized diagnosis to the operator via a user_chat subsession instead.
+
+**Rationale:** The assistant bulk-resumed 75 blocked tickets without pre-classifying failure modes,
+assuming a single implement-stage fix was sufficient. The monitor later revealed 41 re-blocks across
+9 distinct root causes. Pre-classifying failure modes before bulk-resume prevents re-block cycles
+and wasted implement cycles when a batch spans multiple unrelated root causes.
+
+**SHA256:** `TODO — computed after commit`
+
 ______________________________________________________________________
 
 ## v64 — 2026-07-27 — expose-deploy-image-digest-and-health-st-ae07
