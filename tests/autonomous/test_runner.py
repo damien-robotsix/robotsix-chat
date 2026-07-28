@@ -343,7 +343,7 @@ class TestAutoContinue:
 
         assert len(captured_message) >= 1
         assert "previous completion marker was ignored" in captured_message[0]
-        assert "active monitoring subsessions" in captured_message[0]
+        assert "pending subsessions (task / user_chat)" in captured_message[0]
         assert "list_subsessions" in captured_message[0]
         # The flag must be cleared after the message is delivered.
         assert aq.completion_suppressed is False
@@ -399,7 +399,7 @@ class TestAutoContinue:
         assert len(captured_message) >= 1
         assert "SYSTEM RESTARTED" in captured_message[0]
         assert "previous completion marker was ignored" in captured_message[0]
-        assert "active monitoring subsessions" in captured_message[0]
+        assert "pending subsessions (task / user_chat)" in captured_message[0]
         assert "list_subsessions" in captured_message[0]
         # The flag must be cleared after the message is delivered.
         assert aq.completion_suppressed is False

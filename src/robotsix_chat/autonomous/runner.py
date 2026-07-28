@@ -365,9 +365,11 @@ class AutonomousRunner:
         # Check completion first (it terminates the execution loop).
         if completion_marker in reply_text:
             # Gate: suppress completion while the session owns any active
-            # subsession (including periodic monitors).  Premature completion
-            # closes the session and locks the agent out of spawning tracking
-            # monitors, leaving newly-filed tickets untracked.
+            # non-periodic subsession (task / user_chat).  Periodic monitors
+            # run indefinitely by design and must not deadlock completion.
+            # Premature completion closes the session and locks the agent
+            # out of spawning tracking monitors, leaving newly-filed tickets
+            # untracked.
             if self._has_pending_subsessions(session_id):
                 logger.warning(
                     "Autonomous session %s attempted completion while "
@@ -807,11 +809,11 @@ class AutonomousRunner:
                             message = (
                                 f"{restart_prefix}"
                                 "Continue. (Your previous completion marker "
-                                "was ignored because active monitoring "
-                                "subsessions are still running.  Use "
+                                "was ignored because pending subsessions "
+                                "(task / user_chat) are still running.  Use "
                                 "list_subsessions to check their status, "
                                 "and only emit the completion marker when "
-                                "all subsessions have finished.)"
+                                "all pending subsessions have finished.)"
                             )
                         elif is_restart:
                             message = (
