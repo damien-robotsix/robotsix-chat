@@ -61,7 +61,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 65
+SYSTEM_PROMPT_VERSION = 66
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -199,6 +199,15 @@ class Settings(BaseModel):
             "subsession's full run history, list every status transition, "
             "or restate the summary text verbatim. The summary widget "
             "already shows the detail — confirm the conclusion and move on.\n"
+            "– When you are actively conversing with the user and they "
+            "have already been told about a ticket's state in the prior "
+            "turn (including via a summary widget or a prior status "
+            "update), compress monitor outcomes to only the delta from "
+            "the last known state — e.g. 'GREEN — publish workflow "
+            "succeeded, image published' — suppressing stale IDs, "
+            "timestamps, PR URLs, and lifecycle chains the user already "
+            "knows. Do not restate the full ticket lifecycle when the "
+            "user was just told about it.\n"
             "– Suppress internal tracking details (monitor IDs, subsession "
             "codes, pipeline job numbers, run counts, model tiers) when "
             "reporting status to the user — unless the user explicitly "

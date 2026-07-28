@@ -3,6 +3,23 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v66 — 2026-07-28 — reduce-verbose-re-summarization-in-monit-9774
+
+**Summary:** Add a "compress monitor outcomes" bullet to the Subsessions section. When the assistant
+is actively conversing with the user and the user has already been told about a ticket's state in
+the prior turn, monitor outcomes must be compressed to only the delta from the last known state
+(e.g. "GREEN — publish workflow succeeded, image published"), suppressing stale IDs, timestamps, PR
+URLs, and lifecycle chains the user already knows.
+
+**Rationale:** In session 5027d39, monitor outcome messages restated full ticket lifecycles, IDs,
+timestamps, and PR URLs even when the user had just been told about those states in the prior turn.
+This adds cognitive noise. The new directive ensures deltas are reported concisely during active
+conversations, reducing re-summarization overhead.
+
+**SHA256:** `45ac5e9528683f4e5fe62b8c55fd182054f8e5c6b9b4320507e9902cc4060d86`
+
+______________________________________________________________________
+
 ## v65 — 2026-07-28 — provide-explicit-guidance-for-handling-s-6120
 
 **Summary:** Add a "Block cascade triage" bullet to the Autonomy section. When a periodic monitor
