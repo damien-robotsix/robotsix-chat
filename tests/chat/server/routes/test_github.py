@@ -153,7 +153,7 @@ async def test_403_when_api_key_mismatch() -> None:
     """Returns 403 when ``X-API-Key`` does not match the configured key."""
     settings = _mock_settings(api_key="secret-key")  # pragma: allowlist secret
     request = _make_patch_request(
-        api_key="wrong-key",
+        api_key="wrong-key",  # pragma: allowlist secret
         github_settings=settings,
     )
     with pytest.raises(HTTPException) as exc_info:
@@ -464,8 +464,8 @@ async def test_200_multiple_features() -> None:
         "test-org/test-repo",
         dependency_graph="enabled",
         advanced_security="disabled",
-        secret_scanning="enabled",
-        secret_scanning_push_protection="disabled",
+        secret_scanning="enabled",  # pragma: allowlist secret
+        secret_scanning_push_protection="disabled",  # pragma: allowlist secret
     )
 
 
@@ -492,8 +492,7 @@ async def test_200_disabled_feature() -> None:
         "test-org/test-repo",
         dependency_graph=None,
         advanced_security=None,
-        secret_scanning="disabled",
-        secret_scanning_push_protection=None,
+        secret_scanning="disabled",  # pragma: allowlist secret
     )
 
 
