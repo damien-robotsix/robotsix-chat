@@ -16,7 +16,22 @@ boards but the assistant lacked guidance to halt further bulk actions and offer 
 Adding this directive prevents wasteful bulk-resume attempts against systemic, stabilized block
 cascades and routes the operator directly to a categorized triage decision.
 
-**SHA256:** `3165c8baea9a40eb074f5fb3afa560371ebd4f6dd7ed54293b7b65057af478f8`
+**SHA256:** `5d4c331db3f3338b25d5330f0306671898a640e67e506bab7c8476229b4a6c40`
+
+## v65 — 2026-07-28 — add-failure-mode-classification-to-bulk-0839
+
+**Summary:** Add a "Bulk-resume failure-mode classification" bullet to the ticket lifecycle's
+Remediate step (3). Before bulk-resuming multiple blocked tickets, the assistant must now query each
+ticket's history and comments to infer the failure-mode category (e.g. 'unavailable tools', 'CI
+typecheck', 'git checkout failure'). If more than 2 distinct failure modes are detected, abort the
+bulk-resume and surface a categorized diagnosis to the operator via a user_chat subsession instead.
+
+**Rationale:** The assistant bulk-resumed 75 blocked tickets without pre-classifying failure modes,
+assuming a single implement-stage fix was sufficient. The monitor later revealed 41 re-blocks across
+9 distinct root causes. Pre-classifying failure modes before bulk-resume prevents re-block cycles
+and wasted implement cycles when a batch spans multiple unrelated root causes.
+
+**SHA256:** `f0882f7e2e093b0dfb94edbd9dfc2948bb43d065fdd06c01666c26a8f6ce38d8`
 
 ______________________________________________________________________
 
