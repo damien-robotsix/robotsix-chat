@@ -7,6 +7,7 @@ real network.
 from __future__ import annotations
 
 import time
+from email.utils import formatdate
 
 import httpx
 import pytest
@@ -15,6 +16,7 @@ from pydantic import SecretStr
 
 import robotsix_chat.component_access.roster as _roster
 from robotsix_chat.component_access.roster import (
+    _augment_with_fallbacks,
     _cache_valid,
     build_skill_prompt,
     fetch_roster,
@@ -22,6 +24,8 @@ from robotsix_chat.component_access.roster import (
 )
 from robotsix_chat.component_access.tools import (
     _component_request_impl,
+    _health_probe,
+    _parse_retry_after,
     build_component_access_tools,
 )
 from robotsix_chat.config import CentralDeploySettings, ComponentCredentials
@@ -69,6 +73,84 @@ def test_cache_valid_expired() -> None:
     # as "fresh" on a newly booted CI runner — anchor relative to now.
     _roster._cache = (time.monotonic() - 301.0, [])  # just past the 300s TTL
     assert _cache_valid(300.0) is False
+
+
+# ---------------------------------------------------------------------------
+# _augment_with_fallbacks
+# ---------------------------------------------------------------------------
+
+
+def test_augment_with_fallbacks_empty() -> None:
+    """Empty fallbacks dict returns original entries unchanged."""
+    entries = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    result = _augment_with_fallbacks(entries, {})
+    assert result is entries
+
+
+def test_augment_with_fallbacks_merges_all() -> None:
+    """All fallbacks are appended when none overlap with roster entries."""
+    entries = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    fallbacks = {"board": "http://b:8080", "deploy": "http://d:8100"}
+    result = _augment_with_fallbacks(entries, fallbacks)
+    # Original entries preserved.
+    assert result[0] == entries[0]
+    # Fallback entries appended.
+    assert len(result) == 3
+    fb_ids = {e["id"] for e in result if e.get("_fallback")}
+    assert fb_ids == {"board", "deploy"}
+    # Each fallback entry has the expected shape.
+    for e in result:
+        if e.get("_fallback"):
+            assert e["base_url"] == fallbacks[e["id"]]
+            assert e["skill"] == ""
+
+
+def test_augment_with_fallbacks_dedup_partial() -> None:
+    """Fallbacks already in the roster are skipped; only new ones are added."""
+    entries = [
+        {"id": "mill", "base_url": "http://m:8080", "skill": "..."},
+        {"id": "board", "base_url": "http://b:8080", "skill": "..."},
+    ]
+    fallbacks = {"board": "http://b-alt:8080", "deploy": "http://d:8100"}
+    result = _augment_with_fallbacks(entries, fallbacks)
+    assert len(result) == 3
+    # board already existed — only deploy should be added as fallback.
+    fb_ids = {e["id"] for e in result if e.get("_fallback")}
+    assert fb_ids == {"deploy"}
+
+
+def test_augment_with_fallbacks_dedup_all() -> None:
+    """When every fallback id is already in the roster, nothing is added."""
+    entries = [
+        {"id": "mill", "base_url": "http://m:8080", "skill": "..."},
+        {"id": "board", "base_url": "http://b:8080", "skill": "..."},
+    ]
+    fallbacks = {"mill": "http://m-alt:8080", "board": "http://b-alt:8080"}
+    result = _augment_with_fallbacks(entries, fallbacks)
+    assert result == entries
+
+
+def test_augment_with_fallbacks_error_entries_ignored() -> None:
+    """Error entries do not count as existing — fallback can replace them."""
+    entries = [
+        {"id": "mill", "base_url": "", "skill": "", "_error": "down"},
+    ]
+    fallbacks = {"mill": "http://m:8080"}
+    result = _augment_with_fallbacks(entries, fallbacks)
+    # The error entry is kept, but a fallback entry with the same id is added.
+    assert len(result) == 2
+    fb_entry = next(e for e in result if e.get("_fallback"))
+    assert fb_entry["id"] == "mill"
+    assert fb_entry["base_url"] == "http://m:8080"
+
+
+def test_augment_with_fallbacks_original_not_mutated() -> None:
+    """The original entries list is not modified by the augmentation."""
+    entries = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    fallbacks = {"deploy": "http://d:8100"}
+    _augment_with_fallbacks(entries, fallbacks)
+    assert len(entries) == 1
+    assert entries[0]["id"] == "mill"
 
 
 # ---------------------------------------------------------------------------
@@ -248,6 +330,101 @@ async def test_fetch_roster_strips_trailing_slash(
     settings = _settings(url="http://deploy:8080/", roster_cache_ttl=300.0)
     await fetch_roster(settings)
     assert route.called
+
+
+# -- fetch_roster with component_fallbacks ----------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_roster_empty_url_with_fallbacks() -> None:
+    """Empty URL + fallbacks returns fallback entries only, no HTTP call."""
+    _wipe_cache()
+    fallbacks = {"mill": "http://m:8080", "board": "http://b:8080"}
+    settings = _settings(url="", component_fallbacks=fallbacks)
+    result = await fetch_roster(settings)
+    assert len(result) == 2
+    fb_ids = {e["id"] for e in result}
+    assert fb_ids == {"mill", "board"}
+    for e in result:
+        assert e.get("_fallback") is True
+        assert e["skill"] == ""
+
+
+@pytest.mark.asyncio
+async def test_fetch_roster_success_augmented_with_fallbacks(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Successful fetch + fallbacks: missing fallback ids are appended."""
+    _wipe_cache()
+    entries = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(200, json=entries)
+    )
+    fallbacks = {"mill": "http://m-alt:8080", "board": "http://b:8080"}
+    settings = _settings(
+        url="http://deploy:8080",
+        roster_cache_ttl=300.0,
+        component_fallbacks=fallbacks,
+    )
+    result = await fetch_roster(settings)
+    # mill from roster, board from fallback, but NOT mill (already present).
+    assert len(result) == 2
+    fb_entry = next(e for e in result if e["id"] == "board")
+    assert fb_entry.get("_fallback") is True
+    assert fb_entry["base_url"] == "http://b:8080"
+
+
+@pytest.mark.asyncio
+async def test_fetch_roster_error_with_fallbacks_and_stale_cache(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Error fetch + stale cache: fallbacks augment the stale cache entries."""
+    _wipe_cache()
+    # Prime a non-empty cache.
+    entries = [{"id": "mill", "base_url": "http://m:8080", "skill": "..."}]
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(200, json=entries)
+    )
+    fallbacks = {"board": "http://b:8080"}
+    settings = _settings(
+        url="http://deploy:8080",
+        roster_cache_ttl=300.0,
+        component_fallbacks=fallbacks,
+    )
+    await fetch_roster(settings)  # prime cache
+
+    # Now force an error, keeping the stale cache.
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(500, text="boom")
+    )
+    _roster._cache = (time.monotonic() - 301.0, entries)
+    result = await fetch_roster(settings)
+    # Stale mill entry + fallback board entry.
+    assert len(result) == 2
+    ids = {e["id"] for e in result}
+    assert ids == {"mill", "board"}
+    assert any(e.get("_fallback") for e in result)
+
+
+@pytest.mark.asyncio
+async def test_fetch_roster_empty_with_fallbacks_no_stale_cache(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Empty roster + fallbacks (no stale cache): returns fallbacks only."""
+    _wipe_cache()
+    respx_mock.get("http://deploy:8080/chat/components").mock(
+        return_value=httpx.Response(200, json=[])
+    )
+    fallbacks = {"mill": "http://m:8080"}
+    settings = _settings(
+        url="http://deploy:8080",
+        roster_cache_ttl=300.0,
+        component_fallbacks=fallbacks,
+    )
+    result = await fetch_roster(settings)
+    assert len(result) == 1
+    assert result[0]["id"] == "mill"
+    assert result[0].get("_fallback") is True
 
 
 # ---------------------------------------------------------------------------
@@ -439,6 +616,64 @@ def test_build_skill_prompt_missing_skill_field() -> None:
     """Entries with no skill field are skipped."""
     entries = [{"id": "mill", "base_url": "http://m:8080"}]
     assert build_skill_prompt(entries) == ""
+
+
+# ---------------------------------------------------------------------------
+# _health_probe
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_health_probe_success_200(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """GET /health returning 200 is considered healthy."""
+    respx_mock.get("http://m:8080/health").mock(
+        return_value=httpx.Response(200, json={"status": "ok"})
+    )
+    assert await _health_probe("http://m:8080") is True
+
+
+@pytest.mark.asyncio
+async def test_health_probe_success_204(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """GET /health returning 204 (no content) is 2xx and thus healthy."""
+    respx_mock.get("http://m:8080/health").mock(return_value=httpx.Response(204))
+    assert await _health_probe("http://m:8080") is True
+
+
+@pytest.mark.asyncio
+async def test_health_probe_failure_500(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Non-2xx response (500) is considered unhealthy."""
+    respx_mock.get("http://m:8080/health").mock(
+        return_value=httpx.Response(500, text="internal error")
+    )
+    assert await _health_probe("http://m:8080") is False
+
+
+@pytest.mark.asyncio
+async def test_health_probe_failure_404(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Non-2xx response (404) is considered unhealthy."""
+    respx_mock.get("http://m:8080/health").mock(
+        return_value=httpx.Response(404, text="not found")
+    )
+    assert await _health_probe("http://m:8080") is False
+
+
+@pytest.mark.asyncio
+async def test_health_probe_failure_timeout(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Timeout / connection error is considered unhealthy."""
+    respx_mock.get("http://m:8080/health").mock(
+        side_effect=httpx.ConnectError("connection refused")
+    )
+    assert await _health_probe("http://m:8080") is False
 
 
 # ---------------------------------------------------------------------------
@@ -1053,6 +1288,58 @@ async def test_patch_is_non_idempotent_no_retry_on_any_response(
     )
     assert "HTTP 503" in result
     assert route.call_count == 1
+
+
+# -- _parse_retry_after ----------------------------------------------------
+
+
+def test_parse_retry_after_seconds() -> None:
+    """Integer-seconds Retry-After header is parsed directly."""
+    headers = httpx.Headers({"Retry-After": "120"})
+    assert _parse_retry_after(headers) == 120.0
+
+
+def test_parse_retry_after_seconds_float() -> None:
+    """Float-seconds Retry-After header is parsed as float."""
+    headers = httpx.Headers({"Retry-After": "0.5"})
+    assert _parse_retry_after(headers) == 0.5
+
+
+def test_parse_retry_after_negative_clamped() -> None:
+    """Negative Retry-After seconds are clamped to 0.0."""
+    headers = httpx.Headers({"Retry-After": "-10"})
+    assert _parse_retry_after(headers) == 0.0
+
+
+def test_parse_retry_after_http_date_future() -> None:
+    """HTTP-date Retry-After in the future returns positive seconds."""
+    future_ts = time.time() + 120.0
+    date_str = formatdate(future_ts, usegmt=True)
+    headers = httpx.Headers({"Retry-After": date_str})
+    result = _parse_retry_after(headers)
+    assert result is not None
+    assert result > 0.0
+    assert result <= 125.0  # allow small timing slop
+
+
+def test_parse_retry_after_http_date_past() -> None:
+    """HTTP-date Retry-After in the past is clamped to 0.0."""
+    past_ts = time.time() - 60.0
+    date_str = formatdate(past_ts, usegmt=True)
+    headers = httpx.Headers({"Retry-After": date_str})
+    assert _parse_retry_after(headers) == 0.0
+
+
+def test_parse_retry_after_missing() -> None:
+    """Missing Retry-After header returns None."""
+    headers = httpx.Headers({})
+    assert _parse_retry_after(headers) is None
+
+
+def test_parse_retry_after_unparsable() -> None:
+    """Unparsable Retry-After value returns None."""
+    headers = httpx.Headers({"Retry-After": "not-a-number-or-date"})
+    assert _parse_retry_after(headers) is None
 
 
 # -- 429 retry-after -------------------------------------------------------
