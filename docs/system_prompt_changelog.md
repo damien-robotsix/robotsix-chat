@@ -3,6 +3,26 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v67 — 2026-07-28 — consolidate-subsession-summaries-into-a-c7d8
+
+**Summary:** Replace the "consolidate periodic subsession outcomes" bullet in the Subsessions section
+with stronger, more explicit language. The new text: (a) explicitly forbids raw enumerations of
+subsession outcomes (no bullet lists of `[id] kind=... status=...` lines), (b) requires the agent to
+SYNTHESIZE all relevant outcomes into a single cohesive narrative (1-2 paragraphs in natural
+language), (c) instructs the agent to omit trivial NO_CHANGE monitors entirely, and (d) when
+multiple outcomes need reporting, consolidate them into ONE narrative grouped by theme, not by
+subsession id. The `_REACT_PROMPT_TEMPLATE` in `delivery.py` is similarly updated to forbid raw
+enumerations and require synthesis over individual notices.
+
+**Rationale:** The prior instruction ("consolidate them into ONE grouped summary") was being
+interpreted loosely — the agent still produced plain bullet lists and tool-output-style dumps that
+read like debug output rather than a polished assistant reply. The new language is prescriptive and
+unambiguous, leaving no room for raw enumeration fallback.
+
+**SHA256:** `d27d30799d75701d7f1dcdd5e507adbb3099921aab868a4f4c51edf091b4931a`
+
+______________________________________________________________________
+
 ## v66 — 2026-07-28 — reduce-verbose-re-summarization-in-monit-9774
 
 **Summary:** Add a "compress monitor outcomes" bullet to the Subsessions section. When the assistant
