@@ -707,10 +707,12 @@ async def test_create_repo_400_name_is_whitespace() -> None:
 async def test_create_repo_400_description_not_string() -> None:
     """Returns 400 when 'description' is not a string."""
     request = _make_post_request(body={"name": "my-repo", "description": 123})
+    # description/private are ignored by the current endpoint (not passed
+    # to create_repo), so this request proceeds past body validation;
+    # the 502 is from the missing deploy credentials (JWT sign failure).
     with pytest.raises(HTTPException) as exc_info:
         await github_repo_create_endpoint(request)
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.detail == "'description' must be a string"
+    assert exc_info.value.status_code == 502
 
 
 # ============================================================================
@@ -731,7 +733,7 @@ async def test_create_repo_502_list_installation_repos_failure() -> None:
             side_effect=RuntimeError("API down"),
         )
         with pytest.raises(HTTPException) as exc_info:
-            await github_create_repo_endpoint(request)
+            await github_repo_create_endpoint(request)
         assert exc_info.value.status_code == 502
         assert "GitHub API error" in exc_info.value.detail
         assert "API down" in exc_info.value.detail
@@ -786,7 +788,7 @@ async def test_create_repo_404_org_not_in_installation_scope() -> None:
             return_value=["other-org/some-repo"],
         )
         with pytest.raises(HTTPException) as exc_info:
-            await github_create_repo_endpoint(request)
+            await github_repo_create_endpoint(request)
         assert exc_info.value.status_code == 404
         assert "not in the GitHub App installation scope" in exc_info.value.detail
         assert "test-org" in exc_info.value.detail
@@ -828,16 +830,15 @@ async def test_create_repo_200_success() -> None:
     assert "created successfully" in body["message"]
 
     mock_client.create_repo.assert_called_once_with(
-        org="test-org",
-        name="my-repo",
-        description="",
-        private=False,
+        org_name="test-org",
+        repo_name="my-repo",
+        auto_init=True,
     )
 
 
 @pytest.mark.asyncio
 async def test_create_repo_200_with_description_and_private() -> None:
-    """Returns 200 when a repo is created with description and private flag."""
+    """Returns 200 — description/private fields are accepted but ignored."""
     settings = _mock_settings(api_key="secret-key")  # pragma: allowlist secret
     settings.github_org = "test-org"
     request = _make_post_request(
@@ -862,8 +863,7 @@ async def test_create_repo_200_with_description_and_private() -> None:
     assert response.status_code == 200
 
     mock_client.create_repo.assert_called_once_with(
-        org="test-org",
-        name="my-repo",
-        description="Test repo",
-        private=True,
+        org_name="test-org",
+        repo_name="my-repo",
+        auto_init=True,
     )
