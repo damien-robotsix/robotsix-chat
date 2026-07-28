@@ -1289,9 +1289,7 @@ class DirectRepoClient:
         try:
             patched = self.apply_patch(original, patch_text)
         except ValueError as exc:
-            return (
-                f"Error applying patch to '{file_path}' in {repo_full_name}: {exc}"
-            )
+            return f"Error applying patch to '{file_path}' in {repo_full_name}: {exc}"
 
         if patched == original:
             return (
