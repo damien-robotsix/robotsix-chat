@@ -149,7 +149,7 @@ repos:
         # turns every release commit into a red main.  Same for the
         # towncrier fragment directory — fragments are auto-generated
         # one-liners.
-        exclude: ^(CHANGELOG\.md|changelog\.d/.*)$
+        exclude: ^(CHANGELOG\.md|changelog\.d/.*|docs/system_prompt_changelog\.md)$
         additional_dependencies:
           - mdformat-gfm
           - mdformat-frontmatter

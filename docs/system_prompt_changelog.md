@@ -3,6 +3,34 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v68 — 2026-07-28 — add-retry-with-justification-support-to-6928
+
+**Summary:** Three updates to the `agent_instruction` default to support retry-with-justification
+for fingerprint-guarded tickets:
+
+1. **resume-blocked endpoint:** Document the `justification` JSON body parameter so the agent knows
+   it can pass a reason to override the fingerprint guard when the spec is unchanged but external
+   information (e.g. an answered pending question, a resolved prerequisite) makes re-implementation
+   warranted.
+
+1. **Auto-resume remediation:** Extend the remediation rule to include fingerprint-guarded tickets
+   where a pending question has been answered — the agent should call `resume-blocked` with
+   `justification: "pending question answered; spec is complete; allow re-implement"`.
+
+1. **Periodic subsession monitoring:** Add an exception to the "do not keep polling" rule for
+   fingerprint-guarded tickets: if the guard can be bypassed with new external information, the
+   agent should call `resume-blocked` with a justification explaining why re-implementation is now
+   warranted.
+
+**Rationale:** Fingerprint-guarded tickets that are blocked solely because a pending question
+needed answering were previously stuck until the spec itself changed. The `justification` parameter
+on `resume-blocked` now allows the agent to unblock these tickets when the question is answered,
+reducing unnecessary operator intervention.
+
+**SHA256:** `3aca65c9780285400f51a1853c4c0c70bd272368ee7b53014b27458808e43b40`
+
+______________________________________________________________________
+
 ## v67 — 2026-07-28 — consolidate-subsession-summaries-into-a-c7d8
 
 **Summary:** Replace the "consolidate periodic subsession outcomes" bullet in the Subsessions
@@ -243,7 +271,7 @@ close prematurely when a ticket reaches "done/closed" on the board but the chang
 1. **Step 1 (Initiate):** New guidance requires ticket specs to include acceptance criteria that
    verify the change is live and working — e.g. "the endpoint returns 2xx" — not just "PR merged".
 
-2. **Step 4 (Complete):** The monitor must now probe the change directly with `component_request`
+1. **Step 4 (Complete):** The monitor must now probe the change directly with `component_request`
    before closing. If a server-side capability (endpoint, config flag, behaviour) does not respond
    as expected — e.g. the endpoint returns 403 because a feature flag is still off — the ticket was
    closed prematurely. The monitor should either reopen the ticket or file a follow-up. Only close
@@ -326,14 +354,14 @@ and strengthen warnings that recalled session memories may be stale.
    Recalled session memories are explicitly called out as similarity-based, potentially stale, and
    likely to reference phantom identifiers.
 
-2. **Agent instruction opening:** "consult it at the start of every session" → "consult it at the
+1. **Agent instruction opening:** "consult it at the start of every session" → "consult it at the
    start of every session and before drafting any plan or taking substantive action".
 
-3. **Autonomy section:** Added a mandatory pre-action bullet: load live board state via
+1. **Autonomy section:** Added a mandatory pre-action bullet: load live board state via
    `GET /tickets` and knowledge notes before drafting any plan. Recalled session memories are a
    fallible cache — verify live state first.
 
-4. **Verification section (Cognee recall):** Strengthened the stale-memory warning — explicitly
+1. **Verification section (Cognee recall):** Strengthened the stale-memory warning — explicitly
    calls out phantom identifiers (wrong repo owners, non-existent ticket ids, closed items
    remembered as open) and requires cross-checking against both knowledge notes and board state, not
    just the live API.
@@ -356,7 +384,7 @@ ______________________________________________________________________
    a restriction like "never use X", "avoid Y", or "do not spawn Z" — behavioral rules belong in the
    system prompt, not in knowledge notes.
 
-2. **Verification bullet (knowledge note rule contradictions):** When a recalled knowledge note
+1. **Verification bullet (knowledge note rule contradictions):** When a recalled knowledge note
    appears to prohibit an action the system prompt explicitly permits (e.g. "never use
    subsessions"), trust the system prompt — it is the higher-authority directive. Retire
    contradicting notes with `update_knowledge_note`.
@@ -1079,11 +1107,11 @@ Every change to `Settings.agent_instruction` (the pydantic field default literal
 `src/robotsix_chat/config/settings.py`) **MUST**:
 
 1. **Bump** `SYSTEM_PROMPT_VERSION` to the next integer.
-2. **Add a new entry** at the top of this file (reverse-chronological, newest first) with the header
+1. **Add a new entry** at the top of this file (reverse-chronological, newest first) with the header
    `## v<N> — <YYYY-MM-DD> — <ticket-id>`.
-3. **Record the SHA256** of the new `agent_instruction` default literal (computed as
+1. **Record the SHA256** of the new `agent_instruction` default literal (computed as
    `hashlib.sha256(default.encode()).hexdigest()`) in the entry.
-4. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` in
+1. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` in
    the Default column — the full multi-paragraph instruction literal is impractical to embed
    verbatim in a Markdown table cell. Do not attempt to inline the literal; the placeholder is
    sufficient.
@@ -1098,14 +1126,14 @@ Rollback is a **forward-moving new version** — never reuse a version number. T
 prompt:
 
 1. Pick the target prior version's entry in this changelog.
-2. Restore its prompt text via git, e.g.: `git revert <commit>` or
+1. Restore its prompt text via git, e.g.: `git revert <commit>` or
    `git show <commit>:src/robotsix_chat/config/settings.py` (extract the `agent_instruction` block).
-3. Bump `SYSTEM_PROMPT_VERSION` to the next number.
-4. Add a new changelog entry `## v<N> — <YYYY-MM-DD> — <ticket-id>` with:
+1. Bump `SYSTEM_PROMPT_VERSION` to the next number.
+1. Add a new changelog entry `## v<N> — <YYYY-MM-DD> — <ticket-id>` with:
    - **Summary**: `rollback to v<K>`
    - **Rationale**: why the rollback is needed and which ticket authorises it.
    - **SHA256**: the hash of the restored literal (must match the prior version's recorded hash).
-5. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` — no
+1. The `agent.instruction` row of `docs/configuration.md` uses the placeholder `(long default)` — no
    change needed there for a rollback.
 
 ______________________________________________________________________

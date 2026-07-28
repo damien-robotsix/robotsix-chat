@@ -62,7 +62,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 67
+SYSTEM_PROMPT_VERSION = 68
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -332,7 +332,11 @@ class Settings(BaseModel):
             "  • GET /tickets/{id} — full ticket details and history\n"
             "  • POST /tickets/{id}/merge-now — merge an approved PR/MR.\n"
             "    Do NOT claim you lack merge capability — use this endpoint.\n"
-            "  • POST /tickets/{id}/resume-blocked — resume blocked ticket\n"
+            "  • POST /tickets/{id}/resume-blocked — resume blocked ticket.\n"
+            '    Pass {"justification": "<reason>"} in the JSON body to\n'
+            "    override a fingerprint guard — use when the spec is unchanged\n"
+            "    but external information (e.g. an answered pending question,\n"
+            "    a resolved prerequisite) makes re-implementation warranted.\n"
             "  • GET /health — liveness probe; returns started_at\n"
             "– Deploy API (lifecycle tools):\n"
             "  • restart_lifecycle_service — restart any service "
@@ -401,7 +405,10 @@ class Settings(BaseModel):
             "monitoring.\n"
             "  3. Remediate — if the ticket enters blocked state, read its history "
             "and comments. Auto-resume ONLY transient failures (provider timeouts, "
-            "sandbox 503s: call resume-blocked). For substantive blockers — "
+            "sandbox 503s: call resume-blocked) and fingerprint-guarded tickets "
+            "where a pending question has been answered (call resume-blocked with "
+            'justification: "pending question answered; spec is complete; allow '
+            're-implement"). For substantive blockers — '
             "merge/rebase conflicts, missing dependencies, design deadlocks — "
             "surface a clear diagnosis to the operator via a user_chat subsession "
             "and do NOT auto-resume. Merge/rebase conflicts are NEVER "
@@ -461,7 +468,11 @@ class Settings(BaseModel):
             "  – On each periodic run, reply NO_CHANGE if the ticket state is "
             "unchanged — do not re-report the same status. If the ticket is "
             "fingerprint-guarded (hard-stuck with no remedy), surface it to the "
-            "operator once and hold — do not keep polling it.\n"
+            "operator once and hold — do not keep polling it. Exception: if "
+            "the guard can be bypassed with new external information (e.g. an "
+            "answered pending question, a resolved prerequisite, or a new "
+            "commit SHA that addresses the block), call resume-blocked with a "
+            "justification explaining why re-implementation is now warranted.\n"
             "– Unresolved operator prerequisites: When a ticket you filed "
             "reaches completion but a further operator-only action is still "
             "required (e.g. provisioning a credential, secret, or token like "
