@@ -1,6 +1,11 @@
 ## 0.0.0 (unreleased)
 
 - Add missing `model_config = ConfigDict(extra="forbid")` to `GitHubActionsSettings` so it rejects unknown JSON keys like every other config model.
+- Remove dead ``timeout`` fields from ``GitHubActionsSettings`` and
+  ``GitHubSecuritySettings`` — neither field was ever read by any code
+  path (``DirectRepoSettings.timeout`` is the active timeout).  Removed
+  the fields from the pydantic model, config template, JSON Schema, and
+  class docstrings.
 - Extracted shared `_request` helper method in `LifecycleClient`, replacing duplicated boilerplate across `_get`, `_get_raw`, `_post`, and `_put`.
 - Extract `_list_subsessions` helper from duplicate registry-check boilerplate in `autonomous/runner.py`.
 - System prompt: added guidance to compress monitor outcomes to delta-only when the user was recently told about a ticket's state, suppressing stale IDs, timestamps, PR URLs, and lifecycle chains.
