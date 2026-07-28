@@ -1336,8 +1336,8 @@ def test_parse_retry_after_missing() -> None:
     assert _parse_retry_after(headers) is None
 
 
-def test_parse_retry_after_unparseable() -> None:
-    """Unparseable Retry-After value returns None."""
+def test_parse_retry_after_unparsable() -> None:
+    """Unparsable Retry-After value returns None."""
     headers = httpx.Headers({"Retry-After": "not-a-number-or-date"})
     assert _parse_retry_after(headers) is None
 
