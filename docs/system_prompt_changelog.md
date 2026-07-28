@@ -16,7 +16,7 @@ boards but the assistant lacked guidance to halt further bulk actions and offer 
 Adding this directive prevents wasteful bulk-resume attempts against systemic, stabilized block
 cascades and routes the operator directly to a categorized triage decision.
 
-**SHA256:** `3165c8baea9a40eb074f5fb3afa560371ebd4f6dd7ed54293b7b65057af478f8`
+**SHA256:** `5d4c331db3f3338b25d5330f0306671898a640e67e506bab7c8476229b4a6c40`
 
 ## v65 — 2026-07-28 — add-failure-mode-classification-to-bulk-0839
 
