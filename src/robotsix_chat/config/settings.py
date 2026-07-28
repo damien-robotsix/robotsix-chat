@@ -61,7 +61,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 64
+SYSTEM_PROMPT_VERSION = 65
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -439,6 +439,20 @@ class Settings(BaseModel):
             "the operator is explicitly reminded of steps only they can take "
             "and the prerequisite is tracked in the ticket system rather than "
             "buried in conversation history.\n"
+            "– Block cascade triage: when a periodic monitor reports a "
+            "stabilized cascade — \u226510 blocked tickets across at least 2 "
+            "boards, with no state change for \u22653 consecutive monitor "
+            "runs — do NOT bulk-resume or attempt mass remediation.  A "
+            "cascade that has stabilized is systemic; automated "
+            "retries will not resolve the underlying causes and only "
+            "waste cycles.  Instead, present a categorized failure-mode "
+            "summary grouping tickets by root cause "
+            "(merge conflicts, missing dependencies, pipeline errors, "
+            "design deadlocks, etc.) with a severity label per group, "
+            "and ask the operator to choose between per-board triage or "
+            "individual-ticket focus.  Do not enumerate every ticket "
+            "individually unless the operator selects individual focus; "
+            "keep the initial summary at the group level.\n"
             "– Merge / PR management: push_direct_repo_branch and "
             "open_direct_repo_pr push branches and open PRs for blocked "
             "tickets, but these PRs are opened without auto-merge — the "
