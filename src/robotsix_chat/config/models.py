@@ -774,6 +774,7 @@ class GitHubActionsSettings(BaseModel):
     github_org: str = "damien-robotsix"
     deploy_api_key: SecretStr = SecretStr("")
     timeout: float = 30.0
+    model_config = ConfigDict(extra="forbid")
 
 
 class NotificationSettings(BaseModel):
