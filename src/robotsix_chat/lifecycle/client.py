@@ -434,15 +434,25 @@ class LifecycleClient:
             headers["X-API-Key"] = api_key
         return headers
 
-    async def _get(self, path: str) -> str:
+    async def _request(
+        self,
+        method: str,
+        path: str,
+        json_body: dict[str, Any] | None = None,
+        *,
+        raw: bool = False,
+    ) -> str | None:
         url = f"{self._base_url}{path}"
         result = await safe_http_request(
-            "GET",
+            method,
             url,
             headers=self._headers(),
             timeout=self._s.timeout,
+            json_body=json_body,
             label="Lifecycle",
         )
+        if raw:
+            return None if result.error else result.text
         if result.error:
             return result.error
         # Re-serialise through json for consistent formatting.
@@ -452,52 +462,15 @@ class LifecycleClient:
         except Exception:
             return str(result.text)
 
+    async def _get(self, path: str) -> str:
+        return await self._request("GET", path)  # type: ignore[return-value]
+
     async def _get_raw(self, path: str) -> str | None:
         """Return the raw response text, or ``None`` on any failure."""
-        url = f"{self._base_url}{path}"
-        result = await safe_http_request(
-            "GET",
-            url,
-            headers=self._headers(),
-            timeout=self._s.timeout,
-            label="Lifecycle",
-        )
-        if result.error:
-            return None
-        return result.text
+        return await self._request("GET", path, raw=True)
 
     async def _post(self, path: str, json_body: dict[str, Any] | None = None) -> str:
-        url = f"{self._base_url}{path}"
-        result = await safe_http_request(
-            "POST",
-            url,
-            headers=self._headers(),
-            timeout=self._s.timeout,
-            json_body=json_body,
-            label="Lifecycle",
-        )
-        if result.error:
-            return result.error
-        try:
-            parsed = json.loads(str(result.text))
-            return json.dumps(parsed, indent=2)
-        except Exception:
-            return str(result.text)
+        return await self._request("POST", path, json_body=json_body)  # type: ignore[return-value]
 
     async def _put(self, path: str, json_body: dict[str, Any]) -> str:
-        url = f"{self._base_url}{path}"
-        result = await safe_http_request(
-            "PUT",
-            url,
-            headers=self._headers(),
-            timeout=self._s.timeout,
-            json_body=json_body,
-            label="Lifecycle",
-        )
-        if result.error:
-            return result.error
-        try:
-            parsed = json.loads(str(result.text))
-            return json.dumps(parsed, indent=2)
-        except Exception:
-            return str(result.text)
+        return await self._request("PUT", path, json_body=json_body)  # type: ignore[return-value]
