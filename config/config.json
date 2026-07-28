@@ -139,14 +139,12 @@
   "github_security": {
     "enabled": false,
     "github_org": "damien-robotsix",
-    "deploy_api_key": "",
-    "timeout": 30.0
+    "deploy_api_key": ""
   },
   "github_actions": {
     "enabled": false,
     "github_org": "damien-robotsix",
-    "deploy_api_key": "",
-    "timeout": 30.0
+    "deploy_api_key": ""
   },
   "repo_study": {
     "enabled": false,

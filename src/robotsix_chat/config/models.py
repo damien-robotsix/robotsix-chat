@@ -724,7 +724,6 @@ class GitHubSecuritySettings(BaseModel):
             ``X-API-Key`` header when calling the
             ``PATCH /chat/github/repos/{owner}/{repo}/settings``
             endpoint.  When empty, the endpoint returns 503 (unconfigured).
-        timeout: Per-request HTTP timeout in seconds.
 
     Note: GitHub App authentication is delegated to
     :class:`DirectRepoSettings` — those credentials must also be configured
@@ -735,7 +734,6 @@ class GitHubSecuritySettings(BaseModel):
     enabled: bool = False
     github_org: str = "damien-robotsix"
     deploy_api_key: SecretStr = SecretStr("")
-    timeout: float = 30.0
     model_config = ConfigDict(extra="forbid")
 
 
@@ -762,7 +760,6 @@ class GitHubActionsSettings(BaseModel):
         deploy_api_key: API key that clients must present in the
             ``X-API-Key`` header when calling the Actions endpoints.
             When empty, the endpoints return 503 (unconfigured).
-        timeout: Per-request HTTP timeout in seconds.
 
     Note: GitHub App authentication is delegated to
     :class:`DirectRepoSettings` — those credentials must also be configured
@@ -773,7 +770,6 @@ class GitHubActionsSettings(BaseModel):
     enabled: bool = False
     github_org: str = "damien-robotsix"
     deploy_api_key: SecretStr = SecretStr("")
-    timeout: float = 30.0
     model_config = ConfigDict(extra="forbid")
 
 
