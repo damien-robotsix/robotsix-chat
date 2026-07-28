@@ -24,6 +24,7 @@ class AutonomousSession:
     state: AutonomousState = AutonomousState.planning
     plan_text: str = ""
     auto_turn_count: int = 0
+    consecutive_no_change: int = 0
     completion_suppressed: bool = False
     rejected_subjects: list[str] | None = None
     recent_user_messages: list[str] | None = None

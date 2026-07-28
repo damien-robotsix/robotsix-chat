@@ -974,6 +974,16 @@ class AutonomousSettings(BaseModel):
     initial_task: str = ""
     continue_interval_seconds: float = 45.0
     pending_subsession_wait_timeout: float = 600.0
+    max_idle_auto_turns: int = Field(
+        default=5,
+        description=(
+            "Maximum number of consecutive NO_CHANGE / idle auto-continue "
+            "turns before the loop halts (reverts to proposal).  A turn is "
+            "idle when the agent reply is a recognised no-op sentinel "
+            "(NO_CHANGE, nothing changed, …).  Set to 0 to disable the "
+            "idle cap and only rely on max_auto_turns."
+        ),
+    )
     stale_monitor_runs_before_completion: int = Field(
         default=3,
         description=(

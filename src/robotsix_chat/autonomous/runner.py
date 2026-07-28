@@ -17,6 +17,7 @@ from robotsix_chat.chat.events import (
     autonomous_state_frame,
     autonomous_token_frame,
 )
+from robotsix_chat.subsessions.worker import _is_no_change
 
 if TYPE_CHECKING:
     from robotsix_chat.chat.conversation import ConversationStore
@@ -99,6 +100,7 @@ class AutonomousRunner:
                     "state": aq.state.value,
                     "plan_text": aq.plan_text,
                     "auto_turn_count": aq.auto_turn_count,
+                    "consecutive_no_change": aq.consecutive_no_change,
                     "completion_suppressed": aq.completion_suppressed,
                     "rejected_subjects": aq.rejected_subjects or [],
                     "recent_user_messages": aq.recent_user_messages or [],
@@ -133,6 +135,7 @@ class AutonomousRunner:
                     state=AutonomousState(entry["state"]),
                     plan_text=entry.get("plan_text", ""),
                     auto_turn_count=entry.get("auto_turn_count", 0),
+                    consecutive_no_change=entry.get("consecutive_no_change", 0),
                     completion_suppressed=entry.get("completion_suppressed", False),
                     rejected_subjects=entry.get("rejected_subjects", []),
                     recent_user_messages=entry.get("recent_user_messages", []),
@@ -362,13 +365,16 @@ class AutonomousRunner:
         # Check completion first (it terminates the execution loop).
         if completion_marker in reply_text:
             # Gate: suppress completion while the session owns any active
-            # subsession (including periodic monitors).  Premature completion
-            # closes the session and locks the agent out of spawning tracking
-            # monitors, leaving newly-filed tickets untracked.
-            if self._has_active_subsessions(session_id):
+            # non-periodic subsession (task / user_chat).  Periodic monitors
+            # run indefinitely by design and must not deadlock completion.
+            # Premature completion closes the session and locks the agent
+            # out of spawning tracking monitors, leaving newly-filed tickets
+            # untracked.
+            if self._has_pending_subsessions(session_id):
                 logger.warning(
                     "Autonomous session %s attempted completion while "
-                    "active subsessions are still running — suppressing",
+                    "pending subsessions (task / user_chat) are still "
+                    "running — suppressing",
                     session_id,
                 )
                 aq.completion_suppressed = True
@@ -424,6 +430,7 @@ class AutonomousRunner:
 
         aq.state = AutonomousState.executing
         aq.auto_turn_count = 0
+        aq.consecutive_no_change = 0
 
         # Schedule auto-continue as a background task.
         self._schedule_background(lambda: self._auto_continue(session_id))
@@ -802,11 +809,11 @@ class AutonomousRunner:
                             message = (
                                 f"{restart_prefix}"
                                 "Continue. (Your previous completion marker "
-                                "was ignored because active monitoring "
-                                "subsessions are still running.  Use "
+                                "was ignored because pending subsessions "
+                                "(task / user_chat) are still running.  Use "
                                 "list_subsessions to check their status, "
                                 "and only emit the completion marker when "
-                                "all subsessions have finished.)"
+                                "all pending subsessions have finished.)"
                             )
                         elif is_restart:
                             message = (
@@ -844,7 +851,14 @@ class AutonomousRunner:
                     # Record the exchange so history accumulates.
                     self._store.record(session_id, owner_id, message, full_reply)
 
-                    if self._event_sink is not None:
+                    # Detect no-op / idle replies and suppress publication.
+                    is_noop = _is_no_change(full_reply)
+                    if is_noop:
+                        aq.consecutive_no_change += 1
+                    else:
+                        aq.consecutive_no_change = 0
+
+                    if self._event_sink is not None and not is_noop:
                         self._event_sink.publish(
                             session_id,
                             agent_message_frame(full_reply, time.time()),
@@ -852,6 +866,21 @@ class AutonomousRunner:
 
                     aq.auto_turn_count += 1
                     self._save_sessions()
+
+                    # Idle cap: halt the loop after N consecutive no-op turns.
+                    max_idle = self._settings.autonomous.max_idle_auto_turns
+                    if max_idle > 0 and aq.consecutive_no_change >= max_idle:
+                        logger.info(
+                            "Autonomous session %s hit max_idle_auto_turns "
+                            "(%d consecutive no-op turns) — reverting to "
+                            "proposal",
+                            session_id,
+                            max_idle,
+                        )
+                        aq.state = AutonomousState.proposal
+                        self._save_sessions()
+                        self._publish_state(session_id)
+                        return
 
                     # Check for lifecycle markers in the reply.
                     new_state = self.check_reply_for_markers(session_id, full_reply)

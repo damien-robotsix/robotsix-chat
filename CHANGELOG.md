@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Add mutation-authorization guard to the autonomous session prompt: the agent must now verify operator authorization before performing state-changing actions (resume-blocked, merge-now, ingest, config/deploy/restart). When told to perform read-only work, the agent is instructed to hold all mutations and output a blocking message until explicitly authorized.
+- Autonomous sessions: periodic monitors no longer deadlock session completion; NO_CHANGE / idle auto-continue replies are suppressed from the browser; a new `max_idle_auto_turns` config (default 5) halts the loop after N consecutive idle turns instead of spinning to `max_auto_turns`.
 - Added `step-security/harden-runner` egress monitor to `docs.yml`, `release.yml`, `release-image.yml`, and `dependency-review.yml` workflows, matching the pattern already used in `ci.yml`.
 - Refactor `github_create_repo_endpoint` and `github_job_log_endpoint` to use a shared `_check_settings_and_auth` helper, eliminating duplicated 503/403 preamble code. Add installation-scope check to `github_create_repo_endpoint` so repos cannot be created under an org outside the GitHub App installation scope.
 - Fix backward-incompatible config loading crash: `GitHubSecuritySettings` and `GitHubActionsSettings` now accept the legacy `timeout` key (stripped before validation) so existing deployed configs do not fail on startup when the field was removed from the model.
