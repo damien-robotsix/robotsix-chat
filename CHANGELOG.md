@@ -37,6 +37,9 @@
   completes, even if the user has switched focus to another session.
   Returning to a session with stale queued messages also re-triggers
   pickup defensively.
+- Run mdformat on changed .md files in the document stage before
+  committing, so doc commits land with canonical formatting and avoid
+  the CI auto-fix round-trip.
 - Add a "Conflict Resolution" instruction to the system prompt: when a user gives an instruction that conflicts with an existing pending ticket, the assistant now automatically attempts to merge the instruction into the ticket rather than just flagging the conflict and waiting for manual intervention.
 - Add consolidation guidance to the system prompt for periodic subsession outcomes: when multiple monitors deliver outcomes in quick succession, the agent consolidates them into one grouped summary by state (NO_CHANGE, PROGRESS, GATE_PENDING) and hides trivial NO_CHANGE runs from duplicate monitor cycles.  Also updates the reaction prompt template (`_REACT_PROMPT_TEMPLATE`) with matching consolidation instructions.
 - Enable the `notify_user` browser notification tool by default (`notification.enabled: true` in the config template).  The agent can now proactively push alerts to connected browsers when background tasks complete, escalate, or need user attention.)

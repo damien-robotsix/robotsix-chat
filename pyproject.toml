@@ -223,6 +223,11 @@ ignore_missing_imports = true
 module = ["asgi_correlation_id", "asgi_correlation_id.*"]
 ignore_missing_imports = true
 
+# robotsix-mill is an external fleet package that ships no type information.
+[[tool.mypy.overrides]]
+module = ["robotsix_mill", "robotsix_mill.*"]
+ignore_missing_imports = true
+
 [tool.pyright]
 typeCheckingMode = "basic"
 pythonVersion = "3.14"
