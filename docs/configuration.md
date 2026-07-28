@@ -80,41 +80,35 @@ ______________________________________________________________________
 
 ### Top-level
 
-| JSON key | Type | Default | Description | | --------------------------- | ----------------- |
------------------------------------------------------ |
-\-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-| | `llmio_model_level` | `integer` | `3` | LLM capability level: `1` (cheapest), `2`, `3`, or `4`
-(best). | | `llmio_api_key` | `string` (secret) | `""` | OpenRouter API key. Required for levels
-1–2; ignored for 3–4. | | `summary_model_level` | `integer` | `1` | LLM capability level used to
-regenerate `POST /summary`'s structured extraction after each turn. | | `agent_instruction` |
-`string` | (long default) | System instruction for the agent. Governed by the code default in
-`src/robotsix_chat/config/settings.py` (currently v67). Intentionally absent from
-`config/config.json` — the code default is the single source of truth. Operators who need to
-override it can add `"agent_instruction"` to their local or deployed config file; doing so bypasses
-the code default entirely. | | `max_images_per_message` | `integer` | `8` | Maximum images per chat
-message. | | `max_image_bytes` | `integer` | `5242880` | Maximum image size in bytes (5 MiB). | |
-`allowed_image_media_types` | `array[string]` |
-`["image/png","image/jpeg","image/gif","image/webp"]` | Allowed image MIME types. |
+| JSON key                    | Type              | Default                                               | Description                                                                                                                                                                                                                                                                                                                                                                     |
+| --------------------------- | ----------------- | ----------------------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `llmio_model_level`         | `integer`         | `3`                                                   | LLM capability level: `1` (cheapest), `2`, `3`, or `4` (best).                                                                                                                                                                                                                                                                                                                  |
+| `llmio_api_key`             | `string` (secret) | `""`                                                  | OpenRouter API key. Required for levels 1–2; ignored for 3–4.                                                                                                                                                                                                                                                                                                                   |
+| `summary_model_level`       | `integer`         | `1`                                                   | LLM capability level used to regenerate `POST /summary`'s structured extraction after each turn.                                                                                                                                                                                                                                                                                |
+| `agent_instruction`         | `string`          | (long default)                                        | System instruction for the agent. Governed by the code default in `src/robotsix_chat/config/settings.py` (currently v67). Intentionally absent from `config/config.json` — the code default is the single source of truth. Operators who need to override it can add `"agent_instruction"` to their local or deployed config file; doing so bypasses the code default entirely. |
+| `max_images_per_message`    | `integer`         | `8`                                                   | Maximum images per chat message.                                                                                                                                                                                                                                                                                                                                                |
+| `max_image_bytes`           | `integer`         | `5242880`                                             | Maximum image size in bytes (5 MiB).                                                                                                                                                                                                                                                                                                                                            |
+| `allowed_image_media_types` | `array[string]`   | `["image/png","image/jpeg","image/gif","image/webp"]` | Allowed image MIME types.                                                                                                                                                                                                                                                                                                                                                       |
 
 ### Server
 
-| JSON key | Type | Default | Description | | ----------------------- | --------------- |
----------------- |
--------------------------------------------------------------------------------------------------- |
-| `server_host` | `string` | `"0.0.0.0"` | Host the server binds to. | | `server_port` | `integer` |
-`8000` | Port the server listens on. | | `idle_timeout_minutes` | `integer` | `30` | Minutes of
-inactivity before closing the connection. | | `log_level` | `string` | `"INFO"` | Python logging
-level. | | `log_json_format` | `boolean` | `true` | When `true`, log lines are structured JSON
-(structlog); `false` for human-readable console output. | | `cors_allow_origins` | `array[string]` |
-`[]` | Origins allowed to call `/chat` cross-origin. | | `correlation_id_header` | `string` |
-`"X-Request-ID"` | Header name for request correlation ids. |
+| JSON key                | Type            | Default          | Description                                                                                        |
+| ----------------------- | --------------- | ---------------- | -------------------------------------------------------------------------------------------------- |
+| `server_host`           | `string`        | `"0.0.0.0"`      | Host the server binds to.                                                                          |
+| `server_port`           | `integer`       | `8000`           | Port the server listens on.                                                                        |
+| `idle_timeout_minutes`  | `integer`       | `30`             | Minutes of inactivity before closing the connection.                                               |
+| `log_level`             | `string`        | `"INFO"`         | Python logging level.                                                                              |
+| `log_json_format`       | `boolean`       | `true`           | When `true`, log lines are structured JSON (structlog); `false` for human-readable console output. |
+| `cors_allow_origins`    | `array[string]` | `[]`             | Origins allowed to call `/chat` cross-origin.                                                      |
+| `correlation_id_header` | `string`        | `"X-Request-ID"` | Header name for request correlation ids.                                                           |
 
 ### Langfuse (tracing)
 
-| JSON key | Type | Default | Description | | --------------------- | ----------------- |
------------------------------- | -------------------- | | `langfuse.public_key` | `string` (secret)
-| `""` | Langfuse public key. | | `langfuse.secret_key` | `string` (secret) | `""` | Langfuse secret
-key. | | `langfuse.host` | `string` | `"https://cloud.langfuse.com"` | Langfuse host. |
+| JSON key              | Type              | Default                        | Description          |
+| --------------------- | ----------------- | ------------------------------ | -------------------- |
+| `langfuse.public_key` | `string` (secret) | `""`                           | Langfuse public key. |
+| `langfuse.secret_key` | `string` (secret) | `""`                           | Langfuse secret key. |
+| `langfuse.host`       | `string`          | `"https://cloud.langfuse.com"` | Langfuse host.       |
 
 These keys trace the main chat agent. When memory is enabled, a **separate** Langfuse project
 (`memory.langfuse.*`) traces the cognee/LiteLLM pipeline independently — see
@@ -124,202 +118,155 @@ These keys trace the main chat agent. When memory is enabled, a **separate** Lan
 
 Persistent, cross-conversation episodic memory via embedded cognee. Disabled by default.
 
-| JSON key | Type | Default | Description | | ---------------------------------------- |
------------------ | ----------------------------------------- |
-\-------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-| | `memory.enabled` | `boolean` | `false` | Master switch. Requires cognee extras. | |
-`memory.data_dir` | `string` | `"/data/cognee"` | Cognee store directory (keep on persistent
-volume). | | `memory.recall_search_type` | `string` | `"GRAPH_COMPLETION"` | Cognee recall search
-type. | | `memory.recall_timeout_seconds` | `number` | `60.0` | Hard timeout (seconds) for a single
-`recall` call. On expiry degrades to empty string — the agent proceeds without memory. | |
-`memory.remember_timeout_seconds` | `number` | `300.0` | Hard timeout (seconds) for a single
-`remember` call (cognify consolidation). On expiry the write is skipped and a warning is logged. | |
-`memory.write_backlog_path` | `string` | `"/data/cognee/backlog.jsonl"` | Path to a durable JSONL
-backlog for exchanges that could not be persisted after retries are exhausted. Drained
-opportunistically on subsequent successful writes. | | `memory.datafusion_runtime_memory_limit` |
-`string` | `"256M"` | DataFusion memory-pool limit (e.g. `"256M"`, `"1G"`). Bounds the LanceDB
-worker subprocess memory so a single large `merge_insert` does not OOM the container. Safe default
-for 2 GB containers; raise for larger limits. | | `memory.frozen_store_alert_minutes` | `number` |
-`10.0` | Duration (minutes) of consecutive write failures before a `WARNING` diagnostic is emitted —
-prevents a silently frozen vector store from going unnoticed for days. | |
-`memory.write_throttle_seconds` | `number` | `0.5` | Delay (seconds) between serialised writes so
-the LanceDB worker subprocess can complete each `merge_insert` before the next starts. Prevents
-burst OOM. | | `memory.llm.provider` | `string` | `"custom"` | Extraction LLM provider. | |
-`memory.llm.model` | `string` | `"openrouter/deepseek/deepseek-v4-flash"` | Extraction LLM model. |
-| `memory.llm.endpoint` | `string` | `"https://openrouter.ai/api/v1"` | Extraction LLM endpoint. | |
-`memory.llm.api_key` | `string` (secret) | `""` | OpenRouter API key for extraction. | |
-`memory.embedding.provider` | `string` | `"openai_compatible"` | Embedding provider. | |
-`memory.embedding.model` | `string` | `"bge-m3"` | Embedding model name. | |
-`memory.embedding.endpoint` | `string` | `""` | Embedding server URL (e.g. `http://host:11434/v1`).
-| | `memory.embedding.dimensions` | `integer` | `1024` | Embedding vector dimensions. | |
-`memory.embedding.api_key` | `string` (secret) | `""` | Bearer token for the embedding server. | |
-`memory.embedding.huggingface_tokenizer` | `string` | `"BAAI/bge-m3"` | HuggingFace tokenizer name.
-| | `memory.langfuse.public_key` | `string` (secret) | `""` | Langfuse public key
-(robotsix-chat-cognee project). | | `memory.langfuse.secret_key` | `string` (secret) | `""` |
-Langfuse secret key (robotsix-chat-cognee project). | | `memory.langfuse.host` | `string` |
-`"https://cloud.langfuse.com"` | Langfuse host for cognee tracing. |
+| JSON key                                 | Type              | Default                                   | Description                                                                                                                                                                                                               |
+| ---------------------------------------- | ----------------- | ----------------------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `memory.enabled`                         | `boolean`         | `false`                                   | Master switch. Requires cognee extras.                                                                                                                                                                                    |
+| `memory.data_dir`                        | `string`          | `"/data/cognee"`                          | Cognee store directory (keep on persistent volume).                                                                                                                                                                       |
+| `memory.recall_search_type`              | `string`          | `"GRAPH_COMPLETION"`                      | Cognee recall search type.                                                                                                                                                                                                |
+| `memory.recall_timeout_seconds`          | `number`          | `60.0`                                    | Hard timeout (seconds) for a single `recall` call. On expiry degrades to empty string — the agent proceeds without memory.                                                                                                |
+| `memory.remember_timeout_seconds`        | `number`          | `300.0`                                   | Hard timeout (seconds) for a single `remember` call (cognify consolidation). On expiry the write is skipped and a warning is logged.                                                                                      |
+| `memory.write_backlog_path`              | `string`          | `"/data/cognee/backlog.jsonl"`            | Path to a durable JSONL backlog for exchanges that could not be persisted after retries are exhausted. Drained opportunistically on subsequent successful writes.                                                         |
+| `memory.datafusion_runtime_memory_limit` | `string`          | `"256M"`                                  | DataFusion memory-pool limit (e.g. `"256M"`, `"1G"`). Bounds the LanceDB worker subprocess memory so a single large `merge_insert` does not OOM the container. Safe default for 2 GB containers; raise for larger limits. |
+| `memory.frozen_store_alert_minutes`      | `number`          | `10.0`                                    | Duration (minutes) of consecutive write failures before a `WARNING` diagnostic is emitted — prevents a silently frozen vector store from going unnoticed for days.                                                        |
+| `memory.write_throttle_seconds`          | `number`          | `0.5`                                     | Delay (seconds) between serialised writes so the LanceDB worker subprocess can complete each `merge_insert` before the next starts. Prevents burst OOM.                                                                   |
+| `memory.llm.provider`                    | `string`          | `"custom"`                                | Extraction LLM provider.                                                                                                                                                                                                  |
+| `memory.llm.model`                       | `string`          | `"openrouter/deepseek/deepseek-v4-flash"` | Extraction LLM model.                                                                                                                                                                                                     |
+| `memory.llm.endpoint`                    | `string`          | `"https://openrouter.ai/api/v1"`          | Extraction LLM endpoint.                                                                                                                                                                                                  |
+| `memory.llm.api_key`                     | `string` (secret) | `""`                                      | OpenRouter API key for extraction.                                                                                                                                                                                        |
+| `memory.embedding.provider`              | `string`          | `"openai_compatible"`                     | Embedding provider.                                                                                                                                                                                                       |
+| `memory.embedding.model`                 | `string`          | `"bge-m3"`                                | Embedding model name.                                                                                                                                                                                                     |
+| `memory.embedding.endpoint`              | `string`          | `""`                                      | Embedding server URL (e.g. `http://host:11434/v1`).                                                                                                                                                                       |
+| `memory.embedding.dimensions`            | `integer`         | `1024`                                    | Embedding vector dimensions.                                                                                                                                                                                              |
+| `memory.embedding.api_key`               | `string` (secret) | `""`                                      | Bearer token for the embedding server.                                                                                                                                                                                    |
+| `memory.embedding.huggingface_tokenizer` | `string`          | `"BAAI/bge-m3"`                           | HuggingFace tokenizer name.                                                                                                                                                                                               |
+| `memory.langfuse.public_key`             | `string` (secret) | `""`                                      | Langfuse public key (robotsix-chat-cognee project).                                                                                                                                                                       |
+| `memory.langfuse.secret_key`             | `string` (secret) | `""`                                      | Langfuse secret key (robotsix-chat-cognee project).                                                                                                                                                                       |
+| `memory.langfuse.host`                   | `string`          | `"https://cloud.langfuse.com"`            | Langfuse host for cognee tracing.                                                                                                                                                                                         |
 
 ### Central Deploy
 
 Component-access roster and skill loading from the central-deploy management plane.
 
-| JSON key | Type | Default | Description | | --------------------------------------------- |
------------------ | -------- |
-\----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-| | `central_deploy.url` | `string` | `""` | Base URL of the central-deploy API (no trailing slash).
-| | `central_deploy.api_token` | `string` (secret) | `""` | Bearer token for the central-deploy API.
-| | `central_deploy.roster_cache_ttl` | `number` | `300.0` | Seconds to cache the component roster
-before re-fetching. | | `central_deploy.component_response_max_chars` | `integer` | `200000` |
-Default truncation limit for GET/HEAD component responses — write methods keep the 8,000-char limit.
-Raised from 8,000 so large ticket lists (e.g. mill board blocked tickets) enumerate fully. Each call
-can override this with `component_request`'s `max_response_chars` parameter (e.g.
-`max_response_chars=2000` for a compact summary of a ticket history). | |
-`central_deploy.component_fallbacks` | `object` | `{}` | Baked-in fallback base URLs for components
-that may be missing from the central-deploy roster (e.g. after a redeploy). Keyed by component id
-(e.g. `"robotsix-mill"` → `"http://mill:8080"`). When the roster returned by central-deploy is
-missing a component, the fallback URL is used instead — keeps monitors and tool calls running
-through transient roster gaps. If a component is reported as unknown, the error message tells you
-exactly which config key to set. |
+| JSON key                                      | Type              | Default  | Description                                                                                                                                                                                                                                                                                                                                                                                                                                                                  |
+| --------------------------------------------- | ----------------- | -------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `central_deploy.url`                          | `string`          | `""`     | Base URL of the central-deploy API (no trailing slash).                                                                                                                                                                                                                                                                                                                                                                                                                      |
+| `central_deploy.api_token`                    | `string` (secret) | `""`     | Bearer token for the central-deploy API.                                                                                                                                                                                                                                                                                                                                                                                                                                     |
+| `central_deploy.roster_cache_ttl`             | `number`          | `300.0`  | Seconds to cache the component roster before re-fetching.                                                                                                                                                                                                                                                                                                                                                                                                                    |
+| `central_deploy.component_response_max_chars` | `integer`         | `200000` | Default truncation limit for GET/HEAD component responses — write methods keep the 8,000-char limit. Raised from 8,000 so large ticket lists (e.g. mill board blocked tickets) enumerate fully. Each call can override this with `component_request`'s `max_response_chars` parameter (e.g. `max_response_chars=2000` for a compact summary of a ticket history).                                                                                                            |
+| `central_deploy.component_fallbacks`          | `object`          | `{}`     | Baked-in fallback base URLs for components that may be missing from the central-deploy roster (e.g. after a redeploy). Keyed by component id (e.g. `"robotsix-mill"` → `"http://mill:8080"`). When the roster returned by central-deploy is missing a component, the fallback URL is used instead — keeps monitors and tool calls running through transient roster gaps. If a component is reported as unknown, the error message tells you exactly which config key to set. |
 
 ### Mail (board HTTP)
 
 Direct HTTP access to the mill's board API for listing, reading, and creating tickets.
 
-| JSON key | Type | Default | Description | | ------------------- | ----------------- |
-------------------------- | --------------------------------------------------- | | `mail.enabled` |
-`boolean` | `false` | Master switch. | | `mail.api_base_url` | `string` | `"http://127.0.0.1:8077"`
-| Base URL of the board HTTP API (no trailing slash). | | `mail.api_token` | `string` (secret) |
-`""` | Optional bearer token for the board API. | | `mail.timeout` | `number` | `30.0` | Per-request
-HTTP timeout (seconds). |
+| JSON key            | Type              | Default                   | Description                                         |
+| ------------------- | ----------------- | ------------------------- | --------------------------------------------------- |
+| `mail.enabled`      | `boolean`         | `false`                   | Master switch.                                      |
+| `mail.api_base_url` | `string`          | `"http://127.0.0.1:8077"` | Base URL of the board HTTP API (no trailing slash). |
+| `mail.api_token`    | `string` (secret) | `""`                      | Optional bearer token for the board API.            |
+| `mail.timeout`      | `number`          | `30.0`                    | Per-request HTTP timeout (seconds).                 |
 
 ### Conversation
 
-| JSON key | Type | Default | Description | | -------------------------------- | --------- |
----------------------------- | ------------------------------------------ | |
-`conversation.max_history_turns` | `integer` | `50` | Maximum conversation turns to retain. | |
-`conversation.max_conversations` | `integer` | `1000` | Maximum concurrent conversations. | |
-`conversation.persist_path` | `string` | `"/data/conversations.json"` | Path to the conversation
-persistence file. |
+| JSON key                         | Type      | Default                      | Description                                |
+| -------------------------------- | --------- | ---------------------------- | ------------------------------------------ |
+| `conversation.max_history_turns` | `integer` | `50`                         | Maximum conversation turns to retain.      |
+| `conversation.max_conversations` | `integer` | `1000`                       | Maximum concurrent conversations.          |
+| `conversation.persist_path`      | `string`  | `"/data/conversations.json"` | Path to the conversation persistence file. |
 
 ### Diagnostics
 
 Failure capture and systemic fix surfacing. Enabled by default.
 
-| JSON key | Type | Default | Description | | ------------------------------------- | --------- |
----------------------------------------- |
------------------------------------------------------------- | | `diagnostics.enabled` | `boolean` |
-`true` | Master switch. | | `diagnostics.store_path` | `string` | `"/data/diagnostics.json"` |
-Diagnostic-event JSON persistence path. | | `diagnostics.proposals_path` | `string` |
-`"/data/fix_proposals.json"` | Fix-proposal JSON persistence path. | |
-`diagnostics.effectiveness_path` | `string` | `"/data/diagnostics_effectiveness.json"` |
-Effectiveness-report JSON persistence path. | | `diagnostics.recurrence_threshold` | `integer` | `3`
-| Occurrences within the window to trigger a recurrence alert. | |
-`diagnostics.recurrence_window_days` | `integer` | `30` | Look-back window in days for recurrence
-detection. | | `diagnostics.observation_window_days` | `integer` | `30` | Days after a fix to wait
-before an effectiveness report. |
+| JSON key                              | Type      | Default                                  | Description                                                  |
+| ------------------------------------- | --------- | ---------------------------------------- | ------------------------------------------------------------ |
+| `diagnostics.enabled`                 | `boolean` | `true`                                   | Master switch.                                               |
+| `diagnostics.store_path`              | `string`  | `"/data/diagnostics.json"`               | Diagnostic-event JSON persistence path.                      |
+| `diagnostics.proposals_path`          | `string`  | `"/data/fix_proposals.json"`             | Fix-proposal JSON persistence path.                          |
+| `diagnostics.effectiveness_path`      | `string`  | `"/data/diagnostics_effectiveness.json"` | Effectiveness-report JSON persistence path.                  |
+| `diagnostics.recurrence_threshold`    | `integer` | `3`                                      | Occurrences within the window to trigger a recurrence alert. |
+| `diagnostics.recurrence_window_days`  | `integer` | `30`                                     | Look-back window in days for recurrence detection.           |
+| `diagnostics.observation_window_days` | `integer` | `30`                                     | Days after a fix to wait before an effectiveness report.     |
 
 ### Reference Docs (refdocs)
 
 Read-only reference-docs tool — fetches documentation from allowlisted GitHub repos on demand.
 
-| JSON key | Type | Default | Description | | ---------------------- | ----------------- |
--------------------------- | ------------------------------------------ | | `refdocs.enabled` |
-`boolean` | `false` | Master switch. Requires non-empty `repos`. | | `refdocs.repos` |
-`array[string]` | `[]` | Allowlist of `owner/name` GitHub repos. | | `refdocs.ref` | `string` |
-`"main"` | Default git ref/branch to read from. | | `refdocs.github_token` | `string` (secret) |
-`""` | Optional PAT for private repos. | | `refdocs.base_url` | `string` |
-`"https://api.github.com"` | Base URL for GitHub Enterprise. | | `refdocs.timeout` | `number` |
-`30.0` | Per-request HTTP timeout (seconds). |
+| JSON key               | Type              | Default                    | Description                                |
+| ---------------------- | ----------------- | -------------------------- | ------------------------------------------ |
+| `refdocs.enabled`      | `boolean`         | `false`                    | Master switch. Requires non-empty `repos`. |
+| `refdocs.repos`        | `array[string]`   | `[]`                       | Allowlist of `owner/name` GitHub repos.    |
+| `refdocs.ref`          | `string`          | `"main"`                   | Default git ref/branch to read from.       |
+| `refdocs.github_token` | `string` (secret) | `""`                       | Optional PAT for private repos.            |
+| `refdocs.base_url`     | `string`          | `"https://api.github.com"` | Base URL for GitHub Enterprise.            |
+| `refdocs.timeout`      | `number`          | `30.0`                     | Per-request HTTP timeout (seconds).        |
 
 ### Knowledge
 
 Writable agent knowledge base — a plain JSON file on disk. Enabled by default.
 
-| JSON key | Type | Default | Description | | ------------------- | --------- |
------------------------- | ---------------------------------- | | `knowledge.enabled` | `boolean` |
-`true` | Master switch. | | `knowledge.path` | `string` | `"/data/knowledge.json"` | Path to the
-JSON persistence file. |
+| JSON key            | Type      | Default                  | Description                        |
+| ------------------- | --------- | ------------------------ | ---------------------------------- |
+| `knowledge.enabled` | `boolean` | `true`                   | Master switch.                     |
+| `knowledge.path`    | `string`  | `"/data/knowledge.json"` | Path to the JSON persistence file. |
 
 ### Self-review
 
 Read-only digest of live conversation activity. Disabled by default.
 
-| JSON key | Type | Default | Description | | ----------------------------------- | --------- |
-------- | -------------------------------------------------------- | | `self_review.enabled` |
-`boolean` | `false` | Master switch — enables the `read_recent_activity` tool. | |
-`self_review.recent_activity_limit` | `integer` | `20` | Maximum conversations returned by the tool.
-|
+| JSON key                            | Type      | Default | Description                                              |
+| ----------------------------------- | --------- | ------- | -------------------------------------------------------- |
+| `self_review.enabled`               | `boolean` | `false` | Master switch — enables the `read_recent_activity` tool. |
+| `self_review.recent_activity_limit` | `integer` | `20`    | Maximum conversations returned by the tool.              |
 
 ### Version Check
 
 Self-version-check tool — compares the running version against the latest GitHub release. Disabled
 by default.
 
-| JSON key | Type | Default | Description | | ---------------------------- | ----------------- |
--------------------------- | ------------------------------------------- | | `version_check.enabled`
-| `boolean` | `false` | Master switch. | | `version_check.repo` | `string` | `""` | GitHub
-`owner/name`. Required when enabled. | | `version_check.github_token` | `string` (secret) | `""` |
-Optional PAT to avoid rate limits. | | `version_check.base_url` | `string` |
-`"https://api.github.com"` | Base URL for GitHub Enterprise. | | `version_check.timeout` | `number`
-| `30.0` | Per-request HTTP timeout (seconds). | | `version_check.cache_ttl` | `number` | `300.0` |
-Seconds to cache the latest-release lookup. |
+| JSON key                     | Type              | Default                    | Description                                 |
+| ---------------------------- | ----------------- | -------------------------- | ------------------------------------------- |
+| `version_check.enabled`      | `boolean`         | `false`                    | Master switch.                              |
+| `version_check.repo`         | `string`          | `""`                       | GitHub `owner/name`. Required when enabled. |
+| `version_check.github_token` | `string` (secret) | `""`                       | Optional PAT to avoid rate limits.          |
+| `version_check.base_url`     | `string`          | `"https://api.github.com"` | Base URL for GitHub Enterprise.             |
+| `version_check.timeout`      | `number`          | `30.0`                     | Per-request HTTP timeout (seconds).         |
+| `version_check.cache_ttl`    | `number`          | `300.0`                    | Seconds to cache the latest-release lookup. |
 
 ### Component Client
 
 HTTP client for inspecting and configuring remote component agents. Disabled by default.
 
-| JSON key | Type | Default | Description | | ----------------------------- | --------------- |
-------- | --------------------------------------------------------------------------------------- |
-| `component_client.enabled` | `boolean` | `false` | Master switch. | | `component_client.timeout` |
-`number` | `240.0` | Per-request HTTP timeout (seconds). | | `component_client.components` |
-`array[object]` | `[]` | List of component targets, each with `base_url` (string) and optional
-`label` (string). |
+| JSON key                      | Type            | Default | Description                                                                             |
+| ----------------------------- | --------------- | ------- | --------------------------------------------------------------------------------------- |
+| `component_client.enabled`    | `boolean`       | `false` | Master switch.                                                                          |
+| `component_client.timeout`    | `number`        | `240.0` | Per-request HTTP timeout (seconds).                                                     |
+| `component_client.components` | `array[object]` | `[]`    | List of component targets, each with `base_url` (string) and optional `label` (string). |
 
 ### Subsessions
 
 Background sub-agent spawning configuration.
 
-| JSON key | Type | Default | Description | | --------------------------------------------------- |
---------------- | -------------------------- |
-\------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-| | `subsessions.max_concurrent` | `integer` | `8` | Maximum concurrent subsessions. | |
-`subsessions.max_depth` | `integer` | `3` | Maximum nesting depth. | |
-`subsessions.default_model_level` | `integer` | `2` | Default model level for spawned subsessions. |
-| `subsessions.min_interval_seconds` | `number` | `60.0` | Minimum interval between periodic runs. |
-| `subsessions.auto_stop_no_change_runs` | `integer` | `3` | Consecutive NO_CHANGE runs before
-auto-stop. | | `subsessions.run_timeout_seconds` | `number` | `600.0` | Hard per-run timeout
-(seconds) for a single subsession turn. On expiry the run is marked failed and the schedule
-continues. | | `subsessions.store_path` | `string` | `"/data/subsessions.json`" | Path to the
-subsession persistence file. | | `subsessions.transcript_max_entries` | `integer` | `200` | Maximum
-transcript entries per subsession. | | `subsessions.human_approval_timeout_runs` | `integer` | `5` |
-When a periodic subsession's checkpoint indicates the monitored ticket is in `human_issue_approval`
-state, auto-escalate (close with reason `human_approval_timeout`) after this many consecutive
-`NO_CHANGE` runs. | | `subsessions.human_approval_timeout_seconds` | `number` | `300.0` | Wall-clock
-backstop for the `human_issue_approval` stuck-ticket gate. When the checkpoint has carried
-`last_known_state='human_issue_approval'` for longer than this many seconds, auto-escalate even if
-the `NO_CHANGE` run count has not yet reached `human_approval_timeout_runs`. Default 300 (5
-minutes). | | `subsessions.pre_authorized_ticket_patterns` | `array[string]` | `[]` | Glob patterns
-(`fnmatch`) matching ticket IDs that are pre-authorized under a standing operator directive. When a
-monitored ticket's ID matches a pattern, the `human_issue_approval` gate is bypassed — the system
-auto-escalates immediately (reason `pre_authorized_approval`) instead of waiting for
-`human_approval_timeout_runs`. | | `subsessions.mill_recovery_initial_backoff_seconds` | `number` |
-`60.0` | Initial backoff (seconds) when a ticket monitor enters mill-recovery mode after consecutive
-failures. Doubles on each retry up to `mill_recovery_max_backoff_seconds`. | |
-`subsessions.mill_recovery_max_backoff_seconds` | `number` | `3600.0` | Maximum backoff (seconds)
-for mill-recovery retries (1 hour). | | `subsessions.mill_recovery_max_retries` | `integer` | `10` |
-Maximum number of recovery retries before the subsession is permanently closed. | |
-`subsessions.paused_monitor_poll_interval_seconds` | `number` | `60.0` | Interval (seconds) between
-polls of paused periodic monitors by the background watcher. The watcher checks each paused
-monitor's ticket state via the mill API; when the ticket's state differs from the checkpoint's
-`last_known_state` the monitor is reopened and re-spawned. Set to `0` to disable runtime polling
-(paused monitors only resume on service restart). | | `subsessions.transient_error_max_retries` |
-`integer` | `3` | Maximum retry attempts when a periodic subsession's agent turn fails with a
-transient API error (e.g. OpenRouter upstream hiccup). Retries use exponential backoff between
-`transient_error_backoff_base` and `transient_error_backoff_cap`. When retries are exhausted the
-cycle is skipped and the schedule continues rather than permanently failing the subsession. | |
-`subsessions.transient_error_backoff_base` | `number` | `1.0` | Initial backoff in seconds for
-transient-error retries (doubles each attempt). | | `subsessions.transient_error_backoff_cap` |
-`number` | `30.0` | Maximum backoff in seconds for transient-error retries. |
+| JSON key                                            | Type            | Default                    | Description                                                                                                                                                                                                                                                                                                                                                              |
+| --------------------------------------------------- | --------------- | -------------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| `subsessions.max_concurrent`                        | `integer`       | `8`                        | Maximum concurrent subsessions.                                                                                                                                                                                                                                                                                                                                          |
+| `subsessions.max_depth`                             | `integer`       | `3`                        | Maximum nesting depth.                                                                                                                                                                                                                                                                                                                                                   |
+| `subsessions.default_model_level`                   | `integer`       | `2`                        | Default model level for spawned subsessions.                                                                                                                                                                                                                                                                                                                             |
+| `subsessions.min_interval_seconds`                  | `number`        | `60.0`                     | Minimum interval between periodic runs.                                                                                                                                                                                                                                                                                                                                  |
+| `subsessions.auto_stop_no_change_runs`              | `integer`       | `3`                        | Consecutive NO_CHANGE runs before auto-stop.                                                                                                                                                                                                                                                                                                                             |
+| `subsessions.run_timeout_seconds`                   | `number`        | `600.0`                    | Hard per-run timeout (seconds) for a single subsession turn. On expiry the run is marked failed and the schedule continues.                                                                                                                                                                                                                                              |
+| `subsessions.store_path`                            | `string`        | `"/data/subsessions.json`" | Path to the subsession persistence file.                                                                                                                                                                                                                                                                                                                                 |
+| `subsessions.transcript_max_entries`                | `integer`       | `200`                      | Maximum transcript entries per subsession.                                                                                                                                                                                                                                                                                                                               |
+| `subsessions.human_approval_timeout_runs`           | `integer`       | `5`                        | When a periodic subsession's checkpoint indicates the monitored ticket is in `human_issue_approval` state, auto-escalate (close with reason `human_approval_timeout`) after this many consecutive `NO_CHANGE` runs.                                                                                                                                                      |
+| `subsessions.human_approval_timeout_seconds`        | `number`        | `300.0`                    | Wall-clock backstop for the `human_issue_approval` stuck-ticket gate. When the checkpoint has carried `last_known_state='human_issue_approval'` for longer than this many seconds, auto-escalate even if the `NO_CHANGE` run count has not yet reached `human_approval_timeout_runs`. Default 300 (5 minutes).                                                           |
+| `subsessions.pre_authorized_ticket_patterns`        | `array[string]` | `[]`                       | Glob patterns (`fnmatch`) matching ticket IDs that are pre-authorized under a standing operator directive. When a monitored ticket's ID matches a pattern, the `human_issue_approval` gate is bypassed — the system auto-escalates immediately (reason `pre_authorized_approval`) instead of waiting for `human_approval_timeout_runs`.                                  |
+| `subsessions.mill_recovery_initial_backoff_seconds` | `number`        | `60.0`                     | Initial backoff (seconds) when a ticket monitor enters mill-recovery mode after consecutive failures. Doubles on each retry up to `mill_recovery_max_backoff_seconds`.                                                                                                                                                                                                   |
+| `subsessions.mill_recovery_max_backoff_seconds`     | `number`        | `3600.0`                   | Maximum backoff (seconds) for mill-recovery retries (1 hour).                                                                                                                                                                                                                                                                                                            |
+| `subsessions.mill_recovery_max_retries`             | `integer`       | `10`                       | Maximum number of recovery retries before the subsession is permanently closed.                                                                                                                                                                                                                                                                                          |
+| `subsessions.paused_monitor_poll_interval_seconds`  | `number`        | `60.0`                     | Interval (seconds) between polls of paused periodic monitors by the background watcher. The watcher checks each paused monitor's ticket state via the mill API; when the ticket's state differs from the checkpoint's `last_known_state` the monitor is reopened and re-spawned. Set to `0` to disable runtime polling (paused monitors only resume on service restart). |
+| `subsessions.transient_error_max_retries`           | `integer`       | `3`                        | Maximum retry attempts when a periodic subsession's agent turn fails with a transient API error (e.g. OpenRouter upstream hiccup). Retries use exponential backoff between `transient_error_backoff_base` and `transient_error_backoff_cap`. When retries are exhausted the cycle is skipped and the schedule continues rather than permanently failing the subsession.  |
+| `subsessions.transient_error_backoff_base`          | `number`        | `1.0`                      | Initial backoff in seconds for transient-error retries (doubles each attempt).                                                                                                                                                                                                                                                                                           |
+| `subsessions.transient_error_backoff_cap`           | `number`        | `30.0`                     | Maximum backoff in seconds for transient-error retries.                                                                                                                                                                                                                                                                                                                  |
 
 ### Feedback
 
@@ -328,25 +275,25 @@ the conversation at compaction and session-end boundaries, then files improvemen
 board's `POST /tickets/ingest` endpoint. Tickets flow through the normal human-approval workflow —
 the feedback run never auto-approves. Disabled by default.
 
-| JSON key | Type | Default | Description | | -------------------------- | ----------------- |
-------- | -------------------------------------------------------------------------- | |
-`feedback.enabled` | `boolean` | `false` | Master switch. | | `feedback.model_level` | `integer` |
-`1` | llmio capability level for the feedback-analysis agent (cheap extraction). | |
-`feedback.board_url` | `string` | `""` | Base URL of the board HTTP API (no trailing slash).
-Required when enabled. | | `feedback.board_api_token` | `string` (secret) | `""` | Optional Bearer
-token for the board API. | | `feedback.timeout` | `number` | `60.0` | Per-request HTTP timeout
-(seconds) for ingest calls. |
+| JSON key                   | Type              | Default | Description                                                                |
+| -------------------------- | ----------------- | ------- | -------------------------------------------------------------------------- |
+| `feedback.enabled`         | `boolean`         | `false` | Master switch.                                                             |
+| `feedback.model_level`     | `integer`         | `1`     | llmio capability level for the feedback-analysis agent (cheap extraction). |
+| `feedback.board_url`       | `string`          | `""`    | Base URL of the board HTTP API (no trailing slash). Required when enabled. |
+| `feedback.board_api_token` | `string` (secret) | `""`    | Optional Bearer token for the board API.                                   |
+| `feedback.timeout`         | `number`          | `60.0`  | Per-request HTTP timeout (seconds) for ingest calls.                       |
 
 #### Observability (Langfuse traces)
 
 Each feedback run produces a named Langfuse trace (`feedback-{trigger}`) tagged `feedback` and
 `{trigger}`. The trace **root span** carries three ticket-count attributes:
 
-| Attribute | Description | | ------------------------- |
-------------------------------------------- | | `feedback.total_tickets` | Total tickets the runner
-attempted to file. | | `feedback.filed_tickets` | Tickets that received a 2xx response. | |
-`feedback.failed_tickets` | Tickets that received a non-2xx response or | | | raised an HTTP
-exception. |
+| Attribute                 | Description                                 |
+| ------------------------- | ------------------------------------------- |
+| `feedback.total_tickets`  | Total tickets the runner attempted to file. |
+| `feedback.filed_tickets`  | Tickets that received a 2xx response.       |
+| `feedback.failed_tickets` | Tickets that received a non-2xx response or |
+|                           | raised an HTTP exception.                   |
 
 Individual `POST /tickets/ingest` spans set the OTel span status to `StatusCode.ERROR` on failure
 (non-2xx or exception), include an `error.type` attribute (e.g. `http_503`), and call
@@ -376,41 +323,38 @@ central-deploy API (optional; needed only when the deploy server requires authen
 
 Push-branch and open-PR as the robotsix-mill GitHub App. Disabled by default.
 
-| JSON key | Type | Default | Description | | ---------------------------------------- |
------------------ | -------------------------- |
------------------------------------------------------ | | `direct_repo.enabled` | `boolean` |
-`false` | Master switch. | | `direct_repo.github_app_id` | `string` | `""` | GitHub App numeric or
-slug id. Required when enabled. | | `direct_repo.github_app_private_key` | `string` (secret) | `""`
-| RSA private key in PEM format. | | `direct_repo.github_app_installation_id` | `string` | `""` |
-Installation id to act as. | | `direct_repo.github_api_base_url` | `string` |
-`"https://api.github.com"` | Base URL for GitHub Enterprise. | | `direct_repo.board_api_base_url` |
-`string` | `"http://127.0.0.1:8077"` | Board HTTP API base URL for ticket-state lookups. | |
-`direct_repo.board_api_token` | `string` (secret) | `""` | Optional bearer token for the board API.
-| | `direct_repo.timeout` | `number` | `30.0` | Per-request HTTP timeout (seconds). |
+| JSON key                                 | Type              | Default                    | Description                                           |
+| ---------------------------------------- | ----------------- | -------------------------- | ----------------------------------------------------- |
+| `direct_repo.enabled`                    | `boolean`         | `false`                    | Master switch.                                        |
+| `direct_repo.github_app_id`              | `string`          | `""`                       | GitHub App numeric or slug id. Required when enabled. |
+| `direct_repo.github_app_private_key`     | `string` (secret) | `""`                       | RSA private key in PEM format.                        |
+| `direct_repo.github_app_installation_id` | `string`          | `""`                       | Installation id to act as.                            |
+| `direct_repo.github_api_base_url`        | `string`          | `"https://api.github.com"` | Base URL for GitHub Enterprise.                       |
+| `direct_repo.board_api_base_url`         | `string`          | `"http://127.0.0.1:8077"`  | Board HTTP API base URL for ticket-state lookups.     |
+| `direct_repo.board_api_token`            | `string` (secret) | `""`                       | Optional bearer token for the board API.              |
+| `direct_repo.timeout`                    | `number`          | `30.0`                     | Per-request HTTP timeout (seconds).                   |
 
 ### GitHub Security
 
 Repository security-feature toggle via the GitHub App installation. Disabled by default.
 
-| JSON key | Type | Default | Description | | -------------------------------- | ----------------- |
-------------------- | ------------------------------------------------------------------------ | |
-`github_security.enabled` | `boolean` | `false` | Master switch. | | `github_security.github_org` |
-`string` | `"damien-robotsix"` | GitHub organisation name whose repos are in scope. | |
-`github_security.deploy_api_key` | `string` (secret) | `""` | API key for the security-feature
-endpoint. Empty → endpoint returns 503. | | `github_security.timeout` | `number` | `30.0` |
-Per-request HTTP timeout (seconds). |
+| JSON key                         | Type              | Default             | Description                                                              |
+| -------------------------------- | ----------------- | ------------------- | ------------------------------------------------------------------------ |
+| `github_security.enabled`        | `boolean`         | `false`             | Master switch.                                                           |
+| `github_security.github_org`     | `string`          | `"damien-robotsix"` | GitHub organisation name whose repos are in scope.                       |
+| `github_security.deploy_api_key` | `string` (secret) | `""`                | API key for the security-feature endpoint. Empty → endpoint returns 503. |
+| `github_security.timeout`        | `number`          | `30.0`              | Per-request HTTP timeout (seconds).                                      |
 
 ### GitHub Actions
 
 GitHub Actions secrets and workflow dispatch via the GitHub App installation. Disabled by default.
 
-| JSON key | Type | Default | Description | | ------------------------------- | ----------------- |
-------------------- | ------------------------------------------------------------ | |
-`github_actions.enabled` | `boolean` | `false` | Master switch. | | `github_actions.github_org` |
-`string` | `"damien-robotsix"` | GitHub organisation name whose repos are in scope. | |
-`github_actions.deploy_api_key` | `string` (secret) | `""` | API key for Actions endpoints. Empty →
-endpoint returns 503. | | `github_actions.timeout` | `number` | `30.0` | Per-request HTTP timeout
-(seconds). |
+| JSON key                        | Type              | Default             | Description                                                  |
+| ------------------------------- | ----------------- | ------------------- | ------------------------------------------------------------ |
+| `github_actions.enabled`        | `boolean`         | `false`             | Master switch.                                               |
+| `github_actions.github_org`     | `string`          | `"damien-robotsix"` | GitHub organisation name whose repos are in scope.           |
+| `github_actions.deploy_api_key` | `string` (secret) | `""`                | API key for Actions endpoints. Empty → endpoint returns 503. |
+| `github_actions.timeout`        | `number`          | `30.0`              | Per-request HTTP timeout (seconds).                          |
 
 ### Repo Study
 
@@ -420,15 +364,15 @@ Authentication reuses the `direct_repo` GitHub App credentials when configured (
 installation scope defines the reachable private repos); public repos need no auth. Disabled by
 default.
 
-| JSON key | Type | Default | Description | | -------------------------------- | --------- |
--------------------- | ---------------------------------------------- | | `repo_study.enabled` |
-`boolean` | `false` | Master switch. | | `repo_study.data_dir` | `string` | `"/data/repo_study"` |
-Workspace directory (persistent volume). | | `repo_study.ttl_minutes` | `integer` | `240` |
-Workspace lifetime before the automatic sweep. | | `repo_study.max_archive_bytes` | `integer` |
-`67108864` | Tarball download cap (64 MiB). | | `repo_study.max_extracted_bytes` | `integer` |
-`268435456` | Total uncompressed cap (256 MiB). | | `repo_study.max_read_bytes` | `integer` |
-`204800` | Per-read file byte cap. | | `repo_study.timeout` | `number` | `60.0` | Download HTTP
-timeout (seconds). |
+| JSON key                         | Type      | Default              | Description                                    |
+| -------------------------------- | --------- | -------------------- | ---------------------------------------------- |
+| `repo_study.enabled`             | `boolean` | `false`              | Master switch.                                 |
+| `repo_study.data_dir`            | `string`  | `"/data/repo_study"` | Workspace directory (persistent volume).       |
+| `repo_study.ttl_minutes`         | `integer` | `240`                | Workspace lifetime before the automatic sweep. |
+| `repo_study.max_archive_bytes`   | `integer` | `67108864`           | Tarball download cap (64 MiB).                 |
+| `repo_study.max_extracted_bytes` | `integer` | `268435456`          | Total uncompressed cap (256 MiB).              |
+| `repo_study.max_read_bytes`      | `integer` | `204800`             | Per-read file byte cap.                        |
+| `repo_study.timeout`             | `number`  | `60.0`               | Download HTTP timeout (seconds).               |
 
 ______________________________________________________________________
 
@@ -437,22 +381,17 @@ ______________________________________________________________________
 Deploy-lifecycle API client for inspecting and restarting the agent's own service. Disabled by
 default.
 
-| JSON key | Type | Default | Description | | ------------------------------------- |
------------------ | -------- |
-\-------------------------------------------------------------------------------------------------------------------------------------------------------
-| | `lifecycle.enabled` | `boolean` | `false` | Master switch. | | `lifecycle.base_url` | `string` |
-`""` | Base URL of the deploy-lifecycle API (no trailing slash). If the URL has no scheme (e.g.
-`central-deploy:8100`), `default_protocol` is prepended. | | `lifecycle.default_protocol` | `string`
-| `"http"` | Protocol scheme prepended when `base_url` lacks one (e.g. `"https"` for TLS). Ignored
-when `base_url` already has a recognised scheme (`http`/`https`). | | `lifecycle.api_key` | `string`
-(secret) | `""` | Optional API key for the deploy-lifecycle API. | | `lifecycle.service_name` |
-`string` | `""` | Name of this service as registered with the deploy server. | | `lifecycle.timeout`
-| `number` | `30.0` | Per-request HTTP timeout (seconds). | | `lifecycle.self_restart_max_retries` |
-`integer` | `3` | Maximum number of retries for transient `self_restart` failures (5xx, timeouts,
-connection errors). 0 = no retries. | | `lifecycle.self_restart_backoff_base` | `number` | `1.0` |
-Initial exponential-backoff delay in seconds. Doubled each retry: `base * 2^(attempt-1)`. | |
-`lifecycle.self_restart_backoff_cap` | `number` | `30.0` | Maximum exponential-backoff delay in
-seconds (ceiling). Retries never wait longer than this. |
+| JSON key                              | Type              | Default  | Description                                                                                                                                             |
+| ------------------------------------- | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lifecycle.enabled`                   | `boolean`         | `false`  | Master switch.                                                                                                                                          |
+| `lifecycle.base_url`                  | `string`          | `""`     | Base URL of the deploy-lifecycle API (no trailing slash). If the URL has no scheme (e.g. `central-deploy:8100`), `default_protocol` is prepended.       |
+| `lifecycle.default_protocol`          | `string`          | `"http"` | Protocol scheme prepended when `base_url` lacks one (e.g. `"https"` for TLS). Ignored when `base_url` already has a recognised scheme (`http`/`https`). |
+| `lifecycle.api_key`                   | `string` (secret) | `""`     | Optional API key for the deploy-lifecycle API.                                                                                                          |
+| `lifecycle.service_name`              | `string`          | `""`     | Name of this service as registered with the deploy server.                                                                                              |
+| `lifecycle.timeout`                   | `number`          | `30.0`   | Per-request HTTP timeout (seconds).                                                                                                                     |
+| `lifecycle.self_restart_max_retries`  | `integer`         | `3`      | Maximum number of retries for transient `self_restart` failures (5xx, timeouts, connection errors). 0 = no retries.                                     |
+| `lifecycle.self_restart_backoff_base` | `number`          | `1.0`    | Initial exponential-backoff delay in seconds. Doubled each retry: `base * 2^(attempt-1)`.                                                               |
+| `lifecycle.self_restart_backoff_cap`  | `number`          | `30.0`   | Maximum exponential-backoff delay in seconds (ceiling). Retries never wait longer than this.                                                            |
 
 ______________________________________________________________________
 
@@ -461,50 +400,39 @@ ______________________________________________________________________
 Browser notification settings — lets the agent alert the user proactively via the `notify_user`
 tool. Enabled by default.
 
-| JSON key | Type | Default | Description | | ---------------------- | --------- | ------- |
--------------------------------------------------------------- | | `notification.enabled` |
-`boolean` | `true` | Master switch. When `false`, no `notify_user` tool is offered. |
+| JSON key               | Type      | Default | Description                                                    |
+| ---------------------- | --------- | ------- | -------------------------------------------------------------- |
+| `notification.enabled` | `boolean` | `true`  | Master switch. When `false`, no `notify_user` tool is offered. |
 
 ### HTTP Probe
 
 Read-only HTTP uptime/render-probe tool for the agent. Enabled by default.
 
-| JSON key | Type | Default | Description | | --------------------------- | --------------- |
--------------------------------------- |
----------------------------------------------------------------------------- | |
-`http_probe.enabled` | `boolean` | `true` | Master switch. When `false`, no `http_probe` tool is
-offered. | | `http_probe.timeout` | `number` | `10.0` | Per-request HTTP timeout (seconds). | |
-`http_probe.allowlist` | `array[string]` | `["www.robotsix.net", "robotsix.net"]` | Hostnames the
-tool is permitted to probe. Empty permits any public hostname. | | `http_probe.max_body_bytes` |
-`integer` | `2048` | Maximum bytes of the response body to return (~2 KB). | |
-`http_probe.max_redirects` | `integer` | `5` | Maximum number of redirects to follow. |
+| JSON key                    | Type            | Default                                | Description                                                                  |
+| --------------------------- | --------------- | -------------------------------------- | ---------------------------------------------------------------------------- |
+| `http_probe.enabled`        | `boolean`       | `true`                                 | Master switch. When `false`, no `http_probe` tool is offered.                |
+| `http_probe.timeout`        | `number`        | `10.0`                                 | Per-request HTTP timeout (seconds).                                          |
+| `http_probe.allowlist`      | `array[string]` | `["www.robotsix.net", "robotsix.net"]` | Hostnames the tool is permitted to probe. Empty permits any public hostname. |
+| `http_probe.max_body_bytes` | `integer`       | `2048`                                 | Maximum bytes of the response body to return (~2 KB).                        |
+| `http_probe.max_redirects`  | `integer`       | `5`                                    | Maximum number of redirects to follow.                                       |
 
 ### Autonomous
 
 Autonomous sessions that pick a subject, draft a plan for operator review, then execute after the
 operator comments. Sessions stay open after completion — the operator must explicitly close them.
 
-| JSON key | Type | Default | Description | | ------------------------------------------------- |
---------- | ---------------------------------- |
-\-----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
-| | `autonomous.enabled` | `boolean` | `true` | Master switch. | | `autonomous.proposal_marker` |
-`string` | `"---PROPOSAL READY---"` | Marker string the agent emits after drafting a plan to signal
-it is ready for operator review. The session enters the `proposal` state. | |
-`autonomous.completion_marker` | `string` | `"---AUTONOMOUS COMPLETE---"` | Marker string the agent
-emits when the plan is complete. The session stays open after completion. | |
-`autonomous.max_auto_turns` | `integer` | `20` | Maximum automatic agent turns during the execution
-phase before reverting to `proposal`. | | `autonomous.persist_path` | `string` |
-`"/data/autonomous_sessions.json"` | Path to the autonomous-session persistence file. | |
-`autonomous.session_color` | `string` | `""` | Optional CSS color string for a visual accent on
-autonomous session rows (e.g. `"#ef4444"`). | | `autonomous.initial_task` | `string` | `""` |
-Optional description of the first task to spawn. When empty, the agent picks its own subject. | |
-`autonomous.continue_interval_seconds` | `number` | `45.0` | Pacing interval (seconds) between
-auto-continue loop iterations. | | `autonomous.pending_subsession_wait_timeout` | `number` | `600.0`
-| Maximum time (seconds) the auto-continue loop waits for pending non-periodic subsessions to
-complete before giving up and continuing. | | `autonomous.stale_monitor_runs_before_completion` |
-`integer` | `3` | Number of consecutive `NO_CHANGE` cycles after which a periodic monitor is
-considered "stale" — the agent may declare the autonomous session complete even while the monitor is
-still running. Monitors continue in the background. |
+| JSON key                                          | Type      | Default                            | Description                                                                                                                                                                                                                         |
+| ------------------------------------------------- | --------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `autonomous.enabled`                              | `boolean` | `true`                             | Master switch.                                                                                                                                                                                                                      |
+| `autonomous.proposal_marker`                      | `string`  | `"---PROPOSAL READY---"`           | Marker string the agent emits after drafting a plan to signal it is ready for operator review. The session enters the `proposal` state.                                                                                             |
+| `autonomous.completion_marker`                    | `string`  | `"---AUTONOMOUS COMPLETE---"`      | Marker string the agent emits when the plan is complete. The session stays open after completion.                                                                                                                                   |
+| `autonomous.max_auto_turns`                       | `integer` | `20`                               | Maximum automatic agent turns during the execution phase before reverting to `proposal`.                                                                                                                                            |
+| `autonomous.persist_path`                         | `string`  | `"/data/autonomous_sessions.json"` | Path to the autonomous-session persistence file.                                                                                                                                                                                    |
+| `autonomous.session_color`                        | `string`  | `""`                               | Optional CSS color string for a visual accent on autonomous session rows (e.g. `"#ef4444"`).                                                                                                                                        |
+| `autonomous.initial_task`                         | `string`  | `""`                               | Optional description of the first task to spawn. When empty, the agent picks its own subject.                                                                                                                                       |
+| `autonomous.continue_interval_seconds`            | `number`  | `45.0`                             | Pacing interval (seconds) between auto-continue loop iterations.                                                                                                                                                                    |
+| `autonomous.pending_subsession_wait_timeout`      | `number`  | `600.0`                            | Maximum time (seconds) the auto-continue loop waits for pending non-periodic subsessions to complete before giving up and continuing.                                                                                               |
+| `autonomous.stale_monitor_runs_before_completion` | `integer` | `3`                                | Number of consecutive `NO_CHANGE` cycles after which a periodic monitor is considered "stale" — the agent may declare the autonomous session complete even while the monitor is still running. Monitors continue in the background. |
 
 ______________________________________________________________________
 
@@ -517,11 +445,12 @@ or navigation beyond the initial page load is permitted. Requires the `render-ur
 (`playwright`) in the image as well as a Playwright Chromium browser installation. Disabled by
 default.
 
-| JSON key | Type | Default | Description | | ---------------------------- | --------- | ------- |
----------------------------------------- | | `render_url.enabled` | `boolean` | `false` | Master
-switch. | | `render_url.timeout` | `number` | `30.0` | Per-request page-load timeout (seconds). | |
-`render_url.viewport_width` | `integer` | `1280` | Browser viewport width (pixels). | |
-`render_url.viewport_height` | `integer` | `720` | Browser viewport height (pixels). |
+| JSON key                     | Type      | Default | Description                              |
+| ---------------------------- | --------- | ------- | ---------------------------------------- |
+| `render_url.enabled`         | `boolean` | `false` | Master switch.                           |
+| `render_url.timeout`         | `number`  | `30.0`  | Per-request page-load timeout (seconds). |
+| `render_url.viewport_width`  | `integer` | `1280`  | Browser viewport width (pixels).         |
+| `render_url.viewport_height` | `integer` | `720`   | Browser viewport height (pixels).        |
 
 ______________________________________________________________________
 
