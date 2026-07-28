@@ -9,10 +9,13 @@ from pathlib import Path
 
 from robotsix_chat.config import Settings
 
-_CHANGELOG_PATH = Path(__file__).resolve().parent.parent / "docs" / "system_prompt_changelog.md"
+_CHANGELOG_PATH = (
+    Path(__file__).resolve().parent.parent / "docs" / "system_prompt_changelog.md"
+)
 
 
 def main() -> None:
+    """Update the changelog SHA256 if it does not match the current default."""
     text = _CHANGELOG_PATH.read_text()
     default = Settings.model_fields["agent_instruction"].default
     computed = hashlib.sha256(default.encode()).hexdigest()
