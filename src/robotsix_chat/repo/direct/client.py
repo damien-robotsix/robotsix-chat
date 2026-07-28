@@ -241,6 +241,40 @@ class DirectRepoClient:
 
     # -- public API --------------------------------------------------------
 
+    async def create_repo(
+        self,
+        *,
+        org_name: str,
+        repo_name: str,
+        auto_init: bool = True,
+    ) -> str:
+        """Create a new repository under the GitHub organisation.
+
+        Calls ``POST /orgs/{org}/repos``.  When *auto_init* is ``True``
+        (the default), seeds the new repo with an initial ``README.md``
+        so that workflows and branch pushes can proceed immediately
+        — an empty repo has no default branch to push against, which
+        creates a deadlock for any automated bootstrap process.
+
+        Never raises — returns a success/error message string.
+        """
+        try:
+            data = await self._post_json(
+                f"/orgs/{org_name}/repos",
+                {
+                    "name": repo_name,
+                    "auto_init": auto_init,
+                },
+            )
+            html_url = data.get("html_url", "")
+            return f"Repository '{org_name}/{repo_name}' created successfully.\n" + (
+                f"URL: {html_url}" if html_url else ""
+            )
+        except RuntimeError as exc:
+            return f"Error creating repo: {exc}"
+        except Exception as exc:
+            return f"Error creating repo: {exc}"
+
     async def list_installation_repos(self) -> list[str]:
         """Return the set of ``owner/name`` repos in the installation scope.
 
