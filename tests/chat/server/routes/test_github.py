@@ -719,14 +719,41 @@ async def test_create_repo_400_auto_init_not_bool() -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_repo_502_client_error() -> None:
-    """Returns 502 when ``create_repo`` returns an error string."""
+async def test_create_repo_502_list_installation_repos_failure() -> None:
+    """Returns 502 when ``list_installation_repos`` raises an exception."""
     request = _make_post_request(body={"name": "my-repo"})
     with patch(
         "robotsix_chat.chat.server.routes.github.DirectRepoClient",
         autospec=True,
     ) as mock_client_cls:
         mock_client = mock_client_cls.return_value
+        mock_client.list_installation_repos = AsyncMock(
+            side_effect=RuntimeError("API down"),
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            await github_create_repo_endpoint(request)
+        assert exc_info.value.status_code == 502
+        assert "GitHub API error" in exc_info.value.detail
+        assert "API down" in exc_info.value.detail
+
+
+@pytest.mark.asyncio
+async def test_create_repo_502_client_error() -> None:
+    """Returns 502 when ``create_repo`` returns an error string."""
+    settings = _mock_settings(api_key="secret-key")  # pragma: allowlist secret
+    settings.github_org = "test-org"
+    request = _make_post_request(
+        body={"name": "my-repo"},
+        github_settings=settings,
+    )
+    with patch(
+        "robotsix_chat.chat.server.routes.github.DirectRepoClient",
+        autospec=True,
+    ) as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.list_installation_repos = AsyncMock(
+            return_value=["test-org/other-repo"],
+        )
         mock_client.create_repo = AsyncMock(
             return_value="Error: repo already exists",
         )
@@ -734,6 +761,35 @@ async def test_create_repo_502_client_error() -> None:
             await github_create_repo_endpoint(request)
         assert exc_info.value.status_code == 502
         assert exc_info.value.detail == "Error: repo already exists"
+
+
+# ============================================================================
+# POST /chat/github/repos — 404
+# ============================================================================
+
+
+@pytest.mark.asyncio
+async def test_create_repo_404_org_not_in_installation_scope() -> None:
+    """Returns 404 when the configured org is not in the installation scope."""
+    settings = _mock_settings(api_key="secret-key")  # pragma: allowlist secret
+    settings.github_org = "test-org"
+    request = _make_post_request(
+        body={"name": "my-repo"},
+        github_settings=settings,
+    )
+    with patch(
+        "robotsix_chat.chat.server.routes.github.DirectRepoClient",
+        autospec=True,
+    ) as mock_client_cls:
+        mock_client = mock_client_cls.return_value
+        mock_client.list_installation_repos = AsyncMock(
+            return_value=["other-org/some-repo"],
+        )
+        with pytest.raises(HTTPException) as exc_info:
+            await github_create_repo_endpoint(request)
+        assert exc_info.value.status_code == 404
+        assert "not in the GitHub App installation scope" in exc_info.value.detail
+        assert "test-org" in exc_info.value.detail
 
 
 # ============================================================================
@@ -755,6 +811,9 @@ async def test_create_repo_200_success() -> None:
         autospec=True,
     ) as mock_client_cls:
         mock_client = mock_client_cls.return_value
+        mock_client.list_installation_repos = AsyncMock(
+            return_value=["test-org/other-repo"],
+        )
         mock_client.create_repo = AsyncMock(
             return_value="Repository 'test-org/my-repo' created successfully.\n"
             "URL: https://github.com/test-org/my-repo",
@@ -789,6 +848,9 @@ async def test_create_repo_200_auto_init_false() -> None:
         autospec=True,
     ) as mock_client_cls:
         mock_client = mock_client_cls.return_value
+        mock_client.list_installation_repos = AsyncMock(
+            return_value=["test-org/other-repo"],
+        )
         mock_client.create_repo = AsyncMock(
             return_value="Repository 'test-org/my-repo' created successfully.\n"
             "URL: https://github.com/test-org/my-repo",
