@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Added `step-security/harden-runner` egress monitor to `docs.yml`, `release.yml`, `release-image.yml`, and `dependency-review.yml` workflows, matching the pattern already used in `ci.yml`.
 - Fix backward-incompatible config loading crash: `GitHubSecuritySettings` and `GitHubActionsSettings` now accept the legacy `timeout` key (stripped before validation) so existing deployed configs do not fail on startup when the field was removed from the model.
 - Add missing `model_config = ConfigDict(extra="forbid")` to `GitHubActionsSettings` so it rejects unknown JSON keys like every other config model.
 - Remove dead ``timeout`` fields from ``GitHubActionsSettings`` and
