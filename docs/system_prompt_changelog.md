@@ -3,6 +3,34 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v68 — 2026-07-28 — add-retry-with-justification-support-to-6928
+
+**Summary:** Three updates to the `agent_instruction` default to support retry-with-justification
+for fingerprint-guarded tickets:
+
+1. **resume-blocked endpoint:** Document the `justification` JSON body parameter so the agent knows
+   it can pass a reason to override the fingerprint guard when the spec is unchanged but external
+   information (e.g. an answered pending question, a resolved prerequisite) makes re-implementation
+   warranted.
+
+2. **Auto-resume remediation:** Extend the remediation rule to include fingerprint-guarded tickets
+   where a pending question has been answered — the agent should call `resume-blocked` with
+   `justification: "pending question answered; spec is complete; allow re-implement"`.
+
+3. **Periodic subsession monitoring:** Add an exception to the "do not keep polling" rule for
+   fingerprint-guarded tickets: if the guard can be bypassed with new external information, the
+   agent should call `resume-blocked` with a justification explaining why re-implementation is now
+   warranted.
+
+**Rationale:** Fingerprint-guarded tickets that are blocked solely because a pending question
+needed answering were previously stuck until the spec itself changed. The `justification` parameter
+on `resume-blocked` now allows the agent to unblock these tickets when the question is answered,
+reducing unnecessary operator intervention.
+
+**SHA256:** `3aca65c9780285400f51a1853c4c0c70bd272368ee7b53014b27458808e43b40`
+
+______________________________________________________________________
+
 ## v67 — 2026-07-28 — consolidate-subsession-summaries-into-a-c7d8
 
 **Summary:** Replace the "consolidate periodic subsession outcomes" bullet in the Subsessions
