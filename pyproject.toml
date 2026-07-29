@@ -84,6 +84,9 @@ robotsix-chat = "robotsix_chat.chat.server:run_server_from_config"
 dev = [
     "deptry",
     "hypothesis",
+    "mdformat",
+    "mdformat-frontmatter",
+    "mdformat-gfm",
     "mypy",
 
     "pre-commit",
