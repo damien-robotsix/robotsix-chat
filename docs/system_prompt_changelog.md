@@ -3,6 +3,23 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v70 — 2026-07-28 — require-concrete-operator-blocker-instructions-0ce2
+
+**Summary:** Added a new operator-facing blocker instructions bullet in the Autonomy section.
+When the assistant surfaces a hard server-side blocker to the operator (configuration deadlock,
+service registration not enabled, missing credential, permission gap, or any block requiring
+operator action), it must now provide a concrete, copy-paste-ready instruction — exact env variable
+name, config file path, restart command, or endpoint URL — rather than a vague directive. It must
+also store common remediation recipes in a knowledge note (topic: `operator-remediation-recipes`).
+
+**Rationale:** Vague instructions like "flip the toggle" or "enable the feature" without specific
+keys, paths, or commands force the operator to guess and cause back-and-forth. Concrete, executable
+instructions eliminate ambiguity and let the operator act immediately.
+
+**SHA256:** `7dcf9364ea1d0dcfd3eaffbd3d6bed9871435e833714348f25b0f636dd7bd616`
+
+______________________________________________________________________
+
 ## v69 — 2026-07-28 — avoid-duplicate-ticket-creation-by-check-7b0b
 
 **Summary:** Tighten the ticket-creation deduplication rule in the Initiate step (1) of the ticket
@@ -19,23 +36,6 @@ deduplication check more prescriptive and specifically calls out CI/periodic-age
 source of pre-existing tickets.
 
 **SHA256:** `e9180114668b01ee6c6e91d826521e8542681d6ab8af1dfc3826485ec01ce72b`
-
-______________________________________________________________________
-
-## v69 — 2026-07-28 — require-concrete-operator-blocker-instructions-0ce2
-
-**Summary:** Added a new operator-facing blocker instructions bullet in the Autonomy section.
-When the assistant surfaces a hard server-side blocker to the operator (configuration deadlock,
-service registration not enabled, missing credential, permission gap, or any block requiring
-operator action), it must now provide a concrete, copy-paste-ready instruction — exact env variable
-name, config file path, restart command, or endpoint URL — rather than a vague directive. It must
-also store common remediation recipes in a knowledge note (topic: `operator-remediation-recipes`).
-
-**Rationale:** Vague instructions like "flip the toggle" or "enable the feature" without specific
-keys, paths, or commands force the operator to guess and cause back-and-forth. Concrete, executable
-instructions eliminate ambiguity and let the operator act immediately.
-
-**SHA256:** `eb1960a07e3906fd0941061911cc94c91745f572f2d7a234e0eac7dc049eea40`
 
 ## v68 — 2026-07-28 — add-retry-with-justification-support-to-6928
 
