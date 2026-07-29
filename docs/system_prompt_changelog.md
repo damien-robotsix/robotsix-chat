@@ -74,6 +74,7 @@ this check.
 **SHA256:** (not yet deployed — changelog fragment at `changelog.d/20260728T210856Z-add-loop-guard-to-periodic-monitors-chec-5679.misc.md`)
 
 ______________________________________________________________________
+
 ## v68 — 2026-07-28 — add-retry-with-justification-support-to-6928
 
 **Summary:** Three updates to the `agent_instruction` default to support retry-with-justification
