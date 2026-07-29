@@ -12,6 +12,10 @@
 - Added `ticket_poll_batch` tool for bulk read-only ticket triage. Fetches full ticket data
   (state, history, events, comments) for multiple tickets concurrently via `GET /tickets/{id}`,
   enabling failure-mode classification without N sequential round-trips.
+- Include the full conversation transcript alongside the agent-written summary when
+  delivering closed user_chat subsession outcomes to the parent session.  This ensures
+  the main assistant can act on operator decisions even when the ``complete_subsession``
+  summary is terse (e.g. ``"Decisions recorded"``).
 - Subsessions: require the assistant to synthesize multiple subsession outcomes into a single cohesive narrative paragraph, never outputting raw `[id] kind=...` bullet-list enumerations. Trivial no-change monitors are now explicitly omitted from reporting.
 - Added ``patch_direct_repo_file`` tool to the direct-repo tool set
   (gated on ``direct_fix_enabled``).  Accepts a file path and a unified

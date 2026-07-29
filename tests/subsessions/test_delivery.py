@@ -545,6 +545,86 @@ async def test_deliver_summary_periodic_parent_enqueues_and_reacts() -> None:
 
 
 # ---------------------------------------------------------------------------
+# user_chat transcript inclusion — outcome enrichment
+# ---------------------------------------------------------------------------
+
+
+def test_format_user_chat_outcome_no_transcript() -> None:
+    """When transcript is empty, the outcome is just the summary (unchanged)."""
+    from robotsix_chat.subsessions.delivery import _format_user_chat_outcome
+
+    result = _format_user_chat_outcome("Decisions recorded", [])
+    assert result == "Decisions recorded"
+
+
+def test_format_user_chat_outcome_includes_transcript() -> None:
+    """Transcript entries are formatted as role-tagged lines after the summary."""
+    from robotsix_chat.subsessions.delivery import _format_user_chat_outcome
+    from robotsix_chat.subsessions.models import TranscriptEntry
+
+    transcript = [
+        TranscriptEntry(role="assistant", text="What should we do?", timestamp=1.0),
+        TranscriptEntry(role="user", text="Close the ticket.", timestamp=2.0),
+        TranscriptEntry(role="assistant", text="OK, closing now.", timestamp=3.0),
+    ]
+    result = _format_user_chat_outcome("Decisions recorded", transcript)
+    assert result.startswith("Decisions recorded\n\nConversation transcript:")
+    assert "[assistant] What should we do?" in result
+    assert "[user] Close the ticket." in result
+    assert "[assistant] OK, closing now." in result
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_user_chat_includes_transcript_in_outcome() -> None:
+    """For user_chat kind, the transcript is appended to the delivered outcome."""
+    store = MagicMock()
+    registry = MagicMock()
+    delivery = _build_delivery(store=store, registry=registry)
+    from robotsix_chat.subsessions.models import TranscriptEntry
+
+    info = _make_info(parent_id=None, kind=SubsessionKind.USER_CHAT)
+    info.transcript = [
+        TranscriptEntry(role="user", text="Yes, close it.", timestamp=1.0),
+        TranscriptEntry(role="assistant", text="Will do.", timestamp=2.0),
+    ]
+
+    await delivery.deliver_summary(info, "Decisions recorded", "completed")
+    await _await_reaction_tasks(delivery)
+
+    store.record_for_session.assert_called_once()
+    args, _kwargs = store.record_for_session.call_args
+    outcome = args[2]
+    assert outcome.startswith("Decisions recorded")
+    assert "Conversation transcript:" in outcome
+    assert "[user] Yes, close it." in outcome
+    assert "[assistant] Will do." in outcome
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_task_kind_does_not_include_transcript() -> None:
+    """Non-user_chat kinds (e.g. TASK) pass the summary through unchanged."""
+    store = MagicMock()
+    registry = MagicMock()
+    delivery = _build_delivery(store=store, registry=registry)
+    from robotsix_chat.subsessions.models import TranscriptEntry
+
+    info = _make_info(parent_id=None, kind=SubsessionKind.TASK)
+    info.transcript = [
+        TranscriptEntry(role="assistant", text="Task output.", timestamp=1.0),
+    ]
+
+    await delivery.deliver_summary(info, "task completed", "completed")
+    await _await_reaction_tasks(delivery)
+
+    store.record_for_session.assert_called_once()
+    args, _kwargs = store.record_for_session.call_args
+    outcome = args[2]
+    # TASK kind: summary is NOT enriched with the transcript.
+    assert outcome == "task completed"
+    assert "Conversation transcript:" not in outcome
+
+
+# ---------------------------------------------------------------------------
 # exception paths — logged but not raised
 # ---------------------------------------------------------------------------
 

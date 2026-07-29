@@ -272,7 +272,11 @@ async def test_user_chat_waits_between_turns_and_closes_via_close_state() -> Non
     label, reply = history[0]
     assert "(user_chat)" in label
     assert "completed" in label
-    assert reply == "user satisfied"
+    # The outcome now includes the transcript for user_chat kinds (the
+    # summary + a formatted transcript section).
+    assert reply.startswith("user satisfied")
+    assert "Conversation transcript:" in reply
+    assert "[assistant] hi there" in reply
 
 
 # ---------------------------------------------------------------------------

@@ -35,6 +35,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from collections.abc import Sequence
 from typing import TYPE_CHECKING
 
 from robotsix_chat.autonomous.models import AutonomousState
@@ -125,6 +126,24 @@ def _extract_ticket_id(info: SubsessionInfo) -> str | None:
         return None
     ticket_id = cp.get("ticket_id")
     return ticket_id if isinstance(ticket_id, str) else None
+
+
+def _format_user_chat_outcome(summary: str, transcript: Sequence[object]) -> str:
+    """Build a detailed outcome for a user_chat subsession.
+
+    Includes both the agent-written *summary* and the full conversation
+    transcript so the parent can act on operator decisions even when the
+    summary is terse (e.g. ``"Decisions recorded"``).
+    """
+    if not transcript:
+        return summary
+    lines = [summary, "", "Conversation transcript:"]
+    for entry in transcript:
+        # TranscriptEntry has .role (str) and .text (str).
+        role: str = getattr(entry, "role", "unknown")
+        text: str = getattr(entry, "text", "")
+        lines.append(f"[{role}] {text}")
+    return "\n".join(lines)
 
 
 class ParentDelivery:
@@ -222,6 +241,13 @@ class ParentDelivery:
                 )
                 return
 
+        # For user_chat subsessions include the full transcript alongside
+        # the agent-written summary so the parent can act on operator
+        # decisions even when the summary is terse.
+        outcome: str = summary
+        if info.kind == SubsessionKind.USER_CHAT and info.transcript:
+            outcome = _format_user_chat_outcome(summary, info.transcript)
+
         label = (
             f"[Subsession {info.id[:8]} ({info.kind.value}) '{info.title}' {reason}]"
         )
@@ -229,7 +255,7 @@ class ParentDelivery:
             if info.parent_id is not None:
                 if not self._parent_is_periodic(info.parent_id):
                     if self._registry.enqueue_message(
-                        info.parent_id, "parent", f"{label} {summary}"
+                        info.parent_id, "parent", f"{label} {outcome}"
                     ):
                         return
                 else:
@@ -243,14 +269,14 @@ class ParentDelivery:
                     # active the enqueue is a silent no-op; the reaction
                     # still fires so the outcome is never lost.
                     self._registry.enqueue_message(
-                        info.parent_id, "parent", f"{label} {summary}"
+                        info.parent_id, "parent", f"{label} {outcome}"
                     )
-                    self._schedule_reaction(info, summary, reason, label)
+                    self._schedule_reaction(info, outcome, reason, label)
                     return
             # Main-chat parent (parent_id is None) or nested parent
             # already terminal → relay to the owning session so the
             # outcome is never lost.
-            self._schedule_reaction(info, summary, reason, label)
+            self._schedule_reaction(info, outcome, reason, label)
         except Exception:
             logger.exception(
                 "Failed to deliver subsession %s summary to its parent", info.id
