@@ -370,8 +370,8 @@ When the operator sends repeated continuation messages (e.g. "Continue" multiple
 providing new instructions or data, the agent treats this as explicit permission to close the
 session immediately — bypassing the stale-threshold check. The same applies when the operator sends
 short, non-substantive messages several times in a row. This prevents indefinite looping when the
-operator is satisfied and all actionable work is done but periodic monitors have not yet
-accumulated enough `NO_CHANGE` cycles to auto-close.
+operator is satisfied and all actionable work is done but periodic monitors have not yet accumulated
+enough `NO_CHANGE` cycles to auto-close.
 
 | Config key                                        | Default | Description                                                                   |
 | ------------------------------------------------- | ------- | ----------------------------------------------------------------------------- |
