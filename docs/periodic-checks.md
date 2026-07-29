@@ -279,7 +279,7 @@ run once and a transient failure would silently lose the work.
 
 06. **Terminal-state discipline (three-source verification + CI loop guard).** The sub-agent calls
     its `complete_subsession(summary)` tool as soon as the monitored condition reaches a verified
-    terminal state — the summary is delivered to the parent and the subsession closes.  For periodic
+    terminal state — the summary is delivered to the parent and the subsession closes. For periodic
     monitors with a `ticket_id` in their checkpoint, the agent must verify from **three independent
     sources** before calling `complete_subsession`:
 
@@ -289,17 +289,17 @@ run once and a transient failure would silently lose the work.
     - **(3)** A check of the most recent CI workflow run for the affected pipeline (e.g. the
       "Publish Docker image" workflow or the repo's primary deploy workflow).
 
-    **Programmatic gate.** `complete_subsession` **rejects** any summary that does not include
-    CI workflow evidence — at least one of: `"CI workflow"`, `"workflow run"`, `"pipeline"`,
-    `"GitHub Actions"`, `"publish"`, `"deploy workflow"`, or `"could not be verified"`.  If the
+    **Programmatic gate.** `complete_subsession` **rejects** any summary that does not include CI
+    workflow evidence — at least one of: `"CI workflow"`, `"workflow run"`, `"pipeline"`,
+    `"GitHub Actions"`, `"publish"`, `"deploy workflow"`, or `"could not be verified"`. If the
     summary lacks these keywords, the tool returns a rejection message instructing the agent to
     fetch the CI workflow status first.
 
     **On CI failure.** If the workflow run failed or is still failing, the agent must NOT claim
-    success.  Instead it calls `complete_subsession` with a summary documenting the failure
-    (run id, reason, log excerpt), then calls `spawn_subsession` to file a new diagnostic ticket
-    so the operator sees the pipeline is still broken.  If the workflow API is unreachable, the
-    agent retries twice with a 5-second pause before acknowledging the status could not be
+    success. Instead it calls `complete_subsession` with a summary documenting the failure (run id,
+    reason, log excerpt), then calls `spawn_subsession` to file a new diagnostic ticket so the
+    operator sees the pipeline is still broken. If the workflow API is unreachable, the agent
+    retries twice with a 5-second pause before acknowledging the status could not be
     verified.
 
 07. Subsessions persist to `/data/subsessions.json`; periodic ones are automatically resumed after a
