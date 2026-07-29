@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Extract shared `_handle_terminal_on_resume` helper in `resume.py` to eliminate ~39 lines of duplicate terminal-check-and-close logic across the three `_resume_*_entry` functions.
 - Added `mdformat` (with `mdformat-gfm` and `mdformat-frontmatter` plugins) to the dev dependency group so `uv run mdformat` works in the sandbox. The implement agent now runs mdformat on changed `.md` files as a pre-flight check, eliminating wasteful CI auto-fix cycles on non-compliant markdown.
 - Fix `DirectRepoClient.apply_patch` negative-index bug when a hunk starts at line 0 (`@@ -0,0 +1,N @@`): `orig_pos` is now clamped to 0 instead of wrapping via Python negative indexing.
 - Strengthen the ticket-filing dedup guard in the agent system prompt: always query the board's ticket list first (by board, keywords, or error message) before filing, explicitly noting that the CI system and periodic agents may have already auto-filed a ticket for the same issue.

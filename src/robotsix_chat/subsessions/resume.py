@@ -185,6 +185,35 @@ _AUTO_CLOSE_REASONS: frozenset[str] = frozenset(
 )
 
 
+def _handle_terminal_on_resume(
+    env: SubsessionEnv,
+    entry: Mapping[str, object],
+    sub_id: str,
+) -> bool:
+    """If the ticket was already terminal, close the subsession and return True.
+
+    Returns True when the subsession was closed (caller should return None),
+    False when the subsession should proceed with resume.
+    """
+    checkpoint = _rebuild_checkpoint(entry)
+    last_known = checkpoint.get("last_known_state") if checkpoint else None
+    if isinstance(last_known, str) and last_known.lower() in _TICKET_STATE_TERMINAL:
+        info = _restore_entry(env.registry, entry, force_active=True)
+        if info is not None:
+            env.registry.mark_closed(
+                sub_id,
+                summary=(
+                    f"Ticket was already terminal "
+                    f"('{last_known}') before restart — closed without "
+                    f"resuming."
+                ),
+                reason="ticket_terminal_on_resume",
+                closed_by="system",
+            )
+        return True
+    return False
+
+
 def _resume_periodic_entry(
     env: SubsessionEnv,
     entry: Mapping[str, object],
@@ -199,26 +228,10 @@ def _resume_periodic_entry(
     subsession without spawning a worker so it does not poll a ticket
     whose monitor had already been cleanly stopped.
     """
-    checkpoint = _rebuild_checkpoint(entry)
-    last_known = checkpoint.get("last_known_state") if checkpoint else None
-    if isinstance(last_known, str) and last_known.lower() in _TICKET_STATE_TERMINAL:
-        # The ticket was already terminal — close the subsession without
-        # spawning a worker, matching what _check_resume_status does on
-        # the first post-restart tick.
-        info = _restore_entry(env.registry, entry, force_active=True)
-        if info is not None:
-            env.registry.mark_closed(
-                sub_id,
-                summary=(
-                    f"Ticket monitor was already terminal "
-                    f"('{last_known}') before restart — closed without "
-                    f"resuming."
-                ),
-                reason="ticket_terminal_on_resume",
-                closed_by="system",
-            )
+    if _handle_terminal_on_resume(env, entry, sub_id):
         return None
 
+    checkpoint = _rebuild_checkpoint(entry)
     completed_runs = _rebuild_completed_runs(entry)
     runs = max(completed_runs) if completed_runs else _entry_int(entry, "runs")
     dedup_key = _entry_opt_str(entry, "dedup_key")
@@ -255,25 +268,10 @@ def _resume_user_chat_entry(
     title: str,
 ) -> _ResumeFate | None:
     """Re-open a user_chat subsession under its original id."""
-    checkpoint = _rebuild_checkpoint(entry)
-    last_known = checkpoint.get("last_known_state") if checkpoint else None
-    if isinstance(last_known, str) and last_known.lower() in _TICKET_STATE_TERMINAL:
-        # The ticket was already terminal — close the subsession without
-        # spawning a worker.
-        info = _restore_entry(env.registry, entry, force_active=True)
-        if info is not None:
-            env.registry.mark_closed(
-                sub_id,
-                summary=(
-                    f"Ticket was already terminal "
-                    f"('{last_known}') before restart — closed without "
-                    f"resuming."
-                ),
-                reason="ticket_terminal_on_resume",
-                closed_by="system",
-            )
+    if _handle_terminal_on_resume(env, entry, sub_id):
         return None
 
+    checkpoint = _rebuild_checkpoint(entry)
     common = _entry_to_common_kwargs(entry)
     last_text = _entry_last_assistant_text(entry)
     if last_text:
@@ -318,26 +316,10 @@ def _resume_task_entry(
     pick up where it left off.  The original prompt is augmented with a
     restart notice so the agent knows work may have been lost.
     """
-    checkpoint = _rebuild_checkpoint(entry)
-    last_known = checkpoint.get("last_known_state") if checkpoint else None
-    if isinstance(last_known, str) and last_known.lower() in _TICKET_STATE_TERMINAL:
-        # The ticket was already terminal — close the subsession without
-        # spawning a worker, matching what _check_resume_status does on
-        # the first post-restart tick.
-        info = _restore_entry(env.registry, entry, force_active=True)
-        if info is not None:
-            env.registry.mark_closed(
-                sub_id,
-                summary=(
-                    f"Ticket was already terminal "
-                    f"('{last_known}') before restart — closed without "
-                    f"resuming."
-                ),
-                reason="ticket_terminal_on_resume",
-                closed_by="system",
-            )
+    if _handle_terminal_on_resume(env, entry, sub_id):
         return None
 
+    checkpoint = _rebuild_checkpoint(entry)
     common = _entry_to_common_kwargs(entry)
     common["prompt"] = (
         f"{common['prompt']}\n\n"
