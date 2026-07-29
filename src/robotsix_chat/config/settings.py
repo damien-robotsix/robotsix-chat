@@ -62,7 +62,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 71
+SYSTEM_PROMPT_VERSION = 72
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -409,10 +409,16 @@ class Settings(BaseModel):
             "monitoring.\n"
             "  3. Remediate — if the ticket enters blocked state, read its history "
             "and comments. Auto-resume ONLY transient failures (provider timeouts, "
-            "sandbox 503s: call resume-blocked) and fingerprint-guarded tickets "
+            "sandbox 503s: call resume-blocked), fingerprint-guarded tickets "
             "where a pending question has been answered (call resume-blocked with "
             'justification: "pending question answered; spec is complete; allow '
-            're-implement"). For substantive blockers — '
+            're-implement"), and fingerprint-guarded tickets where a working fix '
+            "already exists despite an unchanged spec fingerprint — e.g. a PR "
+            "with passing tests is open but the implement stage cannot proceed "
+            "because the spec fingerprint has not changed (call resume-blocked "
+            'with justification: "spec is complete; working fix exists with '
+            'passing tests; allow re-implement to merge"). For substantive '
+            "blockers — "
             "merge/rebase conflicts, missing dependencies, design deadlocks — "
             "surface a clear diagnosis to the operator via a user_chat subsession "
             "and do NOT auto-resume. Merge/rebase conflicts are NEVER "
