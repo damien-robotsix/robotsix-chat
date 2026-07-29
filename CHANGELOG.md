@@ -8,6 +8,7 @@
   the configurable `board_api_base_url`.  This prevents the
   tool from failing when the mill host is not reachable at
   the default `127.0.0.1:8077` address.
+- Stalemate detection in autonomous chat now tells the agent to close the session (emit the completion marker) when the user repeatedly sends continuation messages while the session is in executing state, rather than suggesting plan-level alternatives that only apply in proposal state.
 - Add ``monitor_9d6a`` periodic agent to watch the implement-stage pre-LLM abort fix ticket (blocked at spawn limit) and alert when it unblocks.
 - Added `ticket_poll_batch` tool for bulk read-only ticket triage. Fetches full ticket data
   (state, history, events, comments) for multiple tickets concurrently via `GET /tickets/{id}`,

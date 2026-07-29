@@ -79,7 +79,7 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "terminal summaries will be visible in the session history.\n"
         "\n"
         "Operator-driven completion: when the operator sends repeated "
-        "continuation messages (e.g. \"Continue\" multiple times) without "
+        'continuation messages (e.g. "Continue" multiple times) without '
         "providing new instructions or data, treat this as explicit "
         "permission to close the session.  Emit the completion marker "
         "immediately — do NOT keep polling monitors that have not yet "
