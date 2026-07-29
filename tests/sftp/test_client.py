@@ -484,7 +484,7 @@ class TestSftpClientConnectionKwargs:
         assert kwargs["host"] == "sftp.example.com"
         assert kwargs["port"] == 2222
         assert kwargs["username"] == "admin"
-        assert kwargs["password"] == "p@ss"
+        assert kwargs["password"] == "p@ss"  # pragma: allowlist secret
         assert kwargs["known_hosts"] is None
 
     @pytest.mark.asyncio
@@ -504,7 +504,7 @@ class TestSftpClientConnectionKwargs:
 
         assert kwargs["username"] == "admin"
         assert "password" not in kwargs
-        assert "-----BEGIN OPENSSH PRIVATE KEY-----" in kwargs["client_keys"]
+        assert "-----BEGIN OPENSSH PRIVATE KEY-----" in kwargs["client_keys"]  # pragma: allowlist secret
         assert kwargs["passphrase"] == "keypass"
         assert kwargs["known_hosts"] == "sftp.example.com ssh-rsa AAA..."
 
