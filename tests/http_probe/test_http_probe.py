@@ -14,6 +14,7 @@ import pytest
 import respx
 
 from robotsix_chat.config import HttpProbeSettings
+from robotsix_chat.config.models import FleetAuthSettings
 from robotsix_chat.http_probe import build_http_probe_tools, load_http_probe_skill
 
 
@@ -317,3 +318,109 @@ async def test_http_probe_500_still_returns_body(
     assert result["body_snippet"] == "Internal Server Error"
     assert "text/plain" in result["content_type"]
     assert result["error"] == ""
+
+
+# ---------------------------------------------------------------------------
+# Fleet auth — basic-auth header injection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_http_probe_fleet_auth_sends_header(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When fleet_auth is configured and host matches, basic auth header is sent."""
+    respx_mock.get("https://deploy.robotsix.net/docs").mock(
+        return_value=httpx.Response(200, text="authenticated")
+    )
+
+    settings = _settings(
+        allowlist=["deploy.robotsix.net"],
+        fleet_auth=FleetAuthSettings(
+            basic_auth_username="operator",
+            basic_auth_password="s3cret",
+            auth_hosts=["deploy.robotsix.net"],
+        ),
+    )
+    tools = build_http_probe_tools(settings)
+    result = json.loads(await tools[0]("https://deploy.robotsix.net/docs"))
+
+    assert result["healthy"] is True
+    assert result["body_snippet"] == "authenticated"
+
+    # Verify the Authorization header was sent.
+    last_request = respx_mock.calls.last.request
+    auth = last_request.headers.get("Authorization", "")
+    assert auth.startswith("Basic ")
+    import base64 as _b64
+
+    decoded = _b64.b64decode(auth.removeprefix("Basic ")).decode()
+    assert decoded == "operator:s3cret"
+
+
+@pytest.mark.asyncio
+async def test_http_probe_fleet_auth_host_not_matching(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Fleet auth is NOT sent when the host is not in auth_hosts."""
+    respx_mock.get("https://www.robotsix.net/").mock(
+        return_value=httpx.Response(200, text="public")
+    )
+
+    settings = _settings(
+        fleet_auth=FleetAuthSettings(
+            basic_auth_username="operator",
+            basic_auth_password="s3cret",
+            auth_hosts=["deploy.robotsix.net"],
+        ),
+    )
+    tools = build_http_probe_tools(settings)
+    result = json.loads(await tools[0]("https://www.robotsix.net/"))
+
+    assert result["healthy"] is True
+    assert result["body_snippet"] == "public"
+
+    last_request = respx_mock.calls.last.request
+    assert "Authorization" not in last_request.headers
+
+
+@pytest.mark.asyncio
+async def test_http_probe_fleet_auth_none(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """No fleet_auth configured → no auth header sent."""
+    respx_mock.get("https://www.robotsix.net/").mock(
+        return_value=httpx.Response(200, text="public")
+    )
+
+    tools = build_http_probe_tools(_settings(fleet_auth=None))
+    result = json.loads(await tools[0]("https://www.robotsix.net/"))
+
+    assert result["healthy"] is True
+    last_request = respx_mock.calls.last.request
+    assert "Authorization" not in last_request.headers
+
+
+@pytest.mark.asyncio
+async def test_http_probe_fleet_auth_empty_credentials_no_header(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When username or password is empty, no auth header is sent."""
+    respx_mock.get("https://deploy.robotsix.net/docs").mock(
+        return_value=httpx.Response(200, text="ok")
+    )
+
+    settings = _settings(
+        allowlist=["deploy.robotsix.net"],
+        fleet_auth=FleetAuthSettings(
+            basic_auth_username="",
+            basic_auth_password="",
+            auth_hosts=["deploy.robotsix.net"],
+        ),
+    )
+    tools = build_http_probe_tools(settings)
+    result = json.loads(await tools[0]("https://deploy.robotsix.net/docs"))
+
+    assert result["healthy"] is True
+    last_request = respx_mock.calls.last.request
+    assert "Authorization" not in last_request.headers
