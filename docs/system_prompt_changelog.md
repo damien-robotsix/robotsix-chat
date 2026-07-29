@@ -41,7 +41,6 @@ fingerprint and unblock a guard. This clarification prevents that misunderstandi
 **SHA256:** `c8e48fdeb0fad3f232be99f649013d18e13aaef56f9096268b344ae297d9c477`
 
 ______________________________________________________________________
-
 ## v72 — 2026-07-29 — fingerprint-guard-auto-resume-working-fix-7181
 
 **Summary:** Extend the auto-resume criteria in the Remediate step (3) of the ticket
@@ -62,7 +61,6 @@ correct and the fix exists, but the fingerprint guard blocks re-implementation.
 **SHA256:** `ce58088fe1088dffa82d2e6e158f63a6d9d15642d23e6bdd6e8fed59c7cbbad7`
 
 ______________________________________________________________________
-
 ## v72 — 2026-07-28 — resolve-conflicting-option-a-memory-by-g-f4f2
 
 **Summary:** Strengthen memory-recall guardrails in both the system prompt's Autonomy section and
@@ -85,7 +83,6 @@ labels.
 **SHA256:** `bb6777326a3018872678408c46f0620da2ac8d7c8e6e31556926e3a82eac29a7`
 
 ______________________________________________________________________
-
 ## v71 — 2026-07-28 — merge-handle-blocked-closed-transition-0ce2-c578
 
 **Summary:** Merge of two independent v70-branch changes into v71:
@@ -99,7 +96,6 @@ ______________________________________________________________________
 **SHA256:** `bd34147301da38a69438f1905a8b247969066119dac3be29dffa42f73ee068a1`
 
 ______________________________________________________________________
-
 ## v70 — 2026-07-28 — require-concrete-operator-blocker-instructions-0ce2
 
 **Summary:** Added a new operator-facing blocker instructions bullet in the Autonomy section.
@@ -116,7 +112,6 @@ instructions eliminate ambiguity and let the operator act immediately.
 **SHA256:** `7dcf9364ea1d0dcfd3eaffbd3d6bed9871435e833714348f25b0f636dd7bd616`
 
 ______________________________________________________________________
-
 ## v69 — 2026-07-28 — avoid-duplicate-ticket-creation-by-check-7b0b
 
 **Summary:** Tighten the ticket-creation deduplication rule in the Initiate step (1) of the ticket
@@ -135,7 +130,6 @@ source of pre-existing tickets.
 **SHA256:** `e9180114668b01ee6c6e91d826521e8542681d6ab8af1dfc3826485ec01ce72b`
 
 ______________________________________________________________________
-
 ## v70 — 2026-07-28 — add-loop-guard-to-periodic-monitors-checking-ci-workflow-runs
 
 **Summary:** Add a "LOOP GUARD — CI workflow verification" section to the periodic subsession system
@@ -157,7 +151,6 @@ this check.
 **SHA256:** (not yet deployed — changelog fragment at `changelog.d/20260728T210856Z-add-loop-guard-to-periodic-monitors-chec-5679.misc.md`)
 
 ______________________________________________________________________
-
 ## v68 — 2026-07-28 — add-retry-with-justification-support-to-6928
 
 **Summary:** Three updates to the `agent_instruction` default to support retry-with-justification
@@ -185,7 +178,6 @@ reducing unnecessary operator intervention.
 **SHA256:** `3aca65c9780285400f51a1853c4c0c70bd272368ee7b53014b27458808e43b40`
 
 ______________________________________________________________________
-
 ## v67 — 2026-07-28 — consolidate-subsession-summaries-into-a-c7d8
 
 **Summary:** Replace the "consolidate periodic subsession outcomes" bullet in the Subsessions
@@ -205,7 +197,6 @@ unambiguous, leaving no room for raw enumeration fallback.
 **SHA256:** `d27d30799d75701d7f1dcdd5e507adbb3099921aab868a4f4c51edf091b4931a`
 
 ______________________________________________________________________
-
 ## v66 — 2026-07-28 — reduce-verbose-re-summarization-in-monit-9774
 
 **Summary:** Add a "compress monitor outcomes" bullet to the Subsessions section. When the assistant
@@ -222,7 +213,6 @@ conversations, reducing re-summarization overhead.
 **SHA256:** `45ac5e9528683f4e5fe62b8c55fd182054f8e5c6b9b4320507e9902cc4060d86`
 
 ______________________________________________________________________
-
 ## v65 — 2026-07-28 — provide-explicit-guidance-for-handling-s-6120
 
 **Summary:** Add a "Block cascade triage" bullet to the Autonomy section. When a periodic monitor
@@ -254,7 +244,6 @@ and wasted implement cycles when a batch spans multiple unrelated root causes.
 **SHA256:** `f0882f7e2e093b0dfb94edbd9dfc2948bb43d065fdd06c01666c26a8f6ce38d8`
 
 ______________________________________________________________________
-
 ## v64 — 2026-07-27 — expose-deploy-image-digest-and-health-st-ae07
 
 **Summary:** Add a "deploy status tracking" bullet to the Subsessions section. When monitoring a
@@ -272,7 +261,6 @@ proposals for issues already resolved in the running image, accelerating deadloc
 **SHA256:** `45e04e8c1aa771858e20cf0dd6fa247d741a659184b5efa91d6fa51bd2e97dd9`
 
 ______________________________________________________________________
-
 ## v63 — 2026-07-28 — introduce-model-policy-abstraction-for-d-42d5
 
 **Summary:** Add a "Model Policy" section defining named tier labels for the existing model levels
@@ -291,9 +279,6 @@ stay current without manual rework.
 **SHA256:** `54ea4a939c89c287887567d0b1c05c16cf9ad4b16e80b34af18182126689632e`
 
 ______________________________________________________________________
-
-
-
 ## v62 — 2026-07-25 — unify-periodic-sub-session-summaries-int-6dc6
 
 **Summary:** Add a consolidation rule for periodic subsession outcomes. When multiple periodic
@@ -311,7 +296,6 @@ the agent to batch outcomes proactively, reducing noise when the user is not act
 **SHA256:** `cc09561088cbb302d4a4dd8a37d4089d063272d12cf720dcd0002ca3ebbbd01f`
 
 ______________________________________________________________________
-
 ## v61 — 2026-07-24 — recalled-memory-hallucination-flagged-bu-67ab
 
 **Summary:** Remove the standalone bullet "When the user directly challenges a claim about external
@@ -331,8 +315,6 @@ re-verify.
 **SHA256:** `043607eb68fa273c3de6a8c9529b1be5ec1c88063123ad07f1481713e4025cae`
 
 ______________________________________________________________________
-
-
 ## v60 — 2026-07-21 — add-automatic-pr-merge-verification-befo-2329
 
 **Summary:** Add a "Deploy pre-check" bullet to the Deploy system guidance in the Autonomy section.
@@ -350,8 +332,6 @@ merge verification a required pre-deploy step.
 **SHA256:** `a5bba5bbcdf3db34f1f0db3213c34081d37b1cb094755e7da93083b9e7ad42d5`
 
 ______________________________________________________________________
-
-
 ## v59 — 2026-07-27 — do-not-ask-for-permission-for-trivial-cl-70b7
 
 **Summary:** Add an "explicit instruction override" bullet to the Verification section. When a user
@@ -465,8 +445,6 @@ feature was actually live.
 **SHA256:** `d965f15a4a7f5a53ac0cf97e5efe93a0ea467607fbdc9a0f20777fe23dd70acb`
 
 ______________________________________________________________________
-
-
 ## v55 — 2026-07-25 — periodic-subsession-spawning-restriction-7981
 
 **Summary:** Add a new bullet to the Subsessions section instructing periodic subsessions on how to
@@ -484,8 +462,6 @@ a clear fallback path and keeps the error hidden from the user.
 **SHA256:** `7e7b00fb717a05d749d2ff38259914fd6e15540cbc826f9ca7618b4be7acd521`
 
 ______________________________________________________________________
-
-
 ## v54 — 2026-07-25 — verify-config-before-advising-4895
 
 **Summary:** Add a rule requiring the agent to retrieve and analyse relevant source code before
@@ -506,8 +482,6 @@ a dead no-op. This incorrect guidance added confusion and required additional cl
 **SHA256:** `ab5974d257cc18a871cf77ce6cc9c2df992dd3ac49c6f28e4b5d436165f5d852`
 
 ______________________________________________________________________
-
-
 ## v53 — 2026-07-25 — avoid-fabricating-causes-without-validating-0cb1
 
 **Summary:** Add troubleshooting instruction to fetch live system state before hypothesizing causes
@@ -526,8 +500,6 @@ The user's prompts exposed these as fabricated guesses.
 **SHA256:** `2b4d0254251d74796966a338e034e198d8d8dae1621c05bb925d9647af894a56`
 
 ______________________________________________________________________
-
-
 ## v52 — 2026-07-25 — require-live-notes-and-board-before-planning-c451
 
 **Summary:** Add mandatory pre-planning step to load actual knowledge notes and live board state,
@@ -558,8 +530,6 @@ eliminates this entire class of error.
 **SHA256:** `3ef0fc15c18fd655521d840603a68c03f6769c9f6a7f6c64e1d7add0bab5298e`
 
 ______________________________________________________________________
-
-
 ## v51 — 2026-07-25 — remove-or-flag-self-authored-knowledge-n-13b9
 
 **Summary:** Add two guardrails against self-authored behavioral rules in knowledge notes:
@@ -584,8 +554,6 @@ behavioral policy.
 **SHA256:** `7ef377e5b7f89c26fc84ea0bcc40a209fdd16500e854a52c98ebb4307c718680`
 
 ______________________________________________________________________
-
-
 ## v50 — 2026-07-25 — periodic-subsessions-spawned-from-conversation-288d
 
 **Summary:** Clarify periodic subsession role to suppress misleading "not supported" warning.
@@ -600,8 +568,6 @@ ticket monitor.
 **SHA256:** `3a14bb18e6bdb7ba4a5ba7316a6c6ffb9b6be0a7f604ffa9feaa5a22e704e325`
 
 ______________________________________________________________________
-
-
 ## v49 — 2026-07-25 — smarter-subsession-reporting-only-surfac-8e33
 
 **Summary:** Bake the subsession reporting contract into the system prompt. Add a new bullet
@@ -771,8 +737,6 @@ stay current without manual rework.
 **SHA256:** `c27c3b532a4338aaa51d9a0a943a81538a60ff94e487209e0925ace0a59669df`
 
 ______________________________________________________________________
-
-
 ## v45 — 2026-07-22 — hallucinated-memory-summary-causes-redun-f44a
 
 **Summary:** Add a cognee memory recall verification bullet to the Verification section. Cognee
@@ -790,8 +754,6 @@ memory is treated as a hint requiring verification, not as ground truth.
 **SHA256:** `00d9b5881eae6c49dd793826344f2d11b3d42edac990d08babf0d19b23c361ce`
 
 ______________________________________________________________________
-
-
 ## v44 — 2026-07-21 — do-not-assume-a-generic-one-shot-deploy-45a0
 
 **Summary:** Add a "Deploy preflight" paragraph after the "Deploy system" section. Before calling
@@ -849,8 +811,6 @@ information to work from.
 **SHA256:** `f70ca3f5db3176cacba351f45054037b14a790f05b84f547990cdaa5f786b7e6`
 
 ______________________________________________________________________
-
-
 ## v42 — 2026-07-21 — add-prompt-guidance-for-self-mutation-bo-0461
 
 **Summary:** Add a "Self-mutation bootstrap" bullet to the Autonomy / ticket-lifecycle section
@@ -869,8 +829,6 @@ direct the operator to the one-time action that breaks the loop.
 **SHA256:** `3a5f2afe0de0c7655fd83baeea3828a5bb1eb3601c70283ef10efa8560e0a8f2`
 
 ______________________________________________________________________
-
-
 ## v41 — 2026-07-21 — fix-guard-paragraph-contradicts-network-tools
 
 **Summary:** Reword the closing guard paragraph to clarify that the agent **can** access external
@@ -931,8 +889,6 @@ broader check prevents symptom-vs.-cause duplicate filing.
 **SHA256:** `d409e9c7f73f5671a27796ccc4a28c71850d9beeab06e012d8361ab8da7600ad`
 
 ______________________________________________________________________
-
-
 ## v39 — 2026-07-20 — add-bootstrap-deadlock-guidance-to-system-prompt-7f94
 
 **Summary:** Add a "Bootstrap deadlock" bullet to the Merge/PR management section of the agent
@@ -949,8 +905,6 @@ clean standalone addition.
 **SHA256:** `346af495da125fc27d3225d7f6a5d9699ff6aba8206c987782a203b3d5dd6ed1`
 
 ______________________________________________________________________
-
-
 ## v39 — 2026-07-20 — add-deploy-server-restart-capability-for-144c
 
 **Summary:** Add `self_restart` to the Deploy API quick-reference bullet list and update the Reload
@@ -969,8 +923,6 @@ needs to self-restart after picking up new capabilities.
 **SHA256:** `a3dcab48d87f5235fb66ee928961604dc2d47fd6ab357c047bfe4807ef634d62`
 
 ______________________________________________________________________
-
-
 ## v38 — 2026-07-20 — decision-chat-subsessions-must-embed-full-77c1
 
 **Summary:** Add an option-label restatement rule to the user_chat subsession guidance. When
@@ -989,8 +941,6 @@ operator-facing turns.
 **SHA256:** `501a7f57365d705c6bbf7b250196da279c238c2a31977017df4cfc60a6e38e6d`
 
 ______________________________________________________________________
-
-
 ## v37 — 2026-07-20 — direct-fix-capability-chat-agent-can-push-validated-fixes
 
 **Summary:** Add a `direct_fix` tool to the system prompt's direct-repo section: when a ticket has
@@ -1010,11 +960,7 @@ requirement.
 **SHA256:** `ae8151436ae1c006268f845d6713b7031ff49ae5032406a993abac6e009451d9`
 
 ______________________________________________________________________
-
-
 ______________________________________________________________________
-
-
 ## v36 — 2026-07-20 — contract-version-troubleshooting-guide
 
 **Summary:** Add a "Contract-version troubleshooting" bullet to the Deploy system guidance in the
@@ -1050,8 +996,6 @@ existing lifecycle base URL and auth, so the agent can reach these endpoints dir
 **SHA256:** `110dcb100d67ab3c3e92c4af2d671a54a33886115831c070661a02044dc6e802`
 
 ______________________________________________________________________
-
-
 ## v34 — 2026-07-20 — improve-handling-of-rebase-conflicts-avo-8b37
 
 **Summary:** Enhance the Remediate step of the Ticket lifecycle with explicit merge/rebase conflict
@@ -1067,8 +1011,6 @@ failures, surface substantive blockers with a specific diagnosis.
 **SHA256:** `28625c3b503d2496e6bb56372fdf94d8ebe7bbdb24de179831ec35e376710c53`
 
 ______________________________________________________________________
-
-
 ## v33 — 2026-07-20 — correct-mistaken-understanding-of-centra-0b5b
 
 **Summary:** Add a "Deploy system" bullet to the Autonomy section documenting that the
@@ -1088,8 +1030,6 @@ API-driven deploy system from git-driven workflows.
 **SHA256:** `50aa4a754a18b4a2de813a876a73923a73c179966687a32514be46c68e8a05a9`
 
 ______________________________________________________________________
-
-
 ## v32 — 2026-07-20 — document-mill-merge-now-endpoint-and-add-feda
 
 **Summary:** Add a dedicated "Mill & Deploy Endpoints" section to the default `agent_instruction`.
@@ -1121,8 +1061,6 @@ one reply rather than inspecting every MR individually, reducing back-and-forth.
 **SHA256:** `1be126bf59a010259f66e570b008fbceca627fe604447e0e2784bfda968abf99`
 
 ______________________________________________________________________
-
-
 ## v30 — 2026-07-20 — handle-ambiguous-single-word-commands-wi-1d61
 
 **Summary:** Add a pick-list instruction to the Autonomy section: when multiple unowned, actionable
@@ -1138,8 +1076,6 @@ back-and-forth and cognitive load.
 **SHA256:** `f0aa4c393e144fffcbc9f053d9ac7937444ddf996beb373b0cdb3248f9e6d553`
 
 ______________________________________________________________________
-
-
 ## v29 — 2026-07-19 — prevent-creation-of-duplicate-monitors-f-8af3 & cross-reference-historical-claims-with-live-state-11ec
 
 **Summary (dedup_key):** Extend `dedup_key` deduplication from `user_chat`-only to all subsession
@@ -1169,8 +1105,6 @@ state as the source of truth and distrust memory when it conflicts with live obs
 **SHA256 (Verification):** `d8abc681dfd9de968e6dece0e1d6a51bc8ad2f8f7c2351b5a65ce4a2be1c9610`
 
 ______________________________________________________________________
-
-
 ## v28 — 2026-07-19 — document-merge-capability-via-mill-api-d1a3
 
 **Summary:** Add a "Merge / PR management" bullet to the Autonomy section documenting that
@@ -1188,8 +1122,6 @@ endpoints first.
 **SHA256:** `436be0c1a8683984e7dc721d039bf3d4bd3dfa108d462f3f8542617fdd2939e8`
 
 ______________________________________________________________________
-
-
 ## v27 — 2026-07-19 — deduplicate-known-broken-asyncio-run-err-54ea
 
 **Summary:** Add dedup_key guidance to the agent_instruction default. When spawning a user_chat to
@@ -1201,8 +1133,6 @@ what is already running.
 **SHA256:** `00cf8271575ee7a1d9965eb9c4429bf7947def9e5e5aaaf6c72880fe80f4c771`
 
 ______________________________________________________________________
-
-
 ## v26 — 2026-07-19 — simplify-credential-handling-avoid-expos-a275
 
 **Summary:** Add a "Secret handling" section to the default `agent_instruction` covering three
@@ -1221,8 +1151,6 @@ up afterward.
 **SHA256:** `f547bbff537bc7c2694f71d76e143dbaebb76ed0fb8b4d6da298d823af8a86cc`
 
 ______________________________________________________________________
-
-
 ## v25 — 2026-07-19 — prevent-redundant-ticket-creation-when-a-652b
 
 **Summary:** Extend the Initiate step in the Ticket lifecycle with deduplication guidance: before
@@ -1233,13 +1161,9 @@ cancel the predecessor's monitor subsession so only one monitor runs for the sam
 **SHA256:** `31388ebb20a25bf9c9a70c5ace06bbab39700f4f6c5e26831cc7559a91e462f2`
 
 ______________________________________________________________________
-
-
 ## v24 — 2026-07-19 — improve-clarity-of-system-notices-for-re-1d76
 
 ______________________________________________________________________
-
-
 ## v22 — 2026-07-12 — add-one-subsession-per-subject-rule-to-s-efab
 
 **Summary:** Add a "one subsession per subject" rule to the subsession guidance in the default
@@ -1250,8 +1174,6 @@ subsession. Each subsession should have a single, coherent goal and close when t
 **SHA256:** `c9da8ee6d80ebf1f9c1f243638e519172453db5e20e1d98581609fefca53e895`
 
 ______________________________________________________________________
-
-
 ## v21 — 2026-07-11 — formalize-autonomous-ticket-lifecycle
 
 **Summary:** Replace the single capability-upgrade bullet in the Autonomy section with a full
@@ -1264,8 +1186,6 @@ for fingerprint-guarded hard-stuck tickets.
 **SHA256:** `c01b0918c8765e40e05c9b8a3742a39db88c9f4492cf910c2c5fe7b37e5a027b`
 
 ______________________________________________________________________
-
-
 ## v20 — 2026-07-07 — self-upgrade-capability-via-tickets
 
 **Summary:** Add a bullet to the Autonomy section documenting that the agent upgrades its own
@@ -1276,8 +1196,6 @@ deploy component to pick up newly registered capabilities.
 **SHA256:** `a3a77a1426baf3da4a300b107e7a9401f6325490d6878d0374753c741fa97ab4`
 
 ______________________________________________________________________
-
-
 ## v19 — 2026-07-05 — subsession-prefer-level-2-for-general-work
 
 **Summary:** Reword the subsession `model_level` guidance in the default `agent_instruction`. Level
@@ -1290,8 +1208,6 @@ retry at level 3 if a level 1-2 spawn errors for a missing API key.
 **SHA256:** `0387f250d8092d248e1e29b7736966c09aa1c3e6a32df4d7c6bb42024a07e939`
 
 ______________________________________________________________________
-
-
 ## v18 — 2026-07-04 — default-prompt-promises-component-request-cc62
 
 **Summary:** Remove the "Component access" section from the default `agent_instruction`. It is now
@@ -1302,8 +1218,6 @@ deployment where no central-deploy roster is wired.
 **SHA256:** `91f785fc2ff229ecc5c5bfd39c75b3aaaa5b070cf0b0a9a7f31066ac1787e3f2`
 
 ______________________________________________________________________
-
-
 ## v17 — 2026-07-04 — knowledge-tool-names-in-system-prompt
 
 **Summary:** Update the knowledge-base tool names in the agent system prompt from shorthand
@@ -1313,7 +1227,6 @@ ______________________________________________________________________
 **SHA256:** `efb12c78d114b5ea64d3bb79c4522b74c6e1c82a4203abe79c69e4d56ceca041`
 
 ______________________________________________________________________
-
 
 ## Governance policy
 
@@ -1351,8 +1264,6 @@ prompt:
    change needed there for a rollback.
 
 ______________________________________________________________________
-
-
 ## v16 — 2026-07-04 — generic-component-access-roster-skills
 
 **Summary:** Replace the Board/mill rules and Calendar/task tools sections with a new "Component
@@ -1364,8 +1275,6 @@ all component interaction now goes through the single generic tool.
 **SHA256:** `d6067ea41ef447564913d75031059f476e86c1817e601a4d395801fbad76a161`
 
 ______________________________________________________________________
-
-
 ## v15 — 2026-07-02 — subsession-redesign
 
 **Summary:** Replace all `delegate_task` / check-loop / pending-question guidance with a new
@@ -1524,8 +1433,6 @@ board-read gate. The new bullet is defense-in-depth alongside the programmatic g
 **SHA256:** `2188c9422da9d5a9db8cf024095d8717b0e779391b25903c91482109ceff75ff`
 
 ______________________________________________________________________
-
-
 ## v4 — 2026-06-24 — 20260623T204239Z-robotsix-chat-give-the-assistant-a-writa-ff6c
 
 **Summary:** Add knowledge-base instructions — the agent now has a local, durable knowledge base
