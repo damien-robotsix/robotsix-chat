@@ -317,6 +317,7 @@ modules:
     description: "Read-only URL rendering tool — headless Chromium (Playwright) that captures full-page screenshots and accessibility trees for UI verification. Exposes build_render_url_tools(), a factory returning a single render_url async tool."
     paths:
       - src/robotsix_chat/render_url/__init__.py
+      - src/robotsix_chat/render_url/skill.md
       - tests/render_url/__init__.py
       - tests/render_url/test_render_url.py
   - id: selfreview

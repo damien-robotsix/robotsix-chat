@@ -402,6 +402,36 @@ async def test_http_probe_fleet_auth_none(
 
 
 @pytest.mark.asyncio
+async def test_http_probe_fleet_auth_host_allowed_without_main_allowlist(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Fleet-auth hosts are implicitly allowed even when not in the main allowlist."""
+    respx_mock.get("https://deploy.robotsix.net/docs").mock(
+        return_value=httpx.Response(200, text="authenticated")
+    )
+
+    # The main allowlist does NOT include deploy.robotsix.net.
+    settings = _settings(
+        allowlist=["www.robotsix.net", "robotsix.net"],
+        fleet_auth=FleetAuthSettings(
+            basic_auth_username="operator",
+            basic_auth_password="s3cret",
+            auth_hosts=["deploy.robotsix.net"],
+        ),
+    )
+    tools = build_http_probe_tools(settings)
+    result = json.loads(await tools[0]("https://deploy.robotsix.net/docs"))
+
+    assert result["healthy"] is True
+    assert result["body_snippet"] == "authenticated"
+
+    # Verify the Authorization header was sent.
+    last_request = respx_mock.calls.last.request
+    auth = last_request.headers.get("Authorization", "")
+    assert auth.startswith("Basic ")
+
+
+@pytest.mark.asyncio
 async def test_http_probe_fleet_auth_empty_credentials_no_header(
     respx_mock: respx.MockRouter,
 ) -> None:
