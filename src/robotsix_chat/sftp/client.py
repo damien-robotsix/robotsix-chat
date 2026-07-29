@@ -37,16 +37,17 @@ async def _resolve_path(
     if not remote_root:
         return PurePosixPath(remote_path)
 
+    import os
+
     root = PurePosixPath(remote_root)
     # Normalise: join the root with the provided path, then resolve ".." segments.
     candidate = PurePosixPath(root, remote_path)
-    try:
-        resolved = PurePosixPath("/", candidate).relative_to("/")
-    except ValueError:
-        raise SftpPathError(
-            f"Path {remote_path!r} could not be resolved under {remote_root!r}"
-        ) from None
-    # Re-check that the resolved path is still under root.
+    # Use os.path.normpath to resolve ".." components — PurePosixPath
+    # preserves them verbatim, which would let a path like
+    #   /var/www/../../../etc/passwd
+    # pass the containment check below.
+    resolved = PurePosixPath(os.path.normpath(str(candidate)))
+    # Check that the resolved path is still under root.
     try:
         resolved.relative_to(root)
     except ValueError:
