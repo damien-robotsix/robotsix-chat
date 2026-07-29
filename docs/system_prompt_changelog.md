@@ -53,7 +53,6 @@ source of pre-existing tickets.
 
 ______________________________________________________________________
 
-
 ## v68 — 2026-07-28 — add-retry-with-justification-support-to-6928
 
 **Summary:** Three updates to the `agent_instruction` default to support retry-with-justification
