@@ -20,6 +20,7 @@ from robotsix_chat.chat.events import EventBus
 from robotsix_chat.config import Settings
 from robotsix_chat.config.constants import level_needs_api_key
 from robotsix_chat.diagnostics import DiagnosticStore
+from robotsix_chat.knowledge.store import KnowledgeStore
 from robotsix_chat.llm import LlmioChatAgent
 
 from .app import create_agent_from_settings, create_app
@@ -60,6 +61,7 @@ def run_server(
     github_actions_settings: Any = None,
     config_path: str | None = None,
     diagnostic_store: Any = None,
+    knowledge_store: Any = None,
 ) -> None:
     """Start the chat SSE server on ``host:port``.
 
@@ -94,6 +96,7 @@ def run_server(
         github_actions_settings=github_actions_settings,
         config_path=config_path,
         diagnostic_store=diagnostic_store,
+        knowledge_store=knowledge_store,
     )
     uvicorn.run(app, host=host, port=port)
 
@@ -256,6 +259,10 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # are immediately visible to agent tools without a restart.
     diagnostic_store = DiagnosticStore(settings.diagnostics.store_path)
 
+    # Shared knowledge store — created once so the agent tools and the
+    # session-lifecycle handlers (carryover persistence) use the same instance.
+    knowledge_store = KnowledgeStore(settings.knowledge.path)
+
     subsession_registry = SubsessionRegistry(
         event_sink=event_bus,
         store_path=Path(settings.subsessions.store_path),
@@ -289,6 +296,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             # they don't recall + cognify every turn around the clock.
             memory_enabled=s.memory.subsession_enabled,
             diagnostic_store=diagnostic_store,
+            knowledge_store=knowledge_store,
         )
 
     env = SubsessionEnv(
@@ -320,6 +328,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             # they don't cognify every turn around the clock.
             memory_enabled=settings.memory.autonomous_enabled,
             diagnostic_store=diagnostic_store,
+            knowledge_store=knowledge_store,
         )
 
     # -- autonomous runner -------------------------------------------------
@@ -354,6 +363,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             subsession_env=env,
             event_sink=event_bus,
             diagnostic_store=diagnostic_store,
+            knowledge_store=knowledge_store,
         )
     # Wire the main agent into ParentDelivery now that both exist (see
     # ParentDelivery.set_agent for why this can't happen at construction
@@ -388,6 +398,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         model_level=summary_model_level,
         bare=True,
         diagnostic_store=diagnostic_store,
+        knowledge_store=knowledge_store,
     )
 
     # -- feedback runner ---------------------------------------------------
@@ -418,6 +429,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             model_level=feedback_model_level,
             bare=True,
             diagnostic_store=diagnostic_store,
+            knowledge_store=knowledge_store,
         )
 
         feedback_runner = FeedbackRunner(
@@ -504,4 +516,5 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         github_security_settings=settings.github_security,
         github_actions_settings=settings.github_actions,
         diagnostic_store=diagnostic_store,
+        knowledge_store=knowledge_store,
     )
