@@ -521,6 +521,126 @@ async def test_complete_subsession_sets_close_state() -> None:
     assert "Close requested" in result
 
 
+@pytest.mark.asyncio
+async def test_complete_subsession_rejects_periodic_without_ci_evidence() -> None:
+    """A periodic monitor with a ticket_id checkpoint must include CI evidence."""
+    env = build_env()
+    _register(
+        env,
+        sub_id="sub-ci-1",
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "abc123"},
+    )
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id="sub-ci-1", depth=1), close_state=close_state
+    )
+    complete = _by_name(tools, "complete_subsession")
+
+    # Summary with no CI evidence → rejected.
+    result = await complete("Ticket abc123 is now closed. All checks passed.")
+    assert "REJECTED" in result
+    assert "CI workflow verification required" in result
+    assert close_state.requested is False
+
+
+@pytest.mark.asyncio
+async def test_complete_subsession_accepts_periodic_with_ci_evidence() -> None:
+    """A periodic monitor with ticket_id passes when CI evidence is present."""
+    env = build_env()
+    _register(
+        env,
+        sub_id="sub-ci-2",
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "abc123"},
+    )
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id="sub-ci-2", depth=1), close_state=close_state
+    )
+    complete = _by_name(tools, "complete_subsession")
+
+    # Summary with CI evidence → accepted.
+    result = await complete(
+        "Ticket abc123 closed. CI workflow run #42 passed — pipeline is green."
+    )
+    assert "REJECTED" not in result
+    assert "Close requested" in result
+    assert close_state.requested is True
+
+
+@pytest.mark.asyncio
+async def test_complete_subsession_accepts_periodic_with_unreachable_ci() -> None:
+    """A periodic monitor passes when CI was unreachable (acknowledged)."""
+    env = build_env()
+    _register(
+        env,
+        sub_id="sub-ci-3",
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "abc123"},
+    )
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id="sub-ci-3", depth=1), close_state=close_state
+    )
+    complete = _by_name(tools, "complete_subsession")
+
+    # Summary acknowledging CI was unreachable → accepted.
+    result = await complete(
+        "Ticket abc123 closed. CI workflow status could not be verified "
+        "(API unreachable after 2 attempts)."
+    )
+    assert "REJECTED" not in result
+    assert "Close requested" in result
+    assert close_state.requested is True
+
+
+@pytest.mark.asyncio
+async def test_complete_subsession_no_guard_without_ticket_id() -> None:
+    """Periodic without a ticket_id checkpoint skips the CI guard entirely."""
+    env = build_env()
+    _register(
+        env,
+        sub_id="sub-ci-4",
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        checkpoint={"last_known_state": "blocked"},
+    )
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id="sub-ci-4", depth=1), close_state=close_state
+    )
+    complete = _by_name(tools, "complete_subsession")
+
+    result = await complete("Monitoring complete — ticket resolved.")
+    assert "REJECTED" not in result
+    assert "Close requested" in result
+
+
+@pytest.mark.asyncio
+async def test_complete_subsession_no_guard_for_task_subsession() -> None:
+    """Task subsessions with a ticket_id checkpoint are not affected."""
+    env = build_env()
+    _register(
+        env,
+        sub_id="sub-ci-5",
+        kind=SubsessionKind.TASK,
+        checkpoint={"ticket_id": "abc123"},
+    )
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id="sub-ci-5", depth=1), close_state=close_state
+    )
+    complete = _by_name(tools, "complete_subsession")
+
+    result = await complete("Ticket closed.")
+    assert "REJECTED" not in result
+    assert "Close requested" in result
+
+
 # ---------------------------------------------------------------------------
 # set_checkpoint tool
 # ---------------------------------------------------------------------------

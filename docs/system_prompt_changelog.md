@@ -53,6 +53,28 @@ source of pre-existing tickets.
 
 ______________________________________________________________________
 
+## v70 — 2026-07-28 — add-loop-guard-to-periodic-monitors-checking-ci-workflow-runs
+
+**Summary:** Add a "LOOP GUARD — CI workflow verification" section to the periodic subsession system
+prompt supplement (`_build_periodic_input` in `worker.py`).  Before calling `complete_subsession`,
+periodic monitors watching a ticket (checkpoint has `ticket_id`) must now verify from **three
+independent sources**: (1) the ticket endpoint confirming terminal state, (2) the PR/MR endpoint
+confirming merge status, and (3) the most recent CI workflow run (e.g. "Publish Docker image").
+If the workflow failed, the agent documents the failure in the summary and spawns a new diagnostic
+ticket.  A programmatic gate in `complete_subsession` rejects summaries that lack CI workflow
+keywords, breaking the redraft loop where monitors reported success despite a still-failing publish
+pipeline.
+
+**Rationale:** The deployment pipeline entered a redraft loop where consecutive tickets each fixed
+one TypeScript error but left others, and the "Publish Docker image" workflow kept failing.  A
+monitor that only checks ticket state (closed) is insufficient — it must also verify the actual CI
+workflow outcome before reporting success.  The programmatic gate ensures the agent cannot bypass
+this check.
+
+**SHA256:** (not yet deployed — changelog fragment at `changelog.d/20260728T210856Z-add-loop-guard-to-periodic-monitors-chec-5679.misc.md`)
+
+______________________________________________________________________
+
 ## v68 — 2026-07-28 — add-retry-with-justification-support-to-6928
 
 **Summary:** Three updates to the `agent_instruction` default to support retry-with-justification
