@@ -309,7 +309,7 @@
     },
     "DockerDigestSettings": {
       "additionalProperties": false,
-      "description": "Read-only Docker digest resolution tool for the agent.\n\nWhen enabled, the agent gains a ``resolve_docker_digest`` tool that\nresolves a Docker image reference (e.g. ``python:3.14-slim``) and\ntarget platform to its immutable ``sha256:...`` content digest by\nquerying the Docker Registry v2 HTTP API.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no docker_digest tool is offered.\n    timeout: Per-request HTTP timeout in seconds (default 30 s).",
+      "description": "Read-only Docker digest resolution tool for the agent.\n\nWhen enabled, the agent gains a ``resolve_docker_digest`` tool that\nresolves a Docker image reference (e.g. ``python:3.14-slim``) and\ntarget platform to its immutable ``sha256:...`` content digest by\nquerying the Docker Registry v2 HTTP API.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no docker_digest tool is offered.\n    timeout: Per-request HTTP timeout in seconds (default 30 s).\n    registry_host: Docker Registry v2 hostname for manifest lookups.\n        Default ``registry-1.docker.io`` (Docker Hub).\n    auth_url: Token-authentication endpoint for bearer tokens.\n        Default ``https://auth.docker.io/token`` (Docker Hub's auth\n        service).",
       "properties": {
         "enabled": {
           "default": true,
@@ -320,6 +320,16 @@
           "default": 30.0,
           "title": "Timeout",
           "type": "number"
+        },
+        "registry_host": {
+          "default": "registry-1.docker.io",
+          "title": "Registry Host",
+          "type": "string"
+        },
+        "auth_url": {
+          "default": "https://auth.docker.io/token",
+          "title": "Auth Url",
+          "type": "string"
         }
       },
       "title": "DockerDigestSettings",

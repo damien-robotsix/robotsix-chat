@@ -965,11 +965,18 @@ class DockerDigestSettings(BaseModel):
     Attributes:
         enabled: Master switch.  When ``False``, no docker_digest tool is offered.
         timeout: Per-request HTTP timeout in seconds (default 30 s).
+        registry_host: Docker Registry v2 hostname for manifest lookups.
+            Default ``registry-1.docker.io`` (Docker Hub).
+        auth_url: Token-authentication endpoint for bearer tokens.
+            Default ``https://auth.docker.io/token`` (Docker Hub's auth
+            service).
 
     """
 
     enabled: bool = True
     timeout: float = 30.0
+    registry_host: str = "registry-1.docker.io"
+    auth_url: str = "https://auth.docker.io/token"
     model_config = ConfigDict(extra="forbid")
 
 

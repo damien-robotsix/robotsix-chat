@@ -100,6 +100,14 @@ def build_docker_digest_tools(
             "error": "",
         }
 
+        # --- @sha256: shortcut ---
+        if "@sha256:" in image:
+            raw_image, raw_digest_suffix = image.split("@sha256:", 1)
+            resolved_digest = "sha256:" + raw_digest_suffix
+            result["digest"] = resolved_digest
+            result["resolved_ref"] = f"{raw_image}@{resolved_digest}"
+            return json.dumps(result, ensure_ascii=False)
+
         # --- Parse image reference ---
         image_without_tag: str
         tag: str
@@ -123,7 +131,7 @@ def build_docker_digest_tools(
         )
 
         if is_docker_hub:
-            registry_host = "registry-1.docker.io"
+            registry_host = settings.registry_host
             if len(parts) == 1:
                 namespace = "library"
                 repo = parts[0]
@@ -159,7 +167,7 @@ def build_docker_digest_tools(
             ) as client:
                 if is_docker_hub:
                     token_url = (
-                        f"https://auth.docker.io/token"
+                        f"{settings.auth_url}"
                         f"?service=registry.docker.io"
                         f"&scope=repository:{repo_path}:pull"
                     )
@@ -209,7 +217,16 @@ def build_docker_digest_tools(
                 manifest_body = manifest_resp.json()
 
                 # If it's a manifest list, find the platform-specific entry
-                if media_type and "manifest.list" in media_type:
+                _body_mt: str = (
+                    manifest_body.get("mediaType", "")
+                    if isinstance(manifest_body, dict)
+                    else ""
+                )
+                is_manifest_list = (
+                    media_type
+                    and ("manifest.list" in media_type or "image.index" in media_type)
+                ) or ("manifest.list" in _body_mt or "image.index" in _body_mt)
+                if is_manifest_list:
                     manifests = manifest_body.get("manifests", [])
                     platform_os, platform_arch, platform_variant = _parse_platform(
                         platform
