@@ -48,6 +48,12 @@ return a 403 error — the agent should treat that as "not permitted" and not re
 - `PUT  /services/{name}/config` — update service configuration
 - `PUT  /services/{name}/env` — update service environment
 
+**Enabling the toggle:** This is a per-repo setting in the central-deploy dashboard (labelled
+`allow_chat_access` or `chat_agent_mutatable`), not a chat-component config key or environment
+variable. See the
+[deployment guide](../user-guide/deployment.md#4-chat-agent-mutation-access-allow_chat_access) for
+step-by-step instructions.
+
 ## Self-restart
 
 `self_restart` restarts the agent's **own** service via `POST /chat/services/{name}/restart`, where
