@@ -3,6 +3,25 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v69 — 2026-07-28 — avoid-duplicate-ticket-creation-by-check-7b0b
+
+**Summary:** Tighten the ticket-creation deduplication rule in the Initiate step (1) of the ticket
+lifecycle. The prior wording checked `list_tickets` for any open or in-flight ticket addressing the
+same root cause; the new wording is more explicit: always query the board's ticket list first (by
+board, title keywords, or the exact error message) to check whether an open ticket for the same
+issue already exists. It adds a specific call-out that the CI system and other periodic agents may
+have already auto-filed a ticket — the agent must never create a second ticket for the same root
+cause or proposed action.
+
+**Rationale:** The agent was creating duplicate tickets for issues already tracked by CI-auto-filed
+tickets, wasting board slots and creating redundant work. The revised language makes the
+deduplication check more prescriptive and specifically calls out CI/periodic-agent auto-filing as a
+source of pre-existing tickets.
+
+**SHA256:** `e9180114668b01ee6c6e91d826521e8542681d6ab8af1dfc3826485ec01ce72b`
+
+______________________________________________________________________
+
 ## v68 — 2026-07-28 — add-retry-with-justification-support-to-6928
 
 **Summary:** Three updates to the `agent_instruction` default to support retry-with-justification
