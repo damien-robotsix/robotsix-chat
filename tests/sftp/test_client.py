@@ -504,7 +504,9 @@ class TestSftpClientConnectionKwargs:
 
         assert kwargs["username"] == "admin"
         assert "password" not in kwargs
-        assert "-----BEGIN OPENSSH PRIVATE KEY-----" in kwargs["client_keys"]  # pragma: allowlist secret
+        assert (
+            "-----BEGIN OPENSSH PRIVATE KEY-----" in kwargs["client_keys"]
+        )  # pragma: allowlist secret
         assert kwargs["passphrase"] == "keypass"
         assert kwargs["known_hosts"] == "sftp.example.com ssh-rsa AAA..."
 
