@@ -997,6 +997,10 @@ class AutonomousSettings(BaseModel):
             must explicitly close it.
         max_auto_turns: Maximum number of automatic agent turns during the
             execution phase before reverting to ``proposal``.
+        escalation_warning_turns: After this many execution turns without
+            completion, the runner injects an escalation warning suggesting
+            alternatives (re-trigger implementation, request human review,
+            direct debugging) instead of plain ``"Continue."``.  Default 10.
         session_color: Optional CSS color string applied as a visual accent
             on autonomous session rows (e.g. ``"#ef4444"`` for red).
         initial_task: Optional description of the first task to spawn when
@@ -1009,6 +1013,7 @@ class AutonomousSettings(BaseModel):
     proposal_marker: str = "---PROPOSAL READY---"
     completion_marker: str = "---AUTONOMOUS COMPLETE---"
     max_auto_turns: int = 20
+    escalation_warning_turns: int = 10
     persist_path: str = "/data/autonomous_sessions.json"
     session_color: str = ""
     initial_task: str = ""

@@ -28,6 +28,16 @@ class TestBuildAutonomousInstruction:
         assert "MUTATION AUTHORIZATION" in result
         assert "read-only work" in result
 
+    def test_escalation_guidance_present(self) -> None:
+        """The stuck/no-change loop escalation section is present."""
+        settings = MagicMock()
+        settings.autonomous.proposal_marker = "---PROPOSAL READY---"
+        settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
+        result = build_autonomous_instruction(settings)
+        assert "Re-trigger implementation" in result
+        assert "Request human review" in result
+        assert "Suggest direct debugging" in result
+
     def test_custom_markers(self) -> None:
         """Custom marker strings are injected, defaults are absent."""
         settings = MagicMock()
