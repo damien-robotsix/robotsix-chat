@@ -3,6 +3,27 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v72 — 2026-07-29 — fingerprint-guard-auto-resume-working-fix-7181
+
+**Summary:** Extend the auto-resume criteria in the Remediate step (3) of the ticket
+lifecycle to include fingerprint-guarded tickets where a working fix already exists despite an
+unchanged spec fingerprint — e.g. a PR with passing tests is open but the implement stage cannot
+proceed because the spec fingerprint hasn't changed. The assistant can now call resume-blocked with
+justification `"spec is complete; working fix exists with passing tests; allow re-implement to
+merge"` for this case without operator authorization.  Also updated the autonomous protocol's
+MUTATION AUTHORIZATION section to carve out an exception for the auto-resume cases documented in
+the main prompt.
+
+**Rationale:** When a monitor reports a blocked ticket due to unchanged spec fingerprint despite a
+working fix already existing, the assistant previously could not clear the block without user
+go-ahead — the only auto-resume cases were transient failures and fingerprint-guard with answered
+pending question.  This adds the third common fingerprint-guard pattern: the spec is already
+correct and the fix exists, but the fingerprint guard blocks re-implementation.
+
+**SHA256:** `16815c5c4fb16e434fd41281c201c513d69ac89c94d7dd19e9286ea39d3cf113`
+
+______________________________________________________________________
+
 ## v71 — 2026-07-28 — merge-handle-blocked-closed-transition-0ce2-c578
 
 **Summary:** Merge of two independent v70-branch changes into v71:
