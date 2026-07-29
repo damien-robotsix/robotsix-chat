@@ -1,9 +1,9 @@
 # Ticket Poll — direct board-API ticket-state lookup
 
-You have `ticket_poll` and `ticket_poll_batch` tools that query the mill board API directly.
-These tools bypass the component roster and are always available when the board API URL is
-configured — use them as a fallback when `component_request` is unavailable or as an independent
-verification of ticket state.
+You have `ticket_poll` and `ticket_poll_batch` tools that query the mill board API directly. These
+tools bypass the component roster and are always available when the board API URL is configured —
+use them as a fallback when `component_request` is unavailable or as an independent verification of
+ticket state.
 
 ## When to use it
 
@@ -13,15 +13,15 @@ verification of ticket state.
   `ticket_poll` as a second source to satisfy the terminal-state double-check requirement.
 - **Periodic monitoring** — every monitor tick, call `ticket_poll` (or `component_request`) to
   live-GET the ticket state before reporting any change.
-- **Bulk triage** — use `ticket_poll_batch` to fetch full details (state, history, events,
-  comments) for many tickets in one call, then classify them by failure signature.
+- **Bulk triage** — use `ticket_poll_batch` to fetch full details (state, history, events, comments)
+  for many tickets in one call, then classify them by failure signature.
 
 ## Allowed operations
 
-| Tool               | Description                                                                       |
-| ------------------ | --------------------------------------------------------------------------------- |
-| `ticket_poll`      | HTTP GET to the board API; returns the ticket's current state.                    |
-| `ticket_poll_batch` | Concurrent HTTP GETs for multiple tickets; returns full details for triage.      |
+| Tool                | Description                                                                 |
+| ------------------- | --------------------------------------------------------------------------- |
+| `ticket_poll`       | HTTP GET to the board API; returns the ticket's current state.              |
+| `ticket_poll_batch` | Concurrent HTTP GETs for multiple tickets; returns full details for triage. |
 
 The tool signatures are:
 
@@ -47,7 +47,7 @@ A JSON string with a `tickets` array. Each element has:
 
 - `ticket_id` — the ticket identifier
 - `state` — the ticket's current state string (or `null`)
-- `data` — the full JSON response from ``GET /tickets/{id}`` (includes events, history, comments,
+- `data` — the full JSON response from `GET /tickets/{id}` (includes events, history, comments,
   cycle metadata)
 - `error` — empty string on success, or a diagnostic message on failure
 
