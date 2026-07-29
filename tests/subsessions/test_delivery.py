@@ -989,3 +989,9 @@ async def test_reaction_unknown_session_uses_default_template() -> None:
     prompt = args[1]
     assert "not actively conversing" in prompt
     assert "DO NOT re-request approval" not in prompt
+from robotsix_chat.subsessions.delivery import _REACT_PROMPT_TEMPLATE
+
+def test_react_prompt_forbids_reemitting_already_shown_payload() -> None:
+    text = _REACT_PROMPT_TEMPLATE.lower()
+    assert "already presented" in text or "already shown" in text
+    assert "delta" in text
