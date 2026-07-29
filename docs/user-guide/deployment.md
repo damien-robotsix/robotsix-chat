@@ -109,9 +109,9 @@ ______________________________________________________________________
 The chat agent can inspect and mutate managed services through the deploy-lifecycle API (see the
 [lifecycle skill](../lifecycle/skill.md)). All mutation endpoints — including
 `POST /chat/services/{name}/restart` (service restart), `PUT /chat/services/{name}/config`
-(config-write), and `POST /chat/services` (service registration) — are gated by a **per-repo
-access toggle** in the central-deploy dashboard. When the toggle is off, every mutation attempt
-returns `403 Forbidden`.
+(config-write), and `POST /chat/services` (service registration) — are gated by a **per-repo access
+toggle** in the central-deploy dashboard. When the toggle is off, every mutation attempt returns
+`403 Forbidden`.
 
 > This toggle is **not** a chat-component config key or environment variable — it lives in the
 > central-deploy management plane. There is nothing to set in `config/config.json` or in the
@@ -119,21 +119,20 @@ returns `403 Forbidden`.
 
 ### Symptom
 
-When the chat agent attempts a mutation (e.g. registering a new service via
-`POST /chat/services`) and the toggle is disabled, the agent receives a 403 error. The agent
-treats this as "not permitted" and does not retry — the operation fails silently from the
-operator's perspective.
+When the chat agent attempts a mutation (e.g. registering a new service via `POST /chat/services`)
+and the toggle is disabled, the agent receives a 403 error. The agent treats this as "not permitted"
+and does not retry — the operation fails silently from the operator's perspective.
 
 ### Enabling the toggle
 
 1. Open the **central-deploy dashboard**.
 2. Navigate to the **repo** (component) whose chat agent needs mutation access.
-3. Locate the **"Allow chat access"** (also labelled `chat_agent_mutatable` or
-   `allow_chat_access`) setting in the per-repo configuration.
+3. Locate the **"Allow chat access"** (also labelled `chat_agent_mutatable` or `allow_chat_access`)
+   setting in the per-repo configuration.
 4. Enable it, then save (or redeploy) the repo configuration.
 
-After the toggle is enabled, the chat agent can successfully call mutation endpoints — no
-restart of the chat component is required; the deploy server enforces the gate on every request.
+After the toggle is enabled, the chat agent can successfully call mutation endpoints — no restart of
+the chat component is required; the deploy server enforces the gate on every request.
 
 ______________________________________________________________________
 
