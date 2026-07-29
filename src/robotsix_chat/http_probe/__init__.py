@@ -72,6 +72,23 @@ def build_http_probe_tools(
 
     allowed_hosts: set[str] = set(settings.allowlist)
 
+    # Pre-compute the basic-auth header value when fleet-auth is
+    # configured — the agent never sees the credential; it is injected
+    # server-side for matching hosts only.
+    fleet_auth_header: str | None = None
+    fleet_auth_hosts: set[str] = set()
+    if settings.fleet_auth is not None:
+        username = settings.fleet_auth.basic_auth_username
+        password = settings.fleet_auth.basic_auth_password.get_secret_value()
+        if username and password:
+            import base64 as _base64
+
+            encoded = _base64.b64encode(f"{username}:{password}".encode()).decode(
+                "ascii"
+            )
+            fleet_auth_header = f"Basic {encoded}"
+            fleet_auth_hosts = set(settings.fleet_auth.auth_hosts)
+
     async def http_probe(
         url: str,
         expect_status: int = 200,
@@ -129,12 +146,21 @@ def build_http_probe_tools(
         }
 
         # --- Hostname allowlist check ---
+        # Fleet-auth hosts are implicitly allowed (the operator
+        # explicitly listed them in auth_hosts), so the agent can
+        # reach authenticated fleet UIs without duplicating every
+        # hostname in the main allowlist.
         parsed = urlparse(url)
         hostname = parsed.hostname or ""
-        if allowed_hosts and hostname not in allowed_hosts:
+        if (
+            allowed_hosts
+            and hostname not in allowed_hosts
+            and hostname not in fleet_auth_hosts
+        ):
+            all_allowed = sorted(allowed_hosts | fleet_auth_hosts)
             result["error"] = (
                 f"Hostname {hostname!r} is not in the http_probe allowlist. "
-                f"Allowed hosts: {sorted(allowed_hosts)}"
+                f"Allowed hosts: {all_allowed}"
             )
             result["healthy"] = False
             return json.dumps(result, ensure_ascii=False)
@@ -150,12 +176,15 @@ def build_http_probe_tools(
         # --- HTTP GET ---
         start = time.monotonic()
         try:
+            headers: dict[str, str] = {}
+            if hostname in fleet_auth_hosts and fleet_auth_header is not None:
+                headers["Authorization"] = fleet_auth_header
             async with httpx.AsyncClient(
                 timeout=settings.timeout,
                 follow_redirects=True,
                 max_redirects=settings.max_redirects,
             ) as client:
-                response = await client.get(url)
+                response = await client.get(url, headers=headers)
                 elapsed = (time.monotonic() - start) * 1000.0  # ms
 
                 result["final_url"] = str(response.url)

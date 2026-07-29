@@ -15,7 +15,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from robotsix_chat.config.models import RenderUrlSettings
+from robotsix_chat.config.models import FleetAuthSettings, RenderUrlSettings
 
 # ---------------------------------------------------------------------------
 # Helpers
@@ -350,5 +350,115 @@ async def test_render_url_launches_headless_with_no_sandbox() -> None:
             headless=True,
             args=["--no-sandbox", "--disable-setuid-sandbox"],
         )
+    finally:
+        _remove_fake_playwright()
+
+
+# ---------------------------------------------------------------------------
+# render_url — fleet auth
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_render_url_fleet_auth_passes_http_credentials() -> None:
+    """When fleet_auth is configured and host matches, http_credentials are set."""
+    fake = _install_fake_playwright()
+    try:
+        from robotsix_chat.render_url import build_render_url_tools
+
+        tools = build_render_url_tools(
+            _settings(
+                fleet_auth=FleetAuthSettings(
+                    basic_auth_username="operator",
+                    basic_auth_password="s3cret",  # pragma: allowlist secret
+                    auth_hosts=["deploy.robotsix.net"],
+                ),
+            )
+        )
+        render_url = tools[0]
+
+        await render_url("https://deploy.robotsix.net/docs")
+
+        fake._test_browser.new_context.assert_awaited_once()
+        call_kwargs = fake._test_browser.new_context.call_args.kwargs
+        assert call_kwargs["viewport"] == {"width": 1280, "height": 720}
+        assert call_kwargs["http_credentials"] == {
+            "username": "operator",
+            "password": "s3cret",  # pragma: allowlist secret
+        }
+    finally:
+        _remove_fake_playwright()
+
+
+@pytest.mark.asyncio
+async def test_render_url_fleet_auth_host_not_matching() -> None:
+    """Fleet auth http_credentials are NOT set when host is not in auth_hosts."""
+    fake = _install_fake_playwright()
+    try:
+        from robotsix_chat.render_url import build_render_url_tools
+
+        tools = build_render_url_tools(
+            _settings(
+                fleet_auth=FleetAuthSettings(
+                    basic_auth_username="operator",
+                    basic_auth_password="s3cret",  # pragma: allowlist secret
+                    auth_hosts=["deploy.robotsix.net"],
+                ),
+            )
+        )
+        render_url = tools[0]
+
+        await render_url("https://www.robotsix.net/")
+
+        fake._test_browser.new_context.assert_awaited_once()
+        call_kwargs = fake._test_browser.new_context.call_args.kwargs
+        assert "http_credentials" not in call_kwargs
+        assert call_kwargs["viewport"] == {"width": 1280, "height": 720}
+    finally:
+        _remove_fake_playwright()
+
+
+@pytest.mark.asyncio
+async def test_render_url_fleet_auth_none() -> None:
+    """No fleet_auth → no http_credentials."""
+    fake = _install_fake_playwright()
+    try:
+        from robotsix_chat.render_url import build_render_url_tools
+
+        tools = build_render_url_tools(_settings(fleet_auth=None))
+        render_url = tools[0]
+
+        await render_url("https://www.robotsix.net/")
+
+        fake._test_browser.new_context.assert_awaited_once()
+        call_kwargs = fake._test_browser.new_context.call_args.kwargs
+        assert "http_credentials" not in call_kwargs
+    finally:
+        _remove_fake_playwright()
+
+
+@pytest.mark.asyncio
+async def test_render_url_fleet_auth_empty_credentials_no_http_credentials() -> None:
+    """Empty username/password → no http_credentials even for matching host."""
+    fake = _install_fake_playwright()
+    try:
+        from robotsix_chat.render_url import build_render_url_tools
+
+        tools = build_render_url_tools(
+            _settings(
+                fleet_auth=FleetAuthSettings(
+                    basic_auth_username="",
+                    basic_auth_password="",
+                    auth_hosts=["deploy.robotsix.net"],
+                ),
+            )
+        )
+        render_url = tools[0]
+
+        await render_url("https://deploy.robotsix.net/docs")
+
+        fake._test_browser.new_context.assert_awaited_once()
+        call_kwargs = fake._test_browser.new_context.call_args.kwargs
+        assert "http_credentials" not in call_kwargs
     finally:
         _remove_fake_playwright()

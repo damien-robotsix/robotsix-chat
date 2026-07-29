@@ -849,6 +849,36 @@ class FeedbackSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class FleetAuthSettings(BaseModel):
+    """Server-side HTTP basic-auth credentials for authenticated fleet UIs.
+
+    When configured, the ``http_probe`` and ``render_url`` tools
+    automatically attach an ``Authorization: Basic …`` header to
+    requests targeting hosts in *auth_hosts* — the credentials are
+    injected server-side and never exposed to the chat agent.
+
+    Authenticated hosts must still pass the owning tool's host
+    allowlist (``http_probe.allowlist``, ``render_url.auth_hosts``).
+
+    Attributes:
+        basic_auth_username: Username for HTTP basic authentication.
+            Leave empty when auth is not required.
+        basic_auth_password: Password for HTTP basic authentication
+            (stored as a SecretStr — never serialised in logs or
+            exposed to the agent).
+        auth_hosts: Hostnames (no protocol, no path) for which the
+            basic-auth header is attached.  Requests to hosts not on
+            this list proceed without credentials.  Default empty
+            (no authenticated hosts).
+
+    """
+
+    basic_auth_username: str = ""
+    basic_auth_password: SecretStr = SecretStr("")
+    auth_hosts: list[str] = Field(default_factory=list)
+    model_config = ConfigDict(extra="forbid")
+
+
 class RenderUrlSettings(BaseModel):
     """Read-only URL rendering with headless Chromium (Playwright).
 
@@ -863,6 +893,10 @@ class RenderUrlSettings(BaseModel):
         timeout: Per-request timeout in seconds for the page load.
         viewport_width: Browser viewport width in pixels.
         viewport_height: Browser viewport height in pixels.
+        fleet_auth: Optional server-side credentials for authenticated
+            fleet UIs.  When set, requests to hosts in
+            ``fleet_auth.auth_hosts`` carry HTTP basic-auth headers
+            injected by the server (never visible to the agent).
 
     """
 
@@ -870,6 +904,7 @@ class RenderUrlSettings(BaseModel):
     timeout: float = 30.0
     viewport_width: int = 1280
     viewport_height: int = 720
+    fleet_auth: FleetAuthSettings | None = None
     model_config = ConfigDict(extra="forbid")
 
 
@@ -891,6 +926,10 @@ class HttpProbeSettings(BaseModel):
         max_body_bytes: Maximum bytes of the response body to read and
             return to the agent (default 2048 — ~2 KB).
         max_redirects: Maximum number of redirects to follow (default 5).
+        fleet_auth: Optional server-side credentials for authenticated
+            fleet UIs.  When set, requests to hosts in
+            ``fleet_auth.auth_hosts`` carry HTTP basic-auth headers
+            injected by the server (never visible to the agent).
 
     """
 
@@ -901,6 +940,7 @@ class HttpProbeSettings(BaseModel):
     )
     max_body_bytes: int = 2048
     max_redirects: int = 5
+    fleet_auth: FleetAuthSettings | None = None
     model_config = ConfigDict(extra="forbid")
 
 

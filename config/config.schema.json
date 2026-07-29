@@ -349,6 +349,33 @@
       "title": "FeedbackSettings",
       "type": "object"
     },
+    "FleetAuthSettings": {
+      "additionalProperties": false,
+      "description": "Server-side HTTP basic-auth credentials for authenticated fleet UIs.\n\nWhen configured, the ``http_probe`` and ``render_url`` tools\nautomatically attach an ``Authorization: Basic \u2026`` header to\nrequests targeting hosts in *auth_hosts* \u2014 the credentials are\ninjected server-side and never exposed to the chat agent.\n\nAuthenticated hosts must still pass the owning tool's host\nallowlist (``http_probe.allowlist``, ``render_url.auth_hosts``).\n\nAttributes:\n    basic_auth_username: Username for HTTP basic authentication.\n        Leave empty when auth is not required.\n    basic_auth_password: Password for HTTP basic authentication\n        (stored as a SecretStr \u2014 never serialised in logs or\n        exposed to the agent).\n    auth_hosts: Hostnames (no protocol, no path) for which the\n        basic-auth header is attached.  Requests to hosts not on\n        this list proceed without credentials.  Default empty\n        (no authenticated hosts).",
+      "properties": {
+        "basic_auth_username": {
+          "default": "",
+          "title": "Basic Auth Username",
+          "type": "string"
+        },
+        "basic_auth_password": {
+          "default": "",
+          "format": "password",
+          "title": "Basic Auth Password",
+          "type": "string",
+          "writeOnly": true
+        },
+        "auth_hosts": {
+          "items": {
+            "type": "string"
+          },
+          "title": "Auth Hosts",
+          "type": "array"
+        }
+      },
+      "title": "FleetAuthSettings",
+      "type": "object"
+    },
     "GitHubActionsSettings": {
       "additionalProperties": false,
       "description": "GitHub Actions secrets and workflow dispatch via the GitHub App installation.\n\nWhen enabled, the chat agent gains ``set_actions_secret`` and\n``dispatch_workflow`` tools that can create/update repository Actions\nsecrets and trigger ``workflow_dispatch`` events on repos under the\nconfigured GitHub App's installation scope.\n\n**Guardrails built into the tools (not configurable):**\n- Repo scope is resolved dynamically from the GitHub App installation\n  (list-installation-repositories) \u2014 no static allowlist.\n- Only repos within the installation scope are modifiable.\n- Secret encryption uses libsodium sealed-box (requires ``pynacl``).\n- Both tools are confirmation-gated: the agent must confirm the exact\n  repo, secret name (or workflow id + ref) with the user before calling.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no Actions tools are offered.\n    github_org: GitHub organisation name whose repos are in scope\n        (e.g. ``\"damien-robotsix\"``).\n    deploy_api_key: API key that clients must present in the\n        ``X-API-Key`` header when calling the Actions endpoints.\n        When empty, the endpoints return 503 (unconfigured).\n\nNote: GitHub App authentication is delegated to\n:class:`DirectRepoSettings` \u2014 those credentials must also be configured\nfor the tools to function.",
@@ -401,7 +428,7 @@
     },
     "HttpProbeSettings": {
       "additionalProperties": false,
-      "description": "Read-only HTTP uptime/render-probe tool for the agent.\n\nWhen enabled, the agent gains an ``http_probe`` tool that performs a\nplain HTTPS GET to a public URL (follows redirects, short timeout)\nand returns the HTTP status, final URL, response time, Content-Type,\nresponse size, and a snippet of the body text with optional content\nassertions.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no http_probe tool is offered.\n    timeout: Per-request HTTP timeout in seconds (default 10 s).\n    allowlist: Hostnames (no protocol, no path) that the tool is permitted to\n        probe.  At minimum must include ``www.robotsix.net`` and\n        ``robotsix.net``.  When empty, the tool permits any public hostname.\n    max_body_bytes: Maximum bytes of the response body to read and\n        return to the agent (default 2048 \u2014 ~2 KB).\n    max_redirects: Maximum number of redirects to follow (default 5).",
+      "description": "Read-only HTTP uptime/render-probe tool for the agent.\n\nWhen enabled, the agent gains an ``http_probe`` tool that performs a\nplain HTTPS GET to a public URL (follows redirects, short timeout)\nand returns the HTTP status, final URL, response time, Content-Type,\nresponse size, and a snippet of the body text with optional content\nassertions.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no http_probe tool is offered.\n    timeout: Per-request HTTP timeout in seconds (default 10 s).\n    allowlist: Hostnames (no protocol, no path) that the tool is permitted to\n        probe.  At minimum must include ``www.robotsix.net`` and\n        ``robotsix.net``.  When empty, the tool permits any public hostname.\n    max_body_bytes: Maximum bytes of the response body to read and\n        return to the agent (default 2048 \u2014 ~2 KB).\n    max_redirects: Maximum number of redirects to follow (default 5).\n    fleet_auth: Optional server-side credentials for authenticated\n        fleet UIs.  When set, requests to hosts in\n        ``fleet_auth.auth_hosts`` carry HTTP basic-auth headers\n        injected by the server (never visible to the agent).",
       "properties": {
         "enabled": {
           "default": true,
@@ -429,6 +456,17 @@
           "default": 5,
           "title": "Max Redirects",
           "type": "integer"
+        },
+        "fleet_auth": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FleetAuthSettings"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "title": "HttpProbeSettings",
@@ -834,7 +872,7 @@
     },
     "RenderUrlSettings": {
       "additionalProperties": false,
-      "description": "Read-only URL rendering with headless Chromium (Playwright).\n\nWhen enabled, the agent gains a tool that loads a URL in a headless\nChromium browser (via Playwright), takes a full-page screenshot, and\nextracts the ARIA accessibility tree \u2014 both returned as structured output.\nNo interactive browsing, form-filling, or navigation beyond the initial\npage load is permitted.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no URL-render tool is offered.\n    timeout: Per-request timeout in seconds for the page load.\n    viewport_width: Browser viewport width in pixels.\n    viewport_height: Browser viewport height in pixels.",
+      "description": "Read-only URL rendering with headless Chromium (Playwright).\n\nWhen enabled, the agent gains a tool that loads a URL in a headless\nChromium browser (via Playwright), takes a full-page screenshot, and\nextracts the ARIA accessibility tree \u2014 both returned as structured output.\nNo interactive browsing, form-filling, or navigation beyond the initial\npage load is permitted.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no URL-render tool is offered.\n    timeout: Per-request timeout in seconds for the page load.\n    viewport_width: Browser viewport width in pixels.\n    viewport_height: Browser viewport height in pixels.\n    fleet_auth: Optional server-side credentials for authenticated\n        fleet UIs.  When set, requests to hosts in\n        ``fleet_auth.auth_hosts`` carry HTTP basic-auth headers\n        injected by the server (never visible to the agent).",
       "properties": {
         "enabled": {
           "default": true,
@@ -855,6 +893,17 @@
           "default": 720,
           "title": "Viewport Height",
           "type": "integer"
+        },
+        "fleet_auth": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FleetAuthSettings"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "title": "RenderUrlSettings",
