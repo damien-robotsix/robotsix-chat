@@ -324,6 +324,9 @@ def test_build_periodic_input_includes_loop_guard_instructions() -> None:
     assert "CI workflow verification" in result
     assert "GitHub Actions API" in result
     assert "publish/deploy workflow" in result
+    # Programmatic gate language.
+    assert "PROGRAMMATIC GATE" in result
+    assert "will REJECT any summary" in result
 
 
 @pytest.mark.asyncio

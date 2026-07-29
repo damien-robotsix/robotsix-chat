@@ -321,6 +321,38 @@ def _build_complete_tool(
                 f"Error: subsession {sub_id} is no longer active — its tree "
                 "record may have been lost. Cannot complete."
             )
+
+        # -- loop guard: require CI workflow verification for ticket monitors --
+        if (
+            info.kind == SubsessionKind.PERIODIC
+            and info.checkpoint
+            and "ticket_id" in info.checkpoint
+        ):
+            summary_lower = summary.lower()
+            has_ci_evidence = (
+                "ci workflow" in summary_lower
+                or "workflow run" in summary_lower
+                or "pipeline" in summary_lower
+                or "github actions" in summary_lower
+                or "publish" in summary_lower
+                or "deploy workflow" in summary_lower
+                or "could not be verified" in summary_lower
+            )
+            if not has_ci_evidence:
+                return (
+                    "REJECTED: CI workflow verification required.  This periodic "
+                    "monitor is watching a ticket (checkpoint.ticket_id is set).  "
+                    "Before calling complete_subsession you MUST verify the most "
+                    "recent CI workflow run for the affected pipeline (e.g. the "
+                    "'Publish Docker image' workflow or the repo's primary deploy "
+                    "workflow).  Use the check_workflow_run tool (or the GitHub "
+                    "Actions API via component_request) to fetch the latest run "
+                    "status.  Your summary MUST include the workflow verification "
+                    "result — either 'CI workflow passed', 'CI workflow failed: "
+                    "<details>', or 'CI workflow status could not be verified'.  "
+                    "Then call complete_subsession again with the updated summary."
+                )
+
         # Persist the closed state immediately so the subsession is not
         # re-loaded on restart.  The return value is intentionally ignored:
         # the pre-check guarantees success (info is active), and the worker's
