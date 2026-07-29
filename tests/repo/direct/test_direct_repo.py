@@ -1280,6 +1280,53 @@ async def test_reset_implement_spawn_counter_failure(
     assert "t-bad" in out
 
 
+@pytest.mark.asyncio
+async def test_reset_implement_spawn_counter_via_component_request_success() -> None:
+    """component_request returns HTTP 204 → tool reports success."""
+
+    async def _mock_component_request(
+        _component_id: str,
+        _method: str,
+        _path: str,
+        **_kw: Any,
+    ) -> str:
+        return "HTTP 204\n"
+
+    tools = build_direct_repo_tools(
+        _settings(), component_request=_mock_component_request
+    )
+    reset_fn = [t for t in tools if t.__name__ == "reset_implement_spawn_counter"][0]
+
+    out = await reset_fn(ticket_id="t-comp")
+    assert "reset" in out
+    assert "t-comp" in out
+    assert "Error" not in out
+
+
+@pytest.mark.asyncio
+async def test_reset_implement_spawn_counter_via_component_request_failure() -> None:
+    """component_request returns HTTP 500 → tool reports error."""
+
+    async def _mock_component_request(
+        _component_id: str,
+        _method: str,
+        _path: str,
+        **_kw: Any,
+    ) -> str:
+        return "HTTP 500\n"
+
+    tools = build_direct_repo_tools(
+        _settings(), component_request=_mock_component_request
+    )
+    reset_fn = [t for t in tools if t.__name__ == "reset_implement_spawn_counter"][0]
+
+    out = await reset_fn(ticket_id="t-bad-comp")
+    assert "Error" in out
+    # When component_request fails, we return the error immediately
+    # (no fallback to the direct API)
+    assert "component_request" in out
+
+
 # ============================================================================
 # direct_fix
 # ============================================================================
