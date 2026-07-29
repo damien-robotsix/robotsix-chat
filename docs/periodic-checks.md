@@ -299,8 +299,7 @@ run once and a transient failure would silently lose the work.
     success. Instead it calls `complete_subsession` with a summary documenting the failure (run id,
     reason, log excerpt), then calls `spawn_subsession` to file a new diagnostic ticket so the
     operator sees the pipeline is still broken. If the workflow API is unreachable, the agent
-    retries twice with a 5-second pause before acknowledging the status could not be
-    verified.
+    retries twice with a 5-second pause before acknowledging the status could not be verified.
 
 07. Subsessions persist to `/data/subsessions.json`; periodic ones are automatically resumed after a
     process restart (e.g. Watchtower redeploy) with their remaining run budget. Unlike task and
