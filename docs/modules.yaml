@@ -370,6 +370,14 @@ modules:
       - tests/http_probe/__init__.py
       - tests/http_probe/test_http_probe.py
 
+  - id: docker-digest
+    description: "Read-only Docker digest resolution tool for the agent — exposes build_docker_digest_tools() returning a resolve_docker_digest tool that resolves a Docker image reference and target platform to its immutable sha256:... content digest via the Docker Registry v2 HTTP API, plus load_docker_digest_skill() for the component skill document."
+    paths:
+      - src/robotsix_chat/docker_digest/__init__.py
+      - src/robotsix_chat/docker_digest/skill.md
+      - tests/docker_digest/__init__.py
+      - tests/docker_digest/test_docker_digest.py
+
   - id: public-fetch
     description: "Scoped public-URL fetch tool for the chat agent — exposes build_public_fetch_tools() returning a fetch_public_url tool that performs a plain HTTP(S) GET with SSRF protection, size cap, rate limiting, and audit logging, plus load_public_fetch_skill() for the component skill document."
     paths:

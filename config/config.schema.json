@@ -307,6 +307,24 @@
       "title": "DirectRepoSettings",
       "type": "object"
     },
+    "DockerDigestSettings": {
+      "additionalProperties": false,
+      "description": "Read-only Docker digest resolution tool for the agent.\n\nWhen enabled, the agent gains a ``resolve_docker_digest`` tool that\nresolves a Docker image reference (e.g. ``python:3.14-slim``) and\ntarget platform to its immutable ``sha256:...`` content digest by\nquerying the Docker Registry v2 HTTP API.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no docker_digest tool is offered.\n    timeout: Per-request HTTP timeout in seconds (default 30 s).",
+      "properties": {
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "timeout": {
+          "default": 30.0,
+          "title": "Timeout",
+          "type": "number"
+        }
+      },
+      "title": "DockerDigestSettings",
+      "type": "object"
+    },
     "FeedbackSettings": {
       "additionalProperties": false,
       "description": "Automated feedback analysis for continuous self-improvement.\n\nWhen enabled, a feedback run analyses the conversation at compaction\nand session-end boundaries, then files improvement tickets via the\nboard's ``POST /tickets/ingest`` endpoint.  Tickets flow through the\nnormal human-approval workflow \u2014 the feedback run never auto-approves.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no feedback runs occur.\n    model_level: llmio capability level for the feedback-analysis\n        agent (a cheap, single-turn extraction call).  Default ``1``.\n    board_url: Base URL of the board HTTP API (no trailing slash).\n        Required when *enabled* \u2014 the runner POSTs to\n        ``{board_url}/tickets/ingest``.\n    board_api_token: Optional Bearer token for the board API.\n    deploy_api_key: Bearer / X-API-Key token for the central-deploy\n        roster endpoint (``GET /chat/components``). Required when\n        the feedback runner needs to resolve allowed repos via the\n        deploy roster.\n    timeout: Per-request HTTP timeout in seconds for ingest calls.\n        The set of allowed target repos is resolved dynamically at\n        run-time from the deploy server's chat-component roster\n        intersected with the mill board's repo registry \u2014 no static\n        allowlist is needed.",
@@ -1350,6 +1368,10 @@
     },
     "http_probe": {
       "$ref": "#/$defs/HttpProbeSettings",
+      "advanced": true
+    },
+    "docker_digest": {
+      "$ref": "#/$defs/DockerDigestSettings",
       "advanced": true
     },
     "public_fetch": {
