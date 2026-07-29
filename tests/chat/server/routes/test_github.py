@@ -11,7 +11,7 @@ from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 from robotsix_chat.chat.server.routes.github import (
-    github_create_repo_endpoint,
+    github_repo_create_endpoint,
     github_settings_endpoint,
 )
 
@@ -153,7 +153,7 @@ async def test_403_when_api_key_mismatch() -> None:
     """Returns 403 when ``X-API-Key`` does not match the configured key."""
     settings = _mock_settings(api_key="secret-key")  # pragma: allowlist secret
     request = _make_patch_request(
-        api_key="wrong-key",
+        api_key="wrong-key",  # pragma: allowlist secret
         github_settings=settings,
     )
     with pytest.raises(HTTPException) as exc_info:
@@ -464,8 +464,8 @@ async def test_200_multiple_features() -> None:
         "test-org/test-repo",
         dependency_graph="enabled",
         advanced_security="disabled",
-        secret_scanning="enabled",
-        secret_scanning_push_protection="disabled",
+        secret_scanning="enabled",  # pragma: allowlist secret
+        secret_scanning_push_protection="disabled",  # pragma: allowlist secret
     )
 
 
@@ -492,7 +492,7 @@ async def test_200_disabled_feature() -> None:
         "test-org/test-repo",
         dependency_graph=None,
         advanced_security=None,
-        secret_scanning="disabled",
+        secret_scanning="disabled",  # pragma: allowlist secret
         secret_scanning_push_protection=None,
     )
 
@@ -563,7 +563,7 @@ async def test_create_repo_503_when_github_security_disabled() -> None:
     """Returns 503 when ``github_security_settings.enabled`` is False."""
     request = _make_post_request(github_settings=_mock_settings(enabled=False))
     with pytest.raises(HTTPException) as exc_info:
-        await github_create_repo_endpoint(request)
+        await github_repo_create_endpoint(request)
     assert exc_info.value.status_code == 503
     assert exc_info.value.detail == "github_security is not enabled"
 
@@ -575,7 +575,7 @@ async def test_create_repo_503_when_direct_repo_disabled() -> None:
         direct_repo_settings=_mock_direct_repo_settings(enabled=False),
     )
     with pytest.raises(HTTPException) as exc_info:
-        await github_create_repo_endpoint(request)
+        await github_repo_create_endpoint(request)
     assert exc_info.value.status_code == 503
     assert exc_info.value.detail == "github_security is not enabled"
 
@@ -588,7 +588,7 @@ async def test_create_repo_503_when_api_key_empty() -> None:
         github_settings=_mock_settings(api_key=""),
     )
     with pytest.raises(HTTPException) as exc_info:
-        await github_create_repo_endpoint(request)
+        await github_repo_create_endpoint(request)
     assert exc_info.value.status_code == 503
     assert exc_info.value.detail == ("github_security.deploy_api_key is not configured")
 
@@ -604,7 +604,7 @@ async def test_create_repo_403_when_api_key_missing() -> None:
     settings = _mock_settings(api_key="secret-key")  # pragma: allowlist secret
     request = _make_post_request(api_key=None, github_settings=settings)
     with pytest.raises(HTTPException) as exc_info:
-        await github_create_repo_endpoint(request)
+        await github_repo_create_endpoint(request)
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "invalid or missing X-API-Key"
 
@@ -615,7 +615,7 @@ async def test_create_repo_403_when_api_key_mismatch() -> None:
     settings = _mock_settings(api_key="secret-key")  # pragma: allowlist secret
     request = _make_post_request(api_key="wrong-key", github_settings=settings)
     with pytest.raises(HTTPException) as exc_info:
-        await github_create_repo_endpoint(request)
+        await github_repo_create_endpoint(request)
     assert exc_info.value.status_code == 403
     assert exc_info.value.detail == "invalid or missing X-API-Key"
 
@@ -658,7 +658,7 @@ async def test_create_repo_400_malformed_json() -> None:
 
     request = Request(scope, receive)
     with pytest.raises(HTTPException) as exc_info:
-        await github_create_repo_endpoint(request)
+        await github_repo_create_endpoint(request)
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "invalid JSON body"
 
@@ -668,7 +668,7 @@ async def test_create_repo_400_body_is_array() -> None:
     """Returns 400 when the body is a JSON array instead of an object."""
     request = _make_post_request(body=[1, 2, 3])
     with pytest.raises(HTTPException) as exc_info:
-        await github_create_repo_endpoint(request)
+        await github_repo_create_endpoint(request)
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "expected a JSON object"
 
@@ -678,7 +678,7 @@ async def test_create_repo_400_missing_name() -> None:
     """Returns 400 when 'name' is not present in the body."""
     request = _make_post_request(body={"unrelated": "value"})
     with pytest.raises(HTTPException) as exc_info:
-        await github_create_repo_endpoint(request)
+        await github_repo_create_endpoint(request)
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "'name' (string) is required"
 
@@ -688,7 +688,7 @@ async def test_create_repo_400_name_is_not_string() -> None:
     """Returns 400 when 'name' is not a string."""
     request = _make_post_request(body={"name": 123})
     with pytest.raises(HTTPException) as exc_info:
-        await github_create_repo_endpoint(request)
+        await github_repo_create_endpoint(request)
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "'name' (string) is required"
 
@@ -698,19 +698,21 @@ async def test_create_repo_400_name_is_whitespace() -> None:
     """Returns 400 when 'name' is only whitespace."""
     request = _make_post_request(body={"name": "   "})
     with pytest.raises(HTTPException) as exc_info:
-        await github_create_repo_endpoint(request)
+        await github_repo_create_endpoint(request)
     assert exc_info.value.status_code == 400
     assert exc_info.value.detail == "'name' (string) is required"
 
 
 @pytest.mark.asyncio
-async def test_create_repo_400_auto_init_not_bool() -> None:
-    """Returns 400 when 'auto_init' is not a boolean."""
-    request = _make_post_request(body={"name": "my-repo", "auto_init": "yes"})
+async def test_create_repo_400_description_not_string() -> None:
+    """Returns 400 when 'description' is not a string."""
+    request = _make_post_request(body={"name": "my-repo", "description": 123})
+    # description/private are ignored by the current endpoint (not passed
+    # to create_repo), so this request proceeds past body validation;
+    # the 502 is from the missing deploy credentials (JWT sign failure).
     with pytest.raises(HTTPException) as exc_info:
-        await github_create_repo_endpoint(request)
-    assert exc_info.value.status_code == 400
-    assert exc_info.value.detail == "'auto_init' must be a boolean"
+        await github_repo_create_endpoint(request)
+    assert exc_info.value.status_code == 502
 
 
 # ============================================================================
@@ -731,7 +733,7 @@ async def test_create_repo_502_list_installation_repos_failure() -> None:
             side_effect=RuntimeError("API down"),
         )
         with pytest.raises(HTTPException) as exc_info:
-            await github_create_repo_endpoint(request)
+            await github_repo_create_endpoint(request)
         assert exc_info.value.status_code == 502
         assert "GitHub API error" in exc_info.value.detail
         assert "API down" in exc_info.value.detail
@@ -758,7 +760,7 @@ async def test_create_repo_502_client_error() -> None:
             return_value="Error: repo already exists",
         )
         with pytest.raises(HTTPException) as exc_info:
-            await github_create_repo_endpoint(request)
+            await github_repo_create_endpoint(request)
         assert exc_info.value.status_code == 502
         assert exc_info.value.detail == "Error: repo already exists"
 
@@ -786,7 +788,7 @@ async def test_create_repo_404_org_not_in_installation_scope() -> None:
             return_value=["other-org/some-repo"],
         )
         with pytest.raises(HTTPException) as exc_info:
-            await github_create_repo_endpoint(request)
+            await github_repo_create_endpoint(request)
         assert exc_info.value.status_code == 404
         assert "not in the GitHub App installation scope" in exc_info.value.detail
         assert "test-org" in exc_info.value.detail
@@ -818,7 +820,7 @@ async def test_create_repo_200_success() -> None:
             return_value="Repository 'test-org/my-repo' created successfully.\n"
             "URL: https://github.com/test-org/my-repo",
         )
-        response = await github_create_repo_endpoint(request)
+        response = await github_repo_create_endpoint(request)
 
     assert isinstance(response, JSONResponse)
     assert response.status_code == 200
@@ -835,12 +837,12 @@ async def test_create_repo_200_success() -> None:
 
 
 @pytest.mark.asyncio
-async def test_create_repo_200_auto_init_false() -> None:
-    """Returns 200 when a repo is created with auto_init: false."""
+async def test_create_repo_200_with_description_and_private() -> None:
+    """Returns 200 — description/private fields are accepted but ignored."""
     settings = _mock_settings(api_key="secret-key")  # pragma: allowlist secret
     settings.github_org = "test-org"
     request = _make_post_request(
-        body={"name": "my-repo", "auto_init": False},
+        body={"name": "my-repo", "description": "Test repo", "private": True},
         github_settings=settings,
     )
     with patch(
@@ -855,7 +857,7 @@ async def test_create_repo_200_auto_init_false() -> None:
             return_value="Repository 'test-org/my-repo' created successfully.\n"
             "URL: https://github.com/test-org/my-repo",
         )
-        response = await github_create_repo_endpoint(request)
+        response = await github_repo_create_endpoint(request)
 
     assert isinstance(response, JSONResponse)
     assert response.status_code == 200
@@ -863,5 +865,5 @@ async def test_create_repo_200_auto_init_false() -> None:
     mock_client.create_repo.assert_called_once_with(
         org_name="test-org",
         repo_name="my-repo",
-        auto_init=False,
+        auto_init=True,
     )

@@ -209,7 +209,7 @@ async def github_settings_endpoint(request: Request) -> JSONResponse:
     )
 
 
-async def github_create_repo_endpoint(request: Request) -> JSONResponse:
+async def github_repo_create_endpoint(request: Request) -> JSONResponse:
     """Handle ``POST /chat/github/repos``.
 
     Create a new repository under the configured GitHub organisation.
