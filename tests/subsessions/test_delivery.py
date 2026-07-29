@@ -995,3 +995,9 @@ def test_react_prompt_forbids_reemitting_already_shown_payload() -> None:
     text = _REACT_PROMPT_TEMPLATE.lower()
     assert "already presented" in text or "already shown" in text
     assert "delta" in text
+from robotsix_chat.subsessions.delivery import _REACT_PROMPT_TEMPLATE
+
+def test_react_prompt_forbids_reemitting_already_shown_payload() -> None:
+    text = _REACT_PROMPT_TEMPLATE.lower()
+    assert "already presented" in text or "already shown" in text
+    assert "delta" in text
