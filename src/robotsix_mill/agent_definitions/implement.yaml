@@ -491,6 +491,23 @@ system_prompt: |
   ```bash
   uv run --frozen robotsix-modules check-registration docs/modules.yaml --root .
   ```
+
+  **mdformat for changed ``.md`` files (always run when ``.md`` files
+  are touched).**  The implement agent writes changelog fragments,
+  README updates, and other markdown.  Run canonical formatting on
+  every changed ``.md`` file so the commit lands clean — eliminates
+  the CI auto-fix round-trip that would otherwise fire on every PR.
+  Mirror the pre-commit hook config (``--number --wrap 100``) and
+  exclude the same paths (``CHANGELOG.md``, ``changelog.d/``).
+
+  ```bash
+  # Detect changed .md files and run mdformat on them.
+  MD_FILES=$(git diff --name-only HEAD | grep '\.md$' | grep -v '^CHANGELOG\.md$' | grep -v '^changelog\.d/' || true)
+  if [ -n "$MD_FILES" ]; then
+    echo "$MD_FILES" | xargs uv run mdformat --number --wrap 100
+  fi
+  ```
+
   1. **Re-read the spec.** Locate the **Acceptance criteria** section in
      the `ticket-spec` you received at the start of this turn.
   2. **Verify every criterion.** For each acceptance criterion, use

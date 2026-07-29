@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Added `mdformat` (with `mdformat-gfm` and `mdformat-frontmatter` plugins) to the dev dependency group so `uv run mdformat` works in the sandbox. The implement agent now runs mdformat on changed `.md` files as a pre-flight check, eliminating wasteful CI auto-fix cycles on non-compliant markdown.
 - Fix `DirectRepoClient.apply_patch` negative-index bug when a hunk starts at line 0 (`@@ -0,0 +1,N @@`): `orig_pos` is now clamped to 0 instead of wrapping via Python negative indexing.
 - Strengthen the ticket-filing dedup guard in the agent system prompt: always query the board's ticket list first (by board, keywords, or error message) before filing, explicitly noting that the CI system and periodic agents may have already auto-filed a ticket for the same issue.
 - Agent system prompt v70: require concrete, copy-paste-ready operator instructions when surfacing server-side blockers. The assistant must now include exact env variable names, config file paths, restart commands, or endpoint URLs rather than vague diagnoses like "flip the toggle." Common remediation recipes should be stored in a knowledge note (`operator-remediation-recipes`).
