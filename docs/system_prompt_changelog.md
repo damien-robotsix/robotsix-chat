@@ -20,7 +20,7 @@ go-ahead — the only auto-resume cases were transient failures and fingerprint-
 pending question.  This adds the third common fingerprint-guard pattern: the spec is already
 correct and the fix exists, but the fingerprint guard blocks re-implementation.
 
-**SHA256:** `16815c5c4fb16e434fd41281c201c513d69ac89c94d7dd19e9286ea39d3cf113`
+**SHA256:** `ba3bb49cbcd33ef6ce671e5c682709d678747f3926c5995fa273dc05120d0a7e`
 
 ______________________________________________________________________
 
