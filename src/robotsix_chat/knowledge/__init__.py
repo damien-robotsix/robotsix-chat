@@ -32,6 +32,21 @@ __all__ = ["build_knowledge_tools"]
 _LIST_SNIPPET_LENGTH = 200
 
 
+def _format_entries(entries: list[Any]) -> str:
+    """Format a list of KnowledgeEntry objects as a multi-line summary string."""
+    lines: list[str] = []
+    for e in entries:
+        snippet = e.content.replace("\n", " ")
+        if len(snippet) > _LIST_SNIPPET_LENGTH:
+            snippet = snippet[:_LIST_SNIPPET_LENGTH].rstrip() + "…"
+        lines.append(
+            f"[{e.id}] {e.topic}\n"
+            f"  created: {e.created_at}  updated: {e.updated_at}\n"
+            f"  snippet: {snippet}"
+        )
+    return "\n".join(lines)
+
+
 def build_knowledge_tools(
     settings: KnowledgeSettings,
     *,
@@ -128,17 +143,7 @@ def build_knowledge_tools(
         if not entries:
             return "No knowledge notes found." + (f" (topic: {topic})" if topic else "")
 
-        lines: list[str] = []
-        for e in entries:
-            snippet = e.content.replace("\n", " ")
-            if len(snippet) > _LIST_SNIPPET_LENGTH:
-                snippet = snippet[:_LIST_SNIPPET_LENGTH].rstrip() + "…"
-            lines.append(
-                f"[{e.id}] {e.topic}\n"
-                f"  created: {e.created_at}  updated: {e.updated_at}\n"
-                f"  snippet: {snippet}"
-            )
-        return "\n".join(lines)
+        return _format_entries(entries)
 
     async def search_knowledge_notes(query: str) -> str:
         """Search your knowledge base for notes matching a query.
@@ -161,17 +166,7 @@ def build_knowledge_tools(
         if not entries:
             return f"No knowledge notes found matching '{query}'."
 
-        lines: list[str] = []
-        for e in entries:
-            snippet = e.content.replace("\n", " ")
-            if len(snippet) > _LIST_SNIPPET_LENGTH:
-                snippet = snippet[:_LIST_SNIPPET_LENGTH].rstrip() + "…"
-            lines.append(
-                f"[{e.id}] {e.topic}\n"
-                f"  created: {e.created_at}  updated: {e.updated_at}\n"
-                f"  snippet: {snippet}"
-            )
-        return "\n".join(lines)
+        return _format_entries(entries)
 
     async def read_knowledge_note(note_id: str) -> str:
         """Read the full content of a knowledge note by id.
