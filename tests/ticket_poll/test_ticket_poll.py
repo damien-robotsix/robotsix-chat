@@ -76,11 +76,12 @@ def test_whitespace_only_board_url_returns_empty_list() -> None:
 # ---------------------------------------------------------------------------
 
 
-def test_configured_board_url_returns_one_tool() -> None:
-    """When board_api_base_url is set, returns exactly one callable."""
+def test_configured_board_url_returns_two_tools() -> None:
+    """When board_api_base_url is set, returns ticket_poll and ticket_poll_batch."""
     tools = build_ticket_poll_tools(_settings())
-    assert len(tools) == 1
+    assert len(tools) == 2
     assert tools[0].__name__ == "ticket_poll"
+    assert tools[1].__name__ == "ticket_poll_batch"
 
 
 @pytest.mark.asyncio
@@ -252,3 +253,175 @@ async def test_ticket_poll_empty_body_json_decode_failure(
     assert result["ticket_id"] == "empty-body"
     assert result["state"] is None
     assert "Non-JSON" in result["error"]
+
+
+# ---------------------------------------------------------------------------
+# ticket_poll_batch
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_batch_multiple_success(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Fetches multiple tickets concurrently; returns full data for each."""
+    route_a = respx_mock.get("http://board:8077/tickets/ticket-a").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "state": "BLOCKED",
+                "title": "Ticket A",
+                "events": [
+                    {
+                        "type": "state_change",
+                        "from": "IN_PROGRESS",
+                        "to": "BLOCKED",
+                    }
+                ],
+            },
+        )
+    )
+    route_b = respx_mock.get("http://board:8077/tickets/ticket-b").mock(
+        return_value=httpx.Response(
+            200,
+            json={
+                "state": "DONE",
+                "title": "Ticket B",
+                "events": [],
+            },
+        )
+    )
+
+    tools = build_ticket_poll_tools(_settings())
+    batch_tool = tools[1]
+    result = json.loads(await batch_tool(["ticket-a", "ticket-b"]))
+
+    assert route_a.called
+    assert route_b.called
+    assert len(result["tickets"]) == 2
+
+    a = result["tickets"][0]
+    assert a["ticket_id"] == "ticket-a"
+    assert a["state"] == "BLOCKED"
+    assert a["data"]["title"] == "Ticket A"
+    assert a["data"]["events"][0]["type"] == "state_change"
+    assert a["error"] == ""
+
+    b = result["tickets"][1]
+    assert b["ticket_id"] == "ticket-b"
+    assert b["state"] == "DONE"
+    assert b["data"]["title"] == "Ticket B"
+    assert b["error"] == ""
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_batch_partial_failure(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """One failing ticket does not block others; each gets its own error field."""
+    respx_mock.get("http://board:8077/tickets/good").mock(
+        return_value=httpx.Response(200, json={"state": "OPEN"})
+    )
+    respx_mock.get("http://board:8077/tickets/bad").mock(
+        return_value=httpx.Response(500, text="Internal Server Error")
+    )
+
+    tools = build_ticket_poll_tools(_settings())
+    batch_tool = tools[1]
+    result = json.loads(await batch_tool(["good", "bad"]))
+
+    assert len(result["tickets"]) == 2
+    good = result["tickets"][0]
+    assert good["ticket_id"] == "good"
+    assert good["state"] == "OPEN"
+    assert good["error"] == ""
+
+    bad = result["tickets"][1]
+    assert bad["ticket_id"] == "bad"
+    assert bad["state"] is None
+    assert bad["data"] is None
+    assert "500" in bad["error"]
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_batch_with_auth_token(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Auth token is propagated to every request in the batch."""
+    route_a = respx_mock.get("http://board:8077/tickets/t1").mock(
+        return_value=httpx.Response(200, json={"state": "OPEN"})
+    )
+    route_b = respx_mock.get("http://board:8077/tickets/t2").mock(
+        return_value=httpx.Response(200, json={"state": "OPEN"})
+    )
+
+    tools = build_ticket_poll_tools(_settings(board_api_token="batch-token"))
+    batch_tool = tools[1]
+    await batch_tool(["t1", "t2"])
+
+    for route in (route_a, route_b):
+        assert route.called
+        request_headers = route.calls.last.request.headers
+        assert request_headers["Authorization"] == "Bearer batch-token"
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_batch_empty_list(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Empty ticket_ids list returns empty tickets array."""
+    tools = build_ticket_poll_tools(_settings())
+    batch_tool = tools[1]
+    result = json.loads(await batch_tool([]))
+
+    assert result == {"tickets": []}
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_batch_timeout_per_ticket(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Timeout on one ticket surfaces in its error; others still succeed."""
+    respx_mock.get("http://board:8077/tickets/fast").mock(
+        return_value=httpx.Response(200, json={"state": "DONE"})
+    )
+    respx_mock.get("http://board:8077/tickets/slow").mock(
+        side_effect=httpx.TimeoutException("timed out")
+    )
+
+    tools = build_ticket_poll_tools(_settings())
+    batch_tool = tools[1]
+    result = json.loads(await batch_tool(["fast", "slow"]))
+
+    assert len(result["tickets"]) == 2
+    fast = result["tickets"][0]
+    assert fast["state"] == "DONE"
+    assert fast["error"] == ""
+
+    slow = result["tickets"][1]
+    assert slow["state"] is None
+    assert "timed out" in slow["error"].lower()
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_batch_json_decode_failure(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Non-JSON response in batch → error per ticket, data is None."""
+    respx_mock.get("http://board:8077/tickets/bad-json").mock(
+        return_value=httpx.Response(
+            200,
+            headers={"Content-Type": "text/html"},
+            text="<html>Not JSON</html>",
+        )
+    )
+
+    tools = build_ticket_poll_tools(_settings())
+    batch_tool = tools[1]
+    result = json.loads(await batch_tool(["bad-json"]))
+
+    ticket = result["tickets"][0]
+    assert ticket["ticket_id"] == "bad-json"
+    assert ticket["state"] is None
+    assert ticket["data"] is None
+    assert "Non-JSON" in ticket["error"]
