@@ -8,6 +8,7 @@
   toggle in the deployment guide and lifecycle skill, explaining how operators
   enable chat-agent mutation endpoints (service registration, restart,
   config-write) via the central-deploy dashboard.
+- Add deadlocked ticket closure guidance to the agent system prompt (v69). When a ticket is deadlocked and normal close transitions are rejected by the mill API, the agent surfaces the deadlock to the operator and uses `DELETE /tickets/{id}` (via `component_request`) as a last resort with operator approval. A superseding ticket may be filed if the issue still needs attention.
 - `reset_implement_spawn_counter` tool now routes its DELETE
   request through the roster-based `component_request` proxy
   when available, matching the connectivity used by other
