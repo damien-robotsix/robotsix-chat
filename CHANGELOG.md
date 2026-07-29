@@ -1,6 +1,9 @@
 ## 0.0.0 (unreleased)
 
 - Add ``monitor_9d6a`` periodic agent to watch the implement-stage pre-LLM abort fix ticket (blocked at spawn limit) and alert when it unblocks.
+- Added `ticket_poll_batch` tool for bulk read-only ticket triage. Fetches full ticket data
+  (state, history, events, comments) for multiple tickets concurrently via `GET /tickets/{id}`,
+  enabling failure-mode classification without N sequential round-trips.
 - Subsessions: require the assistant to synthesize multiple subsession outcomes into a single cohesive narrative paragraph, never outputting raw `[id] kind=...` bullet-list enumerations. Trivial no-change monitors are now explicitly omitted from reporting.
 - Added ``patch_direct_repo_file`` tool to the direct-repo tool set
   (gated on ``direct_fix_enabled``).  Accepts a file path and a unified
