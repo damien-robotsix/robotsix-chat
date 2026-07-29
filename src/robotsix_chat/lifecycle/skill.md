@@ -50,7 +50,7 @@ return a 403 error — the agent should treat that as "not permitted" and not re
 
 **Enabling the toggle:** This is a per-repo setting in the central-deploy dashboard (labelled
 `allow_chat_access` or `chat_agent_mutatable`), not a chat-component config key or environment
-variable. See the [deployment guide](../../docs/user-guide/deployment.md#4-chat-agent-mutation-access-allow_chat_access)
+variable. See the [deployment guide](../user-guide/deployment.md#4-chat-agent-mutation-access-allow_chat_access)
 for step-by-step instructions.
 
 ## Self-restart
