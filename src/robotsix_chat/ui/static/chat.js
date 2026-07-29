@@ -3435,7 +3435,7 @@
     "conversation", "diagnostics", "refdocs", "render_url",
     "knowledge", "self_review", "version_check", "component_client",
     "subsessions", "direct_repo", "github_security", "repo_study",
-    "lifecycle", "notification", "http_probe", "feedback",
+    "lifecycle", "notification", "http_probe", "docker_digest", "feedback",
     "autonomous", "github_actions"
   ];
 
