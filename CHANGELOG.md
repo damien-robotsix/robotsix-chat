@@ -1,6 +1,10 @@
 ## 0.0.0 (unreleased)
 
-- Improved subsession outcome formatting: added FILTERING RULE to reaction prompt templates instructing the agent to strip internal technical details (block IDs, event numbers, state machine transitions, spawn counters) from subsession outcomes before presenting to the user. Added user-facing summary formatting guidance to periodic monitor prompts and the `complete_subsession` tool docstring.
+- Wire `load_render_url_skill()` into the agent instruction pipeline so the
+  render_url skill markdown is injected alongside other component skills.
+  Previously `skill.md` existed but was never loaded — the LLM had no
+  guidance on when or how to use the render_url tool.
+- Improved subsession outcome formatting: added FILTERING RULE to reaction prompt templates instructing the agent to strip internal technical details (block IDs, event numbers, state machine transitions, spawn counters) from subsession outcomes before presenting to the user. Added user-facing summary formatting guidance to periodic monitor prompts and the `complete_subsession` tool docstring.)
 - Document `### SFTP` settings section in `docs/configuration.md` covering all 9 fields: `enabled`, `host`, `port`, `username`, `password`, `private_key`, `private_key_passphrase`, `known_hosts`, `remote_root`.
 - Dockerfile: fix hadolint warnings — use numeric UID for USER (DL3066) and
   consolidate HEALTHCHECK CMD onto a single line (DL3025)

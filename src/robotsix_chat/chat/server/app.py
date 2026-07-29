@@ -43,7 +43,7 @@ from robotsix_chat.memory import NullMemory, build_memory
 from robotsix_chat.notification import build_notification_tools, load_notification_skill
 from robotsix_chat.public_fetch import build_public_fetch_tools, load_public_fetch_skill
 from robotsix_chat.refdocs import build_refdocs_tools
-from robotsix_chat.render_url import build_render_url_tools
+from robotsix_chat.render_url import build_render_url_tools, load_render_url_skill
 from robotsix_chat.repo.actions import (
     build_github_actions_tools,
     load_github_actions_skill,
@@ -591,6 +591,7 @@ def _inject_skills(
             load_langfuse_inspect_skill,
         ),
         (settings.public_fetch.enabled, "public_fetch", load_public_fetch_skill),
+        (settings.render_url.enabled, "render_url", load_render_url_skill),
         (settings.github_security.enabled, "github_security", load_github_skill),
         (settings.github_actions.enabled, "github_actions", load_github_actions_skill),
         (
