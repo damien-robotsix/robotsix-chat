@@ -311,6 +311,17 @@ def _build_complete_tool(
         thing your parent conversation is guaranteed to see. The
         subsession ends after your current reply.
 
+        The summary will be shown directly to a human operator — write
+        in plain, user-facing language.  Omit internal technical details:
+        block IDs, event numbers, state machine transitions, spawn
+        counters, internal timeout values, stack traces, or raw API
+        response fragments.  State the actionable conclusion first (what
+        happened in one sentence), then any supporting detail the
+        operator needs to act.  For example, instead of "event 35
+        triggered stall guard after spawn counter reset at block a3f2,"
+        write "Publishing workflow stalled because the ticket scope was
+        too broad — suggest splitting into a canary-only ticket."
+
         The close is persisted to disk immediately so the subsession is
         not re-loaded after a restart — always call this BEFORE any
         action that might kill the process (e.g. a self-restart).
