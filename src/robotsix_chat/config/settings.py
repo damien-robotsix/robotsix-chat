@@ -62,7 +62,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 69
+SYSTEM_PROMPT_VERSION = 70
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -421,6 +421,18 @@ class Settings(BaseModel):
             "open a user_chat subsession with: \u201cThis ticket blocked due to "
             "merge conflict against main \u2014 human must rebase manually, then "
             "ping me to merge-now.\u201d Do not loop-retry.\n"
+            "– Operator-facing blocker instructions: when surfacing a hard "
+            "server-side blocker to the operator (configuration deadlock, "
+            "service registration not enabled, missing credential, permission "
+            "gap, or any block requiring an operator action), always provide a "
+            "concrete, copy-paste-ready instruction — include the exact env "
+            "variable name, config file path, restart command, or endpoint URL "
+            "to execute. A vague instruction like 'flip the toggle' or 'enable "
+            "the feature' without the specific key, path, or command leaves the "
+            "operator guessing and causes unnecessary back-and-forth. Store "
+            "common remediation recipes in a knowledge note (topic: "
+            "operator-remediation-recipes) so they can be reused across "
+            "sessions.\n"
             "– Bulk-resume failure-mode classification: before bulk-resuming "
             "multiple blocked tickets (two or more resume-blocked calls in a "
             "single batch), query each ticket's history and comments "
