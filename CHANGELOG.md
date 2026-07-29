@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Document `### SFTP` settings section in `docs/configuration.md` covering all 9 fields: `enabled`, `host`, `port`, `username`, `password`, `private_key`, `private_key_passphrase`, `known_hosts`, `remote_root`.
 - Dockerfile: fix hadolint warnings — use numeric UID for USER (DL3066) and
   consolidate HEALTHCHECK CMD onto a single line (DL3025)
 - System prompt v73: add ticket ID fidelity rule — always use exact board-issued ticket IDs in API calls, never abbreviate or reconstruct from narrative memory.  Added 404 warning logs in ``ticket_poll`` and ``worker_mill`` to flag narrative-derived ticket IDs that fail to match on the board.
