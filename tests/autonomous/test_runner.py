@@ -141,7 +141,7 @@ class TestMarkerDetection:
 
         store = ConversationStore()
         settings = MagicMock()
-        settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
+        settings.autonomous.proposal_marker = "---AWAITING APPROVAL---"
         settings.autonomous.completion_marker = "---AUTONOMOUS COMPLETE---"
         settings.autonomous.max_auto_turns = 20
         settings.autonomous.continue_interval_seconds = 0
@@ -288,7 +288,7 @@ class TestAutoContinue:
         settings = MagicMock()
         settings.autonomous.max_auto_turns = 20
         settings.autonomous.escalation_warning_turns = 10
-        settings.autonomous.approval_marker = "[APPROVAL]"
+        settings.autonomous.proposal_marker = "[APPROVAL]"
         settings.autonomous.completion_marker = "[COMPLETE]"
         settings.autonomous.continue_interval_seconds = 0
         settings.autonomous.pending_subsession_wait_timeout = 0
@@ -332,7 +332,7 @@ class TestAutoContinue:
         settings = MagicMock()
         settings.autonomous.max_auto_turns = 20
         settings.autonomous.escalation_warning_turns = 10
-        settings.autonomous.approval_marker = "---AWAITING APPROVAL---"
+        settings.autonomous.proposal_marker = "---AWAITING APPROVAL---"
         settings.autonomous.completion_marker = "[COMPLETE]"
         settings.autonomous.continue_interval_seconds = 0
         settings.autonomous.pending_subsession_wait_timeout = 0
@@ -382,7 +382,7 @@ class TestAutoContinue:
         settings = MagicMock()
         settings.autonomous.max_auto_turns = 20
         settings.autonomous.escalation_warning_turns = 10
-        settings.autonomous.approval_marker = "[APPROVAL]"
+        settings.autonomous.proposal_marker = "[APPROVAL]"
         settings.autonomous.completion_marker = "[COMPLETE]"
         settings.autonomous.continue_interval_seconds = 0
         settings.autonomous.pending_subsession_wait_timeout = 0
@@ -446,7 +446,7 @@ class TestAutoContinue:
         settings.autonomous.max_auto_turns = 20
         settings.autonomous.continue_interval_seconds = 0
         settings.autonomous.pending_subsession_wait_timeout = 0
-        settings.autonomous.approval_marker = "[APPROVAL]"
+        settings.autonomous.proposal_marker = "[APPROVAL]"
         settings.autonomous.completion_marker = "[COMPLETE]"
         settings.autonomous.auto_approve = False
         run_serializer = MagicMock()
@@ -501,7 +501,7 @@ class TestAutoContinue:
         settings.autonomous.max_auto_turns = 20
         settings.autonomous.continue_interval_seconds = 0
         settings.autonomous.pending_subsession_wait_timeout = 0
-        settings.autonomous.approval_marker = "[APPROVAL]"
+        settings.autonomous.proposal_marker = "[APPROVAL]"
         settings.autonomous.completion_marker = "[COMPLETE]"
         settings.autonomous.auto_approve = False
         run_serializer = MagicMock()

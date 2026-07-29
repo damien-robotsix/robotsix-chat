@@ -841,7 +841,7 @@ class AutonomousRunner:
                                     f"(1) re-trigger implementation with a "
                                     f"fresh approach, (2) request human "
                                     f"review by emitting "
-                                    f"{self._settings.autonomous.approval_marker} "
+                                    f"{self._settings.autonomous.proposal_marker} "
                                     f"with a clear explanation, or "
                                     f"(3) suggest direct debugging (e.g. "
                                     f"inspecting fetch-spec logs).  "
