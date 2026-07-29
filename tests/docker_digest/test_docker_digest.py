@@ -216,29 +216,12 @@ async def test_resolve_with_manifest_list(
         )
     )
 
-    # Sub-manifest for the selected platform (linux/amd64)
-    sub_route = respx_mock.get(
-        "https://registry-1.docker.io/v2/library/python/manifests/"
-        "sha256:amd64manifestdigest123",
-    ).mock(
-        return_value=httpx.Response(
-            200,
-            headers={
-                "Docker-Content-Digest": "sha256:finalamd64digest789",
-                "Content-Type": (
-                    "application/vnd.docker.distribution.manifest.v2+json"
-                ),
-            },
-            json={"schemaVersion": 2, "config": {}},
-        )
-    )
-
     tools = build_docker_digest_tools(_settings())
     result = json.loads(await tools[0]("python:3.14-slim", platform="linux/amd64"))
 
-    assert sub_route.called
-    assert result["digest"] == "sha256:finalamd64digest789"
-    assert result["resolved_ref"] == "python@sha256:finalamd64digest789"
+    # The entry's digest field IS the content digest — no sub-manifest fetch needed (§2 step 4).
+    assert result["digest"] == "sha256:amd64manifestdigest123"
+    assert result["resolved_ref"] == "python@sha256:amd64manifestdigest123"
     assert result["platform"] == "linux/amd64"
     assert result["error"] == ""
 

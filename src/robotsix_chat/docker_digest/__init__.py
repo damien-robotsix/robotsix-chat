@@ -189,8 +189,8 @@ def build_docker_digest_tools(
 
                 _accept = (
                     "application/vnd.docker.distribution.manifest.list.v2+json,"
+                    "application/vnd.oci.image.index.v1+json,"
                     "application/vnd.docker.distribution.manifest.v2+json,"
-                    "application/vnd.oci.image.manifest.list.v1+json,"
                     "application/vnd.oci.image.manifest.v1+json"
                 )
                 headers: dict[str, str] = {"Accept": _accept}
@@ -251,27 +251,7 @@ def build_docker_digest_tools(
                             continue
 
                         found = True
-                        sub_digest = entry.get("digest", "")
-                        if sub_digest:
-                            sub_manifest_url = f"https://{registry_host}/v2/{repo_path}/manifests/{sub_digest}"
-                            sub_headers: dict[str, str] = {
-                                "Accept": (
-                                    "application/vnd.docker.distribution.manifest.v2+json,"
-                                    "application/vnd.oci.image.manifest.v1+json"
-                                ),
-                            }
-                            if token:
-                                sub_headers["Authorization"] = f"Bearer {token}"
-                            sub_resp = await client.get(
-                                sub_manifest_url, headers=sub_headers
-                            )
-                            sub_resp.raise_for_status()
-                            digest = sub_resp.headers.get(
-                                "Docker-Content-Digest", sub_digest
-                            )
-                            media_type = sub_resp.headers.get(
-                                "Content-Type", media_type
-                            )
+                        digest = entry.get("digest", "")
                         break
 
                     if not found:
