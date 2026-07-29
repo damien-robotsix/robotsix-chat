@@ -372,6 +372,8 @@ modules:
 
   - id: docker-digest
     description: "Read-only Docker digest resolution tool for the agent — exposes build_docker_digest_tools() returning a resolve_docker_digest tool that resolves a Docker image reference and target platform to its immutable sha256:... content digest via the Docker Registry v2 HTTP API, plus load_docker_digest_skill() for the component skill document."
+  - id: docker-digest
+    description: "Read-only Docker Registry v2 tag→digest resolver for the agent — exposes build_docker_digest_tools() returning a resolve_docker_digest tool that resolves an image ref + platform to its immutable sha256 digest via the Docker Hub token-auth handshake, plus load_docker_digest_skill() for the component skill document."
     paths:
       - src/robotsix_chat/docker_digest/__init__.py
       - src/robotsix_chat/docker_digest/skill.md
