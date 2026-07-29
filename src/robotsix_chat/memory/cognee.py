@@ -25,11 +25,13 @@ import re
 import shutil
 import time
 from pathlib import Path
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, Awaitable, Callable, TypeVar
 
 if TYPE_CHECKING:
     from robotsix_chat.config import MemorySettings
     from robotsix_chat.memory.base import RecoverCallback
+
+_T = TypeVar("_T")
 
 logger = logging.getLogger(__name__)
 
@@ -487,6 +489,30 @@ class CogneeMemory:
             endpoint,
         )
 
+    async def _retry_with_kuzu_heal(
+        self, coro_factory: Callable[[], Awaitable[_T]]
+    ) -> _T:
+        """Retry *coro_factory* once, self-healing healable Kuzu errors.
+
+        On a healable error the stale kuzu shadows are removed from
+        ``data_dir / "system"`` and the operation is retried once.
+        All other exceptions propagate immediately.
+        """
+        for attempt in range(2):
+            try:
+                return await coro_factory()
+            except Exception as exc:
+                if attempt == 0 and _is_healable_kuzu_error(exc):
+                    logger.warning(
+                        "Kuzu graph open failed; rebuilding database: %s",
+                        exc,
+                    )
+                    data_dir = Path(self._settings.data_dir).expanduser().resolve()
+                    self._remove_stale_kuzu_shadows(data_dir / "system")
+                    continue
+                raise
+        raise RuntimeError("unreachable")  # pragma: no cover
+
     # -- read -------------------------------------------------------------
 
     async def recall(self, query: str, *, session_id: str | None = None) -> str:
@@ -540,27 +566,16 @@ class CogneeMemory:
             self._settings.recall_search_type,
             SearchType.GRAPH_COMPLETION,
         )
-        for attempt in range(2):
-            try:
-                results = await cognee.search(
-                    query_type=search_type,
-                    query_text=query,
-                    session_id=session_id,
-                )
-                return _format_results(results)
-            except Exception as exc:
-                if attempt == 0 and _is_healable_kuzu_error(exc):
-                    logger.warning(
-                        "Kuzu graph open failed; rebuilding database: %s",
-                        exc,
-                    )
-                    data_dir = Path(self._settings.data_dir).expanduser().resolve()
-                    self._remove_stale_kuzu_shadows(data_dir / "system")
-                    continue
-                raise
-        # Unreachable — the retry loop always either returns or raises.
-        # Required to satisfy mypy's exhaustive check.
-        return ""
+
+        async def _search() -> str:
+            results = await cognee.search(
+                query_type=search_type,
+                query_text=query,
+                session_id=session_id,
+            )
+            return _format_results(results)
+
+        return await self._retry_with_kuzu_heal(_search)
 
     # -- write ------------------------------------------------------------
 
@@ -623,27 +638,18 @@ class CogneeMemory:
         import cognee
 
         text = f"User: {user_message}\nAssistant: {assistant_message}"
-        for attempt in range(2):
-            try:
-                async with self._write_lock:
-                    await cognee.add(text, session_id=session_id)
-                    await cognee.cognify(session_id=session_id)
-                # Throttle: give the LanceDB worker subprocess time to complete
-                # its merge_insert before the next serialised write starts, so a
-                # burst of rapid remembers does not collectively OOM the worker.
-                if self._settings.write_throttle_seconds > 0:
-                    await asyncio.sleep(self._settings.write_throttle_seconds)
-                return
-            except Exception as exc:
-                if attempt == 0 and _is_healable_kuzu_error(exc):
-                    logger.warning(
-                        "Kuzu graph open failed; rebuilding database: %s",
-                        exc,
-                    )
-                    data_dir = Path(self._settings.data_dir).expanduser().resolve()
-                    self._remove_stale_kuzu_shadows(data_dir / "system")
-                    continue
-                raise
+
+        async def _remember() -> None:
+            async with self._write_lock:
+                await cognee.add(text, session_id=session_id)
+                await cognee.cognify(session_id=session_id)
+            # Throttle: give the LanceDB worker subprocess time to complete
+            # its merge_insert before the next serialised write starts, so a
+            # burst of rapid remembers does not collectively OOM the worker.
+            if self._settings.write_throttle_seconds > 0:
+                await asyncio.sleep(self._settings.write_throttle_seconds)
+
+        await self._retry_with_kuzu_heal(_remember)
 
     # -- write-failure tracking & self-heal -------------------------------
 
