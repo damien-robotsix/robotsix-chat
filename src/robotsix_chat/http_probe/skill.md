@@ -13,8 +13,8 @@ redirects (up to the configured limit), and returns a structured health report.
   `<title>` appears, or confirm an error string (`"Index of /"`,
   `"Error establishing a database connection"`) is absent.
 - **Post-deploy defacement detection** — probe for absence of known attacker signatures
-  (`"graybyte"`, `"Google Gemini – AI"`, `"Welcome to WordPress"`) to catch a site compromise
-  within minutes of deployment instead of requiring manual investigation.
+  (`"graybyte"`, `"Google Gemini – AI"`, `"Welcome to WordPress"`) to catch a site compromise within
+  minutes of deployment instead of requiring manual investigation.
 
 ## Allowed operation
 

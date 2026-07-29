@@ -139,6 +139,7 @@ def _resolve_url() -> str:
         file=sys.stderr,
     )
     sys.exit(2)
+    return ""  # unreachable — satisfies static analysis that all paths return str
 
 
 def main() -> NoReturn:
