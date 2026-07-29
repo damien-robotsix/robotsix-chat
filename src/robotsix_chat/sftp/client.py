@@ -8,6 +8,8 @@ constrained under an optional ``remote_root`` for safety.
 from __future__ import annotations
 
 import logging
+from collections.abc import AsyncIterator
+from contextlib import asynccontextmanager
 from pathlib import PurePosixPath
 from typing import TYPE_CHECKING, Any
 
@@ -114,11 +116,10 @@ class SftpClient:
         conn = await asyncssh.connect(**kwargs)
         return conn
 
-    async def read_file(self, remote_path: str) -> str:
-        """Read the contents of *remote_path* from the SFTP server.
-
-        Returns the file content as a string (UTF-8 decoded).
-        """
+    @asynccontextmanager
+    async def _sftp_connection(
+        self, remote_path: str, operation: str
+    ) -> AsyncIterator[tuple[Any, PurePosixPath]]:
         import asyncssh
 
         resolved = await _resolve_path(remote_path, self._settings.remote_root)
@@ -126,16 +127,26 @@ class SftpClient:
             conn = await self._connect()
             try:
                 async with conn.start_sftp_client() as sftp:
-                    content = await sftp.read(str(resolved), encoding="utf-8")
-                return str(content)
+                    yield sftp, resolved
             finally:
                 conn.close()
         except asyncssh.SFTPError as exc:
-            raise SftpError(f"SFTP read failed for {remote_path!r}: {exc}") from exc
+            raise SftpError(
+                f"SFTP {operation} failed for {remote_path!r}: {exc}"
+            ) from exc
         except OSError as exc:
             raise SftpError(
                 f"SFTP connection failed for {remote_path!r}: {exc}"
             ) from exc
+
+    async def read_file(self, remote_path: str) -> str:
+        """Read the contents of *remote_path* from the SFTP server.
+
+        Returns the file content as a string (UTF-8 decoded).
+        """
+        async with self._sftp_connection(remote_path, "read") as (sftp, resolved):
+            content = await sftp.read(str(resolved), encoding="utf-8")
+        return str(content)
 
     async def write_file(
         self,
@@ -152,76 +163,36 @@ class SftpClient:
         """
         import asyncssh
 
-        resolved = await _resolve_path(remote_path, self._settings.remote_root)
-        resolved_str = str(resolved)
-        try:
-            conn = await self._connect()
-            try:
-                async with conn.start_sftp_client() as sftp:
-                    if backup:
-                        # Check if the target already exists.
-                        try:
-                            await sftp.stat(resolved_str)
-                        except asyncssh.SFTPError:
-                            pass  # File doesn't exist — no backup needed.
-                        else:
-                            backup_path = f"{resolved_str}.bak"
-                            await sftp.rename(resolved_str, backup_path)
-                            logger.info(
-                                "SFTP backup: %s → %s", resolved_str, backup_path
-                            )
+        async with self._sftp_connection(remote_path, "write") as (sftp, resolved):
+            resolved_str = str(resolved)
+            if backup:
+                # Check if the target already exists.
+                try:
+                    await sftp.stat(resolved_str)
+                except asyncssh.SFTPError:
+                    pass  # File doesn't exist — no backup needed.
+                else:
+                    backup_path = f"{resolved_str}.bak"
+                    await sftp.rename(resolved_str, backup_path)
+                    logger.info("SFTP backup: %s → %s", resolved_str, backup_path)
 
-                    await sftp.write(resolved_str, content, encoding="utf-8")
-                return (
-                    f"Wrote {len(content)} bytes to {remote_path!r}"
-                    f" on {self._settings.host}"
-                )
-            finally:
-                conn.close()
-        except asyncssh.SFTPError as exc:
-            raise SftpError(f"SFTP write failed for {remote_path!r}: {exc}") from exc
-        except OSError as exc:
-            raise SftpError(
-                f"SFTP connection failed for {remote_path!r}: {exc}"
-            ) from exc
+            await sftp.write(resolved_str, content, encoding="utf-8")
+        return f"Wrote {len(content)} bytes to {remote_path!r} on {self._settings.host}"
 
     async def list_directory(self, remote_path: str) -> str:
         """List the contents of *remote_path* directory on the SFTP server.
 
         Returns a newline-separated list of entry names.
         """
-        import asyncssh
-
-        resolved = await _resolve_path(remote_path, self._settings.remote_root)
-        try:
-            conn = await self._connect()
-            try:
-                async with conn.start_sftp_client() as sftp:
-                    entries = await sftp.listdir(str(resolved))
-                return "\n".join(entries)
-            finally:
-                conn.close()
-        except asyncssh.SFTPError as exc:
-            raise SftpError(f"SFTP listdir failed for {remote_path!r}: {exc}") from exc
-        except OSError as exc:
-            raise SftpError(
-                f"SFTP connection failed for {remote_path!r}: {exc}"
-            ) from exc
+        async with self._sftp_connection(remote_path, "listdir") as (sftp, resolved):
+            entries = await sftp.listdir(str(resolved))
+        return "\n".join(entries)
 
     async def file_exists(self, remote_path: str) -> bool:
         """Return ``True`` when *remote_path* exists on the SFTP server."""
-        import asyncssh
-
-        resolved = await _resolve_path(remote_path, self._settings.remote_root)
         try:
-            conn = await self._connect()
-            try:
-                async with conn.start_sftp_client() as sftp:
-                    await sftp.stat(str(resolved))
-                return True
-            finally:
-                conn.close()
-        except asyncssh.SFTPError:
-            return False
-        except OSError:
+            async with self._sftp_connection(remote_path, "stat") as (sftp, resolved):
+                await sftp.stat(str(resolved))
+            return True
+        except SftpError:
             return False
