@@ -792,7 +792,7 @@
     },
     "PublicFetchSettings": {
       "additionalProperties": false,
-      "description": "Scoped public-repo-fetch tool for the chat agent.\n\nWhen enabled, the agent gains a ``fetch_public_url`` tool that performs\na plain HTTP(S) GET to a user-provided public URL, returns the raw\ntext/file contents with metadata, and writes an audit-log entry per\nfetch.  SSRF protection blocks internal/private IP ranges; only\npublic, unauthenticated URLs are allowed.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no tool is offered.\n    timeout: Per-request HTTP timeout in seconds (default 10 s).\n    max_body_bytes: Maximum bytes of the response body to read and\n        return to the agent (default 1_048_576 \u2014 ~1 MB).\n    max_redirects: Maximum number of redirects to follow (default 5).\n    domain_allowlist: Optional list of hostnames (no protocol, no\n        path) that the tool is permitted to fetch.  When empty, any\n        public hostname is allowed (subject to SSRF checks).\n    rate_limit_requests: Maximum number of requests allowed within\n        ``rate_limit_window_seconds`` (default 10).\n    rate_limit_window_seconds: Sliding window in seconds for the\n        rate limiter (default 60.0).",
+      "description": "Scoped public-repo-fetch tool for the chat agent.\n\nWhen enabled, the agent gains a ``fetch_public_url`` tool that performs\na plain HTTP(S) GET to a user-provided public URL, returns the raw\ntext/file contents with metadata, and writes an audit-log entry per\nfetch.  SSRF protection blocks internal/private IP ranges for public\nhosts; hosts listed in ``fleet_auth.auth_hosts`` are trusted by the\noperator and bypass the SSRF check.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no tool is offered.\n    timeout: Per-request HTTP timeout in seconds (default 10 s).\n    max_body_bytes: Maximum bytes of the response body to read and\n        return to the agent (default 1_048_576 \u2014 ~1 MB).\n    max_redirects: Maximum number of redirects to follow (default 5).\n    domain_allowlist: Optional list of hostnames (no protocol, no\n        path) that the tool is permitted to fetch.  When empty, any\n        public hostname is allowed (subject to SSRF checks).\n    rate_limit_requests: Maximum number of requests allowed within\n        ``rate_limit_window_seconds`` (default 10).\n    rate_limit_window_seconds: Sliding window in seconds for the\n        rate limiter (default 60.0).\n    fleet_auth: Optional server-side credentials for authenticated\n        fleet UIs.  When set, requests to hosts in\n        ``fleet_auth.auth_hosts`` carry HTTP basic-auth headers\n        injected by the server (never visible to the agent), and\n        those hosts are implicitly allowed through the domain\n        allowlist and SSRF checks.",
       "properties": {
         "enabled": {
           "default": false,
@@ -830,6 +830,17 @@
           "default": 60.0,
           "title": "Rate Limit Window Seconds",
           "type": "number"
+        },
+        "fleet_auth": {
+          "anyOf": [
+            {
+              "$ref": "#/$defs/FleetAuthSettings"
+            },
+            {
+              "type": "null"
+            }
+          ],
+          "default": null
         }
       },
       "title": "PublicFetchSettings",
