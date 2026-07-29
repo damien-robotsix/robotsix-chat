@@ -30,6 +30,7 @@ from robotsix_chat.subsessions.worker import (
     CloseState,
     SubsessionContext,
     SubsessionEnv,
+    _build_periodic_input,
     _format_worker_error,
     _is_duplicate_reply,
     _is_no_change,
@@ -294,6 +295,35 @@ def test_periodic_interval_below_minimum_is_rejected() -> None:
         _spawn(env, kind=SubsessionKind.PERIODIC, interval_seconds=None)
 
     assert env.registry.list_for_owner(OWNER) == []
+
+
+def test_build_periodic_input_includes_loop_guard_instructions() -> None:
+    """The periodic turn input includes CI workflow loop guard instructions."""
+    from robotsix_chat.subsessions.models import SubsessionInfo, SubsessionKind
+
+    info = SubsessionInfo(
+        id="sub-x",
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id="sess-1",
+        parent_id=None,
+        depth=1,
+        title="monitor",
+        prompt="watch ticket 9d6a",
+        model_level=3,
+        status="active",  # type: ignore[arg-type]
+        created_at=0.0,
+        last_activity_at=0.0,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "abc123"},
+    )
+
+    result = _build_periodic_input(info, previous_result=None, steering=[])
+
+    # The output must include the loop guard instructions.
+    assert "LOOP GUARD" in result
+    assert "CI workflow verification" in result
+    assert "GitHub Actions API" in result
+    assert "publish/deploy workflow" in result
 
 
 @pytest.mark.asyncio
