@@ -351,22 +351,27 @@ run once and a transient failure would silently lose the work.
 
 ## Autonomous-session interaction
 
-In **autonomous sessions**, periodic monitors no longer block session completion. Previously, the
-auto-continue loop waited for *all* active subsessions — including long-running periodic monitors —
-which caused the agent to loop indefinitely on stable tickets, never declaring the session complete.
+In **autonomous sessions**, periodic monitors do not block session completion. The runner's
+`_has_pending_subsessions` check **excludes** periodic subsessions; only `task` and `user_chat`
+subsessions (which have finite lifetimes) block the loop. The agent is instructed to emit the
+completion marker while periodic monitors are still running, under either of the following paths:
 
-The runner's `_has_pending_subsessions` check now **excludes** periodic subsessions; only `task` and
-`user_chat` subsessions (which have finite lifetimes) block the loop. The agent is instructed (via
-the system prompt) to emit the completion marker while periodic monitors are still running,
-provided:
+### Stale-monitor completion (automatic)
 
-- All active periodic monitors have been reporting `NO_CHANGE` for at least
-  `autonomous.stale_monitor_runs_before_completion` (default 3) consecutive cycles.
-- No other pending actions remain (no in-flight task or user_chat subsessions, no unaddressed
-  operator decisions).
+The agent may declare the session complete when all active periodic monitors have been reporting
+`NO_CHANGE` for at least `autonomous.stale_monitor_runs_before_completion` (default 3) consecutive
+cycles and no other pending actions remain (no in-flight task or user_chat subsessions, no
+unaddressed operator decisions). Monitors continue running in the background after closure; their
+terminal summaries are delivered to the next session.
 
-Monitors continue running in the background after the autonomous session closes; their terminal
-summaries are delivered to the next session.
+### Operator-driven completion (explicit)
+
+When the operator sends repeated continuation messages (e.g. "Continue" multiple times) without
+providing new instructions or data, the agent treats this as explicit permission to close the
+session immediately — bypassing the stale-threshold check. The same applies when the operator sends
+short, non-substantive messages several times in a row. This prevents indefinite looping when the
+operator is satisfied and all actionable work is done but periodic monitors have not yet accumulated
+enough `NO_CHANGE` cycles to auto-close.
 
 | Config key                                        | Default | Description                                                                   |
 | ------------------------------------------------- | ------- | ----------------------------------------------------------------------------- |
