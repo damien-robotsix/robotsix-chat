@@ -370,7 +370,7 @@ async def test_render_url_fleet_auth_passes_http_credentials() -> None:
             _settings(
                 fleet_auth=FleetAuthSettings(
                     basic_auth_username="operator",
-                    basic_auth_password="s3cret",
+                    basic_auth_password="s3cret",  # pragma: allowlist secret
                     auth_hosts=["deploy.robotsix.net"],
                 ),
             )
@@ -384,7 +384,7 @@ async def test_render_url_fleet_auth_passes_http_credentials() -> None:
         assert call_kwargs["viewport"] == {"width": 1280, "height": 720}
         assert call_kwargs["http_credentials"] == {
             "username": "operator",
-            "password": "s3cret",
+            "password": "s3cret",  # pragma: allowlist secret
         }
     finally:
         _remove_fake_playwright()
@@ -401,7 +401,7 @@ async def test_render_url_fleet_auth_host_not_matching() -> None:
             _settings(
                 fleet_auth=FleetAuthSettings(
                     basic_auth_username="operator",
-                    basic_auth_password="s3cret",
+                    basic_auth_password="s3cret",  # pragma: allowlist secret
                     auth_hosts=["deploy.robotsix.net"],
                 ),
             )

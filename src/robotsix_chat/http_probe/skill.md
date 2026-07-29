@@ -67,22 +67,21 @@ Common `expect_absent` patterns:
 ## Authenticated fleet UIs
 
 When the operator has configured fleet-auth credentials (server-side, never exposed to you), the
-probe automatically attaches an ``Authorization: Basic …`` header when the target hostname is in
-the configured ``fleet_auth.auth_hosts`` list.  Fleet-auth hosts are **implicitly allowlisted** —
-you do not need to list them in the main ``allowlist``.
+probe automatically attaches an `Authorization: Basic …` header when the target hostname is in the
+configured `fleet_auth.auth_hosts` list. Fleet-auth hosts are **implicitly allowlisted** — you do
+not need to list them in the main `allowlist`.
 
-This means you can probe authenticated fleet UIs such as
-``https://invest.deploy.robotsix.net/docs`` or ``/openapi.json`` — the credentials are injected
-server-side and you never see them.
+This means you can probe authenticated fleet UIs such as `https://invest.deploy.robotsix.net/docs`
+or `/openapi.json` — the credentials are injected server-side and you never see them.
 
 ## Safety
 
 - **Read-only** — GET only; no other HTTP methods are exposed.
-- **Credentials never exposed** — when fleet-auth is configured, the ``Authorization`` header is
+- **Credentials never exposed** — when fleet-auth is configured, the `Authorization` header is
   injected server-side; you never see the raw credential.
 - **Hostname allowlisted** — the probe only reaches hosts in the configurable allowlist
-  (operator-controlled) plus any fleet-auth hosts. At minimum ``www.robotsix.net`` and
-  ``robotsix.net`` are permitted.
+  (operator-controlled) plus any fleet-auth hosts. At minimum `www.robotsix.net` and `robotsix.net`
+  are permitted.
 - **Size-capped** — only the first ~2 KB of the response body are read and returned.
 - **Timeout** — the request has a short timeout (default 10 s); one request per call.
 

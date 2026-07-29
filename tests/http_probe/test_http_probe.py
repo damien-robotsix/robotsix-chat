@@ -338,7 +338,7 @@ async def test_http_probe_fleet_auth_sends_header(
         allowlist=["deploy.robotsix.net"],
         fleet_auth=FleetAuthSettings(
             basic_auth_username="operator",
-            basic_auth_password="s3cret",
+            basic_auth_password="s3cret",  # pragma: allowlist secret
             auth_hosts=["deploy.robotsix.net"],
         ),
     )
@@ -355,7 +355,7 @@ async def test_http_probe_fleet_auth_sends_header(
     import base64 as _b64
 
     decoded = _b64.b64decode(auth.removeprefix("Basic ")).decode()
-    assert decoded == "operator:s3cret"
+    assert decoded == "operator:s3cret"  # pragma: allowlist secret
 
 
 @pytest.mark.asyncio
@@ -370,7 +370,7 @@ async def test_http_probe_fleet_auth_host_not_matching(
     settings = _settings(
         fleet_auth=FleetAuthSettings(
             basic_auth_username="operator",
-            basic_auth_password="s3cret",
+            basic_auth_password="s3cret",  # pragma: allowlist secret
             auth_hosts=["deploy.robotsix.net"],
         ),
     )
@@ -415,7 +415,7 @@ async def test_http_probe_fleet_auth_host_allowed_without_main_allowlist(
         allowlist=["www.robotsix.net", "robotsix.net"],
         fleet_auth=FleetAuthSettings(
             basic_auth_username="operator",
-            basic_auth_password="s3cret",
+            basic_auth_password="s3cret",  # pragma: allowlist secret
             auth_hosts=["deploy.robotsix.net"],
         ),
     )
