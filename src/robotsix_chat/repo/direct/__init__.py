@@ -840,6 +840,11 @@ def build_direct_repo_tools(
         ``board_api_base_url`` path.  When *component_request* is
         unavailable the direct path is used directly.
 
+        On board builds that do not expose the ``implement_spawn_count``
+        artifact DELETE route the call returns **HTTP 405 / an error**.
+        Do not retry the reset — use the ``resume-blocked`` mechanism
+        (``POST /tickets/{id}/resume-blocked``) as the standard fallback.
+
         Args:
             ticket_id: The blocked ticket whose counter to reset
                 (e.g. ``"20250624T020652Z-my-ticket-a1b2"``).
