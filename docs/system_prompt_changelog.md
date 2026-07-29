@@ -22,6 +22,21 @@ source of pre-existing tickets.
 
 ______________________________________________________________________
 
+## v69 — 2026-07-28 — require-concrete-operator-blocker-instructions-0ce2
+
+**Summary:** Added a new operator-facing blocker instructions bullet in the Autonomy section.
+When the assistant surfaces a hard server-side blocker to the operator (configuration deadlock,
+service registration not enabled, missing credential, permission gap, or any block requiring
+operator action), it must now provide a concrete, copy-paste-ready instruction — exact env variable
+name, config file path, restart command, or endpoint URL — rather than a vague directive. It must
+also store common remediation recipes in a knowledge note (topic: `operator-remediation-recipes`).
+
+**Rationale:** Vague instructions like "flip the toggle" or "enable the feature" without specific
+keys, paths, or commands force the operator to guess and cause back-and-forth. Concrete, executable
+instructions eliminate ambiguity and let the operator act immediately.
+
+**SHA256:** `eb1960a07e3906fd0941061911cc94c91745f572f2d7a234e0eac7dc049eea40`
+
 ## v68 — 2026-07-28 — add-retry-with-justification-support-to-6928
 
 **Summary:** Three updates to the `agent_instruction` default to support retry-with-justification

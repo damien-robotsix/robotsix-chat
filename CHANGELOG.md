@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Strengthen the ticket-filing dedup guard in the agent system prompt: always query the board's ticket list first (by board, keywords, or error message) before filing, explicitly noting that the CI system and periodic agents may have already auto-filed a ticket for the same issue.
+- Agent system prompt v69: require concrete, copy-paste-ready operator instructions when surfacing server-side blockers. The assistant must now include exact env variable names, config file paths, restart commands, or endpoint URLs rather than vague diagnoses like "flip the toggle." Common remediation recipes should be stored in a knowledge note (`operator-remediation-recipes`).
 - Fleet-auth hosts in `http_probe` are now implicitly allowlisted — the operator no longer needs to duplicate fleet hostnames in both `allowlist` and `fleet_auth.auth_hosts`.  The `http_probe` skill document has been updated to accurately describe the fleet-auth capability, and a new `render_url` skill document has been created so the agent knows it can render authenticated fleet UIs.
 - Added documentation for the central-deploy `allow_chat_access` per-repo
   toggle in the deployment guide and lifecycle skill, explaining how operators
