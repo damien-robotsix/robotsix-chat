@@ -9,7 +9,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from robotsix_chat.autonomous.models import AutonomousSession, AutonomousState
-from robotsix_chat.subsessions.delivery import ParentDelivery
+from robotsix_chat.subsessions.delivery import _REACT_PROMPT_TEMPLATE, ParentDelivery
 from robotsix_chat.subsessions.models import (
     SubsessionInfo,
     SubsessionKind,
@@ -989,21 +989,10 @@ async def test_reaction_unknown_session_uses_default_template() -> None:
     prompt = args[1]
     assert "not actively conversing" in prompt
     assert "DO NOT re-request approval" not in prompt
-from robotsix_chat.subsessions.delivery import _REACT_PROMPT_TEMPLATE
+
 
 def test_react_prompt_forbids_reemitting_already_shown_payload() -> None:
+    """The REACT prompt template must forbid re-emitting already-shown data."""
     text = _REACT_PROMPT_TEMPLATE.lower()
-    assert "already presented" in text or "already shown" in text
-    assert "delta" in text
-from robotsix_chat.subsessions.delivery import _REACT_PROMPT_TEMPLATE
-
-def test_react_prompt_forbids_reemitting_already_shown_payload() -> None:
-    text = _REACT_PROMPT_TEMPLATE.lower()
-    assert "already presented" in text or "already shown" in text
-    assert "delta" in text
-from robotsix_chat.subsessions.delivery import _REACT_PROMPT_TEMPLATE
-
-def test_react_prompt_forbids_reemitting_already_shown_payload() -> None:
-    text = _REACT_PROMPT_TEMPLATE.lower()
-    assert "already presented" in text or "already shown" in text
+    assert "do not re-list" in text
     assert "delta" in text
