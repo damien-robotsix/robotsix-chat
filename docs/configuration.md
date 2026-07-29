@@ -456,30 +456,30 @@ ______________________________________________________________________
 
 ### Public Fetch
 
-Scoped public-repo-fetch tool for the chat agent. When enabled, the agent gains a ``fetch_public_url``
+Scoped public-repo-fetch tool for the chat agent. When enabled, the agent gains a `fetch_public_url`
 tool that performs a plain HTTP(S) GET to a user-provided public URL, returns the raw text/file
 contents with metadata, and writes an audit-log entry per fetch. SSRF protection blocks
-internal/private IP ranges for public hosts; hosts listed in ``fleet_auth.auth_hosts`` are trusted by
+internal/private IP ranges for public hosts; hosts listed in `fleet_auth.auth_hosts` are trusted by
 the operator and bypass the SSRF check.
 
-| JSON key                              | Type                    | Default     | Description                                                                                               |
-| ------------------------------------- | ----------------------- | ----------- | --------------------------------------------------------------------------------------------------------- |
-| `public_fetch.enabled`                | `boolean`               | `false`     | Master switch. When ``False``, no tool is offered.                                                        |
-| `public_fetch.timeout`                | `number`                | `10.0`      | Per-request HTTP timeout in seconds.                                                                      |
-| `public_fetch.max_body_bytes`         | `integer`               | `1048576`   | Maximum bytes of the response body to read and return to the agent (~1 MB).                               |
-| `public_fetch.max_redirects`          | `integer`               | `5`         | Maximum number of redirects to follow.                                                                    |
-| `public_fetch.domain_allowlist`       | `array[string]`         | `[]`        | Optional list of hostnames (no protocol, no path) permitted for fetch. Empty = any public host is allowed. |
-| `public_fetch.rate_limit_requests`    | `integer`               | `10`        | Maximum requests allowed within ``rate_limit_window_seconds``.                                            |
-| `public_fetch.rate_limit_window_seconds` | `number`             | `60.0`      | Sliding window in seconds for the rate limiter.                                                           |
-| `public_fetch.fleet_auth`             | `FleetAuthSettings \| null` | `null`   | Optional server-side credentials for authenticated fleet UIs. When set, requests to hosts in ``fleet_auth.auth_hosts`` carry HTTP basic-auth headers injected by the server (never visible to the agent), and those hosts are implicitly allowed through the domain allowlist and SSRF checks. |
+| JSON key                                 | Type                        | Default   | Description                                                                                                                                                                                                                                                                                  |
+| ---------------------------------------- | --------------------------- | --------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `public_fetch.enabled`                   | `boolean`                   | `false`   | Master switch. When `False`, no tool is offered.                                                                                                                                                                                                                                             |
+| `public_fetch.timeout`                   | `number`                    | `10.0`    | Per-request HTTP timeout in seconds.                                                                                                                                                                                                                                                         |
+| `public_fetch.max_body_bytes`            | `integer`                   | `1048576` | Maximum bytes of the response body to read and return to the agent (~1 MB).                                                                                                                                                                                                                  |
+| `public_fetch.max_redirects`             | `integer`                   | `5`       | Maximum number of redirects to follow.                                                                                                                                                                                                                                                       |
+| `public_fetch.domain_allowlist`          | `array[string]`             | `[]`      | Optional list of hostnames (no protocol, no path) permitted for fetch. Empty = any public host is allowed.                                                                                                                                                                                   |
+| `public_fetch.rate_limit_requests`       | `integer`                   | `10`      | Maximum requests allowed within `rate_limit_window_seconds`.                                                                                                                                                                                                                                 |
+| `public_fetch.rate_limit_window_seconds` | `number`                    | `60.0`    | Sliding window in seconds for the rate limiter.                                                                                                                                                                                                                                              |
+| `public_fetch.fleet_auth`                | `FleetAuthSettings \| null` | `null`    | Optional server-side credentials for authenticated fleet UIs. When set, requests to hosts in `fleet_auth.auth_hosts` carry HTTP basic-auth headers injected by the server (never visible to the agent), and those hosts are implicitly allowed through the domain allowlist and SSRF checks. |
 
-The ``FleetAuthSettings`` object accepts:
+The `FleetAuthSettings` object accepts:
 
-| JSON key                                  | Type            | Default | Description                                                                                                    |
-| ----------------------------------------- | --------------- | ------- | -------------------------------------------------------------------------------------------------------------- |
-| `fleet_auth.basic_auth_username`          | `string`        | `""`    | Username for HTTP basic authentication. Leave empty when auth is not required.                                  |
-| `fleet_auth.basic_auth_password`          | `string` (secret) | `""`  | Password for HTTP basic authentication (``SecretStr`` — never serialised in logs or exposed to the agent).     |
-| `fleet_auth.auth_hosts`                   | `array[string]` | `[]`    | Hostnames (no protocol, no path) for which the basic-auth header is attached. Requests to hosts not on this list proceed without credentials. |
+| JSON key                         | Type              | Default | Description                                                                                                                                   |
+| -------------------------------- | ----------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fleet_auth.basic_auth_username` | `string`          | `""`    | Username for HTTP basic authentication. Leave empty when auth is not required.                                                                |
+| `fleet_auth.basic_auth_password` | `string` (secret) | `""`    | Password for HTTP basic authentication (`SecretStr` — never serialised in logs or exposed to the agent).                                      |
+| `fleet_auth.auth_hosts`          | `array[string]`   | `[]`    | Hostnames (no protocol, no path) for which the basic-auth header is attached. Requests to hosts not on this list proceed without credentials. |
 
 ______________________________________________________________________
 
