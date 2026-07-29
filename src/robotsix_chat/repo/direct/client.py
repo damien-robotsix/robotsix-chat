@@ -1197,7 +1197,8 @@ class DirectRepoClient:
                 idx += 1
 
             # Apply the hunk
-            orig_pos = old_start - 1 + cumulative_offset  # 0-indexed in *result*
+            # 0-indexed position in *result*
+            orig_pos = max(0, old_start - 1 + cumulative_offset)
             hunk_offset_add = 0
             hunk_offset_del = 0
             hj = 0
