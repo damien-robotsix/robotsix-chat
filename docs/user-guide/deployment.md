@@ -104,7 +104,40 @@ curl http://<container>:8080/health     # via the central-deploy network
 
 ______________________________________________________________________
 
-## 4. Claude credentials
+## 4. Chat-agent mutation access (`allow_chat_access`)
+
+The chat agent can inspect and mutate managed services through the deploy-lifecycle API (see the
+[lifecycle skill](../lifecycle/skill.md)). All mutation endpoints — including
+`POST /chat/services/{name}/restart` (service restart), `PUT /chat/services/{name}/config`
+(config-write), and `POST /chat/services` (service registration) — are gated by a **per-repo
+access toggle** in the central-deploy dashboard. When the toggle is off, every mutation attempt
+returns `403 Forbidden`.
+
+> This toggle is **not** a chat-component config key or environment variable — it lives in the
+> central-deploy management plane. There is nothing to set in `config/config.json` or in the
+> container environment.
+
+### Symptom
+
+When the chat agent attempts a mutation (e.g. registering a new service via
+`POST /chat/services`) and the toggle is disabled, the agent receives a 403 error. The agent
+treats this as "not permitted" and does not retry — the operation fails silently from the
+operator's perspective.
+
+### Enabling the toggle
+
+1. Open the **central-deploy dashboard**.
+2. Navigate to the **repo** (component) whose chat agent needs mutation access.
+3. Locate the **"Allow chat access"** (also labelled `chat_agent_mutatable` or
+   `allow_chat_access`) setting in the per-repo configuration.
+4. Enable it, then save (or redeploy) the repo configuration.
+
+After the toggle is enabled, the chat agent can successfully call mutation endpoints — no
+restart of the chat component is required; the deploy server enforces the gate on every request.
+
+______________________________________________________________________
+
+## 5. Claude credentials
 
 The chat server defaults to `model_level=3` (Claude SDK / Opus; level 4 = frontier), which
 authenticates via the `claude` CLI's OAuth token — no API key needed.
@@ -117,7 +150,7 @@ authenticates via the `claude` CLI's OAuth token — no API key needed.
 
 ______________________________________________________________________
 
-## 5. Authentication
+## 6. Authentication
 
 The chat server ships **no authentication of its own** (robotsix-standards component standard): in
 production it is served exclusively through the central-deploy gateway, which validates the
@@ -127,7 +160,7 @@ the server directly to an untrusted network.
 
 ______________________________________________________________________
 
-## 6. Reverse proxy / TLS
+## 7. Reverse proxy / TLS
 
 > [!NOTE] Provisioning a reverse proxy, a public domain, and TLS certificates is a **manual operator
 > step** — no domain, vhost, or certificate configuration is committed to this repo. Under
@@ -169,7 +202,7 @@ Key characteristics:
 - **Container restart**: history loaded from `/data/conversations.json` is fully functional —
   idle-reset behaviour, the 50-turn cap, and LRU eviction all apply to restored conversations.
 
-## 7. Updating
+## 8. Updating
 
 Every push to `main` publishes a fresh `ghcr.io/damien-robotsix/robotsix-chat:main` (CI-gated).
 Redeploy from the central-deploy dashboard to pull it; central-deploy recreates the container with

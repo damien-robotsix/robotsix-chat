@@ -1,6 +1,10 @@
 ## 0.0.0 (unreleased)
 
 - Fleet-auth hosts in `http_probe` are now implicitly allowlisted — the operator no longer needs to duplicate fleet hostnames in both `allowlist` and `fleet_auth.auth_hosts`.  The `http_probe` skill document has been updated to accurately describe the fleet-auth capability, and a new `render_url` skill document has been created so the agent knows it can render authenticated fleet UIs.
+- Added documentation for the central-deploy `allow_chat_access` per-repo
+  toggle in the deployment guide and lifecycle skill, explaining how operators
+  enable chat-agent mutation endpoints (service registration, restart,
+  config-write) via the central-deploy dashboard.
 - `reset_implement_spawn_counter` tool now routes its DELETE
   request through the roster-based `component_request` proxy
   when available, matching the connectivity used by other
