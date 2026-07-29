@@ -63,6 +63,29 @@ correct and the fix exists, but the fingerprint guard blocks re-implementation.
 
 ______________________________________________________________________
 
+## v72 — 2026-07-28 — resolve-conflicting-option-a-memory-by-g-f4f2
+
+**Summary:** Strengthen memory-recall guardrails in both the system prompt's Autonomy section and
+the per-turn memory header (`_MEMORY_PROMPT_HEADER`) to prevent stale plans and solution options
+from past sessions being presented as current proposals. The Autonomy warning now explicitly calls
+out stale plans, solution options, and decisions (not just identifiers). The memory header gains a
+new "CRITICAL — stale plans and decisions" block that warns: recalled Option A/B/… labels, proposed
+plans, deployment strategies, and approval workflows are almost always from a past session with a
+different context; a label reused across sessions almost certainly refers to a different proposal;
+before presenting any recalled plan or option, verify it appears in the current conversation
+history, and if uncertain, label it explicitly as "from memory, may not apply to this session."
+
+**Rationale:** Session 8b03ed2ca8f946629bdee029f2efaaa7 showed the assistant recalling a stale
+"Option A" (monitor 63c5, auto-run deploy, auto-approve) from a similar past memory that did not
+match the actually proposed Option A (manual PR), causing confusion and requiring explicit
+disregard. The existing warnings covered identifiers and action items but not plans/options;
+similarity recall can surface semantically similar but contextually different proposals under reused
+labels.
+
+**SHA256:** `bb6777326a3018872678408c46f0620da2ac8d7c8e6e31556926e3a82eac29a7`
+
+______________________________________________________________________
+
 ## v71 — 2026-07-28 — merge-handle-blocked-closed-transition-0ce2-c578
 
 **Summary:** Merge of two independent v70-branch changes into v71:
@@ -249,31 +272,6 @@ proposals for issues already resolved in the running image, accelerating deadloc
 **SHA256:** `45e04e8c1aa771858e20cf0dd6fa247d741a659184b5efa91d6fa51bd2e97dd9`
 
 ______________________________________________________________________
-
-## v64 — 2026-07-27 — resolve-conflicting-option-a-memory-by-g-f4f2
-
-**Summary:** Strengthen memory-recall guardrails in both the system prompt's Autonomy section and
-the per-turn memory header (`_MEMORY_PROMPT_HEADER`) to prevent stale plans and solution options
-from past sessions being presented as current proposals. The Autonomy warning now explicitly calls
-out stale plans, solution options, and decisions (not just identifiers). The memory header gains a
-new "CRITICAL — stale plans and decisions" block that warns: recalled Option A/B/… labels, proposed
-plans, deployment strategies, and approval workflows are almost always from a past session with a
-different context; a label reused across sessions almost certainly refers to a different proposal;
-before presenting any recalled plan or option, verify it appears in the current conversation
-history, and if uncertain, label it explicitly as "from memory, may not apply to this session."
-
-**Rationale:** Session 8b03ed2ca8f946629bdee029f2efaaa7 showed the assistant recalling a stale
-"Option A" (monitor 63c5, auto-run deploy, auto-approve) from a similar past memory that did not
-match the actually proposed Option A (manual PR), causing confusion and requiring explicit
-disregard. The existing warnings covered identifiers and action items but not plans/options;
-similarity recall can surface semantically similar but contextually different proposals under reused
-labels.
-
-**SHA256:** `984f41f0a4f693e50624698dfe0c715bfc9cd6198c4525213cacc4b89caed5f0`
-
-______________________________________________________________________
-
-
 
 ## v63 — 2026-07-28 — introduce-model-policy-abstraction-for-d-42d5
 
