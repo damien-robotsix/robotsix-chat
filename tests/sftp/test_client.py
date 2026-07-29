@@ -427,15 +427,14 @@ class TestSftpClientFileExists:
         assert result is False
 
     @pytest.mark.asyncio
-    async def test_file_exists_connection_error_returns_false(self) -> None:
-        """Returns False when the connection itself fails (OSError)."""
+    async def test_file_exists_connection_error_raises(self) -> None:
+        """Raises SftpError when the connection itself fails (OSError)."""
         settings = self._make_settings()
         client = SftpClient(settings)
         SftpClient._connect = AsyncMock(side_effect=OSError("Connection refused"))
 
-        result = await client.file_exists("any.txt")
-
-        assert result is False
+        with pytest.raises(SftpError, match="SFTP connection failed"):
+            await client.file_exists("any.txt")
 
     @pytest.mark.asyncio
     async def test_file_exists_path_escape_raises_error(self) -> None:
@@ -447,8 +446,8 @@ class TestSftpClientFileExists:
             await client.file_exists("../../../etc/passwd")
 
     @pytest.mark.asyncio
-    async def test_file_exists_permission_denied_returns_false(self) -> None:
-        """Returns False when stat fails with permission denied."""
+    async def test_file_exists_permission_denied_raises(self) -> None:
+        """Raises SftpError when stat fails with permission denied."""
         import asyncssh
 
         settings = self._make_settings()
@@ -459,9 +458,8 @@ class TestSftpClientFileExists:
             )
         )
 
-        result = await client.file_exists("secret.txt")
-
-        assert result is False
+        with pytest.raises(SftpError, match="SFTP stat failed"):
+            await client.file_exists("secret.txt")
 
 
 class TestSftpClientConnectionKwargs:
@@ -505,7 +503,7 @@ class TestSftpClientConnectionKwargs:
         assert kwargs["username"] == "admin"
         assert "password" not in kwargs
         assert (
-            "-----BEGIN OPENSSH PRIVATE KEY-----" in kwargs["client_keys"]
+            b"-----BEGIN OPENSSH PRIVATE KEY-----" in kwargs["client_keys"]
         )  # pragma: allowlist secret
         assert kwargs["passphrase"] == "keypass"
         assert kwargs["known_hosts"] == "sftp.example.com ssh-rsa AAA..."
@@ -523,7 +521,7 @@ class TestSftpClientConnectionKwargs:
 
         kwargs = client._connection_kwargs()
 
-        assert kwargs["client_keys"] == ["key-material"]
+        assert kwargs["client_keys"] == [b"key-material"]
         assert "passphrase" not in kwargs
 
     @pytest.mark.asyncio
