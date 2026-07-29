@@ -308,11 +308,11 @@ Feedback tickets are filed against a set of allowed target repos. The set is res
 
 1. **Deploy roster** — `GET http://central-deploy:8100/chat/components` fetches the list of
    currently deployed chat components. Each component's `id` becomes a candidate target repo.
-2. **Mill repo registry** — `GET http://mill:8077/repos` fetches the list of registered repos from
+1. **Mill repo registry** — `GET http://mill:8077/repos` fetches the list of registered repos from
    the mill board.
-3. **Intersection** — only repos present in *both* the deploy roster *and* the mill repo registry
+1. **Intersection** — only repos present in *both* the deploy roster *and* the mill repo registry
    are allowed. A repo that is registered but not deployed (or vice versa) cannot receive tickets.
-4. **Fallback** — if either service is unreachable, returns an empty response, or the intersection
+1. **Fallback** — if either service is unreachable, returns an empty response, or the intersection
    is empty, the runner falls back to `["robotsix-chat"]` and logs a warning so the feedback
    pipeline continues to function in a degraded state.
 
@@ -487,17 +487,17 @@ SFTP config-restore capability. When enabled, the agent gains tools to read, lis
 (confirmation-gated) write files on a remote SFTP server — used to restore known-good configuration
 files when diagnostics detect they are missing. Disabled by default.
 
-| JSON key                      | Type              | Default | Description                                                                                                  |
-| ----------------------------- | ----------------- | ------- | ------------------------------------------------------------------------------------------------------------ |
-| `sftp.enabled`                | `boolean`         | `false` | Master switch. When `false`, no SFTP tools are registered and the agent runs exactly as before.              |
-| `sftp.host`                   | `string`          | `""`    | SFTP server hostname or IP address.                                                                          |
-| `sftp.port`                   | `integer`         | `22`    | SFTP server port.                                                                                            |
-| `sftp.username`               | `string`          | `""`    | SFTP username for authentication.                                                                            |
-| `sftp.password`               | `string` (secret) | `""`    | Password for password-based authentication. Leave empty when using key-based auth.                           |
-| `sftp.private_key`            | `string` (secret) | `""`    | OpenSSH-format private key for key-based authentication. Leave empty when using password auth.               |
-| `sftp.private_key_passphrase` | `string` (secret) | `""`    | Passphrase for `private_key`, if the key is encrypted.                                                       |
-| `sftp.known_hosts`            | `string`          | `""`    | OpenSSH-format known-hosts entries for host key verification. When empty, host key verification is skipped.  |
-| `sftp.remote_root`            | `string`          | `""`    | Optional base directory on the remote server to restrict all operations under (e.g. `/var/www`).             |
+| JSON key                      | Type              | Default | Description                                                                                                 |
+| ----------------------------- | ----------------- | ------- | ----------------------------------------------------------------------------------------------------------- |
+| `sftp.enabled`                | `boolean`         | `false` | Master switch. When `false`, no SFTP tools are registered and the agent runs exactly as before.             |
+| `sftp.host`                   | `string`          | `""`    | SFTP server hostname or IP address.                                                                         |
+| `sftp.port`                   | `integer`         | `22`    | SFTP server port.                                                                                           |
+| `sftp.username`               | `string`          | `""`    | SFTP username for authentication.                                                                           |
+| `sftp.password`               | `string` (secret) | `""`    | Password for password-based authentication. Leave empty when using key-based auth.                          |
+| `sftp.private_key`            | `string` (secret) | `""`    | OpenSSH-format private key for key-based authentication. Leave empty when using password auth.              |
+| `sftp.private_key_passphrase` | `string` (secret) | `""`    | Passphrase for `private_key`, if the key is encrypted.                                                      |
+| `sftp.known_hosts`            | `string`          | `""`    | OpenSSH-format known-hosts entries for host key verification. When empty, host key verification is skipped. |
+| `sftp.remote_root`            | `string`          | `""`    | Optional base directory on the remote server to restrict all operations under (e.g. `/var/www`).            |
 
 ______________________________________________________________________
 
