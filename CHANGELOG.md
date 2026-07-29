@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Re-export `SftpSettings` from `robotsix_chat.config` package, following the existing convention where every settings model is importable from `robotsix_chat.config`.
 - Extract `_parse_json_body` helper in `github.py` routes, removing duplicated JSON body parsing logic from `_github_endpoint` and `github_repo_create_endpoint`
 - Extract shared `_handle_terminal_on_resume` helper in `resume.py` to eliminate ~39 lines of duplicate terminal-check-and-close logic across the three `_resume_*_entry` functions.
 - Fixed `_resolve_path` path-containment bug that rejected all paths when `remote_root` was absolute (e.g. `/var/www`). The normalisation step incorrectly stripped the leading `/`, causing the subsequent containment check to always fail.

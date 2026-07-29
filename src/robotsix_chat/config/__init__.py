@@ -33,6 +33,7 @@ from robotsix_chat.config.models import (
     RenderUrlSettings,
     RepoStudySettings,
     SelfReviewSettings,
+    SftpSettings,
     SubsessionsSettings,
     VersionCheckSettings,
 )
@@ -73,6 +74,7 @@ __all__ = [
     "RepoStudySettings",
     "SelfReviewSettings",
     "Settings",
+    "SftpSettings",
     "SubsessionsSettings",
     "VersionCheckSettings",
     "level_needs_api_key",
