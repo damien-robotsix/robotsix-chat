@@ -219,7 +219,8 @@ async def test_resolve_with_manifest_list(
     tools = build_docker_digest_tools(_settings())
     result = json.loads(await tools[0]("python:3.14-slim", platform="linux/amd64"))
 
-    # The entry's digest field IS the content digest — no sub-manifest fetch needed (§2 step 4).
+    # The entry's digest field IS the content digest —
+    # no sub-manifest fetch needed (§2 step 4).
     assert result["digest"] == "sha256:amd64manifestdigest123"
     assert result["resolved_ref"] == "python@sha256:amd64manifestdigest123"
     assert result["platform"] == "linux/amd64"
