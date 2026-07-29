@@ -60,6 +60,20 @@ def _check_settings_and_auth(
         raise HTTPException(status_code=403, detail="invalid or missing X-API-Key")
 
 
+async def _parse_json_body(request: Request) -> dict[str, object]:
+    """Parse the request body as JSON and validate it is a dict.
+
+    Raises HTTPException(400) on parse failure or non-dict body.
+    """
+    try:
+        body = await request.json()
+    except json.JSONDecodeError, ValueError:
+        raise HTTPException(status_code=400, detail="invalid JSON body") from None
+    if not isinstance(body, dict):
+        raise HTTPException(status_code=400, detail="expected a JSON object")
+    return body
+
+
 async def _github_endpoint(
     request: Request,
     settings: GitHubSecuritySettings | GitHubActionsSettings,
@@ -89,12 +103,7 @@ async def _github_endpoint(
         )
 
     # -- body --------------------------------------------------------------
-    try:
-        body = await request.json()
-    except json.JSONDecodeError, ValueError:
-        raise HTTPException(status_code=400, detail="invalid JSON body") from None
-    if not isinstance(body, dict):
-        raise HTTPException(status_code=400, detail="expected a JSON object")
+    body = await _parse_json_body(request)
 
     return owner, repo, body
 
@@ -232,12 +241,7 @@ async def github_repo_create_endpoint(request: Request) -> JSONResponse:
     _check_settings_and_auth(request, settings, "github_security")
 
     # -- body --------------------------------------------------------------
-    try:
-        body = await request.json()
-    except json.JSONDecodeError, ValueError:
-        raise HTTPException(status_code=400, detail="invalid JSON body") from None
-    if not isinstance(body, dict):
-        raise HTTPException(status_code=400, detail="expected a JSON object")
+    body = await _parse_json_body(request)
 
     repo_name = body.get("name")
     if not repo_name or not isinstance(repo_name, str) or not repo_name.strip():

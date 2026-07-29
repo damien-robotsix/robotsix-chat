@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Extract `_parse_json_body` helper in `github.py` routes, removing duplicated JSON body parsing logic from `_github_endpoint` and `github_repo_create_endpoint`
 - Extract shared `_handle_terminal_on_resume` helper in `resume.py` to eliminate ~39 lines of duplicate terminal-check-and-close logic across the three `_resume_*_entry` functions.
 - Fixed `_resolve_path` path-containment bug that rejected all paths when `remote_root` was absolute (e.g. `/var/www`). The normalisation step incorrectly stripped the leading `/`, causing the subsequent containment check to always fail.
 - Added `mdformat` (with `mdformat-gfm` and `mdformat-frontmatter` plugins) to the dev dependency group so `uv run mdformat` works in the sandbox. The implement agent now runs mdformat on changed `.md` files as a pre-flight check, eliminating wasteful CI auto-fix cycles on non-compliant markdown.
