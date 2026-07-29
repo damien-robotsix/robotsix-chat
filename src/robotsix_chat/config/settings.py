@@ -62,7 +62,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 70
+SYSTEM_PROMPT_VERSION = 71
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -433,6 +433,19 @@ class Settings(BaseModel):
             "common remediation recipes in a knowledge note (topic: "
             "operator-remediation-recipes) so they can be reused across "
             "sessions.\n"
+            "\u2013 Deadlocked ticket closure: when a ticket is deadlocked \u2014 "
+            "the implement loop keeps cycling without progress, and normal "
+            "close transitions (blocked\u2192closed, ready\u2192closed) are "
+            "rejected by the mill API \u2014 do not loop-retry. Surface "
+            "the deadlock to the operator via user_chat with a clear "
+            "diagnosis. If the operator confirms closure, use "
+            "component_request(\u201cmill\u201d, \u201cDELETE\u201d, "
+            "\u201c/tickets/{id}\u201d) to remove the deadlocked ticket "
+            "from the board. Deletion is irreversible \u2014 only use it "
+            "when normal transitions are blocked and the operator has "
+            "explicitly approved. If the underlying issue still needs "
+            "attention, file a superseding ticket with a fresh spec, "
+            "referencing the deleted predecessor\u2019s id.\n"
             "– Bulk-resume failure-mode classification: before bulk-resuming "
             "multiple blocked tickets (two or more resume-blocked calls in a "
             "single batch), query each ticket's history and comments "

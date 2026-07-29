@@ -37,6 +37,21 @@ source of pre-existing tickets.
 
 **SHA256:** `e9180114668b01ee6c6e91d826521e8542681d6ab8af1dfc3826485ec01ce72b`
 
+## v71 — 2026-07-28 — merge-handle-blocked-closed-transition-0ce2-c578
+
+**Summary:** Merge of two independent v70-branch changes into v71:
+
+1. **Operator-facing blocker instructions** (v70/0ce2): When surfacing a hard server-side blocker to the operator, the assistant must now provide a concrete, copy-paste-ready instruction — exact env variable name, config file path, restart command, or endpoint URL — rather than a vague directive. It must also store common remediation recipes in a knowledge note (topic: `operator-remediation-recipes`).
+
+2. **Deadlocked ticket closure** (c578): Add a "Deadlocked ticket closure" bullet to the ticket lifecycle remediation guidance. When a ticket is deadlocked — the implement loop keeps cycling without progress and normal close transitions (blocked→closed, ready→closed) are rejected by the mill API — the agent must surface the deadlock to the operator via user_chat with a clear diagnosis. If the operator confirms closure, the agent uses `component_request("mill", "DELETE", "/tickets/{id}")` to remove the deadlocked ticket from the board. Deletion is irreversible — only use it when normal transitions are blocked and the operator has explicitly approved. If the underlying issue still needs attention, the agent should file a superseding ticket with a fresh spec, referencing the deleted predecessor's id.
+
+**Rationale:** Both changes were authored independently against v69, each bumping to v70. The merge combines both into a single v71 prompt.
+
+**SHA256:** `bd34147301da38a69438f1905a8b247969066119dac3be29dffa42f73ee068a1`
+
+______________________________________________________________________
+
+
 ## v68 — 2026-07-28 — add-retry-with-justification-support-to-6928
 
 **Summary:** Three updates to the `agent_instruction` default to support retry-with-justification
