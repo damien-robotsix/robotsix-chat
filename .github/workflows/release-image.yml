@@ -67,8 +67,29 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Setup Docker Buildx
-        uses: docker/setup-buildx-action@bb05f3f5519dd87d3ba754cc423b652a5edd6d2c  # v4.2.0
+      - name: Setup Docker Buildx (with retry)
+        run: |
+          for attempt in 1 2 3; do
+            echo "::group::Setup Docker Buildx (attempt ${attempt} of 3)"
+            # Remove any partially-created builder from a prior failed attempt.
+            docker buildx rm -f builder 2>/dev/null || true
+            # Create the builder with the docker-container driver and bootstrap
+            # it.  The bootstrap step reaches out to Docker Hub to pull the
+            # buildkit container image -- this is where transient timeouts occur.
+            if docker buildx create --use --name builder --driver docker-container && \
+               docker buildx inspect --bootstrap 2>&1; then
+              echo "::endgroup::"
+              echo "Buildx ready (attempt ${attempt})"
+              exit 0
+            fi
+            echo "::endgroup::"
+            if [ "${attempt}" -lt 3 ]; then
+              echo "Bootstrap failed, retrying in 15s..."
+              sleep 15
+            fi
+          done
+          echo "Buildx setup failed after 3 attempts"
+          exit 1
 
       - name: Login to GHCR
         uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0
