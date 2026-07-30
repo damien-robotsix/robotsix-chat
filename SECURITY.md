@@ -62,7 +62,8 @@ over HTTP.
    endpoint streams LLM tokens and never accepts or executes arbitrary tool definitions from
    clients.
 3. **CORS is opt-in.** The `cors_allow_origins` config key (a list of origin strings) must be
-   explicitly set in the JSON config file to enable cross-origin requests. By default the UI and API share the same origin.
+   explicitly set in the JSON config file to enable cross-origin requests. By default the UI and API
+   share the same origin.
 
 ## Dependency scanning
 
