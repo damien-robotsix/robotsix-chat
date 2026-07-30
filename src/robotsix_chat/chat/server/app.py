@@ -48,7 +48,10 @@ from robotsix_chat.repo.actions import (
     build_github_actions_tools,
     load_github_actions_skill,
 )
-from robotsix_chat.repo.direct import build_direct_repo_tools
+from robotsix_chat.repo.direct import (
+    build_direct_repo_tools,
+    load_direct_repo_skill,
+)
 from robotsix_chat.repo.security import build_github_security_tools, load_github_skill
 from robotsix_chat.repo.study import build_repo_study_tools
 from robotsix_chat.selfreview import build_recent_activity_tools
@@ -599,6 +602,7 @@ def _inject_skills(
         (settings.render_url.enabled, "render_url", load_render_url_skill),
         (settings.github_security.enabled, "github_security", load_github_skill),
         (settings.github_actions.enabled, "github_actions", load_github_actions_skill),
+        (settings.direct_repo.enabled, "direct_repo", load_direct_repo_skill),
         (
             bool(settings.direct_repo.board_api_base_url.strip())
             or bool(settings.central_deploy.url.strip()),

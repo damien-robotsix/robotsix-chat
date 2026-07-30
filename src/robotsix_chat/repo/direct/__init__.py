@@ -1,13 +1,20 @@
 """Direct-repository-capability tools for the chat agent.
 
 Exposes :func:`build_direct_repo_tools` — a factory returning the LLM tools
-that let the agent push branches, open PRs, and (when enabled) push direct
-fixes against repositories in the robotsix-mill GitHub App's installation
-scope, authenticating as the app.  Returns no tools when the direct-repo
-capability is disabled.
+that let the agent push branches, open PRs, merge PRs, arm auto-merge, and
+(when enabled) push direct fixes against repositories in the robotsix-mill
+GitHub App's installation scope, authenticating as the app.  Returns no
+tools when the direct-repo capability is disabled.
+
+Also exposes :func:`load_direct_repo_skill` which returns the component
+skill markdown — a description of the direct-repo tools, their auth
+requirements, and their confirmation-gated mutation policy.
 
 **Guardrails enforced by the tools:**
-- Actions are ONLY permitted for tickets currently in BLOCKED state.
+- Branch/PR/fix actions are ONLY permitted for tickets currently in BLOCKED
+  state.
+- Merge and auto-merge tools require installation scope but do NOT require
+  BLOCKED state — they are follow-up operations on PRs already created.
 - The repo set is resolved DYNAMICALLY from the GitHub App installation
   (list-installation-repositories) — no static allowlist.
 - PRs are opened in a reviewable state with no auto-merge; the merge gate
@@ -15,6 +22,8 @@ capability is disabled.
 - A ``recover_auto_merge`` tool can update a stale PR branch to re-arm
   auto-merge when a green, review-approved PR has bounced (no BLOCKED-state
   gate required).
+- Merge and auto-merge are confirmation-gated: the agent must obtain
+  explicit operator approval in-chat before calling either tool.
 
 **Additional guardrails for ``direct_fix``:**
 - Ticket must have exhausted its spawn limit (≥3 implement cycles),
@@ -29,12 +38,31 @@ import asyncio
 import json
 import logging
 from collections.abc import Callable
+from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from robotsix_chat.config import DirectRepoSettings
 
-__all__ = ["build_direct_repo_tools"]
+__all__ = ["build_direct_repo_tools", "load_direct_repo_skill"]
+
+
+def load_direct_repo_skill() -> str:
+    """Return the direct-repo component skill markdown.
+
+    Reads ``skill.md`` (shipped next to this module) and returns it as a
+    string suitable for appending to the agent's system prompt.  Returns
+    an empty string when the file is missing, so a missing skill document
+    never prevents the agent from starting.
+
+    """
+    skill_path = Path(__file__).parent / "skill.md"
+    try:
+        return skill_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ""
+    except OSError:
+        return ""
 
 logger = logging.getLogger(__name__)
 
@@ -645,6 +673,130 @@ def build_direct_repo_tools(
 
         return "\n".join(context_lines) + "\n\n" + result
 
+    async def _assert_in_scope(
+        client: DirectRepoClient,
+        repo_full_name: str,
+    ) -> str | None:
+        """Return an error string if repo not in installation scope, or None.
+
+        Scope check is skipped when *component_request* is available
+        (the mill pipeline has its own credentials).
+        """
+        if component_request is None and (
+            scope_error := await client.check_installation_scope(repo_full_name)
+        ):
+            return scope_error
+        return None
+
+    async def merge_direct_repo_pr(
+        repo_full_name: str,
+        pr_number: int,
+        pr_title: str,
+        head_base_branches: str,
+        merge_method: str = "squash",
+        commit_title: str = "",
+        commit_message: str = "",
+    ) -> str:
+        """Merge a pull request in a GitHub repository.
+
+        **This is a confirmation-gated mutation.**  Before calling this tool
+        you MUST obtain explicit operator approval in the conversation.
+        State the exact repo, PR number, PR title, and head/base branches
+        and wait for the operator to confirm before proceeding.  Never merge
+        a PR without the operator's explicit consent in-chat.
+
+        **Preconditions (enforced server-side by GitHub):**
+        - PR must be mergeable (no conflicts).
+        - Required status checks / CI must be green.
+        - PR must not be in draft state.
+
+        **Scope:** *repo_full_name* must be within the robotsix-mill GitHub
+        App's current installation scope (checked dynamically at call time).
+
+        Args:
+            repo_full_name: GitHub ``owner/name`` (e.g.
+                ``"robotsix/robotsix-chat"``).
+            pr_number: The PR number to merge.
+            pr_title: The PR title — used for the confirmation echo.
+            head_base_branches: Description of head/base branches
+                (e.g. ``"fix/ticket → main"``) — used for the
+                confirmation echo.
+            merge_method: How to merge — ``"squash"`` (default),
+                ``"merge"``, or ``"rebase"``.
+            commit_title: Optional merge-commit title (squash/merge).
+            commit_message: Optional merge-commit body (squash/merge).
+
+        Returns:
+            A status message with the merge commit SHA on success, or an
+            actionable error message (conflicts, CI not green, draft, etc.).
+
+        """
+        if error := await _assert_in_scope(client, repo_full_name):
+            return error
+
+        result = await client.merge_pr(
+            repo_full_name=repo_full_name,
+            pr_number=pr_number,
+            merge_method=merge_method,
+            commit_title=commit_title or None,
+            commit_message=commit_message or None,
+        )
+        # Include confirmation context in the result for auditability
+        if "merged successfully" in result.lower():
+            result += f"\nPR: {pr_title}\nBranches: {head_base_branches}"
+        return result
+
+    async def arm_direct_repo_auto_merge(
+        repo_full_name: str,
+        pr_number: int,
+        pr_title: str,
+        head_base_branches: str,
+        merge_method: str = "squash",
+    ) -> str:
+        """Enable auto-merge on a pull request.
+
+        When auto-merge is enabled GitHub will automatically merge the PR
+        as soon as all required conditions are met (CI passes, reviews are
+        submitted, branch protection rules are satisfied).  The merge
+        happens without further human intervention.
+
+        **This is a confirmation-gated mutation.**  Before calling this tool
+        you MUST obtain explicit operator approval in the conversation.
+        State the exact repo, PR number, PR title, and head/base branches
+        and wait for the operator to confirm before proceeding.  Never
+        enable auto-merge without the operator's explicit consent in-chat.
+
+        **Scope:** *repo_full_name* must be within the robotsix-mill GitHub
+        App's current installation scope (checked dynamically at call time).
+
+        Args:
+            repo_full_name: GitHub ``owner/name`` (e.g.
+                ``"robotsix/robotsix-chat"``).
+            pr_number: The PR number to enable auto-merge on.
+            pr_title: The PR title — used for the confirmation echo.
+            head_base_branches: Description of head/base branches
+                (e.g. ``"fix/ticket → main"``) — used for the
+                confirmation echo.
+            merge_method: Merge strategy to use when auto-merge fires —
+                ``"squash"`` (default), ``"merge"``, or ``"rebase"``.
+
+        Returns:
+            A success message, or an actionable error message.
+
+        """
+        if error := await _assert_in_scope(client, repo_full_name):
+            return error
+
+        result = await client.arm_auto_merge(
+            repo_full_name=repo_full_name,
+            pr_number=pr_number,
+            merge_method=merge_method,
+        )
+        # Include confirmation context in the result for auditability
+        if "auto-merge enabled" in result.lower():
+            result += f"\nPR: {pr_title}\nBranches: {head_base_branches}"
+        return result
+
     async def reset_implement_spawn_counter(ticket_id: str) -> str:
         """Reset the implement-agent spawn counter for a blocked ticket.
 
@@ -929,6 +1081,8 @@ def build_direct_repo_tools(
         update_pr_branch,
         check_pr_merge_conflict,
         recover_auto_merge,
+        merge_direct_repo_pr,
+        arm_direct_repo_auto_merge,
         reset_implement_spawn_counter,
         apply_patch_to_file,
         push_patch_to_pr_branch,
