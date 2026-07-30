@@ -79,7 +79,7 @@ def test_build_direct_repo_tools_returns_eight_tools() -> None:
     assert "open_direct_repo_pr" in names
     assert "update_pr_branch" in names
     assert "check_pr_merge_conflict" in names
-    assert "merge_pr" in names
+    assert "recover_auto_merge" in names
     assert "reset_implement_spawn_counter" in names
     assert "apply_patch_to_file" in names
     assert "push_patch_to_pr_branch" in names
@@ -303,21 +303,30 @@ def test_merge_method_on_client() -> None:
     )
 
 
-def test_merge_tool_returned() -> None:
-    """Verify that build_direct_repo_tools returns merge_pr."""
+def test_no_merge_tool_returned() -> None:
+    """Verify that build_direct_repo_tools returns no merge-performing tools.
+
+    Tools may reference "merge" in the context of *checking* mergeability
+    (e.g. ``check_pr_merge_conflict``) or *recovering* from a bounced
+    auto-merge (``recover_auto_merge``), but never to perform an actual merge.
+    """
     tools = build_direct_repo_tools(_settings())
     names = [t.__name__ for t in tools]
+    # The only tools with "merge" in the name are the check and recovery tools
+    # — verify neither performs an actual merge.
     merge_named = sorted(n for n in names if "merge" in n.lower())
-    assert merge_named == ["check_pr_merge_conflict", "merge_pr"], (
+    assert merge_named == ["check_pr_merge_conflict", "recover_auto_merge"], (
         f"Unexpected merge-named tools: {merge_named}"
     )
+    # Expected set: push, open_pr, update_branch, check_merge_conflict,
+    # recover_auto_merge, reset, apply_patch
     assert sorted(names) == [
         "apply_patch_to_file",
         "check_pr_merge_conflict",
-        "merge_pr",
         "open_direct_repo_pr",
         "push_direct_repo_branch",
         "push_patch_to_pr_branch",
+        "recover_auto_merge",
         "reset_implement_spawn_counter",
         "update_pr_branch",
     ]
