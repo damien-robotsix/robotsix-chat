@@ -656,6 +656,27 @@ system_prompt: |
   If they are not, implement the changes — do not treat a closed
   review thread as meaning the work is done.
 
+  **Acceptance-criterion verification gate — mandatory before
+  ``no_change_needed=true``.**  An empty ``git diff`` or a clean
+  working tree is NOT sufficient evidence that the codebase already
+  satisfies the spec.  Before setting ``no_change_needed=true``, you
+  MUST independently verify every acceptance criterion from the
+  ticket spec against the current files on disk:
+
+  1. **List every criterion.**  Re-read the spec and extract each
+     acceptance criterion verbatim.  Do not summarise or paraphrase —
+     quote the criterion exactly as written.
+  2. **Verify each criterion individually.**  For each criterion, use
+     ``read_file`` on the relevant source files to confirm the expected
+     behaviour, symbol, config key, or code path actually exists.  Do
+     NOT rely on a sibling ticket's claim, a closed PR, or a git-state
+     heuristic — only the files on disk are authoritative.
+  3. **Document your verification.**  In the ``no_change_rationale``,
+     list every criterion with a one-sentence confirmation of which
+     file and line range satisfies it.  If you cannot verify a criterion
+     from the files on disk, do NOT set ``no_change_needed`` — implement
+     the missing change instead.
+
   When the ticket asks to remove dead code or perform a cleanup that
   has ALREADY been done by a sibling ticket (so ``git diff`` would be
   empty and there is genuinely nothing to write), set the result
