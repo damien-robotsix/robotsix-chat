@@ -669,6 +669,103 @@ def build_direct_repo_tools(
             ticket_id=ticket_id,
         )
 
+    async def push_patch_to_pr_branch(
+        ticket_id: str,
+        repo_full_name: str,
+        pr_number: int,
+        file_path: str,
+        patch_content: str,
+        commit_message: str = "",
+    ) -> str:
+        """Push a patched commit to an existing pull request's head branch.
+
+        Fetches *file_path* from the PR's head branch, applies *patch_content*
+        (a unified diff), and pushes the result as a commit on the same branch.
+        This is the standard path for updating a PR with a code change — no
+        cycle-count gate, no new-branch creation.
+
+        **Preconditions (all enforced by the tool):**
+        1. Ticket MUST be in BLOCKED state.
+        2. When called through the component roster (i.e. the
+           ``component_request`` credential is available) the GitHub App
+           installation scope check is bypassed — the mill already has its
+           own GitHub access.  For direct board-API calls, *repo_full_name*
+           MUST be in the GitHub App installation scope.
+        3. The PR must exist and its head branch must belong to the same
+           repository (*repo_full_name*) — cross-repo PR updates are refused.
+
+        **Patch format:** Standard unified diff (as produced by ``diff -u``
+        or ``git diff``)::
+
+            --- a/path
+            +++ b/path
+            @@ -start,count +start,count @@
+             context
+            -removed
+            +added
+
+        Args:
+            ticket_id: The blocked ticket this PR addresses (e.g.
+                ``"20250624T020652Z-my-ticket-a1b2"``).
+            repo_full_name: GitHub ``owner/name`` (e.g.
+                ``"robotsix/robotsix-chat"``).
+            pr_number: The PR number to push to.
+            file_path: Path to the file to patch, relative to the repo
+                root (e.g. ``"src/dashboard.js"``).
+            patch_content: The unified diff to apply.  Must include at
+                least one ``@@`` hunk header with context lines.
+            commit_message: Commit message.  Defaults to a message that
+                references the *ticket_id*.
+
+        Returns:
+            A status message with the commit SHA on success, or an error
+            message describing why the push was refused or failed.
+
+        """
+        # --- guard 1+2: BLOCKED + scope ---
+        if error := await _assert_blocked_and_scoped(client, ticket_id, repo_full_name):
+            return error
+
+        # --- guard 3: fetch PR and verify head branch ---
+        try:
+            pr = await client.get_pr(
+                repo_full_name=repo_full_name,
+                pr_number=pr_number,
+            )
+        except Exception as exc:
+            return f"Error fetching PR #{pr_number} in {repo_full_name}: {exc}"
+
+        head_info = pr.get("head", {})
+        head_branch: str | None = head_info.get("ref")
+        head_repo = head_info.get("repo", {})
+        head_repo_full_name: str | None = head_repo.get("full_name")
+
+        if not head_branch:
+            return (
+                f"Error: PR #{pr_number} in {repo_full_name} has no head "
+                f"branch — cannot determine where to push."
+            )
+
+        if head_repo_full_name and head_repo_full_name != repo_full_name:
+            return (
+                f"Refused: PR #{pr_number} head branch '{head_branch}' belongs "
+                f"to '{head_repo_full_name}', not '{repo_full_name}'. "
+                f"Cross-repo PR updates are not permitted."
+            )
+
+        # --- push the patched commit ---
+        msg = commit_message or (
+            f"fix: patch {file_path} for blocked ticket {ticket_id} (PR #{pr_number})"
+        )
+        return await client.push_patched_file(
+            repo_full_name=repo_full_name,
+            branch_name=head_branch,
+            file_path=file_path,
+            patch_text=patch_content,
+            commit_message=msg,
+            ticket_id=ticket_id,
+        )
+
     tools: list[Callable[..., Any]] = [
         push_direct_repo_branch,
         open_direct_repo_pr,
@@ -676,6 +773,7 @@ def build_direct_repo_tools(
         check_pr_merge_conflict,
         reset_implement_spawn_counter,
         apply_patch_to_file,
+        push_patch_to_pr_branch,
     ]
 
     # ------------------------------------------------------------------
