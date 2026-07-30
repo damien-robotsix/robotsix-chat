@@ -729,3 +729,93 @@ def test_rollback_no_history(tmp_path: Path) -> None:
     # No bootstrap (no GET /config, no PUT) — no version history.
     resp = client.post("/config/rollback", json={"version": 1})
     assert resp.status_code == 404
+
+
+# ---------------------------------------------------------------------------
+# POST /config/import
+# ---------------------------------------------------------------------------
+
+
+def test_import_not_enabled(tmp_path: Path) -> None:
+    """Import returns 400 when lifecycle.config_import_enabled is false (default)."""
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_model_level": 3})
+    client = _make_app(config_path)
+
+    resp = client.post("/config/import", json={})
+    assert resp.status_code == 400
+    body = resp.json()
+    assert "config_import_enabled" in body["detail"]
+
+
+def test_import_no_service_name(tmp_path: Path) -> None:
+    """Import returns 400 when lifecycle is enabled for import but no service_name."""
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "llmio_model_level": 3,
+            "lifecycle": {
+                "enabled": True,
+                "config_import_enabled": True,
+                "base_url": "http://central-deploy:8100",
+                "api_key": "test-key",
+                "service_name": "",
+            },
+        },
+    )
+    client = _make_app(config_path)
+
+    resp = client.post("/config/import", json={})
+    assert resp.status_code == 400
+    body = resp.json()
+    assert "service_name" in body["detail"].lower()
+
+
+def test_import_no_base_url(tmp_path: Path) -> None:
+    """Import returns 400 when lifecycle is enabled but base_url is empty."""
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "llmio_model_level": 3,
+            "lifecycle": {
+                "enabled": True,
+                "config_import_enabled": True,
+                "base_url": "",
+                "api_key": "test-key",
+                "service_name": "test-service",
+            },
+        },
+    )
+    client = _make_app(config_path)
+
+    resp = client.post("/config/import", json={})
+    assert resp.status_code == 400
+    body = resp.json()
+    assert "base_url" in body["detail"].lower()
+
+
+def test_import_with_service_name_in_body(tmp_path: Path) -> None:
+    """Import uses service_name from request body when provided."""
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "llmio_model_level": 3,
+            "lifecycle": {
+                "enabled": True,
+                "config_import_enabled": True,
+                "base_url": "http://central-deploy:8100",
+                "api_key": "test-key",
+                "service_name": "",
+            },
+        },
+    )
+    client = _make_app(config_path)
+
+    # The import will fail (502) because central-deploy is not reachable,
+    # but the service_name from the body should be used.
+    resp = client.post("/config/import", json={"service_name": "my-service"})
+    # 502 expected (central-deploy unreachable), NOT 400 (missing service_name)
+    assert resp.status_code == 502

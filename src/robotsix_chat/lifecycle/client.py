@@ -425,6 +425,27 @@ class LifecycleClient:
         """``PUT /services/{name}/env`` — update service environment."""
         return await self._put(f"/services/{service_name}/env", env)
 
+    async def import_service_config(self, service_name: str) -> str:
+        """``GET /chat/services/{name}/config/export`` — one-time config import.
+
+        Calls the central-deploy config-export endpoint to retrieve the
+        full, unmasked config for *service_name*.  This is a one-time
+        migration path: components that previously had their config
+        managed by central-deploy can pull it in and self-own it going
+        forward.
+
+        Args:
+            service_name: The deploy-registered service name whose config
+                to import.
+
+        Returns:
+            The exported config as a JSON string (with real secret values),
+            or an error string when the endpoint is unreachable or the
+            import is rejected.
+
+        """
+        return await self._get(f"/chat/services/{service_name}/config/export")
+
     # -- internals --------------------------------------------------------
 
     def _headers(self) -> dict[str, str]:

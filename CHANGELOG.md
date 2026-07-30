@@ -102,6 +102,7 @@
   scanning. The active-plan template receives the same treatment. This prevents the
   assistant from listing individual subsession outcomes when multiple complete in
   the same compaction cycle.)
+- Add `POST /config/import` endpoint and startup bootstrap for one-time config import from central-deploy's export endpoint, gated behind `lifecycle.config_import_enabled`. Components can now self-own their runtime configuration: import once from the deploy plane, then manage all settings through the local `GET/PUT /config` API without any central-deploy dependency for their own config.
 - Removed stale `github_security.timeout` and `github_actions.timeout` doc entries from `docs/configuration.md` (fields were removed from the models in a prior PR and silently stripped by legacy validators). (mill: Remove stale timeout doc entries from GitHub Security and GitHub Actions sections in docs/configuration.md (20260730T074059Z-remove-stale-timeout-doc-entries-from-gi-35fa))
 - Document `langfuse_inspect` settings (`enabled`, `max_traces`) in configuration reference.
 - Extract ``_ok_or_error`` helper in GitHub routes to eliminate four repeated error-handling postludes

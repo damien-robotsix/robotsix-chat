@@ -665,12 +665,13 @@ class ConversationSettings(BaseModel):
 
 
 class LifecycleSettings(BaseModel):
-    """Read-only deploy-lifecycle API access for the agent.
+    """Deploy-lifecycle API access for the agent.
 
-    When enabled, the chat agent gains read-only tools to inspect the
+    When enabled, the chat agent gains tools to inspect the
     central-deploy lifecycle server: list services, check service status
-    and health, and read configuration and environment (with secrets
-    already masked as ``***`` server-side by ``_mask_secrets``).
+    and health, read configuration and environment (with secrets
+    already masked as ``***`` server-side by ``_mask_secrets``), and
+    restart services.
 
     Attributes:
         enabled: Master switch.  When ``False``, no lifecycle tools are
@@ -686,6 +687,13 @@ class LifecycleSettings(BaseModel):
             ``self_restart`` (and the cognee frozen-store auto-recovery that
             depends on it) is unavailable.
         timeout: Per-request HTTP timeout in seconds.
+        config_import_enabled: When ``True``, the server will attempt a
+            one-time config import from central-deploy on first boot if no
+            config file exists.  Also gates the ``POST /config/import``
+            endpoint.
+        config_import_url: Optional override for the config-export endpoint
+            URL.  When empty, the URL is constructed from ``base_url`` as
+            ``{base_url}/chat/services/{service_name}/config/export``.
 
     """
 
@@ -698,6 +706,8 @@ class LifecycleSettings(BaseModel):
     self_restart_max_retries: int = 3
     self_restart_backoff_base: float = 1.0
     self_restart_backoff_cap: float = 30.0
+    config_import_enabled: bool = False
+    config_import_url: str = ""
     model_config = ConfigDict(extra="forbid")
 
 
