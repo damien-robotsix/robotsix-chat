@@ -1,14 +1,15 @@
-"""Direct board-API ticket poll tool — fallback when component_request is unavailable.
+"""Ticket poll tools for querying the mill board API.
 
-Provides ``ticket_poll(ticket_id)``, a dedicated tool that queries the mill
-board API directly via HTTP (bypassing the component roster) and returns the
-ticket's current state.  Also provides ``ticket_poll_batch(ticket_ids)`` for
-bulk read-only triage — fetches full ticket data (state, events, history,
-cycle_count) for multiple tickets concurrently, enabling failure-mode
-classification without N sequential round-trips.
+Routes through ``component_request`` (roster-based connectivity) when
+available, falling back to the direct ``board_api_base_url`` otherwise.
+
+Provides ``ticket_poll(ticket_id)`` and ``ticket_poll_batch(ticket_ids)`` —
+dedicated tools that return ticket state and full data for single-ticket
+polling and bulk read-only triage respectively.
 
 Exposes :func:`build_ticket_poll_tools` — a factory returning the LLM tools.
-Returns no tools when ``board_api_base_url`` is empty.  Also exposes
+Returns no tools when neither ``component_request`` nor
+``board_api_base_url`` are available.  Also exposes
 :func:`load_ticket_poll_skill` which returns the component skill markdown
 for injection into the agent instruction.
 """
@@ -40,6 +41,18 @@ _TICKET_POLL_RETRY_CONFIG = RetryConfig(
     backoff_cap=10.0,
     jitter_factor=0.5,
 )
+
+
+def _parse_json_body(body: str) -> tuple[dict[str, Any] | None, str]:
+    """Parse *body* as JSON, returning ``(data, error)``.
+
+    *error* is empty on success, or a diagnostic message on failure.
+    Callers format the error into their own return shape.
+    """
+    try:
+        return json.loads(body), ""
+    except (json.JSONDecodeError, TypeError):
+        return None, "Non-JSON response from board API"
 
 
 def load_ticket_poll_skill() -> str:
@@ -130,7 +143,7 @@ def build_ticket_poll_tools(
             )
         try:
             status_code = int(status_line.split()[1])
-        except IndexError, ValueError:
+        except (IndexError, ValueError):
             return (
                 0,
                 None,
@@ -178,17 +191,13 @@ def build_ticket_poll_tools(
                     },
                     ensure_ascii=False,
                 )
-            try:
-                data: dict[str, Any] = json.loads(body)
-            except json.JSONDecodeError, TypeError:
+            data, parse_error = _parse_json_body(body)
+            if parse_error:
                 return json.dumps(
-                    {
-                        "ticket_id": ticket_id,
-                        "state": None,
-                        "error": "Non-JSON response from board API",
-                    },
+                    {"ticket_id": ticket_id, "state": None, "error": parse_error},
                     ensure_ascii=False,
                 )
+            assert data is not None  # guarded by parse_error check above
             state = data.get("state")
             return json.dumps(
                 {"ticket_id": ticket_id, "state": state, "error": ""},
@@ -213,17 +222,13 @@ def build_ticket_poll_tools(
                 retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
                 response = await retry_client.get(url, headers=headers)
                 response.raise_for_status()
-                try:
-                    data: dict[str, Any] = response.json()
-                except json.JSONDecodeError, TypeError:
+                data, parse_error = _parse_json_body(response.text)
+                if parse_error:
                     return json.dumps(
-                        {
-                            "ticket_id": ticket_id,
-                            "state": None,
-                            "error": "Non-JSON response from board API",
-                        },
+                        {"ticket_id": ticket_id, "state": None, "error": parse_error},
                         ensure_ascii=False,
                     )
+                assert data is not None  # guarded by parse_error check above
                 state = data.get("state")
                 return json.dumps(
                     {
@@ -317,15 +322,15 @@ def build_ticket_poll_tools(
                             "data": None,
                             "error": "Empty response body from board API",
                         }
-                    try:
-                        data: dict[str, Any] = json.loads(body)
-                    except json.JSONDecodeError, TypeError:
+                    data, parse_error = _parse_json_body(body)
+                    if parse_error:
                         return {
                             "ticket_id": ticket_id,
                             "state": None,
                             "data": None,
-                            "error": "Non-JSON response from board API",
+                            "error": parse_error,
                         }
+                    assert data is not None  # guarded by parse_error check above
                     return {
                         "ticket_id": ticket_id,
                         "state": data.get("state"),
@@ -352,15 +357,15 @@ def build_ticket_poll_tools(
                         )
                         response = await retry_client.get(url, headers=headers)
                         response.raise_for_status()
-                        try:
-                            data: dict[str, Any] = response.json()
-                        except json.JSONDecodeError, TypeError:
+                        data, parse_error = _parse_json_body(response.text)
+                        if parse_error:
                             return {
                                 "ticket_id": ticket_id,
                                 "state": None,
                                 "data": None,
-                                "error": "Non-JSON response from board API",
+                                "error": parse_error,
                             }
+                        assert data is not None  # guarded by parse_error check above
                         return {
                             "ticket_id": ticket_id,
                             "state": data.get("state"),
