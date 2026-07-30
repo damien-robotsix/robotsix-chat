@@ -344,6 +344,7 @@ Repository security-feature toggle via the GitHub App installation. Disabled by 
 | `github_security.enabled`        | `boolean`         | `false`             | Master switch.                                                           |
 | `github_security.github_org`     | `string`          | `"damien-robotsix"` | GitHub organisation name whose repos are in scope.                       |
 | `github_security.deploy_api_key` | `string` (secret) | `""`                | API key for the security-feature endpoint. Empty → endpoint returns 503. |
+
 ### GitHub Actions
 
 GitHub Actions secrets and workflow dispatch via the GitHub App installation. Disabled by default.
@@ -353,6 +354,7 @@ GitHub Actions secrets and workflow dispatch via the GitHub App installation. Di
 | `github_actions.enabled`        | `boolean`         | `false`             | Master switch.                                               |
 | `github_actions.github_org`     | `string`          | `"damien-robotsix"` | GitHub organisation name whose repos are in scope.           |
 | `github_actions.deploy_api_key` | `string` (secret) | `""`                | API key for Actions endpoints. Empty → endpoint returns 503. |
+
 ### Repo Study
 
 Temporary local repo snapshots the agent can fetch (GitHub tarball — no `git` binary) and study with
