@@ -62,6 +62,12 @@
 - Clarify in the agent instruction that the ticket fingerprint guard hashes only the spec text — editing the description without changing the spec will not clear the guard. This prevents agents from wasting cycles trying to bypass the guard by appending to the ticket description.
 - Added `push_patch_to_pr_branch` tool: push a unified-diff commit to an existing PR's head branch, with BLOCKED-state, scope, and same-repo authorization checks. Removes the need to create a new branch for every PR update.
 - Bumped `robotsix-llmio` (v0.1.1 → v0.1.4) and `robotsix-http` (v0.1.dev16 → v0.1.dev38) pinned git revisions to pick up upstream routing fixes for the OpenRouter 402 fallback issue (robotsix-llmio #499/#500, robotsix-http #45).
+- Strengthen subsession consolidation prompt: the CONSOLIDATION RULE is now the
+  primary instruction (applied first, before per-outcome handling) in the reaction
+  prompt template, using mandatory MUST language and explicit conversation-history
+  scanning. The active-plan template receives the same treatment. This prevents the
+  assistant from listing individual subsession outcomes when multiple complete in
+  the same compaction cycle.)
 - Extend auto-resume criteria to include fingerprint-guarded tickets where a working fix already exists despite an unchanged spec fingerprint (e.g. a PR with passing tests blocked on spec fingerprint). The assistant can now call resume-blocked with justification for this case without operator authorization.
 - `fetch_public_url` now supports fleet-auth Basic Auth credential injection for operator-configured hosts. Hosts listed in `public_fetch.fleet_auth.auth_hosts` receive a server-side `Authorization` header (never exposed to the agent) and bypass the SSRF and domain-allowlist checks, allowing the agent to inspect authenticated fleet UIs directly.
 - Re-export `SftpSettings` from `robotsix_chat.config` package, following the existing convention where every settings model is importable from `robotsix_chat.config`.
