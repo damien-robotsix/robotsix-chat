@@ -20,7 +20,7 @@ go-ahead — the only auto-resume cases were transient failures and fingerprint-
 pending question.  This adds the third common fingerprint-guard pattern: the spec is already
 correct and the fix exists, but the fingerprint guard blocks re-implementation.
 
-**SHA256:** `ba3bb49cbcd33ef6ce671e5c682709d678747f3926c5995fa273dc05120d0a7e`
+**SHA256:** `ce58088fe1088dffa82d2e6e158f63a6d9d15642d23e6bdd6e8fed59c7cbbad7`
 
 ______________________________________________________________________
 
@@ -230,6 +230,27 @@ stay current without manual rework.
 
 ______________________________________________________________________
 
+## v63 — 2026-07-27 — validate-proposed-solutions-against-live-7756
+
+**Summary:** Add a mandatory live-deploy-state pre-check to the "Hand-authoring PRs as a
+mill-failure escape hatch" section. Before proposing any mill-targeting fix (hand-authored PR,
+ticket, or rework), the assistant must first verify the live mill deploy state: use the deploy API
+to check the running image digest and commit on the mill service, then check the mill repo's
+recently merged PRs to confirm the defect has not already been fixed in a deploy that occurred since
+the assistant last checked. A defect observed hours ago — or that surfaced in recalled memory or a
+periodic-note summary — may already be resolved; building a fix on outdated live-state assumptions
+wastes implementation effort and delays actual remediation.
+
+**Rationale:** Session 8b03ed2ca8f946629bdee029f2efaaa7 showed the assistant proposing a manual PR
+to fix a fleet-wide implement-stage bug without first verifying the current deploy state. Live
+checks later revealed the fix was already merged on mill main. The assistant built a plan on
+recalled/periodic notes without cross-referencing live deploy status, leading to a delayed
+correction.
+
+**SHA256:** `1aaee2880866d65b25fea2d6856a9b5204a429c5b492b5d7928ad863836ec2bb`
+
+______________________________________________________________________
+
 ## v62 — 2026-07-25 — unify-periodic-sub-session-summaries-int-6dc6
 
 **Summary:** Add a consolidation rule for periodic subsession outcomes. When multiple periodic
@@ -299,6 +320,27 @@ directs action, re-asking for confirmation is redundant friction. This change ma
 respect explicit user directives without weakening safety for ambiguous cases.
 
 **SHA256:** `ab8e8246f0e2ec6d64e0a4008f4aac061a4ee7cafb4387a12d2899e4c950e548`
+
+______________________________________________________________________
+
+## v59 — 2026-07-27 — validate-proposed-solutions-against-live-7756
+
+**Summary:** Add a mandatory live-deploy-state pre-check to the "Hand-authoring PRs as a
+mill-failure escape hatch" section. Before proposing any mill-targeting fix (hand-authored PR,
+ticket, or rework), the assistant must first verify the live mill deploy state: use the deploy API
+to check the running image digest and commit on the mill service, then check the mill repo's
+recently merged PRs to confirm the defect has not already been fixed in a deploy that occurred since
+the assistant last checked. A defect observed hours ago — or that surfaced in recalled memory or a
+periodic-note summary — may already be resolved; building a fix on outdated live-state assumptions
+wastes implementation effort and delays actual remediation.
+
+**Rationale:** Session 8b03ed2ca8f946629bdee029f2efaaa7 showed the assistant proposing a manual PR
+to fix a fleet-wide implement-stage bug without first verifying the current deploy state. Live
+checks later revealed the fix was already merged on mill main. The assistant built a plan on
+recalled/periodic notes without cross-referencing live deploy status, leading to a delayed
+correction.
+
+**SHA256:** `d9b1351b2e4123fe4c7f81976b436e9f45f153b54ba089a175115d447d7f21f3`
 
 ## v58 — 2026-07-27 — guidance-for-hand-authoring-prs-as-escap-1b2e
 
