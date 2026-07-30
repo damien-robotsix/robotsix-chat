@@ -262,8 +262,7 @@ def _maybe_import_config_from_central_deploy(settings: Settings) -> None:
     )
 
     logger.info(
-        "Config file missing or empty at %s — attempting one-time import "
-        "from %s",
+        "Config file missing or empty at %s — attempting one-time import from %s",
         config_path,
         import_url,
     )
@@ -282,6 +281,7 @@ def _maybe_import_config_from_central_deploy(settings: Settings) -> None:
 
     # Parse and validate.
     import json
+
     try:
         imported = json.loads(result)
     except json.JSONDecodeError as exc:
