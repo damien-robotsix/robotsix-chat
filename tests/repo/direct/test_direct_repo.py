@@ -1007,7 +1007,7 @@ async def test_merge_pr_success(
         merge_method="squash",
     )
     assert "merged successfully" in out.lower()
-    assert "abc123def456" in out
+    assert "abc123def456" in out  # pragma: allowlist secret
 
 
 @pytest.mark.asyncio
