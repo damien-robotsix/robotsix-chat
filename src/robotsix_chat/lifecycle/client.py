@@ -425,7 +425,9 @@ class LifecycleClient:
         """``PUT /services/{name}/env`` — update service environment."""
         return await self._put(f"/services/{service_name}/env", env)
 
-    async def import_service_config(self, service_name: str) -> str:
+    async def import_service_config(
+        self, service_name: str, *, url: str | None = None
+    ) -> str:
         """``GET /chat/services/{name}/config/export`` — one-time config import.
 
         Calls the central-deploy config-export endpoint to retrieve the
@@ -437,6 +439,11 @@ class LifecycleClient:
         Args:
             service_name: The deploy-registered service name whose config
                 to import.
+            url: Optional fully-qualified override URL for the config-export
+                endpoint.  When provided, this URL is used directly instead
+                of constructing one from ``_base_url`` + path.  Set this to
+                ``lifecycle.config_import_url`` when the operator has
+                configured an explicit override.
 
         Returns:
             The exported config as a JSON string (with real secret values),
@@ -444,6 +451,22 @@ class LifecycleClient:
             import is rejected.
 
         """
+        if url:
+            result = await safe_http_request(
+                "GET",
+                url,
+                headers=self._headers(),
+                timeout=self._s.timeout,
+                label="Lifecycle",
+            )
+            if result.error:
+                return result.error
+            # Re-serialise through json for consistent formatting.
+            try:
+                parsed = json.loads(str(result.text))
+                return json.dumps(parsed, indent=2)
+            except Exception:
+                return str(result.text)
         return await self._get(f"/chat/services/{service_name}/config/export")
 
     # -- internals --------------------------------------------------------

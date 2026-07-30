@@ -594,7 +594,7 @@ async def config_import_endpoint(request: Request) -> JSONResponse:
         import_url = f"{base}/chat/services/{service_name}/config/export"
 
     client = LifecycleClient(lifecycle_settings)
-    result = await client.import_service_config(service_name)
+    result = await client.import_service_config(service_name, url=import_url)
 
     # The client returns error strings prefixed with "Lifecycle" on failure.
     if result.startswith("Lifecycle"):
