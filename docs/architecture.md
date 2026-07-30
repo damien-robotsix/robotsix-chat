@@ -222,6 +222,12 @@ The Approve / Reject buttons that appeared when a session was awaiting approval 
 Sessions in `proposal` state display "Awaiting review" with a plan snippet. The operator comments on
 the plan in the chat to begin execution.
 
+**Consent propagation.** When the operator authorises a complete operation (e.g. "use this password
+and deploy this config change"), that consent carries forward automatically to all sub-operations in
+the chain — ticket approval, MR approval, and merge — without the agent re-asking at intermediate
+gates. Only genuinely new, unconsented actions that were not reasonably encompassed by the original
+authorisation trigger a fresh approval request.
+
 ______________________________________________________________________
 
 ## Subpackage Inventory
