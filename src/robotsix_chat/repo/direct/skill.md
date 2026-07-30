@@ -87,4 +87,3 @@ state and the repo to be in the installation scope:
 
 These tools are read-only or gated on BLOCKED state — they do not modify live repository state
 beyond what the agent has already been authorised to do via the BLOCKED ticket flow.
-

@@ -409,4 +409,3 @@ modules:
       - docs/notification/skill.md
       - tests/notification/__init__.py
       - tests/notification/test_notification.py
-
