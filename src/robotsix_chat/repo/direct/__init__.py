@@ -91,7 +91,7 @@ def build_direct_repo_tools(
             )
         try:
             status_code = int(status_line.split()[1])
-        except (IndexError, ValueError):
+        except IndexError, ValueError:
             return None, (
                 f"Error: could not determine state for ticket {ticket_id} "
                 f"via component_request (roster-based board connectivity): "
@@ -107,7 +107,7 @@ def build_direct_repo_tools(
             data = json.loads(body_str)
             state: str | None = data.get("state")
             return state, None
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             return None, (
                 f"Error: could not determine state for ticket {ticket_id} "
                 f"via component_request (roster-based board connectivity): "
@@ -137,13 +137,13 @@ def build_direct_repo_tools(
             return None
         try:
             status_code = int(status_line.split()[1])
-        except (IndexError, ValueError):
+        except IndexError, ValueError:
             return None
         if status_code >= 400:
             return None
         try:
             data = json.loads(body_str)
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             return None
 
         # 1. Try the events array
@@ -215,7 +215,7 @@ def build_direct_repo_tools(
             )
         try:
             status_code = int(status_line.split()[1])
-        except (IndexError, ValueError):
+        except IndexError, ValueError:
             return False, (
                 f"Error: could not reset implement spawn counter for ticket "
                 f"{ticket_id} via component_request "
@@ -325,7 +325,7 @@ def build_direct_repo_tools(
         """
         try:
             files: list[dict[str, str]] = json.loads(files_json)
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             return (
                 "Error: files_json must be a valid JSON array "
                 "of {path, content} objects."
@@ -733,7 +733,7 @@ def build_direct_repo_tools(
             # --- validate files_json ---
             try:
                 files: list[dict[str, str]] = json.loads(files_json)
-            except (json.JSONDecodeError, TypeError):
+            except json.JSONDecodeError, TypeError:
                 return (
                     "Error: files_json must be a valid JSON array "
                     "of {path, content} objects."

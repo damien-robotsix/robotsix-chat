@@ -2013,17 +2013,19 @@ async def _mock_component_request_blocked(
     **_kw: Any,
 ) -> str:
     """Mock ``component_request`` that returns BLOCKED state with ≥3 cycles."""
-    return "HTTP 200\n" + json.dumps({
-        "state": "blocked",
-        "events": [
-            {"type": "implement_start"},
-            {"type": "implement_complete"},
-            {"type": "implement_start"},
-            {"type": "implement_complete"},
-            {"type": "implement_start"},
-            {"type": "implement_complete"},
-        ],
-    })
+    return "HTTP 200\n" + json.dumps(
+        {
+            "state": "blocked",
+            "events": [
+                {"type": "implement_start"},
+                {"type": "implement_complete"},
+                {"type": "implement_start"},
+                {"type": "implement_complete"},
+                {"type": "implement_start"},
+                {"type": "implement_complete"},
+            ],
+        }
+    )
 
 
 @pytest.mark.asyncio
