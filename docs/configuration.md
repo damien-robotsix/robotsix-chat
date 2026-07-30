@@ -114,6 +114,17 @@ These keys trace the main chat agent. When memory is enabled, a **separate** Lan
 (`memory.langfuse.*`) traces the cognee/LiteLLM pipeline independently — see
 [Memory](#memory-cognee).
 
+### Langfuse Inspect
+
+Trace-inspection tool that lets the agent query recent Langfuse traces. Reuses the main
+`langfuse` credentials (public key, secret key, host) for API authentication — no separate
+credential fields. Disabled by default.
+
+| JSON key                      | Type      | Default | Description                                               |
+| ----------------------------- | --------- | ------- | --------------------------------------------------------- |
+| `langfuse_inspect.enabled`    | `boolean` | `false` | Master switch — enables the `inspect_langfuse_trace` tool. |
+| `langfuse_inspect.max_traces` | `integer` | `5`     | Maximum number of traces returned per query.               |
+
 ### Memory (cognee)
 
 Persistent, cross-conversation episodic memory via embedded cognee. Disabled by default.
