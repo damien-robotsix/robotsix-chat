@@ -4,6 +4,9 @@
 - Fix hadolint warnings in Dockerfile: suppress DL3066 on ``uv pip install``
   (versions are pinned via ``uv.lock``) and convert HEALTHCHECK CMD to exec
   form (DL3025).
+- Updated `ticket_poll` skill docs: now correctly describe roster-first routing
+  (`component_request` preferred, direct board API as fallback) instead of the
+  outdated "bypass the component roster" / "no roster dependency" claims. (mill: Direct-path tools `ticket_poll`/`ticket_poll_batch` target wrong host (127.0.0.1:8077 instead of mill host) (20260730T130836Z-direct-path-tools-ticket-poll-ticket-pol-ca68))
 - **ticket_poll:** `ticket_poll` and `ticket_poll_batch` now route through the
   component roster (`component_request`) when available, falling back to the
   direct `board_api_base_url` only when the roster is unavailable. This fixes

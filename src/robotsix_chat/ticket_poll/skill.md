@@ -1,16 +1,17 @@
-# Ticket Poll — direct board-API ticket-state lookup
+# Ticket Poll — ticket-state lookup via the component roster
 
-You have `ticket_poll` and `ticket_poll_batch` tools that query the mill board API directly. These
-tools bypass the component roster and are always available when the board API URL is configured —
-use them as a fallback when `component_request` is unavailable or as an independent verification of
-ticket state.
+You have `ticket_poll` and `ticket_poll_batch` tools that query the mill board API. These tools
+route through `component_request` (roster-based connectivity) when available, falling back to the
+direct board API when the roster is unavailable — they are reliable as the primary path for
+checking ticket state.
 
 ## When to use it
 
-- **Primary fallback** — when `component_request` is not among your tools, `ticket_poll` is your
-  only way to check ticket state. Always try it before reporting that you cannot check ticket state.
-- **Independent verification** — even when `component_request` is available, you can use
-  `ticket_poll` as a second source to satisfy the terminal-state double-check requirement.
+- **Primary ticket-state check** — `ticket_poll` is your go-to tool for checking a ticket's current
+  state. It uses the same roster-based connectivity as `component_request` and is always preferred
+  for single-ticket lookups.
+- **Independent verification** — use `ticket_poll` as a second source (alongside
+  `component_request`) to satisfy the terminal-state double-check requirement.
 - **Periodic monitoring** — every monitor tick, call `ticket_poll` (or `component_request`) to
   live-GET the ticket state before reporting any change.
 - **Bulk triage** — use `ticket_poll_batch` to fetch full details (state, history, events, comments)
@@ -54,8 +55,9 @@ A JSON string with a `tickets` array. Each element has:
 ## Safety
 
 - **Read-only** — GET only; no state mutation is possible through these tools.
-- **No roster dependency** — queries the board API directly; does not require `component_request` or
-  the component roster to be available.
+- **Roster-first routing** — prefers the component roster (`component_request`) when available;
+  falls back to the direct board API when the roster is absent.  This means the tools share the
+  same connectivity path as `component_request` and are equally reliable.
 - **Timeout** — each request has a short timeout; failures are per-ticket (one down ticket won't
   break the batch).
 
