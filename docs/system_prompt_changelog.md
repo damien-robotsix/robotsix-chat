@@ -18,7 +18,7 @@ approval at the ticket and MR gates — adding latency and confusion. The new gu
 agent to recognise consent propagation: an operator who says "use this password and file/deploy this
 config change" has authorised the complete operation, and intermediate approval gates are redundant.
 
-**SHA256:** (recorded from the live `agent_instruction` default after merge; CI enforces the match)
+**SHA256:** `0bda2ad9a6fc6bdb8d02551b7694c9035c10a58a26cd3e332e613931dca2bb80`
 
 ______________________________________________________________________
 
