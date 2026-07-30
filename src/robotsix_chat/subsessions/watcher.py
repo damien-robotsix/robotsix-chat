@@ -1,11 +1,12 @@
-"""Background watcher that resumes paused periodic monitors.
+"""Background watcher that resumes paused and timeout-escalated periodic monitors.
 
 When a periodic subsession is auto-paused by ``max_idle_runs`` (closed
-with reason ``"paused"``), it stops ticking.  This module provides a
-lightweight asyncio task that periodically polls the mill for each
-paused monitor's ticket state.  When the ticket's ``state`` differs
-from the checkpoint's ``last_known_state``, the monitor is reopened
-and its worker re-spawned.
+with reason ``"paused"``) or auto-escalated while stuck in
+``human_issue_approval`` (closed with reason ``"human_approval_timeout"``),
+it stops ticking.  This module provides a lightweight asyncio task that
+periodically polls the mill for each such monitor's ticket state.  When the
+ticket's ``state`` differs from the checkpoint's ``last_known_state``, the
+monitor is reopened and its worker re-spawned.
 """
 
 from __future__ import annotations
@@ -77,7 +78,7 @@ async def _resume_paused_monitor(
     env: SubsessionEnv,
     sub_id: str,
 ) -> None:
-    """Reopen a paused monitor and re-spawn its worker task."""
+    """Reopen a paused/timeout monitor and re-spawn its worker task."""
     from .worker import _subsession_worker
 
     info = env.registry.reopen(sub_id)
@@ -85,7 +86,7 @@ async def _resume_paused_monitor(
         return
 
     logger.info(
-        "Watcher: resuming paused monitor %s (%s) — ticket state changed.",
+        "Watcher: resuming monitor %s (%s) — ticket state changed.",
         sub_id,
         info.title,
     )
@@ -98,7 +99,7 @@ async def _resume_paused_monitor(
 
 
 async def watch_paused_monitors(env: SubsessionEnv) -> None:
-    """Background task: poll paused monitors and resume on state change.
+    """Background task: poll auto-paused/timeout monitors and resume on state change.
 
     Runs forever — cancelled on server shutdown.  Must be started as an
     asyncio task after the server is ready (e.g. via the Starlette
@@ -175,7 +176,8 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                     await _resume_paused_monitor(env, info.id)
                 else:
                     logger.debug(
-                        "Watcher: subsession %s ticket %s still '%s' — keeping paused.",
+                        "Watcher: subsession %s ticket %s still '%s' — "
+                        "keeping closed.",
                         info.id,
                         ticket_id,
                         current_state,

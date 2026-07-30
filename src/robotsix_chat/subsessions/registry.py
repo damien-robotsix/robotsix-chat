@@ -642,12 +642,13 @@ class SubsessionRegistry:
         )
 
     def reopen(self, sub_id: str) -> SubsessionInfo | None:
-        """Transition a paused periodic subsession back to ``RUNNING``.
+        """Reopen a paused or human-approval-timeout periodic subsession.
 
-        Only reopens records whose status is ``CLOSED`` and
-        ``close_reason`` is ``"paused"`` — other terminal records are
-        left untouched.  Returns the updated record or ``None`` when the
-        subsession is unknown, not paused, or already active.
+        Accepts records whose status is ``CLOSED``, kind is ``PERIODIC``,
+        and ``close_reason`` is ``"paused"`` or ``"human_approval_timeout"``.
+        Other terminal records are left untouched.  Returns the updated
+        record or ``None`` when the subsession is unknown, not in a
+        reopenable state, or already active.
         """
         info = self._subs.get(sub_id)
         if info is None or info.is_active:
@@ -655,13 +656,17 @@ class SubsessionRegistry:
         if (
             info.status is not SubsessionStatus.CLOSED
             or info.kind is not SubsessionKind.PERIODIC
-            or info.close_reason != "paused"
+            or info.close_reason not in ("paused", "human_approval_timeout")
         ):
             return None
         info.status = SubsessionStatus.RUNNING
         info.last_activity_at = self._clock()
         info.close_reason = None
         info.summary = None
+        # Reset the human_approval_since timestamp so the reopened
+        # monitor does not immediately time out again.
+        if info.checkpoint is not None:
+            info.checkpoint.pop("human_approval_since", None)
         self._publish(
             info.owner_session_id,
             subsession_updated_frame(
@@ -676,17 +681,20 @@ class SubsessionRegistry:
         return info
 
     def find_paused_periodic(self) -> list[SubsessionInfo]:
-        """Return every paused periodic subsession (``CLOSED``, reason ``"paused"``).
+        """Return every auto-paused periodic subsession waiting for a state change.
 
-        These are monitors that were auto-paused by ``max_idle_runs``
-        and are waiting for a ticket-state change to resume.
+        Includes monitors closed with reason ``"paused"`` (auto-paused by
+        ``max_idle_runs``) and ``"human_approval_timeout"`` (auto-escalated
+        while stuck in ``human_issue_approval``).  Both are waiting for a
+        ticket-state change — typically a PR merge or an operator action —
+        before they can safely resume.
         """
         result: list[SubsessionInfo] = []
         for info in self._subs.values():
             if (
                 info.status is SubsessionStatus.CLOSED
                 and info.kind is SubsessionKind.PERIODIC
-                and info.close_reason == "paused"
+                and info.close_reason in ("paused", "human_approval_timeout")
             ):
                 result.append(info)
         return result

@@ -489,6 +489,8 @@ async def _check_resume_status(
         return (True, context)
 
     # Unchanged / open / in_progress → continue normally.
+    checkpoint["last_known_state"] = current_state_str
+    env.registry.update_checkpoint(sub_id, checkpoint)
     context = (
         f"[System note: this ticket monitor was restarted after a "
         f"service restart.  Ticket {ticket_id} state is "
