@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Fix hadolint violations in Dockerfile: use numeric UID (`USER 1000` instead of `USER app` for DL3066) and JSON form for HEALTHCHECK CMD (DL3025).
 - Extend auto-resume criteria to include fingerprint-guarded tickets where a working fix already exists despite an unchanged spec fingerprint (e.g. a PR with passing tests blocked on spec fingerprint). The assistant can now call resume-blocked with justification for this case without operator authorization.
 - Re-export `SftpSettings` from `robotsix_chat.config` package, following the existing convention where every settings model is importable from `robotsix_chat.config`.
 - Extract `_parse_json_body` helper in `github.py` routes, removing duplicated JSON body parsing logic from `_github_endpoint` and `github_repo_create_endpoint`
