@@ -645,7 +645,8 @@ class SubsessionRegistry:
         """Reopen a paused or human-approval-timeout periodic subsession.
 
         Accepts records whose status is ``CLOSED``, kind is ``PERIODIC``,
-        and ``close_reason`` is ``"paused"`` or ``"human_approval_timeout"``.
+        and ``close_reason`` is ``"paused"``, ``"human_approval_timeout"``,
+        or ``"pre_authorized_approval"``.
         Other terminal records are left untouched.  Returns the updated
         record or ``None`` when the subsession is unknown, not in a
         reopenable state, or already active.
@@ -656,7 +657,8 @@ class SubsessionRegistry:
         if (
             info.status is not SubsessionStatus.CLOSED
             or info.kind is not SubsessionKind.PERIODIC
-            or info.close_reason not in ("paused", "human_approval_timeout")
+            or info.close_reason
+            not in ("paused", "human_approval_timeout", "pre_authorized_approval")
         ):
             return None
         info.status = SubsessionStatus.RUNNING
@@ -684,17 +686,20 @@ class SubsessionRegistry:
         """Return every auto-paused periodic subsession waiting for a state change.
 
         Includes monitors closed with reason ``"paused"`` (auto-paused by
-        ``max_idle_runs``) and ``"human_approval_timeout"`` (auto-escalated
-        while stuck in ``human_issue_approval``).  Both are waiting for a
-        ticket-state change — typically a PR merge or an operator action —
-        before they can safely resume.
+        ``max_idle_runs``), ``"human_approval_timeout"`` (auto-escalated
+        while stuck in ``human_issue_approval``), and
+        ``"pre_authorized_approval"`` (immediately escalated for
+        pre-authorized tickets).  All three are waiting for a ticket-state
+        change — typically a PR merge or an operator action — before they
+        can safely resume.
         """
         result: list[SubsessionInfo] = []
         for info in self._subs.values():
             if (
                 info.status is SubsessionStatus.CLOSED
                 and info.kind is SubsessionKind.PERIODIC
-                and info.close_reason in ("paused", "human_approval_timeout")
+                and info.close_reason
+                in ("paused", "human_approval_timeout", "pre_authorized_approval")
             ):
                 result.append(info)
         return result

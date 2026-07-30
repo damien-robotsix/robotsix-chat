@@ -642,6 +642,21 @@ def _build_periodic_input(
         "normally (the fix is confirmed effective).\n"
         "Call complete_subsession only after all three checks are complete."
     )
+    parts.append(
+        "CRITICAL — checkpoint PR tracking: whenever you detect or create "
+        "a PR associated with the monitored ticket (via open_direct_repo_pr "
+        "or by querying the GitHub API), store the PR number and repository "
+        "in this subsession's checkpoint using set_checkpoint with "
+        "'pr_number' (int) and 'repo_full_name' (str, e.g. "
+        "'owner/repo').  Include the existing checkpoint fields "
+        "(ticket_id, last_known_state, human_approval_since) alongside "
+        "the new PR fields — the checkpoint is replaced wholesale.  "
+        "This enables the background watcher to detect PR merges and "
+        "auto-resume the monitor after a merge event, even when the "
+        "board ticket state has not yet been updated.  If you previously "
+        "created a PR and it was later merged or closed, update the "
+        "checkpoint to remove stale PR information."
+    )
     return "\n\n".join(parts)
 
 

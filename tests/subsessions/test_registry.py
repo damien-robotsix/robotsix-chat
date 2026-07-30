@@ -1281,3 +1281,46 @@ def test_find_paused_periodic_empty_when_no_paused() -> None:
     _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
 
     assert registry.find_paused_periodic() == []
+
+
+def test_find_paused_periodic_includes_pre_authorized_approval() -> None:
+    """``pre_authorized_approval`` monitors are included in the paused set."""
+    registry = SubsessionRegistry(store_path=None)
+    p = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        title="pre-auth-monitor",
+    )
+    registry.mark_closed(
+        p.id,
+        summary="pre-authorized escalation",
+        reason="pre_authorized_approval",
+        closed_by="system",
+    )
+    paused = registry.find_paused_periodic()
+    assert len(paused) == 1
+    assert paused[0].id == p.id
+
+
+def test_reopen_pre_authorized_approval() -> None:
+    """``reopen`` transitions a ``pre_authorized_approval`` subsession to RUNNING."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        title="pre-auth-monitor",
+    )
+    registry.mark_closed(
+        info.id,
+        summary="pre-authorized escalation",
+        reason="pre_authorized_approval",
+        closed_by="system",
+    )
+    reopened = registry.reopen(info.id)
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.RUNNING
+    assert reopened.close_reason is None
+    # Second reopen is a no-op (already active).
+    assert registry.reopen(info.id) is None
