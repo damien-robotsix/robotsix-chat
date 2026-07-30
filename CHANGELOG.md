@@ -76,6 +76,7 @@
   scanning. The active-plan template receives the same treatment. This prevents the
   assistant from listing individual subsession outcomes when multiple complete in
   the same compaction cycle.)
+- Removed stale `github_security.timeout` and `github_actions.timeout` doc entries from `docs/configuration.md` (fields were removed from the models in a prior PR and silently stripped by legacy validators). (mill: Remove stale timeout doc entries from GitHub Security and GitHub Actions sections in docs/configuration.md (20260730T074059Z-remove-stale-timeout-doc-entries-from-gi-35fa))
 - Extend auto-resume criteria to include fingerprint-guarded tickets where a working fix already exists despite an unchanged spec fingerprint (e.g. a PR with passing tests blocked on spec fingerprint). The assistant can now call resume-blocked with justification for this case without operator authorization.
 - `fetch_public_url` now supports fleet-auth Basic Auth credential injection for operator-configured hosts. Hosts listed in `public_fetch.fleet_auth.auth_hosts` receive a server-side `Authorization` header (never exposed to the agent) and bypass the SSRF and domain-allowlist checks, allowing the agent to inspect authenticated fleet UIs directly.
 - Re-export `SftpSettings` from `robotsix_chat.config` package, following the existing convention where every settings model is importable from `robotsix_chat.config`.
