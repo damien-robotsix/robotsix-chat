@@ -54,7 +54,7 @@ def build_direct_repo_tools(
     if not settings.enabled:
         return []
 
-    from .client import DirectRepoClient
+    from .client import DirectRepoClient, _count_cycles_from_data
 
     client = DirectRepoClient(settings)
 
@@ -147,73 +147,109 @@ def build_direct_repo_tools(
                 f"non-JSON response body"
             )
 
-    async def _get_implement_cycles_via_component(
-        component_req: Callable[..., Any],
+    async def _check_blocked_exhausted(
+        client: DirectRepoClient,
         ticket_id: str,
-    ) -> int | None:
-        """Count implement cycles via *component_req*; return count or None.
+        repo_full_name: str,
+    ) -> tuple[str | None, int]:
+        """Verify BLOCKED state + scope and count implement cycles in one API call.
 
-        Mirrors :meth:`DirectRepoClient.count_implement_cycles` but uses the
-        roster-based connectivity path so cycle-counting succeeds when the
-        direct ``board_api_base_url`` path is unreachable.
+        Fetches ticket data ONCE via the same connectivity path used by
+        ``_assert_blocked_and_scoped``, then extracts both the ``state``
+        field and the implement-cycle count from the single response.
+        This eliminates the second API round-trip that previously caused
+        spurious "could not fetch ticket data" failures when the cycle
+        count fetch hit a different (unreachable) path.
 
-        The underlying component_request call is retried up to 3 times with
-        exponential backoff to absorb transient board-API connectivity issues.
+        Returns ``(None, cycles)`` when all preconditions pass, or
+        ``(error_message, 0)`` when a precondition fails.  The *cycles*
+        value is only meaningful when *error* is ``None``.
         """
-        resp = await _retry_component_ticket_fetch(component_req, ticket_id)
-        if resp.startswith("Error:"):
-            return None
-        try:
-            newline = resp.index("\n")
-            status_line = resp[:newline]
-            body_str = resp[newline + 1 :]
-        except ValueError:
-            return None
-        if not status_line.startswith("HTTP "):
-            return None
-        try:
-            status_code = int(status_line.split()[1])
-        except IndexError, ValueError:
-            return None
-        if status_code >= 400:
-            return None
-        try:
-            data = json.loads(body_str)
-        except json.JSONDecodeError, TypeError:
-            return None
+        # --- scope check: skipped when mill pipeline credential available ---
+        if component_request is None and (
+            scope_error := await client.check_installation_scope(repo_full_name)
+        ):
+            return scope_error, 0
 
-        # 1. Try the events array
-        events: list[dict[str, Any]] = data.get("events", [])
-        if events:
-            count = 0
-            for ev in events:
-                if not isinstance(ev, dict):
-                    continue
-                event_type = str(ev.get("type", ev.get("action", ""))).lower()
-                if "implement" in event_type:
-                    count += 1
-            return count
+        # --- single API call for state + cycles ---
+        if component_request is not None:
+            resp = await component_request("mill", "GET", f"/tickets/{ticket_id}")
+            if resp.startswith("Error:"):
+                return (
+                    f"Error: could not fetch ticket data for {ticket_id} "
+                    f"via component_request (roster-based board connectivity): "
+                    f"{resp}",
+                    0,
+                )
+            try:
+                newline = resp.index("\n")
+                status_line = resp[:newline]
+                body_str = resp[newline + 1 :]
+            except ValueError:
+                return (
+                    f"Error: could not parse component_request response for "
+                    f"ticket {ticket_id} (no status line)",
+                    0,
+                )
+            if not status_line.startswith("HTTP "):
+                return (
+                    f"Error: unexpected component_request response for "
+                    f"ticket {ticket_id}: {status_line!r}",
+                    0,
+                )
+            try:
+                status_code = int(status_line.split()[1])
+            except IndexError, ValueError:
+                return (
+                    f"Error: unparsable HTTP status in component_request "
+                    f"response for ticket {ticket_id}: {status_line!r}",
+                    0,
+                )
+            if status_code >= 400:
+                return (
+                    f"Error: board API returned HTTP {status_code} for "
+                    f"ticket {ticket_id} via component_request",
+                    0,
+                )
+            try:
+                data = json.loads(body_str)
+            except json.JSONDecodeError, TypeError:
+                return (
+                    f"Error: non-JSON response for ticket {ticket_id} "
+                    f"via component_request",
+                    0,
+                )
+            state: str | None = data.get("state")
+            cycles = _count_cycles_from_data(data)
+        else:
+            data = await client.get_ticket_data(ticket_id)
+            if data is None:
+                board_url = client._s.board_api_base_url.rstrip("/")
+                return (
+                    f"Error: could not fetch ticket data for {ticket_id}. "
+                    f"Verify the ticket id and board API connectivity "
+                    f"(tried {board_url}/tickets/{ticket_id}).",
+                    0,
+                )
+            state = data.get("state")
+            cycles = _count_cycles_from_data(data)
 
-        # 2. Fall back to state-transition history
-        history: list[dict[str, Any]] = data.get("history", [])
-        if history:
-            count = 0
-            for entry in history:
-                if not isinstance(entry, dict):
-                    continue
-                st = str(entry.get("state", entry.get("to", ""))).lower()
-                act = str(entry.get("action", entry.get("type", ""))).lower()
-                if "implement_complete" in st or "implement" in act:
-                    count += 1
-            return count
+        # --- state check ---
+        if state is None:
+            return (
+                f"Error: ticket {ticket_id} data did not contain a state "
+                "field (response was received but is missing required "
+                "fields — the ticket may not exist or may be malformed).",
+                0,
+            )
+        if state.upper() != "BLOCKED":
+            return (
+                f"Refused: ticket {ticket_id} is in state '{state}', not BLOCKED. "
+                "Direct-repo actions are only permitted for BLOCKED tickets.",
+                0,
+            )
 
-        # 3. No events/history — try a direct cycle_count field
-        cycle_count = data.get("cycle_count")
-        if isinstance(cycle_count, int):
-            return cycle_count
-
-        # 4. Can't determine — return 0
-        return 0
+        return None, cycles
 
     async def _assert_blocked_and_scoped(
         client: DirectRepoClient,
@@ -943,30 +979,13 @@ def build_direct_repo_tools(
                 ):
                     f["content"] = f["content"] + "\n"
 
-            # --- guard 1+2: BLOCKED + scope ---
-            if error := await _assert_blocked_and_scoped(
+            # --- guard 1+2+3: BLOCKED + scope + ≥3 implement cycles (single API call) ---  # noqa: E501
+            error, cycles = await _check_blocked_exhausted(
                 client, ticket_id, repo_full_name
-            ):
+            )
+            if error is not None:
                 return error
 
-            # --- guard 3: ≥3 implement cycles ---
-            if component_request is not None:
-                cycles = await _get_implement_cycles_via_component(
-                    component_request, ticket_id
-                )
-                # Fall back to the direct board-API client when the
-                # roster-based (component_request) path fails, so a
-                # transient connectivity issue on one path does not
-                # hard-fail the entire tool invocation.
-                if cycles is None:
-                    cycles = await client.count_implement_cycles(ticket_id)
-            else:
-                cycles = await client.count_implement_cycles(ticket_id)
-            if cycles is None:
-                return (
-                    f"Error: could not fetch ticket data for {ticket_id}. "
-                    "Verify the ticket id and board API connectivity."
-                )
             if cycles < 3:
                 return (
                     f"Refused: ticket {ticket_id} has only {cycles} implement "
@@ -1071,30 +1090,13 @@ def build_direct_repo_tools(
             """
             _logger = logging.getLogger(__name__)
 
-            # --- guard 1+2: BLOCKED + scope ---
-            if error := await _assert_blocked_and_scoped(
+            # --- guard 1+2+3: BLOCKED + scope + ≥3 implement cycles (single API call) ---  # noqa: E501
+            error, cycles = await _check_blocked_exhausted(
                 client, ticket_id, repo_full_name
-            ):
+            )
+            if error is not None:
                 return error
 
-            # --- guard 3: ≥3 implement cycles ---
-            if component_request is not None:
-                cycles = await _get_implement_cycles_via_component(
-                    component_request, ticket_id
-                )
-                # Fall back to the direct board-API client when the
-                # roster-based (component_request) path fails, so a
-                # transient connectivity issue on one path does not
-                # hard-fail the entire tool invocation.
-                if cycles is None:
-                    cycles = await client.count_implement_cycles(ticket_id)
-            else:
-                cycles = await client.count_implement_cycles(ticket_id)
-            if cycles is None:
-                return (
-                    f"Error: could not fetch ticket data for {ticket_id}. "
-                    "Verify the ticket id and board API connectivity."
-                )
             if cycles < 3:
                 return (
                     f"Refused: ticket {ticket_id} has only {cycles} implement "
