@@ -191,6 +191,7 @@ modules:
       - src/robotsix_chat/common/json_store.py
       - tests/common/__init__.py
       - tests/common/subsession_fakes.py
+      - tests/common/test_github_auth.py
       - tests/common/test_http.py
       - tests/common/test_json_store.py
       - tests/common/test_hypothesis_json_store.py
