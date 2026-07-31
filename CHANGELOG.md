@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Fix `patch_direct_repo_file` / `direct_fix` connectivity and cycle-count gate: the roster-based board-API path now uses retries with exponential backoff and falls back to the direct API; resume/unblock events are counted as evidence of prior exhaustion so the ≥3-cycle gate survives a resume-blocked reset.
+- Deduplicate auto-pause notices in periodic subsessions: when a second monitor for the same ticket auto-pauses or auto-stops after the first already reported the no-change/terminal outcome, the second notice is suppressed before reaching the LLM, eliminating redundant "no change" reaction turns.
 - Add CI workflow convention rule: never commit pre-compiled tool binaries to the repository; add them to `.gitignore` instead of registering them as module paths.
 - Added a contributor-side convention: every settings model in `src/robotsix_chat/config/models.py` must have a matching `###` section in `docs/configuration.md` (under `## Settings reference`), kept in the same PR.
 - Add "Halt and Re-scope" workflow to system prompt: when the agent detects a policy violation, it now immediately halts and presents structured compliant alternatives with one-click actions to close superseded work, condensing a 4–5 turn resolution into 1–2 turns.
