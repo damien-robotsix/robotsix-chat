@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Extract shared `_retry_with_kuzu_heal` helper in `CogneeMemory`, deduplicating the 13-line retry-with-self-heal pattern from `_recall_core` and `_remember_core`.
 - Add `merge_pr` tool to `DirectRepoClient` and the direct-repo agent tools,
   allowing the agent to merge PRs via the GitHub API (PUT merge endpoint).
   The tool is gated on the same BLOCKED-ticket precondition as other
