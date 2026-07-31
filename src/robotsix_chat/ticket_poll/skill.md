@@ -67,7 +67,12 @@ board API on any failure.
 
 ## Safety
 
-- **Read-only** — GET only; no state mutation is possible through these tools.
+- **`ticket_poll` / `ticket_poll_batch` are read-only** — GET only; no state mutation is possible
+  through these two tools.
+- **`merge_pull_request` is mutating** — it issues a POST that merges the approved PR associated
+  with a ticket.  Only call it when the ticket is in `waiting_auto_merge` or `human_mr_approval`
+  state and the associated PR has been approved by a human reviewer.  Do not call it speculatively
+  or for tickets in other states.
 - **Roster-first routing** — prefers the component roster (`component_request`) when available;
   falls back to the direct board API when the roster is absent. This means the tools share the same
   connectivity path as `component_request` and are equally reliable.
