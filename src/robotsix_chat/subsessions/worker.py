@@ -1020,7 +1020,11 @@ async def _run_periodic_turn(
             sub_id,
             consecutive_no_change,
         )
-        summary = f"Auto-paused after {idle_cap} consecutive no-change runs."
+        summary = (
+            f"Auto-paused after {idle_cap} consecutive no-change runs. "
+            f"The monitor will resume when the ticket state changes or "
+            f"when you report progress — no action needed until then."
+        )
         closed = registry.mark_closed(
             sub_id,
             summary=summary,

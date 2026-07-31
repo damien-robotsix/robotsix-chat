@@ -422,7 +422,11 @@ async def test_periodic_max_idle_runs_pauses_after_consecutive_no_change() -> No
     assert info is not None
     assert info.status is SubsessionStatus.CLOSED
     assert info.close_reason == "paused"
-    assert info.summary == "Auto-paused after 3 consecutive no-change runs."
+    assert info.summary == (
+        "Auto-paused after 3 consecutive no-change runs. "
+        "The monitor will resume when the ticket state changes or "
+        "when you report progress — no action needed until then."
+    )
     assert len(agent.calls) == 3
 
 
