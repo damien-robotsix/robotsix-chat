@@ -104,7 +104,7 @@ ARG APP_GID=1000
 RUN groupadd --gid ${APP_GID} app \
     && useradd --create-home --uid ${APP_UID} --gid ${APP_GID} app
 WORKDIR /home/app
-# hadolint ignore=DL3066 — APP_UID is parameterized for local builds
+# hadolint ignore=DL3066
 USER app
 
 # Cache the HuggingFace tokenizer (bge-m3) on the persistent /data mount so
