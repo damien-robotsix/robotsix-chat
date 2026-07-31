@@ -93,7 +93,7 @@ def build_direct_repo_tools(
             )
         try:
             status_code = int(status_line.split()[1])
-        except (IndexError, ValueError):
+        except IndexError, ValueError:
             return None, (
                 f"Error: could not determine state for ticket {ticket_id} "
                 f"via component_request (roster-based board connectivity): "
@@ -109,7 +109,7 @@ def build_direct_repo_tools(
             data = json.loads(body_str)
             state: str | None = data.get("state")
             return state, None
-        except (json.JSONDecodeError, TypeError):
+        except json.JSONDecodeError, TypeError:
             return None, (
                 f"Error: could not determine state for ticket {ticket_id} "
                 f"via component_request (roster-based board connectivity): "
