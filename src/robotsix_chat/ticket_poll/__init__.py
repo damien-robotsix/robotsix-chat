@@ -1,4 +1,4 @@
-"""Ticket poll tools for querying the mill board API.
+"""Mill board API tools — ticket polling and PR merging.
 
 Routes through ``component_request`` (roster-based connectivity) when
 available, falling back to the direct ``board_api_base_url`` otherwise.
@@ -7,7 +7,14 @@ Provides ``ticket_poll(ticket_id)`` and ``ticket_poll_batch(ticket_ids)`` —
 dedicated tools that return ticket state and full data for single-ticket
 polling and bulk read-only triage respectively.
 
-Exposes :func:`build_ticket_poll_tools` — a factory returning the LLM tools.
+Also provides ``merge_pull_request(ticket_id)`` — a dedicated merge tool
+that calls ``POST /tickets/{id}/merge-now`` on the mill board API to merge
+approved PRs/MRs.  Prefer this over the generic ``component_request`` when
+merging PRs for tickets in ``waiting_auto_merge`` or ``human_mr_approval``
+state.
+
+Exposes :func:`build_ticket_poll_tools` and
+:func:`build_merge_pull_request_tool` — factories returning the LLM tools.
 Returns no tools when neither ``component_request`` nor
 ``board_api_base_url`` are available.  Also exposes
 :func:`load_ticket_poll_skill` which returns the component skill markdown
@@ -29,7 +36,11 @@ from robotsix_http import RetryClient, RetryConfig
 if TYPE_CHECKING:
     from robotsix_chat.config import Settings
 
-__all__ = ["build_ticket_poll_tools", "load_ticket_poll_skill"]
+__all__ = [
+    "build_merge_pull_request_tool",
+    "build_ticket_poll_tools",
+    "load_ticket_poll_skill",
+]
 
 logger = logging.getLogger(__name__)
 
@@ -68,6 +79,117 @@ def load_ticket_poll_skill() -> str:
         return skill_path.read_text(encoding="utf-8")
     except FileNotFoundError:
         return ""
+
+
+def build_merge_pull_request_tool(
+    settings: Settings,
+    *,
+    component_request: Callable[..., Any] | None = None,
+) -> list[Callable[..., Any]]:
+    """Return the ``merge_pull_request`` tool.
+
+    The tool calls the mill board's ``POST /tickets/{id}/merge-now`` endpoint
+    to merge the approved PR/MR associated with a ticket.  It routes through
+    *component_request* (roster-based connectivity) when available, falling
+    back to the direct ``board_api_base_url`` otherwise.
+
+    Use this tool when a ticket is in ``waiting_auto_merge`` or
+    ``human_mr_approval`` state and the associated PR has been approved —
+    it is the primary path for merging approved MRs across the robotsix
+    fleet.
+
+    Args:
+        settings: Full application settings.
+        component_request: The roster-based request callable, or ``None``
+            when the component roster is unavailable.
+
+    Returns:
+        A one-element list containing the ``merge_pull_request`` async
+        callable, or ``[]`` when neither *component_request* nor
+        ``board_api_base_url`` are available.
+
+    """
+    board_url = settings.direct_repo.board_api_base_url.strip()
+    if not component_request and not board_url:
+        return []
+
+    board_url = board_url.rstrip("/") if board_url else ""
+    board_token = settings.direct_repo.board_api_token.get_secret_value()
+    timeout = settings.direct_repo.timeout
+
+    async def merge_pull_request(ticket_id: str) -> str:
+        """Merge the pull request associated with a ticket.
+
+        Calls the mill board's merge-now endpoint to merge the approved
+        PR/MR for the given ticket.  Use this when a ticket is in
+        ``waiting_auto_merge`` or ``human_mr_approval`` state and the
+        associated PR has been approved by a human reviewer.
+
+        This is a dedicated merge tool — prefer it over the generic
+        ``component_request`` for merging PRs.  The tool routes through
+        the component roster when available, falling back to the direct
+        board API.
+
+        Args:
+            ticket_id: The ticket ID whose associated PR should be merged.
+
+        Returns:
+            A status message from the mill API — success confirmation or
+            an error describing why the merge failed (e.g. the PR is not
+            approved, conflicts exist, or required status checks have not
+            passed).
+
+        """
+        # Try component_request (roster-based) first.
+        if component_request is not None:
+            resp = await component_request(
+                "mill", "POST", f"/tickets/{ticket_id}/merge-now"
+            )
+            if not resp.startswith("Error:"):
+                return str(resp)
+            logger.info(
+                "merge_pull_request: roster path failed for %s; "
+                "falling back to direct board API",
+                ticket_id,
+            )
+
+        # Direct fallback via board API.
+        url = f"{board_url}/tickets/{ticket_id}/merge-now"
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if board_token:
+            headers["Authorization"] = f"Bearer {board_token}"
+
+        try:
+            async with httpx.AsyncClient(timeout=timeout) as client:
+                retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
+                response = await retry_client.post(url, headers=headers)
+                try:
+                    body = response.json()
+                    body_str = json.dumps(body)
+                except Exception:
+                    body_str = response.text
+                return f"HTTP {response.status_code}\n{body_str}"
+        except httpx.HTTPStatusError as exc:
+            try:
+                body = exc.response.json()
+                body_str = json.dumps(body)
+            except Exception:
+                body_str = exc.response.text
+            return f"HTTP {exc.response.status_code}\n{body_str}"
+        except httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException:
+            return (
+                f"Error merging PR for ticket {ticket_id}: "
+                f"board API request timed out after {timeout}s"
+            )
+        except Exception as exc:
+            logger.warning(
+                "merge_pull_request direct path failed for %s: %s",
+                ticket_id,
+                exc,
+            )
+            return f"Error merging PR for ticket {ticket_id}: {exc}"
+
+    return [merge_pull_request]
 
 
 def build_ticket_poll_tools(

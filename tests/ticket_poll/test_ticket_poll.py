@@ -15,7 +15,11 @@ import pytest
 import respx
 
 from robotsix_chat.config import DirectRepoSettings, Settings
-from robotsix_chat.ticket_poll import build_ticket_poll_tools, load_ticket_poll_skill
+from robotsix_chat.ticket_poll import (
+    build_merge_pull_request_tool,
+    build_ticket_poll_tools,
+    load_ticket_poll_skill,
+)
 
 
 def _settings(**kw: Any) -> Settings:
@@ -524,3 +528,220 @@ async def test_ticket_poll_batch_json_decode_failure(
     assert ticket["state"] is None
     assert ticket["data"] is None
     assert "Non-JSON" in ticket["error"]
+
+
+# ---------------------------------------------------------------------------
+# build_merge_pull_request_tool
+# ---------------------------------------------------------------------------
+
+
+def test_merge_tool_empty_config_returns_empty_list() -> None:
+    """Neither component_request nor board_api_base_url → empty list."""
+    tools = build_merge_pull_request_tool(
+        Settings(direct_repo=DirectRepoSettings(board_api_base_url=""))
+    )
+    assert tools == []
+
+
+def test_merge_tool_configured_returns_one_tool() -> None:
+    """When board_api_base_url is set, returns merge_pull_request."""
+    tools = build_merge_pull_request_tool(_settings())
+    assert len(tools) == 1
+    assert tools[0].__name__ == "merge_pull_request"
+
+
+@pytest.mark.asyncio
+async def test_merge_pull_request_roster_first_success() -> None:
+    """When component_request succeeds, return its response directly."""
+
+    async def _req(component: str, method: str, path: str) -> str:
+        return "HTTP 200 OK\n" + json.dumps({"status": "merged", "sha": "abc123"})
+
+    tools = build_merge_pull_request_tool(
+        _settings(),
+        component_request=_req,
+    )
+    result = await tools[0]("mr-roster")
+
+    assert "HTTP 200" in result
+    assert "merged" in result
+    assert "abc123" in result
+
+
+@pytest.mark.asyncio
+async def test_merge_pull_request_roster_falls_back_to_direct(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When roster path returns an error, fall back to direct POST."""
+    route = respx_mock.post("http://board:8077/tickets/mr-fallback/merge-now").mock(
+        return_value=httpx.Response(200, json={"status": "merged_from_direct"})
+    )
+
+    tools = build_merge_pull_request_tool(
+        _settings(),
+        component_request=_component_request_error("Error: connection refused"),
+    )
+    result = await tools[0]("mr-fallback")
+
+    assert route.called
+    assert "merged_from_direct" in result
+
+
+@pytest.mark.asyncio
+async def test_merge_pull_request_direct_only(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Without component_request, the direct POST path works."""
+    route = respx_mock.post("http://board:8077/tickets/mr-direct/merge-now").mock(
+        return_value=httpx.Response(200, json={"status": "merged"})
+    )
+
+    tools = build_merge_pull_request_tool(_settings())
+    result = await tools[0]("mr-direct")
+
+    assert route.called
+    assert "merged" in result
+
+
+@pytest.mark.asyncio
+async def test_merge_pull_request_with_auth_token(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Auth token is sent as Bearer in the Authorization header."""
+    route = respx_mock.post("http://board:8077/tickets/mr-auth/merge-now").mock(
+        return_value=httpx.Response(200, json={"status": "merged"})
+    )
+
+    tools = build_merge_pull_request_tool(
+        _settings(board_api_token="merge-token"),
+    )
+    await tools[0]("mr-auth")
+
+    assert route.called
+    request_headers = route.calls.last.request.headers
+    assert request_headers["Authorization"] == "Bearer merge-token"
+
+
+@pytest.mark.asyncio
+async def test_merge_pull_request_strips_trailing_slash(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Trailing slash on board_api_base_url is stripped correctly."""
+    route = respx_mock.post("http://board:8077/tickets/mr-slash/merge-now").mock(
+        return_value=httpx.Response(200, json={"status": "merged"})
+    )
+
+    tools = build_merge_pull_request_tool(
+        _settings(board_api_base_url="http://board:8077/")
+    )
+    await tools[0]("mr-slash")
+
+    assert route.called
+
+
+# ---------------------------------------------------------------------------
+# merge_pull_request — HTTP error responses
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_merge_pull_request_http_404(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """HTTP 404 → error message includes the status code."""
+    respx_mock.post("http://board:8077/tickets/mr-404/merge-now").mock(
+        return_value=httpx.Response(404, json={"detail": "Not found"})
+    )
+
+    tools = build_merge_pull_request_tool(_settings())
+    result = await tools[0]("mr-404")
+
+    assert "404" in result
+    assert "Not found" in result
+
+
+@pytest.mark.asyncio
+async def test_merge_pull_request_http_500(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """HTTP 500 → error message includes the status code."""
+    respx_mock.post("http://board:8077/tickets/mr-500/merge-now").mock(
+        return_value=httpx.Response(500, text="Internal Server Error")
+    )
+
+    tools = build_merge_pull_request_tool(_settings())
+    result = await tools[0]("mr-500")
+
+    assert "500" in result
+
+
+@pytest.mark.asyncio
+async def test_merge_pull_request_http_status_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """HTTPStatusError (raise_for_status) → error with status code."""
+    respx_mock.post("http://board:8077/tickets/mr-status-err/merge-now").mock(
+        return_value=httpx.Response(
+            409, json={"detail": "PR is not in a mergeable state"}
+        )
+    )
+
+    tools = build_merge_pull_request_tool(_settings())
+    result = await tools[0]("mr-status-err")
+
+    assert "409" in result
+    assert "mergeable" in result.lower()
+
+
+# ---------------------------------------------------------------------------
+# merge_pull_request — network / transport errors
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_merge_pull_request_timeout(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Timeout → error message mentions the ticket ID and timeout."""
+    respx_mock.post("http://board:8077/tickets/mr-timeout/merge-now").mock(
+        side_effect=httpx.TimeoutException("timed out")
+    )
+
+    tools = build_merge_pull_request_tool(_settings())
+    result = await tools[0]("mr-timeout")
+
+    assert "mr-timeout" in result
+    assert "timed out" in result.lower()
+    assert "10.0s" in result
+
+
+@pytest.mark.asyncio
+async def test_merge_pull_request_connect_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """ConnectError → error message mentions the ticket ID and timeout."""
+    respx_mock.post("http://board:8077/tickets/mr-connfail/merge-now").mock(
+        side_effect=httpx.ConnectError("connection refused")
+    )
+
+    tools = build_merge_pull_request_tool(_settings())
+    result = await tools[0]("mr-connfail")
+
+    assert "mr-connfail" in result
+    assert "timed out" in result.lower()
+
+
+@pytest.mark.asyncio
+async def test_merge_pull_request_unexpected_exception(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Unexpected exceptions → error with ticket ID and exception message."""
+    respx_mock.post("http://board:8077/tickets/mr-uex/merge-now").mock(
+        side_effect=RuntimeError("something exploded")
+    )
+
+    tools = build_merge_pull_request_tool(_settings())
+    result = await tools[0]("mr-uex")
+
+    assert "mr-uex" in result
+    assert "something exploded" in result
