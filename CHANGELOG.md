@@ -1,6 +1,6 @@
 ## 0.0.0 (unreleased)
 
-<<<<<<< HEAD
+- `direct_fix` and `patch_direct_repo_file` now use the component-request roster path for implement-cycle counting when `component_request` is available, matching the fallback already used for ticket-state verification.  Fixes failures where the direct board API was unreachable but the roster-based path worked.
 - Fix hadolint violations in Dockerfile: use numeric UID (`USER 1000` instead of `USER app` for DL3066) and JSON form for HEALTHCHECK CMD (DL3025).
 - Fix hadolint warnings in Dockerfile: suppress DL3066 on ``uv pip install``
   (versions are pinned via ``uv.lock``) and convert HEALTHCHECK CMD to exec

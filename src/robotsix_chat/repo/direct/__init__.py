@@ -114,6 +114,71 @@ def build_direct_repo_tools(
                 f"non-JSON response body"
             )
 
+    async def _get_implement_cycles_via_component(
+        component_req: Callable[..., Any],
+        ticket_id: str,
+    ) -> int | None:
+        """Count implement cycles via *component_req*; return count or None.
+
+        Mirrors :meth:`DirectRepoClient.count_implement_cycles` but uses the
+        roster-based connectivity path so cycle-counting succeeds when the
+        direct ``board_api_base_url`` path is unreachable.
+        """
+        resp = await component_req("mill", "GET", f"/tickets/{ticket_id}")
+        if resp.startswith("Error:"):
+            return None
+        try:
+            newline = resp.index("\n")
+            status_line = resp[:newline]
+            body_str = resp[newline + 1 :]
+        except ValueError:
+            return None
+        if not status_line.startswith("HTTP "):
+            return None
+        try:
+            status_code = int(status_line.split()[1])
+        except IndexError, ValueError:
+            return None
+        if status_code >= 400:
+            return None
+        try:
+            data = json.loads(body_str)
+        except json.JSONDecodeError, TypeError:
+            return None
+
+        # 1. Try the events array
+        events: list[dict[str, Any]] = data.get("events", [])
+        if events:
+            count = 0
+            for ev in events:
+                if not isinstance(ev, dict):
+                    continue
+                event_type = str(ev.get("type", ev.get("action", ""))).lower()
+                if "implement" in event_type:
+                    count += 1
+            return count
+
+        # 2. Fall back to state-transition history
+        history: list[dict[str, Any]] = data.get("history", [])
+        if history:
+            count = 0
+            for entry in history:
+                if not isinstance(entry, dict):
+                    continue
+                st = str(entry.get("state", entry.get("to", ""))).lower()
+                act = str(entry.get("action", entry.get("type", ""))).lower()
+                if "implement_complete" in st or "implement" in act:
+                    count += 1
+            return count
+
+        # 3. No events/history — try a direct cycle_count field
+        cycle_count = data.get("cycle_count")
+        if isinstance(cycle_count, int):
+            return cycle_count
+
+        # 4. Can't determine — return 0
+        return 0
+
     async def _delete_artifact_via_component(
         component_req: Callable[..., Any],
         ticket_id: str,
@@ -693,7 +758,12 @@ def build_direct_repo_tools(
                 return error
 
             # --- guard 3: ≥3 implement cycles ---
-            cycles = await client.count_implement_cycles(ticket_id)
+            if component_request is not None:
+                cycles = await _get_implement_cycles_via_component(
+                    component_request, ticket_id
+                )
+            else:
+                cycles = await client.count_implement_cycles(ticket_id)
             if cycles is None:
                 return (
                     f"Error: could not fetch ticket data for {ticket_id}. "
@@ -807,7 +877,12 @@ def build_direct_repo_tools(
                 return error
 
             # --- guard 3: ≥3 implement cycles ---
-            cycles = await client.count_implement_cycles(ticket_id)
+            if component_request is not None:
+                cycles = await _get_implement_cycles_via_component(
+                    component_request, ticket_id
+                )
+            else:
+                cycles = await client.count_implement_cycles(ticket_id)
             if cycles is None:
                 return (
                     f"Error: could not fetch ticket data for {ticket_id}. "
