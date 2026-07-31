@@ -262,6 +262,30 @@ class MessageCoalescer:
             # message_id not found in the batch.
             return {"cancelled": 0, "processing": True}
 
+    async def close(self, *, timeout: float = 5.0) -> None:
+        """Cancel and drain all in-flight processor tasks.
+
+        Called during graceful shutdown so pending agent runs are not
+        abandoned — avoids "Task was destroyed but it is pending" warnings
+        and gives each run a bounded window to persist its store record
+        and finish its trace before the event loop tears down.
+
+        *timeout* caps the total drain wait (matches uvicorn's
+        ``timeout_graceful_shutdown`` default).
+        """
+        if not self._background_tasks:
+            return
+        for task in self._background_tasks:
+            task.cancel()
+        _, _pending = await asyncio.wait(
+            self._background_tasks,
+            timeout=timeout,
+            return_when=asyncio.ALL_COMPLETED,
+        )
+        # Any task still pending after the timeout is truly abandoned —
+        # the event loop is about to tear down regardless.
+        self._background_tasks.clear()
+
     async def _process_batch(
         self,
         session_id: str,
