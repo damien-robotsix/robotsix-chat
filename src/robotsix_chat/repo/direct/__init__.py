@@ -64,6 +64,7 @@ def load_direct_repo_skill() -> str:
     except OSError:
         return ""
 
+
 logger = logging.getLogger(__name__)
 
 
