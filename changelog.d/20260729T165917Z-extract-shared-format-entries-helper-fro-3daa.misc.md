@@ -1,0 +1,1 @@
+Extract shared _format_entries helper from duplicated formatting loop in list_knowledge_notes and search_knowledge_notes
