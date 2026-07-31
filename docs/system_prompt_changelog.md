@@ -3,22 +3,6 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
-## v73 — 2026-07-30 — ticket-description-append-does-not-change-fingerprint-ca44
-
-**Summary:** Clarified that the ticket fingerprint guard hashes only the spec text, not the full
-ticket description. Added notes in two locations:
-
-1. In the autonomous runner's fingerprint-guard bypass guidance: "the fingerprint guard hashes
-only the spec text, not the full ticket description. Editing the description without changing
-the spec text will NOT clear the guard — to vary the fingerprint you must edit the spec itself."
-2. In the periodic monitor section: "the fingerprint hashes only the spec text; editing the
-description without changing the spec will not clear the guard."
-
-**Rationale:** Operators occasionally edit ticket descriptions expecting that to vary the
-fingerprint and unblock a guard. This clarification prevents that misunderstanding.
-
-**SHA256:** `c8e48fdeb0fad3f232be99f649013d18e13aaef56f9096268b344ae297d9c477`
-
 ## v74 — 2026-07-30 — ticket-id-fidelity-narrative-derived-597e
 
 **Summary:** Added a new "ticket ID fidelity" bullet to the Subsessions section, immediately
@@ -39,6 +23,22 @@ over-applied — the assistant was abbreviating ticket IDs in narrative and then
 abbreviated IDs back into API calls.
 
 **SHA256:** `313f599b6ccb0642ea78ad0d553b7b197c11ffe4526d3ebb0fd38fe4ef5e2190`
+
+## v73 — 2026-07-30 — ticket-description-append-does-not-change-fingerprint-ca44
+
+**Summary:** Clarified that the ticket fingerprint guard hashes only the spec text, not the full
+ticket description. Added notes in two locations:
+
+1. In the autonomous runner's fingerprint-guard bypass guidance: "the fingerprint guard hashes
+only the spec text, not the full ticket description. Editing the description without changing
+the spec text will NOT clear the guard — to vary the fingerprint you must edit the spec itself."
+2. In the periodic monitor section: "the fingerprint hashes only the spec text; editing the
+description without changing the spec will not clear the guard."
+
+**Rationale:** Operators occasionally edit ticket descriptions expecting that to vary the
+fingerprint and unblock a guard. This clarification prevents that misunderstanding.
+
+**SHA256:** `c8e48fdeb0fad3f232be99f649013d18e13aaef56f9096268b344ae297d9c477`
 
 ______________________________________________________________________
 
