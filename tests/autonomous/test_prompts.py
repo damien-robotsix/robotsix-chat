@@ -28,6 +28,10 @@ class TestBuildAutonomousInstruction:
         assert "3 or more consecutive cycles" in result
         assert "MUTATION AUTHORIZATION" in result
         assert "read-only work" in result
+        assert "CONSENT SCOPING" in result
+        assert "HUMAN_ISSUE_APPROVAL" in result
+        assert "human_issue_approval" in result
+        assert "gate-specific" in result
 
     def test_custom_markers(self) -> None:
         """Custom marker strings are injected, defaults are absent."""
