@@ -40,6 +40,7 @@
   allowing the agent to merge PRs via the GitHub API (PUT merge endpoint).
   The tool is gated on the same BLOCKED-ticket precondition as other
   direct-repo tools and supports merge, squash, and rebase methods.
+- Document `PublicFetchSettings` in `docs/configuration.md` — a new `### Public Fetch` section under Settings reference covering all 7 JSON keys: `enabled`, `timeout`, `max_body_bytes`, `max_redirects`, `domain_allowlist`, `rate_limit_requests`, and `rate_limit_window_seconds`.
 - Extract shared `_format_entries` helper from duplicated entry-formatting
   loops in `list_knowledge_notes` and `search_knowledge_notes`.
 - Wire `load_render_url_skill()` into the agent instruction pipeline so the
