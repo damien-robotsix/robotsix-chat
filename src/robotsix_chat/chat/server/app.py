@@ -178,6 +178,7 @@ async def _make_lifespan(
     *,
     on_startup_async: Callable[[], Any] | None = None,
     on_shutdown: Callable[[], Any] | None = None,
+    app: Starlette | None = None,
 ) -> AsyncIterator[None]:
     """Starlette lifespan that invokes hooks on startup and shutdown.
 
@@ -196,6 +197,13 @@ async def _make_lifespan(
     try:
         yield
     finally:
+        if app is not None:
+            coalescer = getattr(app.state, "message_coalescer", None)
+            if coalescer is not None:
+                try:
+                    await coalescer.close()
+                except Exception:
+                    logger.exception("MessageCoalescer drain failed")
         if on_shutdown is not None:
             try:
                 await on_shutdown()
@@ -511,6 +519,7 @@ def create_app(
             on_startup,
             on_startup_async=on_startup_async,
             on_shutdown=on_shutdown,
+            app=_app,
         ),
     )
     app.state.agent = agent

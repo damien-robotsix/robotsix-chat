@@ -100,3 +100,62 @@ async def test_background_task_is_retained_while_running_and_released_after() ->
 
     _, history = store.begin(session_id)
     assert history == [("hello", "hi")]
+
+
+@pytest.mark.asyncio
+async def test_close_cancels_and_awaits_in_flight_tasks() -> None:
+    """``close()`` cancels pending processor tasks and drains them.
+
+    Without a drain, the event loop tears down with the task still pending,
+    producing "Task was destroyed but it is pending" warnings.  The drain
+    gives each task a bounded window to unwind cleanly.
+    """
+    release = asyncio.Event()
+    agent = _SlowAgent(release, ["ok"])
+    store = ConversationStore()
+    coalescer = MessageCoalescer(debounce_seconds=0.0)
+    run_serializer = RunSerializer()
+    msg_id_store = MessageIdempotencyStore()
+
+    session_id = "sess-close"
+    await coalescer.submit(
+        session_id,
+        "msg",
+        None,
+        None,
+        agent=agent,
+        store=store,
+        run_serializer=run_serializer,
+        msg_id_store=msg_id_store,
+        lock_key=session_id,
+        owner_id=session_id,
+        had_session=True,
+        summary_agent=None,
+    )
+
+    # Let the processor task start and reach the agent.stream() await.
+    await asyncio.sleep(0.05)
+    assert len(coalescer._background_tasks) == 1
+
+    task = next(iter(coalescer._background_tasks))
+
+    # Drain — the task is cancelled (it's waiting on release), so it
+    # should complete quickly.  Use stdlib warnings capture to assert
+    # that no "Task was destroyed" RuntimeWarning is emitted.
+    import warnings
+
+    with warnings.catch_warnings(record=True) as warning_records:
+        warnings.simplefilter("always")
+        await coalescer.close(timeout=1.0)
+
+    # No "Task was destroyed" warning.
+    destroyed_warnings = [
+        w
+        for w in warning_records
+        if issubclass(w.category, RuntimeWarning)
+        and "Task was destroyed" in str(w.message)
+    ]
+    assert destroyed_warnings == []
+
+    assert coalescer._background_tasks == set()
+    assert task.cancelled() or task.done()
