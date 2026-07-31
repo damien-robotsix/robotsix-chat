@@ -3,6 +3,25 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v76 — 2026-07-30 — propagate-operator-consent-through-approval-gates-e038
+
+**Summary:** Add operator consent propagation to the Autonomy section and to the autonomous
+protocol's mutation authorization guidance. When the operator provides credentials, explicitly
+approves a change, or authorizes a specific operation by name, that consent carries forward to all
+sub-operations in the same chain (ticket approval, MR approval, merge confirmation) without
+re-asking. The agent treats the original authorization as covering the full lifecycle of the
+consented operation, only surfacing a new approval request for genuinely new, unconsented actions.
+
+**Rationale:** Session 9369ddd demonstrated that when an operator specified a temporary password and
+asked the assistant to file and deploy a config change, the assistant still separately asked for
+approval at the ticket and MR gates — adding latency and confusion. The new guidance teaches the
+agent to recognise consent propagation: an operator who says "use this password and file/deploy this
+config change" has authorised the complete operation, and intermediate approval gates are redundant.
+
+**SHA256:** `3787571c0ce99ab0b623b134877cf436a5e3ab1d6dc23b9b3a27104147c7f114`
+
+______________________________________________________________________
+
 ## v75 — 2026-07-28 — resolve-conflicting-option-a-memory-by-g-f4f2
 
 **Summary:** Strengthen memory-recall guardrails in both the system prompt's Autonomy section and
@@ -23,8 +42,6 @@ similarity recall can surface semantically similar but contextually different pr
 labels.
 
 **SHA256:** `e181d65690a7d0089cbaec90d34d194facd9ddf9bcc52a227169d1c7809dcba9`
-
-______________________________________________________________________
 
 ## v74 — 2026-07-30 — ticket-id-fidelity-narrative-derived-597e
 
