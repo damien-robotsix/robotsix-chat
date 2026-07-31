@@ -130,81 +130,6 @@ async def _resume_merged_pr_monitor(
     task.add_done_callback(env._tasks.discard)
 
 
-async def _query_pr_merge_status(
-    repo_full_name: str,
-    pr_number: int,
-    sub_id: str,
-    github_api_base_url: str,
-    installation_token: str,
-) -> bool | None:
-    """Return ``True`` when PR *pr_number* in *repo_full_name* is merged.
-
-    Returns ``False`` when the PR exists but is not merged, and ``None``
-    when the PR is unreachable (API error, 404, etc.).
-    """
-    try:
-        base = httpx.URL(github_api_base_url.rstrip("/"))
-        pr_url = base.copy_with(path=f"/repos/{repo_full_name}/pulls/{pr_number}")
-    except Exception:
-        logger.exception(
-            "Could not construct PR URL for subsession %s (repo=%s, pr=%d)",
-            sub_id,
-            repo_full_name,
-            pr_number,
-        )
-        return None
-
-    headers = {
-        "Accept": "application/vnd.github+json",
-        "Authorization": f"Bearer {installation_token}",
-    }
-    try:
-        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
-            response = await client.get(str(pr_url), headers=headers)
-            if response.status_code == 404:
-                logger.debug(
-                    "Watcher: PR #%d in %s not found (subsession %s)",
-                    pr_number,
-                    repo_full_name,
-                    sub_id,
-                )
-                return None
-            response.raise_for_status()
-            pr_data: dict[str, object] = response.json()
-    except httpx.HTTPStatusError as exc:
-        logger.debug(
-            "Watcher: GitHub returned %d for PR #%d in %s (subsession %s)",
-            exc.response.status_code,
-            pr_number,
-            repo_full_name,
-            sub_id,
-        )
-        return None
-    except (httpx.TimeoutException, httpx.ConnectError, OSError) as exc:
-        logger.debug(
-            "Watcher: GitHub unreachable for PR #%d in %s (subsession %s): %s",
-            pr_number,
-            repo_full_name,
-            sub_id,
-            exc,
-        )
-        return None
-    except Exception:
-        logger.exception(
-            "Watcher: unexpected error querying GitHub for PR #%d in %s "
-            "(subsession %s)",
-            pr_number,
-            repo_full_name,
-            sub_id,
-        )
-        return None
-
-    merged = pr_data.get("merged")
-    if isinstance(merged, bool):
-        return merged
-    return None
-
-
 async def watch_paused_monitors(env: SubsessionEnv) -> None:
     """Background task: poll auto-paused/timeout monitors and resume on state change.
 
@@ -326,15 +251,22 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                             if not isinstance(repo_raw, str) or not repo_raw:
                                 continue
 
-                            merged = await _query_pr_merge_status(
-                                repo_full_name=repo_raw,
-                                pr_number=pr_number_raw,
-                                sub_id=info.id,
-                                github_api_base_url=(
-                                    direct_repo_settings.github_api_base_url
-                                ),
-                                installation_token=token,
-                            )
+                            try:
+                                pr_data = await gh_client.get_pr(
+                                    repo_full_name=repo_raw,
+                                    pr_number=pr_number_raw,
+                                )
+                            except Exception:
+                                logger.debug(
+                                    "Watcher: could not fetch PR #%d in %s "
+                                    "(subsession %s) — skipping.",
+                                    pr_number_raw,
+                                    repo_raw,
+                                    info.id,
+                                )
+                                continue
+
+                            merged = pr_data.get("merged")
                             if merged is True:
                                 logger.info(
                                     "Watcher: subsession %s PR #%d in %s "
@@ -346,14 +278,46 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                                 await _resume_merged_pr_monitor(
                                     env, info.id, pr_number_raw, repo_raw
                                 )
-                            elif merged is False:
-                                logger.debug(
-                                    "Watcher: subsession %s PR #%d in %s "
-                                    "not yet merged.",
-                                    info.id,
-                                    pr_number_raw,
-                                    repo_raw,
+                                continue
+
+                            # Check CI status: if any recent workflow run
+                            # on the PR's head branch has failed, resume
+                            # the monitor so it stays active and reports
+                            # the failure rather than staying hidden.
+                            head_obj = pr_data.get("head")
+                            head_ref: str | None = None
+                            if isinstance(head_obj, dict):
+                                raw = head_obj.get("ref")
+                                if isinstance(raw, str):
+                                    head_ref = raw
+                            if head_ref:
+                                runs = await gh_client.list_workflow_runs(
+                                    repo_full_name=repo_raw,
+                                    branch=head_ref,
+                                    per_page=3,
                                 )
+                                ci_failing = any(
+                                    r.get("conclusion") == "failure" for r in runs
+                                )
+                                if ci_failing:
+                                    logger.info(
+                                        "Watcher: subsession %s PR #%d in %s "
+                                        "has failing CI (branch %s) — resuming.",
+                                        info.id,
+                                        pr_number_raw,
+                                        repo_raw,
+                                        head_ref,
+                                    )
+                                    await _resume_paused_monitor(env, info.id)
+                                    continue
+
+                            logger.debug(
+                                "Watcher: subsession %s PR #%d in %s "
+                                "not yet merged, CI stable — keeping paused.",
+                                info.id,
+                                pr_number_raw,
+                                repo_raw,
+                            )
 
             await asyncio.sleep(poll_interval)
         except asyncio.CancelledError:

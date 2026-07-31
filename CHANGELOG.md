@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Monitor subsessions tracking PRs now check CI status before staying paused. When a paused monitor's tracked PR has a failing CI workflow run on its head branch, the watcher resumes the monitor so the failure is surfaced rather than hidden. Previously, monitors would auto-pause after consecutive no-change runs even when the PR's CI was actively failing.
 - Component request client now follows HTTP redirects (``follow_redirects=True``) — fixes log-fetch returning HTTP 303 instead of the raw log body when a component endpoint redirects to a signed URL.
   - ``fetch_workflow_run_annotations`` no longer skips check runs with a failed conclusion that show ``annotations_count == 0``, avoiding silently-empty annotation results for failed CI runs.
 - Fix: correct system-prompt version reference in CHANGELOG.md from v73 to v74 for the ticket-ID-fidelity entry, matching the version documented in `docs/system_prompt_changelog.md`.
