@@ -271,9 +271,7 @@ def _maybe_import_config_from_central_deploy(settings: Settings) -> None:
     # before the uvicorn event loop starts.
     try:
         result = asyncio.run(
-            client.import_service_config(
-                lifecycle.service_name, url=import_url
-            )
+            client.import_service_config(lifecycle.service_name, url=import_url)
         )
     except Exception:
         logger.exception("Config import raised an unexpected exception")
