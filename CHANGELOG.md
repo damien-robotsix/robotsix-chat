@@ -1,5 +1,11 @@
 ## 0.0.0 (unreleased)
 
+- Split `DirectRepoClient` (1407→~1189 lines) into three focused modules:
+  - `ActionsClient` (`repo/direct/actions_client.py`) — GitHub Actions workflow management (dispatch, runs, jobs, annotations, secrets, billing diagnosis).
+  - `BoardClient` (`repo/direct/board_client.py`) — mill board API for ticket-state verification and lifecycle ops.
+  - `common/unified_diff.py` — pure unified-diff applicator (no HTTP/I/O).
+  `DirectRepoClient` is now a single-responsibility GitHub repo client (push, PR, merge, auto-merge, file content, repo creation, installation scope, security settings).
+  Deprecated wrapper methods remain on `DirectRepoClient` for backward compatibility.
 - Removed misleading instruction from monitor_9d6a periodic prompt overlay that asked agents to manually resolve abbreviated ticket IDs before calling `ticket_poll()` (the tool already handles this automatically).
 - Extract `_board_connection` helper in `ticket_poll` to eliminate duplicated board-connection setup boilerplate across `build_merge_pull_request_tool` and `build_ticket_poll_tools`.
 - Auto-continue prompts are now suppressed while any subsession is active (including periodic monitors sleeping between ticks). Previously, "Continue." prompts fired even when background work was in progress, producing spurious popups in the chat UI.

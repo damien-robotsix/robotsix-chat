@@ -23,6 +23,7 @@ from robotsix_chat.config.models import (
     GitHubActionsSettings,
     GitHubSecuritySettings,
 )
+from robotsix_chat.repo.direct.actions_client import ActionsClient
 from robotsix_chat.repo.direct.client import DirectRepoClient
 
 logger = logging.getLogger(__name__)
@@ -331,9 +332,11 @@ async def github_actions_secret_endpoint(request: Request) -> JSONResponse:
         )
 
     # -- scope check -------------------------------------------------------
-    client = await _check_installation_scope(request, repo_full_name)
+    _ = await _check_installation_scope(request, repo_full_name)
+    direct_repo = request.app.state.direct_repo_settings
+    actions = ActionsClient(direct_repo)
 
-    result = await client.set_actions_secret(
+    result = await actions.set_actions_secret(
         repo_full_name,
         secret_name=secret_name,
         secret_value=secret_value,
@@ -396,9 +399,11 @@ async def github_actions_workflow_endpoint(request: Request) -> JSONResponse:
         inputs = {str(k): str(v) for k, v in raw_inputs.items()}
 
     # -- scope check -------------------------------------------------------
-    client = await _check_installation_scope(request, repo_full_name)
+    _ = await _check_installation_scope(request, repo_full_name)
+    direct_repo = request.app.state.direct_repo_settings
+    actions = ActionsClient(direct_repo)
 
-    result = await client.dispatch_workflow(
+    result = await actions.dispatch_workflow(
         repo_full_name,
         workflow_id=workflow_id,
         ref=ref,
@@ -449,10 +454,12 @@ async def github_job_log_endpoint(request: Request) -> PlainTextResponse:
     repo_full_name = f"{owner}/{repo}"
 
     # -- call --------------------------------------------------------------
-    client = await _check_installation_scope(request, repo_full_name)
+    _ = await _check_installation_scope(request, repo_full_name)
+    direct_repo = request.app.state.direct_repo_settings
+    actions = ActionsClient(direct_repo)
 
     try:
-        log_text = await client.get_job_log(repo_full_name, job_id)
+        log_text = await actions.get_job_log(repo_full_name, job_id)
     except RuntimeError as exc:
         msg = str(exc)
         if "404" in msg:

@@ -47,9 +47,10 @@ def build_github_actions_tools(
     if not github_actions.enabled:
         return []
 
-    from robotsix_chat.repo.direct.client import DirectRepoClient
+    from robotsix_chat.repo.direct.actions_client import ActionsClient
 
-    client = DirectRepoClient(direct_repo)
+    actions = ActionsClient(direct_repo)
+    client = actions._client  # DirectRepoClient for scope checks
     org = github_actions.github_org
 
     async def set_actions_secret(
@@ -83,7 +84,7 @@ def build_github_actions_tools(
         if scope_error := await client.check_installation_scope(repo_full_name):
             return scope_error
 
-        return await client.set_actions_secret(
+        return await actions.set_actions_secret(
             repo_full_name,
             secret_name=secret_name,
             secret_value=secret_value,
@@ -137,7 +138,7 @@ def build_github_actions_tools(
             except json.JSONDecodeError as exc:
                 return f"Error parsing inputs JSON: {exc}"
 
-        return await client.dispatch_workflow(
+        return await actions.dispatch_workflow(
             repo_full_name,
             workflow_id=workflow_id,
             ref=ref,
@@ -177,7 +178,7 @@ def build_github_actions_tools(
 
         if run_id is not None:
             # Single-run deep inspection
-            jobs = await client.get_workflow_run_jobs(repo_full_name, run_id)
+            jobs = await actions.get_workflow_run_jobs(repo_full_name, run_id)
             if not jobs:
                 return (
                     f"Workflow run {run_id} on {repo_full_name} has no jobs — "
@@ -198,7 +199,7 @@ def build_github_actions_tools(
             return "\n".join(lines)
 
         # Broad scan of recent runs
-        runs = await client.list_workflow_runs(
+        runs = await actions.list_workflow_runs(
             repo_full_name, branch=branch, per_page=5
         )
         if not runs:
@@ -209,7 +210,7 @@ def build_github_actions_tools(
             )
 
         # Check for billing-failure signature first
-        billing_diag = client._diagnose_billing_failure(runs)
+        billing_diag = actions._diagnose_billing_failure(runs)
         if billing_diag:
             return billing_diag
 
@@ -262,7 +263,7 @@ def build_github_actions_tools(
         if scope_error := await client.check_installation_scope(repo_full_name):
             return scope_error
 
-        return await client.get_workflow_run_annotations(repo_full_name, run_id)
+        return await actions.get_workflow_run_annotations(repo_full_name, run_id)
 
     return [
         set_actions_secret,

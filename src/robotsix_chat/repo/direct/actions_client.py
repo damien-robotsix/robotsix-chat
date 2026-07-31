@@ -1,0 +1,410 @@
+"""GitHub Actions workflow management client.
+
+Provides ``ActionsClient`` — a client for GitHub Actions API operations
+(dispatch workflows, list runs, fetch job logs, manage secrets).
+
+Shares the same GitHub App authentication plumbing as
+:class:`DirectRepoClient` via composition.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import TYPE_CHECKING, Any
+
+from robotsix_chat.common.http import safe_http_request
+
+if TYPE_CHECKING:
+    from robotsix_chat.config import DirectRepoSettings
+    from robotsix_chat.repo.direct.client import DirectRepoClient
+
+logger = logging.getLogger(__name__)
+
+
+class ActionsClient:
+    """GitHub Actions workflow management client.
+
+    Handles workflow dispatch, run listing/inspection, job log retrieval,
+    and Actions secret management.  Composes a ``DirectRepoClient`` for
+    shared GitHub App HTTP plumbing.
+    """
+
+    def __init__(self, settings: DirectRepoSettings) -> None:
+        """Store settings; composes a ``DirectRepoClient`` for HTTP plumbing.
+
+        Uses a local import to avoid circular dependency at module level.
+        """
+        from robotsix_chat.repo.direct.client import DirectRepoClient
+
+        self._client: DirectRepoClient = DirectRepoClient(settings)
+
+    # -- workflow dispatch -------------------------------------------------
+
+    async def dispatch_workflow(
+        self,
+        repo_full_name: str,
+        workflow_id: str,
+        ref: str,
+        inputs: dict[str, str] | None = None,
+    ) -> str:
+        """Trigger a workflow_dispatch event.
+
+        Calls ``POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches``.
+
+        Never raises — returns a success/error message string.
+        """
+        body: dict[str, Any] = {"ref": ref}
+        if inputs:
+            body["inputs"] = inputs
+
+        try:
+            await self._client._request_json(
+                "POST",
+                f"/repos/{repo_full_name}/actions/workflows/{workflow_id}/dispatches",
+                body,
+            )
+            return (
+                f"Workflow '{workflow_id}' dispatched successfully "
+                f"on {repo_full_name} (ref: {ref})."
+            )
+        except RuntimeError as exc:
+            return f"Error dispatching workflow: {exc}"
+        except Exception as exc:
+            return f"Error dispatching workflow: {exc}"
+
+    # -- workflow run listing ----------------------------------------------
+
+    async def list_workflow_runs(
+        self,
+        repo_full_name: str,
+        *,
+        branch: str | None = None,
+        per_page: int = 10,
+    ) -> list[dict[str, Any]]:
+        """List recent workflow runs for a repository.
+
+        Calls ``GET /repos/{owner}/{repo}/actions/runs``.
+
+        Args:
+            repo_full_name: ``"owner/name"``.
+            branch: Optional branch filter.
+            per_page: Results per page (default 10).
+
+        Returns:
+            A list of workflow run dicts (empty list on error).
+
+        """
+        params = f"?per_page={min(max(per_page, 1), 100)}"
+        if branch:
+            params += f"&branch={branch}"
+        try:
+            data = await self._client._get_json(
+                f"/repos/{repo_full_name}/actions/runs{params}"
+            )
+            runs: list[dict[str, Any]] = data.get("workflow_runs", [])
+            return runs
+        except RuntimeError as exc:
+            logger.warning(
+                "Failed to list workflow runs for %s: %s",
+                repo_full_name,
+                exc,
+            )
+            return []
+
+    # -- workflow run jobs -------------------------------------------------
+
+    async def get_workflow_run_jobs(
+        self,
+        repo_full_name: str,
+        run_id: int,
+    ) -> list[dict[str, Any]]:
+        """Return jobs for a specific workflow run.
+
+        Calls ``GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs``.
+
+        Returns an empty list on any error.
+        """
+        try:
+            data = await self._client._get_json(
+                f"/repos/{repo_full_name}/actions/runs/{run_id}/jobs"
+            )
+            jobs: list[dict[str, Any]] = data.get("jobs", [])
+            return jobs
+        except RuntimeError as exc:
+            logger.warning(
+                "Failed to get workflow run jobs for %s run %s: %s",
+                repo_full_name,
+                run_id,
+                exc,
+            )
+            return []
+
+    # -- workflow run annotations ------------------------------------------
+
+    async def get_workflow_run_annotations(
+        self,
+        repo_full_name: str,
+        run_id: int,
+        *,
+        max_check_runs: int = 20,
+    ) -> str:
+        """Fetch annotations for all check runs in a workflow run.
+
+        Orchestrates three GitHub API calls:
+        1. ``GET /repos/{owner}/{repo}/actions/runs/{run_id}`` — get the
+           ``check_suite_id`` for the run.
+        2. ``GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs``
+           — list check runs belonging to the suite.
+        3. For each check run with annotations,
+           ``GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations``.
+
+        Returns a formatted Markdown string listing all annotations grouped
+        by check run, or a diagnostic message when no annotations are found.
+        """
+        try:
+            # 1. Get the workflow run to find the check_suite_id.
+            run = await self._client._get_json(
+                f"/repos/{repo_full_name}/actions/runs/{run_id}"
+            )
+            check_suite_id = run.get("check_suite_id")
+            if check_suite_id is None:
+                return (
+                    f"Workflow run {run_id} on {repo_full_name} has no "
+                    f"associated check suite — annotations are not available."
+                )
+
+            # 2. List check runs for the check suite.
+            suite_data = await self._client._get_json(
+                f"/repos/{repo_full_name}/check-suites/{check_suite_id}"
+                f"/check-runs?per_page={min(max_check_runs, 100)}"
+                f"&filter=latest"
+            )
+            check_runs: list[dict[str, Any]] = suite_data.get("check_runs", [])
+
+            if not check_runs:
+                return (
+                    f"Workflow run {run_id} on {repo_full_name} has no "
+                    f"check runs in its check suite."
+                )
+
+            # 3. Fetch annotations for each check run that has any.
+            all_annotations: list[dict[str, Any]] = []
+            check_run_summaries: list[str] = []
+
+            _failed_conclusions = frozenset(
+                {"failure", "timed_out", "cancelled", "action_required"}
+            )
+
+            for cr in check_runs:
+                cr_id = cr.get("id")
+                cr_name = cr.get("name", str(cr_id))
+                cr_conclusion = cr.get("conclusion", "?")
+                ann_count = cr.get("annotations_count", 0)
+
+                if ann_count == 0 and cr_conclusion not in _failed_conclusions:
+                    continue
+
+                try:
+                    annotations = await self._client._get_json(
+                        f"/repos/{repo_full_name}/check-runs/{cr_id}"
+                        f"/annotations?per_page=100"
+                    )
+                    if isinstance(annotations, list):
+                        all_annotations.extend(annotations)
+                        check_run_summaries.append(
+                            f"{cr_name} (conclusion={cr_conclusion}, "
+                            f"{len(annotations)} annotation(s))"
+                        )
+                except RuntimeError as exc:
+                    logger.warning(
+                        "Failed to fetch annotations for check run %d: %s",
+                        cr_id,
+                        exc,
+                    )
+                    continue
+
+            if not all_annotations:
+                return (
+                    f"Workflow run {run_id} on {repo_full_name} has "
+                    f"{len(check_runs)} check run(s) but none with annotations."
+                )
+
+            # 4. Format the output.
+            lines: list[str] = [
+                f"## Workflow run {run_id} annotations ({repo_full_name})",
+                "",
+                f"**{len(all_annotations)} annotation(s)** across "
+                f"{len(check_run_summaries)} check run(s):",
+                "",
+            ]
+
+            for summary in check_run_summaries:
+                lines.append(f"- {summary}")
+
+            lines.append("")
+            lines.append("### Details")
+            lines.append("")
+
+            for i, ann in enumerate(all_annotations):
+                level = ann.get("annotation_level", "?")
+                path = ann.get("path", "")
+                start_line = ann.get("start_line")
+                end_line = ann.get("end_line")
+                message = ann.get("message", "")
+                title = ann.get("title", "")
+
+                loc = path
+                if start_line is not None:
+                    loc += f":{start_line}"
+                    if end_line is not None and end_line != start_line:
+                        loc += f"-{end_line}"
+
+                lines.append(
+                    f"**{i + 1}.** `{level}` "
+                    + (f"**{title}** — " if title else "")
+                    + f"{message}"
+                )
+                if loc:
+                    lines.append(f"  _Location: {loc}_")
+                lines.append("")
+
+            return "\n".join(lines)
+
+        except RuntimeError as exc:
+            return f"Error fetching workflow run annotations: {exc}"
+        except Exception as exc:
+            return f"Error fetching workflow run annotations: {exc}"
+
+    # -- job log retrieval -------------------------------------------------
+
+    async def get_job_log(self, repo_full_name: str, job_id: int) -> str:
+        """Fetch the plain-text log for a GitHub Actions job.
+
+        Calls ``GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs`` which
+        returns a 302 redirect to a signed URL containing the raw log text.
+        The redirect is followed server-side so the caller receives the log
+        content directly.
+
+        Raises ``RuntimeError`` on any failure (auth, not-found, network).
+        """
+        path = f"/repos/{repo_full_name}/actions/jobs/{job_id}/logs"
+        url = f"{self._client._base_url}{path}"
+        result = await safe_http_request(
+            "GET",
+            url,
+            headers=await self._client._gh_headers(),
+            timeout=self._client._s.timeout,
+            follow_redirects=True,
+            label="GitHub Actions log",
+        )
+        if result.error:
+            raise RuntimeError(f"GitHub Actions log GET {path}: {result.error}")
+        return result.text or ""
+
+    # -- Actions secrets ---------------------------------------------------
+
+    async def _get_repo_public_key(self, repo_full_name: str) -> tuple[str, str]:
+        """Return ``(key_id, public_key_b64)`` for Actions secret encryption.
+
+        Calls ``GET /repos/{owner}/{repo}/actions/secrets/public-key``.
+        """
+        data = await self._client._get_json(
+            f"/repos/{repo_full_name}/actions/secrets/public-key"
+        )
+        return str(data["key_id"]), str(data["key"])
+
+    async def set_actions_secret(
+        self,
+        repo_full_name: str,
+        secret_name: str,
+        secret_value: str,
+    ) -> str:
+        """Create or update a repository Actions secret.
+
+        Encrypts *secret_value* with the repo's public key using libsodium
+        sealed-box encryption (requires ``pynacl``), then sends it via
+        ``PUT /repos/{owner}/{repo}/actions/secrets/{secret_name}``.
+
+        Never raises — returns a success/error message string.
+        """
+        try:
+            from nacl.public import (  # type: ignore[import-not-found]
+                PublicKey,
+                SealedBox,
+            )
+        except ImportError:
+            return (
+                "Error: PyNaCl is required for Actions secret encryption. "
+                "Install it with: uv sync --extra github-actions  or  "
+                "pip install pynacl"
+            )
+
+        try:
+            key_id, public_key_b64 = await self._get_repo_public_key(repo_full_name)
+        except RuntimeError as exc:
+            return f"Error fetching repo public key: {exc}"
+        except Exception as exc:
+            return f"Error fetching repo public key: {exc}"
+
+        from robotsix_chat.repo.direct.client import _b64decode, _b64encode
+
+        try:
+            public_key_bytes = _b64decode(public_key_b64)
+            sealed_box = SealedBox(PublicKey(public_key_bytes))
+            encrypted = sealed_box.encrypt(secret_value.encode("utf-8"))
+            encrypted_b64 = _b64encode(encrypted)
+        except Exception as exc:
+            return f"Error encrypting secret: {exc}"
+
+        try:
+            await self._client._request_json(
+                "PUT",
+                f"/repos/{repo_full_name}/actions/secrets/{secret_name}",
+                {
+                    "encrypted_value": encrypted_b64,
+                    "key_id": key_id,
+                },
+            )
+            return f"Secret '{secret_name}' set successfully on {repo_full_name}."
+        except RuntimeError as exc:
+            return f"Error setting secret: {exc}"
+        except Exception as exc:
+            return f"Error setting secret: {exc}"
+
+    # -- billing failure diagnosis -----------------------------------------
+
+    def _diagnose_billing_failure(
+        self,
+        runs: list[dict[str, Any]],
+    ) -> str | None:
+        """Inspect recent workflow runs for a private-repo billing failure.
+
+        Heuristic: a run whose ``run_started_at`` is ``null`` (never started)
+        strongly suggests the repo has no GitHub Actions billing enabled.
+
+        Note: zero-job detection is NOT attempted here because the
+        ``/actions/runs`` endpoint does not include per-job run data.
+        That signature is handled by the per-run inspection path in
+        ``check_workflow_run`` (via ``get_workflow_run_jobs``).
+
+        Returns a human-readable diagnostic string, or ``None`` when the
+        signature is not detected.
+        """
+        for run in runs:
+            conclusion = str(run.get("conclusion", "")).lower()
+            if conclusion != "failure":
+                continue
+            run_id = run.get("id")
+            run_name = run.get("name", str(run_id))
+            # Runs that never started signal billing issues.
+            if "run_started_at" in run and not run.get("run_started_at"):
+                return (
+                    f"Workflow run '{run_name}' (id {run_id}) for "
+                    f"{run.get('head_branch', '?')} never started — "
+                    f"this is typical of a private repository with no "
+                    f"GitHub Actions billing. "
+                    f"Enable Actions in the repo's "
+                    f"Settings > Actions > General, "
+                    f"or add billing at the organisation level."
+                )
+        return None
