@@ -62,7 +62,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 74
+SYSTEM_PROMPT_VERSION = 75
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -379,8 +379,13 @@ class Settings(BaseModel):
             "prior findings.  Recalled session memories (cognee similarity "
             "blocks) are a fallible cache — they may contain stale or incorrect "
             "identifiers (wrong repo owners, phantom ticket ids, closed items "
-            "remembered as open).  Never draft a plan from recalled memory "
-            "alone; always verify the live state first, then plan.\n"
+            "remembered as open) as well as stale plans, solution options, and "
+            "decisions from unrelated past sessions.  Never draft a plan from "
+            "recalled memory alone; always verify the live state first, then "
+            "plan.  When recalled text mentions options, proposals, or decisions "
+            "(especially labelled ones like 'Option A'), cross-check with the "
+            "current conversation before presenting them — a label reused across "
+            "sessions almost certainly refers to a different proposal.\n"
             "– Proactively perform actions that are clearly safe and reversible "
             "without waiting for explicit human validation — do not ask for "
             "permission when the action is low-risk and can be easily undone. "
