@@ -48,7 +48,7 @@ async def test_returns_none_when_app_id_empty() -> None:
     result = await _build_github_app_auth_headers(
         _settings(
             github_app_id="",
-            github_app_private_key="k",
+            github_app_private_key="k",  # pragma: allowlist secret
             github_app_installation_id="1",
         ),
         "test",
@@ -76,7 +76,7 @@ async def test_returns_none_when_installation_id_empty() -> None:
     result = await _build_github_app_auth_headers(
         _settings(
             github_app_id="1",
-            github_app_private_key="k",
+            github_app_private_key="k",  # pragma: allowlist secret
             github_app_installation_id="",
         ),
         "test",
@@ -94,10 +94,10 @@ async def test_returns_cached_token() -> None:
     """Returns the cached token without calling ``mint_installation_token``."""
     settings = _settings(
         github_app_id="1",
-        github_app_private_key="k",
+        github_app_private_key="k",  # pragma: allowlist secret
         github_app_installation_id="inst-1",
     )
-    cache: dict[str, str] = {"inst-1": "cached-token"}
+    cache: dict[str, str] = {"inst-1": "cached-token"}  # pragma: allowlist secret
 
     with patch("robotsix_github_auth.mint_installation_token") as mock_mint:
         result = await _build_github_app_auth_headers(
@@ -118,13 +118,13 @@ async def test_mints_and_caches_new_token() -> None:
     """Calls ``mint_installation_token`` and populates the cache."""
     settings = _settings(
         github_app_id="456",
-        github_app_private_key="my-key",
+        github_app_private_key="my-key",  # pragma: allowlist secret
         github_app_installation_id="inst-2",
     )
     cache: dict[str, str] = {}
 
     mock_token = MagicMock()
-    mock_token.token = "fresh-token"
+    mock_token.token = "fresh-token"  # pragma: allowlist secret
 
     with patch(
         "robotsix_github_auth.mint_installation_token", return_value=mock_token
@@ -137,7 +137,7 @@ async def test_mints_and_caches_new_token() -> None:
     assert cache == {"inst-2": "fresh-token"}
     mock_mint.assert_called_once_with(
         app_id="456",
-        private_key="my-key",
+        private_key="my-key",  # pragma: allowlist secret
         installation_id="inst-2",
     )
 
@@ -152,7 +152,7 @@ async def test_returns_none_on_runtime_error(caplog: pytest.LogCaptureFixture) -
     """Returns ``None`` and logs a warning when minting raises ``RuntimeError``."""
     settings = _settings(
         github_app_id="789",
-        github_app_private_key="bad-key",
+        github_app_private_key="bad-key",  # pragma: allowlist secret
         github_app_installation_id="inst-3",
     )
 
