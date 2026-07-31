@@ -809,8 +809,23 @@ def create_agent_from_settings(
                     close_state=subsession_close_state,
                 )
             )
+            # Subsession agents get notify_user pinned to the owner's session
+            # so notifications reach the user's connected browser.  Built
+            # statically here (not via the per-request factory) because the
+            # per-request factory receives the subsession's own sub_id, not
+            # the owner's session_id that the browser is subscribed to.
+            if subsession_env.event_sink is not None:
+                from robotsix_chat.notification import build_notification_tools
+
+                tools.extend(
+                    build_notification_tools(
+                        settings.notification,
+                        event_sink=subsession_env.event_sink,
+                        session_id=subsession_ctx.owner_session_id,
+                    )
+                )
         # Build per-request tools factory — subsession tools for the main
-        # agent, notification tools for both main and subsession agents.
+        # agent, notification tools for the main agent.
         request_tools_factory = _build_request_tools_factory(
             settings,
             subsession_env if subsession_ctx is None else None,
