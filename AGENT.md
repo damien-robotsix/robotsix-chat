@@ -184,10 +184,10 @@ class-level `monkeypatch` approach in `tests/autonomous/test_runner.py` has prov
 xdist without follow-up patches.
 
 **Rule:** Any change that adds an HTTP authorization header, relaxes an SSRF/allowlist check, or
-opens a new network-access path must ship with tests covering the newly-opened branches (e.g.
-header injection, allowlist/SSRF bypass, redirect hops). Security-sensitive request paths live
-under `src/robotsix_chat/public_fetch/`, `http_probe`, and `render_url` and may not ship without
-branch coverage.
+opens a new network-access path must ship with tests covering the newly-opened branches (e.g. header
+injection, allowlist/SSRF bypass, redirect hops). Security-sensitive request paths live under
+`src/robotsix_chat/public_fetch/`, `http_probe`, and `render_url` and may not ship without branch
+coverage.
 
 **Rationale:** PR #993 (ticket 20260729T105017Z) added fleet_auth to public_fetch — Basic-Auth
 injection and two SSRF-bypass branches — with zero new tests in
