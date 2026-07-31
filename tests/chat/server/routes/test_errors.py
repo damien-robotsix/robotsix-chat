@@ -29,23 +29,29 @@ from robotsix_chat.chat.server.routes.errors import (
 
 def _build_client(
     *,
-    with_server_error_route: bool = False,
     with_unhandled_route: bool = False,
+    with_http_400_route: bool = False,
 ) -> TestClient:
-    """Build a minimal Starlette app with error handlers and return a TestClient."""
+    """Build a minimal Starlette app with error handlers and return a TestClient.
+
+    ``server_error_handler`` cannot be exercised through the middleware
+    stack (``ServerErrorMiddleware`` only uses the *last* of ``500``/
+    ``Exception`` keys — ``Exception`` wins).  It is tested via direct
+    async call instead.
+    """
     routes: list[Route] = []
-    if with_server_error_route:
-
-        async def _raise(_request: Request) -> JSONResponse:
-            raise RuntimeError("boom")
-
-        routes.append(Route("/raise", _raise, methods=["GET"]))
     if with_unhandled_route:
 
         async def _custom_raise(_request: Request) -> JSONResponse:
             raise ValueError("custom")
 
         routes.append(Route("/custom-raise", _custom_raise, methods=["GET"]))
+    if with_http_400_route:
+
+        async def _bad_request(_request: Request) -> JSONResponse:
+            raise HTTPException(status_code=400, detail="bad input via route")
+
+        routes.append(Route("/bad-request", _bad_request, methods=["GET"]))
 
     app = Starlette(
         routes=routes,
@@ -66,10 +72,10 @@ def _build_client(
 
 def test_http_exception_400() -> None:
     """``HTTPException(400)`` returns JSON error body with 400 status."""
-    # We can't trigger an HTTPException(400) from a bare test app without
-    # a route that raises it, so we test the handler contract via direct
-    # call.  The 404+500 contract is exercised through the full app below
-    # (test_not_found_unmatched_route, test_server_error_handler_500).
+    # We test the handler contract via direct call for the basic case
+    # and also exercise the full Starlette stack via
+    # test_http_exception_handler_via_route below.  The 404 contract is
+    # exercised through the full app in test_not_found_unmatched_route.
 
     request = Mock(spec=Request)
 
@@ -82,7 +88,7 @@ def test_http_exception_400() -> None:
 
     resp = asyncio.run(_call())
     assert resp.status_code == 400
-    data = json.loads(bytes(resp.body))
+    data = json.loads(resp.body)  # type: ignore[arg-type]
     assert data["error"] == "bad input"
     assert data["correlation_id"] == "test-cid-400"
 
@@ -100,9 +106,19 @@ def test_http_exception_handler_non_http_exception() -> None:
 
     resp = asyncio.run(_call())
     assert resp.status_code == 500
-    data = json.loads(bytes(resp.body))
+    data = json.loads(resp.body)  # type: ignore[arg-type]
     assert data["error"] == "non-http"
     assert data["correlation_id"] == "test-cid-500"
+
+
+def test_http_exception_handler_via_route() -> None:
+    """``HTTPException(400)`` raised inside a route hits ``http_exception_handler``."""
+    client = _build_client(with_http_400_route=True)
+    resp = client.get("/bad-request")
+    assert resp.status_code == 400
+    data = resp.json()
+    assert data["error"] == "bad input via route"
+    assert "correlation_id" in data
 
 
 # ---------------------------------------------------------------------------
@@ -133,7 +149,7 @@ def test_not_found_handler_custom_detail() -> None:
 
     resp = asyncio.run(_call())
     assert resp.status_code == 404
-    data = json.loads(bytes(resp.body))
+    data = json.loads(resp.body)  # type: ignore[arg-type]
     assert data["error"] == "unknown subsession 'xyz'"
     assert data["correlation_id"] == "test-cid-custom"
 
@@ -151,7 +167,7 @@ def test_not_found_handler_default_not_found_detail() -> None:
 
     resp = asyncio.run(_call())
     assert resp.status_code == 404
-    data = json.loads(bytes(resp.body))
+    data = json.loads(resp.body)  # type: ignore[arg-type]
     assert data["error"] == "not found"
     assert data["correlation_id"] == "test-cid-default"
 
@@ -162,13 +178,28 @@ def test_not_found_handler_default_not_found_detail() -> None:
 
 
 def test_server_error_handler_500() -> None:
-    """Unhandled server error returns 'internal server error' with 500."""
-    client = _build_client(with_server_error_route=True)
-    resp = client.get("/raise")
+    """``server_error_handler`` returns ``{"error": "internal server error"}`` with 500.
+
+    This handler cannot be tested through the middleware stack because
+    ``Starlette.build_middleware_stack`` strips both ``500`` and
+    ``Exception`` keys, passing only the *last* one to
+    ``ServerErrorMiddleware`` — and ``Exception`` wins.  The handler
+    is exercised via direct async call.
+    """
+    request = Mock(spec=Request)
+
+    async def _call() -> JSONResponse:
+        cid_ctx.set("test-cid-server-err")
+        exc = Exception("something broke")
+        resp = await server_error_handler(request, exc)
+        cid_ctx.set("")
+        return resp
+
+    resp = asyncio.run(_call())
     assert resp.status_code == 500
-    data = resp.json()
+    data = json.loads(resp.body)  # type: ignore[arg-type]
     assert data["error"] == "internal server error"
-    assert "correlation_id" in data
+    assert data["correlation_id"] == "test-cid-server-err"
 
 
 # ---------------------------------------------------------------------------
