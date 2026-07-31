@@ -319,16 +319,13 @@ def build_ticket_poll_tools(
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
-                retry_client = RetryClient(
-                    client, config=_TICKET_POLL_RETRY_CONFIG
-                )
+                retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
                 response = await retry_client.get(url, headers=headers)
                 response.raise_for_status()
                 tickets_data = response.json()
         except Exception as exc:
             logger.warning(
-                "ticket_poll: failed to fetch ticket list for "
-                "ID resolution: %s",
+                "ticket_poll: failed to fetch ticket list for ID resolution: %s",
                 exc,
             )
             return {cid: None for cid in candidate_ids}
@@ -384,8 +381,7 @@ def build_ticket_poll_tools(
                 if len(matches) == 1:
                     resolved = matches[0]
                     logger.info(
-                        "ticket_poll: resolved %r → %r "
-                        "(hash suffix %r)",
+                        "ticket_poll: resolved %r → %r (hash suffix %r)",
                         cid,
                         resolved,
                         suffix,
@@ -394,8 +390,7 @@ def build_ticket_poll_tools(
                     continue
                 if len(matches) > 1:
                     logger.warning(
-                        "ticket_poll: ambiguous hash suffix %r "
-                        "for %r — matches %s",
+                        "ticket_poll: ambiguous hash suffix %r for %r — matches %s",
                         suffix,
                         cid,
                         matches,
@@ -406,14 +401,11 @@ def build_ticket_poll_tools(
             slug = re.sub(r"^\d{8}T\d{6}Z-", "", cid)
             slug = re.sub(r"-?[0-9a-f]{4}$", "", slug)
             if slug and len(slug) >= 4:
-                slug_matches = [
-                    tid for tid in all_ids if slug.lower() in tid.lower()
-                ]
+                slug_matches = [tid for tid in all_ids if slug.lower() in tid.lower()]
                 if len(slug_matches) == 1:
                     resolved = slug_matches[0]
                     logger.info(
-                        "ticket_poll: resolved %r → %r "
-                        "(slug match %r)",
+                        "ticket_poll: resolved %r → %r (slug match %r)",
                         cid,
                         resolved,
                         slug,
@@ -422,8 +414,7 @@ def build_ticket_poll_tools(
                     continue
                 if len(slug_matches) > 1:
                     logger.warning(
-                        "ticket_poll: ambiguous slug %r "
-                        "for %r — matches %s",
+                        "ticket_poll: ambiguous slug %r for %r — matches %s",
                         slug,
                         cid,
                         slug_matches,
@@ -444,33 +435,45 @@ def build_ticket_poll_tools(
         """Poll the mill board for a ticket's current state.
 
         Routes through the component roster when available, falling back
-        to the direct board API on any failure.
+        to the direct board API on any failure.  Resolves paraphrased /
+        abbreviated ticket IDs (e.g. ``...-my-ticket-a3f2``) against the
+        live board before making the request — pass a hash suffix or slug
+        substring and it will be mapped to the full ticket ID.
 
         Args:
             ticket_id: The ticket identifier (e.g. "20250101T120000Z-my-ticket-a1b2").
+                Paraphrased / abbreviated IDs are resolved via hash-suffix
+                or slug-substring match against the live board ticket list.
 
         Returns:
             A JSON string with ``ticket_id``, ``state`` (or ``null`` when
             the field is absent), and ``error`` (empty on success).
 
         """
+        # Resolve paraphrased / abbreviated IDs against the live board
+        # before making the request.  This prevents 404 failures when an
+        # ID was derived from narrative text rather than from a board API
+        # response.
+        resolved_map = await _resolve_ticket_ids([ticket_id])
+        effective_id = resolved_map.get(ticket_id) or ticket_id
+
         if component_request is not None:
-            status, body, error = await _fetch_ticket_via_component(ticket_id)
+            status, body, error = await _fetch_ticket_via_component(effective_id)
             if not error and status < 400 and body is not None:
                 data, parse_error = _parse_json_body(body)
                 if not parse_error and data is not None:
                     state = data.get("state")
                     return json.dumps(
-                        {"ticket_id": ticket_id, "state": state, "error": ""},
+                        {"ticket_id": effective_id, "state": state, "error": ""},
                         ensure_ascii=False,
                     )
             logger.info(
                 "ticket_poll roster path failed for %s; "
                 "falling back to direct board API",
-                ticket_id,
+                effective_id,
             )
 
-        return await _ticket_poll_direct(ticket_id)
+        return await _ticket_poll_direct(effective_id)
 
     async def _ticket_poll_direct(ticket_id: str) -> str:
         """Poll the mill board for a ticket's current state.
@@ -710,7 +713,9 @@ def build_ticket_poll_tools(
                         "error": f"Board API request failed: {exc}",
                     }
 
-        gathered = await asyncio.gather(*(_fetch_one_direct(tid) for tid in effective_ids))
+        gathered = await asyncio.gather(
+            *(_fetch_one_direct(tid) for tid in effective_ids)
+        )
         return json.dumps({"tickets": list(gathered)}, ensure_ascii=False)
 
     return [ticket_poll, ticket_poll_batch]

@@ -4,6 +4,7 @@
   ``notification.enabled`` is true).  Notifications are published on the
   owner's session so they reach the user's connected browser even when
   triggered from a background subsession worker.
+- `ticket_poll` / `ticket_poll_batch`: resolve paraphrased ticket IDs (hash suffix or slug match) against the live board before making per-ticket requests, preventing 404s when IDs are derived from narrative text.
 - Add `knowledge_store` to `SHARED_PARAMS` frozenset in `app.py`, matching the parameter already accepted by `create_app()` and `run_server()`.
 - Fix `reset_implement_spawn_counter`: replace broken `DELETE /tickets/{id}/artifacts/implement_spawn_count`
   (HTTP 405 — board API has no artifact delete endpoint) with
