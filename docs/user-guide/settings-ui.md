@@ -20,9 +20,9 @@ The settings panel is backed by HTTP endpoints on the chat server:
   each version.
 - **`POST /config/rollback`** — reverts to a previous version and creates a new version entry
   (history is append-only, never destructive).
-- **`POST /config/import`** — one-time config import from central-deploy's export endpoint.
-  Pulls the full runtime config (with real secret values) from the deploy plane and writes it to
-  the local config file. Requires ``lifecycle.config_import_enabled`` to be ``true``.
+- **`POST /config/import`** — one-time config import from central-deploy's export endpoint. Pulls
+  the full runtime config (with real secret values) from the deploy plane and writes it to the local
+  config file. Requires `lifecycle.config_import_enabled` to be `true`.
 
 ### Deep-merge (non-destructive save)
 
@@ -298,6 +298,7 @@ real, unmasked secret values) from the deploy plane and writes it to the local c
 the migration path for components that previously had their config managed by central-deploy.
 
 **Prerequisites:**
+
 - `lifecycle.enabled` must be `true`
 - `lifecycle.config_import_enabled` must be `true`
 - `lifecycle.base_url` must point to the central-deploy lifecycle API

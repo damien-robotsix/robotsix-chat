@@ -759,7 +759,7 @@ def test_import_no_service_name(tmp_path: Path) -> None:
                 "enabled": True,
                 "config_import_enabled": True,
                 "base_url": "http://central-deploy:8100",
-                "api_key": "test-key",
+                "api_key": "test-key",  # pragma: allowlist secret
                 "service_name": "",
             },
         },
@@ -783,7 +783,7 @@ def test_import_no_base_url(tmp_path: Path) -> None:
                 "enabled": True,
                 "config_import_enabled": True,
                 "base_url": "",
-                "api_key": "test-key",
+                "api_key": "test-key",  # pragma: allowlist secret
                 "service_name": "test-service",
             },
         },
@@ -807,7 +807,7 @@ def test_import_with_service_name_in_body(tmp_path: Path) -> None:
                 "enabled": True,
                 "config_import_enabled": True,
                 "base_url": "http://central-deploy:8100",
-                "api_key": "test-key",
+                "api_key": "test-key",  # pragma: allowlist secret
                 "service_name": "",
             },
         },
