@@ -1596,6 +1596,55 @@ async def test_direct_fix_rejects_few_cycles(
 
 
 @pytest.mark.asyncio
+async def test_direct_fix_rejects_zero_cycles(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Ticket has 0 completed implement cycles → direct_fix is refused.
+
+    Regression test: the precondition lookup must correctly count 0 cycles
+    (empty or non-implement events) and refuse with a distinct message from
+    the API-unreachable error.
+    """
+    settings = _settings(direct_fix_enabled=True)
+
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-df2z").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "id": "t-df2z",
+                    "state": "blocked",
+                    "events": [
+                        {"type": "ticket_created", "timestamp": "..."},
+                    ],
+                }
+            ),
+        )
+    )
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    df_fn = [t for t in tools if t.__name__ == "direct_fix"][0]
+
+    out = await df_fn(
+        ticket_id="t-df2z",
+        repo_full_name="org/repo",
+        target_branch="main",
+        files_json=json.dumps([{"path": "x.py", "content": "print(1)"}]),
+    )
+    assert "Refused" in out
+    assert "0" in out  # 0 cycles in the error message
+    assert "implement" in out.lower()
+
+
+@pytest.mark.asyncio
 async def test_direct_fix_allows_enough_cycles(
     respx_mock: respx.MockRouter,
 ) -> None:
@@ -2605,6 +2654,56 @@ async def test_patch_direct_repo_file_rejects_few_cycles(
     assert "Refused" in out
     assert "implement" in out.lower()
     assert "1" in out  # cycle count
+
+
+@pytest.mark.asyncio
+async def test_patch_direct_repo_file_rejects_zero_cycles(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Ticket has 0 completed implement cycles → patch_direct_repo_file is refused.
+
+    Regression test: the precondition lookup must correctly count 0 cycles
+    (empty or non-implement events) and refuse with a distinct message from
+    the API-unreachable error.
+    """
+    settings = _settings(direct_fix_enabled=True)
+
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-pf2z").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "id": "t-pf2z",
+                    "state": "blocked",
+                    "events": [
+                        {"type": "ticket_created", "timestamp": "..."},
+                    ],
+                }
+            ),
+        )
+    )
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+
+    tools = build_direct_repo_tools(settings)
+    pf_fn = [t for t in tools if t.__name__ == "patch_direct_repo_file"][0]
+
+    out = await pf_fn(
+        ticket_id="t-pf2z",
+        repo_full_name="org/repo",
+        target_branch="main",
+        file_path="x.py",
+        patch_content="@@ -1,1 +1,1 @@\n-old\n+new\n",
+    )
+    assert "Refused" in out
+    assert "0" in out  # 0 cycles in the error message
+    assert "implement" in out.lower()
 
 
 @pytest.mark.asyncio

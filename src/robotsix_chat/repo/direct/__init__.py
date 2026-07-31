@@ -173,9 +173,7 @@ def build_direct_repo_tools(
 
         # --- single API call for state + cycles ---
         if component_request is not None:
-            resp = await component_request(
-                "mill", "GET", f"/tickets/{ticket_id}"
-            )
+            resp = await component_request("mill", "GET", f"/tickets/{ticket_id}")
             if resp.startswith("Error:"):
                 return (
                     f"Error: could not fetch ticket data for {ticket_id} "
@@ -239,8 +237,9 @@ def build_direct_repo_tools(
         # --- state check ---
         if state is None:
             return (
-                f"Error: ticket {ticket_id} returned no state field. "
-                "Verify the ticket id and board API connectivity.",
+                f"Error: ticket {ticket_id} data did not contain a state "
+                "field (response was received but is missing required "
+                "fields — the ticket may not exist or may be malformed).",
                 0,
             )
         if state.upper() != "BLOCKED":
