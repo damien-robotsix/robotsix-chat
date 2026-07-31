@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add consent-scoping and human_issue_approval safety rules to the autonomous MUTATION AUTHORIZATION prompt: auto-approval now only applies to tickets explicitly consented to (by ID, queue, or gate name), and non-consented human_issue_approval tickets require operator confirmation before transitioning.
 - Fix SFTP private-key authentication: encode PEM string as bytes so asyncssh
   treats it as inline key data rather than a file path.
 - Fix ``SftpClient.file_exists``: only return ``False`` for ``FX_NO_SUCH_FILE``
