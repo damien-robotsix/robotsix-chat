@@ -9,7 +9,11 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from robotsix_chat.autonomous.models import AutonomousSession, AutonomousState
-from robotsix_chat.subsessions.delivery import _REACT_PROMPT_TEMPLATE, ParentDelivery
+from robotsix_chat.subsessions.delivery import (
+    _REACT_PROMPT_ACTIVE_PLAN_TEMPLATE,
+    _REACT_PROMPT_TEMPLATE,
+    ParentDelivery,
+)
 from robotsix_chat.subsessions.models import (
     SubsessionInfo,
     SubsessionKind,
@@ -996,3 +1000,10 @@ def test_react_prompt_forbids_reemitting_already_shown_payload() -> None:
     text = _REACT_PROMPT_TEMPLATE.lower()
     assert "do not re-list" in text
     assert "delta" in text
+
+
+def test_active_plan_react_prompt_forbids_reemitting_already_shown_payload() -> None:
+    """Active-plan template must forbid re-emitting already-shown data."""
+    text = _REACT_PROMPT_ACTIVE_PLAN_TEMPLATE.lower()
+    assert "delta" in text
+    assert "already presented" in text

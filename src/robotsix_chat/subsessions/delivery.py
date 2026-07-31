@@ -107,7 +107,13 @@ _REACT_PROMPT_ACTIVE_PLAN_TEMPLATE = (
     "what decision was reached, what action is needed.\n\n"
     "When acknowledging multiple subsession outcomes, synthesize them into "
     "ONE brief sentence — never output a raw bullet list or enumeration of "
-    "'[id] kind=... status=...' lines."
+    "'[id] kind=... status=...' lines.\n\n"
+    "ANTI-RE-EMISSION RULE: If the subsession outcome (table, rollup, "
+    "enumeration) was already presented to the user earlier in this "
+    "conversation, do not re-emit the full payload verbatim. Reply with "
+    "only the delta (what changed since the last presentation) or a "
+    "one-sentence synthesis — never re-list the full table, ticket IDs, "
+    "or enumeration that the user has already seen."
 )
 
 # Mapping from internal reason codes to human-readable phrases used in the

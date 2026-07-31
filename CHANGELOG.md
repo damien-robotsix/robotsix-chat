@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add anti-re-emission guidance to the active-plan reaction prompt template (`_REACT_PROMPT_ACTIVE_PLAN_TEMPLATE`) in `delivery.py`, instructing the agent to reply with only a delta or one-sentence synthesis when subsession outcomes were already presented earlier — never re-emit a full table/rollup/enumeration verbatim.
 - Subsession agents now have access to the ``notify_user`` tool (when
   ``notification.enabled`` is true).  Notifications are published on the
   owner's session so they reach the user's connected browser even when
