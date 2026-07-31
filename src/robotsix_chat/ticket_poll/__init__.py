@@ -82,6 +82,25 @@ def load_ticket_poll_skill() -> str:
         return ""
 
 
+def _board_connection(
+    settings: Settings,
+    component_request: Callable[..., Any] | None,
+) -> tuple[str, str, float] | None:
+    """Return ``(board_url, board_token, timeout)`` or ``None`` if unavailable.
+
+    Returns ``None`` when neither *component_request* nor
+    ``board_api_base_url`` are available, signalling callers to return an
+    empty tool list.
+    """
+    board_url = settings.direct_repo.board_api_base_url.strip()
+    if not component_request and not board_url:
+        return None
+    board_url = board_url.rstrip("/") if board_url else ""
+    board_token = settings.direct_repo.board_api_token.get_secret_value()
+    timeout = settings.direct_repo.timeout
+    return board_url, board_token, timeout
+
+
 def build_merge_pull_request_tool(
     settings: Settings,
     *,
@@ -110,13 +129,10 @@ def build_merge_pull_request_tool(
         ``board_api_base_url`` are available.
 
     """
-    board_url = settings.direct_repo.board_api_base_url.strip()
-    if not component_request and not board_url:
+    conn = _board_connection(settings, component_request)
+    if conn is None:
         return []
-
-    board_url = board_url.rstrip("/") if board_url else ""
-    board_token = settings.direct_repo.board_api_token.get_secret_value()
-    timeout = settings.direct_repo.timeout
+    board_url, board_token, timeout = conn
 
     async def merge_pull_request(ticket_id: str) -> str:
         """Merge the pull request associated with a ticket.
@@ -223,13 +239,10 @@ def build_ticket_poll_tools(
         *component_request* nor ``board_api_base_url`` are available.
 
     """
-    board_url = settings.direct_repo.board_api_base_url.strip()
-    if not component_request and not board_url:
+    conn = _board_connection(settings, component_request)
+    if conn is None:
         return []
-
-    board_url = board_url.rstrip("/") if board_url else ""
-    board_token = settings.direct_repo.board_api_token.get_secret_value()
-    timeout = settings.direct_repo.timeout
+    board_url, board_token, timeout = conn
 
     async def _fetch_ticket_via_component(
         ticket_id: str,
