@@ -251,6 +251,34 @@ def build_direct_repo_tools(
 
         return None, cycles
 
+    async def _check_preconditions(
+        client: DirectRepoClient,
+        ticket_id: str,
+        repo_full_name: str,
+        action_name: str,
+        fallback_name: str,
+    ) -> str | None:
+        """Verify BLOCKED + scope + ≥3 implement cycles; return error or None.
+
+        Wraps ``_check_blocked_exhausted`` and the cycle-count guard into a
+        single helper so the two call sites (``direct_fix`` and
+        ``patch_direct_repo_file``) share the same logic — only the refusal
+        message differs.
+        """
+        error, cycles = await _check_blocked_exhausted(
+            client, ticket_id, repo_full_name
+        )
+        if error is not None:
+            return error
+        if cycles < 3:
+            return (
+                f"Refused: ticket {ticket_id} has only {cycles} implement "
+                f"cycle(s).  {action_name} requires ≥3 implement cycles "
+                f"(mill exhaustion).  Use {fallback_name} + "
+                "open_direct_repo_pr for the standard PR flow."
+            )
+        return None
+
     async def _assert_blocked_and_scoped(
         client: DirectRepoClient,
         ticket_id: str,
@@ -980,22 +1008,14 @@ def build_direct_repo_tools(
                     f["content"] = f["content"] + "\n"
 
             # --- guard 1+2+3: BLOCKED + scope + ≥3 implement cycles (single API call) ---  # noqa: E501
-            error, cycles = await _check_blocked_exhausted(
-                client, ticket_id, repo_full_name
-            )
-            if error is not None:
+            if error := await _check_preconditions(
+                client,
+                ticket_id,
+                repo_full_name,
+                action_name="direct_fix",
+                fallback_name="push_direct_repo_branch",
+            ):
                 return error
-
-            if cycles < 3:
-                return (
-                    f"Refused: ticket {ticket_id} has only {cycles} implement "
-                    f"cycle(s).  direct_fix requires ≥3 implement cycles "
-                    "(mill exhaustion).  Use push_direct_repo_branch + "
-                    "open_direct_repo_pr for the standard PR flow, "
-                    "or apply_patch_to_file (with target_branch to push "
-                    "to an existing branch, or without it to create a "
-                    "new branch)."
-                )
 
             # --- audit log ---
             file_paths = [f.get("path", "?") for f in files]
@@ -1010,7 +1030,7 @@ def build_direct_repo_tools(
             # --- push the commit ---
             msg = commit_message or (
                 f"fix: direct fix for blocked ticket {ticket_id} "
-                f"(mill exhausted after {cycles} implement cycles)"
+                f"(mill exhausted after ≥3 implement cycles)"
             )
             result = await client.push_commit_to_branch(
                 repo_full_name=repo_full_name,
@@ -1091,20 +1111,14 @@ def build_direct_repo_tools(
             _logger = logging.getLogger(__name__)
 
             # --- guard 1+2+3: BLOCKED + scope + ≥3 implement cycles (single API call) ---  # noqa: E501
-            error, cycles = await _check_blocked_exhausted(
-                client, ticket_id, repo_full_name
-            )
-            if error is not None:
+            if error := await _check_preconditions(
+                client,
+                ticket_id,
+                repo_full_name,
+                action_name="patch_direct_repo_file",
+                fallback_name="apply_patch_to_file",
+            ):
                 return error
-
-            if cycles < 3:
-                return (
-                    f"Refused: ticket {ticket_id} has only {cycles} implement "
-                    f"cycle(s).  patch_direct_repo_file requires ≥3 implement "
-                    f"cycles (mill exhaustion).  Use apply_patch_to_file "
-                    f"(with target_branch to push to an existing branch, "
-                    f"or without it + open_direct_repo_pr for a new PR)."
-                )
 
             # --- audit log ---
             _logger.warning(
@@ -1118,7 +1132,7 @@ def build_direct_repo_tools(
             # --- apply patch and push ---
             msg = commit_message or (
                 f"fix: patched {file_path} for blocked ticket {ticket_id} "
-                f"(mill exhausted after {cycles} implement cycles)"
+                f"(mill exhausted after ≥3 implement cycles)"
             )
             result = await client.push_patched_file(
                 repo_full_name=repo_full_name,
