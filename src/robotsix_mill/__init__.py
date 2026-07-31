@@ -85,7 +85,9 @@ from robotsix_mill.stages.implement.phase_coordinator import (  # noqa: E402
     PhaseCoordinatorMixin,
 )
 
-_original_load_implement_context = PhaseCoordinatorMixin._load_implement_context.__func__
+_original_load_implement_context = (
+    PhaseCoordinatorMixin._load_implement_context.__func__
+)
 
 
 def _patched_load_implement_context(  # type: ignore[no-untyped-def]
