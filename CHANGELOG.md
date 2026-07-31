@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add CI workflow convention rule: never commit pre-compiled tool binaries to the repository; add them to `.gitignore` instead of registering them as module paths.
 - Add "Halt and Re-scope" workflow to system prompt: when the agent detects a policy violation, it now immediately halts and presents structured compliant alternatives with one-click actions to close superseded work, condensing a 4–5 turn resolution into 1–2 turns.
 - Monitor subsessions tracking PRs now check CI status before staying paused. When a paused monitor's tracked PR has a failing CI workflow run on its head branch, the watcher resumes the monitor so the failure is surfaced rather than hidden. Previously, monitors would auto-pause after consecutive no-change runs even when the PR's CI was actively failing.
 - Component request client now follows HTTP redirects (``follow_redirects=True``) — fixes log-fetch returning HTTP 303 instead of the raw log body when a component endpoint redirects to a signed URL.

@@ -162,6 +162,12 @@ standard, "CI-time image scan").
 shared audit step has no ignore mechanism, so enabling both hard-blocks CI on CVEs that have no
 released fix.
 
+**Rule:** Never commit pre-compiled tool binaries (e.g. hadolint, actionlint, shellcheck) to the
+repository — the pre-commit hooks fetch their own binaries via their hook installers. If a tool
+binary appears on your branch, remove it from tracking and add it to the `.gitignore` "Pre-commit
+tool binaries accidentally committed during local testing" block instead of registering it as a
+module path.
+
 ## Testing conventions
 
 Tests for module `robotsix_chat.<module>` live under `tests/<module>/`, mirroring the per-module
