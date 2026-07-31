@@ -219,7 +219,7 @@ async def _component_request_impl(
             )
         return f"HTTP {status}\n{body_str}"
 
-    async with httpx.AsyncClient(timeout=30.0) as client:
+    async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
         retry_client = RetryClient(client, config=_COMPONENT_RETRY_CONFIG)
         try:
             resp = await retry_client.request(

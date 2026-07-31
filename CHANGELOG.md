@@ -1,5 +1,7 @@
 ## 0.0.0 (unreleased)
 
+- Component request client now follows HTTP redirects (``follow_redirects=True``) — fixes log-fetch returning HTTP 303 instead of the raw log body when a component endpoint redirects to a signed URL.
+  - ``fetch_workflow_run_annotations`` no longer skips check runs with a failed conclusion that show ``annotations_count == 0``, avoiding silently-empty annotation results for failed CI runs.
 - Fix: correct system-prompt version reference in CHANGELOG.md from v73 to v74 for the ticket-ID-fidelity entry, matching the version documented in `docs/system_prompt_changelog.md`.
 - Add test coverage for the four error handlers in ``routes/errors.py`` (``http_exception_handler``, ``not_found_handler``, ``server_error_handler``, ``unhandled_exception_handler``)
 - Refactor: extract shared `_check_preconditions` helper in `repo.direct`

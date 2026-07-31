@@ -140,7 +140,7 @@ async def fetch_roster(
 
     roster_url = f"{settings.url.rstrip('/')}/chat/components"
     try:
-        async with httpx.AsyncClient(timeout=30.0) as client:
+        async with httpx.AsyncClient(timeout=30.0, follow_redirects=True) as client:
             retry_client = RetryClient(client, config=_ROSTER_RETRY_CONFIG)
             resp = await retry_client.get(roster_url, headers=headers)
             resp.raise_for_status()
