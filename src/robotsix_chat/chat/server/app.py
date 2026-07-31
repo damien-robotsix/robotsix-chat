@@ -228,6 +228,7 @@ SHARED_PARAMS: frozenset[str] = frozenset(
         "github_actions_settings",
         "config_path",
         "diagnostic_store",
+        "knowledge_store",
     }
 )
 

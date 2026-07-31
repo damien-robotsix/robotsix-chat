@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add `knowledge_store` to `SHARED_PARAMS` frozenset in `app.py`, matching the parameter already accepted by `create_app()` and `run_server()`.
 - Fix `reset_implement_spawn_counter`: replace broken `DELETE /tickets/{id}/artifacts/implement_spawn_count`
   (HTTP 405 — board API has no artifact delete endpoint) with
   `POST /tickets/{id}/resume-blocked` using a spawn-counter-specific
