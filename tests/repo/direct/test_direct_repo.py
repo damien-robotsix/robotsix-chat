@@ -407,9 +407,7 @@ async def test_merge_pr_client_200_success(
     settings = _settings()
     _prepopulate_installation_token(settings)
 
-    respx_mock.put(
-        "https://api.github.com/repos/org/repo/pulls/42/merge"
-    ).mock(
+    respx_mock.put("https://api.github.com/repos/org/repo/pulls/42/merge").mock(
         return_value=httpx.Response(
             200,
             text=json.dumps(
@@ -442,9 +440,7 @@ async def test_merge_pr_client_200_not_merged(
     settings = _settings()
     _prepopulate_installation_token(settings)
 
-    respx_mock.put(
-        "https://api.github.com/repos/org/repo/pulls/42/merge"
-    ).mock(
+    respx_mock.put("https://api.github.com/repos/org/repo/pulls/42/merge").mock(
         return_value=httpx.Response(
             200,
             text=json.dumps(
@@ -473,9 +469,7 @@ async def test_merge_pr_client_405_not_mergeable(
     settings = _settings()
     _prepopulate_installation_token(settings)
 
-    respx_mock.put(
-        "https://api.github.com/repos/org/repo/pulls/99/merge"
-    ).mock(
+    respx_mock.put("https://api.github.com/repos/org/repo/pulls/99/merge").mock(
         return_value=httpx.Response(
             405,
             text=json.dumps(
@@ -506,9 +500,7 @@ async def test_merge_pr_client_409_conflict(
     settings = _settings()
     _prepopulate_installation_token(settings)
 
-    respx_mock.put(
-        "https://api.github.com/repos/org/repo/pulls/77/merge"
-    ).mock(
+    respx_mock.put("https://api.github.com/repos/org/repo/pulls/77/merge").mock(
         return_value=httpx.Response(
             409,
             text=json.dumps(
