@@ -7,6 +7,7 @@ from __future__ import annotations
 
 import json
 import logging
+import re
 from collections.abc import Iterable
 from typing import Any
 
@@ -15,6 +16,42 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 
 logger = logging.getLogger(__name__)
+
+# Heuristic length threshold (chars) above which a response that also
+# matches a truncation pattern is considered likely truncated.
+_TRUNCATION_LENGTH_THRESHOLD = 1500
+
+# Patterns that suggest an LLM response was cut off by an output-length
+# limit.  Each pattern is applied to the last ~120 chars of the text.
+_TRUNCATION_PATTERNS: list[re.Pattern[str]] = [
+    re.compile(r",\s*\.\.\.\s*$"),  # "foo, bar, ..."
+    re.compile(r"\.\.\.\s*$"),  # "and then we saw..."
+    re.compile(r",\s*$"),  # trailing comma mid-list
+    re.compile(r"^\s*#\d+[,;]?\s*$", re.MULTILINE),
+    # last line is a bare "#123" or "#123,"
+]
+
+_TRUNCATION_NOTE = (
+    "\n\n[Note: the response above may have been cut off by an output "
+    "length limit.  If you need the complete list, ask me to provide it "
+    "as a separate artifact or narrow your query to a smaller scope.]"
+)
+
+
+def _detect_truncation(text: str) -> str | None:
+    """Return a truncation-note suffix if *text* appears truncated, else ``None``.
+
+    Applied after the LLM response is fully received; the heuristic only
+    fires when the text is long *and* its tail matches a known truncation
+    pattern (``...``, trailing comma, bare ``#NNN`` line, etc.).
+    """
+    if len(text) < _TRUNCATION_LENGTH_THRESHOLD:
+        return None
+    tail = text[-120:]
+    for pat in _TRUNCATION_PATTERNS:
+        if pat.search(tail):
+            return _TRUNCATION_NOTE
+    return None
 
 
 def build_transcript(turns: Iterable[tuple[str, str]], *, max_len: int = 2000) -> str:

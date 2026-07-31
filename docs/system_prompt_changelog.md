@@ -3,6 +3,24 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v77 — 2026-07-31 — truncate-long-pr-lists-or-provide-them-a-bb9c
+
+**Summary:** Add guidance to the Efficiency section directing the assistant to avoid dumping
+long sorted lists (20+ PR links, ticket enumerations, file inventories) inline in a single
+chat message. When a long list is needed, the assistant should provide a compact summary and
+offer the full list as a separate artifact (knowledge note, split across replies, or narrowed
+query). Lists under ~25 items may be displayed inline with a warning at the output limit.
+
+**Rationale:** Session 2fd0831 reported that the assistant's reply listing 46 PR links was
+cut off mid-list (output length limit), delivering an incomplete answer at a time the user
+specifically needed the full list. The new guidance teaches the agent to structure long
+enumerations defensively so truncation is either avoided or the user is explicitly told how
+to retrieve the remainder.
+
+**SHA256:** `9beaa7109017ff6daa47e515ae60322109551493ea4b9b7f716437bce17673a7`
+
+______________________________________________________________________
+
 ## v76 — 2026-07-30 — propagate-operator-consent-through-approval-gates-e038
 
 **Summary:** Add operator consent propagation to the Autonomy section and to the autonomous
