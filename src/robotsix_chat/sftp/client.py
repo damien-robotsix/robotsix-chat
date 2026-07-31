@@ -89,7 +89,7 @@ class SftpClient:
             passphrase = (
                 self._settings.private_key_passphrase.get_secret_value() or None
             )
-            kwargs["client_keys"] = [private_key]
+            kwargs["client_keys"] = [private_key.encode()]
             if passphrase:
                 kwargs["passphrase"] = passphrase
 
@@ -194,5 +194,14 @@ class SftpClient:
             async with self._sftp_connection(remote_path, "stat") as (sftp, resolved):
                 await sftp.stat(str(resolved))
             return True
-        except SftpError:
-            return False
+        except SftpError as exc:
+            import asyncssh
+
+            # Only mask FX_NO_SUCH_FILE (file doesn't exist);
+            # all other SFTP errors must propagate.
+            if (
+                isinstance(exc.__cause__, asyncssh.SFTPError)
+                and exc.__cause__.code == asyncssh.FX_NO_SUCH_FILE
+            ):
+                return False
+            raise

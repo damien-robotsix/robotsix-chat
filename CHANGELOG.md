@@ -1,5 +1,11 @@
 ## 0.0.0 (unreleased)
 
+- Fix SFTP private-key authentication: encode PEM string as bytes so asyncssh
+  treats it as inline key data rather than a file path.
+- Fix ``SftpClient.file_exists``: only return ``False`` for ``FX_NO_SUCH_FILE``
+  (code 2); re-raise all other SFTP and connection errors as ``SftpError``
+  instead of silently masking them.
+
 - `apply_patch_to_file`: add optional `target_branch` parameter so BLOCKED
   tickets (regardless of implement-cycle count) can push a patched file
   directly to an existing branch.  `direct_fix` and `patch_direct_repo_file`
