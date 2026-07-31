@@ -79,7 +79,7 @@ def test_build_direct_repo_tools_returns_eight_tools() -> None:
     assert "open_direct_repo_pr" in names
     assert "update_pr_branch" in names
     assert "check_pr_merge_conflict" in names
-    assert "merge_pr" in names
+    assert "recover_auto_merge" in names
     assert "reset_implement_spawn_counter" in names
     assert "apply_patch_to_file" in names
     assert "push_patch_to_pr_branch" in names
@@ -303,95 +303,33 @@ def test_merge_method_on_client() -> None:
     )
 
 
-def test_merge_tool_returned() -> None:
-    """Verify that build_direct_repo_tools returns merge_pr."""
+def test_no_merge_tool_returned() -> None:
+    """Verify that build_direct_repo_tools returns no merge-performing tools.
+
+    Tools may reference "merge" in the context of *checking* mergeability
+    (e.g. ``check_pr_merge_conflict``) or *recovering* from a bounced
+    auto-merge (``recover_auto_merge``), but never to perform an actual merge.
+    """
     tools = build_direct_repo_tools(_settings())
     names = [t.__name__ for t in tools]
+    # The only tools with "merge" in the name are the check and recovery tools
+    # — verify neither performs an actual merge.
     merge_named = sorted(n for n in names if "merge" in n.lower())
-    assert merge_named == ["check_pr_merge_conflict", "merge_pr"], (
+    assert merge_named == ["check_pr_merge_conflict", "recover_auto_merge"], (
         f"Unexpected merge-named tools: {merge_named}"
     )
+    # Expected set: push, open_pr, update_branch, check_merge_conflict,
+    # recover_auto_merge, reset, apply_patch
     assert sorted(names) == [
         "apply_patch_to_file",
         "check_pr_merge_conflict",
-        "merge_pr",
         "open_direct_repo_pr",
         "push_direct_repo_branch",
         "push_patch_to_pr_branch",
+        "recover_auto_merge",
         "reset_implement_spawn_counter",
         "update_pr_branch",
     ]
-
-
-# ---------------------------------------------------------------------------
-# merge_pr — tool-layer BLOCKED / scope gating
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_merge_pr_rejects_non_blocked_ticket(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """Ticket not in BLOCKED → merge_pr is refused."""
-    respx_mock.get(
-        url__startswith="https://api.github.com/installation/repositories"
-    ).mock(
-        return_value=httpx.Response(
-            200,
-            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
-        )
-    )
-    respx_mock.get("http://127.0.0.1:8077/tickets/t-merge1").mock(
-        return_value=httpx.Response(
-            200, text=json.dumps({"id": "t-merge1", "state": "draft"})
-        )
-    )
-
-    tools = build_direct_repo_tools(_settings())
-    fn = [t for t in tools if t.__name__ == "merge_pr"][0]
-
-    out = await fn(
-        ticket_id="t-merge1",
-        repo_full_name="org/repo",
-        pr_number=42,
-    )
-    assert "Refused" in out
-    assert "t-merge1" in out
-    assert "draft" in out.lower()
-    assert "BLOCKED" in out
-
-
-@pytest.mark.asyncio
-async def test_merge_pr_rejects_out_of_scope(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """Repo not in installation scope → merge_pr is refused."""
-    _settings()
-
-    respx_mock.get("http://127.0.0.1:8077/tickets/t-merge2").mock(
-        return_value=httpx.Response(
-            200, text=json.dumps({"id": "t-merge2", "state": "blocked"})
-        )
-    )
-    respx_mock.get(
-        url__startswith="https://api.github.com/installation/repositories"
-    ).mock(
-        return_value=httpx.Response(
-            200,
-            text=json.dumps({"repositories": [{"full_name": "org/other"}]}),
-        )
-    )
-
-    tools = build_direct_repo_tools(_settings())
-    fn = [t for t in tools if t.__name__ == "merge_pr"][0]
-
-    out = await fn(
-        ticket_id="t-merge2",
-        repo_full_name="org/repo",
-        pr_number=42,
-    )
-    assert "not installed" in out.lower()
-    assert "install" in out.lower()
 
 
 # ---------------------------------------------------------------------------

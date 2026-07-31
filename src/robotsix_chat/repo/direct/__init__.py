@@ -12,8 +12,9 @@ capability is disabled.
   (list-installation-repositories) — no static allowlist.
 - PRs are opened in a reviewable state with no auto-merge; the merge gate
   stays human.
-- A merge_pr tool is available for merging PRs via the GitHub API
-  (subject to the same BLOCKED-ticket guard).
+- A ``recover_auto_merge`` tool can update a stale PR branch to re-arm
+  auto-merge when a green, review-approved PR has bounced (no BLOCKED-state
+  gate required).
 
 **Additional guardrails for ``direct_fix``:**
 - Ticket must have exhausted its spawn limit (≥3 implement cycles),
@@ -520,21 +521,19 @@ def build_direct_repo_tools(
 
         return "\n".join(lines)
 
-    async def merge_pr(
-        ticket_id: str,
+    async def recover_auto_merge(
         repo_full_name: str,
         pr_number: int,
-        merge_method: str = "merge",
-        commit_title: str = "",
-        commit_message: str = "",
     ) -> str:
-        """Merge a pull request via the GitHub API.
+        """Attempt to recover a PR whose auto-merge has bounced.
 
-        Merges an open PR using the specified merge method.  The PR must be
-        mergeable — no conflicts and all required status checks must pass.
+        Fetches the PR to verify it is open, then calls GitHub's update-branch
+        API to rebase the head branch onto the base.  When auto-merge was
+        enabled before the bounce, updating the branch typically re-arms it.
 
-        **Precondition:** The ticket identified by *ticket_id* MUST be in
-        BLOCKED state.  This tool will verify that and refuse otherwise.
+        This tool does **not** require the owning ticket to be in BLOCKED
+        state — it is designed for recovery when a green, review-approved PR
+        has fallen behind the base branch and auto-merge has failed.
 
         **Scope:** When called through the component roster (i.e. the
         ``component_request`` credential is available) the GitHub App
@@ -544,33 +543,51 @@ def build_direct_repo_tools(
         scope (checked dynamically at call time).
 
         Args:
-            ticket_id: The blocked ticket the PR belongs to.
             repo_full_name: GitHub ``owner/name``.
-            pr_number: The PR number to merge.
-            merge_method: Merge method — ``"merge"`` (default, standard merge
-                commit), ``"squash"`` (squash all commits into one), or
-                ``"rebase"`` (rebase onto the base branch).
-            commit_title: Optional title for the merge commit (only used
-                for ``squash`` and ``merge`` methods).
-            commit_message: Optional extra detail for the merge commit
-                (only used for ``squash`` and ``merge`` methods).
+            pr_number: The PR number to recover.
 
         Returns:
-            A status message — success confirmation or an error describing
-            why the merge failed (e.g. not mergeable, conflict, status
-            checks not passing).
+            A status message with mergeable state and update-branch outcome.
 
         """
-        if error := await _assert_blocked_and_scoped(client, ticket_id, repo_full_name):
-            return error
+        # Installation scope check (skipped when component_request is available)
+        if component_request is None and (
+            scope_error := await client.check_installation_scope(repo_full_name)
+        ):
+            return scope_error
 
-        return await client.merge_pr(
+        # Verify PR exists and is open
+        try:
+            pr = await client.get_pr(
+                repo_full_name=repo_full_name,
+                pr_number=pr_number,
+            )
+        except Exception as exc:
+            return f"Error fetching PR #{pr_number} in {repo_full_name}: {exc}"
+
+        state = pr.get("state", "unknown")
+        if state != "open":
+            return (
+                f"PR #{pr_number} in {repo_full_name} is {state}, not open. "
+                "Auto-merge recovery only applies to open PRs."
+            )
+
+        mergeable_state = pr.get("mergeable_state", "unknown")
+        behind_by: int = pr.get("behind_by", pr.get("commits_behind", 0))
+
+        context_lines = [
+            f"PR #{pr_number} in {repo_full_name}: {pr.get('title', '(no title)')}",
+            f"Mergeable state: {mergeable_state}",
+        ]
+        if behind_by:
+            context_lines.append(f"Behind base by {behind_by} commit(s)")
+
+        result = await client.update_pr_branch(
             repo_full_name=repo_full_name,
             pr_number=pr_number,
-            merge_method=merge_method,
-            commit_title=commit_title,
-            commit_message=commit_message,
         )
+
+        return "\n".join(context_lines) + "\n\n" + result
 
     async def reset_implement_spawn_counter(ticket_id: str) -> str:
         """Reset the implement-agent spawn counter for a blocked ticket.
@@ -824,7 +841,7 @@ def build_direct_repo_tools(
         open_direct_repo_pr,
         update_pr_branch,
         check_pr_merge_conflict,
-        merge_pr,
+        recover_auto_merge,
         reset_implement_spawn_counter,
         apply_patch_to_file,
         push_patch_to_pr_branch,
