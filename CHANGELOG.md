@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Fix misleading error message in `direct_fix`/`patch_direct_repo_file` precondition check: when the board API returns a response without a `state` field, the error no longer incorrectly suggests checking API connectivity. Add regression tests for blocked tickets with 0 completed implement cycles.
 - Add consent-scoping and human_issue_approval safety rules to the autonomous MUTATION AUTHORIZATION prompt: auto-approval now only applies to tickets explicitly consented to (by ID, queue, or gate name), and non-consented human_issue_approval tickets require operator confirmation before transitioning.
 - Fix SFTP private-key authentication: encode PEM string as bytes so asyncssh
   treats it as inline key data rather than a file path.
