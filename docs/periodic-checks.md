@@ -91,10 +91,10 @@ A periodic subsession **cannot** spawn a new periodic child (the system rejects 
 subsessions cannot spawn periodic children" to prevent runaway nesting). When a running periodic
 monitor needs to broaden its scope or change its tempo, the supported path is **self-update**: the
 monitor calls its own `self_update_subsession` tool to amend its instructions, interval, and/or
-max-run cap.  Changes take effect on the **next scheduled tick**.
+max-run cap. Changes take effect on the **next scheduled tick**.
 
 The tool is only available to periodic subsession agents (not the main conversation agent, and not
-task or user_chat subsessions).  Guardrails:
+task or user_chat subsessions). Guardrails:
 
 - **Instructions** must be a string ≤ 8000 characters.
 - **Interval** must be at least the configured minimum (`subsessions.min_interval_seconds`).
@@ -104,7 +104,7 @@ task or user_chat subsessions).  Guardrails:
 
 Example agent-side call (the agent does this autonomously — you don't need to issue this command):
 
-```
+```text
 self_update_subsession(
     instructions="Watch tickets T-42 and T-99; report any state change.",
     interval_seconds=600,
