@@ -204,7 +204,7 @@ jobs:
         with:
           persist-credentials: false
       - name: Setup Docker Buildx (with retry)
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08  # v3
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
         with:
           timeout_minutes: 3
           max_attempts: 3
@@ -214,7 +214,7 @@ jobs:
             docker buildx rm ci-builder 2>/dev/null || true
             docker buildx create --use --driver docker-container --name ci-builder
       - name: Build image (no push, with retry)
-        uses: nick-fields/retry@ce71cc2ab81d554ebbe88c79ab5975992d79ba08  # v3
+        uses: nick-fields/retry@ad984534de44a9489a53aefd81eb77f87c70dc60  # v4.0.0
         with:
           timeout_minutes: 10
           max_attempts: 3
