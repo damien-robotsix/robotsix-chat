@@ -146,7 +146,7 @@ def build_merge_pull_request_tool(
                 "mill", "POST", f"/tickets/{ticket_id}/merge-now"
             )
             if not resp.startswith("Error:"):
-                return resp
+                return str(resp)
             logger.info(
                 "merge_pull_request: roster path failed for %s; "
                 "falling back to direct board API",
@@ -161,9 +161,7 @@ def build_merge_pull_request_tool(
 
         try:
             async with httpx.AsyncClient(timeout=timeout) as client:
-                retry_client = RetryClient(
-                    client, config=_TICKET_POLL_RETRY_CONFIG
-                )
+                retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
                 response = await retry_client.post(url, headers=headers)
                 try:
                     body = response.json()

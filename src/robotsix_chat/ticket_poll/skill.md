@@ -1,9 +1,9 @@
-# Ticket Poll — ticket-state lookup via the component roster
+# Ticket Poll — ticket-state lookup and PR merging via the component roster
 
-You have `ticket_poll` and `ticket_poll_batch` tools that query the mill board API. These tools
-route through `component_request` (roster-based connectivity) when available, falling back to the
-direct board API when the roster is unavailable — they are reliable as the primary path for checking
-ticket state.
+You have `ticket_poll`, `ticket_poll_batch`, and `merge_pull_request` tools that interact with the
+mill board API. These tools route through `component_request` (roster-based connectivity) when
+available, falling back to the direct board API when the roster is unavailable — they are reliable
+as the primary path for checking ticket state and merging approved PRs.
 
 ## When to use it
 
@@ -16,19 +16,25 @@ ticket state.
   live-GET the ticket state before reporting any change.
 - **Bulk triage** — use `ticket_poll_batch` to fetch full details (state, history, events, comments)
   for many tickets in one call, then classify them by failure signature.
+- **Merge approved PRs** — use `merge_pull_request` when a ticket is in `waiting_auto_merge` or
+  `human_mr_approval` state and its associated PR has been approved. This directly calls the mill
+  board's merge-now endpoint, bypassing the need for auto-merge to be enabled on the target
+  repository.
 
 ## Allowed operations
 
-| Tool                | Description                                                                 |
-| ------------------- | --------------------------------------------------------------------------- |
-| `ticket_poll`       | HTTP GET to the board API; returns the ticket's current state.              |
-| `ticket_poll_batch` | Concurrent HTTP GETs for multiple tickets; returns full details for triage. |
+| Tool                 | Description                                                                 |
+| -------------------- | --------------------------------------------------------------------------- |
+| `ticket_poll`        | HTTP GET to the board API; returns the ticket's current state.              |
+| `ticket_poll_batch`  | Concurrent HTTP GETs for multiple tickets; returns full details for triage. |
+| `merge_pull_request` | HTTP POST to merge the approved PR associated with a ticket.                |
 
 The tool signatures are:
 
 ```python
 ticket_poll(ticket_id: str) -> str
 ticket_poll_batch(ticket_ids: list[str]) -> str
+merge_pull_request(ticket_id: str) -> str
 ```
 
 ## Return values
@@ -51,6 +57,13 @@ A JSON string with a `tickets` array. Each element has:
 - `data` — the full JSON response from `GET /tickets/{id}` (includes events, history, comments,
   cycle metadata)
 - `error` — empty string on success, or a diagnostic message on failure
+
+### `merge_pull_request`
+
+A status message string from the mill API — either a success confirmation or an error describing why
+the merge failed (e.g. the PR is not approved, conflicts exist, or required status checks have not
+passed).  The tool routes through the component roster when available, falling back to the direct
+board API on any failure.
 
 ## Safety
 
@@ -79,4 +92,8 @@ ticket_poll_batch([
 # Combined with component_request for double-check (terminal-state verification)
 # 1. ticket_poll("20250101T120000Z-my-ticket-a1b2")     → state: "DONE"
 # 2. component_request("mill", "GET", "/tickets/...")    → confirm: "DONE"
+
+# Merge an approved PR when a ticket is in waiting_auto_merge or human_mr_approval
+merge_pull_request("20250101T120000Z-my-ticket-a1b2")
+# → "HTTP 200\n{\"status\": \"merged\", ...}"
 ```

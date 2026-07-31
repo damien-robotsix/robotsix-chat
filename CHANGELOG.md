@@ -5,6 +5,10 @@
   `POST /tickets/{id}/resume-blocked` using a spawn-counter-specific
   justification.  Removed dead `_delete_artifact_via_component` (never
   called) and `DirectRepoClient.delete_ticket_artifact` (orphaned).
+- Wire `merge_pull_request` tool into the agent's tool suite so it can merge
+  approved PRs for tickets in `waiting_auto_merge` / `human_mr_approval` state,
+  bypassing the need for auto-merge to be enabled on the target repository.
+  Update `skill.md` to document the tool and its usage.
 - Added `recover_auto_merge` direct-repo tool: recovers a PR that has bounced
   from auto-merge by calling GitHub's update-branch API to rebase the head
   branch, without requiring the owning ticket to be in BLOCKED state.  Designed

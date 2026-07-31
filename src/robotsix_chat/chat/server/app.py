@@ -655,6 +655,7 @@ def _build_static_tools(
         *build_langfuse_inspect_tools(settings.langfuse_inspect, settings.langfuse),
         *build_sftp_tools(settings.sftp),
         *build_ticket_poll_tools(settings, component_request=component_request),
+        *build_merge_pull_request_tool(settings, component_request=component_request),
     ]
 
 
