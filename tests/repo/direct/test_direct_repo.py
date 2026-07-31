@@ -3858,3 +3858,195 @@ async def test_push_patch_to_pr_branch_uses_custom_commit_message(
     )
     # Should not be refused — we just verify it doesn't hit a guard
     assert "Refused" not in out
+
+
+# ---------------------------------------------------------------------------
+# apply_patch_to_file
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_apply_patch_to_file_default_new_branch(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """apply_patch_to_file without target_branch pushes to a new branch."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-aptf1").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"id": "t-aptf1", "state": "blocked"}),
+        )
+    )
+    # Repo info (called once by apply_patch_to_file and again inside
+    # push_branch — both need default_branch).
+    respx_mock.get("https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"default_branch": "main"}),
+        )
+    )
+    # File content on the default branch (base64-encoded "old\n").
+    respx_mock.get("https://api.github.com/repos/org/repo/contents/x.py?ref=main").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "encoding": "base64",
+                    "content": "b2xkCg==",
+                    "sha": "abc123",
+                }
+            ),
+        )
+    )
+    # Catch-all GET for git refs and commits (push_branch internals).
+    respx_mock.get(url__startswith="https://api.github.com/repos/org/repo/git").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "object": {"sha": "base-sha"},
+                    "sha": "commit-sha",
+                    "tree": {"sha": "tree-sha"},
+                }
+            ),
+        )
+    )
+    # Catch-all POST for blobs, trees, commits, and ref creation.
+    respx_mock.post(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text=json.dumps({"sha": "new-sha"}))
+    )
+    # push_branch creates a new ref via POST, not PATCH — verify
+    # the target_branch path (which uses PATCH) is NOT taken.
+    patch_route = respx_mock.patch(
+        url__startswith="https://api.github.com/repos/org/repo"
+    ).mock(return_value=httpx.Response(200, text="{}"))
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "apply_patch_to_file"][0]
+
+    out = await fn(
+        ticket_id="t-aptf1",
+        repo_full_name="org/repo",
+        branch_name="fix/t-aptf1",
+        file_path="x.py",
+        patch_content="@@ -1,1 +1,1 @@\n-old\n+new\n",
+    )
+    assert "Refused" not in out
+    assert not patch_route.called
+
+
+@pytest.mark.asyncio
+async def test_apply_patch_to_file_target_branch(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """apply_patch_to_file with target_branch pushes directly to that branch."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-aptf2").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"id": "t-aptf2", "state": "blocked"}),
+        )
+    )
+    # File content on the target branch (base64-encoded "old\n").
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/contents/x.py?ref=existing-branch"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "encoding": "base64",
+                    "content": "b2xkCg==",
+                    "sha": "abc123",
+                }
+            ),
+        )
+    )
+    # Catch-all GET for git refs and commits (push_commit_to_branch).
+    respx_mock.get(url__startswith="https://api.github.com/repos/org/repo/git").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "object": {"sha": "base-sha"},
+                    "sha": "commit-sha",
+                    "tree": {"sha": "tree-sha"},
+                }
+            ),
+        )
+    )
+    # Catch-all POST for blobs, trees, and commits.
+    respx_mock.post(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text=json.dumps({"sha": "new-sha"}))
+    )
+    # push_patched_file → push_commit_to_branch uses PATCH to update
+    # the existing branch ref, not POST (which would create a new ref).
+    patch_route = respx_mock.patch(
+        url__startswith="https://api.github.com/repos/org/repo"
+    ).mock(return_value=httpx.Response(200, text="{}"))
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "apply_patch_to_file"][0]
+
+    out = await fn(
+        ticket_id="t-aptf2",
+        repo_full_name="org/repo",
+        branch_name="fix/t-aptf2",
+        file_path="x.py",
+        patch_content="@@ -1,1 +1,1 @@\n-old\n+new\n",
+        target_branch="existing-branch",
+    )
+    assert "Refused" not in out
+    # The target_branch path calls push_patched_file which updates
+    # the existing ref via PATCH — verify it was taken.
+    assert patch_route.called
+
+
+@pytest.mark.asyncio
+async def test_apply_patch_to_file_rejects_non_blocked(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Non-BLOCKED ticket is refused even when target_branch is supplied."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-aptf3").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"id": "t-aptf3", "state": "draft"}),
+        )
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "apply_patch_to_file"][0]
+
+    out = await fn(
+        ticket_id="t-aptf3",
+        repo_full_name="org/repo",
+        branch_name="fix/t-aptf3",
+        file_path="x.py",
+        patch_content="@@ -1,1 +1,1 @@\n-old\n+new\n",
+        target_branch="existing-branch",
+    )
+    assert "Refused" in out
+    assert "t-aptf3" in out
+    assert "draft" in out.lower()
