@@ -7,6 +7,7 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 **Summary:** Clarified that the ticket fingerprint guard hashes only the spec text, not the full
 ticket description. Added notes in two locations:
+
 1. In the autonomous runner's fingerprint-guard bypass guidance: "the fingerprint guard hashes
 only the spec text, not the full ticket description. Editing the description without changing
 the spec text will NOT clear the guard — to vary the fingerprint you must edit the spec itself."
