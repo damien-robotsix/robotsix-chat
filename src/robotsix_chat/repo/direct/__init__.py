@@ -25,10 +25,11 @@ capability is disabled.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import Callable
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 if TYPE_CHECKING:
     from robotsix_chat.config import DirectRepoSettings
@@ -57,6 +58,33 @@ def build_direct_repo_tools(
 
     client = DirectRepoClient(settings)
 
+    async def _retry_component_ticket_fetch(
+        component_req: Callable[..., Any],
+        ticket_id: str,
+        max_retries: int = 3,
+        backoff_base: float = 0.5,
+    ) -> str:
+        """Call *component_req* for a ticket with retry on transient failures.
+
+        Retries up to *max_retries* times with exponential backoff starting
+        at *backoff_base* seconds.  Returns the raw response string from the
+        last attempt (success or failure).
+        """
+        last_resp = "Error: no response"
+        for attempt in range(max_retries):
+            if attempt > 0:
+                await asyncio.sleep(backoff_base * (2 ** (attempt - 1)))
+            resp = cast(
+                "str",
+                await component_req("mill", "GET", f"/tickets/{ticket_id}"),
+            )
+            # Treat "Error:" prefixed responses as retryable — they indicate
+            # a connectivity or routing failure, not a semantic error.
+            if not resp.startswith("Error:"):
+                return resp
+            last_resp = resp
+        return last_resp
+
     async def _get_ticket_state_via_component(
         component_req: Callable[..., Any],
         ticket_id: str,
@@ -65,8 +93,11 @@ def build_direct_repo_tools(
 
         Returns ``(state, None)`` on success, ``(None, error_msg)`` on failure.
         The error message includes the connectivity path used for diagnosis.
+
+        The underlying component_request call is retried up to 3 times with
+        exponential backoff to absorb transient board-API connectivity issues.
         """
-        resp = await component_req("mill", "GET", f"/tickets/{ticket_id}")
+        resp = await _retry_component_ticket_fetch(component_req, ticket_id)
         # Parse the component_request response format: "HTTP <status>\n<body>"
         # or "Error: ..."
         if resp.startswith("Error:"):
@@ -125,8 +156,11 @@ def build_direct_repo_tools(
         Mirrors :meth:`DirectRepoClient.count_implement_cycles` but uses the
         roster-based connectivity path so cycle-counting succeeds when the
         direct ``board_api_base_url`` path is unreachable.
+
+        The underlying component_request call is retried up to 3 times with
+        exponential backoff to absorb transient board-API connectivity issues.
         """
-        resp = await component_req("mill", "GET", f"/tickets/{ticket_id}")
+        resp = await _retry_component_ticket_fetch(component_req, ticket_id)
         if resp.startswith("Error:"):
             return None
         try:
@@ -206,6 +240,15 @@ def build_direct_repo_tools(
             state, error = await _get_ticket_state_via_component(
                 component_request, ticket_id
             )
+            # Fall back to the direct board-API client when the
+            # roster-based (component_request) path fails, so a
+            # transient connectivity issue on one path does not
+            # hard-fail the entire tool invocation.
+            if error is not None:
+                fallback_state = await client.get_ticket_state(ticket_id)
+                if fallback_state is not None:
+                    state = fallback_state
+                    error = None
         else:
             state = await client.get_ticket_state(ticket_id)
             if state is not None:
@@ -911,6 +954,12 @@ def build_direct_repo_tools(
                 cycles = await _get_implement_cycles_via_component(
                     component_request, ticket_id
                 )
+                # Fall back to the direct board-API client when the
+                # roster-based (component_request) path fails, so a
+                # transient connectivity issue on one path does not
+                # hard-fail the entire tool invocation.
+                if cycles is None:
+                    cycles = await client.count_implement_cycles(ticket_id)
             else:
                 cycles = await client.count_implement_cycles(ticket_id)
             if cycles is None:
@@ -1033,6 +1082,12 @@ def build_direct_repo_tools(
                 cycles = await _get_implement_cycles_via_component(
                     component_request, ticket_id
                 )
+                # Fall back to the direct board-API client when the
+                # roster-based (component_request) path fails, so a
+                # transient connectivity issue on one path does not
+                # hard-fail the entire tool invocation.
+                if cycles is None:
+                    cycles = await client.count_implement_cycles(ticket_id)
             else:
                 cycles = await client.count_implement_cycles(ticket_id)
             if cycles is None:
