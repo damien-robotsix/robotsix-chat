@@ -60,21 +60,37 @@ def build_repo_study_tools(
             return f"Error: {exc}"
 
     async def list_repo_files(
-        workspace_id: str, glob: str = "**/*", max_entries: int = 500
+        workspace_id: str,
+        glob: str = "**/*",
+        path: str = "",
+        max_entries: int = 500,
     ) -> str:
         """List files in a fetched repo workspace.
 
         Args:
             workspace_id: The id returned by ``fetch_repo_for_study``.
             glob: Workspace-relative glob filter (e.g. ``src/**/*.py``).
+            path: Workspace-relative directory to list (e.g. ``changelog.d``).
+                Combines with *glob* when both are given.
             max_entries: Cap on the number of entries returned.
 
         Returns:
             One ``path (size bytes)`` line per file, or an error message.
 
         """
+        # ``path`` exists because every sibling tool (read_repo_file,
+        # write_repo_file, …) takes one, so agents reach for it here too —
+        # and used to get a hard "Additional properties are not allowed
+        # ('path' was unexpected)" validation failure. That cost a wasted
+        # turn each time and generated recurring tool_error tickets. A
+        # directory is just a glob prefix, so accept it directly.
+        effective_glob = glob or "**/*"
+        if path:
+            prefix = path.strip("/")
+            if prefix:
+                effective_glob = f"{prefix}/{effective_glob}"
         try:
-            return manager.list_files(workspace_id, glob, max_entries)
+            return manager.list_files(workspace_id, effective_glob, max_entries)
         except WorkspaceError as exc:
             return f"Error: {exc}"
 
