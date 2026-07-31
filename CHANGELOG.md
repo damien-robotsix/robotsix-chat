@@ -5,6 +5,10 @@
   branch, without requiring the owning ticket to be in BLOCKED state.  Designed
   for green, review-approved PRs stalled behind the base branch.
 - Autonomous prompt: add "Stall guard response" guidance so the agent proactively suggests re-scoping or splitting when a periodic monitor auto-stops after consecutive no-change cycles. This reduces operator cognitive load when a monitored ticket stalls.
+- Strengthen the implement agent's `no_change_needed=true` gate: before
+  declaring a ticket already satisfied, the agent must now independently
+  verify every acceptance criterion against the files on disk — an empty
+  `git diff` alone is no longer sufficient evidence.
 - Extract shared SFTP connection context manager (`_sftp_connection`) in `SftpClient`, eliminating duplicated
   connection-lifecycle boilerplate across `read_file`, `write_file`, `list_directory`, and `file_exists`.
 - Lower ``subsessions.max_idle_runs`` default from 5 to 3 so periodic monitors auto-pause sooner (before auto-stop), and improve the auto-pause summary text to include what to do next.
