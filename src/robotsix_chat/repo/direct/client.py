@@ -580,66 +580,6 @@ class DirectRepoClient:
         """
         return await self._get_json(f"/repos/{repo_full_name}/pulls/{pr_number}")
 
-    async def merge_pr(
-        self,
-        *,
-        repo_full_name: str,
-        pr_number: int,
-        merge_method: str = "merge",
-        commit_title: str = "",
-        commit_message: str = "",
-    ) -> str:
-        """Merge a pull request via the GitHub API.
-
-        Calls ``PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge``.
-        The PR must be mergeable (no conflicts, all required status checks
-        passed); the merge method defaults to a standard merge commit.
-
-        Never raises — returns a success/error message string.
-        """
-        try:
-            body: dict[str, str] = {"merge_method": merge_method}
-            if commit_title:
-                body["commit_title"] = commit_title
-            if commit_message:
-                body["commit_message"] = commit_message
-
-            url = f"{self._base_url}/repos/{repo_full_name}/pulls/{pr_number}/merge"
-            result = await self._http_with_retry(
-                "PUT",
-                url,
-                json_body=body,
-                headers=await self._gh_headers(),
-                timeout=self._s.timeout,
-                label=f"GitHub API (merge PR #{pr_number})",
-            )
-            if result.ok:
-                merge_data = json.loads(result.text or "")
-                merged = merge_data.get("merged", False) if merge_data else False
-                message = merge_data.get("message", "") if merge_data else ""
-                if merged:
-                    return f"PR #{pr_number} in {repo_full_name} merged successfully."
-                return (
-                    f"PR #{pr_number} in {repo_full_name}: merge responded 200 "
-                    f"but did not report merged=True.  Message: {message}"
-                )
-            # 405 = not mergeable (status checks, reviews, conflicts)
-            if result.status_code == 405:
-                detail = result.error or "(no detail)"
-                return (
-                    f"PR #{pr_number} in {repo_full_name} is not mergeable. "
-                    f"Possible causes: required status checks not passing, "
-                    f"required reviews not completed, or merge conflicts.\n"
-                    f"GitHub response: {detail}"
-                )
-            # 409 = conflict / SHA mismatch
-            if result.status_code == 409:
-                detail = result.error or "(no detail)"
-                return f"PR #{pr_number} in {repo_full_name} merge conflict: {detail}"
-            return f"Error merging PR: {result.error or 'unknown error'}"
-        except Exception as exc:
-            return f"Error merging PR: {exc}"
-
     async def resume_blocked_ticket(self, ticket_id: str, justification: str) -> bool:
         """Resume a blocked ticket via the board API.
 
@@ -1163,6 +1103,201 @@ class DirectRepoClient:
             return f"Error fetching workflow run annotations: {exc}"
         except Exception as exc:
             return f"Error fetching workflow run annotations: {exc}"
+
+    # -- merge helpers -----------------------------------------------------
+
+    async def merge_pr(
+        self,
+        *,
+        repo_full_name: str,
+        pr_number: int,
+        merge_method: str = "squash",
+        commit_title: str | None = None,
+        commit_message: str | None = None,
+    ) -> str:
+        """Merge a pull request.
+
+        Calls ``PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge``.
+
+        Before attempting the merge the method fetches the PR to surface
+        actionable diagnostics when the merge is blocked: draft state,
+        merge conflicts, or failing/pending CI checks.  GitHub enforces
+        the same preconditions server-side (returns 405/409), so the
+        pre-flight check is a best-effort diagnostic layer.
+
+        Args:
+            repo_full_name: ``"owner/name"``.
+            pr_number: The PR number to merge.
+            merge_method: ``"squash"`` (default), ``"merge"``, or ``"rebase"``.
+            commit_title: Optional title for the merge commit (squash/merge only).
+            commit_message: Optional body for the merge commit (squash/merge only).
+
+        Returns:
+            A success message with the merge commit SHA, or an error message.
+
+        Never raises — returns an error string on any failure.
+
+        """
+        try:
+            # --- pre-flight: fetch PR to diagnose blockers ---
+            pr = await self.get_pr(repo_full_name=repo_full_name, pr_number=pr_number)
+        except RuntimeError as exc:
+            return f"Error fetching PR #{pr_number} in {repo_full_name}: {exc}"
+
+        # Draft check
+        if pr.get("draft"):
+            return (
+                f"Cannot merge PR #{pr_number} in {repo_full_name}: "
+                f"the PR is still in draft state.  Mark it as ready for "
+                f"review before merging."
+            )
+
+        # Mergeability check (GitHub computes this asynchronously)
+        mergeable = pr.get("mergeable")
+        mergeable_state = pr.get("mergeable_state", "unknown")
+        if mergeable is False:
+            return (
+                f"Cannot merge PR #{pr_number} in {repo_full_name}: "
+                f"merge conflicts detected (mergeable_state={mergeable_state}). "
+                f"Resolve conflicts or rebase the branch before merging."
+            )
+        if mergeable is None:
+            return (
+                f"Cannot merge PR #{pr_number} in {repo_full_name} yet: "
+                f"mergeability is still being computed by GitHub. "
+                f"Wait a few seconds and try again."
+            )
+
+        # Already merged?
+        if pr.get("merged"):
+            merge_sha = pr.get("merge_commit_sha", "(unknown)")
+            return (
+                f"PR #{pr_number} in {repo_full_name} is already merged "
+                f"(merge commit: {merge_sha})."
+            )
+
+        # --- attempt the merge ---
+        body: dict[str, Any] = {"merge_method": merge_method}
+        if commit_title is not None:
+            body["commit_title"] = commit_title
+        if commit_message is not None:
+            body["commit_message"] = commit_message
+
+        try:
+            result = await self._request_json(
+                "PUT",
+                f"/repos/{repo_full_name}/pulls/{pr_number}/merge",
+                body,
+            )
+        except RuntimeError as exc:
+            msg = str(exc)
+            # GitHub returns 405 when the PR is not mergeable (e.g. CI
+            # checks pending/failing, required reviews missing).
+            if "405" in msg:
+                return (
+                    f"Cannot merge PR #{pr_number} in {repo_full_name}: "
+                    f"the PR is not in a mergeable state.  Common causes: "
+                    f"required status checks are pending or failing, "
+                    f"required reviews are missing, or branch protection "
+                    f"rules are not satisfied.  "
+                    f"GitHub response: {msg}"
+                )
+            if "409" in msg:
+                return (
+                    f"Cannot merge PR #{pr_number} in {repo_full_name}: "
+                    f"merge conflict or SHA mismatch.  "
+                    f"GitHub response: {msg}"
+                )
+            return f"Error merging PR #{pr_number} in {repo_full_name}: {msg}"
+
+        merged = result.get("merged", False)
+        sha = result.get("sha", "(unknown)")
+        message = result.get("message", "")
+
+        if merged:
+            return (
+                f"PR #{pr_number} in {repo_full_name} merged successfully "
+                f"using {merge_method}.\n"
+                f"Merge commit SHA: {sha}"
+            )
+        # GitHub returned 200 but merged=False — surface the message
+        return (
+            f"PR #{pr_number} in {repo_full_name} was not merged: "
+            f"{message or 'unknown reason'} (SHA: {sha})"
+        )
+
+    async def arm_auto_merge(
+        self,
+        *,
+        repo_full_name: str,
+        pr_number: int,
+        merge_method: str = "squash",
+    ) -> str:
+        """Enable auto-merge on a pull request.
+
+        Calls ``PUT /repos/{owner}/{repo}/pulls/{pull_number}/auto-merge``.
+
+        When auto-merge is enabled GitHub will automatically merge the PR
+        as soon as all required conditions are met (status checks pass,
+        required reviews are submitted, branch protection rules are
+        satisfied).  The merge happens without further human intervention.
+
+        Args:
+            repo_full_name: ``"owner/name"``.
+            pr_number: The PR number to enable auto-merge on.
+            merge_method: ``"squash"`` (default), ``"merge"``, or ``"rebase"``.
+
+        Returns:
+            A success message, or an error message describing why auto-merge
+            could not be enabled.
+
+        Never raises — returns an error string on any failure.
+
+        """
+        try:
+            # --- pre-flight: fetch PR to check state ---
+            pr = await self.get_pr(repo_full_name=repo_full_name, pr_number=pr_number)
+        except RuntimeError as exc:
+            return f"Error fetching PR #{pr_number} in {repo_full_name}: {exc}"
+
+        if pr.get("draft"):
+            return (
+                f"Cannot enable auto-merge on PR #{pr_number} in "
+                f"{repo_full_name}: the PR is still in draft state."
+            )
+
+        if pr.get("merged"):
+            return (
+                f"PR #{pr_number} in {repo_full_name} is already merged — "
+                f"auto-merge is not applicable."
+            )
+
+        body: dict[str, Any] = {"merge_method": merge_method}
+        try:
+            await self._request_json(
+                "PUT",
+                f"/repos/{repo_full_name}/pulls/{pr_number}/auto-merge",
+                body,
+            )
+        except RuntimeError as exc:
+            msg = str(exc)
+            if "403" in msg or "404" in msg:
+                return (
+                    f"Cannot enable auto-merge on PR #{pr_number} in "
+                    f"{repo_full_name}: the repository may not have "
+                    f"auto-merge enabled, or branch protection rules "
+                    f"prevent it.  GitHub response: {msg}"
+                )
+            return (
+                f"Error enabling auto-merge on PR #{pr_number} in "
+                f"{repo_full_name}: {msg}"
+            )
+
+        return (
+            f"Auto-merge enabled on PR #{pr_number} in {repo_full_name} "
+            f"using {merge_method}.  The PR will be merged automatically "
+            f"once all required conditions are met."
+        )
 
     # -- file-content helpers (for apply_patch_to_file) -------------------
 

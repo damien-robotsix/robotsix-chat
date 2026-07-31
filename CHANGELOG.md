@@ -91,6 +91,11 @@
 - Clarify in the agent instruction that the ticket fingerprint guard hashes only the spec text — editing the description without changing the spec will not clear the guard. This prevents agents from wasting cycles trying to bypass the guard by appending to the ticket description.
 - Added `push_patch_to_pr_branch` tool: push a unified-diff commit to an existing PR's head branch, with BLOCKED-state, scope, and same-repo authorization checks. Removes the need to create a new branch for every PR update.
 - Bumped `robotsix-llmio` (v0.1.1 → v0.1.4) and `robotsix-http` (v0.1.dev16 → v0.1.dev38) pinned git revisions to pick up upstream routing fixes for the OpenRouter 402 fallback issue (robotsix-llmio #499/#500, robotsix-http #45).
+- Add confirmation-gated merge tool (`merge_direct_repo_pr`) and auto-merge tool
+  (`arm_direct_repo_auto_merge`) to the chat agent's direct-repo toolset.
+  Both tools require explicit operator approval in-chat before proceeding,
+  enforce installation scope, and produce actionable diagnostics when the
+  merge is blocked (draft, conflicts, CI not green, etc.).
 - Strengthen subsession consolidation prompt: the CONSOLIDATION RULE is now the
   primary instruction (applied first, before per-outcome handling) in the reaction
   prompt template, using mandatory MUST language and explicit conversation-history
