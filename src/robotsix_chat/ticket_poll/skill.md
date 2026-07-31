@@ -2,8 +2,8 @@
 
 You have `ticket_poll` and `ticket_poll_batch` tools that query the mill board API. These tools
 route through `component_request` (roster-based connectivity) when available, falling back to the
-direct board API when the roster is unavailable — they are reliable as the primary path for
-checking ticket state.
+direct board API when the roster is unavailable — they are reliable as the primary path for checking
+ticket state.
 
 ## When to use it
 
@@ -56,8 +56,8 @@ A JSON string with a `tickets` array. Each element has:
 
 - **Read-only** — GET only; no state mutation is possible through these tools.
 - **Roster-first routing** — prefers the component roster (`component_request`) when available;
-  falls back to the direct board API when the roster is absent.  This means the tools share the
-  same connectivity path as `component_request` and are equally reliable.
+  falls back to the direct board API when the roster is absent. This means the tools share the same
+  connectivity path as `component_request` and are equally reliable.
 - **Timeout** — each request has a short timeout; failures are per-ticket (one down ticket won't
   break the batch).
 

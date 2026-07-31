@@ -39,8 +39,8 @@ A JSON string with these fields:
 
 - **Read-only** — GET only; no state mutation is possible through this tool.
 - **Roster-first routing** — prefers the component roster (`component_request`) when available;
-  falls back to the direct board API when the roster is absent.  This means the tool shares the
-  same connectivity path as `component_request` and is equally reliable.
+  falls back to the direct board API when the roster is absent. This means the tool shares the same
+  connectivity path as `component_request` and is equally reliable.
 - **Timeout** — the request has a short timeout; one request per call.
 
 ## Example calls

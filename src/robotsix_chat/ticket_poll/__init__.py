@@ -51,7 +51,7 @@ def _parse_json_body(body: str) -> tuple[dict[str, Any] | None, str]:
     """
     try:
         return json.loads(body), ""
-    except (json.JSONDecodeError, TypeError):
+    except json.JSONDecodeError, TypeError:
         return None, "Non-JSON response from board API"
 
 
@@ -116,7 +116,13 @@ def build_ticket_poll_tools(
         Returns ``(status, body, "")`` on success, ``(status, None, error)``
         on failure.  *body* is the raw response body string.
         """
-        assert component_request is not None  # type narrow for mypy
+        if component_request is None:  # type narrow for mypy
+            return (
+                0,
+                None,
+                "Board API request via component_request failed: "
+                "component_request is not available",
+            )
         resp = await component_request("mill", "GET", f"/tickets/{ticket_id}")
         if resp.startswith("Error:"):
             return (
@@ -143,7 +149,7 @@ def build_ticket_poll_tools(
             )
         try:
             status_code = int(status_line.split()[1])
-        except (IndexError, ValueError):
+        except IndexError, ValueError:
             return (
                 0,
                 None,
@@ -197,7 +203,15 @@ def build_ticket_poll_tools(
                     {"ticket_id": ticket_id, "state": None, "error": parse_error},
                     ensure_ascii=False,
                 )
-            assert data is not None  # guarded by parse_error check above
+            if data is None:  # guarded by parse_error check above
+                return json.dumps(
+                    {
+                        "ticket_id": ticket_id,
+                        "state": None,
+                        "error": "Empty parsed response from board API",
+                    },
+                    ensure_ascii=False,
+                )
             state = data.get("state")
             return json.dumps(
                 {"ticket_id": ticket_id, "state": state, "error": ""},
@@ -228,7 +242,15 @@ def build_ticket_poll_tools(
                         {"ticket_id": ticket_id, "state": None, "error": parse_error},
                         ensure_ascii=False,
                     )
-                assert data is not None  # guarded by parse_error check above
+                if data is None:  # guarded by parse_error check above
+                    return json.dumps(
+                        {
+                            "ticket_id": ticket_id,
+                            "state": None,
+                            "error": "Empty parsed response from board API",
+                        },
+                        ensure_ascii=False,
+                    )
                 state = data.get("state")
                 return json.dumps(
                     {
@@ -330,7 +352,13 @@ def build_ticket_poll_tools(
                             "data": None,
                             "error": parse_error,
                         }
-                    assert data is not None  # guarded by parse_error check above
+                    if data is None:  # guarded by parse_error check above
+                        return {
+                            "ticket_id": ticket_id,
+                            "state": None,
+                            "data": None,
+                            "error": "Empty parsed response from board API",
+                        }
                     return {
                         "ticket_id": ticket_id,
                         "state": data.get("state"),
@@ -365,7 +393,13 @@ def build_ticket_poll_tools(
                                 "data": None,
                                 "error": parse_error,
                             }
-                        assert data is not None  # guarded by parse_error check above
+                        if data is None:  # guarded by parse_error check above
+                            return {
+                                "ticket_id": ticket_id,
+                                "state": None,
+                                "data": None,
+                                "error": "Empty parsed response from board API",
+                            }
                         return {
                             "ticket_id": ticket_id,
                             "state": data.get("state"),
