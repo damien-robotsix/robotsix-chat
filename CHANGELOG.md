@@ -1,5 +1,9 @@
 ## 0.0.0 (unreleased)
 
+- Refactor: extract shared `_check_preconditions` helper in `repo.direct`
+  to eliminate ~15-line duplicated precondition guard (BLOCKED state +
+  ≥3 implement cycles) that was copy-pasted between `direct_fix` and
+  `patch_direct_repo_file`.
 - Fix misleading error message in `direct_fix`/`patch_direct_repo_file` precondition check: when the board API returns a response without a `state` field, the error no longer incorrectly suggests checking API connectivity. Add regression tests for blocked tickets with 0 completed implement cycles.
 - **System prompt v77** — added guidance to the Efficiency section directing the
   assistant to avoid dumping long sorted lists (20+ PR links, ticket enumerations,
