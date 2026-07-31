@@ -1,6 +1,11 @@
 ## 0.0.0 (unreleased)
 
 - Fix misleading error message in `direct_fix`/`patch_direct_repo_file` precondition check: when the board API returns a response without a `state` field, the error no longer incorrectly suggests checking API connectivity. Add regression tests for blocked tickets with 0 completed implement cycles.
+- **System prompt v77** — added guidance to the Efficiency section directing the
+  assistant to avoid dumping long sorted lists (20+ PR links, ticket enumerations,
+  file inventories) inline in a single chat message. Long lists should use compact
+  summaries with the full list as a separate artifact (knowledge note, split across
+  replies, or narrowed query).
 - Add consent-scoping and human_issue_approval safety rules to the autonomous MUTATION AUTHORIZATION prompt: auto-approval now only applies to tickets explicitly consented to (by ID, queue, or gate name), and non-consented human_issue_approval tickets require operator confirmation before transitioning.
 - Fix SFTP private-key authentication: encode PEM string as bytes so asyncssh
   treats it as inline key data rather than a file path.

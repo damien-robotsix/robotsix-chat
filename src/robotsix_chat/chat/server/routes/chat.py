@@ -19,7 +19,12 @@ from starlette.responses import JSONResponse, StreamingResponse
 from robotsix_chat.autonomous.models import AutonomousState
 from robotsix_chat.chat.conversation import ConversationStore
 
-from ._shared import _parse_json_body, _sse_frame, build_transcript
+from ._shared import (
+    _detect_truncation,
+    _parse_json_body,
+    _sse_frame,
+    build_transcript,
+)
 from .constants import (
     SSE_CONTENT_TYPE,
     SSE_DONE_TYPE,
@@ -340,6 +345,20 @@ class MessageCoalescer:
                         event_bus.append_turn_token(session_id, turn_id, token)
 
                 full_reply = "".join(reply_parts)
+
+                # Detect LLM output-length truncation and append a
+                # human-visible note so the user knows the list may be
+                # incomplete and can request the rest.
+                truncation_note = _detect_truncation(full_reply)
+                if truncation_note is not None:
+                    full_reply += truncation_note
+                    for p in pending:
+                        await p.response_queue.put((SSE_TOKEN_TYPE, truncation_note))
+                    if publish_turn:
+                        event_bus.append_turn_token(
+                            session_id, turn_id, truncation_note
+                        )
+
                 if session_id:
                     store.record(session_id, owner_id, concatenated, full_reply)
                     # Generate an LLM title after the first turn.
