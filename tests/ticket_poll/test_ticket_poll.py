@@ -359,6 +359,45 @@ async def test_ticket_poll_no_component_request_uses_direct_only(
 
 
 # ---------------------------------------------------------------------------
+# ticket_poll — ID resolution
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_resolves_paraphrased_id(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Paraphrased ID is resolved via hash-suffix match before the GET."""
+    real_id = "20260731T020731Z-batch-approval-should-resolve-ids-32be"
+
+    respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"ticket_id": real_id, "state": "BLOCKED"},
+                {"ticket_id": "20260730T232905Z-other-ticket-761f", "state": "DONE"},
+            ],
+        )
+    )
+
+    route = respx_mock.get(f"http://board:8077/tickets/{real_id}").mock(
+        return_value=httpx.Response(
+            200,
+            json={"state": "BLOCKED", "title": "Batch approval"},
+        )
+    )
+
+    tools = build_ticket_poll_tools(_settings())
+    # Pass a paraphrased ID — only the hash suffix matches
+    result = json.loads(await tools[0]("...-resolve-ids-32be"))
+
+    assert route.called
+    assert result["ticket_id"] == real_id
+    assert result["state"] == "BLOCKED"
+    assert result["error"] == ""
+
+
+# ---------------------------------------------------------------------------
 # ticket_poll_batch
 # ---------------------------------------------------------------------------
 
@@ -528,6 +567,178 @@ async def test_ticket_poll_batch_json_decode_failure(
     assert ticket["state"] is None
     assert ticket["data"] is None
     assert "Non-JSON" in ticket["error"]
+
+
+# ---------------------------------------------------------------------------
+# ticket_poll_batch — ID resolution
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_batch_resolves_by_hash_suffix(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Paraphrased ID with a matching 4-char hex suffix is resolved."""
+    real_id = "20260731T020731Z-batch-approval-should-resolve-ids-32be"
+
+    # Mock GET /tickets listing
+    respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"ticket_id": real_id, "state": "BLOCKED"},
+                {"ticket_id": "20260730T232905Z-other-ticket-761f", "state": "DONE"},
+            ],
+        )
+    )
+
+    # The real ticket fetch should be for the resolved ID
+    route = respx_mock.get(f"http://board:8077/tickets/{real_id}").mock(
+        return_value=httpx.Response(
+            200,
+            json={"state": "BLOCKED", "title": "Batch approval"},
+        )
+    )
+
+    tools = build_ticket_poll_tools(_settings())
+    batch_tool = tools[1]
+    # Pass a paraphrased ID — only the hash suffix survives
+    result = json.loads(await batch_tool(["...-resolve-ids-32be"]))
+
+    assert route.called
+    tickets = result["tickets"]
+    assert len(tickets) == 1
+    assert tickets[0]["ticket_id"] == real_id
+    assert tickets[0]["state"] == "BLOCKED"
+    assert tickets[0]["error"] == ""
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_batch_resolves_by_slug_substring(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Paraphrased ID without a hash suffix is resolved via slug substring."""
+    real_id = "20260731T020731Z-batch-approval-should-resolve-ticket-ids-32be"
+
+    respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"ticket_id": real_id, "state": "DONE"},
+                {
+                    "ticket_id": "20260730T232905Z-unrelated-ticket-761f",
+                    "state": "OPEN",
+                },
+            ],
+        )
+    )
+
+    route = respx_mock.get(f"http://board:8077/tickets/{real_id}").mock(
+        return_value=httpx.Response(
+            200,
+            json={"state": "DONE", "title": "Batch approval"},
+        )
+    )
+
+    tools = build_ticket_poll_tools(_settings())
+    batch_tool = tools[1]
+    # Slug "batch-approval-should-resolve" is unique enough
+    result = json.loads(await batch_tool(["batch-approval-should-resolve"]))
+
+    assert route.called
+    tickets = result["tickets"]
+    assert len(tickets) == 1
+    assert tickets[0]["ticket_id"] == real_id
+    assert tickets[0]["state"] == "DONE"
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_batch_exact_match_no_list_fetch(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When an ID is already exact, resolution still fetches the list.
+
+    But the result is the same ID.
+    """
+    real_id = "20260731T020731Z-batch-approval-should-resolve-ticket-ids-32be"
+
+    respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"ticket_id": real_id, "state": "BLOCKED"}],
+        )
+    )
+
+    route = respx_mock.get(f"http://board:8077/tickets/{real_id}").mock(
+        return_value=httpx.Response(
+            200,
+            json={"state": "BLOCKED", "title": "Batch approval"},
+        )
+    )
+
+    tools = build_ticket_poll_tools(_settings())
+    batch_tool = tools[1]
+    result = json.loads(await batch_tool([real_id]))
+
+    assert route.called
+    tickets = result["tickets"]
+    assert len(tickets) == 1
+    assert tickets[0]["ticket_id"] == real_id
+    assert tickets[0]["state"] == "BLOCKED"
+    assert tickets[0]["error"] == ""
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_batch_unresolvable_id_still_attempted(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """An ID that cannot be resolved is still passed through to the API."""
+    respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(
+            200,
+            json=[{"ticket_id": "20260730T232905Z-unrelated-761f", "state": "OPEN"}],
+        )
+    )
+
+    # The unresolvable ID is still attempted; it gets a 404
+    route = respx_mock.get("http://board:8077/tickets/ghost-ticket-xxxx").mock(
+        return_value=httpx.Response(404, text="Not Found")
+    )
+
+    tools = build_ticket_poll_tools(_settings())
+    batch_tool = tools[1]
+    result = json.loads(await batch_tool(["ghost-ticket-xxxx"]))
+
+    assert route.called
+    tickets = result["tickets"]
+    assert len(tickets) == 1
+    assert tickets[0]["ticket_id"] == "ghost-ticket-xxxx"
+    assert "404" in tickets[0]["error"]
+
+
+@pytest.mark.asyncio
+async def test_ticket_poll_batch_resolution_list_failure_graceful(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When GET /tickets fails, resolution is skipped and original IDs are used."""
+    respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(500, text="Internal Server Error")
+    )
+
+    # The original ID is still attempted
+    route = respx_mock.get("http://board:8077/tickets/...-resolve-ids-32be").mock(
+        return_value=httpx.Response(404, text="Not Found")
+    )
+
+    tools = build_ticket_poll_tools(_settings())
+    batch_tool = tools[1]
+    result = json.loads(await batch_tool(["...-resolve-ids-32be"]))
+
+    assert route.called
+    tickets = result["tickets"]
+    assert len(tickets) == 1
+    assert tickets[0]["ticket_id"] == "...-resolve-ids-32be"
+    assert "404" in tickets[0]["error"]
 
 
 # ---------------------------------------------------------------------------

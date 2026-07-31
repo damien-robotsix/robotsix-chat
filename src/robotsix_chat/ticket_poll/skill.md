@@ -65,6 +65,22 @@ the merge failed (e.g. the PR is not approved, conflicts exist, or required stat
 passed). The tool routes through the component roster when available, falling back to the direct
 board API on any failure.
 
+## ID resolution
+
+Both `ticket_poll` and `ticket_poll_batch` resolve paraphrased / abbreviated ticket IDs against the
+live board before making any per-ticket request. This means you can pass an ID derived from
+narrative text (e.g. `...-my-ticket-a3f2`) and it will be mapped to the full ticket ID on the board.
+Resolution tries, in order:
+
+1. **Exact match** — the candidate ID appears verbatim on the board.
+2. **Hash-suffix match** — the last 4 hex chars (e.g. `a3f2`) uniquely match one ticket.
+3. **Slug-substring match** — the non-timestamp portion appears as a substring of exactly one
+   ticket's full ID.
+
+When resolution succeeds, the resolved full ID is used for the request and returned in the response.
+When it fails — the candidate is ambiguous or the board is unreachable — the original ID is still
+attempted (which may surface a 404).
+
 ## Safety
 
 - **`ticket_poll` / `ticket_poll_batch` are read-only** — GET only; no state mutation is possible
