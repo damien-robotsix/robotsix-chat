@@ -3,67 +3,7 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
-## v74 — 2026-07-30 — ticket-id-fidelity-narrative-derived-597e
-
-**Summary:** Added a new "ticket ID fidelity" bullet to the Subsessions section, immediately
-after the "never enumerate raw bullet lists" instruction.  The new bullet requires the assistant
-to always use exact, stable ticket IDs from board API responses when passing them to tools or API
-endpoints, and never to abbreviate, truncate, paraphrase, or reconstruct a ticket ID from
-narrative memory or a prior summary.  Before calling any API endpoint that transitions a ticket
-(merge-now, resume-blocked, etc.), the assistant must resolve the ticket's exact ID from the
-board via a live GET /tickets lookup.  Also added a validation warning log in the ticket_poll and
-worker_mill code paths when a 404 is returned for a ticket ID, noting that the ID may have been
-derived from narrative text rather than from a board API response.
-
-**Rationale:** The assistant was constructing API calls using truncated ticket IDs that had been
-paraphrased during an earlier review summary (e.g. `...fix-0eff` vs
-`...fix-readme-provider-list-to-match-actual-0eff`).  All 36 calls returned 404 because the real
-IDs were slightly different.  The "never enumerate raw bullet lists" instruction was being
-over-applied — the assistant was abbreviating ticket IDs in narrative and then feeding those
-abbreviated IDs back into API calls.
-
-**SHA256:** `2ebd1174daa19ec599397f4603ba62aac5b642399b54e0312c801860774ef50e`
-
-## v73 — 2026-07-30 — ticket-description-append-does-not-change-fingerprint-ca44
-
-**Summary:** Clarified that the ticket fingerprint guard hashes only the spec text, not the full
-ticket description. Added notes in two locations:
-
-1. In the autonomous runner's fingerprint-guard bypass guidance: "the fingerprint guard hashes
-only the spec text, not the full ticket description. Editing the description without changing
-the spec text will NOT clear the guard — to vary the fingerprint you must edit the spec itself."
-2. In the periodic monitor section: "the fingerprint hashes only the spec text; editing the
-description without changing the spec will not clear the guard."
-
-**Rationale:** Operators occasionally edit ticket descriptions expecting that to vary the
-fingerprint and unblock a guard. This clarification prevents that misunderstanding.
-
-**SHA256:** `c8e48fdeb0fad3f232be99f649013d18e13aaef56f9096268b344ae297d9c477`
-
-______________________________________________________________________
-
-## v72 — 2026-07-29 — fingerprint-guard-auto-resume-working-fix-7181
-
-**Summary:** Extend the auto-resume criteria in the Remediate step (3) of the ticket
-lifecycle to include fingerprint-guarded tickets where a working fix already exists despite an
-unchanged spec fingerprint — e.g. a PR with passing tests is open but the implement stage cannot
-proceed because the spec fingerprint hasn't changed. The assistant can now call resume-blocked with
-justification `"spec is complete; working fix exists with passing tests; allow re-implement to
-merge"` for this case without operator authorization.  Also updated the autonomous protocol's
-MUTATION AUTHORIZATION section to carve out an exception for the auto-resume cases documented in
-the main prompt.
-
-**Rationale:** When a monitor reports a blocked ticket due to unchanged spec fingerprint despite a
-working fix already existing, the assistant previously could not clear the block without user
-go-ahead — the only auto-resume cases were transient failures and fingerprint-guard with answered
-pending question.  This adds the third common fingerprint-guard pattern: the spec is already
-correct and the fix exists, but the fingerprint guard blocks re-implementation.
-
-**SHA256:** `ce58088fe1088dffa82d2e6e158f63a6d9d15642d23e6bdd6e8fed59c7cbbad7`
-
-______________________________________________________________________
-
-## v72 — 2026-07-28 — resolve-conflicting-option-a-memory-by-g-f4f2
+## v75 — 2026-07-28 — resolve-conflicting-option-a-memory-by-g-f4f2
 
 **Summary:** Strengthen memory-recall guardrails in both the system prompt's Autonomy section and
 the per-turn memory header (`_MEMORY_PROMPT_HEADER`) to prevent stale plans and solution options
@@ -82,7 +22,66 @@ disregard. The existing warnings covered identifiers and action items but not pl
 similarity recall can surface semantically similar but contextually different proposals under reused
 labels.
 
-**SHA256:** `bb6777326a3018872678408c46f0620da2ac8d7c8e6e31556926e3a82eac29a7`
+**SHA256:** `e181d65690a7d0089cbaec90d34d194facd9ddf9bcc52a227169d1c7809dcba9`
+
+______________________________________________________________________
+
+## v74 — 2026-07-30 — ticket-id-fidelity-narrative-derived-597e
+
+**Summary:** Added a new "ticket ID fidelity" bullet to the Subsessions section, immediately
+after the "never enumerate raw bullet lists" instruction. The new bullet requires the assistant
+to always use exact, stable ticket IDs from board API responses when passing them to tools or API
+endpoints, and never to abbreviate, truncate, paraphrase, or reconstruct a ticket ID from
+narrative memory or a prior summary. Before calling any API endpoint that transitions a ticket
+(merge-now, resume-blocked, etc.), the assistant must resolve the ticket's exact ID from the
+board via a live GET /tickets lookup. Also added a validation warning log in the ticket_poll and
+worker_mill code paths when a 404 is returned for a ticket ID, noting that the ID may have been
+derived from narrative text rather than from a board API response.
+
+**Rationale:** The assistant was constructing API calls using truncated ticket IDs that had been
+paraphrased during an earlier review summary (e.g. `...fix-0eff` vs
+`...fix-readme-provider-list-to-match-actual-0eff`). All 36 calls returned 404 because the real
+IDs were slightly different. The "never enumerate raw bullet lists" instruction was being
+over-applied — the assistant was abbreviating ticket IDs in narrative and then feeding those
+abbreviated IDs back into API calls.
+
+**SHA256:** `2ebd1174daa19ec599397f4603ba62aac5b642399b54e0312c801860774ef50e`
+
+## v73 — 2026-07-30 — ticket-description-append-does-not-change-fingerprint-ca44
+
+**Summary:** Clarified that the ticket fingerprint guard hashes only the spec text, not the full
+ticket description. Added notes in two locations:
+
+1. In the autonomous runner's fingerprint-guard bypass guidance: "the fingerprint guard hashes
+   only the spec text, not the full ticket description. Editing the description without changing
+   the spec text will NOT clear the guard — to vary the fingerprint you must edit the spec itself."
+1. In the periodic monitor section: "the fingerprint hashes only the spec text; editing the
+   description without changing the spec will not clear the guard."
+
+**Rationale:** Operators occasionally edit ticket descriptions expecting that to vary the
+fingerprint and unblock a guard. This clarification prevents that misunderstanding.
+
+**SHA256:** `c8e48fdeb0fad3f232be99f649013d18e13aaef56f9096268b344ae297d9c477`
+
+______________________________________________________________________
+
+## v72 — 2026-07-29 — fingerprint-guard-auto-resume-working-fix-7181
+
+**Summary:** Extend the auto-resume criteria in the Remediate step (3) of the ticket
+lifecycle to include fingerprint-guarded tickets where a working fix already exists despite an
+unchanged spec fingerprint — e.g. a PR with passing tests is open but the implement stage cannot
+proceed because the spec fingerprint hasn't changed. The assistant can now call resume-blocked with
+justification `"spec is complete; working fix exists with passing tests; allow re-implement to merge"` for this case without operator authorization. Also updated the autonomous protocol's
+MUTATION AUTHORIZATION section to carve out an exception for the auto-resume cases documented in
+the main prompt.
+
+**Rationale:** When a monitor reports a blocked ticket due to unchanged spec fingerprint despite a
+working fix already existing, the assistant previously could not clear the block without user
+go-ahead — the only auto-resume cases were transient failures and fingerprint-guard with answered
+pending question. This adds the third common fingerprint-guard pattern: the spec is already
+correct and the fix exists, but the fingerprint guard blocks re-implementation.
+
+**SHA256:** `ce58088fe1088dffa82d2e6e158f63a6d9d15642d23e6bdd6e8fed59c7cbbad7`
 
 ______________________________________________________________________
 
@@ -92,7 +91,7 @@ ______________________________________________________________________
 
 1. **Operator-facing blocker instructions** (v70/0ce2): When surfacing a hard server-side blocker to the operator, the assistant must now provide a concrete, copy-paste-ready instruction — exact env variable name, config file path, restart command, or endpoint URL — rather than a vague directive. It must also store common remediation recipes in a knowledge note (topic: `operator-remediation-recipes`).
 
-2. **Deadlocked ticket closure** (c578): Add a "Deadlocked ticket closure" bullet to the ticket lifecycle remediation guidance. When a ticket is deadlocked — the implement loop keeps cycling without progress and normal close transitions (blocked→closed, ready→closed) are rejected by the mill API — the agent must surface the deadlock to the operator via user_chat with a clear diagnosis. If the operator confirms closure, the agent uses `component_request("mill", "DELETE", "/tickets/{id}")` to remove the deadlocked ticket from the board. Deletion is irreversible — only use it when normal transitions are blocked and the operator has explicitly approved. If the underlying issue still needs attention, the agent should file a superseding ticket with a fresh spec, referencing the deleted predecessor's id.
+1. **Deadlocked ticket closure** (c578): Add a "Deadlocked ticket closure" bullet to the ticket lifecycle remediation guidance. When a ticket is deadlocked — the implement loop keeps cycling without progress and normal close transitions (blocked→closed, ready→closed) are rejected by the mill API — the agent must surface the deadlock to the operator via user_chat with a clear diagnosis. If the operator confirms closure, the agent uses `component_request("mill", "DELETE", "/tickets/{id}")` to remove the deadlocked ticket from the board. Deletion is irreversible — only use it when normal transitions are blocked and the operator has explicitly approved. If the underlying issue still needs attention, the agent should file a superseding ticket with a fresh spec, referencing the deleted predecessor's id.
 
 **Rationale:** Both changes were authored independently against v69, each bumping to v70. The merge combines both into a single v71 prompt.
 
@@ -139,19 +138,19 @@ ______________________________________________________________________
 ## v70 — 2026-07-28 — add-loop-guard-to-periodic-monitors-checking-ci-workflow-runs
 
 **Summary:** Add a "LOOP GUARD — CI workflow verification" section to the periodic subsession system
-prompt supplement (`_build_periodic_input` in `worker.py`).  Before calling `complete_subsession`,
+prompt supplement (`_build_periodic_input` in `worker.py`). Before calling `complete_subsession`,
 periodic monitors watching a ticket (checkpoint has `ticket_id`) must now verify from **three
 independent sources**: (1) the ticket endpoint confirming terminal state, (2) the PR/MR endpoint
 confirming merge status, and (3) the most recent CI workflow run (e.g. "Publish Docker image").
 If the workflow failed, the agent documents the failure in the summary and spawns a new diagnostic
-ticket.  A programmatic gate in `complete_subsession` rejects summaries that lack CI workflow
+ticket. A programmatic gate in `complete_subsession` rejects summaries that lack CI workflow
 keywords, breaking the redraft loop where monitors reported success despite a still-failing publish
 pipeline.
 
 **Rationale:** The deployment pipeline entered a redraft loop where consecutive tickets each fixed
-one TypeScript error but left others, and the "Publish Docker image" workflow kept failing.  A
+one TypeScript error but left others, and the "Publish Docker image" workflow kept failing. A
 monitor that only checks ticket state (closed) is insufficient — it must also verify the actual CI
-workflow outcome before reporting success.  The programmatic gate ensures the agent cannot bypass
+workflow outcome before reporting success. The programmatic gate ensures the agent cannot bypass
 this check.
 
 **SHA256:** (not yet deployed — changelog fragment at `changelog.d/20260728T210856Z-add-loop-guard-to-periodic-monitors-chec-5679.misc.md`)
@@ -991,6 +990,7 @@ requirement.
 **SHA256:** `ae8151436ae1c006268f845d6713b7031ff49ae5032406a993abac6e009451d9`
 
 ______________________________________________________________________
+
 ______________________________________________________________________
 
 ## v36 — 2026-07-20 — contract-version-troubleshooting-guide
