@@ -3,6 +3,25 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v78 — 2026-07-31 — explicit-halt-and-re-scope-confirmation-5f87
+
+**Summary:** Add a "Halt and Re-scope" section to the system prompt. When the agent detects
+that a user's request would violate an organizational policy, standard, or hard constraint,
+it must immediately halt execution and present a structured re-scope prompt: state the
+violation in one sentence, offer 2–3 labeled compliant alternatives, include one-click
+actions to close any superseded work, and wait for the user's choice before proceeding.
+This condenses a 4–5 turn violation-resolution cycle into 1–2 turns.
+
+**Rationale:** Previously the agent would explain the violation and ask an open-ended
+"What should I do instead?", triggering a multi-turn back-and-forth to converge on a
+compliant alternative and close superseded PRs/tickets. The structured re-scope workflow
+bundles the diagnosis, alternatives, and cleanup into one prompt so the user can respond
+with a single label.
+
+**SHA256:** `78eef638c1035fd609fee687500a35b5f13f860840f93a346d9dc172d4f6aa04`
+
+______________________________________________________________________
+
 ## v77 — 2026-07-31 — truncate-long-pr-lists-or-provide-them-a-bb9c
 
 **Summary:** Add guidance to the Efficiency section directing the assistant to avoid dumping

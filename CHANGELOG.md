@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add "Halt and Re-scope" workflow to system prompt: when the agent detects a policy violation, it now immediately halts and presents structured compliant alternatives with one-click actions to close superseded work, condensing a 4–5 turn resolution into 1–2 turns.
 - Monitor subsessions tracking PRs now check CI status before staying paused. When a paused monitor's tracked PR has a failing CI workflow run on its head branch, the watcher resumes the monitor so the failure is surfaced rather than hidden. Previously, monitors would auto-pause after consecutive no-change runs even when the PR's CI was actively failing.
 - Component request client now follows HTTP redirects (``follow_redirects=True``) — fixes log-fetch returning HTTP 303 instead of the raw log body when a component endpoint redirects to a signed URL.
   - ``fetch_workflow_run_annotations`` no longer skips check runs with a failed conclusion that show ``annotations_count == 0``, avoiding silently-empty annotation results for failed CI runs.
@@ -69,7 +70,7 @@
   render_url skill markdown is injected alongside other component skills.
   Previously `skill.md` existed but was never loaded — the LLM had no
   guidance on when or how to use the render_url tool.
-- Improved subsession outcome formatting: added FILTERING RULE to reaction prompt templates instructing the agent to strip internal technical details (block IDs, event numbers, state machine transitions, spawn counters) from subsession outcomes before presenting to the user. Added user-facing summary formatting guidance to periodic monitor prompts and the `complete_subsession` tool docstring.) (mill: Extract shared _format_entries helper from duplicated formatting loop in list_knowledge_notes and search_knowledge_notes (20260729T165917Z-extract-shared-format-entries-helper-fro-3daa))
+- Improved subsession outcome formatting: added FILTERING RULE to reaction prompt templates instructing the agent to strip internal technical details (block IDs, event numbers, state machine transitions, spawn counters) from subsession outcomes before presenting to the user. Added user-facing summary formatting guidance to periodic monitor prompts and the `complete_subsession` tool docstring. (mill: Extract shared _format_entries helper from duplicated formatting loop in list_knowledge_notes and search_knowledge_notes (20260729T165917Z-extract-shared-format-entries-helper-fro-3daa))
 - Document `### SFTP` settings section in `docs/configuration.md` covering all 9 fields: `enabled`, `host`, `port`, `username`, `password`, `private_key`, `private_key_passphrase`, `known_hosts`, `remote_root`.
 - Dockerfile: fix hadolint warnings — use numeric UID for USER (DL3066) and
   consolidate HEALTHCHECK CMD onto a single line (DL3025)

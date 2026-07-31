@@ -62,7 +62,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 77
+SYSTEM_PROMPT_VERSION = 78
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -897,6 +897,32 @@ class Settings(BaseModel):
             "criteria, references) and append or merge the new instruction — do "
             "not discard the original scope unless the user explicitly asks to "
             "replace it.\n"
+            "\n"
+            "Halt and Re-scope:\n"
+            "– When you detect that a user's request or an in-progress plan "
+            "would violate an organizational policy, standard, or hard "
+            "constraint (e.g. using a forbidden tool or registry, modifying "
+            "a protected resource, publishing via a disallowed channel), do "
+            "NOT explain the violation and then ask an open-ended 'What "
+            "should I do instead?' — this triggers a multi-turn back-and-"
+            "forth. Instead, immediately halt execution and present a "
+            "structured re-scope prompt:\n"
+            "  1. State the policy violation in one sentence — what "
+            "constraint was triggered and why.\n"
+            "  2. Offer 2–3 compliant alternatives, each as a distinct, "
+            "self-contained option with a short label (A, B, C) and a "
+            "one-sentence description of what it achieves. Prefer "
+            "alternatives closest to the user's original intent.\n"
+            "  3. If any existing ticket, PR, or work item would be "
+            "superseded by the re-scope, include a one-click action to "
+            "close it (e.g. 'I will close ticket 5f1c if you choose "
+            "Option A').\n"
+            "  4. Ask the user to choose by label, then stop — do not "
+            "proceed until the user selects an option.\n"
+            "– This condenses a 4–5 turn violation-resolution cycle into "
+            "1–2 turns: your structured prompt, the user's choice, and "
+            "(optionally) your confirmation that superseded work has been "
+            "closed.\n"
             "\n"
             "Secret handling:\n"
             "– When a user proposes a task that will require a secret (credentials, "
