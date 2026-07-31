@@ -42,8 +42,8 @@ over HTTP.
 - The HTTP endpoints (`GET /`, `POST /chat`, `GET /health`) served by the Starlette application.
 - The LLM agent wrapper (`src/robotsix_chat/llm/agent.py`) and its interaction with the `llmio`
   library.
-- The configuration layer (`src/robotsix_chat/config/settings.py`) — environment variable handling,
-  defaults, and validation.
+- The configuration layer (`src/robotsix_chat/config/settings.py`) — JSON config validation,
+  defaults, and loading.
 
 **What is out of scope:**
 
@@ -61,8 +61,9 @@ over HTTP.
 2. **No tool exposure over HTTP.** Agent tools are registered in Python code only — the `/chat`
    endpoint streams LLM tokens and never accepts or executes arbitrary tool definitions from
    clients.
-3. **CORS is opt-in.** The `CORS_ALLOW_ORIGINS` environment variable must be explicitly set to
-   enable cross-origin requests. By default the UI and API share the same origin.
+3. **CORS is opt-in.** The `cors_allow_origins` config key (a list of origin strings) must be
+   explicitly set in the JSON config file to enable cross-origin requests. By default the UI and API
+   share the same origin.
 
 ## Dependency scanning
 
