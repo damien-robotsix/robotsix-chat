@@ -241,6 +241,14 @@ async def _check_resume_status(
         if 400 <= status_code < 500:
             if status_code == 404:
                 reason = f"Ticket {ticket_id} was deleted during the outage."
+                logger.warning(
+                    "Mill returned 404 for ticket %r (subsession %s). "
+                    "This ID may have been derived from narrative text "
+                    "rather than from a board API response — verify it "
+                    "against GET /tickets on the board.",
+                    ticket_id,
+                    sub_id,
+                )
             elif status_code in (401, 403):
                 reason = (
                     f"Authentication error ({status_code}) for ticket "
