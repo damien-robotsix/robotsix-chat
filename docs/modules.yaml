@@ -176,6 +176,7 @@ modules:
       - tests/chat/server/routes/test_events.py
       - tests/chat/server/routes/test_github.py
       - tests/chat/server/routes/test_draft.py
+      - tests/chat/server/routes/test_errors.py
       - tests/chat/server/routes/test_sessions.py
       - tests/chat/server/routes/test_diagnostics.py
       - tests/chat/server/routes/test_subsessions.py

@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add test coverage for the four error handlers in ``routes/errors.py`` (``http_exception_handler``, ``not_found_handler``, ``server_error_handler``, ``unhandled_exception_handler``)
 - Refactor: extract shared `_check_preconditions` helper in `repo.direct`
   to eliminate ~15-line duplicated precondition guard (BLOCKED state +
   ≥3 implement cycles) that was copy-pasted between `direct_fix` and
