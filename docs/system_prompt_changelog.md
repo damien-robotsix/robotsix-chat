@@ -22,7 +22,7 @@ IDs were slightly different.  The "never enumerate raw bullet lists" instruction
 over-applied — the assistant was abbreviating ticket IDs in narrative and then feeding those
 abbreviated IDs back into API calls.
 
-**SHA256:** `313f599b6ccb0642ea78ad0d553b7b197c11ffe4526d3ebb0fd38fe4ef5e2190`
+**SHA256:** `2ebd1174daa19ec599397f4603ba62aac5b642399b54e0312c801860774ef50e`
 
 ## v73 — 2026-07-30 — ticket-description-append-does-not-change-fingerprint-ca44
 
