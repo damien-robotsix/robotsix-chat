@@ -534,7 +534,7 @@ def _build_self_update_tool(
         fields = ", ".join(changed)
         return f"Self-update applied: changed {fields}.  Effective next tick."
 
-    self_update_subsession.__doc__ = (
+    self_update_subsession.__doc__ = (  # nosec B608
         """Update THIS periodic subsession's own run configuration.
 
         Call this to change what a periodic monitor does or how often it
