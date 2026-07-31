@@ -13,18 +13,35 @@ factory returns an empty list (graceful degradation).
 
 from __future__ import annotations
 
-__all__ = ["build_render_url_tools"]
+__all__ = ["build_render_url_tools", "load_render_url_skill"]
 
 import base64
 import json
 import logging
 from collections.abc import Callable
+from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
 from robotsix_chat.config.models import RenderUrlSettings
 
 logger = logging.getLogger(__name__)
+
+
+def load_render_url_skill() -> str:
+    """Return the render_url component skill markdown.
+
+    Reads ``skill.md`` (shipped next to this module) and returns it as a
+    string suitable for appending to the agent's system prompt.  Returns
+    an empty string when the file is missing, so a missing skill document
+    never prevents the agent from starting.
+
+    """
+    skill_path = Path(__file__).parent / "skill.md"
+    try:
+        return skill_path.read_text(encoding="utf-8")
+    except FileNotFoundError:
+        return ""
 
 
 def build_render_url_tools(
