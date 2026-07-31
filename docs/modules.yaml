@@ -65,7 +65,6 @@ modules:
       - .dockerignore
       - .editorconfig
       - .gitignore
-      - .hadolint_bin
       - .markdownlint-cli2.jsonc
       - .markdownlintignore
       - .pre-commit-config.yaml
