@@ -48,6 +48,11 @@ rebuild cycle.
 removed key from the input dict before validation. This prevents production startup crashes when
 deployed config files still carry the legacy key (serialized before the removal).
 
+**Rule:** Every settings model added to `src/robotsix_chat/config/models.py` must have a matching
+`###` section in `docs/configuration.md` (under `## Settings reference`) documenting its JSON keys,
+types, defaults, and descriptions — mirror an existing section (e.g. `### SFTP`) and keep it in the
+same PR. A settings model without a config-doc section is incomplete.
+
 ## Deploy stack structure
 
 Two compose files with different jobs (component standard):
