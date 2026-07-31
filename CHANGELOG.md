@@ -18,6 +18,9 @@
   directly to an existing branch.  `direct_fix` and `patch_direct_repo_file`
   error messages now mention this escape hatch alongside the ≥3-cycle
   precondition.
+- Preserve review comments on BLOCKED resume: monkeypatch ``_load_implement_context`` to
+  always fetch ticket comments (removes the ``blocked_from is None`` guard that
+  silently dropped reviewer feedback when the implement agent was re-spawned).
 - Add retry (3 attempts with exponential backoff) and fallback (roster→direct board API) to ``direct_fix`` and ``patch_direct_repo_file`` board-API ticket fetches, so transient connectivity issues no longer hard-fail the tools.
 - Add anti-re-emission guidance to the active-plan reaction prompt template (`_REACT_PROMPT_ACTIVE_PLAN_TEMPLATE`) in `delivery.py`, instructing the agent to reply with only a delta or one-sentence synthesis when subsession outcomes were already presented earlier — never re-emit a full table/rollup/enumeration verbatim.
 - Subsession agents now have access to the ``notify_user`` tool (when
