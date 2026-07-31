@@ -412,7 +412,7 @@ async def test_merge_pr_client_200_success(
             200,
             text=json.dumps(
                 {
-                    "sha": "abc123def",
+                    "sha": "abc123def",  # pragma: allowlist secret
                     "merged": True,
                     "message": "Pull Request successfully merged",
                 }
