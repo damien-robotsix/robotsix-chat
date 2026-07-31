@@ -1,5 +1,10 @@
 ## 0.0.0 (unreleased)
 
+- Fix `reset_implement_spawn_counter`: replace broken `DELETE /tickets/{id}/artifacts/implement_spawn_count`
+  (HTTP 405 — board API has no artifact delete endpoint) with
+  `POST /tickets/{id}/resume-blocked` using a spawn-counter-specific
+  justification.  Removed dead `_delete_artifact_via_component` (never
+  called) and `DirectRepoClient.delete_ticket_artifact` (orphaned).
 - Added `recover_auto_merge` direct-repo tool: recovers a PR that has bounced
   from auto-merge by calling GitHub's update-branch API to rebase the head
   branch, without requiring the owning ticket to be in BLOCKED state.  Designed

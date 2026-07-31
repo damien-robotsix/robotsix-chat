@@ -181,57 +181,6 @@ def build_direct_repo_tools(
         # 4. Can't determine — return 0
         return 0
 
-    async def _delete_artifact_via_component(
-        component_req: Callable[..., Any],
-        ticket_id: str,
-        artifact_path: str,
-    ) -> tuple[bool, str | None]:
-        """Delete a board artifact via *component_req*; return ``(success, error)``.
-
-        Returns ``(True, None)`` on success, ``(False, error_msg)`` on failure,
-        or ``(False, None)`` when the response is ambiguous (caller should
-        fall back to the direct API).
-        """
-        resp = await component_req(
-            "mill",
-            "DELETE",
-            f"/tickets/{ticket_id}/artifacts/{artifact_path}",
-        )
-        if resp.startswith("Error:"):
-            return False, (
-                f"Error: could not reset implement spawn counter for ticket "
-                f"{ticket_id} via component_request "
-                f"(roster-based board connectivity): {resp}"
-            )
-        try:
-            newline = resp.index("\n")
-            status_line = resp[:newline]
-        except ValueError:
-            # No newline — treat as ambiguous, fall through to direct API
-            return False, None
-        if not status_line.startswith("HTTP "):
-            return False, (
-                f"Error: could not reset implement spawn counter for ticket "
-                f"{ticket_id} via component_request "
-                f"(roster-based board connectivity): {status_line}"
-            )
-        try:
-            status_code = int(status_line.split()[1])
-        except IndexError, ValueError:
-            return False, (
-                f"Error: could not reset implement spawn counter for ticket "
-                f"{ticket_id} via component_request "
-                f"(roster-based board connectivity): "
-                f"unparsable status {status_line!r}"
-            )
-        if 200 <= status_code < 300:
-            return True, None
-        return False, (
-            f"Error: could not reset implement spawn counter for ticket "
-            f"{ticket_id} via component_request "
-            f"(roster-based board connectivity): HTTP {status_code}"
-        )
-
     async def _assert_blocked_and_scoped(
         client: DirectRepoClient,
         ticket_id: str,
@@ -592,11 +541,9 @@ def build_direct_repo_tools(
     async def reset_implement_spawn_counter(ticket_id: str) -> str:
         """Reset the implement-agent spawn counter for a blocked ticket.
 
-        Deletes the ``implement_spawn_count`` artifact on the board API,
-        clearing the spawn-limit block so the implement agent can be
-        re-spawned against this ticket.  Use when a ticket is blocked at
-        the implement spawn limit and the ``resume-blocked`` mechanism
-        has proven unreliable.
+        Sends ``POST /tickets/{ticket_id}/resume-blocked`` to the board API
+        with a spawn-counter justification, clearing the spawn-limit block
+        so the implement agent can be re-spawned against this ticket.
 
         Tries the component roster path first when *component_request*
         is available (resolving ``"mill"`` via the central-deploy roster
@@ -613,12 +560,17 @@ def build_direct_repo_tools(
             why the reset failed.
 
         """
+        justification = (
+            "Spawn counter reset — allowing re-implement after spawn limit reached."
+        )
+
         # Try roster path first when available.
         if component_request is not None:
             resp = await component_request(
                 "mill",
-                "DELETE",
-                f"/tickets/{ticket_id}/artifacts/implement_spawn_count",
+                "POST",
+                f"/tickets/{ticket_id}/resume-blocked",
+                json_body={"justification": justification},
             )
             if resp.startswith("HTTP 2"):
                 return (
@@ -632,14 +584,14 @@ def build_direct_repo_tools(
             )
 
         # Fall back to the direct board API path.
-        board_url = client._s.board_api_base_url.rstrip("/")
-        ok = await client.delete_ticket_artifact(ticket_id, "implement_spawn_count")
+        ok = await client.resume_blocked_ticket(ticket_id, justification)
         if ok:
             return (
                 f"Implement spawn counter reset for ticket {ticket_id}. "
                 "The ticket can now be re-spawned."
             )
 
+        board_url = client._s.board_api_base_url.rstrip("/")
         return (
             f"Error: could not reset implement spawn counter for ticket "
             f"{ticket_id}.  Verify the ticket id and board API connectivity "

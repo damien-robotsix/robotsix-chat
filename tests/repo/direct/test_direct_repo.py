@@ -1384,10 +1384,10 @@ def test_tool_docstrings_forbid_merge() -> None:
 async def test_reset_implement_spawn_counter_success(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """Successful DELETE → tool returns success message."""
-    respx_mock.delete(
-        "http://127.0.0.1:8077/tickets/t-reset/artifacts/implement_spawn_count"
-    ).mock(return_value=httpx.Response(204))
+    """Successful POST resume-blocked → tool returns success message."""
+    respx_mock.post("http://127.0.0.1:8077/tickets/t-reset/resume-blocked").mock(
+        return_value=httpx.Response(200)
+    )
 
     tools = build_direct_repo_tools(_settings())
     reset_fn = [t for t in tools if t.__name__ == "reset_implement_spawn_counter"][0]
@@ -1403,9 +1403,9 @@ async def test_reset_implement_spawn_counter_failure(
     respx_mock: respx.MockRouter,
 ) -> None:
     """Board API error → tool returns error message."""
-    respx_mock.delete(
-        "http://127.0.0.1:8077/tickets/t-bad/artifacts/implement_spawn_count"
-    ).mock(return_value=httpx.Response(500))
+    respx_mock.post("http://127.0.0.1:8077/tickets/t-bad/resume-blocked").mock(
+        return_value=httpx.Response(500)
+    )
 
     tools = build_direct_repo_tools(_settings())
     reset_fn = [t for t in tools if t.__name__ == "reset_implement_spawn_counter"][0]
@@ -1419,8 +1419,10 @@ async def test_reset_implement_spawn_counter_failure(
 async def test_reset_implement_spawn_counter_roster_first_success() -> None:
     """When component_request is available, use roster path first."""
 
-    async def _mock_cr(component: str, method: str, path: str) -> str:
-        return "HTTP 204 No Content"
+    async def _mock_cr(
+        component: str, method: str, path: str, json_body: Any = None
+    ) -> str:
+        return "HTTP 200 OK"
 
     tools = build_direct_repo_tools(_settings(), component_request=_mock_cr)
     reset_fn = [t for t in tools if t.__name__ == "reset_implement_spawn_counter"][0]
@@ -1437,12 +1439,14 @@ async def test_reset_implement_spawn_counter_roster_fails_falls_back_to_direct(
 ) -> None:
     """When roster path fails, fall back to direct board API."""
 
-    async def _mock_cr(component: str, method: str, path: str) -> str:
+    async def _mock_cr(
+        component: str, method: str, path: str, json_body: Any = None
+    ) -> str:
         return "Error: connection refused"
 
-    respx_mock.delete(
-        "http://127.0.0.1:8077/tickets/t-fb/artifacts/implement_spawn_count"
-    ).mock(return_value=httpx.Response(204))
+    respx_mock.post("http://127.0.0.1:8077/tickets/t-fb/resume-blocked").mock(
+        return_value=httpx.Response(200)
+    )
 
     tools = build_direct_repo_tools(_settings(), component_request=_mock_cr)
     reset_fn = [t for t in tools if t.__name__ == "reset_implement_spawn_counter"][0]
@@ -1459,12 +1463,14 @@ async def test_reset_implement_spawn_counter_roster_non_2xx_falls_back(
 ) -> None:
     """When roster returns non-2xx, fall back to direct."""
 
-    async def _mock_cr(component: str, method: str, path: str) -> str:
+    async def _mock_cr(
+        component: str, method: str, path: str, json_body: Any = None
+    ) -> str:
         return "HTTP 502 Bad Gateway"
 
-    respx_mock.delete(
-        "http://127.0.0.1:8077/tickets/t-502/artifacts/implement_spawn_count"
-    ).mock(return_value=httpx.Response(204))
+    respx_mock.post("http://127.0.0.1:8077/tickets/t-502/resume-blocked").mock(
+        return_value=httpx.Response(200)
+    )
 
     tools = build_direct_repo_tools(_settings(), component_request=_mock_cr)
     reset_fn = [t for t in tools if t.__name__ == "reset_implement_spawn_counter"][0]
@@ -1480,9 +1486,9 @@ async def test_reset_implement_spawn_counter_no_component_request_uses_direct(
     respx_mock: respx.MockRouter,
 ) -> None:
     """Without component_request, uses direct path only (regression)."""
-    respx_mock.delete(
-        "http://127.0.0.1:8077/tickets/t-direct/artifacts/implement_spawn_count"
-    ).mock(return_value=httpx.Response(204))
+    respx_mock.post("http://127.0.0.1:8077/tickets/t-direct/resume-blocked").mock(
+        return_value=httpx.Response(200)
+    )
 
     tools = build_direct_repo_tools(_settings())  # component_request=None
     reset_fn = [t for t in tools if t.__name__ == "reset_implement_spawn_counter"][0]
