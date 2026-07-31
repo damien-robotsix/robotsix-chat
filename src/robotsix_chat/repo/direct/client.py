@@ -79,6 +79,15 @@ def _count_cycles_from_data(data: dict[str, Any]) -> int:
             event_type = str(ev.get("type", ev.get("action", ""))).lower()
             if "implement" in event_type:
                 count += 1
+            elif "resume" in event_type or "unblock" in event_type:
+                # A resume/unblock event indicates the ticket was
+                # previously BLOCKED (mill-exhausted) and later
+                # resumed — treat this as evidence of prior exhaustion
+                # (the original cycle count was ≥3 before the resume
+                # reset it).  Count each resume event as 3 so the
+                # exhaustion gate is satisfied even when the board API
+                # clears the implement events on resume.
+                count += 3
         return count
 
     # 2. Fall back to state-transition history

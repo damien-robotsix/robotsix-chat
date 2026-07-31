@@ -202,54 +202,67 @@ def build_direct_repo_tools(
 
         # --- single API call for state + cycles ---
         if component_request is not None:
-            resp = await component_request("mill", "GET", f"/tickets/{ticket_id}")
+            # Retry the roster path with exponential backoff (absorbs
+            # transient connectivity failures), then fall back to the
+            # direct board-API path when the roster path fails entirely
+            # — same pattern used by _assert_blocked_and_scoped.
+            resp = await _retry_component_ticket_fetch(component_request, ticket_id)
             if resp.startswith("Error:"):
-                return (
-                    f"Error: could not fetch ticket data for {ticket_id} "
-                    f"via component_request (roster-based board connectivity): "
-                    f"{resp}",
-                    0,
-                )
-            try:
-                newline = resp.index("\n")
-                status_line = resp[:newline]
-                body_str = resp[newline + 1 :]
-            except ValueError:
-                return (
-                    f"Error: could not parse component_request response for "
-                    f"ticket {ticket_id} (no status line)",
-                    0,
-                )
-            if not status_line.startswith("HTTP "):
-                return (
-                    f"Error: unexpected component_request response for "
-                    f"ticket {ticket_id}: {status_line!r}",
-                    0,
-                )
-            try:
-                status_code = int(status_line.split()[1])
-            except IndexError, ValueError:
-                return (
-                    f"Error: unparsable HTTP status in component_request "
-                    f"response for ticket {ticket_id}: {status_line!r}",
-                    0,
-                )
-            if status_code >= 400:
-                return (
-                    f"Error: board API returned HTTP {status_code} for "
-                    f"ticket {ticket_id} via component_request",
-                    0,
-                )
-            try:
-                data = json.loads(body_str)
-            except json.JSONDecodeError, TypeError:
-                return (
-                    f"Error: non-JSON response for ticket {ticket_id} "
-                    f"via component_request",
-                    0,
-                )
-            state: str | None = data.get("state")
-            cycles = _count_cycles_from_data(data)
+                data = await client.get_ticket_data(ticket_id)
+                if data is None:
+                    board_url = client._s.board_api_base_url.rstrip("/")
+                    return (
+                        f"Error: could not fetch ticket data for "
+                        f"{ticket_id}.  Verify the ticket id and board "
+                        f"API connectivity (tried roster path and "
+                        f"{board_url}/tickets/{ticket_id}).",
+                        0,
+                    )
+                state = data.get("state")
+                cycles = _count_cycles_from_data(data)
+            else:
+                try:
+                    newline = resp.index("\n")
+                    status_line = resp[:newline]
+                    body_str = resp[newline + 1 :]
+                except ValueError:
+                    return (
+                        f"Error: could not parse component_request "
+                        f"response for ticket {ticket_id} (no status "
+                        f"line)",
+                        0,
+                    )
+                if not status_line.startswith("HTTP "):
+                    return (
+                        f"Error: unexpected component_request response for "
+                        f"ticket {ticket_id}: {status_line!r}",
+                        0,
+                    )
+                try:
+                    status_code = int(status_line.split()[1])
+                except IndexError, ValueError:
+                    return (
+                        f"Error: unparsable HTTP status in "
+                        f"component_request response for ticket "
+                        f"{ticket_id}: {status_line!r}",
+                        0,
+                    )
+                if status_code >= 400:
+                    return (
+                        f"Error: board API returned HTTP {status_code} for "
+                        f"ticket {ticket_id} via component_request",
+                        0,
+                    )
+                try:
+                    data = json.loads(body_str)
+                except json.JSONDecodeError, TypeError:
+                    return (
+                        f"Error: non-JSON response for ticket "
+                        f"{ticket_id} via component_request",
+                        0,
+                    )
+                state = data.get("state")
+                cycles = _count_cycles_from_data(data)
         else:
             data = await client.get_ticket_data(ticket_id)
             if data is None:
