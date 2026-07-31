@@ -259,6 +259,7 @@ def create_app(
     config_path: str | None = None,
     draft_store_dir: str | None = None,
     diagnostic_store: Any = None,
+    knowledge_store: Any = None,
 ) -> Starlette:
     """Return a Starlette ASGI app wired to ``agent``.
 
@@ -367,6 +368,9 @@ def create_app(
             instance, used by the ``POST /diagnostics/events`` and
             ``GET /diagnostics/events`` endpoints.  When ``None`` (default),
             the diagnostic endpoints return 503.
+        knowledge_store: Shared :class:`~robotsix_chat.knowledge.KnowledgeStore`
+            instance used for session carryover persistence.  When ``None``
+            (default), carryover is disabled.
 
     """
     routes: list[Route | Mount] = [
@@ -528,6 +532,7 @@ def create_app(
     app.state.feedback_runner = feedback_runner  # may be None
     app.state.autonomous_runner = autonomous_runner  # may be None
     app.state.diagnostic_store = diagnostic_store  # may be None
+    app.state.knowledge_store = knowledge_store  # may be None
     if config_path is not None:
         app.state.config_path = config_path
     if draft_store_dir is not None:
@@ -610,6 +615,7 @@ def _build_static_tools(
     bare: bool = False,
     conversation_store: ConversationStore | None = None,
     diagnostic_store: Any = None,
+    knowledge_store: Any = None,
 ) -> list[Any]:
     """Return the static (non-per-request) tool suite gated by *settings*.
 
@@ -632,7 +638,7 @@ def _build_static_tools(
         ),
         *build_github_security_tools(settings.github_security, settings.direct_repo),
         *build_github_actions_tools(settings.github_actions, settings.direct_repo),
-        *build_knowledge_tools(settings.knowledge),
+        *build_knowledge_tools(settings.knowledge, store=knowledge_store),
         *build_diagnostics_tools(settings.diagnostics, store=diagnostic_store),
         *build_recent_activity_tools(settings.self_review, conversation_store),
         *build_version_check_tools(settings.version_check, settings.direct_repo),
@@ -714,6 +720,7 @@ def create_agent_from_settings(
     memory_enabled: bool = True,
     event_sink: EventSink | None = None,
     diagnostic_store: Any = None,
+    knowledge_store: Any = None,
 ) -> LlmioChatAgent:
     """Build an :class:`LlmioChatAgent` wired from *settings*.
 
@@ -776,6 +783,7 @@ def create_agent_from_settings(
         bare=bare,
         conversation_store=conversation_store,
         diagnostic_store=diagnostic_store,
+        knowledge_store=knowledge_store,
     )
     if tool_wrapper is not None:
         tools = tool_wrapper(tools)

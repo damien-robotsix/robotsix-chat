@@ -1302,6 +1302,10 @@ async def test_run_server_from_config_creates_agent_from_settings(
         from robotsix_chat.diagnostics import DiagnosticStore
 
         assert isinstance(diagnostic_store, DiagnosticStore)
+        knowledge_store = call_args[1].pop("knowledge_store")
+        from robotsix_chat.knowledge.store import KnowledgeStore
+
+        assert isinstance(knowledge_store, KnowledgeStore)
         assert call_args[1] == {
             "host": "127.0.0.1",
             "port": 8080,

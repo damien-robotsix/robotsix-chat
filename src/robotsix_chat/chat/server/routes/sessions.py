@@ -211,6 +211,11 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
     if feedback_runner is not None and deletion_turns:
         feedback_runner.schedule("session_end", session_id, deletion_turns)
 
+    # -- session carryover persistence ------------------------------------
+    # Save an action-plan summary to the knowledge store so the assistant
+    # can pick up pending work in a new session.
+    await _persist_carryover(request, store, session_id, owner_id)
+
     # Autonomous cleanup: forget the runner's record and auto-restart so the
     # operator always has one live autonomous run (auto-restart always).
     if is_autonomous and runner is not None:
@@ -277,6 +282,11 @@ async def sessions_close_endpoint(request: Request) -> JSONResponse:
         turns = store.history(session_id)
         if turns:
             feedback_runner.schedule("session_end", session_id, turns)
+
+    # -- session carryover persistence ------------------------------------
+    # Save an action-plan summary to the knowledge store so the assistant
+    # can pick up pending work in a new session.
+    await _persist_carryover(request, store, session_id, owner_id)
 
     # Autonomous cleanup: forget the runner's record (the store keeps the
     # closed history) and auto-restart so the operator always has one live
@@ -355,3 +365,70 @@ async def summary_endpoint(request: Request) -> JSONResponse:
         ) from None
 
     return JSONResponse({"summary": "".join(reply_parts).strip()})
+
+
+# -- session carryover -----------------------------------------------------
+
+# Well-known note topic for session carryover in the knowledge store.
+_CARRYOVER_TOPIC = "session-carryover"
+
+
+async def _persist_carryover(
+    request: Request,
+    store: ConversationStore,
+    session_id: str,
+    owner_id: str,
+) -> None:
+    """Generate a carryover action-plan summary and save it to the knowledge store.
+
+    The summary captures what the assistant was planning to do next so a
+    new session can pick up pending work.  A no-op when knowledge is
+    disabled, the summary agent is missing, or the session has no turns.
+    """
+    knowledge_store = request.app.state.knowledge_store
+    if knowledge_store is None:
+        return
+
+    summary_agent: ChatAgent | None = request.app.state.summary_agent
+    if summary_agent is None:
+        return
+
+    turns = store.history(session_id)
+    if not turns:
+        return
+
+    # Avoid circular import: _generate_carryover_summary lives in .chat
+    from .chat import _generate_carryover_summary
+
+    try:
+        summary = await _generate_carryover_summary(summary_agent, turns)
+    except Exception:
+        logger.exception(
+            "Carryover summary generation failed for session %s", session_id
+        )
+        return
+
+    if not summary:
+        return
+
+    try:
+        # Find any existing carryover note for this owner and update it,
+        # or create a new one if none exists.  We use list-filtered-by-topic
+        # to locate the note since KnowledgeStore.add() generates a random id.
+        existing = knowledge_store.list(_CARRYOVER_TOPIC)
+        if existing:
+            knowledge_store.update(existing[0].id, summary)
+            logger.debug(
+                "Updated carryover note %s for owner %s",
+                existing[0].id,
+                owner_id,
+            )
+        else:
+            entry = knowledge_store.add(_CARRYOVER_TOPIC, summary)
+            logger.debug(
+                "Created carryover note %s for owner %s",
+                entry.id,
+                owner_id,
+            )
+    except Exception:
+        logger.exception("Failed to persist carryover note for owner %s", owner_id)

@@ -22,6 +22,8 @@ from typing import TYPE_CHECKING, Any
 if TYPE_CHECKING:
     from robotsix_chat.config import KnowledgeSettings
 
+    from .store import KnowledgeStore
+
 logger = logging.getLogger(__name__)
 
 __all__ = ["build_knowledge_tools"]
@@ -30,14 +32,23 @@ __all__ = ["build_knowledge_tools"]
 _LIST_SNIPPET_LENGTH = 200
 
 
-def build_knowledge_tools(settings: KnowledgeSettings) -> list[Callable[..., Any]]:
-    """Return the five knowledge-note tools, or ``[]`` when disabled."""
+def build_knowledge_tools(
+    settings: KnowledgeSettings,
+    *,
+    store: KnowledgeStore | None = None,
+) -> list[Callable[..., Any]]:
+    """Return the five knowledge-note tools, or ``[]`` when disabled.
+
+    When *store* is given, it is used directly; otherwise a new
+    :class:`KnowledgeStore` is created from *settings.path*.
+    """
     if not settings.enabled:
         return []
 
-    from .store import KnowledgeStore
+    if store is None:
+        from .store import KnowledgeStore
 
-    store = KnowledgeStore(settings.path)
+        store = KnowledgeStore(settings.path)
 
     # ------------------------------------------------------------------
     # tools (plain async def → str, no decorators)

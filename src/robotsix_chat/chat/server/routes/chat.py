@@ -552,6 +552,38 @@ async def _generate_idle_summary(
     )
 
 
+async def _generate_carryover_summary(
+    summary_agent: ChatAgent,
+    turns: list[tuple[str, str]],
+) -> str:
+    """Generate a brief action-plan summary for cross-session carryover.
+
+    Focuses on what the assistant was planning to do next — actionable
+    items, pending tasks, blocked items, and next steps.  Returns an
+    empty string when there are no turns or on failure.
+    """
+    if not turns:
+        return ""
+
+    transcript = build_transcript(turns)
+
+    prompt = (
+        "Generate a brief action-plan summary from the conversation below. "
+        "Focus on: specific action items the assistant mentioned, pending "
+        "tasks, blocked items waiting for input, and any multi-step "
+        "processes in progress. This will be shown to the assistant at "
+        "the start of the next session, so make it actionable and "
+        "concrete — include task IDs, ticket IDs, file paths, and next "
+        "steps the assistant should pick up. Plain text only, no markdown "
+        "fences, no JSON.\n\nConversation:\n"
+        f"{transcript}\n\nAction-plan summary:"
+    )
+
+    return await _stream_summary(
+        summary_agent, prompt, "Carryover summary generation failed"
+    )
+
+
 async def chat_endpoint(
     request: Request,
 ) -> JSONResponse | StreamingResponse:
@@ -677,6 +709,11 @@ async def chat_endpoint(
                 if feedback_runner is not None:
                     feedback_runner.schedule("compaction", session_id, compaction_turns)
 
+                # Save a carryover action-plan summary so the assistant
+                # can pick up pending work if the operator starts a new
+                # session instead of continuing this compacted one.
+                await _persist_carryover_for_compaction(request, store, session_id)
+
     lock_key = client_id or session_id
 
     # -- Autonomous proposal approval / rejection --------------------------
@@ -717,6 +754,15 @@ async def chat_endpoint(
     title_agent = request.app.state.summary_agent
     if title_agent is agent:
         title_agent = None
+
+    # -- session carryover injection ---------------------------------------
+    # When starting a new session, check for a carryover note from a
+    # previous session and prepend it to the user's message so the
+    # agent can pick up pending work.
+    if not had_session:
+        carryover = _load_carryover(request)
+        if carryover:
+            message = _CARRYOVER_HEADER + carryover + _CARRYOVER_FOOTER + "\n" + message
 
     response_queue = await coalescer.submit(
         session_id,
@@ -829,3 +875,81 @@ async def cancel_queued_endpoint(request: Request) -> JSONResponse:
     coalescer: MessageCoalescer = request.app.state.message_coalescer
     result = await coalescer.cancel_message(session_id, message_id)
     return JSONResponse(result)
+
+
+# -- session carryover injection -------------------------------------------
+
+_CARRYOVER_TOPIC = "session-carryover"
+
+_CARRYOVER_HEADER = (
+    "# Action plan from your previous session\n"
+    "Below is what you were working on in your last session. "
+    "Review it for pending actions, incomplete tasks, and next steps:\n\n"
+)
+_CARRYOVER_FOOTER = "\n\n# End of previous session action plan"
+
+
+def _load_carryover(request: Request) -> str:
+    """Return the carryover note content for the request's owner, or ``""``.
+
+    The carryover note is a knowledge-store entry persisted on session
+    close/delete/idle-compaction.  Returns the empty string when knowledge
+    is disabled or no carryover note exists.
+    """
+    knowledge_store = request.app.state.knowledge_store
+    if knowledge_store is None:
+        return ""
+
+    try:
+        existing = knowledge_store.list(_CARRYOVER_TOPIC)
+    except Exception:
+        logger.exception("Failed to load carryover note")
+        return ""
+
+    if not existing:
+        return ""
+
+    return existing[0].content  # type: ignore[no-any-return]
+
+
+async def _persist_carryover_for_compaction(
+    request: Request,
+    store: ConversationStore,
+    session_id: str,
+) -> None:
+    """Generate and persist a carryover summary on idle compaction."""
+    knowledge_store = request.app.state.knowledge_store
+    if knowledge_store is None:
+        return
+
+    summary_agent: ChatAgent | None = request.app.state.summary_agent
+    if summary_agent is None:
+        return
+
+    turns = store.history(session_id)
+    if not turns:
+        return
+
+    try:
+        summary = await _generate_carryover_summary(summary_agent, turns)
+    except Exception:
+        logger.exception(
+            "Carryover summary generation failed for compacted session %s",
+            session_id,
+        )
+        return
+
+    if not summary:
+        return
+
+    try:
+        existing = knowledge_store.list(_CARRYOVER_TOPIC)
+        if existing:
+            knowledge_store.update(existing[0].id, summary)
+        else:
+            knowledge_store.add(_CARRYOVER_TOPIC, summary)
+    except Exception:
+        logger.exception(
+            "Failed to persist carryover note for compacted session %s",
+            session_id,
+        )
