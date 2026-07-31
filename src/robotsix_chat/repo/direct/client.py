@@ -1075,13 +1075,22 @@ class DirectRepoClient:
             all_annotations: list[dict[str, Any]] = []
             check_run_summaries: list[str] = []
 
+            # Conclusions that indicate a meaningful failure where
+            # annotations are the primary diagnostic signal.  Always
+            # fetch annotations for these even when GitHub reports
+            # annotations_count == 0, because that field can be
+            # stale or missing for job-level annotations.
+            _failed_conclusions = frozenset(
+                {"failure", "timed_out", "cancelled", "action_required"}
+            )
+
             for cr in check_runs:
                 cr_id = cr.get("id")
                 cr_name = cr.get("name", str(cr_id))
                 cr_conclusion = cr.get("conclusion", "?")
                 ann_count = cr.get("annotations_count", 0)
 
-                if ann_count == 0:
+                if ann_count == 0 and cr_conclusion not in _failed_conclusions:
                     continue
 
                 try:
