@@ -386,17 +386,17 @@ first-party credentials live in the config file and nowhere else.
 
 Push-branch and open-PR as the robotsix-mill GitHub App. Disabled by default.
 
-| JSON key                                 | Type              | Default                    | Description                                                     |
-| ---------------------------------------- | ----------------- | -------------------------- | --------------------------------------------------------------- |
-| `direct_repo.enabled`                    | `boolean`         | `false`                    | Master switch.                                                  |
-| `direct_repo.github_app_id`              | `string`          | `""`                       | GitHub App numeric or slug id. Required when enabled.           |
-| `direct_repo.github_app_private_key`     | `string` (secret) | `""`                       | RSA private key in PEM format.                                  |
-| `direct_repo.github_app_installation_id` | `string`          | `""`                       | Installation id to act as.                                      |
-| `direct_repo.github_api_base_url`        | `string`          | `"https://api.github.com"` | Base URL for GitHub Enterprise.                                 |
-| `direct_repo.board_api_base_url`         | `string`          | `"http://127.0.0.1:8077"`  | Board HTTP API base URL for ticket-state lookups.               |
-| `direct_repo.board_api_token`            | `string` (secret) | `""`                       | Optional bearer token for the board API.                        |
-| `direct_repo.timeout`                    | `number`          | `30.0`                     | Per-request HTTP timeout (seconds).                             |
-| `direct_repo.direct_fix_enabled`         | `boolean`         | `false`                    | Enables the `direct_fix` branch-push tool (requires `enabled`). |
+| JSON key                                 | Type              | Default                    | Description                                                                                                                       |
+| ---------------------------------------- | ----------------- | -------------------------- | --------------------------------------------------------------------------------------------------------------------------------- |
+| `direct_repo.enabled`                    | `boolean`         | `false`                    | Master switch.                                                                                                                    |
+| `direct_repo.github_app_id`              | `string`          | `""`                       | GitHub App numeric or slug id. Required when enabled.                                                                             |
+| `direct_repo.github_app_private_key`     | `string` (secret) | `""`                       | RSA private key in PEM format.                                                                                                    |
+| `direct_repo.github_app_installation_id` | `string`          | `""`                       | Installation id to act as.                                                                                                        |
+| `direct_repo.github_api_base_url`        | `string`          | `"https://api.github.com"` | Base URL for GitHub Enterprise.                                                                                                   |
+| `direct_repo.board_api_base_url`         | `string`          | `"http://127.0.0.1:8077"`  | Board HTTP API base URL for ticket-state lookups.                                                                                 |
+| `direct_repo.board_api_token`            | `string` (secret) | `""`                       | Optional bearer token for the board API.                                                                                          |
+| `direct_repo.timeout`                    | `number`          | `30.0`                     | Per-request HTTP timeout (seconds).                                                                                               |
+| `direct_repo.direct_fix_enabled`         | `boolean`         | `false`                    | Enables the `direct_fix` branch-push tool (requires `enabled`).                                                                   |
 | `direct_repo.allow_push_to_existing_pr`  | `boolean`         | `false`                    | Expose `push_to_pr_branch` tool for committing small patches to existing PR branches (CI-fix iterations) without re-creating PRs. |
 
 ### GitHub Security
