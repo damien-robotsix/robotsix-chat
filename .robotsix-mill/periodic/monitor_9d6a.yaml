@@ -20,9 +20,7 @@ prompt_overlay: |
   ticket_poll("<full-ticket-id>")
   ```
 
-  If you only have the suffix `9d6a`, use the board API or component
-  roster to resolve the full ticket ID first.  The title contains
-  "implement-stage pre-LLM abort" and "unavailable tools".
+  # ticket_poll() resolves abbreviated IDs automatically — just pass the suffix
 
   ### State machine
 
