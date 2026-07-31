@@ -580,66 +580,6 @@ class DirectRepoClient:
         """
         return await self._get_json(f"/repos/{repo_full_name}/pulls/{pr_number}")
 
-    async def merge_pr(
-        self,
-        *,
-        repo_full_name: str,
-        pr_number: int,
-        merge_method: str = "merge",
-        commit_title: str = "",
-        commit_message: str = "",
-    ) -> str:
-        """Merge a pull request via the GitHub API.
-
-        Calls ``PUT /repos/{owner}/{repo}/pulls/{pull_number}/merge``.
-        The PR must be mergeable (no conflicts, all required status checks
-        passed); the merge method defaults to a standard merge commit.
-
-        Never raises — returns a success/error message string.
-        """
-        try:
-            body: dict[str, str] = {"merge_method": merge_method}
-            if commit_title:
-                body["commit_title"] = commit_title
-            if commit_message:
-                body["commit_message"] = commit_message
-
-            url = f"{self._base_url}/repos/{repo_full_name}/pulls/{pr_number}/merge"
-            result = await self._http_with_retry(
-                "PUT",
-                url,
-                json_body=body,
-                headers=await self._gh_headers(),
-                timeout=self._s.timeout,
-                label=f"GitHub API (merge PR #{pr_number})",
-            )
-            if result.ok:
-                merge_data = json.loads(result.text or "")
-                merged = merge_data.get("merged", False) if merge_data else False
-                message = merge_data.get("message", "") if merge_data else ""
-                if merged:
-                    return f"PR #{pr_number} in {repo_full_name} merged successfully."
-                return (
-                    f"PR #{pr_number} in {repo_full_name}: merge responded 200 "
-                    f"but did not report merged=True.  Message: {message}"
-                )
-            # 405 = not mergeable (status checks, reviews, conflicts)
-            if result.status_code == 405:
-                detail = result.error or "(no detail)"
-                return (
-                    f"PR #{pr_number} in {repo_full_name} is not mergeable. "
-                    f"Possible causes: required status checks not passing, "
-                    f"required reviews not completed, or merge conflicts.\n"
-                    f"GitHub response: {detail}"
-                )
-            # 409 = conflict / SHA mismatch
-            if result.status_code == 409:
-                detail = result.error or "(no detail)"
-                return f"PR #{pr_number} in {repo_full_name} merge conflict: {detail}"
-            return f"Error merging PR: {result.error or 'unknown error'}"
-        except Exception as exc:
-            return f"Error merging PR: {exc}"
-
     async def resume_blocked_ticket(self, ticket_id: str, justification: str) -> bool:
         """Resume a blocked ticket via the board API.
 

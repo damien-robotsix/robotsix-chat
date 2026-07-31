@@ -337,6 +337,20 @@ async def test_merge_pr_client_200_success(
     settings = _settings()
     _prepopulate_installation_token(settings)
 
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "title": "Test PR",
+                    "mergeable": True,
+                    "mergeable_state": "clean",
+                    "merged": False,
+                    "draft": False,
+                }
+            ),
+        )
+    )
     respx_mock.put("https://api.github.com/repos/org/repo/pulls/42/merge").mock(
         return_value=httpx.Response(
             200,
@@ -370,6 +384,20 @@ async def test_merge_pr_client_200_not_merged(
     settings = _settings()
     _prepopulate_installation_token(settings)
 
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "title": "Test PR",
+                    "mergeable": True,
+                    "mergeable_state": "clean",
+                    "merged": False,
+                    "draft": False,
+                }
+            ),
+        )
+    )
     respx_mock.put("https://api.github.com/repos/org/repo/pulls/42/merge").mock(
         return_value=httpx.Response(
             200,
@@ -387,7 +415,7 @@ async def test_merge_pr_client_200_not_merged(
         repo_full_name="org/repo",
         pr_number=42,
     )
-    assert "did not report merged=True" in result
+    assert "was not merged" in result
     assert "Merge already in progress" in result
 
 
@@ -399,6 +427,20 @@ async def test_merge_pr_client_405_not_mergeable(
     settings = _settings()
     _prepopulate_installation_token(settings)
 
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/99").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "title": "CI failing",
+                    "mergeable": True,
+                    "mergeable_state": "blocked",
+                    "merged": False,
+                    "draft": False,
+                }
+            ),
+        )
+    )
     respx_mock.put("https://api.github.com/repos/org/repo/pulls/99/merge").mock(
         return_value=httpx.Response(
             405,
@@ -416,7 +458,7 @@ async def test_merge_pr_client_405_not_mergeable(
         repo_full_name="org/repo",
         pr_number=99,
     )
-    assert "not mergeable" in result.lower()
+    assert "not in a mergeable state" in result.lower()
     assert "99" in result
     assert "status checks" in result.lower()
     assert "Pull Request is not mergeable" in result
@@ -430,6 +472,20 @@ async def test_merge_pr_client_409_conflict(
     settings = _settings()
     _prepopulate_installation_token(settings)
 
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/77").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "title": "Test PR",
+                    "mergeable": True,
+                    "mergeable_state": "clean",
+                    "merged": False,
+                    "draft": False,
+                }
+            ),
+        )
+    )
     respx_mock.put("https://api.github.com/repos/org/repo/pulls/77/merge").mock(
         return_value=httpx.Response(
             409,
@@ -2057,7 +2113,7 @@ def test_direct_fix_available_when_enabled() -> None:
     tools = build_direct_repo_tools(_settings(direct_fix_enabled=True))
     names = [t.__name__ for t in tools]
     assert "direct_fix" in names
-    assert len(tools) == 10  # 8 base + direct_fix + patch_direct_repo_file
+    assert len(tools) == 12  # 10 base + direct_fix + patch_direct_repo_file
 
 
 @pytest.mark.asyncio
