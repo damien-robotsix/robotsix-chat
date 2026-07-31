@@ -94,6 +94,12 @@ attempted (which may surface a 404).
   connectivity path as `component_request` and are equally reliable.
 - **Timeout** — each request has a short timeout; failures are per-ticket (one down ticket won't
   break the batch).
+- **Connectivity vs. state.** A tool call failure (timeout, unreachable, HTTP 5xx, DNS error) is a
+  transient I/O error — it tells you nothing about the ticket's actual state. Do **not** conflate
+  "the API returned an error" with "the ticket is closed," "the ticket is being tracked by a
+  monitor," or any other conclusion about the ticket. When a call fails, report the failure honestly
+  (e.g. "could not reach the board API — will retry") and do not fabricate state from the absence of
+  data. Only state facts about a ticket when you have a successful response containing those facts.
 
 ## Example calls
 

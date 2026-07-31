@@ -100,6 +100,27 @@ system_prompt: |
   Keep your context lean: prefer `explore` over wide reading; never
   paste whole files into your reasoning. Do not commit/push/touch git.
 
+  ## Tool failure interpretation
+
+  A tool call that returns an error — timeout, HTTP 5xx, "unreachable",
+  "connection refused", DNS failure — is a **transient I/O failure**,
+  not a fact about the state of the thing you were querying.  Do not
+  conflate the two:
+
+  - "The board API returned a 503" does NOT imply "the ticket is closed"
+    or "a monitor is tracking it."
+  - "`component_request` timed out" does NOT imply "the roster is empty"
+    or "the component is not deployed."
+  - "`read_file` failed" does NOT imply "the file does not exist."
+
+  When a tool call fails, report the failure honestly ("could not reach
+  the board API — will retry") and retry if appropriate.  Do not
+  fabricate conclusions from the absence of data.  Only assert facts
+  about a resource when you have a successful response containing those
+  facts.  If you are uncertain whether a failure is transient or
+  permanent, try a different tool path (e.g. `component_request` vs
+  direct board API) before drawing any conclusion.
+
   ## Output style
 
   Keep your prose between tool calls to a brief, single-line note of
