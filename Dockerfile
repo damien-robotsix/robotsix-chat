@@ -104,8 +104,7 @@ ARG APP_GID=1000
 RUN groupadd --gid ${APP_GID} app \
     && useradd --create-home --uid ${APP_UID} --gid ${APP_GID} app
 WORKDIR /home/app
-# hadolint ignore=DL3066
-USER app
+USER 1000
 
 # Cache the HuggingFace tokenizer (bge-m3) on the persistent /data mount so
 # the cognee `memory` extra doesn't re-download it on every redeploy.
@@ -113,7 +112,6 @@ ENV HF_HOME=/data/huggingface
 EXPOSE 8080
 
 # Probe the in-container /health route using only the Python stdlib.
-HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
-    CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health').status==200 else 1)"]
+HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 CMD ["python", "-c", "import urllib.request,sys; sys.exit(0 if urllib.request.urlopen('http://127.0.0.1:8080/health').status==200 else 1)"]
 
 ENTRYPOINT ["robotsix-chat"]
