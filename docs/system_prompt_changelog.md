@@ -38,7 +38,7 @@ IDs were slightly different.  The "never enumerate raw bullet lists" instruction
 over-applied — the assistant was abbreviating ticket IDs in narrative and then feeding those
 abbreviated IDs back into API calls.
 
-**SHA256:** `(pending — update after finalizing prompt text)`
+**SHA256:** `313f599b6ccb0642ea78ad0d553b7b197c11ffe4526d3ebb0fd38fe4ef5e2190`
 
 ______________________________________________________________________
 
