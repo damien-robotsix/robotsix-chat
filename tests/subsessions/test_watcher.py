@@ -335,3 +335,56 @@ async def test_watcher_handles_mill_unreachable_gracefully() -> None:
     # The monitor should still be paused (no crash, no resume).
     paused = env.registry.find_paused_periodic()
     assert len(paused) == 1
+
+
+@pytest.mark.asyncio
+async def test_watcher_resumes_human_approval_timeout_when_state_changes() -> None:
+    """Watcher resumes a ``human_approval_timeout`` monitor on state change."""
+    settings = make_settings()
+    settings.direct_repo = type(
+        "_ns", (), {"board_api_base_url": "https://mill.example.com"}
+    )()
+    settings.subsessions.paused_monitor_poll_interval_seconds = 0.01
+    env = build_env(settings=settings)
+
+    info = env.registry.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="monitor",
+        prompt="monitor",
+        model_level=3,
+        interval_seconds=60.0,
+        checkpoint={
+            "ticket_id": "T-1",
+            "last_known_state": "human_issue_approval",
+            "human_approval_since": 999999.0,
+        },
+    )
+    env.registry.mark_closed(
+        info.id,
+        summary="human approval timeout",
+        reason="human_approval_timeout",
+        closed_by="system",
+    )
+
+    # Mock the mill to return a changed state (e.g. PR merged, ticket
+    # moved to in_progress).
+    mock_client = _mock_ticket_client(state="in_progress")
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with patch("httpx.AsyncClient", mock_client):
+        await asyncio.sleep(0.15)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.is_active
+    # human_approval_since must be cleared on reopen.
+    assert reopened.checkpoint is not None
+    assert "human_approval_since" not in reopened.checkpoint

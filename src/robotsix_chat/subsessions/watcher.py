@@ -1,11 +1,16 @@
-"""Background watcher that resumes paused periodic monitors.
+"""Background watcher that resumes paused and timeout-escalated periodic monitors.
 
 When a periodic subsession is auto-paused by ``max_idle_runs`` (closed
-with reason ``"paused"``), it stops ticking.  This module provides a
-lightweight asyncio task that periodically polls the mill for each
-paused monitor's ticket state.  When the ticket's ``state`` differs
-from the checkpoint's ``last_known_state``, the monitor is reopened
-and its worker re-spawned.
+with reason ``"paused"``), auto-escalated while stuck in
+``human_issue_approval`` (closed with reason ``"human_approval_timeout"``),
+or immediately escalated for a pre-authorized ticket (closed with reason
+``"pre_authorized_approval"``), it stops ticking.  This module provides
+a lightweight asyncio task that periodically polls the mill for each
+such monitor's ticket state **and** — when the monitor's checkpoint
+records a tracked PR — polls GitHub for merge status.  When the
+ticket's ``state`` differs from the checkpoint's ``last_known_state``
+*or* the tracked PR has been merged, the monitor is reopened and its
+worker re-spawned.
 """
 
 from __future__ import annotations
@@ -77,7 +82,7 @@ async def _resume_paused_monitor(
     env: SubsessionEnv,
     sub_id: str,
 ) -> None:
-    """Reopen a paused monitor and re-spawn its worker task."""
+    """Reopen a paused/timeout monitor and re-spawn its worker task."""
     from .worker import _subsession_worker
 
     info = env.registry.reopen(sub_id)
@@ -85,7 +90,7 @@ async def _resume_paused_monitor(
         return
 
     logger.info(
-        "Watcher: resuming paused monitor %s (%s) — ticket state changed.",
+        "Watcher: resuming monitor %s (%s) — ticket state changed.",
         sub_id,
         info.title,
     )
@@ -97,8 +102,111 @@ async def _resume_paused_monitor(
     task.add_done_callback(env._tasks.discard)
 
 
+async def _resume_merged_pr_monitor(
+    env: SubsessionEnv,
+    sub_id: str,
+    pr_number: int,
+    repo_full_name: str,
+) -> None:
+    """Reopen a paused monitor whose tracked PR has been merged."""
+    from .worker import _subsession_worker
+
+    info = env.registry.reopen(sub_id)
+    if info is None:
+        return
+
+    logger.info(
+        "Watcher: resuming monitor %s (%s) — tracked PR #%d in %s was merged.",
+        sub_id,
+        info.title,
+        pr_number,
+        repo_full_name,
+    )
+    task = asyncio.create_task(
+        _subsession_worker(env, sub_id), context=contextvars.Context()
+    )
+    env.registry.attach_task(sub_id, task)
+    env._tasks.add(task)
+    task.add_done_callback(env._tasks.discard)
+
+
+async def _query_pr_merge_status(
+    repo_full_name: str,
+    pr_number: int,
+    sub_id: str,
+    github_api_base_url: str,
+    installation_token: str,
+) -> bool | None:
+    """Return ``True`` when PR *pr_number* in *repo_full_name* is merged.
+
+    Returns ``False`` when the PR exists but is not merged, and ``None``
+    when the PR is unreachable (API error, 404, etc.).
+    """
+    try:
+        base = httpx.URL(github_api_base_url.rstrip("/"))
+        pr_url = base.copy_with(path=f"/repos/{repo_full_name}/pulls/{pr_number}")
+    except Exception:
+        logger.exception(
+            "Could not construct PR URL for subsession %s (repo=%s, pr=%d)",
+            sub_id,
+            repo_full_name,
+            pr_number,
+        )
+        return None
+
+    headers = {
+        "Accept": "application/vnd.github+json",
+        "Authorization": f"Bearer {installation_token}",
+    }
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+            response = await client.get(str(pr_url), headers=headers)
+            if response.status_code == 404:
+                logger.debug(
+                    "Watcher: PR #%d in %s not found (subsession %s)",
+                    pr_number,
+                    repo_full_name,
+                    sub_id,
+                )
+                return None
+            response.raise_for_status()
+            pr_data: dict[str, object] = response.json()
+    except httpx.HTTPStatusError as exc:
+        logger.debug(
+            "Watcher: GitHub returned %d for PR #%d in %s (subsession %s)",
+            exc.response.status_code,
+            pr_number,
+            repo_full_name,
+            sub_id,
+        )
+        return None
+    except (httpx.TimeoutException, httpx.ConnectError, OSError) as exc:
+        logger.debug(
+            "Watcher: GitHub unreachable for PR #%d in %s (subsession %s): %s",
+            pr_number,
+            repo_full_name,
+            sub_id,
+            exc,
+        )
+        return None
+    except Exception:
+        logger.exception(
+            "Watcher: unexpected error querying GitHub for PR #%d in %s "
+            "(subsession %s)",
+            pr_number,
+            repo_full_name,
+            sub_id,
+        )
+        return None
+
+    merged = pr_data.get("merged")
+    if isinstance(merged, bool):
+        return merged
+    return None
+
+
 async def watch_paused_monitors(env: SubsessionEnv) -> None:
-    """Background task: poll paused monitors and resume on state change.
+    """Background task: poll auto-paused/timeout monitors and resume on state change.
 
     Runs forever — cancelled on server shutdown.  Must be started as an
     asyncio task after the server is ready (e.g. via the Starlette
@@ -175,11 +283,77 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                     await _resume_paused_monitor(env, info.id)
                 else:
                     logger.debug(
-                        "Watcher: subsession %s ticket %s still '%s' — keeping paused.",
+                        "Watcher: subsession %s ticket %s still '%s' — keeping closed.",
                         info.id,
                         ticket_id,
                         current_state,
                     )
+
+            # Second pass: check GitHub PR merge status for paused
+            # monitors whose checkpoint records a tracked PR.  This
+            # catches merges that the mill ticket API may not reflect
+            # (e.g. when a PR is merged but the ticket state is not
+            # automatically updated by the board).
+            paused_after_mill = env.registry.find_paused_periodic()
+            if paused_after_mill:
+                direct_repo_settings = getattr(env.settings, "direct_repo", None)
+                if direct_repo_settings is not None and getattr(
+                    direct_repo_settings, "enabled", False
+                ):
+                    try:
+                        from robotsix_chat.repo.direct.client import (
+                            DirectRepoClient,
+                        )
+
+                        gh_client = DirectRepoClient(direct_repo_settings)
+                        token = await gh_client._token()
+                    except Exception:
+                        logger.debug(
+                            "Watcher: could not create GitHub client — "
+                            "skipping PR merge checks."
+                        )
+                        token = None
+
+                    if token is not None:
+                        for info in paused_after_mill:
+                            checkpoint = info.checkpoint
+                            if checkpoint is None:
+                                continue
+                            pr_number_raw = checkpoint.get("pr_number")
+                            if not isinstance(pr_number_raw, int) or pr_number_raw <= 0:
+                                continue
+                            repo_raw = checkpoint.get("repo_full_name")
+                            if not isinstance(repo_raw, str) or not repo_raw:
+                                continue
+
+                            merged = await _query_pr_merge_status(
+                                repo_full_name=repo_raw,
+                                pr_number=pr_number_raw,
+                                sub_id=info.id,
+                                github_api_base_url=(
+                                    direct_repo_settings.github_api_base_url
+                                ),
+                                installation_token=token,
+                            )
+                            if merged is True:
+                                logger.info(
+                                    "Watcher: subsession %s PR #%d in %s "
+                                    "was merged — resuming.",
+                                    info.id,
+                                    pr_number_raw,
+                                    repo_raw,
+                                )
+                                await _resume_merged_pr_monitor(
+                                    env, info.id, pr_number_raw, repo_raw
+                                )
+                            elif merged is False:
+                                logger.debug(
+                                    "Watcher: subsession %s PR #%d in %s "
+                                    "not yet merged.",
+                                    info.id,
+                                    pr_number_raw,
+                                    repo_raw,
+                                )
 
             await asyncio.sleep(poll_interval)
         except asyncio.CancelledError:

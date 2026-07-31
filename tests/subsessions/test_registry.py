@@ -1158,12 +1158,41 @@ def test_reopen_returns_none_for_active_subsession() -> None:
 
 
 def test_reopen_returns_none_for_non_paused_closed() -> None:
-    """``reopen`` returns None when closed with a reason other than 'paused'."""
+    """``reopen`` returns None when closed with an unrecognised reason."""
     registry = SubsessionRegistry(store_path=None)
     info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
     registry.mark_closed(info.id, summary="done", reason="max_runs", closed_by="system")
 
     assert registry.reopen(info.id) is None
+
+
+def test_reopen_transitions_human_approval_timeout_to_running() -> None:
+    """``reopen`` transitions a ``human_approval_timeout`` subsession to RUNNING."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+    info.checkpoint = {
+        "ticket_id": "abc123",
+        "last_known_state": "human_issue_approval",
+        "human_approval_since": 999999.0,
+    }
+    registry.mark_closed(
+        info.id,
+        summary="human approval timeout",
+        reason="human_approval_timeout",
+        closed_by="system",
+    )
+
+    reopened = registry.reopen(info.id)
+
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.RUNNING
+    assert reopened.close_reason is None
+    assert reopened.summary is None
+    # human_approval_since must be cleared so the monitor doesn't
+    # immediately time out again.
+    assert reopened.checkpoint is not None
+    assert "human_approval_since" not in reopened.checkpoint
+    assert reopened.checkpoint["ticket_id"] == "abc123"
 
 
 def test_reopen_returns_none_for_non_periodic() -> None:
@@ -1196,7 +1225,7 @@ def test_reopen_is_idempotent() -> None:
 
 
 def test_find_paused_periodic_returns_paused_monitors() -> None:
-    """Returns periodic subsessions that are CLOSED with reason 'paused'."""
+    """Returns periodic subsessions CLOSED with 'paused' or 'human_approval_timeout'."""
     registry = SubsessionRegistry(store_path=None)
     p1 = _create(
         registry,
@@ -1210,29 +1239,39 @@ def test_find_paused_periodic_returns_paused_monitors() -> None:
         interval_seconds=60.0,
         title="monitor-2",
     )
-    # Non-periodic — should not appear.
-    t1 = _create(registry, kind=SubsessionKind.TASK, title="task-1")
-    # Active periodic — should not appear.
     p3 = _create(
         registry,
         kind=SubsessionKind.PERIODIC,
         interval_seconds=60.0,
         title="monitor-3",
     )
+    # Non-periodic — should not appear.
+    t1 = _create(registry, kind=SubsessionKind.TASK, title="task-1")
+    # Active periodic — should not appear.
+    p4 = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        title="monitor-4",
+    )
 
-    # Pause two of the periodic monitors.
+    # Pause two periodic monitors, timeout-escalate one.
     registry.mark_closed(p1.id, summary="paused", reason="paused", closed_by="system")
     registry.mark_closed(p2.id, summary="paused", reason="paused", closed_by="system")
-    # Close the task with max_runs (not paused).
+    registry.mark_closed(
+        p3.id, summary="timeout", reason="human_approval_timeout", closed_by="system"
+    )
+    # Close the task with max_runs (not watched).
     registry.mark_closed(t1.id, summary="done", reason="max_runs", closed_by="system")
 
     paused = registry.find_paused_periodic()
     paused_ids = {info.id for info in paused}
 
-    assert len(paused) == 2
+    assert len(paused) == 3
     assert p1.id in paused_ids
     assert p2.id in paused_ids
-    assert p3.id not in paused_ids
+    assert p3.id in paused_ids
+    assert p4.id not in paused_ids
     assert t1.id not in paused_ids
 
 
@@ -1242,3 +1281,46 @@ def test_find_paused_periodic_empty_when_no_paused() -> None:
     _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
 
     assert registry.find_paused_periodic() == []
+
+
+def test_find_paused_periodic_includes_pre_authorized_approval() -> None:
+    """``pre_authorized_approval`` monitors are included in the paused set."""
+    registry = SubsessionRegistry(store_path=None)
+    p = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        title="pre-auth-monitor",
+    )
+    registry.mark_closed(
+        p.id,
+        summary="pre-authorized escalation",
+        reason="pre_authorized_approval",
+        closed_by="system",
+    )
+    paused = registry.find_paused_periodic()
+    assert len(paused) == 1
+    assert paused[0].id == p.id
+
+
+def test_reopen_pre_authorized_approval() -> None:
+    """``reopen`` transitions a ``pre_authorized_approval`` subsession to RUNNING."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        title="pre-auth-monitor",
+    )
+    registry.mark_closed(
+        info.id,
+        summary="pre-authorized escalation",
+        reason="pre_authorized_approval",
+        closed_by="system",
+    )
+    reopened = registry.reopen(info.id)
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.RUNNING
+    assert reopened.close_reason is None
+    # Second reopen is a no-op (already active).
+    assert registry.reopen(info.id) is None
