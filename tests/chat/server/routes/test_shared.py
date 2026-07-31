@@ -11,6 +11,7 @@ from starlette.requests import Request
 from starlette.responses import HTMLResponse, JSONResponse
 
 from robotsix_chat.chat.server.routes._shared import (
+    _detect_truncation,
     _get_session_id,
     _parse_json_body,
     _sse_frame,
@@ -293,3 +294,64 @@ async def test_ui_endpoint() -> None:
     assert response.status_code == 200
     assert response.body == b"<html>ui</html>"
     mock_load.assert_called_once_with(5)
+
+
+# ---------------------------------------------------------------------------
+# _detect_truncation
+# ---------------------------------------------------------------------------
+
+
+def _long_prefix() -> str:
+    """Return a string long enough to exceed the truncation length threshold."""
+    return "x" * 1600
+
+
+class TestDetectTruncation:
+    """Unit tests for the ``_detect_truncation`` heuristic."""
+
+    def test_short_text_returns_none(self) -> None:
+        """Short text (below the length threshold) never triggers."""
+        assert _detect_truncation("short reply") is None
+
+    def test_long_clean_text_returns_none(self) -> None:
+        """Long text that ends with proper punctuation is not flagged."""
+        text = _long_prefix() + "\n\nHere is a complete sentence."
+        assert _detect_truncation(text) is None
+
+    def test_ends_with_ellipsis(self) -> None:
+        """Text ending with '...' is flagged as truncated."""
+        text = _long_prefix() + " robotsix-llmio: #501, ..."
+        assert _detect_truncation(text) is not None
+
+    def test_ends_with_trailing_comma(self) -> None:
+        """Text ending with a trailing comma is flagged as truncated."""
+        text = _long_prefix() + " robotsix-llmio: #501,"
+        assert _detect_truncation(text) is not None
+
+    def test_ends_with_trailing_comma_and_whitespace(self) -> None:
+        """Trailing comma followed by whitespace is also flagged."""
+        text = _long_prefix() + " robotsix-llmio: #501,   \n"
+        assert _detect_truncation(text) is not None
+
+    def test_bare_numbered_line(self) -> None:
+        """A bare '#501' as the last line is flagged."""
+        text = _long_prefix() + "\nrobotsix-llmio:\n#501"
+        assert _detect_truncation(text) is not None
+
+    def test_bare_numbered_line_with_semicolon(self) -> None:
+        """A bare '#501;' as the last line is flagged."""
+        text = _long_prefix() + "\nrobotsix-llmio:\n#501;"
+        assert _detect_truncation(text) is not None
+
+    def test_comma_inside_sentence_not_flagged(self) -> None:
+        """A comma followed by more text is not a truncation signal."""
+        text = _long_prefix() + " item one, item two, and item three."
+        assert _detect_truncation(text) is None
+
+    def test_note_contains_expected_text(self) -> None:
+        """The truncation note includes guidance for the user."""
+        text = _long_prefix() + " robotsix-llmio: #501, ..."
+        note = _detect_truncation(text)
+        assert note is not None
+        assert "output length limit" in note
+        assert "separate artifact" in note

@@ -62,7 +62,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 76
+SYSTEM_PROMPT_VERSION = 77
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -718,6 +718,16 @@ class Settings(BaseModel):
             "the user explicitly requests them (e.g. 'show me a table', 'give me "
             "the full audit'). Never repeat content already shown earlier in the "
             "same conversation.\n"
+            "– Long sorted lists (e.g. 20+ PR links, ticket enumerations, "
+            "file inventories): do NOT dump the full list inline in a single "
+            "chat message — output-length limits will truncate it mid-list "
+            "and the user gets an incomplete answer.  Instead, provide a "
+            "compact summary (count, top few items, key takeaway) and offer "
+            "the full list as a separate artifact — write it to a knowledge "
+            "note (add_knowledge_note), split across multiple shorter replies, "
+            "or ask the user to narrow their query.  If you must display the "
+            "full list inline, keep it under ~25 items and warn the user when "
+            "it approaches the output limit.\n"
             "– All tools are already loaded and available for the entire "
             "session; there is no separate tool-loading step. Never narrate "
             "loading, preparing, or fetching tools (e.g. 'I'll load the "
