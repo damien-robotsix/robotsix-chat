@@ -138,6 +138,17 @@ async def _check_installation_scope(
     return client
 
 
+def _ok_or_error(result: str, **extra_fields: object) -> JSONResponse:
+    """Raise HTTPException(502) on error, or return a success JSON response.
+
+    All GitHub action endpoints return the same shape:
+    ``{"status": "ok", "message": result, ...extra}``.
+    """
+    if result.startswith("Error"):
+        raise HTTPException(status_code=502, detail=result)
+    return JSONResponse({"status": "ok", "message": result, **extra_fields})
+
+
 async def github_settings_endpoint(request: Request) -> JSONResponse:
     """Handle ``PATCH /chat/github/repos/{owner}/{repo}/settings``.
 
@@ -206,16 +217,7 @@ async def github_settings_endpoint(request: Request) -> JSONResponse:
         secret_scanning_push_protection=kwargs["secret_scanning_push_protection"],
     )
 
-    if result.startswith("Error"):
-        raise HTTPException(status_code=502, detail=result)
-
-    return JSONResponse(
-        {
-            "status": "ok",
-            "repo": repo_full_name,
-            "message": result,
-        }
-    )
+    return _ok_or_error(result, repo=repo_full_name)
 
 
 async def github_repo_create_endpoint(request: Request) -> JSONResponse:
@@ -283,16 +285,7 @@ async def github_repo_create_endpoint(request: Request) -> JSONResponse:
         auto_init=auto_init,
     )
 
-    if result.startswith("Error"):
-        raise HTTPException(status_code=502, detail=result)
-
-    return JSONResponse(
-        {
-            "status": "ok",
-            "repo": f"{org}/{repo_name}",
-            "message": result,
-        }
-    )
+    return _ok_or_error(result, repo=f"{org}/{repo_name}")
 
 
 async def github_actions_secret_endpoint(request: Request) -> JSONResponse:
@@ -346,17 +339,7 @@ async def github_actions_secret_endpoint(request: Request) -> JSONResponse:
         secret_value=secret_value,
     )
 
-    if result.startswith("Error"):
-        raise HTTPException(status_code=502, detail=result)
-
-    return JSONResponse(
-        {
-            "status": "ok",
-            "repo": repo_full_name,
-            "secret_name": secret_name,
-            "message": result,
-        }
-    )
+    return _ok_or_error(result, repo=repo_full_name, secret_name=secret_name)
 
 
 async def github_actions_workflow_endpoint(request: Request) -> JSONResponse:
@@ -422,17 +405,7 @@ async def github_actions_workflow_endpoint(request: Request) -> JSONResponse:
         inputs=inputs,
     )
 
-    if result.startswith("Error"):
-        raise HTTPException(status_code=502, detail=result)
-
-    return JSONResponse(
-        {
-            "status": "ok",
-            "repo": repo_full_name,
-            "workflow_id": workflow_id,
-            "message": result,
-        }
-    )
+    return _ok_or_error(result, repo=repo_full_name, workflow_id=workflow_id)
 
 
 async def github_job_log_endpoint(request: Request) -> PlainTextResponse:
