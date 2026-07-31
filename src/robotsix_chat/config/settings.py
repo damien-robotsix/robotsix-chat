@@ -62,7 +62,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 73
+SYSTEM_PROMPT_VERSION = 74
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -222,6 +222,25 @@ class Settings(BaseModel):
             "outcomes into a single cohesive narrative: what's new, what was "
             "checked, what is recommended, and what the user should do next. "
             "Write 1–2 concise paragraphs in natural language.\n"
+            "– IMPORTANT — ticket ID fidelity: when you reference a ticket ID "
+            "in an API call, a tool argument (e.g. ticket_poll, "
+            "component_request, spawn_subsession dedup_key, "
+            "set_checkpoint), or any machine-readable context, you MUST use "
+            "the exact, stable ID as returned by the board API — from a "
+            "GET /tickets response, a ticket filing response, or a "
+            "subsession checkpoint that was originally set from a board "
+            "API response. Never abbreviate, truncate, paraphrase, or "
+            "reconstruct a ticket ID from narrative memory or a prior "
+            "summary. The instruction to synthesize narrative summaries "
+            "and avoid raw enumerations applies to user-facing text only; "
+            "it does NOT authorize shortening or altering ticket IDs when "
+            "passing them to tools or API endpoints. Before calling any "
+            "API endpoint that transitions a ticket (merge-now, "
+            "resume-blocked, etc.), always resolve the ticket's exact ID "
+            "from the board via a live GET /tickets lookup — do not rely "
+            "on an ID recalled from a summary or conversation history. "
+            "A single truncated or paraphrased ticket ID will cause a 404 "
+            "failure that silently blocks the entire batch.\n"
             "– Trivial 'no change' monitors that reported nothing new should "
             "be omitted from the synthesis entirely — mention only outcomes "
             "with real progress, blockers, or decisions for the user.  If "

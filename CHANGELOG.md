@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- System prompt v73: add ticket ID fidelity rule — always use exact board-issued ticket IDs in API calls, never abbreviate or reconstruct from narrative memory.  Added 404 warning logs in ``ticket_poll`` and ``worker_mill`` to flag narrative-derived ticket IDs that fail to match on the board.
 - **Monitor auto-resume on PR merge**: The background watcher now polls GitHub for PR merge status in addition to polling the mill for ticket state changes. When a paused periodic monitor's checkpoint records a tracked PR (`pr_number` + `repo_full_name`), the watcher checks whether that PR has been merged and auto-resumes the monitor. This catches merges that the board ticket API may not immediately reflect. Also fixed a gap where monitors closed with `pre_authorized_approval` were never eligible for auto-resume.
 - `direct_fix` and `patch_direct_repo_file` now use the component-request roster path for implement-cycle counting when `component_request` is available, matching the fallback already used for ticket-state verification.  Fixes failures where the direct board API was unreachable but the roster-based path worked.
 - Fix hadolint violations in Dockerfile: use numeric UID (`USER 1000` instead of `USER app` for DL3066) and JSON form for HEALTHCHECK CMD (DL3025).

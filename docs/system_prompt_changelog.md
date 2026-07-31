@@ -3,6 +3,27 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v74 — 2026-07-30 — ticket-id-fidelity-narrative-derived-597e
+
+**Summary:** Added a new "ticket ID fidelity" bullet to the Subsessions section, immediately
+after the "never enumerate raw bullet lists" instruction.  The new bullet requires the assistant
+to always use exact, stable ticket IDs from board API responses when passing them to tools or API
+endpoints, and never to abbreviate, truncate, paraphrase, or reconstruct a ticket ID from
+narrative memory or a prior summary.  Before calling any API endpoint that transitions a ticket
+(merge-now, resume-blocked, etc.), the assistant must resolve the ticket's exact ID from the
+board via a live GET /tickets lookup.  Also added a validation warning log in the ticket_poll and
+worker_mill code paths when a 404 is returned for a ticket ID, noting that the ID may have been
+derived from narrative text rather than from a board API response.
+
+**Rationale:** The assistant was constructing API calls using truncated ticket IDs that had been
+paraphrased during an earlier review summary (e.g. `...fix-0eff` vs
+`...fix-readme-provider-list-to-match-actual-0eff`).  All 36 calls returned 404 because the real
+IDs were slightly different.  The "never enumerate raw bullet lists" instruction was being
+over-applied — the assistant was abbreviating ticket IDs in narrative and then feeding those
+abbreviated IDs back into API calls.
+
+**SHA256:** `2ebd1174daa19ec599397f4603ba62aac5b642399b54e0312c801860774ef50e`
+
 ## v73 — 2026-07-30 — ticket-description-append-does-not-change-fingerprint-ca44
 
 **Summary:** Clarified that the ticket fingerprint guard hashes only the spec text, not the full

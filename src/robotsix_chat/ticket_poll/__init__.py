@@ -241,6 +241,14 @@ def build_ticket_poll_tools(
                 ensure_ascii=False,
             )
         except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                logger.warning(
+                    "ticket_poll: ticket %r not found (404). "
+                    "This ID may have been derived from narrative text "
+                    "rather than from a board API response — verify it "
+                    "against GET /tickets on the board.",
+                    ticket_id,
+                )
             return json.dumps(
                 {
                     "ticket_id": ticket_id,
@@ -378,6 +386,14 @@ def build_ticket_poll_tools(
                             "error": "",
                         }
                 except httpx.HTTPStatusError as exc:
+                    if exc.response.status_code == 404:
+                        logger.warning(
+                            "ticket_poll_batch: ticket %r not found (404). "
+                            "This ID may have been derived from narrative text "
+                            "rather than from a board API response — verify it "
+                            "against GET /tickets on the board.",
+                            ticket_id,
+                        )
                     return {
                         "ticket_id": ticket_id,
                         "state": None,
