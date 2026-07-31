@@ -48,7 +48,9 @@ The tool accepts any public HTTP(S) URL, including:
 ## Safety
 
 - **Read-only** — GET only; no other HTTP methods.
-- **No credentials** — the request carries no auth headers or cookies.
+- **No credentials by default** — the request carries no auth headers or cookies for public URLs.
+  Fleet-auth hosts (operator-configured) carry Basic-Auth headers injected server-side — the
+  credential is never exposed to you.
 - **SSRF protection** — internal/private IP ranges (127.0.0.0/8, 10.0.0.0/8, 172.16.0.0/12,
   192.168.0.0/16, 169.254.0.0/16, localhost, IPv6 unique-local/link-local) are blocked.
 - **Domain allowlist** — optional, operator-controlled; when empty any public host is allowed.
@@ -56,7 +58,9 @@ The tool accepts any public HTTP(S) URL, including:
   truncated, `truncated` is `true` and the `body_size_bytes` reports the full size.
 - **Timeout** — short per-request timeout (default 10 s).
 - **Rate-limited** — configurable sliding-window rate limit (default 10 req/minute).
-- **Auth refusal** — HTTP 401/403 responses are reported with a clear error message.
+- **Auth refusal** — HTTP 401/403 responses on non-fleet-auth hosts are reported with a clear error
+  message. Fleet-auth hosts have credentials injected server-side and should not see 401/403 for
+  auth reasons; if they do, the credentials may need updating.
 - **Audited** — every fetch is logged at WARNING level with URL, disposition, status, size, and a
   SHA-256 hash of the response body.
 

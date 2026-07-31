@@ -7,8 +7,9 @@ per fetch.
 
 Safe by construction: only GET, SSRF protection blocks internal/private IP
 ranges, body read is size-capped, configurable domain allowlist, rate
-limiting, one request per call, short timeout.  Only public, unauthenticated
-URLs are allowed — 401/403 responses are reported clearly.
+limiting, one request per call, short timeout.  Fleet-auth hosts (configured
+via ``fleet_auth.auth_hosts``) carry server-side Basic-Auth headers injected
+transparently — the agent never sees the credential.
 
 Exposes :func:`build_public_fetch_tools` — a factory returning the LLM tool.
 Returns no tools when disabled.  Also exposes :func:`load_public_fetch_skill`
@@ -167,6 +168,23 @@ def build_public_fetch_tools(
         settings.rate_limit_requests, settings.rate_limit_window_seconds
     )
 
+    # Pre-compute the basic-auth header value when fleet-auth is
+    # configured — the agent never sees the credential; it is injected
+    # server-side for matching hosts only.
+    fleet_auth_header: str | None = None
+    fleet_auth_hosts: set[str] = set()
+    if settings.fleet_auth is not None:
+        username = settings.fleet_auth.basic_auth_username
+        password = settings.fleet_auth.basic_auth_password.get_secret_value()
+        if username and password:
+            import base64 as _base64
+
+            encoded = _base64.b64encode(f"{username}:{password}".encode()).decode(
+                "ascii"
+            )
+            fleet_auth_header = f"Basic {encoded}"
+            fleet_auth_hosts = set(settings.fleet_auth.auth_hosts)
+
     async def fetch_public_url(url: str) -> str:
         """Fetch a public URL and return raw text contents with metadata.
 
@@ -177,9 +195,10 @@ def build_public_fetch_tools(
         flag, and a fetch timestamp.
 
         Safety: only public URLs on the open internet are allowed — SSRF
-        protection blocks internal/private IP ranges.  Only GET, no auth
-        headers.  401/403 responses are reported clearly.  Every fetch is
-        audited at WARNING log level.
+        protection blocks internal/private IP ranges.  Only GET.  Fleet-
+        auth hosts (configured by the operator) carry Basic-Auth headers
+        injected server-side — the credential is never exposed to the
+        agent.  Every fetch is audited at WARNING log level.
 
         Args:
             url: The fully-qualified http(s):// URL to fetch.
@@ -220,16 +239,26 @@ def build_public_fetch_tools(
             return json.dumps(result, ensure_ascii=False)
 
         # --- Hostname allowlist check ---
-        if allowed_hosts and hostname not in allowed_hosts:
+        # Fleet-auth hosts are implicitly allowed (the operator
+        # explicitly listed them in auth_hosts), so the agent can
+        # reach authenticated fleet UIs without duplicating every
+        # hostname in the main allowlist.
+        if (
+            allowed_hosts
+            and hostname not in allowed_hosts
+            and hostname not in fleet_auth_hosts
+        ):
+            all_allowed = sorted(allowed_hosts | fleet_auth_hosts)
             result["error"] = (
                 f"Hostname {hostname!r} is not in the public_fetch domain "
-                f"allowlist. Allowed hosts: {sorted(allowed_hosts)}"
+                f"allowlist. Allowed hosts: {all_allowed}"
             )
             _audit(result, "blocked:allowlist")
             return json.dumps(result, ensure_ascii=False)
 
         # --- SSRF check (initial hostname) ---
-        if _host_is_private(hostname):
+        # Fleet-auth hosts are trusted by the operator — skip SSRF check.
+        if hostname not in fleet_auth_hosts and _host_is_private(hostname):
             result["error"] = (
                 f"Hostname {hostname!r} resolves to a private/internal IP "
                 "address — SSRF protection blocked the request."
@@ -263,8 +292,11 @@ def build_public_fetch_tools(
                     parsed_current = urlparse(current_url)
                     current_host = parsed_current.hostname or ""
 
-                    # SSRF check on every hop (redirect targets included)
-                    if _host_is_private(current_host):
+                    # SSRF check on every hop (redirect targets included).
+                    # Fleet-auth hosts are trusted by the operator — skip.
+                    if current_host not in fleet_auth_hosts and _host_is_private(
+                        current_host
+                    ):
                         result["error"] = (
                             f"Hostname {current_host!r} resolves to a "
                             "private/internal IP address — SSRF protection "
@@ -274,7 +306,18 @@ def build_public_fetch_tools(
                         _audit(result, "blocked:ssrf-redirect")
                         return json.dumps(result, ensure_ascii=False)
 
-                    async with client.stream("GET", current_url) as response:
+                    # Build request headers — inject fleet-auth when
+                    # the target host is in the fleet_auth_hosts set.
+                    request_headers: dict[str, str] = {}
+                    if (
+                        current_host in fleet_auth_hosts
+                        and fleet_auth_header is not None
+                    ):
+                        request_headers["Authorization"] = fleet_auth_header
+
+                    async with client.stream(
+                        "GET", current_url, headers=request_headers
+                    ) as response:
                         result["final_url"] = str(response.url)
 
                         # Follow redirect?

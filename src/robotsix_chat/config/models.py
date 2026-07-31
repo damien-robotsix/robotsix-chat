@@ -950,8 +950,9 @@ class PublicFetchSettings(BaseModel):
     When enabled, the agent gains a ``fetch_public_url`` tool that performs
     a plain HTTP(S) GET to a user-provided public URL, returns the raw
     text/file contents with metadata, and writes an audit-log entry per
-    fetch.  SSRF protection blocks internal/private IP ranges; only
-    public, unauthenticated URLs are allowed.
+    fetch.  SSRF protection blocks internal/private IP ranges for public
+    hosts; hosts listed in ``fleet_auth.auth_hosts`` are trusted by the
+    operator and bypass the SSRF check.
 
     Attributes:
         enabled: Master switch.  When ``False``, no tool is offered.
@@ -966,6 +967,12 @@ class PublicFetchSettings(BaseModel):
             ``rate_limit_window_seconds`` (default 10).
         rate_limit_window_seconds: Sliding window in seconds for the
             rate limiter (default 60.0).
+        fleet_auth: Optional server-side credentials for authenticated
+            fleet UIs.  When set, requests to hosts in
+            ``fleet_auth.auth_hosts`` carry HTTP basic-auth headers
+            injected by the server (never visible to the agent), and
+            those hosts are implicitly allowed through the domain
+            allowlist and SSRF checks.
 
     """
 
@@ -976,6 +983,7 @@ class PublicFetchSettings(BaseModel):
     domain_allowlist: list[str] = Field(default_factory=list)
     rate_limit_requests: int = 10
     rate_limit_window_seconds: float = 60.0
+    fleet_auth: FleetAuthSettings | None = None
     model_config = ConfigDict(extra="forbid")
 
 

@@ -191,7 +191,8 @@
     "max_redirects": 5,
     "domain_allowlist": [],
     "rate_limit_requests": 10,
-    "rate_limit_window_seconds": 60.0
+    "rate_limit_window_seconds": 60.0,
+    "fleet_auth": null
   },
   "sftp": {
     "enabled": false,
