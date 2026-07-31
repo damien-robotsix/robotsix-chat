@@ -2226,4 +2226,3 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 - `robotsix-chat` CLI entry point.
 - CI workflow with linting, type checking, tests, and security audit.
 - Documentation site workflow.
-
