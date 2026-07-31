@@ -1,5 +1,10 @@
 ## 0.0.0 (unreleased)
 
+- `apply_patch_to_file`: add optional `target_branch` parameter so BLOCKED
+  tickets (regardless of implement-cycle count) can push a patched file
+  directly to an existing branch.  `direct_fix` and `patch_direct_repo_file`
+  error messages now mention this escape hatch alongside the ≥3-cycle
+  precondition.
 - Add anti-re-emission guidance to the active-plan reaction prompt template (`_REACT_PROMPT_ACTIVE_PLAN_TEMPLATE`) in `delivery.py`, instructing the agent to reply with only a delta or one-sentence synthesis when subsession outcomes were already presented earlier — never re-emit a full table/rollup/enumeration verbatim.
 - Subsession agents now have access to the ``notify_user`` tool (when
   ``notification.enabled`` is true).  Notifications are published on the

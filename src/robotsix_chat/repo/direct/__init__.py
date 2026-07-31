@@ -605,14 +605,24 @@ def build_direct_repo_tools(
         file_path: str,
         patch_content: str,
         commit_message: str = "",
+        target_branch: str = "",
     ) -> str:
-        """Push a patched file to a new branch using a unified diff.
+        """Push a patched file to a branch using a unified diff.
 
-        Fetches the current *file_path* from the repo's default branch,
-        applies *patch_content* (a unified diff), and pushes the result
-        as a commit on a new branch named *branch_name*.  This avoids
-        the need to reconstruct the entire file content — only the diff
-        is required.
+        By default (when *target_branch* is empty), fetches the current
+        *file_path* from the repo's default branch, applies *patch_content*
+        (a unified diff), and pushes the result as a commit on a **new**
+        branch named *branch_name*.  This is the standard path for creating
+        a fix PR from a blocked ticket and works regardless of the ticket's
+        implement-cycle count.
+
+        When *target_branch* is supplied, fetches and patches *file_path*
+        from that **existing** branch and pushes the commit back onto it.
+        Use this to update an open PR's head branch without creating a
+        new branch, again with **no implement-cycle gate**.  This is the
+        escape hatch for pushing a fix directly to an existing branch when
+        the ticket is BLOCKED but ``patch_direct_repo_file`` refuses due to
+        insufficient implement cycles.
 
         **Precondition:** The ticket identified by *ticket_id* MUST be in
         BLOCKED state.  This tool will verify that and refuse otherwise.
@@ -638,13 +648,19 @@ def build_direct_repo_tools(
             repo_full_name: GitHub ``owner/name`` (e.g.
                 ``"robotsix/robotsix-chat"``).
             branch_name: Name for the new branch (e.g.
-                ``"fix/20250624T020652Z-my-ticket-a1b2"``).
+                ``"fix/20250624T020652Z-my-ticket-a1b2"``).  Ignored when
+                *target_branch* is supplied.
             file_path: Path to the file to patch, relative to the repo
                 root (e.g. ``"src/dashboard.js"``).
             patch_content: The unified diff to apply.  Must include at
                 least one ``@@`` hunk header with context lines.
             commit_message: Commit message.  Defaults to a message that
                 references the *ticket_id*.
+            target_branch: Optional.  When non-empty, push the patched file
+                directly to this existing branch instead of creating a new
+                branch.  The file is fetched from *target_branch* (not the
+                default branch) so the patch applies to the branch's current
+                state.  No implement-cycle gate is enforced.
 
         Returns:
             A status message with the branch URL on success, or an error
@@ -657,6 +673,18 @@ def build_direct_repo_tools(
         msg = commit_message or (
             f"fix: patch {file_path} for blocked ticket {ticket_id}"
         )
+
+        if target_branch:
+            # Push directly to the existing target branch —
+            # fetches from that branch, patches, and pushes back.
+            return await client.push_patched_file(
+                repo_full_name=repo_full_name,
+                branch_name=target_branch,
+                file_path=file_path,
+                patch_text=patch_content,
+                commit_message=msg,
+                ticket_id=ticket_id,
+            )
 
         try:
             # Fetch the file from the default branch
@@ -895,7 +923,10 @@ def build_direct_repo_tools(
                     f"Refused: ticket {ticket_id} has only {cycles} implement "
                     f"cycle(s).  direct_fix requires ≥3 implement cycles "
                     "(mill exhaustion).  Use push_direct_repo_branch + "
-                    "open_direct_repo_pr for the standard PR flow."
+                    "open_direct_repo_pr for the standard PR flow, "
+                    "or apply_patch_to_file (with target_branch to push "
+                    "to an existing branch, or without it to create a "
+                    "new branch)."
                 )
 
             # --- audit log ---
@@ -1013,8 +1044,9 @@ def build_direct_repo_tools(
                 return (
                     f"Refused: ticket {ticket_id} has only {cycles} implement "
                     f"cycle(s).  patch_direct_repo_file requires ≥3 implement "
-                    f"cycles (mill exhaustion).  Use apply_patch_to_file + "
-                    "open_direct_repo_pr for the standard PR flow."
+                    f"cycles (mill exhaustion).  Use apply_patch_to_file "
+                    f"(with target_branch to push to an existing branch, "
+                    f"or without it + open_direct_repo_pr for a new PR)."
                 )
 
             # --- audit log ---
