@@ -1,5 +1,9 @@
 ## 0.0.0 (unreleased)
 
+- Add `merge_pr` tool to `DirectRepoClient` and the direct-repo agent tools,
+  allowing the agent to merge PRs via the GitHub API (PUT merge endpoint).
+  The tool is gated on the same BLOCKED-ticket precondition as other
+  direct-repo tools and supports merge, squash, and rebase methods.
 - Extract shared `_format_entries` helper from duplicated entry-formatting
   loops in `list_knowledge_notes` and `search_knowledge_notes`.
 - Wire `load_render_url_skill()` into the agent instruction pipeline so the

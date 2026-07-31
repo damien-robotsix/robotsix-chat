@@ -70,15 +70,16 @@ def test_build_direct_repo_tools_disabled() -> None:
     assert build_direct_repo_tools(DirectRepoSettings(enabled=False)) == []
 
 
-def test_build_direct_repo_tools_returns_seven_tools() -> None:
-    """Verify that enabled direct_repo returns the seven expected tools."""
+def test_build_direct_repo_tools_returns_eight_tools() -> None:
+    """Verify that enabled direct_repo returns the eight expected tools."""
     tools = build_direct_repo_tools(_settings())
-    assert len(tools) == 7
+    assert len(tools) == 8
     names = [t.__name__ for t in tools]
     assert "push_direct_repo_branch" in names
     assert "open_direct_repo_pr" in names
     assert "update_pr_branch" in names
     assert "check_pr_merge_conflict" in names
+    assert "merge_pr" in names
     assert "reset_implement_spawn_counter" in names
     assert "apply_patch_to_file" in names
     assert "push_patch_to_pr_branch" in names
@@ -290,43 +291,233 @@ async def test_open_pr_allows_blocked_ticket(
 # ---------------------------------------------------------------------------
 
 
-def test_no_merge_method_on_client() -> None:
-    """Verify that DirectRepoClient has NO merge/auto-merge methods."""
+def test_merge_method_on_client() -> None:
+    """Verify that DirectRepoClient exposes merge_pr (and no other merge methods)."""
     client = DirectRepoClient(_settings())
     public_methods = [
         m for m in dir(client) if not m.startswith("_") and callable(getattr(client, m))
     ]
     merge_related = [m for m in public_methods if "merge" in m.lower()]
-    assert merge_related == [], (
-        f"DirectRepoClient must not expose merge methods, found: {merge_related}"
+    assert merge_related == ["merge_pr"], (
+        f"DirectRepoClient must expose only merge_pr, found: {merge_related}"
     )
 
 
-def test_no_merge_tool_returned() -> None:
-    """Verify that build_direct_repo_tools returns no merge-performing tools.
-
-    Tools may reference "merge" in the context of *checking* mergeability
-    (e.g. ``check_pr_merge_conflict``), but never to perform an actual merge.
-    """
+def test_merge_tool_returned() -> None:
+    """Verify that build_direct_repo_tools returns merge_pr."""
     tools = build_direct_repo_tools(_settings())
     names = [t.__name__ for t in tools]
-    # The only tool with "merge" in the name is the *check* tool — verify it
-    # is not a merge-performing tool.
-    merge_named = [n for n in names if "merge" in n.lower()]
-    assert merge_named == ["check_pr_merge_conflict"], (
+    merge_named = sorted(n for n in names if "merge" in n.lower())
+    assert merge_named == ["check_pr_merge_conflict", "merge_pr"], (
         f"Unexpected merge-named tools: {merge_named}"
     )
-    # Expected set: push, open_pr, update_branch, check_merge_conflict, reset,
-    # apply_patch, push_patch_to_pr_branch
     assert sorted(names) == [
         "apply_patch_to_file",
         "check_pr_merge_conflict",
+        "merge_pr",
         "open_direct_repo_pr",
         "push_direct_repo_branch",
         "push_patch_to_pr_branch",
         "reset_implement_spawn_counter",
         "update_pr_branch",
     ]
+
+
+# ---------------------------------------------------------------------------
+# merge_pr — tool-layer BLOCKED / scope gating
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_merge_pr_rejects_non_blocked_ticket(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Ticket not in BLOCKED → merge_pr is refused."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-merge1").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-merge1", "state": "draft"})
+        )
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "merge_pr"][0]
+
+    out = await fn(
+        ticket_id="t-merge1",
+        repo_full_name="org/repo",
+        pr_number=42,
+    )
+    assert "Refused" in out
+    assert "t-merge1" in out
+    assert "draft" in out.lower()
+    assert "BLOCKED" in out
+
+
+@pytest.mark.asyncio
+async def test_merge_pr_rejects_out_of_scope(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Repo not in installation scope → merge_pr is refused."""
+    _settings()
+
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-merge2").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-merge2", "state": "blocked"})
+        )
+    )
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/other"}]}),
+        )
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "merge_pr"][0]
+
+    out = await fn(
+        ticket_id="t-merge2",
+        repo_full_name="org/repo",
+        pr_number=42,
+    )
+    assert "not installed" in out.lower()
+    assert "install" in out.lower()
+
+
+# ---------------------------------------------------------------------------
+# merge_pr — client method HTTP response branches
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_merge_pr_client_200_success(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """merge_pr returns success message on 200 with merged=True."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.put("https://api.github.com/repos/org/repo/pulls/42/merge").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "sha": "abc123def",  # pragma: allowlist secret
+                    "merged": True,
+                    "message": "Pull Request successfully merged",
+                }
+            ),
+        )
+    )
+
+    client = DirectRepoClient(settings)
+    result = await client.merge_pr(
+        repo_full_name="org/repo",
+        pr_number=42,
+        merge_method="squash",
+        commit_title="Squash all the things",
+    )
+    assert "merged successfully" in result
+    assert "42" in result
+    assert "org/repo" in result
+
+
+@pytest.mark.asyncio
+async def test_merge_pr_client_200_not_merged(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """merge_pr returns warning when 200 response has merged=False."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.put("https://api.github.com/repos/org/repo/pulls/42/merge").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "merged": False,
+                    "message": "Merge already in progress",
+                }
+            ),
+        )
+    )
+
+    client = DirectRepoClient(settings)
+    result = await client.merge_pr(
+        repo_full_name="org/repo",
+        pr_number=42,
+    )
+    assert "did not report merged=True" in result
+    assert "Merge already in progress" in result
+
+
+@pytest.mark.asyncio
+async def test_merge_pr_client_405_not_mergeable(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """merge_pr returns not-mergeable message on 405."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.put("https://api.github.com/repos/org/repo/pulls/99/merge").mock(
+        return_value=httpx.Response(
+            405,
+            text=json.dumps(
+                {
+                    "message": "Pull Request is not mergeable",
+                    "documentation_url": "https://docs.github.com/...",
+                }
+            ),
+        )
+    )
+
+    client = DirectRepoClient(settings)
+    result = await client.merge_pr(
+        repo_full_name="org/repo",
+        pr_number=99,
+    )
+    assert "not mergeable" in result.lower()
+    assert "99" in result
+    assert "status checks" in result.lower()
+    assert "Pull Request is not mergeable" in result
+
+
+@pytest.mark.asyncio
+async def test_merge_pr_client_409_conflict(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """merge_pr returns conflict message on 409."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.put("https://api.github.com/repos/org/repo/pulls/77/merge").mock(
+        return_value=httpx.Response(
+            409,
+            text=json.dumps(
+                {
+                    "message": "Merge conflict",
+                }
+            ),
+        )
+    )
+
+    client = DirectRepoClient(settings)
+    result = await client.merge_pr(
+        repo_full_name="org/repo",
+        pr_number=77,
+    )
+    assert "merge conflict" in result.lower()
+    assert "77" in result
 
 
 # ---------------------------------------------------------------------------
@@ -1218,16 +1409,16 @@ async def test_list_installation_repos_paginates(
 
 
 def test_tool_docstrings_forbid_merge() -> None:
-    """Tool docstrings must not suggest merge capability.
+    """Tool docstrings must not suggest merge capability (except merge_pr).
 
-    Only denial or descriptive checking of state is allowed.
-    Descriptive uses of "merge" (e.g. "merge conflicts",
-    "mergeable") are fine — they describe state, not a merge action.
+    Only ``merge_pr`` may use performative merge language — all other tools
+    must only use "merge" in a descriptive sense (e.g. "merge conflicts",
+    "mergeable").
     """
     tools = build_direct_repo_tools(_settings())
     for tool in tools:
         doc = (tool.__doc__ or "").lower()
-        # Must not suggest merge as a capability
+        # Must not suggest force-push as a capability
         assert "force-push" not in doc, (
             f"Tool {tool.__name__} docstring mentions 'force-push'"
         )
@@ -1235,8 +1426,10 @@ def test_tool_docstrings_forbid_merge() -> None:
         assert "blocked" in doc, (
             f"Tool {tool.__name__} docstring missing BLOCKED mention"
         )
-        # If "merge" appears it must be descriptive (conflicts, state) OR denial.
-        # Performative merge language is forbidden.
+        # merge_pr is allowed to use performative merge language
+        if tool.__name__ == "merge_pr":
+            continue
+        # If "merge" appears in other tools it must be descriptive only.
         performative = ("perform merge", "execute merge", "merge pr", "merge pull")
         if "merge" in doc:
             assert not any(p in doc for p in performative), (
@@ -1379,7 +1572,7 @@ def test_direct_fix_available_when_enabled() -> None:
     tools = build_direct_repo_tools(_settings(direct_fix_enabled=True))
     names = [t.__name__ for t in tools]
     assert "direct_fix" in names
-    assert len(tools) == 9  # 7 base + direct_fix + patch_direct_repo_file
+    assert len(tools) == 10  # 8 base + direct_fix + patch_direct_repo_file
 
 
 @pytest.mark.asyncio
