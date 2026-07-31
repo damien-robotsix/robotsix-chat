@@ -774,6 +774,12 @@ class AutonomousRunner:
                     aq = self._sessions.get(session_id)
                     if aq is None or aq.state is not AutonomousState.executing:
                         return
+                    # Suppress auto-continue while any subsession is still
+                    # active (including periodic monitors sleeping between
+                    # ticks).  Only emit Continue when the conversation is
+                    # genuinely idle with no pending background work.
+                    if self._has_active_subsessions(session_id):
+                        continue
 
                 # Acquire the per-owner run lock.
                 async with self._run_serializer.for_owner(owner_id):
