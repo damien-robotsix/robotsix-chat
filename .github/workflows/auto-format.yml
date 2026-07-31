@@ -1,0 +1,38 @@
+name: Auto-format
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+concurrency:
+  group: auto-format-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write  # push formatting fixes to the PR branch
+
+jobs:
+  format:
+    name: Auto-format with ruff
+    runs-on: ubuntu-latest
+    # Skip for fork PRs — GITHUB_TOKEN cannot push to external forks.
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          ref: ${{ github.head_ref }}
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
+      - name: Install
+        run: uv sync --frozen
+      - name: Run ruff format
+        run: uv run ruff format .
+      - name: Run ruff check --fix
+        run: uv run ruff check --fix .
+      - uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403  # v5
+        with:
+          commit_message: "Auto-format with ruff"
+          commit_options: "--no-verify"
