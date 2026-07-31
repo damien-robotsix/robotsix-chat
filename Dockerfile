@@ -31,6 +31,7 @@ COPY src ./src
 # builds a project venv the runtime COPY would miss. Extras: claude-sdk for
 # the LLM transport, tracing for Langfuse observability, memory for cognee.
 # --no-hashes: the git-sourced first-party deps cannot carry hashes.
+# hadolint ignore=DL3066
 RUN uv export --frozen --no-emit-project --no-hashes \
         --extra claude-sdk --extra tracing --extra memory --extra render-url \
         -o /tmp/requirements.txt \
