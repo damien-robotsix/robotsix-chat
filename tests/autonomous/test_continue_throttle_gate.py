@@ -3,10 +3,11 @@
 from __future__ import annotations
 
 from types import SimpleNamespace
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from robotsix_chat.autonomous.models import AutonomousState
 from robotsix_chat.autonomous.runner import AutonomousRunner
 from robotsix_chat.chat.conversation import ConversationStore
 
@@ -188,3 +189,63 @@ async def test_wait_before_continue_bounded_by_timeout(
     # throttle(1) + gate sleeps until waited >= timeout(3): total sleeps bounded
     assert sum(slept) >= 3.0
     assert len(slept) <= 5  # bounded, not infinite
+
+
+@pytest.mark.asyncio
+async def test_auto_continue_suppressed_for_active_periodic_subsession() -> None:
+    """Auto-continue skips the turn when a periodic subsession is sleeping.
+
+    A periodic monitor between ticks (status SLEEPING) is still active,
+    so the auto-continue loop must suppress the "Continue." prompt and
+    wait for the subsession to clear before proceeding.
+    """
+    store = ConversationStore()
+    settings = MagicMock()
+    settings.autonomous.max_auto_turns = 20
+    settings.autonomous.continue_interval_seconds = 0
+    settings.autonomous.pending_subsession_wait_timeout = 0
+    settings.autonomous.proposal_marker = "[APPROVAL]"
+    settings.autonomous.completion_marker = "[COMPLETE]"
+    settings.autonomous.auto_approve = False
+    settings.autonomous.max_idle_auto_turns = 0
+
+    run_serializer = MagicMock()
+    run_serializer.for_owner.return_value.__aenter__ = AsyncMock()
+    run_serializer.for_owner.return_value.__aexit__ = AsyncMock()
+
+    agent = MagicMock()
+
+    async def _stream(*args, **kwargs):
+        yield "[APPROVAL]"  # exit loop via proposal marker
+        return
+
+    agent.stream.side_effect = _stream
+
+    reg = MagicMock()
+    # First two calls: periodic active (suppression kicks in).
+    # Next two calls: clear (loop proceeds to agent).
+    reg.list_for_owner.side_effect = [
+        [SimpleNamespace(is_active=True, kind="periodic")],
+        [SimpleNamespace(is_active=True, kind="periodic")],
+        [],
+        [],
+    ]
+
+    runner = AutonomousRunner(
+        settings=settings,
+        conversation_store=store,
+        agent_factory=lambda: agent,
+        run_serializer=run_serializer,
+        subsession_registry=reg,
+    )
+    aq = runner.create_session("owner1", schedule_kickoff=False)
+    aq.state = AutonomousState.executing
+    aq.plan_text = "plan"
+    aq.auto_turn_count = 2  # non-zero so throttle gate + suppression apply
+    runner._save_sessions = MagicMock()
+
+    await runner._auto_continue(aq.session_id)
+
+    # Agent must have been called exactly once (on the second iteration,
+    # after the subsession list cleared).
+    assert agent.stream.call_count == 1
