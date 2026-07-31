@@ -161,8 +161,8 @@ def build_ticket_poll_tools(
     async def ticket_poll(ticket_id: str) -> str:
         """Poll the mill board for a ticket's current state.
 
-        Routes through the component roster when available; falls back to
-        the direct board API otherwise.
+        Routes through the component roster when available, falling back
+        to the direct board API on any failure.
 
         Args:
             ticket_id: The ticket identifier (e.g. "20250101T120000Z-my-ticket-a1b2").
@@ -174,49 +174,20 @@ def build_ticket_poll_tools(
         """
         if component_request is not None:
             status, body, error = await _fetch_ticket_via_component(ticket_id)
-            if error:
-                return json.dumps(
-                    {"ticket_id": ticket_id, "state": None, "error": error},
-                    ensure_ascii=False,
-                )
-            if status >= 400:
-                return json.dumps(
-                    {
-                        "ticket_id": ticket_id,
-                        "state": None,
-                        "error": f"Board API returned HTTP {status}",
-                    },
-                    ensure_ascii=False,
-                )
-            if body is None:
-                return json.dumps(
-                    {
-                        "ticket_id": ticket_id,
-                        "state": None,
-                        "error": "Empty response body from board API",
-                    },
-                    ensure_ascii=False,
-                )
-            data, parse_error = _parse_json_body(body)
-            if parse_error:
-                return json.dumps(
-                    {"ticket_id": ticket_id, "state": None, "error": parse_error},
-                    ensure_ascii=False,
-                )
-            if data is None:  # guarded by parse_error check above
-                return json.dumps(
-                    {
-                        "ticket_id": ticket_id,
-                        "state": None,
-                        "error": "Empty parsed response from board API",
-                    },
-                    ensure_ascii=False,
-                )
-            state = data.get("state")
-            return json.dumps(
-                {"ticket_id": ticket_id, "state": state, "error": ""},
-                ensure_ascii=False,
+            if not error and status < 400 and body is not None:
+                data, parse_error = _parse_json_body(body)
+                if not parse_error and data is not None:
+                    state = data.get("state")
+                    return json.dumps(
+                        {"ticket_id": ticket_id, "state": state, "error": ""},
+                        ensure_ascii=False,
+                    )
+            logger.info(
+                "ticket_poll roster path failed for %s; "
+                "falling back to direct board API",
+                ticket_id,
             )
+
         return await _ticket_poll_direct(ticket_id)
 
     async def _ticket_poll_direct(ticket_id: str) -> str:
