@@ -561,13 +561,13 @@ class DirectRepoClient:
             result = await self._http_with_retry(
                 "PUT",
                 url,
-                json=body,
+                json_body=body,
                 headers=await self._gh_headers(),
                 timeout=self._s.timeout,
                 label=f"GitHub API (merge PR #{pr_number})",
             )
             if result.ok:
-                merge_data = result.json
+                merge_data = json.loads(result.text or "")
                 merged = merge_data.get("merged", False) if merge_data else False
                 message = merge_data.get("message", "") if merge_data else ""
                 if merged:

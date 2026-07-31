@@ -324,6 +324,211 @@ def test_merge_tool_returned() -> None:
 
 
 # ---------------------------------------------------------------------------
+# merge_pr — tool-layer BLOCKED / scope gating
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_merge_pr_rejects_non_blocked_ticket(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Ticket not in BLOCKED → merge_pr is refused."""
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-merge1").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-merge1", "state": "draft"})
+        )
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "merge_pr"][0]
+
+    out = await fn(
+        ticket_id="t-merge1",
+        repo_full_name="org/repo",
+        pr_number=42,
+    )
+    assert "Refused" in out
+    assert "t-merge1" in out
+    assert "draft" in out.lower()
+    assert "BLOCKED" in out
+
+
+@pytest.mark.asyncio
+async def test_merge_pr_rejects_out_of_scope(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Repo not in installation scope → merge_pr is refused."""
+    _settings()
+
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-merge2").mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"id": "t-merge2", "state": "blocked"})
+        )
+    )
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/other"}]}),
+        )
+    )
+
+    tools = build_direct_repo_tools(_settings())
+    fn = [t for t in tools if t.__name__ == "merge_pr"][0]
+
+    out = await fn(
+        ticket_id="t-merge2",
+        repo_full_name="org/repo",
+        pr_number=42,
+    )
+    assert "not installed" in out.lower()
+    assert "install" in out.lower()
+
+
+# ---------------------------------------------------------------------------
+# merge_pr — client method HTTP response branches
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_merge_pr_client_200_success(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """merge_pr returns success message on 200 with merged=True."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.put(
+        "https://api.github.com/repos/org/repo/pulls/42/merge"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "sha": "abc123def",
+                    "merged": True,
+                    "message": "Pull Request successfully merged",
+                }
+            ),
+        )
+    )
+
+    client = DirectRepoClient(settings)
+    result = await client.merge_pr(
+        repo_full_name="org/repo",
+        pr_number=42,
+        merge_method="squash",
+        commit_title="Squash all the things",
+    )
+    assert "merged successfully" in result
+    assert "42" in result
+    assert "org/repo" in result
+
+
+@pytest.mark.asyncio
+async def test_merge_pr_client_200_not_merged(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """merge_pr returns warning when 200 response has merged=False."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.put(
+        "https://api.github.com/repos/org/repo/pulls/42/merge"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "merged": False,
+                    "message": "Merge already in progress",
+                }
+            ),
+        )
+    )
+
+    client = DirectRepoClient(settings)
+    result = await client.merge_pr(
+        repo_full_name="org/repo",
+        pr_number=42,
+    )
+    assert "did not report merged=True" in result
+    assert "Merge already in progress" in result
+
+
+@pytest.mark.asyncio
+async def test_merge_pr_client_405_not_mergeable(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """merge_pr returns not-mergeable message on 405."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.put(
+        "https://api.github.com/repos/org/repo/pulls/99/merge"
+    ).mock(
+        return_value=httpx.Response(
+            405,
+            text=json.dumps(
+                {
+                    "message": "Pull Request is not mergeable",
+                    "documentation_url": "https://docs.github.com/...",
+                }
+            ),
+        )
+    )
+
+    client = DirectRepoClient(settings)
+    result = await client.merge_pr(
+        repo_full_name="org/repo",
+        pr_number=99,
+    )
+    assert "not mergeable" in result.lower()
+    assert "99" in result
+    assert "status checks" in result.lower()
+    assert "Pull Request is not mergeable" in result
+
+
+@pytest.mark.asyncio
+async def test_merge_pr_client_409_conflict(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """merge_pr returns conflict message on 409."""
+    settings = _settings()
+    _prepopulate_installation_token(settings)
+
+    respx_mock.put(
+        "https://api.github.com/repos/org/repo/pulls/77/merge"
+    ).mock(
+        return_value=httpx.Response(
+            409,
+            text=json.dumps(
+                {
+                    "message": "Merge conflict",
+                }
+            ),
+        )
+    )
+
+    client = DirectRepoClient(settings)
+    result = await client.merge_pr(
+        repo_full_name="org/repo",
+        pr_number=77,
+    )
+    assert "merge conflict" in result.lower()
+    assert "77" in result
+
+
+# ---------------------------------------------------------------------------
 # PR human-review gate — verify no auto-merge requested
 # ---------------------------------------------------------------------------
 
