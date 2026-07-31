@@ -593,40 +593,39 @@ class DirectRepoClient:
         except Exception as exc:
             return f"Error merging PR: {exc}"
 
-    async def delete_ticket_artifact(self, ticket_id: str, artifact_path: str) -> bool:
-        """Delete an artifact on the board API for *ticket_id*.
+    async def resume_blocked_ticket(self, ticket_id: str, justification: str) -> bool:
+        """Resume a blocked ticket via the board API.
 
-        Sends ``DELETE /tickets/{ticket_id}/artifacts/{artifact_path}``.
-        Returns ``True`` on success (HTTP 2xx), ``False`` on any error
-        (logged as a warning).
+        Sends ``POST /tickets/{ticket_id}/resume-blocked`` with a JSON
+        body containing *justification*.  Returns ``True`` on success
+        (HTTP 2xx), ``False`` on any error (logged as a warning).
         """
         board_url = self._s.board_api_base_url.rstrip("/")
-        url = f"{board_url}/tickets/{ticket_id}/artifacts/{artifact_path}"
+        url = f"{board_url}/tickets/{ticket_id}/resume-blocked"
         headers: dict[str, str] = {"Accept": "application/json"}
         if self._s.board_api_token.get_secret_value():
             headers["Authorization"] = (
                 f"Bearer {self._s.board_api_token.get_secret_value()}"
             )
         result = await safe_http_request(
-            "DELETE",
+            "POST",
             url,
             headers=headers,
+            json_body={"justification": justification},
             timeout=self._s.timeout,
-            label=f"Board API (artifact {artifact_path})",
+            label=f"Board API (resume-blocked {ticket_id})",
         )
         if result.error:
             logger.warning(
-                "Failed to delete artifact %s for ticket %s: %s",
-                artifact_path,
+                "Failed to resume blocked ticket %s: %s",
                 ticket_id,
                 result.error,
             )
             return False
         if result.status_code and result.status_code >= 400:
             logger.warning(
-                "Board API returned %d for DELETE artifact %s on ticket %s",
+                "Board API returned %d for resume-blocked on ticket %s",
                 result.status_code,
-                artifact_path,
                 ticket_id,
             )
             return False
