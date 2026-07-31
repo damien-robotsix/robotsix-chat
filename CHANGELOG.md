@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Lower ``subsessions.max_idle_runs`` default from 5 to 3 so periodic monitors auto-pause sooner (before auto-stop), and improve the auto-pause summary text to include what to do next.
 - Extract shared `_retry_with_kuzu_heal` helper in `CogneeMemory`, deduplicating the 13-line retry-with-self-heal pattern from `_recall_core` and `_remember_core`.
 - Add `merge_pr` tool to `DirectRepoClient` and the direct-repo agent tools,
   allowing the agent to merge PRs via the GitHub API (PUT merge endpoint).

@@ -1070,7 +1070,7 @@
           "type": "integer"
         },
         "max_idle_runs": {
-          "default": 5,
+          "default": 3,
           "title": "Max Idle Runs",
           "type": "integer"
         },
