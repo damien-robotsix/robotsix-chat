@@ -58,6 +58,53 @@ async def _get_installation_token(settings: DirectRepoSettings) -> str:
 
 
 # ---------------------------------------------------------------------------
+# Shared cycle-counting helper (used by both roster and direct API paths)
+# ---------------------------------------------------------------------------
+
+
+def _count_cycles_from_data(data: dict[str, Any]) -> int:
+    """Count implement cycles from parsed ticket JSON (pure, no I/O).
+
+    Inspects ``events``, ``history``, or a direct ``cycle_count`` field
+    — same logic used by both the roster-based and direct board-API paths.
+    Returns 0 when the data carries no discernible cycle information.
+    """
+    # 1. Try the events array
+    events: list[dict[str, Any]] = data.get("events", [])
+    if events:
+        count = 0
+        for ev in events:
+            if not isinstance(ev, dict):
+                continue
+            event_type = str(ev.get("type", ev.get("action", ""))).lower()
+            if "implement" in event_type:
+                count += 1
+        return count
+
+    # 2. Fall back to state-transition history
+    history: list[dict[str, Any]] = data.get("history", [])
+    if history:
+        count = 0
+        for entry in history:
+            if not isinstance(entry, dict):
+                continue
+            st = str(entry.get("state", entry.get("to", ""))).lower()
+            act = str(entry.get("action", entry.get("type", ""))).lower()
+            if "implement_complete" in st or "implement" in act:
+                count += 1
+        return count
+
+    # 3. No events/history — try a direct cycle_count field
+    cycle_count = data.get("cycle_count")
+    if isinstance(cycle_count, int):
+        return cycle_count
+
+    # 4. Can't determine — return 0 (not an error; the board may not
+    #    expose cycle counts)
+    return 0
+
+
+# ---------------------------------------------------------------------------
 # DirectRepoClient
 # ---------------------------------------------------------------------------
 
@@ -655,44 +702,14 @@ class DirectRepoClient:
         if data is None:
             return None
 
-        # 1. Try the events array
-        events: list[dict[str, Any]] = data.get("events", [])
-        if events:
-            count = 0
-            for ev in events:
-                if not isinstance(ev, dict):
-                    continue
-                event_type = str(ev.get("type", ev.get("action", ""))).lower()
-                if "implement" in event_type:
-                    count += 1
-            return count
-
-        # 2. Fall back to state-transition history
-        history: list[dict[str, Any]] = data.get("history", [])
-        if history:
-            count = 0
-            for entry in history:
-                if not isinstance(entry, dict):
-                    continue
-                state = str(entry.get("state", entry.get("to", ""))).lower()
-                action = str(entry.get("action", entry.get("type", ""))).lower()
-                if "implement_complete" in state or "implement" in action:
-                    count += 1
-            return count
-
-        # 3. No events/history — try a direct cycle_count field
-        cycle_count = data.get("cycle_count")
-        if isinstance(cycle_count, int):
-            return cycle_count
-
-        # 4. Can't determine — return 0 (not an error; the board may not
-        #    expose cycle counts)
-        logger.info(
-            "Ticket %s has no events/history/cycle_count — "
-            "assuming 0 implement cycles.",
-            ticket_id,
-        )
-        return 0
+        cycles = _count_cycles_from_data(data)
+        if cycles == 0:
+            logger.info(
+                "Ticket %s has no events/history/cycle_count — "
+                "assuming 0 implement cycles.",
+                ticket_id,
+            )
+        return cycles
 
     async def push_commit_to_branch(
         self,
