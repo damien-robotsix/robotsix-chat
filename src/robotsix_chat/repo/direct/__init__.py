@@ -979,7 +979,7 @@ def build_direct_repo_tools(
                 ):
                     f["content"] = f["content"] + "\n"
 
-            # --- guard 1+2+3: BLOCKED + scope + ≥3 implement cycles (single API call) ---
+            # --- guard 1+2+3: BLOCKED + scope + ≥3 implement cycles (single API call) ---  # noqa: E501
             error, cycles = await _check_blocked_exhausted(
                 client, ticket_id, repo_full_name
             )
@@ -1090,7 +1090,7 @@ def build_direct_repo_tools(
             """
             _logger = logging.getLogger(__name__)
 
-            # --- guard 1+2+3: BLOCKED + scope + ≥3 implement cycles (single API call) ---
+            # --- guard 1+2+3: BLOCKED + scope + ≥3 implement cycles (single API call) ---  # noqa: E501
             error, cycles = await _check_blocked_exhausted(
                 client, ticket_id, repo_full_name
             )
