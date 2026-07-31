@@ -4,6 +4,14 @@
 - Fix hadolint warnings in Dockerfile: suppress DL3066 on ``uv pip install``
   (versions are pinned via ``uv.lock``) and convert HEALTHCHECK CMD to exec
   form (DL3025).
+- Updated `ticket_poll` skill docs: now correctly describe roster-first routing
+  (`component_request` preferred, direct board API as fallback) instead of the
+  outdated "bypass the component roster" / "no roster dependency" claims. (mill: Direct-path tools `ticket_poll`/`ticket_poll_batch` target wrong host (127.0.0.1:8077 instead of mill host) (20260730T130836Z-direct-path-tools-ticket-poll-ticket-pol-ca68))
+- **ticket_poll:** `ticket_poll` and `ticket_poll_batch` now route through the
+  component roster (`component_request`) when available, falling back to the
+  direct `board_api_base_url` only when the roster is unavailable. This fixes
+  the tools targeting unreachable `127.0.0.1:8077` in production deployments
+  where the mill is only reachable through the roster. (mill: Direct-path tools `ticket_poll`/`ticket_poll_batch` target wrong host (127.0.0.1:8077 instead of mill host) (20260730T130836Z-direct-path-tools-ticket-poll-ticket-pol-ca68))
 - Extend auto-resume criteria to include fingerprint-guarded tickets where a working fix already exists despite an unchanged spec fingerprint (e.g. a PR with passing tests blocked on spec fingerprint). The assistant can now call resume-blocked with justification for this case without operator authorization.
 - `fetch_public_url` now supports fleet-auth Basic Auth credential injection for operator-configured hosts. Hosts listed in `public_fetch.fleet_auth.auth_hosts` receive a server-side `Authorization` header (never exposed to the agent) and bypass the SSRF and domain-allowlist checks, allowing the agent to inspect authenticated fleet UIs directly.
 - Re-export `SftpSettings` from `robotsix_chat.config` package, following the existing convention where every settings model is importable from `robotsix_chat.config`.

@@ -594,7 +594,8 @@ def _inject_skills(
         (settings.github_security.enabled, "github_security", load_github_skill),
         (settings.github_actions.enabled, "github_actions", load_github_actions_skill),
         (
-            bool(settings.direct_repo.board_api_base_url.strip()),
+            bool(settings.direct_repo.board_api_base_url.strip())
+            or bool(settings.central_deploy.url.strip()),
             "ticket_poll",
             load_ticket_poll_skill,
         ),
