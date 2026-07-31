@@ -553,6 +553,7 @@ def test_merge_tool_configured_returns_one_tool() -> None:
 @pytest.mark.asyncio
 async def test_merge_pull_request_roster_first_success() -> None:
     """When component_request succeeds, return its response directly."""
+
     async def _req(component: str, method: str, path: str) -> str:
         return "HTTP 200 OK\n" + json.dumps({"status": "merged", "sha": "abc123"})
 
@@ -572,9 +573,9 @@ async def test_merge_pull_request_roster_falls_back_to_direct(
     respx_mock: respx.MockRouter,
 ) -> None:
     """When roster path returns an error, fall back to direct POST."""
-    route = respx_mock.post(
-        "http://board:8077/tickets/mr-fallback/merge-now"
-    ).mock(return_value=httpx.Response(200, json={"status": "merged_from_direct"}))
+    route = respx_mock.post("http://board:8077/tickets/mr-fallback/merge-now").mock(
+        return_value=httpx.Response(200, json={"status": "merged_from_direct"})
+    )
 
     tools = build_merge_pull_request_tool(
         _settings(),
@@ -591,9 +592,9 @@ async def test_merge_pull_request_direct_only(
     respx_mock: respx.MockRouter,
 ) -> None:
     """Without component_request, the direct POST path works."""
-    route = respx_mock.post(
-        "http://board:8077/tickets/mr-direct/merge-now"
-    ).mock(return_value=httpx.Response(200, json={"status": "merged"}))
+    route = respx_mock.post("http://board:8077/tickets/mr-direct/merge-now").mock(
+        return_value=httpx.Response(200, json={"status": "merged"})
+    )
 
     tools = build_merge_pull_request_tool(_settings())
     result = await tools[0]("mr-direct")
@@ -607,9 +608,9 @@ async def test_merge_pull_request_with_auth_token(
     respx_mock: respx.MockRouter,
 ) -> None:
     """Auth token is sent as Bearer in the Authorization header."""
-    route = respx_mock.post(
-        "http://board:8077/tickets/mr-auth/merge-now"
-    ).mock(return_value=httpx.Response(200, json={"status": "merged"}))
+    route = respx_mock.post("http://board:8077/tickets/mr-auth/merge-now").mock(
+        return_value=httpx.Response(200, json={"status": "merged"})
+    )
 
     tools = build_merge_pull_request_tool(
         _settings(board_api_token="merge-token"),
@@ -626,9 +627,9 @@ async def test_merge_pull_request_strips_trailing_slash(
     respx_mock: respx.MockRouter,
 ) -> None:
     """Trailing slash on board_api_base_url is stripped correctly."""
-    route = respx_mock.post(
-        "http://board:8077/tickets/mr-slash/merge-now"
-    ).mock(return_value=httpx.Response(200, json={"status": "merged"}))
+    route = respx_mock.post("http://board:8077/tickets/mr-slash/merge-now").mock(
+        return_value=httpx.Response(200, json={"status": "merged"})
+    )
 
     tools = build_merge_pull_request_tool(
         _settings(board_api_base_url="http://board:8077/")

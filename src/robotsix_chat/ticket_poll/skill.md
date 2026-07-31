@@ -62,7 +62,7 @@ A JSON string with a `tickets` array. Each element has:
 
 A status message string from the mill API — either a success confirmation or an error describing why
 the merge failed (e.g. the PR is not approved, conflicts exist, or required status checks have not
-passed).  The tool routes through the component roster when available, falling back to the direct
+passed). The tool routes through the component roster when available, falling back to the direct
 board API on any failure.
 
 ## Safety
@@ -70,8 +70,8 @@ board API on any failure.
 - **`ticket_poll` / `ticket_poll_batch` are read-only** — GET only; no state mutation is possible
   through these two tools.
 - **`merge_pull_request` is mutating** — it issues a POST that merges the approved PR associated
-  with a ticket.  Only call it when the ticket is in `waiting_auto_merge` or `human_mr_approval`
-  state and the associated PR has been approved by a human reviewer.  Do not call it speculatively
+  with a ticket. Only call it when the ticket is in `waiting_auto_merge` or `human_mr_approval`
+  state and the associated PR has been approved by a human reviewer. Do not call it speculatively
   or for tickets in other states.
 - **Roster-first routing** — prefers the component roster (`component_request`) when available;
   falls back to the direct board API when the roster is absent. This means the tools share the same
