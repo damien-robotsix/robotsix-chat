@@ -1281,50 +1281,81 @@ async def test_reset_implement_spawn_counter_failure(
 
 
 @pytest.mark.asyncio
-async def test_reset_implement_spawn_counter_via_component_request_success() -> None:
-    """component_request returns HTTP 204 → tool reports success."""
+async def test_reset_implement_spawn_counter_roster_first_success() -> None:
+    """When component_request is available, use roster path first."""
 
-    async def _mock_component_request(
-        _component_id: str,
-        _method: str,
-        _path: str,
-        **_kw: Any,
-    ) -> str:
-        return "HTTP 204\n"
+    async def _mock_cr(component: str, method: str, path: str) -> str:
+        return "HTTP 204 No Content"
 
-    tools = build_direct_repo_tools(
-        _settings(), component_request=_mock_component_request
-    )
+    tools = build_direct_repo_tools(_settings(), component_request=_mock_cr)
     reset_fn = [t for t in tools if t.__name__ == "reset_implement_spawn_counter"][0]
 
-    out = await reset_fn(ticket_id="t-comp")
+    out = await reset_fn(ticket_id="t-roster-reset")
     assert "reset" in out
-    assert "t-comp" in out
+    assert "t-roster-reset" in out
+    assert "roster path" in out
+
+
+@pytest.mark.asyncio
+async def test_reset_implement_spawn_counter_roster_fails_falls_back_to_direct(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When roster path fails, fall back to direct board API."""
+
+    async def _mock_cr(component: str, method: str, path: str) -> str:
+        return "Error: connection refused"
+
+    respx_mock.delete(
+        "http://127.0.0.1:8077/tickets/t-fb/artifacts/implement_spawn_count"
+    ).mock(return_value=httpx.Response(204))
+
+    tools = build_direct_repo_tools(_settings(), component_request=_mock_cr)
+    reset_fn = [t for t in tools if t.__name__ == "reset_implement_spawn_counter"][0]
+
+    out = await reset_fn(ticket_id="t-fb")
+    assert "reset" in out
+    assert "t-fb" in out
     assert "Error" not in out
 
 
 @pytest.mark.asyncio
-async def test_reset_implement_spawn_counter_via_component_request_failure() -> None:
-    """component_request returns HTTP 500 → tool reports error."""
+async def test_reset_implement_spawn_counter_roster_non_2xx_falls_back(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When roster returns non-2xx, fall back to direct."""
 
-    async def _mock_component_request(
-        _component_id: str,
-        _method: str,
-        _path: str,
-        **_kw: Any,
-    ) -> str:
-        return "HTTP 500\n"
+    async def _mock_cr(component: str, method: str, path: str) -> str:
+        return "HTTP 502 Bad Gateway"
 
-    tools = build_direct_repo_tools(
-        _settings(), component_request=_mock_component_request
-    )
+    respx_mock.delete(
+        "http://127.0.0.1:8077/tickets/t-502/artifacts/implement_spawn_count"
+    ).mock(return_value=httpx.Response(204))
+
+    tools = build_direct_repo_tools(_settings(), component_request=_mock_cr)
     reset_fn = [t for t in tools if t.__name__ == "reset_implement_spawn_counter"][0]
 
-    out = await reset_fn(ticket_id="t-bad-comp")
-    assert "Error" in out
-    # When component_request fails, we return the error immediately
-    # (no fallback to the direct API)
-    assert "component_request" in out
+    out = await reset_fn(ticket_id="t-502")
+    assert "reset" in out
+    assert "t-502" in out
+    assert "Error" not in out
+
+
+@pytest.mark.asyncio
+async def test_reset_implement_spawn_counter_no_component_request_uses_direct(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Without component_request, uses direct path only (regression)."""
+    respx_mock.delete(
+        "http://127.0.0.1:8077/tickets/t-direct/artifacts/implement_spawn_count"
+    ).mock(return_value=httpx.Response(204))
+
+    tools = build_direct_repo_tools(_settings())  # component_request=None
+    reset_fn = [t for t in tools if t.__name__ == "reset_implement_spawn_counter"][0]
+
+    out = await reset_fn(ticket_id="t-direct")
+    assert "reset" in out
+    assert "t-direct" in out
+    assert "Error" not in out
 
 
 # ============================================================================

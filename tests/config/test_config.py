@@ -415,7 +415,7 @@ def test_direct_repo_disabled_by_default() -> None:
     assert settings.direct_repo.github_app_private_key.get_secret_value() == ""
     assert settings.direct_repo.github_app_installation_id == ""
     assert settings.direct_repo.github_api_base_url == "https://api.github.com"
-    assert settings.direct_repo.board_api_base_url == "http://127.0.0.1:8077"
+    assert settings.direct_repo.board_api_base_url == "http://mill:8077"
     assert settings.direct_repo.board_api_token.get_secret_value() == ""
     assert settings.direct_repo.timeout == 30.0
 

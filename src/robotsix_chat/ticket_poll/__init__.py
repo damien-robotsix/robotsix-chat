@@ -59,6 +59,7 @@ def load_ticket_poll_skill() -> str:
 
 def build_ticket_poll_tools(
     settings: Settings,
+    component_request: Callable[..., Any] | None = None,
 ) -> list[Callable[..., Any]]:
     """Return the ``ticket_poll`` tool, or an empty list when unavailable.
 
@@ -67,8 +68,17 @@ def build_ticket_poll_tools(
     component roster, so it serves as a fallback when ``component_request``
     is absent.
 
+    When *component_request* is provided, the tool uses the roster-based
+    path as its primary connectivity method (resolving ``"mill"`` via the
+    central-deploy roster or component fallbacks); on failure it falls
+    back to the direct ``board_api_base_url`` path.  This ensures the
+    chat container reaches the mill on its actual service hostname rather
+    than a potentially misconfigured direct URL.
+
     Args:
         settings: Full application settings.
+        component_request: Optional roster-based HTTP callable for
+            primary connectivity.
 
     Returns:
         A single-element list containing the ``ticket_poll`` async callable,
@@ -83,22 +93,71 @@ def build_ticket_poll_tools(
     board_token = settings.direct_repo.board_api_token.get_secret_value()
     timeout = settings.direct_repo.timeout
 
-    async def ticket_poll(ticket_id: str) -> str:
-        """Poll the mill board for a ticket's current state.
+    async def _poll_via_component_request(
+        component_req: Callable[..., Any],
+        ticket_id: str,
+    ) -> dict[str, Any]:
+        """Poll via the roster-based ``component_request`` fallback.
 
-        Directly queries the board API (bypasses the component roster).
-        Use this when ``component_request`` is unavailable or as an
-        independent verification of ticket state.
+        Returns a dict suitable for ``json.dumps`` with ``ticket_id``,
+        ``state``, and ``error`` keys.
+        """
+        resp = await component_req("mill", "GET", f"/tickets/{ticket_id}")
+        if resp.startswith("Error:"):
+            return {
+                "ticket_id": ticket_id,
+                "state": None,
+                "error": f"Roster fallback failed: {resp}",
+            }
+        try:
+            newline = resp.index("\n")
+            status_line = resp[:newline]
+            body_str = resp[newline + 1 :]
+        except ValueError:
+            return {
+                "ticket_id": ticket_id,
+                "state": None,
+                "error": "Roster fallback: unexpected response format",
+            }
+        if not status_line.startswith("HTTP "):
+            return {
+                "ticket_id": ticket_id,
+                "state": None,
+                "error": f"Roster fallback: {status_line}",
+            }
+        try:
+            status_code = int(status_line.split()[1])
+        except IndexError, ValueError:
+            return {
+                "ticket_id": ticket_id,
+                "state": None,
+                "error": f"Roster fallback: unparsable status {status_line!r}",
+            }
+        if status_code >= 400:
+            return {
+                "ticket_id": ticket_id,
+                "state": None,
+                "error": f"Roster fallback: HTTP {status_code}",
+            }
+        try:
+            data = json.loads(body_str)
+            state = data.get("state")
+            return {
+                "ticket_id": ticket_id,
+                "state": state,
+                "error": "",
+            }
+        except json.JSONDecodeError, TypeError:
+            return {
+                "ticket_id": ticket_id,
+                "state": None,
+                "error": "Roster fallback: non-JSON response body",
+            }
 
-        Args:
-            ticket_id: The ticket identifier (e.g. "20250101T120000Z-my-ticket-a1b2").
+    async def _poll_direct(ticket_id: str) -> str:
+        """Poll the board API directly via ``board_api_base_url``.
 
-        Returns:
-            A JSON string with ``ticket_id``, ``state`` (or ``null`` when
-            the field is absent), and ``error`` (empty on success).  On
-            connectivity failure the ``state`` is ``null`` and ``error``
-            contains a diagnostic message.
-
+        Returns a JSON string with ``ticket_id``, ``state``, and ``error``.
         """
         url = f"{board_url}/tickets/{ticket_id}"
         headers: dict[str, str] = {"Accept": "application/json"}
@@ -130,6 +189,15 @@ def build_ticket_poll_tools(
                     },
                     ensure_ascii=False,
                 )
+        except httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException:
+            return json.dumps(
+                {
+                    "ticket_id": ticket_id,
+                    "state": None,
+                    "error": f"Board API request timed out after {timeout}s",
+                },
+                ensure_ascii=False,
+            )
         except httpx.HTTPStatusError as exc:
             return json.dumps(
                 {
@@ -139,17 +207,8 @@ def build_ticket_poll_tools(
                 },
                 ensure_ascii=False,
             )
-        except httpx.TimeoutException:
-            return json.dumps(
-                {
-                    "ticket_id": ticket_id,
-                    "state": None,
-                    "error": f"Board API request timed out after {timeout}s",
-                },
-                ensure_ascii=False,
-            )
         except Exception as exc:
-            logger.warning("ticket_poll failed for %s: %s", ticket_id, exc)
+            logger.warning("ticket_poll direct path failed for %s: %s", ticket_id, exc)
             return json.dumps(
                 {
                     "ticket_id": ticket_id,
@@ -158,6 +217,38 @@ def build_ticket_poll_tools(
                 },
                 ensure_ascii=False,
             )
+
+    async def ticket_poll(ticket_id: str) -> str:
+        """Poll the mill board for a ticket's current state.
+
+        Tries the component roster path first when available (resolves
+        ``"mill"`` via the central-deploy roster or component fallbacks);
+        on failure falls back to the direct ``board_api_base_url`` path.
+        When *component_request* is unavailable the direct path is used
+        directly.
+
+        Args:
+            ticket_id: The ticket identifier (e.g. "20250101T120000Z-my-ticket-a1b2").
+
+        Returns:
+            A JSON string with ``ticket_id``, ``state`` (or ``null`` when
+            the field is absent), and ``error`` (empty on success).  On
+            connectivity failure the ``state`` is ``null`` and ``error``
+            contains a diagnostic message.
+
+        """
+        # Try roster path first when available.
+        if component_request is not None:
+            result = await _poll_via_component_request(component_request, ticket_id)
+            if not result["error"]:
+                return json.dumps(result, ensure_ascii=False)
+            logger.info(
+                "ticket_poll roster path failed for %s; "
+                "falling back to direct board API",
+                ticket_id,
+            )
+
+        return await _poll_direct(ticket_id)
 
     async def ticket_poll_batch(ticket_ids: list[str]) -> str:
         """Fetch full ticket data for multiple tickets concurrently.
@@ -168,6 +259,9 @@ def build_ticket_poll_tools(
         cycle metadata — so you can classify blocked tickets by failure
         signature (e.g. "implement-loop/3of3", "git-failure", "capability-gap")
         without N sequential round-trips.
+
+        This tool uses the direct board API path and does NOT go through
+        the roster.  Use ``ticket_poll`` for roster-first connectivity.
 
         Args:
             ticket_ids: List of ticket identifiers to fetch.

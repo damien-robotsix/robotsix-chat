@@ -287,7 +287,7 @@
           "type": "string"
         },
         "board_api_base_url": {
-          "default": "http://127.0.0.1:8077",
+          "default": "http://mill:8077",
           "title": "Board Api Base Url",
           "type": "string"
         },
