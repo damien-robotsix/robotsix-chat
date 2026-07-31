@@ -521,3 +521,49 @@ async def test_factory_end_to_end_fetch_then_read(tmp_path: Path) -> None:
     assert "acme--widget--default" in summary
     out = await by_name["read_repo_file"]("acme--widget--default", "README.md")
     assert "# Widget" in out
+
+
+# ---------------------------------------------------------------------------
+# list_repo_files accepts `path` (sibling-tool parity)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_repo_files_accepts_path_like_its_siblings(tmp_path: Path) -> None:
+    """`list_repo_files` must accept a `path` directory argument.
+
+    Every sibling tool (read_repo_file, search_repo_files, …) takes a
+    `path`, so agents reach for it here too. It used to be rejected with
+    a hard "Additional properties are not allowed ('path' was
+    unexpected)" validation failure — observed live twice in consecutive
+    turns, burning a turn each time and generating recurring tool_error
+    tickets.
+    """
+    tools = build_repo_study_tools(
+        RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")),
+        DirectRepoSettings(),
+    )
+    by_name = {t.__name__: t for t in tools}
+
+    # Accepted as a keyword — the call must reach the manager (which then
+    # reports the unknown workspace) rather than fail schema validation.
+    out = await by_name["list_repo_files"]("missing", path="changelog.d")
+    assert out.startswith("Error:")
+
+
+def test_list_repo_files_path_is_a_glob_prefix(tmp_path: Path) -> None:
+    """A `path` directory narrows the listing to that subtree."""
+    root = tmp_path / "ws" / "demo"
+    (root / "changelog.d").mkdir(parents=True)
+    (root / "src").mkdir(parents=True)
+    (root / "changelog.d" / "a.md").write_text("x")
+    (root / "src" / "b.py").write_text("y")
+
+    mgr = WorkspaceManager(
+        RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")),
+        DirectRepoSettings(),
+    )
+    listing = mgr.list_files("demo", "changelog.d/**/*", 100)
+
+    assert "a.md" in listing
+    assert "b.py" not in listing
