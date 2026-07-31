@@ -75,6 +75,7 @@ src/bin/
 # Pre-commit tool binaries accidentally committed during local testing
 actionlint
 shellcheck
+.hadolint_bin
 
 # Core dumps — binary artifacts, can contain sensitive memory
 core
