@@ -517,6 +517,7 @@ class DirectRepoSettings(BaseModel):
 
     enabled: bool = False
     direct_fix_enabled: bool = False
+    allow_push_to_existing_pr: bool = False
     github_app_id: str = ""
     github_app_private_key: SecretStr = SecretStr("")
     github_app_installation_id: str = ""

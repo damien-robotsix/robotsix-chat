@@ -317,6 +317,11 @@
           "title": "Direct Fix Enabled",
           "type": "boolean"
         },
+        "allow_push_to_existing_pr": {
+          "default": false,
+          "title": "Allow Push To Existing Pr",
+          "type": "boolean"
+        },
         "github_app_id": {
           "default": "",
           "title": "Github App Id",
