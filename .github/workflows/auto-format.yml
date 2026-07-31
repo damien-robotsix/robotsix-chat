@@ -8,13 +8,12 @@ concurrency:
   group: auto-format-${{ github.ref }}
   cancel-in-progress: true
 
-permissions:
-  contents: write  # push formatting fixes to the PR branch
-
 jobs:
   format:
     name: Auto-format with ruff
     runs-on: ubuntu-latest
+    permissions:
+      contents: write  # push formatting fixes to the PR branch
     # Skip for fork PRs — GITHUB_TOKEN cannot push to external forks.
     if: github.event.pull_request.head.repo.full_name == github.repository
     steps:
@@ -25,6 +24,7 @@ jobs:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
         with:
           ref: ${{ github.head_ref }}
+          persist-credentials: false
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
       - name: Install
         run: uv sync --frozen
@@ -32,7 +32,16 @@ jobs:
         run: uv run ruff format .
       - name: Run ruff check --fix
         run: uv run ruff check --fix .
-      - uses: stefanzweifel/git-auto-commit-action@b863ae1933cb653a53c021fe36dbb774e1fb9403  # v5
-        with:
-          commit_message: "Auto-format with ruff"
-          commit_options: "--no-verify"
+      - name: Commit and push formatting fixes
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "Auto-format with ruff" --no-verify
+            git -c "http.https://github.com/.extraheader=AUTHORIZATION: basic $(printf 'x-access-token:%s' "$GITHUB_TOKEN" | base64 -w0)" push origin HEAD
+          fi
