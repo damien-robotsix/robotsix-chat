@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Fix: correct system-prompt version reference in CHANGELOG.md from v73 to v74 for the ticket-ID-fidelity entry, matching the version documented in `docs/system_prompt_changelog.md`.
 - Add test coverage for the four error handlers in ``routes/errors.py`` (``http_exception_handler``, ``not_found_handler``, ``server_error_handler``, ``unhandled_exception_handler``)
 - Refactor: extract shared `_check_preconditions` helper in `repo.direct`
   to eliminate ~15-line duplicated precondition guard (BLOCKED state +
@@ -69,7 +70,7 @@
 - Document `### SFTP` settings section in `docs/configuration.md` covering all 9 fields: `enabled`, `host`, `port`, `username`, `password`, `private_key`, `private_key_passphrase`, `known_hosts`, `remote_root`.
 - Dockerfile: fix hadolint warnings — use numeric UID for USER (DL3066) and
   consolidate HEALTHCHECK CMD onto a single line (DL3025)
-- System prompt v73: add ticket ID fidelity rule — always use exact board-issued ticket IDs in API calls, never abbreviate or reconstruct from narrative memory.  Added 404 warning logs in ``ticket_poll`` and ``worker_mill`` to flag narrative-derived ticket IDs that fail to match on the board.
+- System prompt v74: add ticket ID fidelity rule — always use exact board-issued ticket IDs in API calls, never abbreviate or reconstruct from narrative memory.  Added 404 warning logs in ``ticket_poll`` and ``worker_mill`` to flag narrative-derived ticket IDs that fail to match on the board.
 - **Monitor auto-resume on PR merge**: The background watcher now polls GitHub for PR merge status in addition to polling the mill for ticket state changes. When a paused periodic monitor's checkpoint records a tracked PR (`pr_number` + `repo_full_name`), the watcher checks whether that PR has been merged and auto-resumes the monitor. This catches merges that the board ticket API may not immediately reflect. Also fixed a gap where monitors closed with `pre_authorized_approval` were never eligible for auto-resume.
 - `direct_fix` and `patch_direct_repo_file` now use the component-request roster path for implement-cycle counting when `component_request` is available, matching the fallback already used for ticket-state verification.  Fixes failures where the direct board API was unreachable but the roster-based path worked.
 - Operator consent propagation: the agent now carries operator authorization forward through subsequent approval gates — when an operator provides credentials, explicitly approves a change, or authorizes a specific operation, the agent treats that consent as covering all sub-operations (ticket approval, MR approval, merge) without re-asking, reducing redundant approval latency.
