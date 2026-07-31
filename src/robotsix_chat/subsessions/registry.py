@@ -935,42 +935,35 @@ class SubsessionRegistry:
         self._store.persist()
         return True
 
-    def update_prompt(self, sub_id: str, new_prompt: str) -> bool:
-        """Replace the prompt for *sub_id* and persist.
+    def update_periodic_config(
+        self,
+        sub_id: str,
+        *,
+        prompt: str | None = None,
+        interval_seconds: float | None = None,
+        max_runs: int | None = None,
+    ) -> bool:
+        """Update the run configuration of an active periodic subsession.
+
+        Only *prompt* (instructions), *interval_seconds*, and *max_runs*
+        are accepted — the run counter is never reset, so self-update
+        cannot bypass max-run limits.  Fields left at ``None`` are not
+        touched.
 
         Returns ``True`` when the update was applied; ``False`` when the
-        subsession is unknown or no longer active.
+        subsession is unknown or not an active periodic.
         """
         info = self._subs.get(sub_id)
         if info is None or not info.is_active:
             return False
-        info.prompt = new_prompt
-        self._store.persist()
-        return True
-
-    def update_interval(self, sub_id: str, new_interval: float) -> bool:
-        """Replace the interval_seconds for *sub_id* and persist.
-
-        Returns ``True`` when the update was applied; ``False`` when the
-        subsession is unknown or no longer active.
-        """
-        info = self._subs.get(sub_id)
-        if info is None or not info.is_active:
+        if info.kind is not SubsessionKind.PERIODIC:
             return False
-        info.interval_seconds = new_interval
-        self._store.persist()
-        return True
-
-    def update_max_runs(self, sub_id: str, new_max_runs: int) -> bool:
-        """Replace the max_runs for *sub_id* and persist.
-
-        Returns ``True`` when the update was applied; ``False`` when the
-        subsession is unknown or no longer active.
-        """
-        info = self._subs.get(sub_id)
-        if info is None or not info.is_active:
-            return False
-        info.max_runs = new_max_runs
+        if prompt is not None:
+            info.prompt = prompt
+        if interval_seconds is not None:
+            info.interval_seconds = interval_seconds
+        if max_runs is not None:
+            info.max_runs = max_runs
         self._store.persist()
         return True
 

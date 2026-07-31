@@ -954,188 +954,288 @@ async def test_spawn_tool_periodic_task_sibling_depth() -> None:
 
 
 # ---------------------------------------------------------------------------
-# Periodic self-adjustment tools
+# self_update_subsession tool
 # ---------------------------------------------------------------------------
 
 
 @pytest.mark.asyncio
-async def test_update_periodic_instructions() -> None:
-    """Periodic monitor can revise its own instructions."""
+async def test_self_update_tool_not_available_to_main_agent() -> None:
+    """The main agent (no close_state) does not get self_update_subsession."""
     env = build_env()
-    periodic = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=10.0)
-    tools = build_subsession_tools(
-        env,
-        ctx=_ctx(subsession_id=periodic.id, depth=periodic.depth),
-        close_state=CloseState(),
-    )
-    update = _by_name(tools, "update_periodic_instructions")
-
-    result = await update("watch for CI failure X specifically")
-    assert "updated" in result.lower()
-
-    info = env.registry.get(periodic.id)
-    assert info is not None
-    assert info.prompt == "watch for CI failure X specifically"
+    tools = build_subsession_tools(env, ctx=_ctx())
+    assert "self_update_subsession" not in _tool_names(tools)
 
 
 @pytest.mark.asyncio
-async def test_update_periodic_instructions_empty_rejected() -> None:
-    """Empty instructions are rejected."""
+async def test_self_update_rejects_non_periodic_subsession() -> None:
+    """self_update_subsession refuses task/user_chat subsessions."""
     env = build_env()
-    periodic = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=10.0)
+    info = _register(env, kind=SubsessionKind.TASK, sub_id="task-1")
+    close_state = CloseState()
     tools = build_subsession_tools(
-        env,
-        ctx=_ctx(subsession_id=periodic.id, depth=periodic.depth),
-        close_state=CloseState(),
+        env, ctx=_ctx(subsession_id=info.id, depth=1), close_state=close_state
     )
-    update = _by_name(tools, "update_periodic_instructions")
+    update = _by_name(tools, "self_update_subsession")
 
-    result = await update("   ")
-    assert "non-empty" in result
+    result = await update(instructions="new instructions")
+
+    assert "only periodic subsessions can self-update" in result
 
 
 @pytest.mark.asyncio
-async def test_adjust_periodic_interval_within_bounds() -> None:
-    """Interval adjustment within bounds succeeds."""
+async def test_self_update_rejects_inactive_subsession() -> None:
+    """self_update_subsession refuses a closed/terminal subsession."""
     env = build_env()
-    periodic = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=10.0)
-    tools = build_subsession_tools(
-        env,
-        ctx=_ctx(subsession_id=periodic.id, depth=periodic.depth),
-        close_state=CloseState(),
+    info = _register(
+        env, kind=SubsessionKind.PERIODIC, interval_seconds=60.0, sub_id="per-1"
     )
-    adjust = _by_name(tools, "adjust_periodic_interval")
+    env.registry.mark_closed(info.id, summary="done", reason="completed")
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=info.id, depth=1), close_state=close_state
+    )
+    update = _by_name(tools, "self_update_subsession")
 
-    result = await adjust(120.0)
-    assert "adjusted" in result
+    result = await update(instructions="new instructions")
 
-    info = env.registry.get(periodic.id)
-    assert info is not None
+    assert "not active" in result
+
+
+@pytest.mark.asyncio
+async def test_self_update_no_fields_returns_error() -> None:
+    """Calling self_update_subsession with no arguments returns an error."""
+    env = build_env()
+    info = _register(
+        env, kind=SubsessionKind.PERIODIC, interval_seconds=60.0, sub_id="per-2"
+    )
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=info.id, depth=1), close_state=close_state
+    )
+    update = _by_name(tools, "self_update_subsession")
+
+    result = await update()
+
+    assert "no fields to update" in result
+
+
+@pytest.mark.asyncio
+async def test_self_update_instructions_too_long() -> None:
+    """Instructions exceeding 8000 chars are rejected."""
+    env = build_env()
+    info = _register(
+        env, kind=SubsessionKind.PERIODIC, interval_seconds=60.0, sub_id="per-3"
+    )
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=info.id, depth=1), close_state=close_state
+    )
+    update = _by_name(tools, "self_update_subsession")
+
+    result = await update(instructions="x" * 8001)
+
+    assert "too long" in result
+    assert "8001" in result
+
+
+@pytest.mark.asyncio
+async def test_self_update_instructions_not_a_string() -> None:
+    """Non-string instructions are rejected."""
+    env = build_env()
+    info = _register(
+        env, kind=SubsessionKind.PERIODIC, interval_seconds=60.0, sub_id="per-4"
+    )
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=info.id, depth=1), close_state=close_state
+    )
+    update = _by_name(tools, "self_update_subsession")
+
+    result = await update(instructions=123)  # type: ignore[arg-type]
+
+    assert "must be a string" in result
+
+
+@pytest.mark.asyncio
+async def test_self_update_interval_below_minimum() -> None:
+    """An interval below the configured minimum is rejected."""
+    env = build_env(settings=make_settings(min_interval_seconds=10))
+    info = _register(
+        env, kind=SubsessionKind.PERIODIC, interval_seconds=60.0, sub_id="per-5"
+    )
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=info.id, depth=1), close_state=close_state
+    )
+    update = _by_name(tools, "self_update_subsession")
+
+    result = await update(interval_seconds=5.0)
+
+    assert "must be >= 10" in result
+
+
+@pytest.mark.asyncio
+async def test_self_update_interval_not_a_number() -> None:
+    """Non-numeric interval is rejected."""
+    env = build_env()
+    info = _register(
+        env, kind=SubsessionKind.PERIODIC, interval_seconds=60.0, sub_id="per-6"
+    )
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=info.id, depth=1), close_state=close_state
+    )
+    update = _by_name(tools, "self_update_subsession")
+
+    result = await update(interval_seconds="fast")  # type: ignore[arg-type]
+
+    assert "must be a number" in result
+
+
+@pytest.mark.asyncio
+async def test_self_update_max_runs_negative() -> None:
+    """Negative max_runs is rejected."""
+    env = build_env()
+    info = _register(
+        env, kind=SubsessionKind.PERIODIC, interval_seconds=60.0, sub_id="per-7"
+    )
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=info.id, depth=1), close_state=close_state
+    )
+    update = _by_name(tools, "self_update_subsession")
+
+    result = await update(max_runs=-1)
+
+    assert "must be >= 0" in result
+
+
+@pytest.mark.asyncio
+async def test_self_update_max_runs_not_int() -> None:
+    """Non-integer max_runs is rejected."""
+    env = build_env()
+    info = _register(
+        env, kind=SubsessionKind.PERIODIC, interval_seconds=60.0, sub_id="per-8"
+    )
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=info.id, depth=1), close_state=close_state
+    )
+    update = _by_name(tools, "self_update_subsession")
+
+    result = await update(max_runs=3.5)  # type: ignore[arg-type]
+
+    assert "must be an integer" in result
+
+
+@pytest.mark.asyncio
+async def test_self_update_changes_instructions() -> None:
+    """self_update_subsession updates the prompt/instructions field."""
+    env = build_env()
+    info = _register(
+        env, kind=SubsessionKind.PERIODIC, interval_seconds=60.0, sub_id="per-9"
+    )
+    old_prompt = info.prompt
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=info.id, depth=1), close_state=close_state
+    )
+    update = _by_name(tools, "self_update_subsession")
+
+    result = await update(instructions="watch tickets T-42 and T-99")
+
+    assert "Self-update applied" in result
+    assert "instructions" in result
+    assert info.prompt == "watch tickets T-42 and T-99"
+    assert info.prompt != old_prompt
+
+
+@pytest.mark.asyncio
+async def test_self_update_changes_interval() -> None:
+    """self_update_subsession updates the interval_seconds field."""
+    env = build_env()
+    info = _register(
+        env, kind=SubsessionKind.PERIODIC, interval_seconds=60.0, sub_id="per-10"
+    )
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=info.id, depth=1), close_state=close_state
+    )
+    update = _by_name(tools, "self_update_subsession")
+
+    result = await update(interval_seconds=120.0)
+
+    assert "Self-update applied" in result
+    assert "interval" in result
     assert info.interval_seconds == 120.0
 
 
 @pytest.mark.asyncio
-async def test_adjust_periodic_interval_clamped_to_max() -> None:
-    """Interval above max is clamped and logged."""
-    settings = make_settings(periodic_max_interval_seconds=300.0)
-    env = build_env(settings=settings)
-    periodic = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=10.0)
-    tools = build_subsession_tools(
-        env,
-        ctx=_ctx(subsession_id=periodic.id, depth=periodic.depth),
-        close_state=CloseState(),
-    )
-    adjust = _by_name(tools, "adjust_periodic_interval")
-
-    result = await adjust(9999.0)
-    assert "clamped" in result.lower() or "outside bounds" in result.lower()
-
-    info = env.registry.get(periodic.id)
-    assert info is not None
-    assert info.interval_seconds == 300.0  # clamped to max
-
-
-@pytest.mark.asyncio
-async def test_adjust_periodic_interval_clamped_to_min() -> None:
-    """Interval below min is clamped."""
-    settings = make_settings(min_interval_seconds=30.0)
-    env = build_env(settings=settings)
-    periodic = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
-    tools = build_subsession_tools(
-        env,
-        ctx=_ctx(subsession_id=periodic.id, depth=periodic.depth),
-        close_state=CloseState(),
-    )
-    adjust = _by_name(tools, "adjust_periodic_interval")
-
-    await adjust(1.0)
-    # Should clamp to min (30.0)
-    info = env.registry.get(periodic.id)
-    assert info is not None
-    assert info.interval_seconds == 30.0
-
-
-@pytest.mark.asyncio
-async def test_adjust_periodic_budget_within_bounds() -> None:
-    """Budget adjustment within bounds succeeds."""
+async def test_self_update_changes_max_runs() -> None:
+    """self_update_subsession updates the max_runs field."""
     env = build_env()
-    periodic = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=10.0)
-    tools = build_subsession_tools(
-        env,
-        ctx=_ctx(subsession_id=periodic.id, depth=periodic.depth),
-        close_state=CloseState(),
+    info = _register(
+        env, kind=SubsessionKind.PERIODIC, interval_seconds=60.0, sub_id="per-11"
     )
-    adjust = _by_name(tools, "adjust_periodic_budget")
+    assert info.max_runs is None  # default
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=info.id, depth=1), close_state=close_state
+    )
+    update = _by_name(tools, "self_update_subsession")
 
-    result = await adjust(42)
-    assert "adjusted" in result
+    result = await update(max_runs=10)
 
-    info = env.registry.get(periodic.id)
-    assert info is not None
-    assert info.max_runs == 42
+    assert "Self-update applied" in result
+    assert "max_runs" in result
+    assert info.max_runs == 10
 
 
 @pytest.mark.asyncio
-async def test_adjust_periodic_budget_clamped_to_max() -> None:
-    """Budget above max is clamped."""
-    settings = make_settings(periodic_max_total_runs=50)
-    env = build_env(settings=settings)
-    periodic = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=10.0)
-    tools = build_subsession_tools(
-        env,
-        ctx=_ctx(subsession_id=periodic.id, depth=periodic.depth),
-        close_state=CloseState(),
-    )
-    adjust = _by_name(tools, "adjust_periodic_budget")
-
-    result = await adjust(999)
-    assert "clamped" in result.lower() or "exceeds maximum" in result.lower()
-
-    info = env.registry.get(periodic.id)
-    assert info is not None
-    assert info.max_runs == 50  # clamped
-
-
-@pytest.mark.asyncio
-async def test_adjust_periodic_budget_zero_unlimited() -> None:
-    """Budget of 0 means unlimited."""
+async def test_self_update_does_not_reset_run_counter() -> None:
+    """self_update_subsession never resets the runs counter."""
     env = build_env()
-    periodic = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=10.0)
-    tools = build_subsession_tools(
+    info = _register(
         env,
-        ctx=_ctx(subsession_id=periodic.id, depth=periodic.depth),
-        close_state=CloseState(),
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        sub_id="per-12",
+        runs=5,
     )
-    adjust = _by_name(tools, "adjust_periodic_budget")
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=info.id, depth=1), close_state=close_state
+    )
+    update = _by_name(tools, "self_update_subsession")
 
-    result = await adjust(0)
-    assert "unlimited" in result.lower()
+    await update(instructions="new instructions", interval_seconds=30.0)
 
-    info = env.registry.get(periodic.id)
-    assert info is not None
-    assert info.max_runs == 0
+    assert info.runs == 5  # unchanged
 
 
 @pytest.mark.asyncio
-async def test_self_adjustment_tools_not_available_to_task() -> None:
-    """Self-adjustment tools are not available to non-periodic subsessions."""
+async def test_self_update_multiple_fields_at_once() -> None:
+    """self_update_subsession can change multiple fields in one call."""
     env = build_env()
-    task = _register(env, kind=SubsessionKind.TASK)
-    tools = build_subsession_tools(
-        env,
-        ctx=_ctx(subsession_id=task.id, depth=task.depth),
-        close_state=CloseState(),
+    info = _register(
+        env, kind=SubsessionKind.PERIODIC, interval_seconds=60.0, sub_id="per-13"
     )
-    names = _tool_names(tools)
-    assert "update_periodic_instructions" not in names
-    assert "adjust_periodic_interval" not in names
-    assert "adjust_periodic_budget" not in names
+    close_state = CloseState()
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=info.id, depth=1), close_state=close_state
+    )
+    update = _by_name(tools, "self_update_subsession")
 
+    result = await update(
+        instructions="watch T-42 and T-99",
+        interval_seconds=300.0,
+        max_runs=20,
+    )
 
-@pytest.mark.asyncio
-async def test_self_adjustment_tools_not_available_to_main_agent() -> None:
-    """Self-adjustment tools are not available to the main chat agent."""
-    env = build_env()
-    tools = build_subsession_tools(env, ctx=_ctx(depth=0))
-    names = _tool_names(tools)
-    assert "update_periodic_instructions" not in names
+    assert "Self-update applied" in result
+    assert "instructions" in result
+    assert "interval" in result
+    assert "max_runs" in result
+    assert info.prompt == "watch T-42 and T-99"
+    assert info.interval_seconds == 300.0
+    assert info.max_runs == 20
