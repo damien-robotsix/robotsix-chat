@@ -76,7 +76,6 @@
 - **Monitor auto-resume on PR merge**: The background watcher now polls GitHub for PR merge status in addition to polling the mill for ticket state changes. When a paused periodic monitor's checkpoint records a tracked PR (`pr_number` + `repo_full_name`), the watcher checks whether that PR has been merged and auto-resumes the monitor. This catches merges that the board ticket API may not immediately reflect. Also fixed a gap where monitors closed with `pre_authorized_approval` were never eligible for auto-resume.
 - `direct_fix` and `patch_direct_repo_file` now use the component-request roster path for implement-cycle counting when `component_request` is available, matching the fallback already used for ticket-state verification.  Fixes failures where the direct board API was unreachable but the roster-based path worked.
 - Operator consent propagation: the agent now carries operator authorization forward through subsequent approval gates — when an operator provides credentials, explicitly approves a change, or authorizes a specific operation, the agent treats that consent as covering all sub-operations (ticket approval, MR approval, merge) without re-asking, reducing redundant approval latency.
-- Fix hadolint violations in Dockerfile: use numeric UID (`USER 1000` instead of `USER app` for DL3066) and JSON form for HEALTHCHECK CMD (DL3025).
 - Fix hadolint warnings in Dockerfile: suppress DL3066 on ``uv pip install``
   (versions are pinned via ``uv.lock``) and convert HEALTHCHECK CMD to exec
   form (DL3025).
