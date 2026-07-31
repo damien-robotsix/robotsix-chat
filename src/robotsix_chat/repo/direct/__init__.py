@@ -12,7 +12,8 @@ capability is disabled.
   (list-installation-repositories) — no static allowlist.
 - PRs are opened in a reviewable state with no auto-merge; the merge gate
   stays human.
-- No merge capability exists on this path.
+- A merge_pr tool is available for merging PRs via the GitHub API
+  (subject to the same BLOCKED-ticket guard).
 
 **Additional guardrails for ``direct_fix``:**
 - Ticket must have exhausted its spawn limit (≥3 implement cycles),
@@ -519,6 +520,58 @@ def build_direct_repo_tools(
 
         return "\n".join(lines)
 
+    async def merge_pr(
+        ticket_id: str,
+        repo_full_name: str,
+        pr_number: int,
+        merge_method: str = "merge",
+        commit_title: str = "",
+        commit_message: str = "",
+    ) -> str:
+        """Merge a pull request via the GitHub API.
+
+        Merges an open PR using the specified merge method.  The PR must be
+        mergeable — no conflicts and all required status checks must pass.
+
+        **Precondition:** The ticket identified by *ticket_id* MUST be in
+        BLOCKED state.  This tool will verify that and refuse otherwise.
+
+        **Scope:** When called through the component roster (i.e. the
+        ``component_request`` credential is available) the GitHub App
+        installation scope check is bypassed — the mill already has its
+        own GitHub access.  For direct board-API calls, *repo_full_name*
+        must be within the robotsix-mill GitHub App's current installation
+        scope (checked dynamically at call time).
+
+        Args:
+            ticket_id: The blocked ticket the PR belongs to.
+            repo_full_name: GitHub ``owner/name``.
+            pr_number: The PR number to merge.
+            merge_method: Merge method — ``"merge"`` (default, standard merge
+                commit), ``"squash"`` (squash all commits into one), or
+                ``"rebase"`` (rebase onto the base branch).
+            commit_title: Optional title for the merge commit (only used
+                for ``squash`` and ``merge`` methods).
+            commit_message: Optional extra detail for the merge commit
+                (only used for ``squash`` and ``merge`` methods).
+
+        Returns:
+            A status message — success confirmation or an error describing
+            why the merge failed (e.g. not mergeable, conflict, status
+            checks not passing).
+
+        """
+        if error := await _assert_blocked_and_scoped(client, ticket_id, repo_full_name):
+            return error
+
+        return await client.merge_pr(
+            repo_full_name=repo_full_name,
+            pr_number=pr_number,
+            merge_method=merge_method,
+            commit_title=commit_title,
+            commit_message=commit_message,
+        )
+
     async def reset_implement_spawn_counter(ticket_id: str) -> str:
         """Reset the implement-agent spawn counter for a blocked ticket.
 
@@ -771,6 +824,7 @@ def build_direct_repo_tools(
         open_direct_repo_pr,
         update_pr_branch,
         check_pr_merge_conflict,
+        merge_pr,
         reset_implement_spawn_counter,
         apply_patch_to_file,
         push_patch_to_pr_branch,
