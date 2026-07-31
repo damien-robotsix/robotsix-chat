@@ -24,6 +24,7 @@ class TestBuildAutonomousInstruction:
         assert "EXECUTION" in result
         assert "COMPLETION" in result
         assert "Stale monitor completion" in result
+        assert "Stall guard response" in result
         assert "3 or more consecutive cycles" in result
         assert "MUTATION AUTHORIZATION" in result
         assert "read-only work" in result

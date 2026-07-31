@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Autonomous prompt: add "Stall guard response" guidance so the agent proactively suggests re-scoping or splitting when a periodic monitor auto-stops after consecutive no-change cycles. This reduces operator cognitive load when a monitored ticket stalls.
 - Extract shared SFTP connection context manager (`_sftp_connection`) in `SftpClient`, eliminating duplicated
   connection-lifecycle boilerplate across `read_file`, `write_file`, `list_directory`, and `file_exists`.
 - Lower ``subsessions.max_idle_runs`` default from 5 to 3 so periodic monitors auto-pause sooner (before auto-stop), and improve the auto-pause summary text to include what to do next.
