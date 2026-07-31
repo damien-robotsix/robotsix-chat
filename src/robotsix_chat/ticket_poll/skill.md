@@ -67,19 +67,19 @@ board API on any failure.
 
 ## ID resolution
 
-Both `ticket_poll` and `ticket_poll_batch` resolve paraphrased / abbreviated ticket IDs against
-the live board before making any per-ticket request. This means you can pass an ID derived from
-narrative text (e.g. `...-my-ticket-a3f2`) and it will be mapped to the full ticket ID on the
-board. Resolution tries, in order:
+Both `ticket_poll` and `ticket_poll_batch` resolve paraphrased / abbreviated ticket IDs against the
+live board before making any per-ticket request. This means you can pass an ID derived from
+narrative text (e.g. `...-my-ticket-a3f2`) and it will be mapped to the full ticket ID on the board.
+Resolution tries, in order:
 
 1. **Exact match** — the candidate ID appears verbatim on the board.
 2. **Hash-suffix match** — the last 4 hex chars (e.g. `a3f2`) uniquely match one ticket.
 3. **Slug-substring match** — the non-timestamp portion appears as a substring of exactly one
    ticket's full ID.
 
-When resolution succeeds, the resolved full ID is used for the request and returned in the
-response. When it fails — the candidate is ambiguous or the board is unreachable — the original
-ID is still attempted (which may surface a 404).
+When resolution succeeds, the resolved full ID is used for the request and returned in the response.
+When it fails — the candidate is ambiguous or the board is unreachable — the original ID is still
+attempted (which may surface a 404).
 
 ## Safety
 
