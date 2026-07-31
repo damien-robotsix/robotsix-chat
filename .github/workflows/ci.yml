@@ -355,6 +355,8 @@ jobs:
       - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
       - name: Install
         run: uv sync --frozen
+        env:
+          UV_MALWARE_CHECK: "1"
       - name: Run benchmarks
         run: uv run pytest tests/benchmarks/ --benchmark-only --benchmark-warmup=on --benchmark-autosave
       - name: Upload benchmark history
