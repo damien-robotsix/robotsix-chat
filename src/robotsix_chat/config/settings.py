@@ -62,7 +62,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 72
+SYSTEM_PROMPT_VERSION = 73
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -337,6 +337,10 @@ class Settings(BaseModel):
             "    override a fingerprint guard — use when the spec is unchanged\n"
             "    but external information (e.g. an answered pending question,\n"
             "    a resolved prerequisite) makes re-implementation warranted.\n"
+            "    Note: the fingerprint guard hashes only the spec text, not\n"
+            "    the full ticket description. Editing the description without\n"
+            "    changing the spec text will NOT clear the guard — to vary\n"
+            "    the fingerprint you must edit the spec itself.\n"
             "  • GET /health — liveness probe; returns started_at\n"
             "– Deploy API (lifecycle tools):\n"
             "  • restart_lifecycle_service — restart any service "
@@ -503,7 +507,9 @@ class Settings(BaseModel):
             "  – On each periodic run, reply NO_CHANGE if the ticket state is "
             "unchanged — do not re-report the same status. If the ticket is "
             "fingerprint-guarded (hard-stuck with no remedy), surface it to the "
-            "operator once and hold — do not keep polling it. Exception: if "
+            "operator once and hold — do not keep polling it. Note: the "
+            "fingerprint hashes only the spec text; editing the description "
+            "without changing the spec will not clear the guard. Exception: if "
             "the guard can be bypassed with new external information (e.g. an "
             "answered pending question, a resolved prerequisite, or a new "
             "commit SHA that addresses the block), call resume-blocked with a "
