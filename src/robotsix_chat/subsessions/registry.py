@@ -927,6 +927,37 @@ class SubsessionRegistry:
                 return True
         return False
 
+    def is_duplicate_auto_pause(self, ticket_id: str, exclude_sub_id: str) -> bool:
+        """Check for a duplicate auto-pause / no-change report for *ticket_id*.
+
+        Returns ``True`` when a different (already-CLOSED) subsession has
+        already reported the same ticket as auto-paused, auto-stopped, or
+        terminal — when a prior monitor has already notified the user that
+        the ticket needs no attention, a second monitor's no-change notice
+        for that ticket is a duplicate and should be suppressed to avoid
+        a redundant (and often noisy) reaction turn in the parent
+        conversation.
+        """
+        for info in self._subs.values():
+            if info.id == exclude_sub_id:
+                continue
+            if info.status is not SubsessionStatus.CLOSED:
+                continue
+            cp = info.checkpoint
+            if cp is None:
+                continue
+            cp_ticket_id = cp.get("ticket_id")
+            if not isinstance(cp_ticket_id, str) or cp_ticket_id != ticket_id:
+                continue
+            if info.close_reason in (
+                "paused",
+                "no_change_auto_stop",
+                "ticket_terminal",
+                "completed",
+            ):
+                return True
+        return False
+
     # ------------------------------------------------------------------
     # helpers
     # ------------------------------------------------------------------

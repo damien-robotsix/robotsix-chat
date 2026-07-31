@@ -855,6 +855,104 @@ async def test_deliver_summary_no_suppression_when_check_returns_false() -> None
 
 
 # ---------------------------------------------------------------------------
+# deliver_summary — duplicate auto-pause / no-change report suppression
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_suppresses_duplicate_auto_pause() -> None:
+    """When is_duplicate_auto_pause returns True, delivery is skipped for 'paused'."""
+    store = MagicMock()
+    registry = MagicMock()
+    registry.is_duplicate_auto_pause.return_value = True
+    delivery = _build_delivery(store=store, registry=registry)
+    info = _make_info(parent_id=None)
+    info.checkpoint = {"ticket_id": "T-123"}
+
+    with patch.object(logging.getLogger(_DELIVERY_LOGGER), "info") as log_info:
+        await delivery.deliver_summary(info, "auto-paused", "paused")
+
+    # No reaction tasks scheduled — early return.
+    assert len(delivery._reaction_tasks) == 0
+    store.record_for_session.assert_not_called()
+    store.history.assert_not_called()
+    registry.enqueue_message.assert_not_called()
+
+    log_info.assert_called_once()
+    log_args = log_info.call_args[0]
+    assert "Suppressing duplicate auto-pause report" in log_args[0]
+    assert log_args[1] == "T-123"
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_suppresses_dup_no_change_auto_stop() -> None:
+    """Duplicate suppression fires when reason is 'no_change_auto_stop'."""
+    store = MagicMock()
+    registry = MagicMock()
+    registry.is_duplicate_auto_pause.return_value = True
+    delivery = _build_delivery(store=store, registry=registry)
+    info = _make_info(parent_id=None)
+    info.checkpoint = {"ticket_id": "T-456"}
+
+    with patch.object(logging.getLogger(_DELIVERY_LOGGER), "info") as log_info:
+        await delivery.deliver_summary(info, "auto-stopped", "no_change_auto_stop")
+
+    assert len(delivery._reaction_tasks) == 0
+    store.record_for_session.assert_not_called()
+    log_info.assert_called_once()
+    log_args = log_info.call_args[0]
+    assert log_args[1] == "T-456"
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_no_auto_pause_check_for_other_reasons() -> None:
+    """is_duplicate_auto_pause skipped for non-pause/non-auto-stop reasons."""
+    store = MagicMock()
+    registry = MagicMock()
+    delivery = _build_delivery(store=store, registry=registry)
+    info = _make_info(parent_id=None)
+    info.checkpoint = {"ticket_id": "T-789"}
+
+    await delivery.deliver_summary(info, "failed", "failed")
+    await _await_reaction_tasks(delivery)
+
+    registry.is_duplicate_auto_pause.assert_not_called()
+    store.record_for_session.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_no_auto_pause_check_when_ticket_id_none() -> None:
+    """When _extract_ticket_id returns None, auto-pause duplicate check is skipped."""
+    store = MagicMock()
+    registry = MagicMock()
+    delivery = _build_delivery(store=store, registry=registry)
+    info = _make_info(parent_id=None)  # no checkpoint
+
+    await delivery.deliver_summary(info, "paused", "paused")
+    await _await_reaction_tasks(delivery)
+
+    registry.is_duplicate_auto_pause.assert_not_called()
+    store.record_for_session.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_no_auto_pause_suppression_when_check_false() -> None:
+    """When is_duplicate_auto_pause returns False, delivery proceeds normally."""
+    store = MagicMock()
+    registry = MagicMock()
+    registry.is_duplicate_auto_pause.return_value = False
+    delivery = _build_delivery(store=store, registry=registry)
+    info = _make_info(parent_id=None)
+    info.checkpoint = {"ticket_id": "T-789"}
+
+    await delivery.deliver_summary(info, "paused", "paused")
+    await _await_reaction_tasks(delivery)
+
+    registry.is_duplicate_auto_pause.assert_called_once_with("T-789", info.id)
+    store.record_for_session.assert_called()
+
+
+# ---------------------------------------------------------------------------
 # Reaction prompt — active autonomous plan detection
 # ---------------------------------------------------------------------------
 

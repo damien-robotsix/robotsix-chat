@@ -266,6 +266,25 @@ class ParentDelivery:
                 )
                 return
 
+        # Suppress duplicate auto-pause / no-change reports: when a ticket
+        # has already had an auto-pause, no-change, or terminal notice
+        # reported by a prior monitor for the same ticket, skip delivery.
+        # This prevents redundant "no change" reaction turns when multiple
+        # periodic subsessions monitor the same ticket and all auto-pause
+        # after consecutive no-change runs.
+        if reason in ("paused", "no_change_auto_stop"):
+            ticket_id = _extract_ticket_id(info)
+            if ticket_id is not None and self._registry.is_duplicate_auto_pause(
+                ticket_id, info.id
+            ):
+                logger.info(
+                    "Suppressing duplicate auto-pause report for ticket %s "
+                    "from subsession %s — already reported by a prior monitor.",
+                    ticket_id,
+                    info.id[:8],
+                )
+                return
+
         # For user_chat subsessions include the full transcript alongside
         # the agent-written summary so the parent can act on operator
         # decisions even when the summary is terse.
