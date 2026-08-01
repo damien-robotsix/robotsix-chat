@@ -3192,9 +3192,7 @@ async def test_component_request_retry_on_transient_error(
             }
         )
 
-    tools = build_direct_repo_tools(
-        settings, component_request=_retry_then_succeed
-    )
+    tools = build_direct_repo_tools(settings, component_request=_retry_then_succeed)
     df_fn = [t for t in tools if t.__name__ == "direct_fix"][0]
 
     out = await df_fn(
