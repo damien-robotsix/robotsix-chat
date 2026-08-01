@@ -1,5 +1,8 @@
 ## 0.0.0 (unreleased)
 
+- Agent instruction: require explicit credential values in ticket descriptions
+  for credential-bearing tickets, and add credential-verification guidance
+  before merging PRs that modify stored credentials or password hashes.
 - Persist the operator's reply-style directive as a durable, versioned artifact
   (`docs/prompt-style.md`) so it is automatically injected into every system prompt
   build.  The style file is the single source of truth for reply formatting;

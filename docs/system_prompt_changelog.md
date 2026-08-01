@@ -3,6 +3,22 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v81 — 2026-07-31 — prevent-placeholder-hashes-in-credential-tickets-075a
+
+**Summary:** Add credential-bearing ticket guidance to the agent instruction: when
+filing a ticket that involves setting or changing a credential, the spec must include
+the exact credential value (never a placeholder). Add credential-verification guidance
+before merging PRs that modify stored credentials or password hashes — inspect the diff
+for well-known default values and block the merge if found.
+
+**Rationale:** A password-reset ticket filed by the assistant resulted in the implement
+agent committing a well-known SHA-1 hash of "password" instead of the user-specified
+password. The ticket description lacked the actual password, so the implement agent
+defaulted to a placeholder. The new guidance closes this gap at two points: ticket
+filing (include the exact value) and merge review (verify the diff has no defaults).
+
+**SHA256:** `50b1fbdcf01fefd27ef2411a93ab15d85d4c834bf104f3663ec6e38005bc5aea`
+
 ## v80 — 2026-07-31 — reconcile-direct-repo-merge-capability-docs-074f
 
 **Summary:** Update the direct-repo guardrail text in the system prompt and
