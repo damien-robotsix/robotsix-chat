@@ -106,14 +106,26 @@ class MemorySettings(BaseModel):
         data_dir: Directory for cognee's stores (relative to the working dir).
             Put it under the persistent ``.data`` mount so memory survives
             container redeploys.
-        recall_search_type: cognee ``SearchType`` name used for recall.
-            ``GRAPH_COMPLETION`` (default) returns clean, relevant facts as text
-            but costs one (cheap) LLM call per message; retrieval-only types
-            like ``CHUNKS``/``SUMMARIES`` are faster but return raw, noisier
-            payloads.
-        recall_timeout_seconds: Hard timeout (seconds) for a single ``recall``
-            call.  On expiry the recall degrades to ``""`` — the agent proceeds
-            without memory.  Default 60 s.
+        recall_search_type: cognee ``SearchType`` name used for the AUTOMATIC
+            per-message recall.  Default ``CHUNKS`` — pure retrieval, no LLM
+            call, so every chat turn stays cheap and fast.  The previous
+            default ``GRAPH_COMPLETION`` ran an LLM completion over the graph
+            on EVERY message; live it added an LLM hop per turn and timed out
+            (90 s) eight times in one observed day, each time stalling the
+            reply and then proceeding memory-less anyway.  Deep, LLM-mediated
+            search is still available on demand — see
+            ``deep_recall_search_type`` and the ``search_memory`` tool.
+        recall_timeout_seconds: Hard timeout (seconds) for a single automatic
+            ``recall`` call.  On expiry the recall degrades to ``""`` — the
+            agent proceeds without memory.  Default 60 s.
+        deep_recall_search_type: cognee ``SearchType`` for the on-demand
+            ``search_memory`` tool.  Default ``GRAPH_COMPLETION`` — the
+            expensive, LLM-mediated graph search, now paid only when the
+            agent deliberately asks for it instead of on every turn.
+        deep_recall_timeout_seconds: Hard timeout (seconds) for one
+            ``search_memory`` tool call.  More generous than the automatic
+            recall's — the tool is invoked deliberately, so waiting longer is
+            acceptable where stalling every message was not.  Default 180 s.
         remember_timeout_seconds: Hard timeout (seconds) for a single
             ``remember`` call (cognify consolidation).  On expiry the write is
             skipped and a warning is logged.  Default 300 s.
@@ -165,8 +177,10 @@ class MemorySettings(BaseModel):
     subsession_enabled: bool = False
     autonomous_enabled: bool = False
     data_dir: str = "/data/cognee"
-    recall_search_type: str = "GRAPH_COMPLETION"
+    recall_search_type: str = "CHUNKS"
     recall_timeout_seconds: float = 60.0
+    deep_recall_search_type: str = "GRAPH_COMPLETION"
+    deep_recall_timeout_seconds: float = 180.0
     remember_timeout_seconds: float = 300.0
     write_backlog_path: str = "/data/cognee/backlog.jsonl"
     datafusion_runtime_memory_limit: str = "256M"
