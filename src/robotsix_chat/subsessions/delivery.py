@@ -43,6 +43,11 @@ from robotsix_chat.chat.events import agent_message_frame
 
 from .models import SubsessionInfo, SubsessionKind
 
+# Terminal ticket states — matches worker_mill._TICKET_STATE_TERMINAL.
+# Defined locally to avoid a circular import (delivery ← worker_mill ←
+# worker ← delivery).
+_TICKET_STATE_TERMINAL: frozenset[str] = frozenset({"closed", "done"})
+
 if TYPE_CHECKING:
     from robotsix_chat.autonomous.runner import AutonomousRunner
     from robotsix_chat.chat.conversation import ConversationStore
@@ -151,6 +156,15 @@ def _extract_ticket_id(info: SubsessionInfo) -> str | None:
         return None
     ticket_id = cp.get("ticket_id")
     return ticket_id if isinstance(ticket_id, str) else None
+
+
+def _extract_last_known_state(info: SubsessionInfo) -> str | None:
+    """Return ``last_known_state`` from *info*'s checkpoint, or ``None``."""
+    cp = info.checkpoint
+    if cp is None:
+        return None
+    state = cp.get("last_known_state")
+    return state if isinstance(state, str) else None
 
 
 def _format_user_chat_outcome(summary: str, transcript: Sequence[object]) -> str:
@@ -282,6 +296,20 @@ class ParentDelivery:
                     "from subsession %s — already reported by a prior monitor.",
                     ticket_id,
                     info.id[:8],
+                )
+                return
+            # Suppress auto-pause delivery when the monitored ticket is
+            # already in a terminal state — stale monitors for
+            # already-closed tickets should not distract the user.
+            last_known = _extract_last_known_state(info)
+            if last_known is not None and last_known.lower() in _TICKET_STATE_TERMINAL:
+                logger.info(
+                    "Suppressing auto-pause report for ticket %s "
+                    "from subsession %s — ticket is already in a "
+                    "terminal state (%s).",
+                    ticket_id,
+                    info.id[:8],
+                    last_known,
                 )
                 return
 

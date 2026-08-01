@@ -9,6 +9,7 @@
   `DirectRepoClient` is now a single-responsibility GitHub repo client (push, PR, merge, auto-merge, file content, repo creation, installation scope, security settings).
   Deprecated wrapper methods remain on `DirectRepoClient` for backward compatibility.
 - Add "one decision at a time" rule to the user_chat subsession instructions: when multiple independent decisions are pending, present them sequentially with explicit confirmation after each answer before moving to the next.
+- Suppress auto-pause / auto-stop summaries for monitor subsessions when the watched ticket is already in a terminal state ("closed" or "done"). This prevents stale "no change" chatter from monitors tracking long-closed tickets, while still delivering summaries for active tickets.
 - Removed misleading instruction from monitor_9d6a periodic prompt overlay that asked agents to manually resolve abbreviated ticket IDs before calling `ticket_poll()` (the tool already handles this automatically).
 - Extract `_board_connection` helper in `ticket_poll` to eliminate duplicated board-connection setup boilerplate across `build_merge_pull_request_tool` and `build_ticket_poll_tools`.
 - Auto-continue prompts are now suppressed while any subsession is active (including periodic monitors sleeping between ticks). Previously, "Continue." prompts fired even when background work was in progress, producing spurious popups in the chat UI.

@@ -953,6 +953,98 @@ async def test_deliver_summary_no_auto_pause_suppression_when_check_false() -> N
 
 
 # ---------------------------------------------------------------------------
+# deliver_summary — terminal-state auto-pause suppression
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_suppresses_auto_pause_for_terminal_ticket() -> None:
+    """Auto-pause delivery is skipped when the monitored ticket is already terminal."""
+    store = MagicMock()
+    registry = MagicMock()
+    registry.is_duplicate_auto_pause.return_value = False
+    delivery = _build_delivery(store=store, registry=registry)
+    info = _make_info(parent_id=None)
+    info.checkpoint = {"ticket_id": "T-123", "last_known_state": "closed"}
+
+    with patch.object(logging.getLogger(_DELIVERY_LOGGER), "info") as log_info:
+        await delivery.deliver_summary(info, "auto-paused", "paused")
+
+    # No reaction tasks scheduled — early return.
+    assert len(delivery._reaction_tasks) == 0
+    store.record_for_session.assert_not_called()
+    store.history.assert_not_called()
+    registry.enqueue_message.assert_not_called()
+
+    assert log_info.called
+    suppression_calls = [
+        c
+        for c in log_info.call_args_list
+        if "ticket is already in a terminal state" in str(c.args[0])
+    ]
+    assert len(suppression_calls) == 1
+    assert suppression_calls[0].args[1] == "T-123"
+
+
+@pytest.mark.asyncio
+async def test_deliver_summary_suppresses_auto_stop_for_terminal_ticket() -> None:
+    """Auto-stop delivery is skipped when the monitored ticket is already terminal."""
+    store = MagicMock()
+    registry = MagicMock()
+    registry.is_duplicate_auto_pause.return_value = False
+    delivery = _build_delivery(store=store, registry=registry)
+    info = _make_info(parent_id=None)
+    info.checkpoint = {"ticket_id": "T-456", "last_known_state": "done"}
+
+    with patch.object(logging.getLogger(_DELIVERY_LOGGER), "info") as log_info:
+        await delivery.deliver_summary(info, "auto-stopped", "no_change_auto_stop")
+
+    assert len(delivery._reaction_tasks) == 0
+    store.record_for_session.assert_not_called()
+    suppression_calls = [
+        c
+        for c in log_info.call_args_list
+        if "ticket is already in a terminal state" in str(c.args[0])
+    ]
+    assert len(suppression_calls) == 1
+    assert suppression_calls[0].args[1] == "T-456"
+
+
+@pytest.mark.asyncio
+async def test_deliver_no_suppression_for_non_terminal_ticket() -> None:
+    """Auto-pause delivery proceeds when the ticket is not in a terminal state."""
+    store = MagicMock()
+    registry = MagicMock()
+    registry.is_duplicate_auto_pause.return_value = False
+    delivery = _build_delivery(store=store, registry=registry)
+    info = _make_info(parent_id=None)
+    info.checkpoint = {"ticket_id": "T-789", "last_known_state": "open"}
+
+    await delivery.deliver_summary(info, "auto-paused", "paused")
+    await _await_reaction_tasks(delivery)
+
+    # Delivery should have proceeded (store was called).
+    store.record_for_session.assert_called()
+
+
+@pytest.mark.asyncio
+async def test_deliver_no_suppression_when_last_known_missing() -> None:
+    """Auto-pause delivery proceeds when checkpoint has no last_known_state."""
+    store = MagicMock()
+    registry = MagicMock()
+    registry.is_duplicate_auto_pause.return_value = False
+    delivery = _build_delivery(store=store, registry=registry)
+    info = _make_info(parent_id=None)
+    info.checkpoint = {"ticket_id": "T-789"}  # no last_known_state
+
+    await delivery.deliver_summary(info, "auto-paused", "paused")
+    await _await_reaction_tasks(delivery)
+
+    # Delivery should have proceeded (store was called).
+    store.record_for_session.assert_called()
+
+
+# ---------------------------------------------------------------------------
 # Reaction prompt — active autonomous plan detection
 # ---------------------------------------------------------------------------
 
