@@ -125,6 +125,7 @@
   in ``github_settings_endpoint``, ``github_repo_create_endpoint``,
   ``github_actions_secret_endpoint``, and ``github_actions_workflow_endpoint``.
 - Add OpenSSF Scorecard workflow (`.github/workflows/scorecard.yml`) — weekly analysis publishing results to the repo's Security tab and uploading SARIF to Code Scanning.
+- Docker digest resolution: add ``registry_host`` / ``auth_url`` settings fields so operators can point at registry mirrors; detect OCI image indexes as multi-arch manifests; short-circuit ``@sha256:`` refs without a network call.
 - Extend auto-resume criteria to include fingerprint-guarded tickets where a working fix already exists despite an unchanged spec fingerprint (e.g. a PR with passing tests blocked on spec fingerprint). The assistant can now call resume-blocked with justification for this case without operator authorization.
 - `fetch_public_url` now supports fleet-auth Basic Auth credential injection for operator-configured hosts. Hosts listed in `public_fetch.fleet_auth.auth_hosts` receive a server-side `Authorization` header (never exposed to the agent) and bypass the SSRF and domain-allowlist checks, allowing the agent to inspect authenticated fleet UIs directly.
 - Re-export `SftpSettings` from `robotsix_chat.config` package, following the existing convention where every settings model is importable from `robotsix_chat.config`.

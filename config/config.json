@@ -186,6 +186,10 @@
       "auth_hosts": []
     }
   },
+  "docker_digest": {
+    "enabled": false,
+    "timeout": 30.0
+  },
   "public_fetch": {
     "enabled": false,
     "timeout": 10.0,

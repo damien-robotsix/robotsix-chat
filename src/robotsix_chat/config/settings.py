@@ -21,6 +21,7 @@ from robotsix_chat.config.models import (
     ConversationSettings,
     DiagnosticsSettings,
     DirectRepoSettings,
+    DockerDigestSettings,
     FeedbackSettings,
     GitHubActionsSettings,
     GitHubSecuritySettings,
@@ -1043,6 +1044,9 @@ class Settings(BaseModel):
     http_probe: HttpProbeSettings = Field(
         default_factory=HttpProbeSettings, json_schema_extra={"advanced": True}
     )
+    docker_digest: DockerDigestSettings = Field(
+        default_factory=DockerDigestSettings, json_schema_extra={"advanced": True}
+    )
     public_fetch: PublicFetchSettings = Field(
         default_factory=PublicFetchSettings, json_schema_extra={"advanced": True}
     )
@@ -1264,6 +1268,7 @@ class Settings(BaseModel):
             "public_fetch",
             "feedback",
             "autonomous",
+            "docker_digest",
         )
         for key in _object_keys:
             val = data.get(key)
