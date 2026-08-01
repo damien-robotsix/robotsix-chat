@@ -44,7 +44,7 @@ from robotsix_chat.langfuse import (
 from robotsix_chat.lifecycle import build_lifecycle_tools, load_lifecycle_skill
 from robotsix_chat.llm import LlmioChatAgent
 from robotsix_chat.mail import build_mail_tools
-from robotsix_chat.memory import NullMemory, build_memory
+from robotsix_chat.memory import ChatMemory, NullMemory, ReadOnlyMemory, build_memory
 from robotsix_chat.notification import build_notification_tools, load_notification_skill
 from robotsix_chat.public_fetch import build_public_fetch_tools, load_public_fetch_skill
 from robotsix_chat.refdocs import build_refdocs_tools
@@ -925,9 +925,19 @@ def create_agent_from_settings(
             event_sink,
         )
 
-    memory = (
-        build_memory(settings.memory) if not bare and memory_enabled else NullMemory()
-    )
+    # Read/write split for background agents. Recall is a retrieval-only
+    # lookup (~0.4 s warm, no LLM call); cognify is a multi-minute LLM
+    # pipeline that also contends with every concurrent recall. So an agent
+    # whose WRITE gate is off can still safely READ — denying it the context
+    # the main conversation already learned buys nothing.
+    if bare:
+        memory: ChatMemory = NullMemory()
+    elif memory_enabled:
+        memory = build_memory(settings.memory)
+    elif settings.memory.enabled and settings.memory.background_recall_enabled:
+        memory = ReadOnlyMemory(build_memory(settings.memory))
+    else:
+        memory = NullMemory()
     # Deep on-demand memory search: the automatic per-message recall is
     # retrieval-only and cheap; the expensive LLM-mediated graph search is a
     # tool the model invokes deliberately. Returns [] for NullMemory, so this
