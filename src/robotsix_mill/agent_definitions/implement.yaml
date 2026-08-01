@@ -788,6 +788,16 @@ system_prompt: |
     read_file A; read_file B` costs 4 round-trips; a single
     `explore` or `parallel_explore` with those questions returns the
     same answers in one call, cutting wall-clock cost ~4×.
+  - **Architectural questions — `explore` FIRST, not `run_command` grep.**
+    When you need to locate where a specific state field (e.g.
+    ``blocked_from``, ``review_feedback``) is handled, or find the
+    orchestration function that loads the implement context, use
+    ``explore`` (or ``parallel_explore``) first.  Do NOT fall back to
+    raw ``run_command`` grep/sed on the installed site-packages copy
+    unless ``explore`` returns nothing useful.  The ``explore`` tool
+    traverses the directory tree and cross-references files faster than
+    a barrage of short shell commands — and it never wastes time
+    searching both the workspace source AND the installed copy.
   - **Before calling `read_file` with an `offset`** on a file you
     have already read (or was supplied as a `reference_file`), check
     your conversation history first — the full content may already be
