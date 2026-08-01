@@ -14,7 +14,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from robotsix_chat.chat.events import SSE_SUBSESSION_RESULT_TYPE
+from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE, SSE_SUBSESSION_RESULT_TYPE
 from robotsix_chat.subsessions import (
     SubsessionCapacityError,
     SubsessionDepthError,
@@ -408,11 +408,13 @@ async def test_periodic_auto_stops_after_consecutive_no_change_runs() -> None:
 
 @pytest.mark.asyncio
 async def test_periodic_max_idle_runs_pauses_after_consecutive_no_change() -> None:
-    """max_idle_runs closes the subsession with reason 'paused'."""
+    """max_idle_runs pauses the subsession and emits a notification."""
     agent = FakeAgent(["NO_CHANGE", "NO_CHANGE", "NO_CHANGE"])
+    sink = RecordingSink()
     env = build_env(
         agent=agent,
         settings=make_settings(max_idle_runs=3, auto_stop_no_change_runs=10),
+        event_sink=sink,
     )
 
     sub_id = _spawn(env, kind=SubsessionKind.PERIODIC, interval_seconds=0.02)
@@ -428,6 +430,14 @@ async def test_periodic_max_idle_runs_pauses_after_consecutive_no_change() -> No
         "when you report progress — no action needed until then."
     )
     assert len(agent.calls) == 3
+
+    # Assert an SSE notification was published for the auto-pause.
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    assert len(notifications) == 1
+    _sid, frame = notifications[0]
+    assert frame["title"] == f"Monitor auto-paused: {info.title}"
+    assert f" — {info.summary}" in str(frame["body"])
+    assert frame["urgency"] == "low"
 
 
 @pytest.mark.asyncio
