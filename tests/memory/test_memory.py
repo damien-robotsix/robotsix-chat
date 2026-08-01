@@ -28,7 +28,6 @@ from robotsix_chat.memory.cognee import (
     _SQLITE_MAGIC,
     CogneeMemory,
     _format_results,
-    _is_healable_kuzu_error,
 )
 
 
@@ -555,56 +554,6 @@ async def test_configure_langfuse_env_guard_regression(
 
 
 @pytest.mark.asyncio
-async def test_remove_stale_shadow_directory(
-    cognee_memory: tuple[CogneeMemory, Any],
-) -> None:
-    """A stale .shadow directory is removed during setup."""
-    mem, _ = cognee_memory
-    system_root = Path(mem._settings.data_dir) / "system"
-    databases_dir = system_root / "databases"
-    databases_dir.mkdir(parents=True, exist_ok=True)
-
-    shadow_dir = databases_dir / "cognee_graph_ladybug.shadow"
-    shadow_dir.mkdir()
-    (shadow_dir / "stale_file").write_text("leftover")
-
-    await mem.setup()
-
-    assert not shadow_dir.exists()
-
-
-@pytest.mark.asyncio
-async def test_remove_stale_shadow_file(
-    cognee_memory: tuple[CogneeMemory, Any],
-) -> None:
-    """A stale .shadow file is removed during setup."""
-    mem, _ = cognee_memory
-    system_root = Path(mem._settings.data_dir) / "system"
-    databases_dir = system_root / "databases"
-    databases_dir.mkdir(parents=True, exist_ok=True)
-
-    shadow_file = databases_dir / "other.shadow"
-    shadow_file.write_text("stale")
-
-    await mem.setup()
-
-    assert not shadow_file.exists()
-
-
-@pytest.mark.asyncio
-async def test_setup_clean_with_no_shadow_entries(
-    cognee_memory: tuple[CogneeMemory, Any],
-) -> None:
-    """Setup succeeds when no .shadow entries exist."""
-    mem, _ = cognee_memory
-    system_root = Path(mem._settings.data_dir) / "system"
-    databases_dir = system_root / "databases"
-    databases_dir.mkdir(parents=True, exist_ok=True)
-    # No .shadow entries — must not raise.
-    await mem.setup()
-
-
-@pytest.mark.asyncio
 async def test_setup_clean_with_no_databases_dir(
     cognee_memory: tuple[CogneeMemory, Any],
 ) -> None:
@@ -614,201 +563,14 @@ async def test_setup_clean_with_no_databases_dir(
     await mem.setup()
 
 
-@pytest.mark.asyncio
-async def test_shadow_removal_failure_is_logged_not_raised(
-    cognee_memory: tuple[CogneeMemory, Any],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """An OSError during shadow removal is logged, not raised."""
-    mem, _ = cognee_memory
-    system_root = Path(mem._settings.data_dir) / "system"
-    databases_dir = system_root / "databases"
-    databases_dir.mkdir(parents=True, exist_ok=True)
-
-    shadow_dir = databases_dir / "cognee_graph_ladybug.shadow"
-    shadow_dir.mkdir()
-
-    import shutil as _shutil
-
-    original_rmtree = _shutil.rmtree
-
-    def _failing_rmtree(path: Any, *args: Any, **kwargs: Any) -> None:
-        if str(path).endswith(".shadow"):
-            raise OSError("permission denied")
-        original_rmtree(path, *args, **kwargs)
-
-    monkeypatch.setattr(_shutil, "rmtree", _failing_rmtree)
-
-    # Must not raise despite the OSError.
-    await mem.setup()
-
-    # The shadow directory is still there (removal failed).
-    assert shadow_dir.exists()
-
-
 # ---------------------------------------------------------------------------
 # Stale kuzu wal cleanup + database directory recreation
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_remove_stale_shadow_and_wal_together(
-    cognee_memory: tuple[CogneeMemory, Any],
-) -> None:
-    """Stale .shadow and .wal entries are both removed, matching DB dir recreated."""
-    mem, _ = cognee_memory
-    system_root = Path(mem._settings.data_dir) / "system"
-    databases_dir = system_root / "databases"
-    databases_dir.mkdir(parents=True, exist_ok=True)
-
-    db_dir = databases_dir / "cognee_graph_ladybug"
-    db_dir.mkdir()
-    (db_dir / "data.kz").write_text("main db content")
-
-    shadow_dir = databases_dir / "cognee_graph_ladybug.shadow"
-    shadow_dir.mkdir()
-    (shadow_dir / "stale_checkpoint").write_text("stale")
-
-    wal_file = databases_dir / "cognee_graph_ladybug.wal"
-    wal_file.write_text("stale wal")
-
-    await mem.setup()
-
-    assert not shadow_dir.exists()
-    assert not wal_file.exists()
-    assert not db_dir.exists()
-
-
-@pytest.mark.asyncio
-async def test_wal_cleaned_when_shadow_already_deleted(
-    cognee_memory: tuple[CogneeMemory, Any],
-) -> None:
-    """Orphaned .wal referencing deleted shadow is removed, DB directory recreated."""
-    mem, _ = cognee_memory
-    system_root = Path(mem._settings.data_dir) / "system"
-    databases_dir = system_root / "databases"
-    databases_dir.mkdir(parents=True, exist_ok=True)
-
-    db_dir = databases_dir / "cognee_graph_ladybug"
-    db_dir.mkdir()
-    (db_dir / "data.kz").write_text("main db content")
-
-    # Shadow already deleted (the previous self-heal scenario).
-    # Only the WAL remains.
-    wal_file = databases_dir / "cognee_graph_ladybug.wal"
-    wal_file.write_text("wal referencing deleted shadow")
-
-    await mem.setup()
-
-    assert not wal_file.exists()
-    assert not db_dir.exists()
-
-
-@pytest.mark.asyncio
-async def test_setup_clean_with_wal_but_no_shadow_and_no_db_dir(
-    cognee_memory: tuple[CogneeMemory, Any],
-) -> None:
-    """An orphaned .wal with no matching DB directory is removed without error."""
-    mem, _ = cognee_memory
-    system_root = Path(mem._settings.data_dir) / "system"
-    databases_dir = system_root / "databases"
-    databases_dir.mkdir(parents=True, exist_ok=True)
-
-    # Only a stale WAL, no DB dir, no shadow.
-    wal_file = databases_dir / "cognee_graph_ladybug.wal"
-    wal_file.write_text("orphaned wal")
-
-    await mem.setup()
-
-    assert not wal_file.exists()
-
-
-@pytest.mark.asyncio
-async def test_db_recreation_failure_is_logged_not_raised(
-    cognee_memory: tuple[CogneeMemory, Any],
-    monkeypatch: pytest.MonkeyPatch,
-) -> None:
-    """An OSError during database directory recreation is logged, not raised."""
-    mem, _ = cognee_memory
-    system_root = Path(mem._settings.data_dir) / "system"
-    databases_dir = system_root / "databases"
-    databases_dir.mkdir(parents=True, exist_ok=True)
-
-    shadow_dir = databases_dir / "cognee_graph_ladybug.shadow"
-    shadow_dir.mkdir()
-
-    db_dir = databases_dir / "cognee_graph_ladybug"
-    db_dir.mkdir()
-
-    import shutil as _shutil
-
-    original_rmtree = _shutil.rmtree
-
-    def _failing_rmtree(path: Any, *args: Any, **kwargs: Any) -> None:
-        if str(path).endswith(".shadow"):
-            # Shadow removal succeeds.
-            original_rmtree(path, *args, **kwargs)
-        else:
-            # DB directory removal fails.
-            raise OSError("permission denied")
-
-    monkeypatch.setattr(_shutil, "rmtree", _failing_rmtree)
-
-    # Must not raise despite the OSError on DB dir removal.
-    await mem.setup()
-
-    # Shadow was removed, but DB dir is still there (recreation failed).
-    assert not shadow_dir.exists()
-    assert db_dir.exists()
-
-
 # ---------------------------------------------------------------------------
 # Missing-shadow detection: DB entity without companion .shadow
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_setup_heals_db_missing_shadow(
-    cognee_memory: tuple[CogneeMemory, Any],
-) -> None:
-    """DB directory present with NO .shadow or .wal → removed during setup."""
-    mem, _ = cognee_memory
-    system_root = Path(mem._settings.data_dir) / "system"
-    databases_dir = system_root / "databases"
-    databases_dir.mkdir(parents=True, exist_ok=True)
-
-    db_dir = databases_dir / "cognee_graph_ladybug"
-    db_dir.mkdir()
-    (db_dir / "data.kz").write_text("db content")
-
-    # No .shadow, no .wal — this is the current production failure state.
-    assert not (databases_dir / "cognee_graph_ladybug.shadow").exists()
-    assert not (databases_dir / "cognee_graph_ladybug.wal").exists()
-
-    await mem.setup()
-
-    assert not db_dir.exists()
-
-
-@pytest.mark.asyncio
-async def test_setup_heals_db_file_missing_shadow(
-    cognee_memory: tuple[CogneeMemory, Any],
-) -> None:
-    """DB file (single-file ladybug form) with NO .shadow → removed during setup."""
-    mem, _ = cognee_memory
-    system_root = Path(mem._settings.data_dir) / "system"
-    databases_dir = system_root / "databases"
-    databases_dir.mkdir(parents=True, exist_ok=True)
-
-    db_file = databases_dir / "cognee_graph_ladybug"
-    db_file.write_text("single-file db content")
-
-    # No .shadow — inconsistent state.
-    assert not (databases_dir / "cognee_graph_ladybug.shadow").exists()
-
-    await mem.setup()
-
-    assert not db_file.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -840,6 +602,39 @@ async def test_setup_preserves_sqlite_relational_db(
     assert sqlite_db.exists()
     assert (databases_dir / "cognee_db-wal").exists()
     assert (databases_dir / "cognee_db-shm").exists()
+
+
+@pytest.mark.asyncio
+async def test_setup_preserves_ladybug_graph_and_its_wal(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """The live ladybug knowledge graph must survive startup untouched.
+
+    Regression (2026-08-01): cognee 1.4 replaced kuzu with its own embedded
+    ladybug engine. A ladybug graph is a file that writes a ``.wal`` and never
+    a ``.shadow``, so the kuzu-era self-heal matched it on both of its rules
+    and deleted the graph on EVERY startup — a store holding 564 nodes / 1366
+    edges was 4 KB and empty straight after a restart. The heal is gone; this
+    guards against anything like it coming back.
+
+    The ``.wal`` matters as much as the database file: it is ladybug's
+    crash-recovery journal and is replayed on open, so deleting it discards
+    committed writes.
+    """
+    mem, _ = cognee_memory
+    databases_dir = Path(mem._settings.data_dir) / "system" / "databases"
+    databases_dir.mkdir(parents=True, exist_ok=True)
+
+    graph = databases_dir / "cognee_graph_ladybug"
+    graph.write_bytes(b"LBUG" + b"\x00" * 64 + b"real graph content")
+    wal = databases_dir / "cognee_graph_ladybug.wal"
+    wal.write_bytes(b"committed but unflushed writes")
+
+    await mem.setup()
+
+    assert graph.exists(), "the live ladybug graph was deleted on startup"
+    assert graph.read_bytes().endswith(b"real graph content")
+    assert wal.exists(), "ladybug's crash-recovery journal was deleted"
 
 
 @pytest.mark.asyncio
@@ -878,64 +673,14 @@ async def test_orphan_wal_does_not_delete_sqlite_db(
     await mem.setup()
 
     assert sqlite_db.exists()
-    assert not (databases_dir / "cognee_db.wal").exists()
+    # The .wal is left alone now: the kuzu-era heal that deleted stray WALs is
+    # gone (it was destroying ladybug's crash-recovery journal).
+    assert (databases_dir / "cognee_db.wal").exists()
 
 
 # ---------------------------------------------------------------------------
 # Open-time retry: catch ENOENT, heal, retry once
 # ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
-async def test_recall_retry_on_shadow_missing(
-    cognee_memory: tuple[CogneeMemory, Any],
-) -> None:
-    """recall() catches shadow-missing RuntimeError, heals, and retries once."""
-    mem, fake = cognee_memory
-
-    call_count = 0
-
-    async def _search(*args: Any, **kwargs: Any) -> list[str]:
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            raise RuntimeError(
-                "IO exception: Cannot open file "
-                "/data/cognee/system/databases/cognee_graph_ladybug.shadow: "
-                "No such file or directory"
-            )
-        return ["recalled after heal"]
-
-    fake.search = _search
-
-    result = await mem.recall("query")
-    assert result == "recalled after heal"
-    assert call_count == 2
-
-
-@pytest.mark.asyncio
-async def test_recall_retry_on_db_id_mismatch(
-    cognee_memory: tuple[CogneeMemory, Any],
-) -> None:
-    """recall() catches DB-ID-mismatch RuntimeError, heals, and retries once."""
-    mem, fake = cognee_memory
-
-    call_count = 0
-
-    async def _search(*args: Any, **kwargs: Any) -> list[str]:
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            raise RuntimeError(
-                "Database ID 12345 does not match the current database ID 67890"
-            )
-        return ["recalled after heal"]
-
-    fake.search = _search
-
-    result = await mem.recall("query")
-    assert result == "recalled after heal"
-    assert call_count == 2
 
 
 @pytest.mark.asyncio
@@ -957,32 +702,6 @@ async def test_recall_no_retry_on_unrelated_error(
     result = await mem.recall("query")
     assert result == ""
     assert call_count == 1  # No retry attempted.
-
-
-@pytest.mark.asyncio
-async def test_remember_retry_on_shadow_missing(
-    cognee_memory: tuple[CogneeMemory, Any],
-) -> None:
-    """remember() catches shadow-missing RuntimeError, heals, and retries once."""
-    mem, fake = cognee_memory
-
-    call_count = 0
-
-    async def _add(*args: Any, **kwargs: Any) -> None:
-        nonlocal call_count
-        call_count += 1
-        if call_count == 1:
-            raise RuntimeError(
-                "IO exception: Cannot open file "
-                "/data/cognee/system/databases/cognee_graph_ladybug.shadow: "
-                "No such file or directory"
-            )
-
-    fake.add = _add
-    fake.cognify = AsyncMock(return_value=None)
-
-    await mem.remember("hello", "hi")
-    assert call_count == 2
 
 
 @pytest.mark.asyncio
@@ -1009,28 +728,6 @@ async def test_remember_no_retry_on_unrelated_error(
 # ---------------------------------------------------------------------------
 # _is_healable_kuzu_error unit tests
 # ---------------------------------------------------------------------------
-
-
-def test_is_healable_shadow_missing() -> None:
-    """Shadow-missing ENOENT is recognised as healable."""
-    exc = RuntimeError(
-        "IO exception: Cannot open file "
-        "/data/cognee/system/databases/cognee_graph_ladybug.shadow: "
-        "No such file or directory"
-    )
-    assert _is_healable_kuzu_error(exc) is True
-
-
-def test_is_healable_db_id_mismatch() -> None:
-    """Database ID mismatch is recognised as healable."""
-    exc = RuntimeError("Database ID 12345 does not match the current database ID 67890")
-    assert _is_healable_kuzu_error(exc) is True
-
-
-def test_is_healable_unrelated_error() -> None:
-    """Unrelated RuntimeError is NOT healable."""
-    exc = RuntimeError("disk full")
-    assert _is_healable_kuzu_error(exc) is False
 
 
 # ---------------------------------------------------------------------------
