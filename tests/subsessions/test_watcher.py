@@ -504,9 +504,9 @@ def _settings_with_direct_repo(**direct_repo_kw: Any) -> SimpleNamespace:
         enabled=True,
         github_api_base_url="https://api.github.com",
         github_app_id="app-id",
-        github_app_private_key="key",
+        github_app_private_key="key",  # pragma: allowlist secret
         github_app_installation_id="inst-id",
-        board_api_token="token",
+        board_api_token="token",  # pragma: allowlist secret
         timeout=10.0,
         **direct_repo_kw,
     )
