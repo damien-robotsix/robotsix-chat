@@ -1,5 +1,13 @@
 ## 0.0.0 (unreleased)
 
+<<<<<<< HEAD
+- **CI health check:** The paused-monitor watcher now detects zero-job
+  CI workflow runs on tracked PRs and emits a high-urgency SSE
+  notification when the CI infrastructure is broken (workflow file parses
+  but produces no jobs — typically a misconfigured trigger, invalid
+  conditional, or billing issue).  Previously, silently-broken CI could
+  persist for extended periods, allowing code issues to accumulate
+  undetected before surfacing all at once when CI was eventually fixed.
 - Add `chat_model_level` config (default `null`) to override the LLM model level for the main interactive chat agent independently of `llmio_model_level`. This enables tier rebalancing — e.g. routing chat to `claude-fable-5` (level 4) while subsession/autonomous agents stay at their configured levels. Bump `robotsix-llmio` to latest main.
 - Added `fetch_workflow_job_log` agent tool: accepts a repo name, workflow run ID, and job name, and returns the full console log for that job. Helps diagnose CI failures when annotations alone are insufficient.
 - Prompt: forbid fabricated "token budget exhausted" claims; when an action cannot be performed the assistant must state the actual reason rather than inventing resource-limit excuses.
@@ -92,6 +100,15 @@
   (`docs/prompt-style.md`) so it is automatically injected into every system prompt
   build.  The style file is the single source of truth for reply formatting;
   a governance test fails if the file is deleted or unreferenced.
+=======
+- **CI health check:** The paused-monitor watcher now detects zero-job
+  CI workflow runs on tracked PRs and emits a high-urgency SSE
+  notification when the CI infrastructure is broken (workflow file parses
+  but produces no jobs — typically a misconfigured trigger, invalid
+  conditional, or billing issue).  Previously, silently-broken CI could
+  persist for extended periods, allowing code issues to accumulate
+  undetected before surfacing all at once when CI was eventually fixed.
+>>>>>>> 32f42f0 (mill: Add pre-merge CI gating to prevent surfacing pre-existing repo debt only after PRs are blocked (20260731T200830Z-add-pre-merge-ci-gating-to-prevent-surfa-8281))
 - Document `feedback.deploy_api_key` in the Feedback settings table in `docs/configuration.md`.
 - Update direct-repo guardrail docstrings and system prompt to acknowledge the ``merge_pr`` tool (BLOCKED-only) instead of claiming no merge capability exists on the direct-repo path.
 - Add single-repo PR verification to the retrospect stage: before closing a ticket, confirm that the PR recorded in ``merge.md`` is still present and merged on the forge. If the PR has been deleted or is no longer merged, the ticket is blocked instead of closed, preventing fixes from being silently dropped.

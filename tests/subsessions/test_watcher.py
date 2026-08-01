@@ -503,6 +503,11 @@ def _settings_with_direct_repo(**direct_repo_kw: Any) -> SimpleNamespace:
         board_api_base_url="https://mill.example.com",
         enabled=True,
         github_api_base_url="https://api.github.com",
+        github_app_id="app-id",
+        github_app_private_key="key",
+        github_app_installation_id="inst-id",
+        board_api_token="token",
+        timeout=10.0,
         **direct_repo_kw,
     )
     return settings
@@ -537,6 +542,164 @@ def _mock_direct_repo_client(
         )
     return mock
 
+
+
+# -- CI health check (zero-job detection) ----------------------------------
+
+
+@pytest.mark.asyncio
+async def test_watcher_emits_high_urgency_on_zero_job_ci() -> None:
+    """The watcher emits a high-urgency notification when CI has zero jobs."""
+    settings = _settings_with_direct_repo()
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_paused_monitor_with_pr(env)
+
+    # Mock the mill to return unchanged state (first pass no-op).
+    mock_mill = _mock_ticket_client(state="open")
+
+    # Mock DirectRepoClient to return an unmerged PR with a head ref.
+    mock_pr_data = {
+        "merged": False,
+        "head": {"ref": "feature-branch"},
+    }
+    mock_gh_client = MagicMock()
+    mock_gh_client.get_pr = AsyncMock(return_value=mock_pr_data)
+    mock_gh_client._token = AsyncMock(return_value="fake-token")
+
+    # Mock ActionsClient to detect zero jobs.
+    mock_actions = MagicMock()
+    mock_actions.check_latest_run_for_zero_jobs = AsyncMock(
+        return_value=(
+            "CI INFRASTRUCTURE FAILURE: workflow run 'CI' (id 1) on "
+            "org/repo branch 'feature-branch' has ZERO jobs"
+        )
+    )
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            return_value=mock_gh_client,
+        ),
+        patch(
+            "robotsix_chat.repo.direct.actions_client.ActionsClient",
+            return_value=mock_actions,
+        ),
+        patch("httpx.AsyncClient", mock_mill),
+    ):
+        await asyncio.sleep(0.15)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # Monitor should still be paused (not resumed).
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.CLOSED
+
+    # A high-urgency notification should have been emitted.
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    ci_notifications = [n for n in notifications if n[1].get("urgency") == "high"]
+    assert len(ci_notifications) == 1
+    _sid, frame = ci_notifications[0]
+    assert "CI infrastructure failure" in str(frame["title"])
+    assert "ZERO jobs" in str(frame["body"])
+
+
+@pytest.mark.asyncio
+async def test_watcher_no_ci_notification_when_jobs_present() -> None:
+    """No CI notification is emitted when the workflow has jobs (normal CI)."""
+    settings = _settings_with_direct_repo()
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    _make_paused_monitor_with_pr(env)
+
+    mock_mill = _mock_ticket_client(state="open")
+
+    mock_pr_data = {
+        "merged": False,
+        "head": {"ref": "feature-branch"},
+    }
+    mock_gh_client = MagicMock()
+    mock_gh_client.get_pr = AsyncMock(return_value=mock_pr_data)
+    mock_gh_client._token = AsyncMock(return_value="fake-token")
+
+    # ActionsClient returns None (no zero-job issue).
+    mock_actions = MagicMock()
+    mock_actions.check_latest_run_for_zero_jobs = AsyncMock(return_value=None)
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            return_value=mock_gh_client,
+        ),
+        patch(
+            "robotsix_chat.repo.direct.actions_client.ActionsClient",
+            return_value=mock_actions,
+        ),
+        patch("httpx.AsyncClient", mock_mill),
+    ):
+        await asyncio.sleep(0.15)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # No high-urgency notifications.
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    ci_notifications = [n for n in notifications if n[1].get("urgency") == "high"]
+    assert len(ci_notifications) == 0
+
+
+@pytest.mark.asyncio
+async def test_watcher_ci_health_check_graceful_on_actions_error() -> None:
+    """The watcher does not crash when ActionsClient raises an error."""
+    settings = _settings_with_direct_repo()
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    _make_paused_monitor_with_pr(env)
+
+    mock_mill = _mock_ticket_client(state="open")
+
+    mock_pr_data = {
+        "merged": False,
+        "head": {"ref": "feature-branch"},
+    }
+    mock_gh_client = MagicMock()
+    mock_gh_client.get_pr = AsyncMock(return_value=mock_pr_data)
+    mock_gh_client._token = AsyncMock(return_value="fake-token")
+
+    # ActionsClient constructor raises.
+    with (
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            return_value=mock_gh_client,
+        ),
+        patch(
+            "robotsix_chat.repo.direct.actions_client.ActionsClient",
+            side_effect=RuntimeError("no network"),
+        ),
+        patch("httpx.AsyncClient", mock_mill),
+    ):
+        watcher_task = asyncio.create_task(watch_paused_monitors(env))
+        await asyncio.sleep(0.15)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # No crash, no high-urgency notifications.
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    ci_notifications = [n for n in notifications if n[1].get("urgency") == "high"]
+    assert len(ci_notifications) == 0
 
 # -- PR-merge pass: resume on merged PR ------------------------------------
 

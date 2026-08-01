@@ -618,6 +618,65 @@ class ActionsClient:
         except Exception as exc:
             return f"Error setting secret: {exc}"
 
+    # -- zero-job workflow detection ---------------------------------------
+
+    async def check_latest_run_for_zero_jobs(
+        self,
+        repo_full_name: str,
+        branch: str,
+    ) -> str | None:
+        """Check if the latest workflow run on *branch* has zero jobs.
+
+        Returns a diagnostic string when zero jobs are detected — a CI
+        infrastructure failure where the workflow file parses correctly
+        but produces no job definitions (typically a misconfigured trigger,
+        invalid conditional, or billing issue).  Returns ``None`` when the
+        check passes, no runs exist, or an error occurs (errors are logged
+        at DEBUG level).
+        """
+        try:
+            runs = await self.list_workflow_runs(
+                repo_full_name, branch=branch, per_page=1
+            )
+        except Exception:
+            logger.debug(
+                "check_latest_run_for_zero_jobs: could not list runs for %s/%s",
+                repo_full_name,
+                branch,
+            )
+            return None
+
+        if not runs:
+            return None
+
+        latest = runs[0]
+        run_id = latest.get("id")
+        if not isinstance(run_id, int):
+            return None
+
+        try:
+            jobs = await self.get_workflow_run_jobs(repo_full_name, run_id)
+        except Exception:
+            logger.debug(
+                "check_latest_run_for_zero_jobs: could not fetch jobs for run %d on %s",
+                run_id,
+                repo_full_name,
+            )
+            return None
+
+        if jobs:
+            return None
+
+        run_name = latest.get("name", str(run_id))
+        return (
+            f"CI INFRASTRUCTURE FAILURE: workflow run '{run_name}' "
+            f"(id {run_id}) on {repo_full_name} branch '{branch}' "
+            f"has ZERO jobs — the CI workflow is not executing any jobs. "
+            f"This typically indicates a workflow configuration error "
+            f"(wrong trigger, invalid conditional) or a billing issue. "
+            f"PRs on this branch are not receiving CI coverage."
+        )
+
     # -- billing failure diagnosis -----------------------------------------
 
     def _diagnose_billing_failure(

@@ -248,6 +248,10 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
         board_url,
     )
 
+    # Track subsessions for which we have already emitted a CI health
+    # notification, so we don't spam the operator on every poll cycle.
+    _ci_health_notified: set[str] = set()
+
     while True:
         try:
             paused = env.registry.find_paused_periodic()
@@ -565,6 +569,67 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                                     env, info.id, pr_number_raw, repo_raw
                                 )
                                 continue
+
+                            # -- CI infrastructure health check -----------------------
+                            # Detect zero-job workflow runs on the PR's
+                            # branch.  This is NOT a code-level CI
+                            # failure (which the agent cannot fix and is
+                            # already handled by auto-pause escalation).
+                            # Instead, it signals that the CI
+                            # *infrastructure* is broken — the workflow
+                            # file parses but produces zero jobs
+                            # (misconfigured trigger, invalid conditional,
+                            # or billing issue).  When detected, emit a
+                            # high-urgency notification so the operator
+                            # can fix the infrastructure before code
+                            # issues pile up.
+                            pr_branch = pr_data.get("head", {}).get("ref")
+                            if isinstance(pr_branch, str) and pr_branch:
+                                try:
+                                    from robotsix_chat.repo.direct import (
+                                        actions_client,
+                                    )
+
+                                    actions = actions_client.ActionsClient(
+                                        direct_repo_settings
+                                    )
+                                    zero_job_msg = (
+                                        await actions.check_latest_run_for_zero_jobs(
+                                            repo_raw, pr_branch
+                                        )
+                                    )
+                                    if zero_job_msg is not None:
+                                        logger.critical(zero_job_msg)
+                                        if (
+                                            env.event_sink is not None
+                                            and info.id not in _ci_health_notified
+                                        ):
+                                            _ci_health_notified.add(info.id)
+                                            env.event_sink.publish(
+                                                info.owner_session_id,
+                                                {
+                                                    "type": SSE_NOTIFICATION_TYPE,
+                                                    "title": (
+                                                        "CI infrastructure failure "
+                                                        "detected"
+                                                    ),
+                                                    "body": zero_job_msg,
+                                                    "urgency": "high",
+                                                    "link": (
+                                                        f"https://github.com/"
+                                                        f"{repo_raw}/pull/"
+                                                        f"{pr_number_raw}"
+                                                    ),
+                                                },
+                                            )
+                                except Exception:
+                                    logger.debug(
+                                        "Watcher: could not check CI health for "
+                                        "PR #%d in %s (subsession %s) — skipping.",
+                                        pr_number_raw,
+                                        repo_raw,
+                                        info.id,
+                                    )
 
                             # When CI is failing on a paused monitor's PR,
                             # keep the monitor paused rather than
