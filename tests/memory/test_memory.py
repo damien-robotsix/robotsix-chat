@@ -128,6 +128,7 @@ def _install_fake_cognee(monkeypatch: pytest.MonkeyPatch) -> Any:
 
     class _SearchType:
         GRAPH_COMPLETION = "GRAPH_COMPLETION"
+        CHUNKS = "CHUNKS"
 
     fake.SearchType = _SearchType
     fake.search = AsyncMock(return_value=["recalled fact"])
@@ -202,6 +203,102 @@ async def test_cognee_remember_never_raises(
 # ---------------------------------------------------------------------------
 # Session scoping — regression: concurrent windows must not share guidance
 # ---------------------------------------------------------------------------
+
+
+# ---------------------------------------------------------------------------
+# Deep on-demand recall + the search_memory tool
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_automatic_recall_uses_cheap_search_type(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """The per-message recall must use the retrieval-only default (CHUNKS).
+
+    The whole point of the split: no LLM hop on every turn. Live, the old
+    GRAPH_COMPLETION-per-message design timed out (90 s) eight times in one
+    observed day, stalling replies that then proceeded memory-less anyway.
+    """
+    mem, fake = cognee_memory
+
+    class _SearchType:
+        GRAPH_COMPLETION = "GRAPH_COMPLETION"
+        CHUNKS = "CHUNKS"
+
+    fake.SearchType = _SearchType
+    await mem.recall("who?")
+    assert fake.search.call_args.kwargs["query_type"] == "CHUNKS"
+
+
+@pytest.mark.asyncio
+async def test_recall_deep_uses_deep_search_type(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """recall_deep runs the configured deep (LLM-mediated) search type."""
+    mem, fake = cognee_memory
+
+    class _SearchType:
+        GRAPH_COMPLETION = "GRAPH_COMPLETION"
+        CHUNKS = "CHUNKS"
+
+    fake.SearchType = _SearchType
+    out = await mem.recall_deep("what do we know about X?")
+    assert out == "recalled fact"
+    assert fake.search.call_args.kwargs["query_type"] == "GRAPH_COMPLETION"
+
+
+@pytest.mark.asyncio
+async def test_recall_deep_failure_returns_explanatory_string(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """A tool result must say WHY it is empty — "" would look like no memory."""
+    mem, fake = cognee_memory
+    fake.search = AsyncMock(side_effect=RuntimeError("backend down"))
+    out = await mem.recall_deep("query")
+    assert "failed" in out.lower()
+
+    out = await mem.recall_deep("   ")
+    assert "empty query" in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_recall_deep_empty_result_is_explained(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """No hits → an explicit "nothing found" message, not an empty string."""
+    mem, fake = cognee_memory
+    fake.search = AsyncMock(return_value=[])
+    out = await mem.recall_deep("obscure thing")
+    assert "no relevant memory" in out.lower()
+
+
+def test_build_memory_tools_empty_for_null_memory() -> None:
+    """NullMemory has no deep recall — the tool surface must be unchanged."""
+    from robotsix_chat.memory.tools import build_memory_tools
+
+    assert build_memory_tools(NullMemory()) == []
+
+
+@pytest.mark.asyncio
+async def test_build_memory_tools_search_memory_delegates(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """The search_memory tool wraps recall_deep on the real backend."""
+    from robotsix_chat.memory.tools import build_memory_tools
+
+    mem, fake = cognee_memory
+
+    class _SearchType:
+        GRAPH_COMPLETION = "GRAPH_COMPLETION"
+        CHUNKS = "CHUNKS"
+
+    fake.SearchType = _SearchType
+    tools = build_memory_tools(mem)
+    assert [t.__name__ for t in tools] == ["search_memory"]
+    out = await tools[0]("what happened in July?")
+    assert out == "recalled fact"
+    assert fake.search.call_args.kwargs["query_type"] == "GRAPH_COMPLETION"
 
 
 @pytest.mark.asyncio

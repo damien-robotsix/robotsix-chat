@@ -146,7 +146,11 @@ def test_memory_disabled_by_default() -> None:
 
     assert settings.memory.enabled is False
     assert settings.memory.data_dir == "/data/cognee"
-    assert settings.memory.recall_search_type == "GRAPH_COMPLETION"
+    # Automatic recall is retrieval-only (no LLM hop per message); the
+    # LLM-mediated GRAPH_COMPLETION moved to the on-demand search_memory tool.
+    assert settings.memory.recall_search_type == "CHUNKS"
+    assert settings.memory.deep_recall_search_type == "GRAPH_COMPLETION"
+    assert settings.memory.deep_recall_timeout_seconds == 180.0
     assert settings.memory.llm.model == "openrouter/openai/gpt-5-mini"
     assert settings.memory.embedding.provider == "openai_compatible"
     assert settings.memory.embedding.dimensions == 1024

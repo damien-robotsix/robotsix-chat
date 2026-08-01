@@ -853,15 +853,22 @@ def create_agent_from_settings(
             event_sink,
         )
 
+    memory = (
+        build_memory(settings.memory) if not bare and memory_enabled else NullMemory()
+    )
+    # Deep on-demand memory search: the automatic per-message recall is
+    # retrieval-only and cheap; the expensive LLM-mediated graph search is a
+    # tool the model invokes deliberately. Returns [] for NullMemory, so this
+    # is safe unconditionally.
+    from robotsix_chat.memory.tools import build_memory_tools
+
+    tools.extend(build_memory_tools(memory))
+
     agent = LlmioChatAgent(
         model_level=effective_level,
         instruction=instruction,
         api_key=api_key,
-        memory=(
-            build_memory(settings.memory)
-            if not bare and memory_enabled
-            else NullMemory()
-        ),
+        memory=memory,
         tools=tools,
         request_tools_factory=request_tools_factory,
         event_sink=event_sink,

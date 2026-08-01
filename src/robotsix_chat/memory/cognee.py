@@ -382,16 +382,27 @@ class CogneeMemory:
                 self._mark_degraded(f"recall failed: {exc}")
             return ""
 
-    async def _recall_core(self, query: str, *, session_id: str | None = None) -> str:
-        """Inner recall logic — separated so the timeout wrapper is clean."""
+    async def _recall_core(
+        self,
+        query: str,
+        *,
+        session_id: str | None = None,
+        search_type_name: str | None = None,
+    ) -> str:
+        """Inner recall logic — separated so the timeout wrapper is clean.
+
+        *search_type_name* overrides the configured automatic-recall search
+        type; the deep on-demand path passes ``deep_recall_search_type``.
+        """
         await self.setup()
         import cognee
         from cognee import SearchType
 
-        search_type = getattr(
-            SearchType,
-            self._settings.recall_search_type,
-            SearchType.GRAPH_COMPLETION,
+        requested = search_type_name or self._settings.recall_search_type
+        # Fall back to GRAPH_COMPLETION for an unknown name — the one type
+        # every cognee version ships.
+        search_type = (
+            getattr(SearchType, requested, None) or SearchType.GRAPH_COMPLETION
         )
 
         async def _search() -> str:
@@ -403,6 +414,46 @@ class CogneeMemory:
             return _format_results(results)
 
         return await _search()
+
+    async def recall_deep(self, query: str) -> str:
+        """Run the expensive, LLM-mediated graph search on demand.
+
+        Backs the agent's ``search_memory`` tool. Unlike the automatic
+        :meth:`recall` — which runs on every message and must therefore be
+        cheap (``recall_search_type``, default ``CHUNKS``) — this uses
+        ``deep_recall_search_type`` (default ``GRAPH_COMPLETION``) under the
+        more generous ``deep_recall_timeout_seconds``.
+
+        Deliberately unscoped by session: the point of an explicit lookup is
+        to reach across the whole memory, not just the current window.
+
+        Returns a human/LLM-readable failure string rather than ``""`` on
+        error — a tool result should tell the model *why* nothing came back,
+        where the automatic path must stay silent.
+        """
+        if not query.strip():
+            return "Empty query — nothing to search for."
+        timeout = self._settings.deep_recall_timeout_seconds
+        try:
+            async with asyncio.timeout(timeout):
+                result = await self._recall_core(
+                    query,
+                    search_type_name=self._settings.deep_recall_search_type,
+                )
+            self._clear_degraded()
+            return result or "No relevant memory found for that query."
+        except TimeoutError:
+            logger.warning("deep memory search timed out after %.0fs", timeout)
+            self._mark_degraded(f"deep recall timed out after {timeout:.0f}s")
+            return (
+                f"Memory search timed out after {timeout:.0f}s — the store may "
+                "be under load. Try a narrower query, or continue without it."
+            )
+        except Exception as exc:
+            logger.warning("deep memory search failed (%s)", exc)
+            if _is_lock_freeze_error(exc):
+                self._mark_degraded(f"deep recall failed: {exc}")
+            return f"Memory search failed ({exc}). Continue without it."
 
     # -- write ------------------------------------------------------------
 
