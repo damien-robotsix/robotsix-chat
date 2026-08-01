@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+from types import SimpleNamespace
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import httpx
@@ -10,6 +12,8 @@ import pytest
 
 from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE
 from robotsix_chat.subsessions import (
+    SubsessionEnv,
+    SubsessionInfo,
     SubsessionKind,
     SubsessionStatus,
 )
@@ -266,7 +270,7 @@ async def test_watcher_resumes_when_state_changes() -> None:
     settings.direct_repo = type(
         "_ns", (), {"board_api_base_url": "https://mill.example.com"}
     )()
-    # Short poll interval so the test doesn't hang.
+    # Short poll interval so the test doesn"t hang.
     settings.subsessions.paused_monitor_poll_interval_seconds = 0.01
     sink = RecordingSink()
     env = build_env(settings=settings, event_sink=sink)
@@ -456,30 +460,33 @@ async def test_watcher_resumes_human_approval_timeout_when_state_changes() -> No
     assert "human_approval_since" not in reopened.checkpoint
 
 
-# -- PR closed-unmerged / merge-conflict detection --------------------------
+# -- PR-merge pass helpers --------------------------------------------------
 
 
-def _make_pr_monitor(
-    env,
-    ticket_id="T-PR",
-    pr_number=42,
-    repo_full_name="org/repo",
-):
-    """Create a paused periodic monitor with a tracked PR in its checkpoint."""
+def _make_paused_monitor_with_pr(
+    env: SubsessionEnv,
+    *,
+    ticket_id: str = "T-PR",
+    last_known: str = "open",
+    pr_number: int = 42,
+    repo_full_name: str = "org/repo",
+    title: str = "pr monitor",
+) -> SubsessionInfo:
+    """Create a paused periodic monitor with a PR checkpoint."""
     info = env.registry.create(
         kind=SubsessionKind.PERIODIC,
         owner_session_id=OWNER,
         parent_id=None,
         depth=1,
-        title="pr monitor",
+        title=title,
         prompt="monitor",
         model_level=3,
         interval_seconds=60.0,
         checkpoint={
             "ticket_id": ticket_id,
+            "last_known_state": last_known,
             "pr_number": pr_number,
             "repo_full_name": repo_full_name,
-            "last_known_state": "in_progress",
         },
     )
     env.registry.mark_closed(
@@ -488,21 +495,169 @@ def _make_pr_monitor(
     return info
 
 
-def _mock_direct_repo_client(*, merged=False, state="open", mergeable=True):
-    """Build a mock ``DirectRepoClient`` returning given PR data."""
-    mock_client = MagicMock()
-    mock_client._token = AsyncMock(return_value="fake-token")
-    mock_client.get_pr = AsyncMock(
-        return_value={
-            "merged": merged,
-            "state": state,
-            "mergeable": mergeable,
-            "mergeable_state": "clean" if mergeable else "dirty",
-            "title": "Test PR",
-            "html_url": "https://github.com/org/repo/pull/42",
-        }
+def _settings_with_direct_repo(**direct_repo_kw: Any) -> SimpleNamespace:
+    """Return settings with ``direct_repo`` enabled and a board URL set."""
+    settings = make_settings()
+    settings.subsessions.paused_monitor_poll_interval_seconds = 0.01
+    settings.direct_repo = SimpleNamespace(
+        board_api_base_url="https://mill.example.com",
+        enabled=True,
+        github_api_base_url="https://api.github.com",
+        **direct_repo_kw,
     )
-    return mock_client
+    return settings
+
+
+def _mock_direct_repo_client(
+    *,
+    merged: bool | None = None,
+    state: str = "open",
+    mergeable: bool = True,
+    get_pr_side_effect: Any = None,
+) -> MagicMock:
+    """Build a mock ``DirectRepoClient`` with a valid token.
+
+    The ``get_pr`` return value is configurable via *merged*, *state*,
+    *mergeable*, or *get_pr_side_effect* (for exception cases).
+    """
+    mock = MagicMock()
+    mock._token = AsyncMock(return_value="fake-token")
+    if get_pr_side_effect is not None:
+        mock.get_pr = AsyncMock(side_effect=get_pr_side_effect)
+    else:
+        mock.get_pr = AsyncMock(
+            return_value={
+                "merged": merged,
+                "state": state,
+                "mergeable": mergeable,
+                "mergeable_state": "clean" if mergeable else "dirty",
+                "title": "Test PR",
+                "html_url": "https://github.com/org/repo/pull/42",
+            }
+        )
+    return mock
+
+
+# -- PR-merge pass: resume on merged PR ------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_watcher_resumes_when_pr_merged() -> None:
+    """The watcher resumes a paused monitor when its tracked PR is merged."""
+    settings = _settings_with_direct_repo()
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_paused_monitor_with_pr(env, ticket_id="T-1", last_known="open")
+
+    # Ticket state unchanged → first pass keeps it paused.
+    mock_ticket_client = _mock_ticket_client(state="open")
+    # PR is merged → second pass resumes.
+    mock_gh = _mock_direct_repo_client(merged=True)
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch("httpx.AsyncClient", mock_ticket_client),
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            return_value=mock_gh,
+        ),
+    ):
+        await asyncio.sleep(0.2)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.is_active
+
+    # Assert a PR-merge notification was published.
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    assert len(notifications) == 1
+    _sid, frame = notifications[0]
+    assert "Monitor resumed:" in str(frame["title"])
+    assert "PR #42 in org/repo was merged" in str(frame["body"])
+
+
+# -- PR-merge pass: keep paused when PR not merged -------------------------
+
+
+@pytest.mark.asyncio
+async def test_watcher_keeps_paused_when_pr_not_merged() -> None:
+    """The watcher leaves a monitor paused when its tracked PR is not merged."""
+    settings = _settings_with_direct_repo()
+    env = build_env(settings=settings)
+
+    info = _make_paused_monitor_with_pr(env, ticket_id="T-1", last_known="open")
+
+    # Ticket state unchanged → first pass keeps it paused.
+    mock_ticket_client = _mock_ticket_client(state="open")
+    # PR not merged → second pass keeps it paused.
+    mock_gh = _mock_direct_repo_client(merged=False)
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch("httpx.AsyncClient", mock_ticket_client),
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            return_value=mock_gh,
+        ),
+    ):
+        await asyncio.sleep(0.2)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.CLOSED
+
+
+# -- PR-merge pass: get_pr() exception path ---------------------------------
+
+
+@pytest.mark.asyncio
+async def test_watcher_handles_get_pr_exception_gracefully() -> None:
+    """The watcher skips a monitor when ``get_pr()`` raises an exception."""
+    settings = _settings_with_direct_repo()
+    env = build_env(settings=settings)
+
+    info = _make_paused_monitor_with_pr(env, ticket_id="T-1", last_known="open")
+
+    # Ticket state unchanged → first pass keeps it paused.
+    mock_ticket_client = _mock_ticket_client(state="open")
+    # get_pr raises → caught, debug logged, monitor skipped.
+    mock_gh = _mock_direct_repo_client(
+        get_pr_side_effect=RuntimeError("API unavailable")
+    )
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch("httpx.AsyncClient", mock_ticket_client),
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            return_value=mock_gh,
+        ),
+    ):
+        await asyncio.sleep(0.2)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # Monitor should still be paused — exception is logged, not raised.
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.CLOSED
+
+
+# -- PR closed-unmerged / merge-conflict detection --------------------------
 
 
 @pytest.mark.asyncio
@@ -512,22 +667,16 @@ async def test_watcher_notifies_on_pr_closed_unmerged() -> None:
     It publishes a high-urgency SSE notification, tries to create a follow-up
     ticket on the board, and resumes the monitor.
     """
-    settings = make_settings()
-    settings.direct_repo = type(
-        "_ns",
-        (),
-        {
-            "enabled": True,
-            "board_api_base_url": "https://mill.example.com",
-            "board_api_token": type("_st", (), {"get_secret_value": lambda: ""})(),
-            "timeout": 10.0,
-        },
-    )()
-    settings.subsessions.paused_monitor_poll_interval_seconds = 0.01
+    settings = _settings_with_direct_repo(
+        board_api_token=type("_st", (), {"get_secret_value": lambda: ""})(),
+        timeout=10.0,
+    )
     sink = RecordingSink()
     env = build_env(settings=settings, event_sink=sink)
 
-    info = _make_pr_monitor(env, ticket_id="T-PR")
+    info = _make_paused_monitor_with_pr(
+        env, ticket_id="T-PR", last_known="in_progress"
+    )
 
     # Mock the mill to return a non-terminal ticket state.
     mock_ticket_client = _mock_ticket_client(state="in_progress")
@@ -586,22 +735,16 @@ async def test_watcher_no_alarm_on_closed_unmerged_terminal_ticket() -> None:
     The watcher logs a debug message but does NOT publish an SSE
     notification or create a follow-up ticket.
     """
-    settings = make_settings()
-    settings.direct_repo = type(
-        "_ns",
-        (),
-        {
-            "enabled": True,
-            "board_api_base_url": "https://mill.example.com",
-            "board_api_token": type("_st", (), {"get_secret_value": lambda: ""})(),
-            "timeout": 10.0,
-        },
-    )()
-    settings.subsessions.paused_monitor_poll_interval_seconds = 0.01
+    settings = _settings_with_direct_repo(
+        board_api_token=type("_st", (), {"get_secret_value": lambda: ""})(),
+        timeout=10.0,
+    )
     sink = RecordingSink()
     env = build_env(settings=settings, event_sink=sink)
 
-    info = _make_pr_monitor(env, ticket_id="T-PR")
+    info = _make_paused_monitor_with_pr(
+        env, ticket_id="T-PR", last_known="in_progress"
+    )
 
     # The ticket is already in a terminal state ("done").
     mock_ticket_client = _mock_ticket_client(state="done")
@@ -643,22 +786,16 @@ async def test_watcher_no_alarm_on_closed_unmerged_terminal_ticket() -> None:
 @pytest.mark.asyncio
 async def test_watcher_notifies_on_merge_conflict() -> None:
     """When a tracked PR has merge conflicts, the watcher notifies with high urgency."""
-    settings = make_settings()
-    settings.direct_repo = type(
-        "_ns",
-        (),
-        {
-            "enabled": True,
-            "board_api_base_url": "https://mill.example.com",
-            "board_api_token": type("_st", (), {"get_secret_value": lambda: ""})(),
-            "timeout": 10.0,
-        },
-    )()
-    settings.subsessions.paused_monitor_poll_interval_seconds = 0.01
+    settings = _settings_with_direct_repo(
+        board_api_token=type("_st", (), {"get_secret_value": lambda: ""})(),
+        timeout=10.0,
+    )
     sink = RecordingSink()
     env = build_env(settings=settings, event_sink=sink)
 
-    _make_pr_monitor(env, ticket_id="T-PR")
+    _make_paused_monitor_with_pr(
+        env, ticket_id="T-PR", last_known="in_progress"
+    )
 
     # Mock the mill to return a non-terminal ticket state.
     mock_ticket_client = _mock_ticket_client(state="in_progress")
