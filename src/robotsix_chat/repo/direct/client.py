@@ -1,8 +1,16 @@
 """Direct-repo HTTP client — GitHub App-authenticated branch push + PR open.
 
 Talks to the GitHub API as a GitHub App installation (JWT → installation
-token) and to the mill's board API for ticket-state verification.  Degrades
-gracefully: all errors become short strings the assistant can relay.
+token) for core repo operations (push branches, open/merge PRs, manage
+security settings) and installation management (list repos, create repos).
+
+Board/ticket API operations have moved to
+:mod:`robotsix_chat.repo.direct.board_client`.  GitHub Actions workflow
+operations have moved to
+:mod:`robotsix_chat.repo.direct.actions_client`.  The unified-diff
+applicator has moved to :mod:`robotsix_chat.common.unified_diff`.
+Deprecated wrapper methods remain on this class for backward
+compatibility.
 """
 
 from __future__ import annotations
@@ -10,7 +18,7 @@ from __future__ import annotations
 import base64
 import json
 import logging
-from typing import TYPE_CHECKING, Any, cast
+from typing import TYPE_CHECKING, Any
 
 from robotsix_chat.common.github_auth import _build_github_app_auth_headers
 from robotsix_chat.common.http import safe_http_request
@@ -119,7 +127,13 @@ def _count_cycles_from_data(data: dict[str, Any]) -> int:
 
 
 class DirectRepoClient:
-    """GitHub App-authenticated client for push-branch + open-PR operations."""
+    """GitHub App-authenticated client for core repo operations.
+
+    Handles push-branch, open-PR, merge-PR, auto-merge, file-content
+    retrieval, repo creation, installation-scope listing, and security
+    settings.  Board/ticket API, GitHub Actions workflow, and unified-diff
+    concerns have been extracted to dedicated modules.
+    """
 
     def __init__(self, settings: DirectRepoSettings) -> None:
         """Store settings; tokens are fetched lazily."""
@@ -392,51 +406,28 @@ class DirectRepoClient:
     ) -> Any:
         """Fetch a ticket from the board API and return *field* or the full dict.
 
-        When *field* is provided (e.g. ``"state"``), returns ``data.get(field)``;
-        when ``None``, returns the full parsed JSON dict.  Returns ``None`` on
-        any error (logged as a warning).
+        .. deprecated::
+            Use :class:`robotsix_chat.repo.direct.board_client.BoardClient`
+            instead.  This wrapper is kept for backward compatibility.
+
         """
-        board_url = self._s.board_api_base_url.rstrip("/")
-        url = f"{board_url}/tickets/{ticket_id}"
-        headers: dict[str, str] = {"Accept": "application/json"}
-        if self._s.board_api_token.get_secret_value():
-            headers["Authorization"] = (
-                f"Bearer {self._s.board_api_token.get_secret_value()}"
-            )
-        label = f"Board API (ticket {label_suffix})"
-        result = await safe_http_request(
-            "GET", url, headers=headers, timeout=self._s.timeout, label=label
+        from robotsix_chat.repo.direct.board_client import BoardClient
+
+        return await BoardClient(self._s)._fetch_ticket_field(
+            ticket_id, label_suffix, field=field
         )
-        if result.error:
-            logger.warning(
-                "Failed to fetch ticket %s %s: %s",
-                ticket_id,
-                label_suffix,
-                result.error,
-            )
-            return None
-        try:
-            data = json.loads(result.text or "")
-        except json.JSONDecodeError, TypeError:
-            logger.warning(
-                "Non-JSON response for ticket %s: %s",
-                ticket_id,
-                (result.text or "")[:200],
-            )
-            return None
-        if field is not None:
-            return data.get(field)
-        return data
 
     async def get_ticket_state(self, ticket_id: str) -> str | None:
         """Return the ticket's state (e.g. ``"BLOCKED"``), or ``None`` on failure.
 
-        Calls the board API directly — the same endpoint the browser UI uses.
+        .. deprecated::
+            Use :class:`robotsix_chat.repo.direct.board_client.BoardClient`
+            instead.  This wrapper is kept for backward compatibility.
+
         """
-        return cast(
-            "str | None",
-            await self._fetch_ticket_field(ticket_id, "state", field="state"),
-        )
+        from robotsix_chat.repo.direct.board_client import BoardClient
+
+        return await BoardClient(self._s).get_ticket_state(ticket_id)
 
     async def push_branch(
         self,
@@ -592,73 +583,40 @@ class DirectRepoClient:
     async def resume_blocked_ticket(self, ticket_id: str, justification: str) -> bool:
         """Resume a blocked ticket via the board API.
 
-        Sends ``POST /tickets/{ticket_id}/resume-blocked`` with a JSON
-        body containing *justification*.  Returns ``True`` on success
-        (HTTP 2xx), ``False`` on any error (logged as a warning).
+        .. deprecated::
+            Use :class:`robotsix_chat.repo.direct.board_client.BoardClient`
+            instead.  This wrapper is kept for backward compatibility.
+
         """
-        board_url = self._s.board_api_base_url.rstrip("/")
-        url = f"{board_url}/tickets/{ticket_id}/resume-blocked"
-        headers: dict[str, str] = {"Accept": "application/json"}
-        if self._s.board_api_token.get_secret_value():
-            headers["Authorization"] = (
-                f"Bearer {self._s.board_api_token.get_secret_value()}"
-            )
-        result = await safe_http_request(
-            "POST",
-            url,
-            headers=headers,
-            json_body={"justification": justification},
-            timeout=self._s.timeout,
-            label=f"Board API (resume-blocked {ticket_id})",
+        from robotsix_chat.repo.direct.board_client import BoardClient
+
+        return await BoardClient(self._s).resume_blocked_ticket(
+            ticket_id, justification
         )
-        if result.error:
-            logger.warning(
-                "Failed to resume blocked ticket %s: %s",
-                ticket_id,
-                result.error,
-            )
-            return False
-        if result.status_code and result.status_code >= 400:
-            logger.warning(
-                "Board API returned %d for resume-blocked on ticket %s",
-                result.status_code,
-                ticket_id,
-            )
-            return False
-        return True
 
     async def get_ticket_data(self, ticket_id: str) -> dict[str, Any] | None:
         """Return the full ticket JSON from the board API, or None on failure.
 
-        Calls ``GET /tickets/{ticket_id}`` on the board API and returns the
-        parsed JSON body.  The response includes ``state``, ``events`` (state
-        transitions), and other ticket metadata.
+        .. deprecated::
+            Use :class:`robotsix_chat.repo.direct.board_client.BoardClient`
+            instead.  This wrapper is kept for backward compatibility.
+
         """
-        return cast(
-            "dict[str, Any] | None", await self._fetch_ticket_field(ticket_id, "data")
-        )
+        from robotsix_chat.repo.direct.board_client import BoardClient
+
+        return await BoardClient(self._s).get_ticket_data(ticket_id)
 
     async def count_implement_cycles(self, ticket_id: str) -> int | None:
         """Return the number of implement cycles for *ticket_id*, or None on failure.
 
-        Inspects the ticket's ``events`` array (from the board API) and counts
-        events whose ``type`` or ``action`` field contains the substring
-        ``"implement"`` (case-insensitive).  Falls back to counting state
-        transitions through ``"implement_complete"`` if no events array is
-        present.
-        """
-        data = await self.get_ticket_data(ticket_id)
-        if data is None:
-            return None
+        .. deprecated::
+            Use :class:`robotsix_chat.repo.direct.board_client.BoardClient`
+            instead.  This wrapper is kept for backward compatibility.
 
-        cycles = _count_cycles_from_data(data)
-        if cycles == 0:
-            logger.info(
-                "Ticket %s has no events/history/cycle_count — "
-                "assuming 0 implement cycles.",
-                ticket_id,
-            )
-        return cycles
+        """
+        from robotsix_chat.repo.direct.board_client import BoardClient
+
+        return await BoardClient(self._s).count_implement_cycles(ticket_id)
 
     async def push_commit_to_branch(
         self,
@@ -717,26 +675,14 @@ class DirectRepoClient:
     async def get_job_log(self, repo_full_name: str, job_id: int) -> str:
         """Fetch the plain-text log for a GitHub Actions job.
 
-        Calls ``GET /repos/{owner}/{repo}/actions/jobs/{job_id}/logs`` which
-        returns a 302 redirect to a signed URL containing the raw log text.
-        The redirect is followed server-side so the caller receives the log
-        content directly.
+        .. deprecated::
+            Use :class:`robotsix_chat.repo.direct.actions_client.ActionsClient`
+            instead.  This wrapper is kept for backward compatibility.
 
-        Raises ``RuntimeError`` on any failure (auth, not-found, network).
         """
-        path = f"/repos/{repo_full_name}/actions/jobs/{job_id}/logs"
-        url = f"{self._base_url}{path}"
-        result = await safe_http_request(
-            "GET",
-            url,
-            headers=await self._gh_headers(),
-            timeout=self._s.timeout,
-            follow_redirects=True,
-            label="GitHub Actions log",
-        )
-        if result.error:
-            raise RuntimeError(f"GitHub Actions log GET {path}: {result.error}")
-        return result.text or ""
+        from robotsix_chat.repo.direct.actions_client import ActionsClient
+
+        return await ActionsClient(self._s).get_job_log(repo_full_name, job_id)
 
     async def set_security_and_analysis(
         self,
@@ -803,12 +749,14 @@ class DirectRepoClient:
     async def _get_repo_public_key(self, repo_full_name: str) -> tuple[str, str]:
         """Return ``(key_id, public_key_b64)`` for Actions secret encryption.
 
-        Calls ``GET /repos/{owner}/{repo}/actions/secrets/public-key``.
+        .. deprecated::
+            Use :class:`robotsix_chat.repo.direct.actions_client.ActionsClient`
+            instead.  This wrapper is kept for backward compatibility.
+
         """
-        data = await self._get_json(
-            f"/repos/{repo_full_name}/actions/secrets/public-key"
-        )
-        return str(data["key_id"]), str(data["key"])
+        from robotsix_chat.repo.direct.actions_client import ActionsClient
+
+        return await ActionsClient(self._s)._get_repo_public_key(repo_full_name)
 
     async def set_actions_secret(
         self,
@@ -818,53 +766,16 @@ class DirectRepoClient:
     ) -> str:
         """Create or update a repository Actions secret.
 
-        Encrypts *secret_value* with the repo's public key using libsodium
-        sealed-box encryption (requires ``pynacl``), then sends it via
-        ``PUT /repos/{owner}/{repo}/actions/secrets/{secret_name}``.
+        .. deprecated::
+            Use :class:`robotsix_chat.repo.direct.actions_client.ActionsClient`
+            instead.  This wrapper is kept for backward compatibility.
 
-        Never raises — returns a success/error message string.
         """
-        try:
-            from nacl.public import (  # type: ignore[import-not-found]
-                PublicKey,
-                SealedBox,
-            )
-        except ImportError:
-            return (
-                "Error: PyNaCl is required for Actions secret encryption. "
-                "Install it with: uv sync --extra github-actions  or  "
-                "pip install pynacl"
-            )
+        from robotsix_chat.repo.direct.actions_client import ActionsClient
 
-        try:
-            key_id, public_key_b64 = await self._get_repo_public_key(repo_full_name)
-        except RuntimeError as exc:
-            return f"Error fetching repo public key: {exc}"
-        except Exception as exc:
-            return f"Error fetching repo public key: {exc}"
-
-        try:
-            public_key_bytes = _b64decode(public_key_b64)
-            sealed_box = SealedBox(PublicKey(public_key_bytes))
-            encrypted = sealed_box.encrypt(secret_value.encode("utf-8"))
-            encrypted_b64 = _b64encode(encrypted)
-        except Exception as exc:
-            return f"Error encrypting secret: {exc}"
-
-        try:
-            await self._request_json(
-                "PUT",
-                f"/repos/{repo_full_name}/actions/secrets/{secret_name}",
-                {
-                    "encrypted_value": encrypted_b64,
-                    "key_id": key_id,
-                },
-            )
-            return f"Secret '{secret_name}' set successfully on {repo_full_name}."
-        except RuntimeError as exc:
-            return f"Error setting secret: {exc}"
-        except Exception as exc:
-            return f"Error setting secret: {exc}"
+        return await ActionsClient(self._s).set_actions_secret(
+            repo_full_name, secret_name, secret_value
+        )
 
     async def dispatch_workflow(
         self,
@@ -875,28 +786,16 @@ class DirectRepoClient:
     ) -> str:
         """Trigger a workflow_dispatch event.
 
-        Calls ``POST /repos/{owner}/{repo}/actions/workflows/{workflow_id}/dispatches``.
+        .. deprecated::
+            Use :class:`robotsix_chat.repo.direct.actions_client.ActionsClient`
+            instead.  This wrapper is kept for backward compatibility.
 
-        Never raises — returns a success/error message string.
         """
-        body: dict[str, Any] = {"ref": ref}
-        if inputs:
-            body["inputs"] = inputs
+        from robotsix_chat.repo.direct.actions_client import ActionsClient
 
-        try:
-            await self._request_json(
-                "POST",
-                f"/repos/{repo_full_name}/actions/workflows/{workflow_id}/dispatches",
-                body,
-            )
-            return (
-                f"Workflow '{workflow_id}' dispatched successfully "
-                f"on {repo_full_name} (ref: {ref})."
-            )
-        except RuntimeError as exc:
-            return f"Error dispatching workflow: {exc}"
-        except Exception as exc:
-            return f"Error dispatching workflow: {exc}"
+        return await ActionsClient(self._s).dispatch_workflow(
+            repo_full_name, workflow_id, ref, inputs
+        )
 
     # -- workflow run query helpers ----------------------------------------
 
@@ -909,32 +808,16 @@ class DirectRepoClient:
     ) -> list[dict[str, Any]]:
         """Return recent workflow runs for *repo_full_name*.
 
-        Calls ``GET /repos/{owner}/{repo}/actions/runs``.
-
-        Args:
-            repo_full_name: ``"owner/name"``.
-            branch: Optional branch filter (``?branch=...``).
-            per_page: Maximum runs to return (1-100, default 5).
-
-        Returns:
-            A list of workflow-run dicts (``id``, ``status``, ``conclusion``,
-            ``head_branch``, ``event``, ``created_at``, …).  Returns an empty
-            list on any error (callers receive no exceptions).
+        .. deprecated::
+            Use :class:`robotsix_chat.repo.direct.actions_client.ActionsClient`
+            instead.  This wrapper is kept for backward compatibility.
 
         """
-        params: dict[str, str] = {"per_page": str(min(max(per_page, 1), 100))}
-        if branch:
-            params["branch"] = branch
-        qs = "&".join(f"{k}={v}" for k, v in params.items())
-        try:
-            data = await self._get_json(f"/repos/{repo_full_name}/actions/runs?{qs}")
-            runs: list[dict[str, Any]] = data.get("workflow_runs", [])
-            return runs
-        except RuntimeError as exc:
-            logger.warning(
-                "Failed to list workflow runs for %s: %s", repo_full_name, exc
-            )
-            return []
+        from robotsix_chat.repo.direct.actions_client import ActionsClient
+
+        return await ActionsClient(self._s).list_workflow_runs(
+            repo_full_name, branch=branch, per_page=per_page
+        )
 
     async def get_workflow_run_jobs(
         self,
@@ -943,27 +826,16 @@ class DirectRepoClient:
     ) -> list[dict[str, Any]]:
         """Return the jobs for a specific workflow run.
 
-        Calls ``GET /repos/{owner}/{repo}/actions/runs/{run_id}/jobs``.
-
-        Returns:
-            A list of job dicts (``id``, ``status``, ``conclusion``, ``name``,
-            …).  Returns an empty list on any error.
+        .. deprecated::
+            Use :class:`robotsix_chat.repo.direct.actions_client.ActionsClient`
+            instead.  This wrapper is kept for backward compatibility.
 
         """
-        try:
-            data = await self._get_json(
-                f"/repos/{repo_full_name}/actions/runs/{run_id}/jobs"
-            )
-            jobs: list[dict[str, Any]] = data.get("jobs", [])
-            return jobs
-        except RuntimeError as exc:
-            logger.warning(
-                "Failed to get workflow run jobs for %s run %d: %s",
-                repo_full_name,
-                run_id,
-                exc,
-            )
-            return []
+        from robotsix_chat.repo.direct.actions_client import ActionsClient
+
+        return await ActionsClient(self._s).get_workflow_run_jobs(
+            repo_full_name, run_id
+        )
 
     async def get_workflow_run_annotations(
         self,
@@ -974,144 +846,16 @@ class DirectRepoClient:
     ) -> str:
         """Fetch annotations for all check runs in a workflow run.
 
-        Orchestrates three GitHub API calls:
-        1. ``GET /repos/{owner}/{repo}/actions/runs/{run_id}`` — get the
-           ``check_suite_id`` for the run.
-        2. ``GET /repos/{owner}/{repo}/check-suites/{check_suite_id}/check-runs``
-           — list check runs belonging to the suite.
-        3. For each check run with ``annotations_count > 0``,
-           ``GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations``.
-
-        Returns a formatted Markdown string listing all annotations grouped
-        by check run, or a diagnostic message when no annotations are found.
-
-        Args:
-            repo_full_name: ``"owner/name"``.
-            run_id: The workflow run id.
-            max_check_runs: Maximum check runs to inspect (default 20).
-
-        Returns:
-            A Markdown-formatted string with annotations, or an error message.
-
-        Never raises — returns an error string on any failure.
+        .. deprecated::
+            Use :class:`robotsix_chat.repo.direct.actions_client.ActionsClient`
+            instead.  This wrapper is kept for backward compatibility.
 
         """
-        try:
-            # 1. Get the workflow run to find the check_suite_id.
-            run = await self._get_json(f"/repos/{repo_full_name}/actions/runs/{run_id}")
-            check_suite_id = run.get("check_suite_id")
-            if check_suite_id is None:
-                return (
-                    f"Workflow run {run_id} on {repo_full_name} has no "
-                    f"associated check suite — annotations are not available."
-                )
+        from robotsix_chat.repo.direct.actions_client import ActionsClient
 
-            # 2. List check runs for the check suite.
-            suite_data = await self._get_json(
-                f"/repos/{repo_full_name}/check-suites/{check_suite_id}"
-                f"/check-runs?per_page={min(max_check_runs, 100)}"
-                f"&filter=latest"
-            )
-            check_runs: list[dict[str, Any]] = suite_data.get("check_runs", [])
-
-            if not check_runs:
-                return (
-                    f"Workflow run {run_id} on {repo_full_name} has no "
-                    f"check runs in its check suite."
-                )
-
-            # 3. Fetch annotations for each check run that has any.
-            all_annotations: list[dict[str, Any]] = []
-            check_run_summaries: list[str] = []
-
-            # Conclusions that indicate a meaningful failure where
-            # annotations are the primary diagnostic signal.  Always
-            # fetch annotations for these even when GitHub reports
-            # annotations_count == 0, because that field can be
-            # stale or missing for job-level annotations.
-            _failed_conclusions = frozenset(
-                {"failure", "timed_out", "cancelled", "action_required"}
-            )
-
-            for cr in check_runs:
-                cr_id = cr.get("id")
-                cr_name = cr.get("name", str(cr_id))
-                cr_conclusion = cr.get("conclusion", "?")
-                ann_count = cr.get("annotations_count", 0)
-
-                if ann_count == 0 and cr_conclusion not in _failed_conclusions:
-                    continue
-
-                try:
-                    annotations = await self._get_json(
-                        f"/repos/{repo_full_name}/check-runs/{cr_id}/annotations"
-                        f"?per_page=100"
-                    )
-                    if isinstance(annotations, list):
-                        all_annotations.extend(annotations)
-                        check_run_summaries.append(
-                            f"{cr_name} (conclusion={cr_conclusion}, "
-                            f"{len(annotations)} annotation(s))"
-                        )
-                except RuntimeError as exc:
-                    logger.warning(
-                        "Failed to fetch annotations for check run %d: %s",
-                        cr_id,
-                        exc,
-                    )
-                    continue
-
-            if not all_annotations:
-                return (
-                    f"Workflow run {run_id} on {repo_full_name} has "
-                    f"{len(check_runs)} check run(s) but none with annotations."
-                )
-
-            # 4. Format the output.
-            lines: list[str] = [
-                f"## Workflow run {run_id} annotations ({repo_full_name})",
-                "",
-                f"**{len(all_annotations)} annotation(s)** across "
-                f"{len(check_run_summaries)} check run(s):",
-                "",
-            ]
-
-            for summary in check_run_summaries:
-                lines.append(f"- {summary}")
-
-            lines.append("")
-            lines.append("### Details")
-            lines.append("")
-
-            for i, ann in enumerate(all_annotations):
-                level = ann.get("annotation_level", "?")
-                path = ann.get("path", "")
-                start_line = ann.get("start_line")
-                end_line = ann.get("end_line")
-                message = ann.get("message", "")
-                title = ann.get("title", "")
-
-                loc = path
-                if start_line is not None:
-                    loc += f":{start_line}"
-                    if end_line is not None and end_line != start_line:
-                        loc += f"-{end_line}"
-
-                lines.append(
-                    f"**{i + 1}.** `{level}` "
-                    + (f"**{title}** — " if title else "")
-                    + f"{message}"
-                )
-                if loc:
-                    lines.append(f"  _Location: {loc}_")
-                lines.append("")
-
-            return "\n".join(lines)
-
-        except RuntimeError as exc:
-            return f"Error fetching workflow run annotations: {exc}"
-        except Exception as exc:
-            return f"Error fetching workflow run annotations: {exc}"
+        return await ActionsClient(self._s).get_workflow_run_annotations(
+            repo_full_name, run_id
+        )
 
     # -- merge helpers -----------------------------------------------------
 
@@ -1366,132 +1110,14 @@ class DirectRepoClient:
     def apply_patch(original: str, patch_text: str) -> str:
         """Apply a unified diff to *original* and return the patched content.
 
-        Supports the standard unified diff format produced by ``diff -u``
-        and ``git diff``::
-
-            --- a/path
-            +++ b/path
-            @@ -start,count +start,count @@
-             context
-            -removed
-            +added
-             context
-
-        Multiple hunks (multiple ``@@`` headers) are supported.
-
-        Args:
-            original: The original file content.
-            patch_text: The unified diff to apply.
-
-        Returns:
-            The patched file content.
-
-        Raises:
-            ValueError: If a hunk cannot be applied (context mismatch).
+        .. deprecated::
+            Use :func:`robotsix_chat.common.unified_diff.apply_patch` instead.
+            This wrapper is kept for backward compatibility.
 
         """
-        import re
+        from robotsix_chat.common.unified_diff import apply_patch as _apply
 
-        orig_lines = original.splitlines(keepends=True)
-        patch_lines = patch_text.splitlines(keepends=True)
-
-        result = list(orig_lines)
-        cumulative_offset = 0  # net lines added (positive) or removed (negative)
-
-        idx = 0
-        while idx < len(patch_lines):
-            line = patch_lines[idx]
-
-            # Skip file headers (--- / +++)
-            if line.startswith("--- ") or line.startswith("+++ "):
-                idx += 1
-                continue
-
-            # Parse hunk header: @@ -old_start,old_count +new_start,new_count @@
-            m = re.match(
-                r"^@@\s+-(\d+)(?:,(\d+))?\s+\+(\d+)(?:,(\d+))?\s+@@",
-                line,
-            )
-            if not m:
-                idx += 1
-                continue
-
-            old_start = int(m.group(1))
-            idx += 1
-
-            # Collect hunk body lines
-            hunk_lines: list[str] = []
-            while idx < len(patch_lines) and not patch_lines[idx].startswith("@@"):
-                hunk_lines.append(patch_lines[idx])
-                idx += 1
-
-            # Apply the hunk
-            # 0-indexed position in *result*
-            orig_pos = max(0, old_start - 1 + cumulative_offset)
-            hunk_offset_add = 0
-            hunk_offset_del = 0
-            hj = 0
-            while hj < len(hunk_lines):
-                hl = hunk_lines[hj]
-                if hl.startswith(" "):  # context line
-                    if orig_pos >= len(result):
-                        raise ValueError(
-                            f"Hunk at line {old_start}: context line {hj + 1} "
-                            f"exceeds file length ({len(result)} lines)."
-                        )
-                    actual = result[orig_pos].rstrip("\n")
-                    expected = hl[1:].rstrip("\n")
-                    if actual != expected:
-                        raise ValueError(
-                            f"Hunk at line {old_start}: context mismatch at "
-                            f"file line {orig_pos + 1}. "
-                            f"Expected: {expected!r}, got: {actual!r}"
-                        )
-                    orig_pos += 1
-                    hj += 1
-                elif hl.startswith("-"):  # remove line
-                    if orig_pos >= len(result):
-                        raise ValueError(
-                            f"Hunk at line {old_start}: removal at line {hj + 1} "
-                            f"exceeds file length ({len(result)} lines)."
-                        )
-                    actual = result[orig_pos].rstrip("\n")
-                    expected = hl[1:].rstrip("\n")
-                    if actual != expected:
-                        raise ValueError(
-                            f"Hunk at line {old_start}: removal mismatch at "
-                            f"file line {orig_pos + 1}. "
-                            f"Expected to remove: {expected!r}, got: {actual!r}"
-                        )
-                    del result[orig_pos]
-                    hunk_offset_del += 1
-                    # Don't advance orig_pos — line was removed
-                    hj += 1
-                elif hl.startswith("+"):  # add line
-                    result.insert(orig_pos, hl[1:])
-                    orig_pos += 1
-                    hunk_offset_add += 1
-                    hj += 1
-                elif hl == "\n" or hl == "":
-                    # Empty context line (no leading space)
-                    if orig_pos < len(result):
-                        actual = result[orig_pos]
-                        if actual not in ("\n", ""):
-                            raise ValueError(
-                                f"Hunk at line {old_start}: expected empty "
-                                f"context line, got: {actual!r}"
-                            )
-                    orig_pos += 1
-                    hj += 1
-                elif hl.startswith("\\"):  # "No newline at end of file" marker
-                    hj += 1
-                else:
-                    # Unknown line — skip
-                    hj += 1
-
-            cumulative_offset += hunk_offset_add - hunk_offset_del
-
-        return "".join(result)
+        return _apply(original, patch_text)
 
     async def push_patched_file(
         self,
@@ -1547,31 +1173,11 @@ class DirectRepoClient:
     ) -> str | None:
         """Inspect recent workflow runs for a private-repo billing failure.
 
-        Heuristic: a run whose ``run_started_at`` is ``null`` (never started)
-        strongly suggests the repo has no GitHub Actions billing enabled.
+        .. deprecated::
+            Use :class:`robotsix_chat.repo.direct.actions_client.ActionsClient`
+            instead.  This wrapper is kept for backward compatibility.
 
-        Note: zero-job detection is NOT attempted here because the
-        ``/actions/runs`` endpoint does not include per-job run data.
-        That signature is handled by the per-run inspection path in
-        ``check_workflow_run`` (via ``get_workflow_run_jobs``).
-
-        Returns a human-readable diagnostic string, or ``None`` when the
-        signature is not detected.
         """
-        for run in runs:
-            conclusion = str(run.get("conclusion", "")).lower()
-            if conclusion != "failure":
-                continue
-            run_id = run.get("id")
-            run_name = run.get("name", str(run_id))
-            # Runs that never started signal billing issues.
-            if "run_started_at" in run and not run.get("run_started_at"):
-                return (
-                    f"Workflow run '{run_name}' (id {run_id}) for "
-                    f"{run.get('head_branch', '?')} never started — "
-                    f"this is typical of a private repository with no "
-                    f"GitHub Actions billing. "
-                    f"Enable Actions in the repo's Settings > Actions > General, "
-                    f"or add billing at the organisation level."
-                )
-        return None
+        from robotsix_chat.repo.direct.actions_client import ActionsClient
+
+        return ActionsClient(self._s)._diagnose_billing_failure(runs)

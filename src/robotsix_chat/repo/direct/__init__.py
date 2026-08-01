@@ -83,9 +83,13 @@ def build_direct_repo_tools(
     if not settings.enabled:
         return []
 
+    from robotsix_chat.common.unified_diff import apply_patch as _apply_patch
+
+    from .board_client import BoardClient
     from .client import DirectRepoClient, _count_cycles_from_data
 
     client = DirectRepoClient(settings)
+    board = BoardClient(settings)
 
     async def _retry_component_ticket_fetch(
         component_req: Callable[..., Any],
@@ -208,9 +212,9 @@ def build_direct_repo_tools(
             # — same pattern used by _assert_blocked_and_scoped.
             resp = await _retry_component_ticket_fetch(component_request, ticket_id)
             if resp.startswith("Error:"):
-                data = await client.get_ticket_data(ticket_id)
+                data = await board.get_ticket_data(ticket_id)
                 if data is None:
-                    board_url = client._s.board_api_base_url.rstrip("/")
+                    board_url = board._board_url
                     return (
                         f"Error: could not fetch ticket data for "
                         f"{ticket_id}.  Verify the ticket id and board "
@@ -264,9 +268,9 @@ def build_direct_repo_tools(
                 state = data.get("state")
                 cycles = _count_cycles_from_data(data)
         else:
-            data = await client.get_ticket_data(ticket_id)
+            data = await board.get_ticket_data(ticket_id)
             if data is None:
-                board_url = client._s.board_api_base_url.rstrip("/")
+                board_url = board._board_url
                 return (
                     f"Error: could not fetch ticket data for {ticket_id}. "
                     f"Verify the ticket id and board API connectivity "
@@ -351,16 +355,16 @@ def build_direct_repo_tools(
             # transient connectivity issue on one path does not
             # hard-fail the entire tool invocation.
             if error is not None:
-                fallback_state = await client.get_ticket_state(ticket_id)
+                fallback_state = await board.get_ticket_state(ticket_id)
                 if fallback_state is not None:
                     state = fallback_state
                     error = None
         else:
-            state = await client.get_ticket_state(ticket_id)
+            state = await board.get_ticket_state(ticket_id)
             if state is not None:
                 error = None
             else:
-                board_url = client._s.board_api_base_url.rstrip("/")
+                board_url = board._board_url
                 error = (
                     f"Error: could not determine state for ticket "
                     f"{ticket_id}. Verify the ticket id and board API "
@@ -857,14 +861,14 @@ def build_direct_repo_tools(
             )
 
         # Fall back to the direct board API path.
-        ok = await client.resume_blocked_ticket(ticket_id, justification)
+        ok = await board.resume_blocked_ticket(ticket_id, justification)
         if ok:
             return (
                 f"Implement spawn counter reset for ticket {ticket_id}. "
                 "The ticket can now be re-spawned."
             )
 
-        board_url = client._s.board_api_base_url.rstrip("/")
+        board_url = board._board_url
         return (
             f"Error: could not reset implement spawn counter for ticket "
             f"{ticket_id}.  Verify the ticket id and board API connectivity "
@@ -974,7 +978,7 @@ def build_direct_repo_tools(
             )
 
         try:
-            patched = DirectRepoClient.apply_patch(original, patch_content)
+            patched = _apply_patch(original, patch_content)
         except ValueError as exc:
             return f"Error applying patch to '{file_path}' in {repo_full_name}: {exc}"
 

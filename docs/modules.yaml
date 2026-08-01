@@ -189,6 +189,7 @@ modules:
       - src/robotsix_chat/common/github_auth.py
       - src/robotsix_chat/common/http.py
       - src/robotsix_chat/common/json_store.py
+      - src/robotsix_chat/common/unified_diff.py
       - tests/common/__init__.py
       - tests/common/subsession_fakes.py
       - tests/common/test_github_auth.py
@@ -201,6 +202,8 @@ modules:
     paths:
       - src/robotsix_chat/repo/__init__.py
       - src/robotsix_chat/repo/direct/__init__.py
+      - src/robotsix_chat/repo/direct/actions_client.py
+      - src/robotsix_chat/repo/direct/board_client.py
       - src/robotsix_chat/repo/direct/client.py
       - src/robotsix_chat/repo/direct/skill.md
       - tests/repo/direct/__init__.py
