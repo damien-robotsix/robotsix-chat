@@ -39,7 +39,7 @@ closes itself.
 
 ### Auto-stop and failure notifications
 
-When a periodic monitor auto-stops (e.g. after 5 consecutive no-change runs, or after hitting its
+When a periodic monitor auto-stops (e.g. after 3 consecutive no-change runs, or after hitting its
 `max_runs` limit) or fails with an API error, the assistant **immediately notifies you** in the
 conversation — you do not need to send a message to learn what happened. The notification is
 delivered via a synthetic reaction turn:
@@ -96,8 +96,8 @@ POST /subsessions/{subsession_id}/close
 
 ### Paused-monitor resume behaviour (watcher)
 
-When a periodic monitor accumulates `subsessions.auto_stop_no_change_runs` consecutive `NO_CHANGE`
-replies, the subsession pauses itself by closing with reason `"paused"` (calling
+When a periodic monitor accumulates `subsessions.max_idle_runs` consecutive `NO_CHANGE` replies, the
+subsession pauses itself by closing with reason `"paused"` (calling
 `registry.mark_closed(reason="paused")`). Once paused, the monitor stops ticking and remains
 terminal — **until the monitored ticket's state changes**.
 
