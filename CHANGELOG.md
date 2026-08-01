@@ -5,6 +5,9 @@
 - Diagnosed misrouted ticket 20260731T174638Z: mail account-add crash targets
   functionality (``default_account_id``, account CRUD handler) not present in
   robotsix-chat; likely belongs in robotsix-mill or the auto-mail board server
+- Subsession auto-pause and resume now emit browser notification events
+  (SSE ``notification`` type) so the operator can see which monitor paused
+  or resumed, including the tracked ticket id and checkpoint state.
 - Split `DirectRepoClient` (1407→~1189 lines) into three focused modules:
   - `ActionsClient` (`repo/direct/actions_client.py`) — GitHub Actions workflow management (dispatch, runs, jobs, annotations, secrets, billing diagnosis).
   - `BoardClient` (`repo/direct/board_client.py`) — mill board API for ticket-state verification and lifecycle ops.

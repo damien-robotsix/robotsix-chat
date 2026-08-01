@@ -22,6 +22,8 @@ from typing import TYPE_CHECKING
 
 import httpx
 
+from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE
+
 if TYPE_CHECKING:
     from .worker import SubsessionEnv
 
@@ -101,6 +103,23 @@ async def _resume_paused_monitor(
     env._tasks.add(task)
     task.add_done_callback(env._tasks.discard)
 
+    if env.event_sink is not None:
+        ticket_id_raw = info.checkpoint.get("ticket_id") if info.checkpoint else ""
+        ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+        env.event_sink.publish(
+            info.owner_session_id,
+            {
+                "type": SSE_NOTIFICATION_TYPE,
+                "title": f"Monitor resumed: {info.title}",
+                "body": (
+                    f"Monitor {sub_id[:8]} tracking ticket {ticket_id} "
+                    f"resumed after ticket state change."
+                ),
+                "urgency": "low",
+                "link": ticket_id,
+            },
+        )
+
 
 async def _resume_merged_pr_monitor(
     env: SubsessionEnv,
@@ -128,6 +147,21 @@ async def _resume_merged_pr_monitor(
     env.registry.attach_task(sub_id, task)
     env._tasks.add(task)
     task.add_done_callback(env._tasks.discard)
+
+    if env.event_sink is not None:
+        env.event_sink.publish(
+            info.owner_session_id,
+            {
+                "type": SSE_NOTIFICATION_TYPE,
+                "title": f"Monitor resumed: {info.title}",
+                "body": (
+                    f"Monitor {sub_id[:8]} resumed after "
+                    f"PR #{pr_number} in {repo_full_name} was merged."
+                ),
+                "urgency": "low",
+                "link": f"https://github.com/{repo_full_name}/pull/{pr_number}",
+            },
+        )
 
 
 async def watch_paused_monitors(env: SubsessionEnv) -> None:

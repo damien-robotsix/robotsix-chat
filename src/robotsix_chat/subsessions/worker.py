@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING
 
 from robotsix_llmio.openrouter import is_openrouter_transient
 
-from robotsix_chat.chat.events import subsession_result_frame
+from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE, subsession_result_frame
 
 from .delivery import ParentDelivery
 from .models import (
@@ -1033,6 +1033,22 @@ async def _run_periodic_turn(
         )
         if closed is not None:
             await env.delivery.deliver_summary(closed, summary, "paused")
+            if env.event_sink is not None:
+                ticket_id_raw = checkpoint.get("ticket_id")
+                ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+                last_known = checkpoint.get("last_known_state", "")
+                env.event_sink.publish(
+                    info.owner_session_id,
+                    {
+                        "type": SSE_NOTIFICATION_TYPE,
+                        "title": f"Monitor auto-paused: {info.title}",
+                        "body": (
+                            f"Tracked ticket {ticket_id} ({last_known}) — {summary}"
+                        ),
+                        "urgency": "low",
+                        "link": ticket_id,
+                    },
+                )
         return None
 
     no_change_cap = env.settings.subsessions.auto_stop_no_change_runs
