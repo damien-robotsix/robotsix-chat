@@ -137,16 +137,14 @@ Config keys: `memory.enabled`, `memory.data_dir`, `memory.recall_search_type`,
 ## Python conventions
 
 **Rule:** Always write exception-tuple handlers in the parenthesized form
-`except (TypeA, TypeB, TypeC):`. Never use the bare comma form
-`except TypeA, TypeB, TypeC:` — it has different meaning in Python 2, is a
-SyntaxError on Python 3.0-3.13, and only parses as a tuple from Python 3.14
-(PEP 758), so it is a cross-version portability and readability hazard. This
+`except (TypeA, TypeB, TypeC):`. Never use the bare comma form `except TypeA, TypeB, TypeC:` — it
+has different meaning in Python 2, is a SyntaxError on Python 3.0-3.13, and only parses as a tuple
+from Python 3.14 (PEP 758), so it is a cross-version portability and readability hazard. This
 applies to both `except` and `except*` clauses.
 
-**Rationale:** 17+ comma-form handlers still shipped across `src/`; new code
-repeatedly copies the in-file comma-form pattern even while sweep/guard tickets
-standardize on the tuple form. A concrete rule prevents re-introduction in fresh
-error handling.
+**Rationale:** 17+ comma-form handlers still shipped across `src/`; new code repeatedly copies the
+in-file comma-form pattern even while sweep/guard tickets standardize on the tuple form. A concrete
+rule prevents re-introduction in fresh error handling.
 
 ## CI workflow conventions
 
