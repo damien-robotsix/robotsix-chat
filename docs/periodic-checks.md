@@ -64,6 +64,12 @@ delivered via a synthetic reaction turn:
 Internal reason codes (e.g. `"no_change_auto_stop"`, `"failed"`, `"ticket_terminal"`) are
 automatically translated to human-readable phrases in both the prompt and fallback messages.
 
+**Stale-monitor suppression.** If the monitored ticket is already in a terminal state — that is, its
+`last_known_state` is `"closed"` or `"done"` — the auto-stop/auto-pause notification is silently
+suppressed instead of being surfaced to you. This prevents a monitor tracking a long-closed ticket
+from generating repeated "no change" chatter; only meaningful state changes or blockers for active
+tickets are surfaced.
+
 ## Listing active checks
 
 Ask:
