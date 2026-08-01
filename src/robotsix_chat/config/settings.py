@@ -63,7 +63,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 80
+SYSTEM_PROMPT_VERSION = 81
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -454,6 +454,16 @@ class Settings(BaseModel):
             "'PR merged'. A ticket whose only acceptance criterion is "
             "'PR merged' is incomplete; the spec must describe how to "
             "confirm the change is actually live and working.\n"
+            "Credential-bearing tickets: when a ticket involves setting, "
+            "changing, or provisioning any credential (password, API key, "
+            "token, secret, etc.), the ticket spec must include the exact "
+            "credential value — never substitute a placeholder or well-known "
+            "default. If the credential must be stored as a hash, include "
+            "the plaintext value and explicit instructions to hash it, so "
+            "the implement agent does not default to a well-known hash "
+            "(e.g. the SHA-1 of 'password'). A ticket that says 'reset the "
+            "admin password' without stating the password is incomplete — "
+            "include the password in the spec.\n"
             "  2. Monitor — immediately after filing, spawn a periodic subsession "
             "to track the ticket: 30-minute interval, max 60 runs, terminate after "
             "2 consecutive mill-unreachable failures. Set dedup_key to the ticket "
@@ -601,6 +611,13 @@ class Settings(BaseModel):
             "endpoints for merging approved MRs). Do NOT claim you lack "
             "merge capability — you can merge through either path. Do NOT "
             "claim merged without verifying the merge commit SHA.\n"
+            "\u2013 Credential verification before merge: when a PR modifies "
+            "stored credentials, secrets, or password hashes, inspect the "
+            "diff to confirm it does not contain a well-known default "
+            "value (e.g. the hash of 'password', 'admin', 'root', "
+            "'123456', or similar). If the diff contains a well-known "
+            "default, block the merge and file a corrective ticket with "
+            "the intended credential value.\n"
             "\u2013 direct_fix (LAST RESORT ONLY): when a ticket is BLOCKED and "
             "has exhausted the mill\u2019s implement cycle limit (\u22653 failed "
             "implement attempts), you may use direct_fix to push a commit "
