@@ -776,6 +776,34 @@ def build_direct_repo_tools(
             result += f"\nPR: {pr_title}\nBranches: {head_base_branches}"
         return result
 
+    async def check_direct_repo_auto_merge(
+        repo_full_name: str,
+    ) -> str:
+        """Check whether a repository has auto-merge enabled.
+
+        Calls the GitHub API to read the repository's ``allow_auto_merge``
+        setting.  Use this **before** filing or managing tickets that
+        require automatic merging — if auto-merge is disabled the
+        operator should be informed that manual merging will be required.
+
+        **Read-only.**  This tool does not modify any state and does not
+        require confirmation gating.
+
+        Args:
+            repo_full_name: GitHub ``owner/name`` (e.g.
+                ``"robotsix/robotsix-chat"``).
+
+        Returns:
+            A message indicating whether auto-merge is enabled or disabled,
+            or an error message if the repository could not be fetched.
+
+        """
+        if error := await _assert_in_scope(client, repo_full_name):
+            return error
+        return await client.check_auto_merge_enabled(
+            repo_full_name=repo_full_name,
+        )
+
     async def arm_direct_repo_auto_merge(
         repo_full_name: str,
         pr_number: int,
@@ -795,6 +823,12 @@ def build_direct_repo_tools(
         State the exact repo, PR number, PR title, and head/base branches
         and wait for the operator to confirm before proceeding.  Never
         enable auto-merge without the operator's explicit consent in-chat.
+
+        **Pre-flight:** Call ``check_direct_repo_auto_merge`` first to
+        verify the repository has auto-merge enabled.  If auto-merge is
+        disabled at the repo level, inform the operator that manual
+        merging will be required — ``arm_direct_repo_auto_merge`` will
+        fail on a repo with ``allow_auto_merge`` set to false.
 
         **Scope:** *repo_full_name* must be within the robotsix-mill GitHub
         App's current installation scope (checked dynamically at call time).
@@ -1120,6 +1154,7 @@ def build_direct_repo_tools(
         update_pr_branch,
         check_pr_merge_conflict,
         recover_auto_merge,
+        check_direct_repo_auto_merge,
         merge_direct_repo_pr,
         arm_direct_repo_auto_merge,
         reset_implement_spawn_counter,

@@ -844,6 +844,48 @@ class DirectRepoClient:
             f"{message or 'unknown reason'} (SHA: {sha})"
         )
 
+    async def check_auto_merge_enabled(
+        self,
+        *,
+        repo_full_name: str,
+    ) -> str:
+        """Check whether auto-merge is enabled on a repository.
+
+        Calls ``GET /repos/{owner}/{repo}`` and reads the
+        ``allow_auto_merge`` field from the repository object.
+
+        Args:
+            repo_full_name: ``"owner/name"``.
+
+        Returns:
+            A human-readable message indicating whether auto-merge is
+            enabled, or an error message if the repository could not be
+            fetched.
+
+        Never raises — returns an error string on any failure.
+
+        """
+        try:
+            repo = await self._get_json(f"/repos/{repo_full_name}")
+        except RuntimeError as exc:
+            return f"Error fetching repository metadata for {repo_full_name}: {exc}"
+
+        allow_auto_merge = repo.get("allow_auto_merge", False)
+        if allow_auto_merge:
+            return (
+                f"Auto-merge is **enabled** on {repo_full_name}.  "
+                f"PRs with auto-merge armed will be merged automatically "
+                f"once all required conditions (CI, reviews, branch "
+                f"protection) are satisfied."
+            )
+        return (
+            f"Auto-merge is **disabled** on {repo_full_name}.  "
+            f"The repository has ``allow_auto_merge`` set to false.  "
+            f"PRs cannot be armed for automatic merging — all merges "
+            f"must be performed manually via the GitHub UI or the "
+            f"``merge_direct_repo_pr`` tool."
+        )
+
     async def arm_auto_merge(
         self,
         *,
@@ -904,7 +946,9 @@ class DirectRepoClient:
                     f"Cannot enable auto-merge on PR #{pr_number} in "
                     f"{repo_full_name}: the repository may not have "
                     f"auto-merge enabled, or branch protection rules "
-                    f"prevent it.  GitHub response: {msg}"
+                    f"prevent it.  Use ``check_direct_repo_auto_merge`` "
+                    f"to verify the repository's auto-merge setting.  "
+                    f"GitHub response: {msg}"
                 )
             return (
                 f"Error enabling auto-merge on PR #{pr_number} in "
