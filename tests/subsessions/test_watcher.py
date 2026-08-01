@@ -8,16 +8,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
+from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE
 from robotsix_chat.subsessions import (
     SubsessionKind,
     SubsessionStatus,
 )
 from robotsix_chat.subsessions.watcher import (
     _query_ticket_state,
+    _resume_merged_pr_monitor,
     _resume_paused_monitor,
     watch_paused_monitors,
 )
-from tests.common.subsession_fakes import build_env, make_settings
+from tests.common.subsession_fakes import (
+    RecordingSink,
+    build_env,
+    make_settings,
+)
 
 OWNER = "sess-main"
 
@@ -100,8 +106,9 @@ async def test_query_ticket_state_returns_none_on_bad_url() -> None:
 
 @pytest.mark.asyncio
 async def test_resume_paused_monitor_reopens_and_spawns_worker() -> None:
-    """``_resume_paused_monitor`` reopens the record and spawns a worker task."""
-    env = build_env()
+    """_resume_paused_monitor reopens, spawns a worker, and emits a notification."""
+    sink = RecordingSink()
+    env = build_env(event_sink=sink)
     info = env.registry.create(
         kind=SubsessionKind.PERIODIC,
         owner_session_id=OWNER,
@@ -126,6 +133,15 @@ async def test_resume_paused_monitor_reopens_and_spawns_worker() -> None:
 
     # A worker task should have been spawned.
     assert info.id in env.registry._running
+
+    # Assert an SSE notification was published for the resume.
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    assert len(notifications) == 1
+    _sid, frame = notifications[0]
+    assert frame["title"] == f"Monitor resumed: {info.title}"
+    assert "ticket state change" in str(frame["body"])
+    assert frame["urgency"] == "low"
+    assert frame["link"] == "T-1"
 
 
 @pytest.mark.asyncio
@@ -161,6 +177,48 @@ async def test_resume_paused_monitor_noop_for_non_paused() -> None:
     reopened = env.registry.get(info.id)
     assert reopened is not None
     assert reopened.status is SubsessionStatus.CLOSED
+
+
+# -- _resume_merged_pr_monitor -------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_resume_merged_pr_monitor_emits_notification() -> None:
+    """``_resume_merged_pr_monitor`` reopens the record and emits a notification."""
+    sink = RecordingSink()
+    env = build_env(event_sink=sink)
+    info = env.registry.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="pr monitor",
+        prompt="monitor",
+        model_level=3,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "T-2", "pr_number": 42, "repo_full_name": "org/repo"},
+    )
+    env.registry.mark_closed(
+        info.id, summary="paused", reason="paused", closed_by="system"
+    )
+
+    await _resume_merged_pr_monitor(
+        env, info.id, pr_number=42, repo_full_name="org/repo"
+    )
+
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.status is SubsessionStatus.RUNNING
+    assert reopened.close_reason is None
+
+    # Assert an SSE notification was published for the PR-merge resume.
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    assert len(notifications) == 1
+    _sid, frame = notifications[0]
+    assert frame["title"] == f"Monitor resumed: {info.title}"
+    assert "PR #42 in org/repo was merged" in str(frame["body"])
+    assert frame["urgency"] == "low"
+    assert frame["link"] == "https://github.com/org/repo/pull/42"
 
 
 # -- watch_paused_monitors -------------------------------------------------
@@ -203,14 +261,15 @@ def _mock_ticket_client(*, state="open"):
 
 @pytest.mark.asyncio
 async def test_watcher_resumes_when_state_changes() -> None:
-    """The watcher resumes a paused monitor whose ticket state changed."""
+    """The watcher resumes a paused monitor on state change and emits a notification."""
     settings = make_settings()
     settings.direct_repo = type(
         "_ns", (), {"board_api_base_url": "https://mill.example.com"}
     )()
     # Short poll interval so the test doesn't hang.
     settings.subsessions.paused_monitor_poll_interval_seconds = 0.01
-    env = build_env(settings=settings)
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
 
     info = _make_paused_monitor(env, ticket_id="T-1", last_known="open")
 
@@ -232,6 +291,13 @@ async def test_watcher_resumes_when_state_changes() -> None:
     reopened = env.registry.get(info.id)
     assert reopened is not None
     assert reopened.is_active
+
+    # Assert an SSE notification was published for the state-change resume.
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    assert len(notifications) == 1
+    _sid, frame = notifications[0]
+    assert "Monitor resumed:" in str(frame["title"])
+    assert "ticket state change" in str(frame["body"])
 
 
 @pytest.mark.asyncio
