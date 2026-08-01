@@ -15,12 +15,24 @@ import json
 import logging
 from typing import TYPE_CHECKING, Any, cast
 
+import httpx
+from robotsix_http import RetryClient, RetryConfig
+
 from robotsix_chat.common.http import safe_http_request
 
 if TYPE_CHECKING:
     from robotsix_chat.config import DirectRepoSettings
 
 logger = logging.getLogger(__name__)
+
+# Retry configuration for board API requests — transient network blips
+# should not surface as "board API unreachable" to callers.
+_BOARD_RETRY_CONFIG = RetryConfig(
+    max_retries=2,
+    backoff_base=1.0,
+    backoff_cap=10.0,
+    jitter_factor=0.5,
+)
 
 
 class BoardClient:
@@ -45,6 +57,9 @@ class BoardClient:
         When *field* is provided (e.g. ``"state"``), returns ``data.get(field)``;
         when ``None``, returns the full parsed JSON dict.  Returns ``None`` on
         any error (logged as a warning).
+
+        Uses ``RetryClient`` so transient network blips don't surface as
+        "board API unreachable" to callers (same retry policy as ticket_poll).
         """
         url = f"{self._board_url}/tickets/{ticket_id}"
         headers: dict[str, str] = {"Accept": "application/json"}
@@ -52,25 +67,53 @@ class BoardClient:
             headers["Authorization"] = (
                 f"Bearer {self._s.board_api_token.get_secret_value()}"
             )
-        label = f"Board API (ticket {label_suffix})"
-        result = await safe_http_request(
-            "GET", url, headers=headers, timeout=self._s.timeout, label=label
-        )
-        if result.error:
+        try:
+            async with httpx.AsyncClient(timeout=self._s.timeout) as client:
+                retry_client = RetryClient(client, config=_BOARD_RETRY_CONFIG)
+                response = await retry_client.get(url, headers=headers)
+                response.raise_for_status()
+                text = response.text
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                logger.warning(
+                    "Board API: ticket %r not found (404) when fetching %s. "
+                    "This ID may have been derived from narrative text "
+                    "rather than from a board API response — verify it "
+                    "against GET /tickets on the board.",
+                    ticket_id,
+                    label_suffix,
+                )
+            else:
+                logger.warning(
+                    "Board API request for ticket %s %s failed: HTTP %s",
+                    ticket_id,
+                    label_suffix,
+                    exc.response.status_code,
+                )
+            return None
+        except httpx.TimeoutException:
             logger.warning(
-                "Failed to fetch ticket %s %s: %s",
+                "Board API request for ticket %s %s timed out after %ss",
                 ticket_id,
                 label_suffix,
-                result.error,
+                self._s.timeout,
+            )
+            return None
+        except Exception as exc:
+            logger.warning(
+                "Board API request for ticket %s %s failed: %s",
+                ticket_id,
+                label_suffix,
+                exc,
             )
             return None
         try:
-            data = json.loads(result.text or "")
+            data = json.loads(text)
         except json.JSONDecodeError, TypeError:
             logger.warning(
                 "Non-JSON response for ticket %s: %s",
                 ticket_id,
-                (result.text or "")[:200],
+                text[:200],
             )
             return None
         if field is not None:

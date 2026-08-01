@@ -193,7 +193,7 @@ async def test_ticket_poll_http_404(respx_mock: respx.MockRouter) -> None:
 
     assert result["ticket_id"] == "not-found"
     assert result["state"] is None
-    assert "404" in result["error"]
+    assert result["error"] == "Board API request failed"
 
 
 @pytest.mark.asyncio
@@ -208,7 +208,7 @@ async def test_ticket_poll_http_500(respx_mock: respx.MockRouter) -> None:
 
     assert result["ticket_id"] == "server-error"
     assert result["state"] is None
-    assert "500" in result["error"]
+    assert result["error"] == "Board API request failed"
 
 
 # ---------------------------------------------------------------------------
@@ -228,8 +228,7 @@ async def test_ticket_poll_timeout(respx_mock: respx.MockRouter) -> None:
 
     assert result["ticket_id"] == "timeout-id"
     assert result["state"] is None
-    assert "timed out" in result["error"].lower()
-    assert "10.0s" in result["error"]
+    assert result["error"] == "Board API request failed"
 
 
 @pytest.mark.asyncio
@@ -244,7 +243,7 @@ async def test_ticket_poll_connect_error(respx_mock: respx.MockRouter) -> None:
 
     assert result["ticket_id"] == "conn-fail"
     assert result["state"] is None
-    assert "timed out" in result["error"].lower()
+    assert result["error"] == "Board API request failed"
 
 
 @pytest.mark.asyncio
@@ -263,7 +262,7 @@ async def test_ticket_poll_json_decode_failure(respx_mock: respx.MockRouter) -> 
 
     assert result["ticket_id"] == "bad-json"
     assert result["state"] is None
-    assert "Non-JSON" in result["error"]
+    assert result["error"] == "Board API request failed"
 
 
 @pytest.mark.asyncio
@@ -280,7 +279,7 @@ async def test_ticket_poll_empty_body_json_decode_failure(
 
     assert result["ticket_id"] == "empty-body"
     assert result["state"] is None
-    assert "Non-JSON" in result["error"]
+    assert result["error"] == "Board API request failed"
 
 
 # ---------------------------------------------------------------------------
@@ -482,7 +481,7 @@ async def test_ticket_poll_batch_partial_failure(
     assert bad["ticket_id"] == "bad"
     assert bad["state"] is None
     assert bad["data"] is None
-    assert "500" in bad["error"]
+    assert bad["error"] == "Board API request failed"
 
 
 @pytest.mark.asyncio
@@ -542,7 +541,7 @@ async def test_ticket_poll_batch_timeout_per_ticket(
 
     slow = result["tickets"][1]
     assert slow["state"] is None
-    assert "timed out" in slow["error"].lower()
+    assert slow["error"] == "Board API request failed"
 
 
 @pytest.mark.asyncio
@@ -566,7 +565,7 @@ async def test_ticket_poll_batch_json_decode_failure(
     assert ticket["ticket_id"] == "bad-json"
     assert ticket["state"] is None
     assert ticket["data"] is None
-    assert "Non-JSON" in ticket["error"]
+    assert ticket["error"] == "Board API request failed"
 
 
 # ---------------------------------------------------------------------------
@@ -713,7 +712,7 @@ async def test_ticket_poll_batch_unresolvable_id_still_attempted(
     tickets = result["tickets"]
     assert len(tickets) == 1
     assert tickets[0]["ticket_id"] == "ghost-ticket-xxxx"
-    assert "404" in tickets[0]["error"]
+    assert tickets[0]["error"] == "Board API request failed"
 
 
 @pytest.mark.asyncio
@@ -738,7 +737,7 @@ async def test_ticket_poll_batch_resolution_list_failure_graceful(
     tickets = result["tickets"]
     assert len(tickets) == 1
     assert tickets[0]["ticket_id"] == "...-resolve-ids-32be"
-    assert "404" in tickets[0]["error"]
+    assert tickets[0]["error"] == "Board API request failed"
 
 
 # ---------------------------------------------------------------------------
