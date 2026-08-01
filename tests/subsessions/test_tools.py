@@ -1051,7 +1051,7 @@ async def test_self_update_instructions_not_a_string() -> None:
     )
     update = _by_name(tools, "self_update_subsession")
 
-    result = await update(instructions=123)  # type: ignore[arg-type]
+    result = await update(instructions=123)
 
     assert "must be a string" in result
 
@@ -1087,7 +1087,7 @@ async def test_self_update_interval_not_a_number() -> None:
     )
     update = _by_name(tools, "self_update_subsession")
 
-    result = await update(interval_seconds="fast")  # type: ignore[arg-type]
+    result = await update(interval_seconds="fast")
 
     assert "must be a number" in result
 
@@ -1123,7 +1123,7 @@ async def test_self_update_max_runs_not_int() -> None:
     )
     update = _by_name(tools, "self_update_subsession")
 
-    result = await update(max_runs=3.5)  # type: ignore[arg-type]
+    result = await update(max_runs=3.5)
 
     assert "must be an integer" in result
 
