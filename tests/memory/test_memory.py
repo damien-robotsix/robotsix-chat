@@ -1413,3 +1413,72 @@ async def test_concurrent_writes_serialised_and_backlogged(
     assert add_call_count == 25
     # No backlog entries (all writes succeeded with the mock).
     assert not backlog.exists() or backlog.read_text().strip() == ""
+
+
+# ---------------------------------------------------------------------------
+# ReadOnlyMemory — background agents read but never write
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_read_only_memory_recalls_but_never_writes(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """Recall is forwarded; remember is dropped without touching the backend.
+
+    Recall is a retrieval-only lookup with no LLM call, while cognify is a
+    multi-minute LLM pipeline that also contends with every concurrent
+    recall — so background agents may read even where they must not write.
+    """
+    from robotsix_chat.memory import ReadOnlyMemory
+
+    mem, fake = cognee_memory
+    ro = ReadOnlyMemory(mem)
+
+    assert await ro.recall("who?") == "recalled fact"
+    fake.search.assert_awaited_once()
+
+    await ro.remember("hello", "hi")
+    fake.add.assert_not_awaited()
+    fake.cognify.assert_not_awaited()
+
+
+@pytest.mark.asyncio
+async def test_read_only_memory_forwards_deep_recall(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """The search_memory tool still works through the wrapper."""
+    from robotsix_chat.memory import ReadOnlyMemory
+    from robotsix_chat.memory.tools import build_memory_tools
+
+    mem, fake = cognee_memory
+    ro = ReadOnlyMemory(mem)
+
+    tools = build_memory_tools(ro)
+    assert [t.__name__ for t in tools] == ["search_memory"]
+    assert await tools[0]("what did we decide?") == "recalled fact"
+
+
+def test_read_only_memory_hides_deep_recall_when_backend_lacks_it() -> None:
+    """No deep recall on the backend → no search_memory tool offered.
+
+    Forwarding is dynamic (``__getattr__``) precisely so the attribute is
+    ABSENT here; an explicit method would always be present and would
+    advertise a tool that then raises.
+    """
+    from robotsix_chat.memory import NullMemory, ReadOnlyMemory
+    from robotsix_chat.memory.tools import build_memory_tools
+
+    assert build_memory_tools(ReadOnlyMemory(NullMemory())) == []
+
+
+def test_read_only_memory_status_flags_read_only(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """Health surfaces the wrapped backend's state, marked read-only."""
+    from robotsix_chat.memory import ReadOnlyMemory
+
+    mem, _ = cognee_memory
+    st = ReadOnlyMemory(mem).status()
+    assert st["backend"] == "cognee"
+    assert st["read_only"] is True

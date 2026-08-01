@@ -20,12 +20,12 @@ from __future__ import annotations
 
 from typing import TYPE_CHECKING
 
-from .base import ChatMemory, NullMemory
+from .base import ChatMemory, NullMemory, ReadOnlyMemory
 
 if TYPE_CHECKING:
     from robotsix_chat.config import MemorySettings
 
-__all__ = ["ChatMemory", "NullMemory", "build_memory"]
+__all__ = ["ChatMemory", "NullMemory", "ReadOnlyMemory", "build_memory"]
 
 
 def build_memory(settings: MemorySettings) -> ChatMemory:

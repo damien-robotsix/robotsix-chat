@@ -97,3 +97,68 @@ class NullMemory:
     def set_recovery_callback(self, callback: RecoverCallback | None) -> None:
         """No-op: a null backend has nothing to recover."""
         return None
+
+
+class ReadOnlyMemory:
+    """Wraps a :class:`ChatMemory` so it can recall but never write.
+
+    Recall and cognify have wildly different costs. Recall is a retrieval-only
+    vector lookup (~0.4 s warm, no LLM call); ``remember`` runs cognee's
+    multi-minute LLM extraction pipeline and contends with every concurrent
+    recall for the same stores.
+
+    Background agents — subsessions and the autonomous auto-continue loop —
+    run unattended around the clock, so letting them cognify every turn is
+    what produced the ~$22/day cognee bill and the write contention that
+    slows interactive chat. But there is no reason to deny them *reading*
+    what the main conversation has already learned.
+
+    This wrapper is that middle setting: full recall (including the deep
+    ``search_memory`` tool, which is forwarded), writes silently dropped.
+    """
+
+    def __init__(self, inner: ChatMemory) -> None:
+        """Wrap *inner*, exposing its reads and discarding its writes."""
+        self._inner = inner
+
+    async def setup(self) -> None:
+        """Initialise the wrapped backend."""
+        await self._inner.setup()
+
+    async def recall(self, query: str, *, session_id: str | None = None) -> str:
+        """Delegate to the wrapped backend — reads are the whole point."""
+        return await self._inner.recall(query, session_id=session_id)
+
+    def __getattr__(self, name: str) -> Any:
+        """Forward unknown attributes (notably ``recall_deep``) to the backend.
+
+        Dynamic rather than an explicit ``recall_deep`` method so the
+        attribute is *absent* when the wrapped backend lacks it — that is
+        exactly what ``build_memory_tools`` probes to decide whether to offer
+        the ``search_memory`` tool. An explicit method would always be
+        present and would advertise a tool that then raises.
+
+        Only reached for names not defined on this class, so the write-side
+        overrides above can never be bypassed.
+        """
+        return getattr(self._inner, name)
+
+    async def remember(
+        self,
+        user_message: str,
+        assistant_message: str,
+        *,
+        session_id: str | None = None,
+    ) -> None:
+        """Discard the exchange — background agents must not cognify."""
+        return None
+
+    def status(self) -> dict[str, Any]:
+        """Report the wrapped backend's health, flagged read-only."""
+        inner_status = dict(self._inner.status())
+        inner_status["read_only"] = True
+        return inner_status
+
+    def set_recovery_callback(self, callback: RecoverCallback | None) -> None:
+        """No-op: recovery is driven by the writing (main-chat) agent."""
+        return None

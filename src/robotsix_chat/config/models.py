@@ -90,6 +90,16 @@ class MemorySettings(BaseModel):
     Attributes:
         enabled: When ``True``, the agent recalls before and persists after each
             reply. Requires the ``memory`` extra (cognee) installed.
+        background_recall_enabled: When ``True`` (default), background agents
+            (subsessions and the autonomous loop) may READ memory even when
+            their write gate is off — they get recall plus the
+            ``search_memory`` tool, but ``remember`` is a no-op.  This is the
+            setting that makes the read/write asymmetry usable: recall is a
+            retrieval-only lookup (~0.4 s warm, no LLM call) while cognify is
+            a multi-minute LLM pipeline, so there is no reason to deny
+            background agents the accumulated context just because they must
+            not pay to write it back.  Set ``False`` to restore the previous
+            all-or-nothing behaviour.
         subsession_enabled: When ``False`` (default), subsession agents
             (task / periodic / user_chat workers) get a ``NullMemory`` — they
             neither recall nor cognify.  ``enabled`` alone only gates the
@@ -184,6 +194,7 @@ class MemorySettings(BaseModel):
     """
 
     enabled: bool = False
+    background_recall_enabled: bool = True
     subsession_enabled: bool = False
     autonomous_enabled: bool = False
     data_dir: str = "/data/cognee"
