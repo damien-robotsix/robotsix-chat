@@ -18,6 +18,12 @@
   escalated to the operator, and resuming would only create a
   wasteful pause-resume-pause loop since the monitor's agent cannot
   fix source-code or dependency issues on its own. (mill: Pause auto-retry monitors that block on substantive CI failures (20260731T200830Z-pause-auto-retry-monitors-that-block-on-c6b8))
+- Route `ticket_poll` direct (non-component) single and batch ticket-fetch
+  paths through `BoardClient` (`get_ticket_data`), deleting the duplicated
+  `_fetch_one_direct` body that re-implemented `GET /tickets/{id}` with
+  bearer auth, retry, and JSON parsing.  `BoardClient._fetch_ticket_field`
+  now uses `RetryClient` so both `repo/direct` and `ticket_poll` benefit
+  from the same retry policy (max_retries=2). (mill: Migrate ticket_poll's direct board-API fetch to the new BoardClient in repo/direct/board_client.py (20260801T000333Z-migrate-ticket-poll-s-direct-board-api-f-f73e))
 - Split `DirectRepoClient` (1407→~1189 lines) into three focused modules:
   - `ActionsClient` (`repo/direct/actions_client.py`) — GitHub Actions workflow management (dispatch, runs, jobs, annotations, secrets, billing diagnosis).
   - `BoardClient` (`repo/direct/board_client.py`) — mill board API for ticket-state verification and lifecycle ops.

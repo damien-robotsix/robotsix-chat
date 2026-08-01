@@ -34,6 +34,8 @@ from typing import TYPE_CHECKING, Any
 import httpx
 from robotsix_http import RetryClient, RetryConfig
 
+from robotsix_chat.repo.direct.board_client import BoardClient
+
 if TYPE_CHECKING:
     from robotsix_chat.config import Settings
 
@@ -243,6 +245,8 @@ def build_ticket_poll_tools(
     if conn is None:
         return []
     board_url, board_token, timeout = conn
+
+    board_client = BoardClient(settings.direct_repo)
 
     async def _fetch_ticket_via_component(
         ticket_id: str,
@@ -495,76 +499,24 @@ def build_ticket_poll_tools(
         Use this when ``component_request`` is unavailable or as an
         independent verification of ticket state.
         """
-        url = f"{board_url}/tickets/{ticket_id}"
-        headers: dict[str, str] = {"Accept": "application/json"}
-        if board_token:
-            headers["Authorization"] = f"Bearer {board_token}"
-
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
-                response = await retry_client.get(url, headers=headers)
-                response.raise_for_status()
-                data, parse_error = _parse_json_body(response.text)
-                if parse_error:
-                    return json.dumps(
-                        {"ticket_id": ticket_id, "state": None, "error": parse_error},
-                        ensure_ascii=False,
-                    )
-                if data is None:  # guarded by parse_error check above
-                    return json.dumps(
-                        {
-                            "ticket_id": ticket_id,
-                            "state": None,
-                            "error": "Empty parsed response from board API",
-                        },
-                        ensure_ascii=False,
-                    )
-                state = data.get("state")
-                return json.dumps(
-                    {
-                        "ticket_id": ticket_id,
-                        "state": state,
-                        "error": "",
-                    },
-                    ensure_ascii=False,
-                )
-        except httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException:
+        data = await board_client.get_ticket_data(ticket_id)
+        if data is None:
             return json.dumps(
                 {
                     "ticket_id": ticket_id,
                     "state": None,
-                    "error": f"Board API request timed out after {timeout}s",
+                    "error": "Board API request failed",
                 },
                 ensure_ascii=False,
             )
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 404:
-                logger.warning(
-                    "ticket_poll: ticket %r not found (404). "
-                    "This ID may have been derived from narrative text "
-                    "rather than from a board API response — verify it "
-                    "against GET /tickets on the board.",
-                    ticket_id,
-                )
-            return json.dumps(
-                {
-                    "ticket_id": ticket_id,
-                    "state": None,
-                    "error": f"Board API returned HTTP {exc.response.status_code}",
-                },
-                ensure_ascii=False,
-            )
-        except Exception as exc:
-            logger.warning("ticket_poll direct path failed for %s: %s", ticket_id, exc)
-            return json.dumps(
-                {
-                    "ticket_id": ticket_id,
-                    "state": None,
-                    "error": f"Board API request failed: {exc}",
-                },
-                ensure_ascii=False,
-            )
+        return json.dumps(
+            {
+                "ticket_id": ticket_id,
+                "state": data.get("state"),
+                "error": "",
+            },
+            ensure_ascii=False,
+        )
 
     async def ticket_poll_batch(ticket_ids: list[str]) -> str:
         """Fetch full ticket data for multiple tickets concurrently.
@@ -660,71 +612,20 @@ def build_ticket_poll_tools(
 
         async def _fetch_one_direct(ticket_id: str) -> dict[str, Any]:
             async with sem:
-                url = f"{board_url}/tickets/{ticket_id}"
-                headers: dict[str, str] = {"Accept": "application/json"}
-                if board_token:
-                    headers["Authorization"] = f"Bearer {board_token}"
-
-                try:
-                    async with httpx.AsyncClient(timeout=timeout) as client:
-                        retry_client = RetryClient(
-                            client, config=_TICKET_POLL_RETRY_CONFIG
-                        )
-                        response = await retry_client.get(url, headers=headers)
-                        response.raise_for_status()
-                        data, parse_error = _parse_json_body(response.text)
-                        if parse_error:
-                            return {
-                                "ticket_id": ticket_id,
-                                "state": None,
-                                "data": None,
-                                "error": parse_error,
-                            }
-                        if data is None:  # guarded by parse_error check above
-                            return {
-                                "ticket_id": ticket_id,
-                                "state": None,
-                                "data": None,
-                                "error": "Empty parsed response from board API",
-                            }
-                        return {
-                            "ticket_id": ticket_id,
-                            "state": data.get("state"),
-                            "data": data,
-                            "error": "",
-                        }
-                except httpx.HTTPStatusError as exc:
-                    if exc.response.status_code == 404:
-                        logger.warning(
-                            "ticket_poll_batch: ticket %r not found (404). "
-                            "This ID may have been derived from narrative text "
-                            "rather than from a board API response — verify it "
-                            "against GET /tickets on the board.",
-                            ticket_id,
-                        )
+                data = await board_client.get_ticket_data(ticket_id)
+                if data is None:
                     return {
                         "ticket_id": ticket_id,
                         "state": None,
                         "data": None,
-                        "error": f"Board API returned HTTP {exc.response.status_code}",
+                        "error": "Board API request failed",
                     }
-                except httpx.TimeoutException:
-                    return {
-                        "ticket_id": ticket_id,
-                        "state": None,
-                        "data": None,
-                        "error": f"Board API request timed out after {timeout}s",
-                    }
-                except Exception as exc:
-                    logger.warning(
-                        "ticket_poll_batch failed for %s: %s", ticket_id, exc
-                    )
-                    return {
-                        "ticket_id": ticket_id,
-                        "state": None,
-                        "data": None,
-                        "error": f"Board API request failed: {exc}",
-                    }
+                return {
+                    "ticket_id": ticket_id,
+                    "state": data.get("state"),
+                    "data": data,
+                    "error": "",
+                }
 
         gathered = await asyncio.gather(
             *(_fetch_one_direct(tid) for tid in effective_ids)
