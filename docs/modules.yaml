@@ -36,6 +36,7 @@ modules:
       - docs/changelog.md
       - docs/triage-boilerplate.md
       - docs/system_prompt_changelog.md
+      - docs/prompt-style.md
       - docs/periodic-checks.md
       - docs/user-guide/deployment.md
       - docs/_snippets/nginx-reverse-proxy.md
@@ -181,6 +182,7 @@ modules:
       - tests/chat/server/routes/test_diagnostics.py
       - tests/chat/server/routes/test_subsessions.py
       - tests/chat/server/test_autonomous_endpoints.py
+      - tests/chat/server/test_prompt_style_governance.py
 
   - id: common
     description: "Shared utilities — provides safe_http_request() for consistent httpx error handling across HTTP clients, and JsonStoreBase for JSON-persisted dataclass stores."

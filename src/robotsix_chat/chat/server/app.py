@@ -11,6 +11,7 @@ import contextlib
 import logging
 from collections.abc import AsyncIterator, Callable
 from importlib import resources
+from pathlib import Path
 from typing import TYPE_CHECKING, Any
 
 from asgi_correlation_id import CorrelationIdMiddleware
@@ -563,6 +564,70 @@ def create_app(
     return app
 
 
+# Canonical path to the reply-style directive — the single source of truth
+# for how the agent formats replies.  The file is read at agent construction
+# time and appended to the system prompt on every build.
+_PROMPT_STYLE_PATH = Path("docs/prompt-style.md")
+
+# Delimiter line that separates the header/description from the actual
+# directive in the style file.  Everything after this line (exclusive)
+# is injected into the system prompt.
+_STYLE_DIRECTIVE_HEADER = "## Style directive"
+
+
+def _load_prompt_style() -> str:
+    """Read the canonical reply-style directive from disk.
+
+    Returns the directive text (the content following the
+    ``## Style directive`` header in ``docs/prompt-style.md``), or
+    an empty string if the file is missing — a missing file logs
+    a warning but is not fatal (the agent runs without a style
+    directive).
+    """
+    try:
+        raw = _PROMPT_STYLE_PATH.read_text()
+    except FileNotFoundError:
+        logging.getLogger(__name__).warning(
+            "Prompt style file not found at %s — agent will run "
+            "without a reply-style directive.",
+            _PROMPT_STYLE_PATH,
+        )
+        return ""
+    except OSError as exc:
+        logging.getLogger(__name__).warning(
+            "Could not read prompt style file at %s: %s — agent will "
+            "run without a reply-style directive.",
+            _PROMPT_STYLE_PATH,
+            exc,
+        )
+        return ""
+
+    # Extract the directive section: everything after the
+    # "## Style directive" header line.
+    header_idx = raw.find(_STYLE_DIRECTIVE_HEADER)
+    if header_idx == -1:
+        logging.getLogger(__name__).warning(
+            "Prompt style file at %s is missing the %r header — "
+            "agent will run without a reply-style directive.",
+            _PROMPT_STYLE_PATH,
+            _STYLE_DIRECTIVE_HEADER,
+        )
+        return ""
+
+    # Drop the header line itself and any blank lines immediately after it.
+    body = raw[header_idx + len(_STYLE_DIRECTIVE_HEADER) :]
+    body = body.lstrip("\n").strip()
+    if not body:
+        logging.getLogger(__name__).warning(
+            "Prompt style file at %s has an empty directive section — "
+            "agent will run without a reply-style directive.",
+            _PROMPT_STYLE_PATH,
+        )
+        return ""
+
+    return body
+
+
 def _inject_skills(
     settings: Settings,
     instruction: str,
@@ -571,11 +636,18 @@ def _inject_skills(
 ) -> str:
     """Augment *instruction* with component-access instructions and skill prompts.
 
-    Only active when *bare* is ``False``.  Each skill gate is independently
-    gated by its own settings key (``central_deploy.url``,
-    ``lifecycle.enabled``, ``notification.enabled``,
-    ``github_security.enabled``).
+    Skill injection is disabled when *bare* is ``True``, but the canonical
+    reply-style directive is always appended — it is a formatting directive,
+    not a skill.  Each skill gate is independently gated by its own settings
+    key (``central_deploy.url``, ``lifecycle.enabled``,
+    ``notification.enabled``, ``github_security.enabled``).
     """
+    # Always append the canonical reply-style directive — this is a
+    # formatting directive, not a skill, and applies to every agent build.
+    style = _load_prompt_style()
+    if style:
+        instruction = f"{instruction}\n\n{style}"
+
     if bare:
         return instruction
 
