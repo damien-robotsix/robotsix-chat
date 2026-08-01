@@ -1,8 +1,8 @@
 # Prompt Style
 
-Canonical reply-style directive for the robotsix-chat agent. This file is the single source of
-truth for how the agent formats its replies. It is read at agent construction time and injected
-into the system prompt — changes to this file take effect on the next deploy without code changes.
+Canonical reply-style directive for the robotsix-chat agent. This file is the single source of truth
+for how the agent formats its replies. It is read at agent construction time and injected into the
+system prompt — changes to this file take effect on the next deploy without code changes.
 
 ## Style directive
 
