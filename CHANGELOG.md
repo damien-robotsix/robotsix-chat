@@ -60,6 +60,7 @@
   a governance test fails if the file is deleted or unreferenced.
 - Document `feedback.deploy_api_key` in the Feedback settings table in `docs/configuration.md`.
 - Update direct-repo guardrail docstrings and system prompt to acknowledge the ``merge_pr`` tool (BLOCKED-only) instead of claiming no merge capability exists on the direct-repo path.
+- Add single-repo PR verification to the retrospect stage: before closing a ticket, confirm that the PR recorded in ``merge.md`` is still present and merged on the forge. If the PR has been deleted or is no longer merged, the ticket is blocked instead of closed, preventing fixes from being silently dropped.
 - Fix `max_idle_runs` docstring default from 5 to 3 (matching shipped behaviour), and correct the paused-monitor config key reference in `docs/periodic-checks.md` from `auto_stop_no_change_runs` to `max_idle_runs`.
 - Diagnosed misrouted ticket 20260731T174638Z: mail account-add crash targets
   functionality (``default_account_id``, account CRUD handler) not present in

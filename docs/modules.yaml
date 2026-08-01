@@ -55,6 +55,7 @@ modules:
       - src/robotsix_mill/__init__.py
       - src/robotsix_mill/agent_definitions/implement.yaml
       - src/robotsix_mill/stages/document.py
+      - src/robotsix_mill/stages/retrospect.py
       - src/robotsix_mill/stages/towncrier.py
       - tests/stages/**/*
       - changelog.d/**/*
