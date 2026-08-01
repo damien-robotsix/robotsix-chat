@@ -13,18 +13,18 @@ from __future__ import annotations
 
 import logging
 import re
+from datetime import UTC
 
-from ..langfuse import client as langfuse_client
 from ..agents import retrospecting
 from ..agents.retrospecting import MemoryEdit, RetrospectResult
-from ..config import Settings, get_repo_config
-from ..config import ConfigError
+from ..config import ConfigError, Settings, get_repo_config
 from ..core.models import SourceKind, Ticket
 from ..core.states import DONE_OR_CLOSED, State
 from ..core.text_noop import is_noop_report
 from ..core.text_utils import truncate_at_boundary
 from ..core.workspace import prune_clone
 from ..forge import get_forge
+from ..langfuse import client as langfuse_client
 from ..runtime.tracing import current_session
 from .base import Outcome, Stage, StageContext
 
@@ -272,7 +272,9 @@ def _apply_memory_edits(
 # source of truth shared with the report_issue tool so the two can't
 # drift.
 def _is_noop_draft(title: str | None) -> bool:
-    """The retrospect model sometimes sets propose_draft=true with a
+    """Check if the draft title is a no-op placeholder.
+
+    The retrospect model sometimes sets ``propose_draft=true`` with a
     "No notable issues - clean run" title — noise, not a ticket. Defers
     to the shared :func:`is_noop_report` (title-only).
     """
@@ -280,7 +282,10 @@ def _is_noop_draft(title: str | None) -> bool:
 
 
 class RetrospectStage(Stage):
-    """Run a deep-analysis retrospective on completed tickets and optionally spawn follow-up draft tickets."""
+    """Run a deep-analysis retrospective on completed tickets.
+
+    Optionally spawn follow-up draft tickets.
+    """
 
     name = "retrospect"
     input_state = State.DONE
@@ -347,7 +352,7 @@ class RetrospectStage(Stage):
         self,
         res: RetrospectResult,
         ticket: Ticket,
-        settings: Settings,
+        _settings: Settings,
         ctx: StageContext,
     ) -> str | None:
         """Conditionally file a concrete incomplete-work follow-up ticket.
@@ -372,7 +377,8 @@ class RetrospectStage(Stage):
         for t in target_service.list():
             if t.title.strip().casefold() == norm and t.state not in DONE_OR_CLOSED:
                 log.info(
-                    "%s: retrospect follow-up already filed as %s (state=%s) — not duplicating",
+                    "%s: retrospect follow-up already filed as %s"
+                    " (state=%s) — not duplicating",
                     ticket.id,
                     t.id,
                     t.state.value,
@@ -402,8 +408,7 @@ class RetrospectStage(Stage):
         settings: Settings,
         ctx: StageContext,
     ) -> None:
-        """Drop AGENT.md proposals that duplicate a recently-filed or
-        in-flight proposal before the ticket-filing sink writes.
+        """Drop AGENT.md proposals duplicating a recently-filed or in-flight proposal.
 
         Runs once over ``res.agented_md_proposals`` and reassigns it to
         the surviving (non-duplicate) proposals so the downstream
@@ -421,11 +426,11 @@ class RetrospectStage(Stage):
         if not proposals:
             return
 
-        from datetime import datetime, timezone
+        from datetime import datetime
 
         from ..core.dedup import find_agent_md_proposal_overlap
 
-        now = datetime.now(timezone.utc)
+        now = datetime.now(UTC)
         kept: list[dict] = []
         for prop in proposals:
             section = prop.get("section", "")
@@ -466,8 +471,7 @@ class RetrospectStage(Stage):
         settings: Settings,
         ctx: StageContext,
     ) -> list[str]:
-        """File a draft ticket per AGENT.md proposal on the originating
-        repo's board.
+        """File a draft ticket per AGENT.md proposal on the originating repo's board.
 
         Gated by the ``retrospect_spawn_agented_proposals`` flag.
         AGENT.md proposals are always
@@ -554,7 +558,10 @@ class RetrospectStage(Stage):
     # ------------------------------------------------------------------
 
     def run(self, ticket: Ticket, ctx: StageContext) -> Outcome:
-        """Run a retrospective over a DONE ticket's history, comments, and description; emit findings and optionally spawn follow-up draft tickets."""
+        """Run a retrospective over a DONE ticket's history, comments, and description.
+
+        Emit findings and optionally spawn follow-up draft tickets.
+        """
         s = ctx.settings
         ws = ctx.service.workspace(ticket)
 
@@ -587,6 +594,12 @@ class RetrospectStage(Stage):
                         source_branch=entry["branch"]
                     )
                 except Exception:
+                    log.debug(
+                        "retrospect: pr_status check failed for %s/%s",
+                        entry.get("repo_id", "?"),
+                        entry.get("branch", "?"),
+                        exc_info=True,
+                    )
                     continue
                 if pr is None or not pr.get("merged"):
                     unmerged.append(f"{entry['repo_id']}: {entry['url']}")
@@ -690,9 +703,9 @@ class RetrospectStage(Stage):
 
         # Verify prior proposals and prepend verified-state table.
         from ..agents.runners.pass_runner import (
-            _verify_prior_proposals,
-            _render_verified_summary,
             _format_recent_proposals,
+            _render_verified_summary,
+            _verify_prior_proposals,
         )
 
         # Render a one-line verified-state summary as an EPHEMERAL kwarg
