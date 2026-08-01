@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Document `render_url.fleet_auth` in the Render URL configuration table, matching the `public_fetch.fleet_auth` pattern.
 - Document 5 missing `memory.*` config fields in the Memory (cognee) table: `subsession_enabled`, `autonomous_enabled`, `auto_recovery_enabled`, `frozen_store_recovery_minutes`, and `recovery_cooldown_minutes`.
 - Enable `mypy_baseline` periodic workflow to track mypy baseline entry counts and catch type regressions.
 - Add Python conventions section to `AGENT.md` with rule requiring parenthesized exception-tuple handlers (`except (A, B):` over `except A, B:`).
