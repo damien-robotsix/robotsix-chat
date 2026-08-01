@@ -314,40 +314,17 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                                 )
                                 continue
 
-                            # Check CI status: if any recent workflow run
-                            # on the PR's head branch has failed, resume
-                            # the monitor so it stays active and reports
-                            # the failure rather than staying hidden.
-                            head_obj = pr_data.get("head")
-                            head_ref: str | None = None
-                            if isinstance(head_obj, dict):
-                                raw = head_obj.get("ref")
-                                if isinstance(raw, str):
-                                    head_ref = raw
-                            if head_ref:
-                                runs = await gh_client.list_workflow_runs(
-                                    repo_full_name=repo_raw,
-                                    branch=head_ref,
-                                    per_page=3,
-                                )
-                                ci_failing = any(
-                                    r.get("conclusion") == "failure" for r in runs
-                                )
-                                if ci_failing:
-                                    logger.info(
-                                        "Watcher: subsession %s PR #%d in %s "
-                                        "has failing CI (branch %s) — resuming.",
-                                        info.id,
-                                        pr_number_raw,
-                                        repo_raw,
-                                        head_ref,
-                                    )
-                                    await _resume_paused_monitor(env, info.id)
-                                    continue
-
+                            # When CI is failing on a paused monitor's PR,
+                            # keep the monitor paused rather than
+                            # resuming it — the auto-pause delivery
+                            # already escalated to the operator.
+                            # Resuming would only create a wasteful
+                            # pause-resume-pause loop since the
+                            # monitor's agent cannot fix source-code
+                            # or dependency issues on its own.
                             logger.debug(
                                 "Watcher: subsession %s PR #%d in %s "
-                                "not yet merged, CI stable — keeping paused.",
+                                "not yet merged — keeping paused.",
                                 info.id,
                                 pr_number_raw,
                                 repo_raw,

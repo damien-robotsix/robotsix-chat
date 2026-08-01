@@ -13,6 +13,11 @@
 - Add "Direct repo tooling" section to AGENT.md: when adding a tool to
   `src/robotsix_chat/repo/direct/`, document it in `skill.md` so the skill
   is discoverable via `load_direct_repo_skill()` and `_inject_skills`.)
+- Monitors: watcher no longer resumes paused monitors when CI is
+  failing on the tracked PR — the auto-pause delivery already
+  escalated to the operator, and resuming would only create a
+  wasteful pause-resume-pause loop since the monitor's agent cannot
+  fix source-code or dependency issues on its own. (mill: Pause auto-retry monitors that block on substantive CI failures (20260731T200830Z-pause-auto-retry-monitors-that-block-on-c6b8))
 - Split `DirectRepoClient` (1407→~1189 lines) into three focused modules:
   - `ActionsClient` (`repo/direct/actions_client.py`) — GitHub Actions workflow management (dispatch, runs, jobs, annotations, secrets, billing diagnosis).
   - `BoardClient` (`repo/direct/board_client.py`) — mill board API for ticket-state verification and lifecycle ops.
