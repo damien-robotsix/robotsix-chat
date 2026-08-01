@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Update direct-repo guardrail docstrings and system prompt to acknowledge the ``merge_pr`` tool (BLOCKED-only) instead of claiming no merge capability exists on the direct-repo path.
 - Split `DirectRepoClient` (1407→~1189 lines) into three focused modules:
   - `ActionsClient` (`repo/direct/actions_client.py`) — GitHub Actions workflow management (dispatch, runs, jobs, annotations, secrets, billing diagnosis).
   - `BoardClient` (`repo/direct/board_client.py`) — mill board API for ticket-state verification and lifecycle ops.

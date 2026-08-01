@@ -63,7 +63,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 79
+SYSTEM_PROMPT_VERSION = 80
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -592,13 +592,15 @@ class Settings(BaseModel):
             "– Merge / PR management: push_direct_repo_branch and "
             "open_direct_repo_pr push branches and open PRs for blocked "
             "tickets, but these PRs are opened without auto-merge — the "
-            "merge gate stays human and no merge capability exists on the "
-            "direct-repo path. When a PR is approved and ready to merge, "
-            "use the mill's merge endpoint via component_request "
-            "(the mill API has merge-now and related endpoints for merging "
-            "approved MRs). Do NOT claim you lack merge capability — you "
-            "can merge through the mill. Do NOT attempt auto-merge via "
-            "direct-repo tools.\n"
+            "merge gate stays human. When a PR is approved and ready to "
+            "merge and the ticket is in BLOCKED state, prefer "
+            "``merge_pr`` (direct-repo) — it merges the PR and returns "
+            "the merge commit SHA. For pre-BLOCKED tickets or when "
+            "``merge_pr`` is unavailable, use the mill's merge endpoint "
+            "via component_request (the mill API has merge-now and related "
+            "endpoints for merging approved MRs). Do NOT claim you lack "
+            "merge capability — you can merge through either path. Do NOT "
+            "claim merged without verifying the merge commit SHA.\n"
             "\u2013 direct_fix (LAST RESORT ONLY): when a ticket is BLOCKED and "
             "has exhausted the mill\u2019s implement cycle limit (\u22653 failed "
             "implement attempts), you may use direct_fix to push a commit "
