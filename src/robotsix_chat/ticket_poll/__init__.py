@@ -69,6 +69,156 @@ def _parse_json_body(body: str) -> tuple[dict[str, Any] | None, str]:
         return None, "Non-JSON response from board API"
 
 
+async def _resolve_ticket_ids(
+    board_url: str,
+    board_token: str,
+    timeout: float,
+    candidate_ids: list[str],
+) -> dict[str, str | None]:
+    """Resolve candidate ticket IDs against the live board.
+
+    Fetches ``GET /tickets`` and for each candidate ID tries, in order:
+
+    1. **Exact match** — the candidate ID appears verbatim in the board.
+    2. **Hash-suffix match** — the last 4 hex chars of the candidate
+       (e.g. ``a3f2`` from ``...-my-ticket-a3f2``) uniquely match one
+       ticket's hash suffix.
+    3. **Slug-substring match** — the non-timestamp, non-hash portion
+       of the candidate appears as a substring of exactly one ticket's
+       full ID.
+
+    Returns a dict mapping each candidate ID to its resolved full
+    ticket ID, or ``None`` when the candidate could not be resolved.
+
+    Resolution uses the direct board API and is best-effort: when the
+    board is unreachable or the response is unparsable, every candidate
+    maps to ``None`` and callers fall back to the original IDs.
+    """
+    if not candidate_ids:
+        return {}
+
+    if not board_url:
+        return {cid: None for cid in candidate_ids}
+
+    url = f"{board_url}/tickets"
+    headers: dict[str, str] = {"Accept": "application/json"}
+    if board_token:
+        headers["Authorization"] = f"Bearer {board_token}"
+
+    try:
+        async with httpx.AsyncClient(timeout=timeout) as client:
+            retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
+            response = await retry_client.get(url, headers=headers)
+            response.raise_for_status()
+            tickets_data = response.json()
+    except Exception as exc:
+        logger.warning(
+            "ticket_poll: failed to fetch ticket list for ID resolution: %s",
+            exc,
+        )
+        return {cid: None for cid in candidate_ids}
+
+    # Extract ticket IDs from the response.  The board may return a
+    # JSON array of ticket objects or an object with a "tickets" key.
+    if isinstance(tickets_data, list):
+        ticket_objects = tickets_data
+    elif isinstance(tickets_data, dict):
+        ticket_objects = tickets_data.get("tickets", [])
+        if not isinstance(ticket_objects, list):
+            logger.warning(
+                "ticket_poll: unexpected GET /tickets response "
+                "format — expected list or {tickets: [...]}"
+            )
+            return {cid: None for cid in candidate_ids}
+    else:
+        logger.warning(
+            "ticket_poll: unexpected GET /tickets response type %s",
+            type(tickets_data).__name__,
+        )
+        return {cid: None for cid in candidate_ids}
+
+    all_ids: list[str] = [
+        t["ticket_id"]
+        for t in ticket_objects
+        if isinstance(t, dict) and isinstance(t.get("ticket_id"), str)
+    ]
+
+    # Build a reverse index: hash-suffix → list of matching full IDs.
+    suffix_index: dict[str, list[str]] = {}
+    for tid in all_ids:
+        m = re.search(r"-([0-9a-f]{4})$", tid)
+        if m:
+            suffix_index.setdefault(m.group(1), []).append(tid)
+
+    result: dict[str, str | None] = {}
+    for cid in candidate_ids:
+        if not isinstance(cid, str) or not cid.strip():
+            result[cid] = None
+            continue
+
+        # 1. Exact match.
+        if cid in all_ids:
+            result[cid] = cid
+            continue
+
+        # 2. Hash-suffix match — extract the last 4 hex chars.
+        suffix_match = re.search(r"([0-9a-f]{4})$", cid)
+        if suffix_match:
+            suffix = suffix_match.group(1)
+            matches = suffix_index.get(suffix, [])
+            if len(matches) == 1:
+                resolved = matches[0]
+                logger.info(
+                    "ticket_poll: resolved %r → %r (hash suffix %r)",
+                    cid,
+                    resolved,
+                    suffix,
+                )
+                result[cid] = resolved
+                continue
+            if len(matches) > 1:
+                logger.warning(
+                    "ticket_poll: ambiguous hash suffix %r for %r — matches %s",
+                    suffix,
+                    cid,
+                    matches,
+                )
+                # Fall through to slug match.
+
+        # 3. Slug-substring match.
+        slug = re.sub(r"^\d{8}T\d{6}Z-", "", cid)
+        slug = re.sub(r"-?[0-9a-f]{4}$", "", slug)
+        if slug and len(slug) >= 4:
+            slug_matches = [tid for tid in all_ids if slug.lower() in tid.lower()]
+            if len(slug_matches) == 1:
+                resolved = slug_matches[0]
+                logger.info(
+                    "ticket_poll: resolved %r → %r (slug match %r)",
+                    cid,
+                    resolved,
+                    slug,
+                )
+                result[cid] = resolved
+                continue
+            if len(slug_matches) > 1:
+                logger.warning(
+                    "ticket_poll: ambiguous slug %r for %r — matches %s",
+                    slug,
+                    cid,
+                    slug_matches,
+                )
+
+        # Unresolvable — the caller will attempt the original ID.
+        logger.warning(
+            "ticket_poll: could not resolve %r against the board (%d tickets listed)",
+            cid,
+            len(all_ids),
+        )
+        result[cid] = None
+
+    return result
+
+
 def load_ticket_poll_skill() -> str:
     """Return the ticket-poll component skill markdown.
 
@@ -159,21 +309,30 @@ def build_merge_pull_request_tool(
             passed).
 
         """
+        # Resolve paraphrased / abbreviated IDs against the live board
+        # before making the request.  This prevents 404 failures when an
+        # ID was derived from narrative text rather than from a board API
+        # response.
+        resolved_map = await _resolve_ticket_ids(
+            board_url, board_token, timeout, [ticket_id]
+        )
+        effective_id = resolved_map.get(ticket_id) or ticket_id
+
         # Try component_request (roster-based) first.
         if component_request is not None:
             resp = await component_request(
-                "mill", "POST", f"/tickets/{ticket_id}/merge-now"
+                "mill", "POST", f"/tickets/{effective_id}/merge-now"
             )
             if not resp.startswith("Error:"):
                 return str(resp)
             logger.info(
                 "merge_pull_request: roster path failed for %s; "
                 "falling back to direct board API",
-                ticket_id,
+                effective_id,
             )
 
         # Direct fallback via board API.
-        url = f"{board_url}/tickets/{ticket_id}/merge-now"
+        url = f"{board_url}/tickets/{effective_id}/merge-now"
         headers: dict[str, str] = {"Accept": "application/json"}
         if board_token:
             headers["Authorization"] = f"Bearer {board_token}"
@@ -197,16 +356,16 @@ def build_merge_pull_request_tool(
             return f"HTTP {exc.response.status_code}\n{body_str}"
         except httpx.ConnectError, httpx.ConnectTimeout, httpx.TimeoutException:
             return (
-                f"Error merging PR for ticket {ticket_id}: "
+                f"Error merging PR for ticket {effective_id}: "
                 f"board API request timed out after {timeout}s"
             )
         except Exception as exc:
             logger.warning(
                 "merge_pull_request direct path failed for %s: %s",
-                ticket_id,
+                effective_id,
                 exc,
             )
-            return f"Error merging PR for ticket {ticket_id}: {exc}"
+            return f"Error merging PR for ticket {effective_id}: {exc}"
 
     return [merge_pull_request]
 
@@ -298,156 +457,6 @@ def build_ticket_poll_tools(
             )
         return status_code, body_str, ""
 
-    async def _resolve_ticket_ids(
-        candidate_ids: list[str],
-    ) -> dict[str, str | None]:
-        """Resolve candidate ticket IDs against the live board.
-
-        Fetches ``GET /tickets`` and for each candidate ID tries, in order:
-
-        1. **Exact match** — the candidate ID appears verbatim in the board.
-        2. **Hash-suffix match** — the last 4 hex chars of the candidate
-           (e.g. ``a3f2`` from ``...-my-ticket-a3f2``) uniquely match one
-           ticket's hash suffix.
-        3. **Slug-substring match** — the non-timestamp, non-hash portion
-           of the candidate appears as a substring of exactly one ticket's
-           full ID.
-
-        Returns a dict mapping each candidate ID to its resolved full
-        ticket ID, or ``None`` when the candidate could not be resolved.
-
-        Resolution uses the direct board API and is best-effort: when the
-        board is unreachable or the response is unparsable, every candidate
-        maps to ``None`` and callers fall back to the original IDs.
-        """
-        if not candidate_ids:
-            return {}
-
-        # Resolution requires the direct board URL.  When only the
-        # component_request path is available we cannot fetch the list
-        # and must skip resolution.
-        if not board_url:
-            return {cid: None for cid in candidate_ids}
-
-        url = f"{board_url}/tickets"
-        headers: dict[str, str] = {"Accept": "application/json"}
-        if board_token:
-            headers["Authorization"] = f"Bearer {board_token}"
-
-        try:
-            async with httpx.AsyncClient(timeout=timeout) as client:
-                retry_client = RetryClient(client, config=_TICKET_POLL_RETRY_CONFIG)
-                response = await retry_client.get(url, headers=headers)
-                response.raise_for_status()
-                tickets_data = response.json()
-        except Exception as exc:
-            logger.warning(
-                "ticket_poll: failed to fetch ticket list for ID resolution: %s",
-                exc,
-            )
-            return {cid: None for cid in candidate_ids}
-
-        # Extract ticket IDs from the response.  The board may return a
-        # JSON array of ticket objects or an object with a "tickets" key.
-        if isinstance(tickets_data, list):
-            ticket_objects = tickets_data
-        elif isinstance(tickets_data, dict):
-            ticket_objects = tickets_data.get("tickets", [])
-            if not isinstance(ticket_objects, list):
-                logger.warning(
-                    "ticket_poll: unexpected GET /tickets response "
-                    "format — expected list or {tickets: [...]}"
-                )
-                return {cid: None for cid in candidate_ids}
-        else:
-            logger.warning(
-                "ticket_poll: unexpected GET /tickets response type %s",
-                type(tickets_data).__name__,
-            )
-            return {cid: None for cid in candidate_ids}
-
-        all_ids: list[str] = [
-            t["ticket_id"]
-            for t in ticket_objects
-            if isinstance(t, dict) and isinstance(t.get("ticket_id"), str)
-        ]
-
-        # Build a reverse index: hash-suffix → list of matching full IDs.
-        suffix_index: dict[str, list[str]] = {}
-        for tid in all_ids:
-            m = re.search(r"-([0-9a-f]{4})$", tid)
-            if m:
-                suffix_index.setdefault(m.group(1), []).append(tid)
-
-        result: dict[str, str | None] = {}
-        for cid in candidate_ids:
-            if not isinstance(cid, str) or not cid.strip():
-                result[cid] = None
-                continue
-
-            # 1. Exact match.
-            if cid in all_ids:
-                result[cid] = cid
-                continue
-
-            # 2. Hash-suffix match — extract the last 4 hex chars.
-            suffix_match = re.search(r"([0-9a-f]{4})$", cid)
-            if suffix_match:
-                suffix = suffix_match.group(1)
-                matches = suffix_index.get(suffix, [])
-                if len(matches) == 1:
-                    resolved = matches[0]
-                    logger.info(
-                        "ticket_poll: resolved %r → %r (hash suffix %r)",
-                        cid,
-                        resolved,
-                        suffix,
-                    )
-                    result[cid] = resolved
-                    continue
-                if len(matches) > 1:
-                    logger.warning(
-                        "ticket_poll: ambiguous hash suffix %r for %r — matches %s",
-                        suffix,
-                        cid,
-                        matches,
-                    )
-                    # Fall through to slug match.
-
-            # 3. Slug-substring match.
-            slug = re.sub(r"^\d{8}T\d{6}Z-", "", cid)
-            slug = re.sub(r"-?[0-9a-f]{4}$", "", slug)
-            if slug and len(slug) >= 4:
-                slug_matches = [tid for tid in all_ids if slug.lower() in tid.lower()]
-                if len(slug_matches) == 1:
-                    resolved = slug_matches[0]
-                    logger.info(
-                        "ticket_poll: resolved %r → %r (slug match %r)",
-                        cid,
-                        resolved,
-                        slug,
-                    )
-                    result[cid] = resolved
-                    continue
-                if len(slug_matches) > 1:
-                    logger.warning(
-                        "ticket_poll: ambiguous slug %r for %r — matches %s",
-                        slug,
-                        cid,
-                        slug_matches,
-                    )
-
-            # Unresolvable — the caller will attempt the original ID.
-            logger.warning(
-                "ticket_poll: could not resolve %r against "
-                "the board (%d tickets listed)",
-                cid,
-                len(all_ids),
-            )
-            result[cid] = None
-
-        return result
-
     async def ticket_poll(ticket_id: str) -> str:
         """Poll the mill board for a ticket's current state.
 
@@ -471,7 +480,9 @@ def build_ticket_poll_tools(
         # before making the request.  This prevents 404 failures when an
         # ID was derived from narrative text rather than from a board API
         # response.
-        resolved_map = await _resolve_ticket_ids([ticket_id])
+        resolved_map = await _resolve_ticket_ids(
+            board_url, board_token, timeout, [ticket_id]
+        )
         effective_id = resolved_map.get(ticket_id) or ticket_id
 
         if component_request is not None:
@@ -549,7 +560,9 @@ def build_ticket_poll_tools(
         # before making any per-ticket requests.  This prevents 404
         # failures when an ID was derived from narrative text rather
         # than from a board API response.
-        resolved_map = await _resolve_ticket_ids(ticket_ids)
+        resolved_map = await _resolve_ticket_ids(
+            board_url, board_token, timeout, ticket_ids
+        )
 
         # Use resolved IDs where available; keep originals for
         # unresolvable ones (they will surface as 404s, same as before).

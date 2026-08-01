@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Wire ticket-ID resolution into ``merge_pull_request`` and direct-repo tools (``reset_implement_spawn_counter``, ``_assert_blocked_and_scoped``, ``_check_blocked_exhausted``) so paraphrased / abbreviated ticket IDs are resolved against the live board before constructing board API URLs, preventing 404 failures.
 - Periodic monitors now enter a true `PAUSED` state (not `CLOSED`) when auto-paused by the idle-guard. The worker stays alive and blocks on an event-driven inbox signal; the watcher sends an immediate wake message when the tracked ticket's state changes, so auto-resume actually works end-to-end. The pause notice wording now accurately reflects the real behavior.
 - Split `tests/repo/direct/test_direct_repo.py` (4052 lines, 110 tests) into 9
   per-tool test modules with shared fixtures in `conftest.py`.
