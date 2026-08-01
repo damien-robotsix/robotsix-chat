@@ -96,8 +96,8 @@ POST /subsessions/{subsession_id}/close
 
 ### Paused-monitor resume behaviour (watcher)
 
-When a periodic monitor accumulates `subsessions.max_idle_runs` consecutive `NO_CHANGE`
-replies, the subsession pauses itself by closing with reason `"paused"` (calling
+When a periodic monitor accumulates `subsessions.max_idle_runs` consecutive `NO_CHANGE` replies, the
+subsession pauses itself by closing with reason `"paused"` (calling
 `registry.mark_closed(reason="paused")`). Once paused, the monitor stops ticking and remains
 terminal — **until the monitored ticket's state changes**.
 
