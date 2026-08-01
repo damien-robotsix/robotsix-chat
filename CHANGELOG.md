@@ -2,6 +2,9 @@
 
 - Update direct-repo guardrail docstrings and system prompt to acknowledge the ``merge_pr`` tool (BLOCKED-only) instead of claiming no merge capability exists on the direct-repo path.
 - Fix `max_idle_runs` docstring default from 5 to 3 (matching shipped behaviour), and correct the paused-monitor config key reference in `docs/periodic-checks.md` from `auto_stop_no_change_runs` to `max_idle_runs`.
+- Diagnosed misrouted ticket 20260731T174638Z: mail account-add crash targets
+  functionality (``default_account_id``, account CRUD handler) not present in
+  robotsix-chat; likely belongs in robotsix-mill or the auto-mail board server
 - Split `DirectRepoClient` (1407→~1189 lines) into three focused modules:
   - `ActionsClient` (`repo/direct/actions_client.py`) — GitHub Actions workflow management (dispatch, runs, jobs, annotations, secrets, billing diagnosis).
   - `BoardClient` (`repo/direct/board_client.py`) — mill board API for ticket-state verification and lifecycle ops.
