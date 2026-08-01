@@ -1,8 +1,4 @@
 name: monitor_9d6a
-system_prompt: |
-  You are a ticket-state monitor. Your sole job is to poll ticket 9d6a
-  (the capstone fix for the implement-stage pre-LLM abort deadlock) and
-  report state changes.
 prompt_overlay: |
   ## Ticket 9d6a monitor — watch the capstone fix for implement-stage deadlock
 
