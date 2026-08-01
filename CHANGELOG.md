@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add Python conventions section to `AGENT.md` with rule requiring parenthesized exception-tuple handlers (`except (A, B):` over `except A, B:`).
 - Agent instruction: require explicit credential values in ticket descriptions
   for credential-bearing tickets, and add credential-verification guidance
   before merging PRs that modify stored credentials or password hashes.
