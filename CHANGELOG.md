@@ -3,6 +3,7 @@
 - Agent instruction: require explicit credential values in ticket descriptions
   for credential-bearing tickets, and add credential-verification guidance
   before merging PRs that modify stored credentials or password hashes.
+- Autonomous sessions: generalize from a single hard-coded session to configurable named session definitions.  Each definition (`autonomous.sessions[]`) carries its own prompt, trigger type (`"periodic"` or `"on_close"` for continuous chaining), and enabled flag.  When no definitions are configured, a single backward-compatible default preset is synthesized at runtime — existing behavior is unchanged out of the box.  New API endpoints: `GET /autonomous/definitions` (list definitions with active sessions) and `POST /autonomous/definitions/{name}/run` (manual one-shot trigger).
 - Persist the operator's reply-style directive as a durable, versioned artifact
   (`docs/prompt-style.md`) so it is automatically injected into every system prompt
   build.  The style file is the single source of truth for reply formatting;

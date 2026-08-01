@@ -6,6 +6,7 @@ be imported directly without pulling in the full Settings cascade.
 
 from __future__ import annotations
 
+import enum
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
@@ -1061,6 +1062,47 @@ class PublicFetchSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
+class TriggerType(enum.StrEnum):
+    """How an autonomous session is re-triggered after completion."""
+
+    periodic = "periodic"
+    """Wait ``trigger_interval_seconds``, then restart."""
+
+    on_close = "on_close"
+    """Restart immediately when the previous run completes (continuous mode)."""
+
+
+class AutonomousSessionDefinition(BaseModel):
+    """Definition of one named autonomous session.
+
+    Each definition maps to one autonomous session owner (``autonomous:<name>``
+    or the legacy ``autonomous`` pseudo-owner for the ``"default"`` preset).
+    The runner respects per-definition prompts, trigger type, and the enabled
+    flag independently.
+
+    Attributes:
+        name: Unique identifier for this session definition.
+        prompt: Custom kickoff prompt appended to the autonomous protocol
+            supplement.  When empty, the agent uses the standard "Pick a
+            subject and draft a plan" prompt.
+        trigger_type: How the session is re-triggered after completion —
+            ``"periodic"`` (wait ``trigger_interval_seconds``) or
+            ``"on_close"`` (restart immediately, continuous mode).
+        trigger_interval_seconds: Delay between completion and restart for
+            ``periodic`` trigger.  Ignored for ``on_close``.  Default 45 s.
+        enabled: When ``False``, the definition is skipped — no session is
+            created for it.
+
+    """
+
+    name: str
+    prompt: str = ""
+    trigger_type: TriggerType = TriggerType.periodic
+    trigger_interval_seconds: float = Field(default=45.0, ge=0.0)
+    enabled: bool = True
+    model_config = ConfigDict(extra="forbid")
+
+
 class AutonomousSettings(BaseModel):
     """Native autonomous chat sessions — self-directed agent loops.
 
@@ -1084,6 +1126,11 @@ class AutonomousSettings(BaseModel):
         initial_task: Optional description of the first task to spawn when
             an autonomous session starts.  When empty, the agent picks its
             own subject.
+        sessions: Optional list of named autonomous session definitions.
+            When empty (the default), a single default preset is synthesized
+            at runtime that matches the pre-existing single-session behavior
+            exactly — backward compatible out of the box.  Each entry defines
+            a prompt, trigger, and enabled flag for one autonomous session.
 
     """
 
@@ -1114,6 +1161,15 @@ class AutonomousSettings(BaseModel):
             "autonomous session complete even while the monitor is still "
             "running.  Monitors continue in the background.  "
             "Env override: ``AUTONOMOUS_STALE_MONITOR_RUNS_BEFORE_COMPLETION``."
+        ),
+    )
+    sessions: list[AutonomousSessionDefinition] = Field(
+        default_factory=list,
+        description=(
+            "Named autonomous session definitions.  When empty, a single "
+            "default preset matching the pre-existing behavior is synthesized "
+            "at runtime.  Each entry defines a prompt, trigger, and enabled "
+            "flag for one autonomous session."
         ),
     )
     model_config = ConfigDict(extra="forbid")

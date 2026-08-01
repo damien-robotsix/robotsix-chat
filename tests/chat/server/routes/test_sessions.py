@@ -831,6 +831,7 @@ async def test_list_endpoint_no_lazy_default_for_autonomous_owner() -> None:
     mock_runner = MagicMock()
     mock_runner.bootstrap_owner = "autonomous"
     mock_runner.is_autonomous.return_value = False
+    mock_runner.is_autonomous_owner.return_value = True
 
     state = MagicMock(conversation_store=mock_store, autonomous_runner=mock_runner)
     request = _make_query_request("owner_id=autonomous")
@@ -853,6 +854,7 @@ async def test_delete_autonomous_session_forgets_and_restarts() -> None:
     mock_runner = MagicMock()
     mock_runner.bootstrap_owner = "autonomous"
     mock_runner.is_autonomous.return_value = True
+    mock_runner.is_autonomous_owner.return_value = True
 
     state = MagicMock(
         conversation_store=mock_store,
@@ -918,6 +920,7 @@ async def test_delete_non_autonomous_session_leaves_runner_untouched() -> None:
     mock_runner = MagicMock()
     mock_runner.bootstrap_owner = "autonomous"
     mock_runner.is_autonomous.return_value = False
+    mock_runner.is_autonomous_owner.return_value = False
 
     state = MagicMock(
         conversation_store=mock_store,

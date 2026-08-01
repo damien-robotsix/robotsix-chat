@@ -28,3 +28,5 @@ class AutonomousSession:
     completion_suppressed: bool = False
     rejected_subjects: list[str] | None = None
     recent_user_messages: list[str] | None = None
+    definition_name: str = ""
+    """Name of the session definition that spawned this session."""
