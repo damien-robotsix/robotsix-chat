@@ -2999,7 +2999,7 @@ docs = [
 requires-dist = [
     { name = "asgi-correlation-id" },
     { name = "asyncssh", marker = "extra == 'sftp'" },
-    { name = "cognee", marker = "extra == 'memory'" },
+    { name = "cognee", marker = "extra == 'memory'", specifier = "==1.4.0" },
     { name = "httpx" },
     { name = "playwright", marker = "extra == 'render-url'" },
     { name = "pydantic" },
