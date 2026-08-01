@@ -680,6 +680,38 @@ async def test_remove_stale_shadow_and_wal_together(
 
 
 @pytest.mark.asyncio
+async def test_ladybug_graph_file_and_wal_survive_setup(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """The live ladybug graph must NOT be healed away on startup.
+
+    Regression (2026-08-01): cognee 1.4 replaced kuzu with its own embedded
+    ladybug engine. A ladybug graph is a FILE that writes a ``.wal`` and never
+    a ``.shadow``, so it matched both heal conditions — the orphan-``.wal``
+    rule and the missing-``.shadow`` rule — and the knowledge graph was
+    deleted on EVERY startup. A graph holding 564 nodes / 1366 edges was 4 KB
+    and empty immediately after a restart, which is why only the handful of
+    documents ingested since the last restart were ever visible.
+    """
+    mem, _ = cognee_memory
+    system_root = Path(mem._settings.data_dir) / "system"
+    databases_dir = system_root / "databases"
+    databases_dir.mkdir(parents=True, exist_ok=True)
+
+    # Real shape: a single file whose first four bytes are the ladybug magic.
+    db_file = databases_dir / "cognee_graph_ladybug"
+    db_file.write_bytes(b"LBUG" + b"\x00" * 512 + b"real graph content")
+    wal_file = databases_dir / "cognee_graph_ladybug.wal"
+    wal_file.write_bytes(b"live wal")
+
+    await mem.setup()
+
+    assert db_file.exists(), "the live ladybug graph was deleted on startup"
+    assert db_file.read_bytes().endswith(b"real graph content")
+    assert wal_file.exists(), "the ladybug WAL was deleted on startup"
+
+
+@pytest.mark.asyncio
 async def test_wal_cleaned_when_shadow_already_deleted(
     cognee_memory: tuple[CogneeMemory, Any],
 ) -> None:

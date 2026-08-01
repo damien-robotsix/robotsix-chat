@@ -47,6 +47,12 @@ _DB_ID_MISMATCH_RE = re.compile(r"Database ID.*does not match")
 # First 16 bytes of every SQLite database file.
 _SQLITE_MAGIC = b"SQLite format 3\x00"
 
+# First 4 bytes of a ladybug database file. Cognee 1.4 replaced kuzu with its
+# own embedded ladybug engine for the graph store, which never writes a
+# ``.shadow`` — so the shadow-less heal below treated the live knowledge graph
+# as a corrupt kuzu database and deleted it on EVERY startup.
+_LADYBUG_MAGIC = b"LBUG"
+
 
 def _is_kuzu_db_entity(entry: Path) -> bool:
     """Return True if *entry* is (or could be) a kuzu graph database.
@@ -65,6 +71,15 @@ def _is_kuzu_db_entity(entry: Path) -> bool:
     ``cognee.search`` requires — so recall failed permanently while ingestion
     silently recreated a fresh, empty store.  Exclude them here so only real
     kuzu graph databases are ever healed.
+
+    Since cognee 1.4 a third store belongs on that list: the graph itself is
+    now a **ladybug** database (``cognee_graph_ladybug``), which writes a
+    ``.wal`` but never a ``.shadow``.  Both heal conditions therefore matched
+    it — the orphan-``.wal`` rule and the missing-``.shadow`` rule — and the
+    live knowledge graph was deleted on every single startup.  Observed
+    2026-08-01: a graph holding 564 nodes / 1366 edges was 4 KB and empty
+    immediately after a restart, which is why the board only ever showed the
+    handful of documents ingested since the last one.
     """
     name = entry.name
     # LanceDB vector store (a directory, e.g. ``cognee.lancedb``).
@@ -74,15 +89,31 @@ def _is_kuzu_db_entity(entry: Path) -> bool:
     # use a hyphen, unlike kuzu's ``.wal``).
     if name.endswith(("-wal", "-shm", "-journal")):
         return False
-    # SQLite relational database — identify by magic header, robust to naming.
+    # Ladybug's sidecar uses a dot, exactly like kuzu's — so it cannot be
+    # told apart by name.  Match it to its database file instead.
+    if name.endswith(".wal") and _has_ladybug_magic(entry.with_suffix("")):
+        return False
+    # Database files identified by magic header, robust to naming.
     if entry.is_file():
         try:
             with entry.open("rb") as fh:
-                if fh.read(len(_SQLITE_MAGIC)) == _SQLITE_MAGIC:
-                    return False
+                header = fh.read(len(_SQLITE_MAGIC))
         except OSError:
-            pass
+            return True
+        if header.startswith(_LADYBUG_MAGIC):
+            return False
+        if header == _SQLITE_MAGIC:
+            return False
     return True
+
+
+def _has_ladybug_magic(entry: Path) -> bool:
+    """Return True when *entry* is a ladybug database file (best-effort)."""
+    try:
+        with entry.open("rb") as fh:
+            return fh.read(len(_LADYBUG_MAGIC)) == _LADYBUG_MAGIC
+    except OSError:
+        return False
 
 
 def _is_healable_kuzu_error(exc: BaseException) -> bool:
@@ -324,9 +355,17 @@ class CogneeMemory:
             return
 
         # Collect all stale artifacts: both .shadow and .wal.
+        #
+        # Filtered through _is_kuzu_db_entity, which is NOT redundant with the
+        # missing-shadow loop further down: this list is deleted outright and
+        # is separately used to derive db_names, so an unfiltered ladybug
+        # ``.wal`` here wiped the live graph via the orphan-artifact rule
+        # before the entity check downstream ever ran.
         stale_entries: list[Path] = []
         for pattern in ("*.shadow", "*.wal"):
-            stale_entries.extend(databases_dir.glob(pattern))
+            stale_entries.extend(
+                e for e in databases_dir.glob(pattern) if _is_kuzu_db_entity(e)
+            )
 
         for entry in stale_entries:
             try:
