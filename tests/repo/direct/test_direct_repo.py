@@ -20,6 +20,7 @@ from robotsix_chat.repo.direct import build_direct_repo_tools
 from robotsix_chat.repo.direct.client import (
     _INSTALLATION_TOKEN_CACHE,
     DirectRepoClient,
+    _count_cycles_from_data,
 )
 
 # ---------------------------------------------------------------------------
@@ -2658,6 +2659,54 @@ async def test_count_implement_cycles_no_data_returns_zero(
     assert cycles == 0
 
 
+def test_count_cycles_from_data_resume_unblock_events() -> None:
+    """Resume/unblock events count as 3 cycles each (exhaustion heuristic)."""
+    data = {
+        "state": "blocked",
+        "events": [
+            {"type": "resume"},
+            {"type": "implement_start"},
+            {"type": "unblock"},
+        ],
+    }
+    cycles = _count_cycles_from_data(data)
+    # 1 resume event (+3) + 1 implement event (+1) + 1 unblock event (+3) = 7
+    assert cycles == 7
+
+
+def test_count_cycles_from_data_resume_event_alone_satisfies_gate() -> None:
+    """A single resume event alone counts as 3 — enough to pass the ≥3 gate."""
+    data = {"state": "blocked", "events": [{"type": "resume"}]}
+    cycles = _count_cycles_from_data(data)
+    assert cycles == 3
+
+
+def test_count_cycles_from_data_unblock_event_alone_satisfies_gate() -> None:
+    """A single unblock event alone counts as 3 — enough to pass the ≥3 gate."""
+    data = {"state": "blocked", "events": [{"type": "unblock"}]}
+    cycles = _count_cycles_from_data(data)
+    assert cycles == 3
+
+
+def test_count_cycles_from_data_mixed_resume_and_implement() -> None:
+    """Resume events (+3 each) and implement events (+1 each) sum correctly."""
+    data = {
+        "state": "blocked",
+        "events": [
+            {"type": "implement_start"},
+            {"type": "implement_complete"},
+            {"type": "resume"},
+            {"type": "implement_start"},
+            {"type": "implement_complete"},
+            {"type": "implement_start"},
+            {"type": "implement_complete"},
+        ],
+    }
+    cycles = _count_cycles_from_data(data)
+    # 6 implement events (+6) + 1 resume event (+3) = 9
+    assert cycles == 9
+
+
 # ---------------------------------------------------------------------------
 # 401 token-expiry retry
 # ---------------------------------------------------------------------------
@@ -2924,6 +2973,239 @@ async def test_direct_fix_bypasses_scope_when_component_request_available(
     assert "not installed" not in out.lower()
     # Should have attempted the push (we see an error because we returned
     # empty JSON for all GitHub API calls, but the guards passed).
+    assert "Error pushing commit" in out or "pushed successfully" in out
+
+
+# ---------------------------------------------------------------------------
+# Roster-to-direct fallback — _check_blocked_exhausted with failing
+# component_request exercises the fallback to board.get_ticket_data.
+# ---------------------------------------------------------------------------
+
+
+async def _mock_component_request_error(
+    _component_id: str,
+    _method: str,
+    _path: str,
+    **_kw: Any,
+) -> str:
+    """Mock ``component_request`` that returns a transient 'Error:' response."""
+    return "Error: connection refused"
+
+
+@pytest.mark.asyncio
+async def test_direct_fix_roster_fails_falls_back_to_direct(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When the roster path returns 'Error:', direct_fix falls back to board API.
+
+    The roster-based component_request returns a retryable 'Error:' string;
+    _check_blocked_exhausted falls back to board.get_ticket_data.  The test
+    verifies the fallback succeeds and direct_fix proceeds past the guard.
+    """
+    settings = _settings(direct_fix_enabled=True)
+
+    # Scope check: repo IS in installation scope (fallback uses direct path)
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    # Board API direct path — the fallback target
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-df-fb").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "id": "t-df-fb",
+                    "state": "blocked",
+                    "events": [
+                        {"type": "implement_start"},
+                        {"type": "implement_complete"},
+                        {"type": "implement_start"},
+                        {"type": "implement_complete"},
+                        {"type": "implement_start"},
+                        {"type": "implement_complete"},
+                    ],
+                }
+            ),
+        )
+    )
+    # Catch-all for remaining GitHub API calls
+    respx_mock.get(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
+    respx_mock.post(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
+    respx_mock.patch(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
+
+    tools = build_direct_repo_tools(
+        settings, component_request=_mock_component_request_error
+    )
+    df_fn = [t for t in tools if t.__name__ == "direct_fix"][0]
+
+    out = await df_fn(
+        ticket_id="t-df-fb",
+        repo_full_name="org/repo",
+        target_branch="main",
+        files_json=json.dumps([{"path": "x.py", "content": "print(1)"}]),
+    )
+    # The guard must pass — fallback should have retrieved the blocked
+    # ticket with ≥3 cycles from the board API.
+    assert "Refused" not in out
+    assert "Error pushing commit" in out or "pushed successfully" in out
+
+
+@pytest.mark.asyncio
+async def test_patch_direct_repo_file_roster_fails_falls_back_to_direct(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """When the roster path returns 'Error:', patch_direct_repo_file falls back.
+
+    Same fallback path as direct_fix, exercised through the
+    patch_direct_repo_file tool.
+    """
+    settings = _settings(direct_fix_enabled=True)
+
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("http://127.0.0.1:8077/tickets/t-pf-fb").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "id": "t-pf-fb",
+                    "state": "blocked",
+                    "events": [
+                        {"type": "implement_start"},
+                        {"type": "implement_complete"},
+                        {"type": "implement_start"},
+                        {"type": "implement_complete"},
+                        {"type": "implement_start"},
+                        {"type": "implement_complete"},
+                    ],
+                }
+            ),
+        )
+    )
+    respx_mock.get(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
+    respx_mock.post(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
+    respx_mock.patch(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
+
+    tools = build_direct_repo_tools(
+        settings, component_request=_mock_component_request_error
+    )
+    pf_fn = [t for t in tools if t.__name__ == "patch_direct_repo_file"][0]
+
+    out = await pf_fn(
+        ticket_id="t-pf-fb",
+        repo_full_name="org/repo",
+        target_branch="main",
+        file_path="x.py",
+        patch_content="@@ -1,1 +1,1 @@\n-old\n+new\n",
+    )
+    assert "Refused" not in out
+
+
+# ---------------------------------------------------------------------------
+# _retry_component_ticket_fetch — retry with exponential backoff
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_component_request_retry_on_transient_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """component_request returning transient 'Error:' is retried, then succeeds.
+
+    The first two calls return 'Error: connection refused'; the third call
+    returns a valid HTTP 200 response.  The tool proceeds via the roster
+    path — the board API is never called (no mock for it).  This verifies
+    that _retry_component_ticket_fetch retries transient failures and that
+    the response from a successful retry is used.
+    """
+    settings = _settings(direct_fix_enabled=True)
+
+    # Scope check: repo IS in installation scope
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    # Catch-all for remaining GitHub API calls
+    respx_mock.get(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
+    respx_mock.post(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
+    respx_mock.patch(url__startswith="https://api.github.com/repos/org/repo").mock(
+        return_value=httpx.Response(200, text="{}")
+    )
+    # NOTE: no board API (http://127.0.0.1:8077) mock — if the roster path
+    # fails and falls back to the board API, the test will fail because
+    # respx would block the unmocked request.
+
+    call_count = 0
+
+    async def _retry_then_succeed(
+        _component_id: str,
+        _method: str,
+        _path: str,
+        **_kw: Any,
+    ) -> str:
+        nonlocal call_count
+        call_count += 1
+        if call_count < 3:
+            return "Error: connection refused"
+        return "HTTP 200\n" + json.dumps(
+            {
+                "state": "blocked",
+                "events": [
+                    {"type": "implement_start"},
+                    {"type": "implement_complete"},
+                    {"type": "implement_start"},
+                    {"type": "implement_complete"},
+                    {"type": "implement_start"},
+                    {"type": "implement_complete"},
+                ],
+            }
+        )
+
+    tools = build_direct_repo_tools(
+        settings, component_request=_retry_then_succeed
+    )
+    df_fn = [t for t in tools if t.__name__ == "direct_fix"][0]
+
+    out = await df_fn(
+        ticket_id="t-df-retry",
+        repo_full_name="org/repo",
+        target_branch="main",
+        files_json=json.dumps([{"path": "x.py", "content": "print(1)"}]),
+    )
+    # The roster path must have succeeded after retries.
+    assert "Refused" not in out
+    assert call_count == 3, f"expected 3 calls, got {call_count}"
     assert "Error pushing commit" in out or "pushed successfully" in out
 
 
