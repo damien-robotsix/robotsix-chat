@@ -307,7 +307,7 @@ class TestAutoContinue:
         settings.autonomous.max_auto_turns = 20
         settings.autonomous.continue_interval_seconds = 0
         settings.autonomous.pending_subsession_wait_timeout = 0
-        settings.autonomous.approval_marker = "[APPROVAL]"
+        settings.autonomous.proposal_marker = "[APPROVAL]"
         settings.autonomous.completion_marker = "[COMPLETE]"
         settings.autonomous.auto_approve = False
         run_serializer = MagicMock()
@@ -321,7 +321,7 @@ class TestAutoContinue:
 
         async def _capture_stream(message, *args, **kwargs):
             captured_message.append(str(message))
-            yield "[APPROVAL]"  # triggers awaiting_approval so loop exits
+            yield "[APPROVAL]"  # triggers proposal marker so loop exits
             return
 
         agent.stream.side_effect = _capture_stream
@@ -362,7 +362,7 @@ class TestAutoContinue:
         settings.autonomous.max_auto_turns = 20
         settings.autonomous.continue_interval_seconds = 0
         settings.autonomous.pending_subsession_wait_timeout = 0
-        settings.autonomous.approval_marker = "[APPROVAL]"
+        settings.autonomous.proposal_marker = "[APPROVAL]"
         settings.autonomous.completion_marker = "[COMPLETE]"
         settings.autonomous.auto_approve = False
         run_serializer = MagicMock()
@@ -376,7 +376,7 @@ class TestAutoContinue:
 
         async def _capture_stream(message, *args, **kwargs):
             captured_message.append(str(message))
-            yield "[APPROVAL]"  # triggers awaiting_approval so loop exits
+            yield "[APPROVAL]"  # triggers proposal marker so loop exits
             return
 
         agent.stream.side_effect = _capture_stream
