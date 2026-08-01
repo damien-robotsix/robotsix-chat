@@ -981,9 +981,7 @@ async def test_merge_pull_request_resolves_paraphrased_id(
     )
 
     # The merge-now POST should be for the resolved real ID
-    route = respx_mock.post(
-        f"http://board:8077/tickets/{real_id}/merge-now"
-    ).mock(
+    route = respx_mock.post(f"http://board:8077/tickets/{real_id}/merge-now").mock(
         return_value=httpx.Response(200, json={"status": "merged", "sha": "abc123"})
     )
 
