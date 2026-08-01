@@ -918,6 +918,82 @@ async def test_remember_core_skips_sleep_when_zero(
 
 
 # ---------------------------------------------------------------------------
+# Write retry
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_remember_retries_then_succeeds(
+    cognee_memory: tuple[CogneeMemory, Any], tmp_path: Any
+) -> None:
+    """A write that fails once is retried and lands — no backlog entry.
+
+    Regression (2026-08-01): there was NO retry despite the docstring
+    claiming "retries exhausted". 20 consecutive write timeouts in one
+    afternoon each silently parked a conversation in the backlog on a single
+    failed attempt.
+    """
+    mem, fake = cognee_memory
+    backlog = tmp_path / "backlog.jsonl"
+    mem._settings.write_backlog_path = str(backlog)
+    mem._settings.remember_retry_backoff_seconds = 0.0
+    mem._settings.remember_max_attempts = 3
+
+    calls = {"n": 0}
+
+    async def _flaky(*a: Any, **kw: Any) -> None:
+        calls["n"] += 1
+        if calls["n"] == 1:
+            raise RuntimeError("database is locked")
+
+    fake.add = AsyncMock(side_effect=_flaky)
+
+    await mem.remember("hello", "hi")
+
+    assert calls["n"] == 2, "should retry once then succeed"
+    assert not backlog.exists(), "a recovered write must not be backlogged"
+
+
+@pytest.mark.asyncio
+async def test_remember_backlogs_only_after_all_attempts(
+    cognee_memory: tuple[CogneeMemory, Any], tmp_path: Any
+) -> None:
+    """The backlog is the last resort, reached only when every attempt fails.
+
+    Uses a lock-freeze signature: only transient faults are retried, so a
+    deterministic error would (correctly) park after one attempt.
+    """
+    mem, fake = cognee_memory
+    backlog = tmp_path / "backlog.jsonl"
+    mem._settings.write_backlog_path = str(backlog)
+    mem._settings.remember_retry_backoff_seconds = 0.0
+    mem._settings.remember_max_attempts = 3
+
+    fake.add = AsyncMock(side_effect=RuntimeError("database is locked"))
+
+    await mem.remember("hello", "hi")
+
+    assert fake.add.await_count == 3, "every attempt should be made"
+    assert backlog.exists()
+    assert len(backlog.read_text().strip().splitlines()) == 1
+
+
+@pytest.mark.asyncio
+async def test_remember_single_attempt_when_configured(
+    cognee_memory: tuple[CogneeMemory, Any], tmp_path: Any
+) -> None:
+    """max_attempts=1 restores single-shot behaviour (no accidental retries)."""
+    mem, fake = cognee_memory
+    mem._settings.write_backlog_path = str(tmp_path / "backlog.jsonl")
+    mem._settings.remember_max_attempts = 1
+    fake.add = AsyncMock(side_effect=RuntimeError("database is locked"))
+
+    await mem.remember("hello", "hi")
+
+    assert fake.add.await_count == 1
+
+
+# ---------------------------------------------------------------------------
 # Durable backlog
 # ---------------------------------------------------------------------------
 
