@@ -60,6 +60,8 @@ from .github import (
 )
 from .sessions import (
     _cleanup_session,
+    autonomous_definitions_list_endpoint,
+    autonomous_definitions_run_endpoint,
     history_endpoint,
     sessions_close_endpoint,
     sessions_create_endpoint,
@@ -94,6 +96,8 @@ __all__ = [
     "_parse_json_body",
     "_resolve_subsession",
     "_sse_frame",
+    "autonomous_definitions_list_endpoint",
+    "autonomous_definitions_run_endpoint",
     "cancel_queued_endpoint",
     "chat_endpoint",
     "config_get_endpoint",

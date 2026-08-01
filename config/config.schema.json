@@ -1,8 +1,43 @@
 {
   "$defs": {
+    "AutonomousSessionDefinition": {
+      "additionalProperties": false,
+      "description": "Definition of one named autonomous session.\n\nEach definition maps to one autonomous session owner (``autonomous:<name>``\nor the legacy ``autonomous`` pseudo-owner for the ``\"default\"`` preset).\nThe runner respects per-definition prompts, trigger type, and the enabled\nflag independently.\n\nAttributes:\n    name: Unique identifier for this session definition.\n    prompt: Custom kickoff prompt appended to the autonomous protocol\n        supplement.  When empty, the agent uses the standard \"Pick a\n        subject and draft a plan\" prompt.\n    trigger_type: How the session is re-triggered after completion \u2014\n        ``\"periodic\"`` (wait ``trigger_interval_seconds``) or\n        ``\"on_close\"`` (restart immediately, continuous mode).\n    trigger_interval_seconds: Delay between completion and restart for\n        ``periodic`` trigger.  Ignored for ``on_close``.  Default 45 s.\n    enabled: When ``False``, the definition is skipped \u2014 no session is\n        created for it.",
+      "properties": {
+        "name": {
+          "title": "Name",
+          "type": "string"
+        },
+        "prompt": {
+          "default": "",
+          "title": "Prompt",
+          "type": "string"
+        },
+        "trigger_type": {
+          "$ref": "#/$defs/TriggerType",
+          "default": "periodic"
+        },
+        "trigger_interval_seconds": {
+          "default": 45.0,
+          "minimum": 0.0,
+          "title": "Trigger Interval Seconds",
+          "type": "number"
+        },
+        "enabled": {
+          "default": true,
+          "title": "Enabled",
+          "type": "boolean"
+        }
+      },
+      "required": [
+        "name"
+      ],
+      "title": "AutonomousSessionDefinition",
+      "type": "object"
+    },
     "AutonomousSettings": {
       "additionalProperties": false,
-      "description": "Native autonomous chat sessions \u2014 self-directed agent loops.\n\nWhen enabled, the agent can run fully autonomous sessions that pick a\nsubject, draft a plan, await operator approval, then execute to\ncompletion with auto-cycling.\n\nAttributes:\n    enabled: Master switch.  Default ``True``.\n    proposal_marker: Marker string the agent emits after drafting a plan\n        to signal the plan is ready for operator review.  The session\n        enters the ``proposal`` state and waits for the operator to\n        comment before beginning execution.\n    completion_marker: Marker string the agent emits when the plan is\n        complete.  The session stays open after completion; the operator\n        must explicitly close it.\n    max_auto_turns: Maximum number of automatic agent turns during the\n        execution phase before reverting to ``proposal``.\n    session_color: Optional CSS color string applied as a visual accent\n        on autonomous session rows (e.g. ``\"#ef4444\"`` for red).\n    initial_task: Optional description of the first task to spawn when\n        an autonomous session starts.  When empty, the agent picks its\n        own subject.",
+      "description": "Native autonomous chat sessions \u2014 self-directed agent loops.\n\nWhen enabled, the agent can run fully autonomous sessions that pick a\nsubject, draft a plan, await operator approval, then execute to\ncompletion with auto-cycling.\n\nAttributes:\n    enabled: Master switch.  Default ``True``.\n    proposal_marker: Marker string the agent emits after drafting a plan\n        to signal the plan is ready for operator review.  The session\n        enters the ``proposal`` state and waits for the operator to\n        comment before beginning execution.\n    completion_marker: Marker string the agent emits when the plan is\n        complete.  The session stays open after completion; the operator\n        must explicitly close it.\n    max_auto_turns: Maximum number of automatic agent turns during the\n        execution phase before reverting to ``proposal``.\n    session_color: Optional CSS color string applied as a visual accent\n        on autonomous session rows (e.g. ``\"#ef4444\"`` for red).\n    initial_task: Optional description of the first task to spawn when\n        an autonomous session starts.  When empty, the agent picks its\n        own subject.\n    sessions: Optional list of named autonomous session definitions.\n        When empty (the default), a single default preset is synthesized\n        at runtime that matches the pre-existing single-session behavior\n        exactly \u2014 backward compatible out of the box.  Each entry defines\n        a prompt, trigger, and enabled flag for one autonomous session.",
       "properties": {
         "enabled": {
           "default": true,
@@ -60,6 +95,14 @@
           "description": "Number of consecutive NO_CHANGE cycles after which a periodic monitor is considered 'stale' \u2014 the agent may declare the autonomous session complete even while the monitor is still running.  Monitors continue in the background.  Env override: ``AUTONOMOUS_STALE_MONITOR_RUNS_BEFORE_COMPLETION``.",
           "title": "Stale Monitor Runs Before Completion",
           "type": "integer"
+        },
+        "sessions": {
+          "description": "Named autonomous session definitions.  When empty, a single default preset matching the pre-existing behavior is synthesized at runtime.  Each entry defines a prompt, trigger, and enabled flag for one autonomous session.",
+          "items": {
+            "$ref": "#/$defs/AutonomousSessionDefinition"
+          },
+          "title": "Sessions",
+          "type": "array"
         }
       },
       "title": "AutonomousSettings",
@@ -1214,6 +1257,15 @@
       },
       "title": "SubsessionsSettings",
       "type": "object"
+    },
+    "TriggerType": {
+      "description": "How an autonomous session is re-triggered after completion.",
+      "enum": [
+        "periodic",
+        "on_close"
+      ],
+      "title": "TriggerType",
+      "type": "string"
     },
     "VersionCheckSettings": {
       "additionalProperties": false,

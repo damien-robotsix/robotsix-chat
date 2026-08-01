@@ -73,6 +73,8 @@ from .routes import (
     ChatAgent,
     MessageCoalescer,
     RunSerializer,
+    autonomous_definitions_list_endpoint,
+    autonomous_definitions_run_endpoint,
     cancel_queued_endpoint,
     chat_endpoint,
     config_get_endpoint,
@@ -414,6 +416,16 @@ def create_app(
         Route(
             "/sessions/{session_id}/close",
             sessions_close_endpoint,
+            methods=["POST"],
+        ),
+        Route(
+            "/autonomous/definitions",
+            autonomous_definitions_list_endpoint,
+            methods=["GET"],
+        ),
+        Route(
+            "/autonomous/definitions/{name}/run",
+            autonomous_definitions_run_endpoint,
             methods=["POST"],
         ),
         Route(

@@ -434,6 +434,10 @@ Read-only HTTP uptime/render-probe tool for the agent. Enabled by default.
 Autonomous sessions that pick a subject, draft a plan for operator review, then execute after the
 operator comments. Sessions stay open after completion — the operator must explicitly close them.
 
+Multiple *named session definitions* can be configured in `autonomous.sessions`, each with its own
+prompt and trigger. When the list is empty, a single default preset matching the pre-existing
+behavior is synthesized at runtime — backward compatible out of the box.
+
 | JSON key                                          | Type      | Default                            | Description                                                                                                                                                                                                                         |
 | ------------------------------------------------- | --------- | ---------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
 | `autonomous.enabled`                              | `boolean` | `true`                             | Master switch.                                                                                                                                                                                                                      |
@@ -446,6 +450,56 @@ operator comments. Sessions stay open after completion — the operator must exp
 | `autonomous.continue_interval_seconds`            | `number`  | `45.0`                             | Pacing interval (seconds) between auto-continue loop iterations.                                                                                                                                                                    |
 | `autonomous.pending_subsession_wait_timeout`      | `number`  | `600.0`                            | Maximum time (seconds) the auto-continue loop waits for pending non-periodic subsessions to complete before giving up and continuing.                                                                                               |
 | `autonomous.stale_monitor_runs_before_completion` | `integer` | `3`                                | Number of consecutive `NO_CHANGE` cycles after which a periodic monitor is considered "stale" — the agent may declare the autonomous session complete even while the monitor is still running. Monitors continue in the background. |
+| `autonomous.sessions`                             | `array`   | `[]`                               | List of named autonomous session definitions (see below). When empty, a single default preset is synthesized.                                                                                                                       |
+
+Each entry in `autonomous.sessions` is an `AutonomousSessionDefinition` object:
+
+| JSON key                   | Type      | Default      | Description                                                                                         |
+| -------------------------- | --------- | ------------ | --------------------------------------------------------------------------------------------------- |
+| `name`                     | `string`  | *(required)* | Unique identifier for this session definition.                                                      |
+| `prompt`                   | `string`  | `""`         | Custom kickoff prompt. When empty, the standard "Pick a subject and draft a plan" prompt is used.   |
+| `trigger_type`             | `string`  | `"periodic"` | Restart strategy: `"periodic"` (wait `trigger_interval_seconds`) or `"on_close"` (continuous mode). |
+| `trigger_interval_seconds` | `number`  | `45.0`       | Delay between completion and restart for `"periodic"` trigger. Ignored for `"on_close"`.            |
+| `enabled`                  | `boolean` | `true`       | When `false`, the definition is skipped — no session is created for it.                             |
+
+**Default preset.** When `autonomous.sessions` is empty (the default), the runner synthesizes a
+single session definition named `"default"` with a periodic trigger at `continue_interval_seconds`.
+This preserves the pre-existing single-session behavior exactly — the
+`GET /sessions?owner_id=autonomous` endpoint and the `[AUTONOMOUS]` UI badge continue to work.
+
+**Named sessions.** Adding entries to `autonomous.sessions` enables multiple concurrent autonomous
+sessions. Each definition maps to a distinct pseudo-owner (`autonomous:<name>`), so sessions cannot
+overlap with themselves (the per-owner dedup invariant applies). Session runs are logged and
+auditable — each run records the definition name, trigger reason, start/end time, and summary.
+
+**API.** The management surface is served at:
+
+- `GET /autonomous/definitions` — list all definitions with their current active session.
+- `POST /autonomous/definitions/{name}/run` — manually trigger a one-shot run (returns 409 if a
+  session is already active).
+
+**Example** — two autonomous sessions, one periodic and one continuous:
+
+```json
+"autonomous": {
+  "enabled": true,
+  "sessions": [
+    {
+      "name": "default",
+      "prompt": "",
+      "trigger_type": "periodic",
+      "trigger_interval_seconds": 45.0,
+      "enabled": true
+    },
+    {
+      "name": "continuous-triage",
+      "prompt": "Begin an autonomous triage session.  Scan open tickets and investigate the oldest unassigned item.",
+      "trigger_type": "on_close",
+      "enabled": true
+    }
+  ]
+}
+```
 
 ______________________________________________________________________
 

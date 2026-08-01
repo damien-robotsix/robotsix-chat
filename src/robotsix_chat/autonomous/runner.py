@@ -33,6 +33,14 @@ logger = logging.getLogger(__name__)
 # ui/static/chat.js.
 BOOTSTRAP_OWNER = "autonomous"
 
+# Name of the default session definition — synthesized when the config's
+# ``sessions`` list is empty so the pre-existing single-session behavior is
+# preserved out of the box.
+DEFAULT_SESSION_NAME = "default"
+
+# Prefix for owner IDs derived from named session definitions.
+_OWNER_ID_PREFIX = "autonomous:"
+
 
 def _rejected_subjects_note(aq: AutonomousSession | None) -> str:
     """Return a prompt suffix listing previously rejected subjects, or ""."""
@@ -69,6 +77,9 @@ class AutonomousRunner:
         # Strong references to in-flight auto-continue tasks (see asyncio
         # docs warning on create_task and weak references).
         self._auto_tasks: set[asyncio.Task[None]] = set()
+        # Resolve session definitions: use the configured list, or synthesize
+        # a default preset when none are configured (backward compat).
+        self._definitions = self._resolve_definitions()
 
     # -- settings accessors -----------------------------------------------
 
@@ -104,6 +115,7 @@ class AutonomousRunner:
                     "completion_suppressed": aq.completion_suppressed,
                     "rejected_subjects": aq.rejected_subjects or [],
                     "recent_user_messages": aq.recent_user_messages or [],
+                    "definition_name": aq.definition_name,
                 }
             self._persist_path.parent.mkdir(parents=True, exist_ok=True)
             self._persist_path.write_text(json.dumps(data, indent=2))
@@ -139,6 +151,7 @@ class AutonomousRunner:
                     completion_suppressed=entry.get("completion_suppressed", False),
                     rejected_subjects=entry.get("rejected_subjects", []),
                     recent_user_messages=entry.get("recent_user_messages", []),
+                    definition_name=entry.get("definition_name", ""),
                 )
             except Exception:
                 logger.exception("Skipping unparsable autonomous session %s", sid)
@@ -148,6 +161,105 @@ class AutonomousRunner:
             self._persist_path,
         )
         return sessions
+
+    # -- session definitions (config or synthesized) ------------------------
+
+    @staticmethod
+    def _synthesize_default_definition(
+        continue_interval_seconds: float,
+    ) -> dict[str, Any]:
+        """Return a single-entry dict with the legacy default definition.
+
+        This is the backward-compat path: when the config's ``sessions``
+        list is empty, the runner creates one default session definition
+        that mirrors the pre-existing single-session behavior exactly.
+        """
+        definition: dict[str, Any] = {
+            "name": DEFAULT_SESSION_NAME,
+            "prompt": "",
+            "trigger_type": "periodic",
+            "trigger_interval_seconds": continue_interval_seconds,
+            "enabled": True,
+        }
+        return {DEFAULT_SESSION_NAME: definition}
+
+    def _resolve_definitions(self) -> dict[str, Any]:
+        """Build the runtime definition registry from config or defaults.
+
+        Returns a ``dict[name, definition_dict]``.  When the configured
+        ``sessions`` list is empty, a single default preset is synthesized
+        so the pre-existing single-session behavior is preserved out of
+        the box.  Only enabled definitions are included.
+        """
+        configured = self._settings.autonomous.sessions
+        if configured and isinstance(configured, list):
+            return {
+                d.name: {
+                    "name": d.name,
+                    "prompt": d.prompt,
+                    "trigger_type": d.trigger_type.value
+                    if hasattr(d.trigger_type, "value")
+                    else d.trigger_type,
+                    "trigger_interval_seconds": d.trigger_interval_seconds,
+                    "enabled": d.enabled,
+                }
+                for d in configured
+                if d.enabled
+            }
+        return self._synthesize_default_definition(
+            self._settings.autonomous.continue_interval_seconds
+        )
+
+    def _owner_id_for_definition(self, name: str) -> str:
+        """Return the pseudo-owner ID for a session definition *name*."""
+        if name == DEFAULT_SESSION_NAME:
+            return BOOTSTRAP_OWNER
+        return f"{_OWNER_ID_PREFIX}{name}"
+
+    def _definition_for_owner(self, owner_id: str) -> dict[str, Any] | None:
+        """Return the definition dict for *owner_id*, or ``None``."""
+        if owner_id == BOOTSTRAP_OWNER:
+            return self._definitions.get(DEFAULT_SESSION_NAME)
+        if owner_id.startswith(_OWNER_ID_PREFIX):
+            name = owner_id[len(_OWNER_ID_PREFIX) :]
+            return self._definitions.get(name)
+        return None
+
+    @property
+    def definition_names(self) -> list[str]:
+        """All active definition names (enabled at startup)."""
+        return sorted(self._definitions)
+
+    # -- public accessors (used by routes) ---------------------------------
+
+    def get_definition(self, name: str) -> dict[str, Any] | None:
+        """Return the definition dict for *name*, or ``None``."""
+        return self._definitions.get(name)
+
+    def owner_id_for_definition(self, name: str) -> str:
+        """Return the pseudo-owner ID for a session definition *name*."""
+        return self._owner_id_for_definition(name)
+
+    def active_session_id_for_definition(self, name: str) -> str | None:
+        """Return the ``session_id`` of the active session for *name*, or ``None``.
+
+        An active session is in a non-terminal state (planning, proposal,
+        or executing).  Completed sessions are ignored.
+        """
+        owner_id = self._owner_id_for_definition(name)
+        for aq in self._sessions.values():
+            if aq.owner_id == owner_id and aq.state is not AutonomousState.completed:
+                return aq.session_id
+        return None
+
+    def is_autonomous_owner(self, owner_id: str) -> bool:
+        """Return ``True`` when *owner_id* belongs to any session definition."""
+        if owner_id == BOOTSTRAP_OWNER and DEFAULT_SESSION_NAME in self._definitions:
+            return True
+        if owner_id.startswith(_OWNER_ID_PREFIX):
+            name = owner_id[len(_OWNER_ID_PREFIX) :]
+            return name in self._definitions
+        return False
 
     # -- session registry ---------------------------------------------------
 
@@ -194,6 +306,7 @@ class AutonomousRunner:
         session_id: str | None = None,
         *,
         schedule_kickoff: bool = True,
+        definition_name: str = "",
     ) -> AutonomousSession:
         """Register a new autonomous session, creating a store session if needed.
 
@@ -201,6 +314,9 @@ class AutonomousRunner:
         turn is scheduled as a background task so the session immediately
         begins subject selection.  Pass ``False`` when the caller will handle
         the kickoff itself (e.g. when the caller will schedule it manually).
+
+        *definition_name* names the :class:`AutonomousSessionDefinition`
+        that spawned this session.  When empty, derived from *owner_id*.
 
         Enforces the single-session invariant: if *owner_id* already has an
         open autonomous session (any non-terminal state), the existing session
@@ -236,10 +352,17 @@ class AutonomousRunner:
         # dropped from ``conversations.json`` on restart.
         self._store.begin(session_id)
         self._store.register_session(owner_id, session_id, title="Autonomous chat")
+        # Resolve definition name from owner_id when not explicitly provided.
+        resolved_name = definition_name
+        if not resolved_name:
+            defn = self._definition_for_owner(owner_id)
+            if defn is not None:
+                resolved_name = defn["name"]
         aq = AutonomousSession(
             session_id=session_id,
             owner_id=owner_id,
             state=AutonomousState.planning,
+            definition_name=resolved_name,
         )
         self._sessions[session_id] = aq
         self._save_sessions()
@@ -292,6 +415,7 @@ class AutonomousRunner:
         owner_id: str = BOOTSTRAP_OWNER,
         *,
         schedule_kickoff: bool = True,
+        definition_name: str = "",
     ) -> AutonomousSession:
         """Guarantee *owner_id* has exactly one open (non-completed) session.
 
@@ -302,6 +426,9 @@ class AutonomousRunner:
         conversation store (with ``create_replacement=False`` so the store
         does not spawn an empty "New chat" husk) — and a fresh autonomous
         session is started.
+
+        *definition_name* is passed through to :meth:`create_session` when a
+        new session is spawned.
         """
         for aq in self._sessions.values():
             if aq.owner_id == owner_id and aq.state is not AutonomousState.completed:
@@ -325,20 +452,37 @@ class AutonomousRunner:
         if stale:
             self._save_sessions()
 
-        return self.create_session(owner_id, schedule_kickoff=schedule_kickoff)
+        return self.create_session(
+            owner_id,
+            schedule_kickoff=schedule_kickoff,
+            definition_name=definition_name,
+        )
 
     async def _auto_restart(self, owner_id: str) -> None:
         """Throttle, then ensure *owner_id* has a fresh open autonomous session.
 
-        Scheduled after a session completes.  The throttle (reusing
-        ``continue_interval_seconds``) prevents a hot restart loop when a
-        session completes almost immediately.
+        Scheduled after a session completes.  Uses the session definition's
+        ``trigger_interval_seconds`` for the throttle delay (periodic trigger),
+        or 0 for on-close trigger (immediate restart).
         """
-        delay = max(0.0, self._settings.autonomous.continue_interval_seconds)
+        defn = self._definition_for_owner(owner_id)
+        trigger_type = defn.get("trigger_type", "periodic") if defn else "periodic"
+        if trigger_type == "on_close":
+            delay = 0.0
+        else:
+            interval = (
+                defn.get("trigger_interval_seconds", 45.0)
+                if defn
+                else self._settings.autonomous.continue_interval_seconds
+            )
+            delay = max(0.0, float(interval))
         try:
             if delay:
                 await asyncio.sleep(delay)
-            self.ensure_active_session(owner_id)
+            self.ensure_active_session(
+                owner_id,
+                definition_name=defn["name"] if defn else "",
+            )
         except asyncio.CancelledError:
             logger.debug("Auto-restart task cancelled for owner %s", owner_id)
         except Exception:
@@ -623,21 +767,30 @@ class AutonomousRunner:
                         "SYSTEM RESTARTED — you are resuming an existing "
                         "autonomous session. "
                     )
-                initial_task = self._settings.autonomous.initial_task
+                # Build the kickoff prompt: use the session definition's
+                # custom prompt when provided, otherwise fall back to the
+                # global initial_task or the standard prompt.
+                defn = self._definition_for_owner(owner_id)
+                custom_prompt = defn.get("prompt", "") if defn else ""
                 rejected_note = _rejected_subjects_note(self._sessions.get(session_id))
-                if initial_task:
-                    prompt = (
-                        f"{restart_notice}"
-                        f"Begin a new autonomous session. Initial task: {initial_task}"
-                        f"{rejected_note}"
-                    )
+                if custom_prompt:
+                    prompt = f"{restart_notice}{custom_prompt}{rejected_note}"
                 else:
-                    prompt = (
-                        f"{restart_notice}"
-                        "Begin a new autonomous session. "
-                        "Pick a subject and draft a plan."
-                        f"{rejected_note}"
-                    )
+                    initial_task = self._settings.autonomous.initial_task
+                    if initial_task:
+                        prompt = (
+                            f"{restart_notice}"
+                            "Begin a new autonomous session. "
+                            f"Initial task: {initial_task}"
+                            f"{rejected_note}"
+                        )
+                    else:
+                        prompt = (
+                            f"{restart_notice}"
+                            "Begin a new autonomous session. "
+                            "Pick a subject and draft a plan."
+                            f"{rejected_note}"
+                        )
                 reply_parts: list[str] = []
                 async for token in agent.stream(
                     prompt,
@@ -891,7 +1044,9 @@ class AutonomousRunner:
                     # Check for lifecycle markers in the reply.
                     new_state = self.check_reply_for_markers(session_id, full_reply)
                     if new_state is AutonomousState.completed:
-                        # Session completed — stay open, operator will close.
+                        # check_reply_for_markers already schedules the
+                        # _auto_restart background task — we only need to
+                        # exit the execution loop here.
                         return
                     if new_state is AutonomousState.proposal:
                         # Agent hit a blocker — wait for operator.
@@ -916,9 +1071,9 @@ class AutonomousRunner:
         - Sessions in ``planning`` state: re-kickoff the initial
           turn (the previous kickoff was lost on restart).
         - Sessions in ``proposal`` state: left for operator review.
-        - When no sessions exist at all (e.g. a fresh or wiped store),
-          auto-start exactly one bootstrap session so autonomous mode is
-          not permanently idle.
+        - When no sessions exist at all for a definition (e.g. a fresh or
+          wiped store), auto-start one session per enabled definition so
+          autonomous mode is not permanently idle.
         """
         for session_id in list(self._sessions):
             aq = self._sessions.get(session_id)
@@ -970,13 +1125,23 @@ class AutonomousRunner:
                     session_id,
                 )
 
-        # Auto-restart always: guarantee the bootstrap owner has exactly one
-        # open autonomous session after resume.  Covers a fresh/wiped store as
-        # well as the case where the only surviving sessions were completed or
-        # closed (which would otherwise leave autonomous mode permanently
-        # idle).  Retires leftover completed sessions and starts a fresh run.
-        logger.info(
-            "Ensuring one open autonomous session for owner %r after resume",
-            BOOTSTRAP_OWNER,
-        )
-        self.ensure_active_session(BOOTSTRAP_OWNER)
+        # Auto-restart always: guarantee every enabled session definition has
+        # exactly one open autonomous session after resume.  Covers a
+        # fresh/wiped store as well as the case where the only surviving
+        # sessions were completed or closed.
+        self.ensure_all_active_sessions()
+
+    def ensure_all_active_sessions(self) -> None:
+        """Guarantee one open session per enabled definition (e.g. on startup)."""
+        for name in self._definitions:
+            owner_id = self._owner_id_for_definition(name)
+            logger.info(
+                "Ensuring one open autonomous session for definition %r "
+                "(owner %r) after resume",
+                name,
+                owner_id,
+            )
+            self.ensure_active_session(
+                owner_id,
+                definition_name=name,
+            )

@@ -85,10 +85,10 @@ async def sessions_list_endpoint(request: Request) -> JSONResponse:
     store: ConversationStore = request.app.state.conversation_store
     runner = request.app.state.autonomous_runner
 
-    # Never lazily create a browser default session for the autonomous
+    # Never lazily create a browser default session for any autonomous
     # pseudo-owner — that husk would surface in the operator's merged list as
-    # an empty, un-closable "New chat".  The runner owns this owner's sessions.
-    create_default = runner is None or owner_id != runner.bootstrap_owner
+    # an empty, un-closable "New chat".  The runner owns these sessions.
+    create_default = runner is None or not runner.is_autonomous_owner(owner_id)
     sessions, active_id = store.list_sessions(owner_id, create_default=create_default)
 
     # Annotate autonomous sessions so the UI can render the [AUTONOMOUS] badge.
@@ -179,7 +179,7 @@ async def sessions_delete_endpoint(request: Request) -> JSONResponse:
 
     runner = request.app.state.autonomous_runner
     is_autonomous = runner is not None and runner.is_autonomous(session_id)
-    is_autonomous_owner = runner is not None and owner_id == runner.bootstrap_owner
+    is_autonomous_owner = runner is not None and runner.is_autonomous_owner(owner_id)
 
     # 1. Close the session's subsessions.
     subsessions_closed = _cleanup_session(session_id, request)
@@ -432,3 +432,117 @@ async def _persist_carryover(
             )
     except Exception:
         logger.exception("Failed to persist carryover note for owner %s", owner_id)
+
+
+# ---------------------------------------------------------------------------
+# Autonomous session definition endpoints (read-only reflection of config)
+# ---------------------------------------------------------------------------
+
+
+async def autonomous_definitions_list_endpoint(request: Request) -> JSONResponse:
+    """List autonomous session definitions.
+
+    ``GET /autonomous/definitions`` returns::
+
+        {
+          "definitions": [
+            {
+              "name": "default",
+              "prompt": "",
+              "trigger_type": "periodic",
+              "trigger_interval_seconds": 45.0,
+              "enabled": true,
+              "owner_id": "autonomous",
+              "active_session_id": "..."
+            },
+            ...
+          ]
+        }
+
+    Each definition is annotated with its derived ``owner_id`` and the
+    ``active_session_id`` of any currently-open session for that definition
+    (``null`` when none is active).
+    """
+    runner = request.app.state.autonomous_runner
+    if runner is None:
+        return JSONResponse(
+            {"error": "autonomous sessions are not enabled"}, status_code=404
+        )
+
+    definitions = []
+    for name in runner.definition_names:
+        owner_id = runner.owner_id_for_definition(name)
+        defn = runner.get_definition(name) or {}
+        active_session_id = runner.active_session_id_for_definition(name)
+        definitions.append(
+            {
+                "name": name,
+                "prompt": defn.get("prompt", ""),
+                "trigger_type": defn.get("trigger_type", "periodic"),
+                "trigger_interval_seconds": defn.get("trigger_interval_seconds", 45.0),
+                "enabled": defn.get("enabled", True),
+                "owner_id": owner_id,
+                "active_session_id": active_session_id,
+            }
+        )
+
+    return JSONResponse({"definitions": definitions})
+
+
+async def autonomous_definitions_run_endpoint(request: Request) -> JSONResponse:
+    """Manually trigger a one-shot run of an autonomous session definition.
+
+    ``POST /autonomous/definitions/{name}/run`` queues a new run for the
+    named definition (if enabled).  Returns::
+
+        {
+          "started": true,
+          "session_id": "...",
+          "definition_name": "..."
+        }
+
+    Returns ``404`` when the definition is not found, ``409`` when the
+    definition already has an active session.
+    """
+    name = request.path_params["name"]
+    runner = request.app.state.autonomous_runner
+    if runner is None:
+        return JSONResponse(
+            {"error": "autonomous sessions are not enabled"}, status_code=404
+        )
+
+    if runner.get_definition(name) is None:
+        return JSONResponse({"error": f"unknown definition {name!r}"}, status_code=404)
+
+    owner_id = runner.owner_id_for_definition(name)
+
+    # Check for an existing open session.
+    active_id = runner.active_session_id_for_definition(name)
+    if active_id is not None:
+        aq = runner.get_session(active_id)
+        state_value = aq.state.value if aq is not None else "unknown"
+        return JSONResponse(
+            {
+                "error": (
+                    f"definition {name!r} already has an active session "
+                    f"({active_id}, state={state_value})"
+                ),
+                "session_id": active_id,
+            },
+            status_code=409,
+        )
+
+    # Start a new session.
+    aq = runner.ensure_active_session(
+        owner_id,
+        schedule_kickoff=True,
+        definition_name=name,
+    )
+
+    return JSONResponse(
+        {
+            "started": True,
+            "session_id": aq.session_id,
+            "definition_name": name,
+        }
+    )
