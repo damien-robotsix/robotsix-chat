@@ -473,36 +473,76 @@ class CogneeMemory:
         consolidation pipeline (e.g. orphaned LanceDB adapter lock)
         skips the write instead of leaking a stuck background task.
 
-        When the write ultimately fails (retries exhausted or timeout),
-        the exchange is appended to a durable JSONL backlog so it is not
-        silently lost — subsequent successful writes opportunistically
-        drain the backlog.
+        Attempted up to ``remember_max_attempts`` times with exponential
+        backoff.  Only when every attempt fails is the exchange appended to a
+        durable JSONL backlog so it is not silently lost — subsequent
+        successful writes opportunistically drain the backlog.
+
+        The retry is not decoration: cognify is a multi-minute LLM pipeline
+        contending with recall for cognee's stores, so a single slow pass was
+        routinely enough to lose the write.  Observed 2026-08-01, before this
+        existed: 20 consecutive ``memory write timed out`` in one afternoon,
+        every one of them a conversation that never reached memory, with the
+        docstring already claiming "retries exhausted" for a code path that
+        made exactly one attempt.
         """
-        try:
-            async with asyncio.timeout(self._settings.remember_timeout_seconds):
-                await self._remember_core(
-                    user_message, assistant_message, session_id=session_id
-                )
-            # Write succeeded → clear freeze/degraded tracking and drain backlog.
-            self._clear_degraded()
+        attempts = max(1, self._settings.remember_max_attempts)
+        timeout = self._settings.remember_timeout_seconds
+        last_error = ""
+
+        for attempt in range(1, attempts + 1):
+            transient = False
             try:
-                await self._drain_backlog()
-            except Exception:
-                logger.exception(
-                    "Backlog drain failed after successful write — "
-                    "backlogged entries preserved for next drain"
+                async with asyncio.timeout(timeout):
+                    await self._remember_core(
+                        user_message, assistant_message, session_id=session_id
+                    )
+                if attempt > 1:
+                    logger.info("memory write succeeded on attempt %d", attempt)
+                # Write succeeded → clear freeze/degraded tracking, drain backlog.
+                self._clear_degraded()
+                try:
+                    await self._drain_backlog()
+                except Exception:
+                    logger.exception(
+                        "Backlog drain failed after successful write — "
+                        "backlogged entries preserved for next drain"
+                    )
+                return
+            except TimeoutError:
+                last_error = f"timed out after {timeout:.0f}s"
+                transient = True
+            except Exception as exc:
+                last_error = f"{type(exc).__name__}: {exc}"
+                # Only transient faults are worth another pass. A deterministic
+                # error will fail identically on every attempt, and retrying it
+                # burns minutes of backoff for a guaranteed backlog entry.
+                transient = _is_lock_freeze_error(exc)
+
+            if not transient:
+                break
+
+            if attempt < attempts:
+                # Back off before retrying: an immediate retry would just
+                # re-enter the same store contention that caused the failure.
+                delay = self._settings.remember_retry_backoff_seconds * (
+                    2 ** (attempt - 1)
                 )
-        except TimeoutError:
-            logger.warning(
-                "memory write timed out after %.0fs; queued to backlog",
-                self._settings.remember_timeout_seconds,
-            )
-            self._record_write_failure()
-            self._append_to_backlog(user_message, assistant_message, session_id)
-        except Exception:
-            logger.exception("memory write failed; queued to backlog")
-            self._record_write_failure()
-            self._append_to_backlog(user_message, assistant_message, session_id)
+                logger.warning(
+                    "memory write attempt %d/%d failed (%s); retrying in %.0fs",
+                    attempt,
+                    attempts,
+                    last_error,
+                    delay,
+                )
+                await asyncio.sleep(delay)
+
+        logger.warning(
+            "memory write failed (%s); queued to backlog",
+            last_error,
+        )
+        self._record_write_failure()
+        self._append_to_backlog(user_message, assistant_message, session_id)
 
     async def _remember_core(
         self,

@@ -126,9 +126,19 @@ class MemorySettings(BaseModel):
             ``search_memory`` tool call.  More generous than the automatic
             recall's — the tool is invoked deliberately, so waiting longer is
             acceptable where stalling every message was not.  Default 180 s.
-        remember_timeout_seconds: Hard timeout (seconds) for a single
-            ``remember`` call (cognify consolidation).  On expiry the write is
-            skipped and a warning is logged.  Default 300 s.
+        remember_timeout_seconds: Hard timeout (seconds) for ONE ``remember``
+            attempt (cognify consolidation).  Default 900 s — raised from 300
+            after 20 consecutive timeouts in one afternoon: cognify is a
+            multi-minute LLM pipeline contending with recall for cognee's
+            stores, and 300 s simply was not enough for it to finish.
+        remember_max_attempts: How many times a write is attempted before the
+            exchange is parked in the backlog.  Default 3.  Each attempt gets
+            the full ``remember_timeout_seconds``; failures back off
+            exponentially from ``remember_retry_backoff_seconds``.
+        remember_retry_backoff_seconds: Base delay before retrying a failed
+            write, doubling per attempt.  Backoff matters more than the retry
+            count here — an immediate retry re-enters the same store
+            contention that caused the failure.  Default 30 s.
         write_backlog_path: Path to a durable JSONL backlog for exchanges that
             could not be persisted after retries are exhausted.  The backlog is
             drained opportunistically on subsequent successful writes.
@@ -181,7 +191,9 @@ class MemorySettings(BaseModel):
     recall_timeout_seconds: float = 60.0
     deep_recall_search_type: str = "GRAPH_COMPLETION"
     deep_recall_timeout_seconds: float = 180.0
-    remember_timeout_seconds: float = 300.0
+    remember_timeout_seconds: float = 900.0
+    remember_max_attempts: int = 3
+    remember_retry_backoff_seconds: float = 30.0
     write_backlog_path: str = "/data/cognee/backlog.jsonl"
     datafusion_runtime_memory_limit: str = "256M"
     frozen_store_alert_minutes: float = 10.0
