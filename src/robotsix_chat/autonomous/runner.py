@@ -230,6 +230,28 @@ class AutonomousRunner:
         """All active definition names (enabled at startup)."""
         return sorted(self._definitions)
 
+    # -- public accessors (used by routes) ---------------------------------
+
+    def get_definition(self, name: str) -> dict[str, Any] | None:
+        """Return the definition dict for *name*, or ``None``."""
+        return self._definitions.get(name)
+
+    def owner_id_for_definition(self, name: str) -> str:
+        """Return the pseudo-owner ID for a session definition *name*."""
+        return self._owner_id_for_definition(name)
+
+    def active_session_id_for_definition(self, name: str) -> str | None:
+        """Return the ``session_id`` of the active session for *name*, or ``None``.
+
+        An active session is in a non-terminal state (planning, proposal,
+        or executing).  Completed sessions are ignored.
+        """
+        owner_id = self._owner_id_for_definition(name)
+        for aq in self._sessions.values():
+            if aq.owner_id == owner_id and aq.state is not AutonomousState.completed:
+                return aq.session_id
+        return None
+
     def is_autonomous_owner(self, owner_id: str) -> bool:
         """Return ``True`` when *owner_id* belongs to any session definition."""
         if owner_id == BOOTSTRAP_OWNER and DEFAULT_SESSION_NAME in self._definitions:
@@ -1022,11 +1044,9 @@ class AutonomousRunner:
                     # Check for lifecycle markers in the reply.
                     new_state = self.check_reply_for_markers(session_id, full_reply)
                     if new_state is AutonomousState.completed:
-                        # Session completed — schedule restart per trigger type.
-                        # On-close trigger chains immediately; periodic waits.
-                        self._schedule_background(
-                            lambda oid=owner_id: self._auto_restart(oid)  # type: ignore[misc]
-                        )
+                        # check_reply_for_markers already schedules the
+                        # _auto_restart background task — we only need to
+                        # exit the execution loop here.
                         return
                     if new_state is AutonomousState.proposal:
                         # Agent hit a blocker — wait for operator.

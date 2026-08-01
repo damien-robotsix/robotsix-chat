@@ -65,6 +65,11 @@ def autonomous_runner(store, tmp_path, monkeypatch) -> AutonomousRunner:
     settings.autonomous.session_color = "#ff0000"
     settings.autonomous.persist_path = str(tmp_path / "autonomous_sessions.json")
     settings.autonomous.initial_task = ""
+    settings.autonomous.continue_interval_seconds = 45.0
+    settings.autonomous.pending_subsession_wait_timeout = 600.0
+    settings.autonomous.max_idle_auto_turns = 5
+    settings.autonomous.stale_monitor_runs_before_completion = 3
+    settings.autonomous.sessions = []
     runner = AutonomousRunner(
         settings=settings,
         conversation_store=store,
@@ -227,3 +232,154 @@ class TestSessionsListAutonomousAnnotation:
         match = [s for s in sessions if s["session_id"] == aq.session_id]
         assert len(match) == 1
         assert match[0]["autonomous"] is True
+
+
+class TestAutonomousDefinitionsListEndpoint:
+    """GET /autonomous/definitions — list all session definitions."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+
+    @pytest.mark.asyncio
+    async def test_returns_404_when_runner_is_none(self, mock_agent, store):
+        """404 when autonomous is not enabled (runner is None)."""
+        app = create_app(
+            mock_agent,
+            conversation_store=store,
+            autonomous_runner=None,
+            serve_ui=False,
+        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            r = await c.get("/autonomous/definitions")
+            assert r.status_code == 404
+            assert "not enabled" in r.json()["error"]
+
+    @pytest.mark.asyncio
+    async def test_lists_default_definition(self, client):
+        """Returns the synthesized default definition when sessions list is empty."""
+        r = await client.get("/autonomous/definitions")
+        assert r.status_code == 200
+        data = r.json()
+        assert "definitions" in data
+        defs = data["definitions"]
+        assert len(defs) >= 1
+        names = {d["name"] for d in defs}
+        assert "default" in names
+
+    @pytest.mark.asyncio
+    async def test_definition_shape(self, client):
+        """Each definition has the expected keys."""
+        r = await client.get("/autonomous/definitions")
+        assert r.status_code == 200
+        for d in r.json()["definitions"]:
+            assert "name" in d
+            assert "prompt" in d
+            assert "trigger_type" in d
+            assert "trigger_interval_seconds" in d
+            assert "enabled" in d
+            assert "owner_id" in d
+            assert "active_session_id" in d
+
+    @pytest.mark.asyncio
+    async def test_active_session_id_when_active(
+        self, client, autonomous_runner, store
+    ):
+        """active_session_id is set when a session is active."""
+        aq = autonomous_runner.create_session(
+            autonomous_runner.bootstrap_owner,
+            schedule_kickoff=False,
+            definition_name="default",
+        )
+        r = await client.get("/autonomous/definitions")
+        assert r.status_code == 200
+        matching = [d for d in r.json()["definitions"] if d["name"] == "default"]
+        assert len(matching) == 1
+        assert matching[0]["active_session_id"] == aq.session_id
+
+    @pytest.mark.asyncio
+    async def test_active_session_id_none_when_no_session(self, client):
+        """active_session_id is null when no session is active."""
+        r = await client.get("/autonomous/definitions")
+        assert r.status_code == 200
+        for d in r.json()["definitions"]:
+            assert d["active_session_id"] is None
+
+
+class TestAutonomousDefinitionsRunEndpoint:
+    """POST /autonomous/definitions/{name}/run — manual trigger."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+
+    @pytest.mark.asyncio
+    async def test_returns_404_when_runner_is_none(self, mock_agent, store):
+        """404 when autonomous is not enabled."""
+        app = create_app(
+            mock_agent,
+            conversation_store=store,
+            autonomous_runner=None,
+            serve_ui=False,
+        )
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as c:
+            r = await c.post("/autonomous/definitions/default/run")
+            assert r.status_code == 404
+
+    @pytest.mark.asyncio
+    async def test_returns_404_for_unknown_name(self, client):
+        """404 for a definition name that does not exist."""
+        r = await client.post("/autonomous/definitions/nonexistent/run")
+        assert r.status_code == 404
+        assert "unknown definition" in r.json()["error"]
+
+    @pytest.mark.asyncio
+    async def test_returns_409_when_session_already_active(
+        self, client, autonomous_runner, store, owner_id
+    ):
+        """409 when a session is already active for the definition."""
+        # The default definition maps to BOOTSTRAP_OWNER.
+        sid = store.create_session(owner_id)["session_id"]
+        autonomous_runner.create_session(
+            owner_id, session_id=sid, schedule_kickoff=False
+        )
+        # Manually set owner_id to be the bootstrap owner so the runner
+        # detects the conflict.
+        aq = autonomous_runner.get_session(sid)
+        assert aq is not None
+        # The definition run endpoint uses owner_id_for_definition which
+        # maps "default" → BOOTSTRAP_OWNER.  So create a session under
+        # BOOTSTRAP_OWNER.
+        autonomous_runner.create_session(
+            autonomous_runner.bootstrap_owner,
+            schedule_kickoff=False,
+            definition_name="default",
+        )
+        r = await client.post("/autonomous/definitions/default/run")
+        assert r.status_code == 409
+        data = r.json()
+        assert "already has an active session" in data["error"]
+        assert "session_id" in data
+
+    @pytest.mark.asyncio
+    async def test_returns_200_and_starts_session_on_success(
+        self, client, autonomous_runner
+    ):
+        """200 + session creation when the definition has no active session."""
+        r = await client.post("/autonomous/definitions/default/run")
+        assert r.status_code == 200
+        data = r.json()
+        assert data["started"] is True
+        assert data["definition_name"] == "default"
+        assert "session_id" in data
+        # Verify a session was actually created.
+        active_id = autonomous_runner.active_session_id_for_definition("default")
+        assert active_id == data["session_id"]

@@ -471,17 +471,9 @@ async def autonomous_definitions_list_endpoint(request: Request) -> JSONResponse
 
     definitions = []
     for name in runner.definition_names:
-        owner_id = runner._owner_id_for_definition(name)
-        defn = runner._definitions.get(name, {})
-        active_session_id = None
-        for aq in runner._sessions.values():
-            if aq.owner_id == owner_id and aq.state.value in (
-                "planning",
-                "proposal",
-                "executing",
-            ):
-                active_session_id = aq.session_id
-                break
+        owner_id = runner.owner_id_for_definition(name)
+        defn = runner.get_definition(name) or {}
+        active_session_id = runner.active_session_id_for_definition(name)
         definitions.append(
             {
                 "name": name,
@@ -519,28 +511,26 @@ async def autonomous_definitions_run_endpoint(request: Request) -> JSONResponse:
             {"error": "autonomous sessions are not enabled"}, status_code=404
         )
 
-    if name not in runner._definitions:
+    if runner.get_definition(name) is None:
         return JSONResponse({"error": f"unknown definition {name!r}"}, status_code=404)
 
-    owner_id = runner._owner_id_for_definition(name)
+    owner_id = runner.owner_id_for_definition(name)
 
     # Check for an existing open session.
-    for aq in runner._sessions.values():
-        if aq.owner_id == owner_id and aq.state.value in (
-            "planning",
-            "proposal",
-            "executing",
-        ):
-            return JSONResponse(
-                {
-                    "error": (
-                        f"definition {name!r} already has an active session "
-                        f"({aq.session_id}, state={aq.state.value})"
-                    ),
-                    "session_id": aq.session_id,
-                },
-                status_code=409,
-            )
+    active_id = runner.active_session_id_for_definition(name)
+    if active_id is not None:
+        aq = runner.get_session(active_id)
+        state_value = aq.state.value if aq is not None else "unknown"
+        return JSONResponse(
+            {
+                "error": (
+                    f"definition {name!r} already has an active session "
+                    f"({active_id}, state={state_value})"
+                ),
+                "session_id": active_id,
+            },
+            status_code=409,
+        )
 
     # Start a new session.
     aq = runner.ensure_active_session(
