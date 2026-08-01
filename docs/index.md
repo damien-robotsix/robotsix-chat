@@ -14,8 +14,8 @@ Browser + SSE chat server exposing an LLM agent to human users.
 - **[Contributing](contributing.md)** — contributor setup and conventions.
 - **[API Reference](api/robotsix_chat.md)** — HTTP endpoint documentation.
 - **[User Guide](user-guide/deployment.md)** — using the chat interface.
-- **[User Guide: Autonomous Sessions](user-guide/autonomous-sessions.md)** — enabling and configuring
-  self-directed autonomous chat sessions.
+- **[User Guide: Autonomous Sessions](user-guide/autonomous-sessions.md)** — enabling and
+  configuring self-directed autonomous chat sessions.
 - **[Changelog](changelog.md)** — release history.
 - **[System Prompt Changelog](system_prompt_changelog.md)** — history of agent system-prompt
   adjustments.

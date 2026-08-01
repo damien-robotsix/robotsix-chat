@@ -60,13 +60,13 @@ ______________________________________________________________________
 
 Add entries under `autonomous.sessions` in the config to define named sessions. Each entry has:
 
-| Key                         | Default      | Description                                                                  |
-| --------------------------- | ------------ | ---------------------------------------------------------------------------- |
-| `name`                      | *(required)* | Unique identifier for the session definition.                                |
-| `prompt`                    | `""`         | Custom kickoff prompt. When empty, the standard subject-selection prompt is used. |
-| `trigger_type`              | `"periodic"` | `"periodic"` (wait `trigger_interval_seconds`) or `"on_close"` (continuous). |
-| `trigger_interval_seconds`  | `45.0`       | Delay between completion and restart for `"periodic"`. Ignored for `"on_close"`. |
-| `enabled`                   | `true`       | When `false`, the definition is skipped — no session is created for it.       |
+| Key                        | Default      | Description                                                                       |
+| -------------------------- | ------------ | --------------------------------------------------------------------------------- |
+| `name`                     | *(required)* | Unique identifier for the session definition.                                     |
+| `prompt`                   | `""`         | Custom kickoff prompt. When empty, the standard subject-selection prompt is used. |
+| `trigger_type`             | `"periodic"` | `"periodic"` (wait `trigger_interval_seconds`) or `"on_close"` (continuous).      |
+| `trigger_interval_seconds` | `45.0`       | Delay between completion and restart for `"periodic"`. Ignored for `"on_close"`.  |
+| `enabled`                  | `true`       | When `false`, the definition is skipped — no session is created for it.           |
 
 Once `autonomous.sessions` is non-empty, each enabled definition becomes its own session with its
 own prompt and trigger. Each maps to a distinct pseudo-owner (`autonomous:<name>`), so sessions run
