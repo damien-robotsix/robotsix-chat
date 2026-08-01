@@ -1,5 +1,9 @@
 ## 0.0.0 (unreleased)
 
+- Persist the operator's reply-style directive as a durable, versioned artifact
+  (`docs/prompt-style.md`) so it is automatically injected into every system prompt
+  build.  The style file is the single source of truth for reply formatting;
+  a governance test fails if the file is deleted or unreferenced.
 - Document `feedback.deploy_api_key` in the Feedback settings table in `docs/configuration.md`.
 - Update direct-repo guardrail docstrings and system prompt to acknowledge the ``merge_pr`` tool (BLOCKED-only) instead of claiming no merge capability exists on the direct-repo path.
 - Fix `max_idle_runs` docstring default from 5 to 3 (matching shipped behaviour), and correct the paused-monitor config key reference in `docs/periodic-checks.md` from `auto_stop_no_change_runs` to `max_idle_runs`.

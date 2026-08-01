@@ -1167,7 +1167,7 @@ def test_create_agent_from_settings_bare_skips_memory_and_tools() -> None:
 
     assert isinstance(agent._memory, NullMemory)
     assert agent._tools == []
-    assert agent._instruction == "Be terse."
+    assert agent._instruction.startswith("Be terse.")
 
 
 def test_create_agent_from_settings_memory_disabled_skips_cognee() -> None:
