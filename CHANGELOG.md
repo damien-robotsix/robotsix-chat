@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Document `feedback.deploy_api_key` in the Feedback settings table in `docs/configuration.md`.
 - Update direct-repo guardrail docstrings and system prompt to acknowledge the ``merge_pr`` tool (BLOCKED-only) instead of claiming no merge capability exists on the direct-repo path.
 - Fix `max_idle_runs` docstring default from 5 to 3 (matching shipped behaviour), and correct the paused-monitor config key reference in `docs/periodic-checks.md` from `auto_stop_no_change_runs` to `max_idle_runs`.
 - Diagnosed misrouted ticket 20260731T174638Z: mail account-add crash targets
