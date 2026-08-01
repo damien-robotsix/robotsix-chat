@@ -9,6 +9,9 @@
   (SSE ``notification`` type) so the operator can see which monitor paused
   or resumed, including the tracked ticket id and checkpoint state.
 - Remove redundant `system_prompt` from `.robotsix-mill/periodic/monitor_9d6a.yaml` — the `prompt_overlay` already covers the role, and the mill's periodic loader treats the two fields as mutually exclusive (having both raises a `ValueError` at load time). (mill: monitor_9d6a.yaml: anomalous `system_prompt` field duplicates `prompt_overlay` content (20260731T122421Z-monitor-9d6a-yaml-anomalous-system-promp-f3d4))
+- Add "Direct repo tooling" section to AGENT.md: when adding a tool to
+  `src/robotsix_chat/repo/direct/`, document it in `skill.md` so the skill
+  is discoverable via `load_direct_repo_skill()` and `_inject_skills`.)
 - Split `DirectRepoClient` (1407→~1189 lines) into three focused modules:
   - `ActionsClient` (`repo/direct/actions_client.py`) — GitHub Actions workflow management (dispatch, runs, jobs, annotations, secrets, billing diagnosis).
   - `BoardClient` (`repo/direct/board_client.py`) — mill board API for ticket-state verification and lifecycle ops.

@@ -236,6 +236,21 @@ waste a cycle on the drift. Run
 `uv run robotsix-modules check-registration docs/modules.yaml --root .` to verify locally before
 committing.
 
+## Direct repo tooling
+
+**Rule:** When adding a tool to `src/robotsix_chat/repo/direct/`, document it in
+`src/robotsix_chat/repo/direct/skill.md` (purpose, preconditions, error/status responses, and any
+confirmation-gate contract). The skill file is read at call time by `load_direct_repo_skill()` and
+injected into the agent system prompt via the `_inject_skills` mapping in `app.py` — a tool or skill
+that is not registered there is silently undiscoverable to the chat agent with no compile-time or CI
+signal.
+
+**Rationale:** PR #1033 / ticket 20260730T141753Z delivered two confirmation-gated mutation tools
+together with their skill.md docs and the app.py:605 injection in one change. The pattern is uniform
+across ~10 components (public_fetch, render_url, github_security/actions, ticket_poll, etc.), each
+with a `load_<component>_skill()` returning the dynamic skill doc and an `(enabled, name, load_...)`
+entry in `_inject_skills`.
+
 ## Task tracking
 
 Persistent, human-readable task tracking lives under `tasks/` at the repo root:
