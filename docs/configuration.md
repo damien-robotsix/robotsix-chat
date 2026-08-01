@@ -293,6 +293,7 @@ the feedback run never auto-approves. Disabled by default.
 | `feedback.model_level`     | `integer`         | `1`     | llmio capability level for the feedback-analysis agent (cheap extraction). |
 | `feedback.board_url`       | `string`          | `""`    | Base URL of the board HTTP API (no trailing slash). Required when enabled. |
 | `feedback.board_api_token` | `string` (secret) | `""`    | Optional Bearer token for the board API.                                   |
+| `feedback.deploy_api_key`  | `string` (secret) | `""`    | Bearer / X-API-Key token for the central-deploy roster endpoint.           |
 | `feedback.timeout`         | `number`          | `60.0`  | Per-request HTTP timeout (seconds) for ingest calls.                       |
 
 #### Observability (Langfuse traces)
