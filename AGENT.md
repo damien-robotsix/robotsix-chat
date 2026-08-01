@@ -204,6 +204,16 @@ coverage.
 injection and two SSRF-bypass branches — with zero new tests in
 tests/public_fetch/test_public_fetch.py; the security-critical code merged untested.
 
+**Rule:** Test files that assert on secret-shaped placeholder values (e.g.
+`github_app_private_key='k'`, `'cached-token'`, `'fresh-token'`) must append
+`# pragma: allowlist secret` to those lines so `detect-secrets`' KeywordDetector does not fail
+pre-commit. This is the established convention in `tests/refdocs/test_refdocs.py` and
+`tests/version_check/test_version_check.py`.
+
+**Rationale:** PR #1068 (ticket 20260730T051112Z) had to add 7 such suppressions in the fixing_ci
+cycle after pre-commit detect-secrets flagged secret-looking test fixtures; adding the pragma up
+front avoids a CI rebuild cycle.
+
 ## Feature flags and activation
 
 **Rule:** Any feature gated behind a runtime flag (`enabled: false`, a feature toggle, or a config
