@@ -1,6 +1,7 @@
 ## 0.0.0 (unreleased)
 
 - Periodic monitors now enter a true `PAUSED` state (not `CLOSED`) when auto-paused by the idle-guard. The worker stays alive and blocks on an event-driven inbox signal; the watcher sends an immediate wake message when the tracked ticket's state changes, so auto-resume actually works end-to-end. The pause notice wording now accurately reflects the real behavior.
+- Added ``check_direct_repo_auto_merge`` tool to proactively detect repositories with auto-merge disabled. The tool reads the ``allow_auto_merge`` GitHub repo setting and informs the operator if manual merging will be required, allowing the assistant to adjust its workflow before attempting to arm auto-merge.
 - Split `tests/repo/direct/test_direct_repo.py` (4052 lines, 110 tests) into 9
   per-tool test modules with shared fixtures in `conftest.py`.
 - Add dedicated unit tests for `BoardClient` (`tests/repo/direct/test_board_client.py`) covering `get_ticket_state`, `resume_blocked_ticket`, `get_ticket_data`, and `count_implement_cycles` (17 tests, respx-mocked HTTP).
