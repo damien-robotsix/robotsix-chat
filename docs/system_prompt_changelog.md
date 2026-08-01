@@ -3,6 +3,23 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v79 — 2026-07-31 — one-decision-at-a-time-for-user-chat-c54a
+
+**Summary:** Add a "one decision at a time" rule to the user_chat subsession guidance.
+When multiple independent decisions are pending, the agent must present them sequentially —
+state the first decision with its options, wait for the operator's answer, confirm the
+choice, then present the next. Never batch multiple unrelated decisions into a single
+message.
+
+**Rationale:** The operator previously received multi-decision lists in a single user_chat
+message, which a human cannot process reliably. Sequential presentation with explicit
+confirmation after each answer ensures every decision receives full attention, no option
+is missed, and the operator can interject follow-up questions without losing the queue.
+
+**SHA256:** `c31f265f076389ec1c3972c86b7c95ea739780cbd69338e0f39d492a41f32618`
+
+______________________________________________________________________
+
 ## v78 — 2026-07-31 — explicit-halt-and-re-scope-confirmation-5f87
 
 **Summary:** Add a "Halt and Re-scope" section to the system prompt. When the agent detects

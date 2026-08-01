@@ -62,7 +62,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 78
+SYSTEM_PROMPT_VERSION = 79
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -303,6 +303,17 @@ class Settings(BaseModel):
             "This applies to every turn: the initial recommendation and any "
             "follow-up confirmation.  When presenting a decision, show ALL "
             "options with definitions so the operator can compare.\n"
+            "– CRITICAL for user_chat decision subsessions: present at most "
+            "ONE decision per message.  When multiple independent decisions "
+            "are pending, present them SEQUENTIALLY — state the first decision "
+            "with its options, wait for the operator's answer, confirm the "
+            "choice (echo the selected option back and ask for explicit "
+            "acknowledgement), then and only then present the next decision.  "
+            "Never batch multiple unrelated decisions into a single message; "
+            "a human operator cannot process a list of choices reliably and "
+            "will miss or misread options.  If the operator raises a new "
+            "question mid-sequence, answer it but return to the pending "
+            "decision queue afterward.\n"
             "– Subsessions can spawn their own subsessions (nesting is depth-"
             "limited) — split genuinely independent subtasks, do not chain "
             "for its own sake. Check list_subsessions before spawning to "
