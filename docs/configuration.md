@@ -106,26 +106,34 @@ ______________________________________________________________________
 The canonical component-standard credential block: the instance host plus every Langfuse project
 this component traces to, keyed by **project name**.
 
-| JSON key                                    | Type              | Default                        | Description                                       |
-| ------------------------------------------- | ----------------- | ------------------------------ | ------------------------------------------------- |
-| `langfuse.host`                             | `string`          | `"https://cloud.langfuse.com"` | Langfuse instance base URL.                       |
-| `langfuse.projects.<project>.public_key`    | `string` (secret) | `""`                           | Langfuse public key for that project.             |
-| `langfuse.projects.<project>.secret_key`    | `string` (secret) | `""`                           | Langfuse secret key for that project.             |
-| `langfuse.projects.<project>.project_id`    | `string`          | `""`                           | Optional Langfuse project id.                     |
+| JSON key                                 | Type              | Default                        | Description                           |
+| ---------------------------------------- | ----------------- | ------------------------------ | ------------------------------------- |
+| `langfuse.host`                          | `string`          | `"https://cloud.langfuse.com"` | Langfuse instance base URL.           |
+| `langfuse.projects.<project>.public_key` | `string` (secret) | `""`                           | Langfuse public key for that project. |
+| `langfuse.projects.<project>.secret_key` | `string` (secret) | `""`                           | Langfuse secret key for that project. |
+| `langfuse.projects.<project>.project_id` | `string`          | `""`                           | Optional Langfuse project id.         |
 
 This component declares two projects, per the component standard's one-project-per-LLM-function
 rule:
 
 - `robotsix-chat` — the main chat agent.
-- `robotsix-chat-cognee` — the cognee/LiteLLM memory pipeline, named by
-  `memory.langfuse_project`. See [Memory](#memory-cognee).
+- `robotsix-chat-cognee` — the cognee/LiteLLM memory pipeline, named by `memory.langfuse_project`.
+  See [Memory](#memory-cognee).
 
 ```json
 "langfuse": {
   "host": "https://langfuse.example.net",
   "projects": {
-    "robotsix-chat":        {"public_key": "pk-lf-…", "secret_key": "sk-lf-…", "project_id": ""},
-    "robotsix-chat-cognee": {"public_key": "pk-lf-…", "secret_key": "sk-lf-…", "project_id": ""}
+    "robotsix-chat": {
+      "public_key": "pk-lf-...",
+      "secret_key": "sk-lf-...",  // pragma: allowlist secret
+      "project_id": ""
+    },
+    "robotsix-chat-cognee": {
+      "public_key": "pk-lf-...",
+      "secret_key": "sk-lf-...",  // pragma: allowlist secret
+      "project_id": ""
+    }
   }
 }
 ```
@@ -175,7 +183,7 @@ Persistent, cross-conversation episodic memory via embedded cognee. Disabled by 
 | `memory.embedding.dimensions`            | `integer`         | `1024`                                    | Embedding vector dimensions.                                                                                                                                                                                              |
 | `memory.embedding.api_key`               | `string` (secret) | `""`                                      | Bearer token for the embedding server.                                                                                                                                                                                    |
 | `memory.embedding.huggingface_tokenizer` | `string`          | `"BAAI/bge-m3"`                           | HuggingFace tokenizer name.                                                                                                                                                                                               |
-| `memory.langfuse_project`                | `string`          | `"robotsix-chat-cognee"`                  | Name of the Langfuse project cognee's own LLM traffic traces to; its credentials are resolved from the top-level `langfuse` block.                                                                                          |
+| `memory.langfuse_project`                | `string`          | `"robotsix-chat-cognee"`                  | Name of the Langfuse project cognee's own LLM traffic traces to; its credentials are resolved from the top-level `langfuse` block.                                                                                        |
 
 ### Central Deploy
 

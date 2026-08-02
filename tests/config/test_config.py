@@ -591,12 +591,12 @@ def test_langfuse_projects_are_parsed_and_resolvable() -> None:
             "projects": {
                 "robotsix-chat": {
                     "public_key": "pk-main",
-                    "secret_key": "sk-main",
+                    "secret_key": "sk-main",  # pragma: allowlist secret
                     "project_id": "cm-main",
                 },
                 "robotsix-chat-cognee": {
                     "public_key": "pk-mem",
-                    "secret_key": "sk-mem",
+                    "secret_key": "sk-mem",  # pragma: allowlist secret
                 },
             },
         }  # type: ignore[arg-type]
@@ -616,6 +616,43 @@ def test_langfuse_half_filled_project_is_not_configured() -> None:
         langfuse={"projects": {"robotsix-chat": {"public_key": "pk-only"}}}  # type: ignore[arg-type]
     )
     assert settings.langfuse.creds("robotsix-chat").is_configured() is False
+
+
+def test_legacy_langfuse_keys_are_stripped_not_migrated() -> None:
+    """A pre-block config loads, but its credentials are NOT carried over.
+
+    ``extra="forbid"`` would otherwise reject the whole file and crash-loop
+    the container on the first start after an image upgrade.  Per the
+    standard's no-fallback rule the old values are dropped, not migrated —
+    the deployment traces nothing until its config is rewritten.
+    """
+    settings = Settings(
+        langfuse={
+            "public_key": "pk-legacy",
+            "secret_key": "sk-legacy",  # pragma: allowlist secret
+            "host": "https://langfuse.example.net",
+        }  # type: ignore[arg-type]
+    )
+    assert settings.langfuse.host == "https://langfuse.example.net"
+    assert settings.langfuse.projects == {}
+    assert settings.langfuse.creds("robotsix-chat").is_configured() is False
+
+
+def test_legacy_memory_langfuse_block_is_stripped() -> None:
+    """The removed ``memory.langfuse`` sub-block no longer rejects the file."""
+    settings = Settings(
+        memory={
+            "data_dir": "/data/cognee",
+            "langfuse": {
+                "public_key": "pk-legacy",
+                "secret_key": "sk-legacy",  # pragma: allowlist secret
+                "host": "https://langfuse.example.net",
+            },
+        }  # type: ignore[arg-type]
+    )
+    assert settings.memory.data_dir == "/data/cognee"
+    assert settings.memory.langfuse_project == "robotsix-chat-cognee"
+    assert not hasattr(settings.memory, "langfuse")
 
 
 def test_memory_langfuse_project_default() -> None:

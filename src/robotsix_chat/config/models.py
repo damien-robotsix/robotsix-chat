@@ -7,9 +7,12 @@ be imported directly without pulling in the full Settings cascade.
 from __future__ import annotations
 
 import enum
+import logging
 from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
+
+_logger = logging.getLogger(__name__)
 
 #: Langfuse project for the main chat agent's LLM traffic.  The component
 #: standard fixes a component's main project name as ``<repo>``.
@@ -69,6 +72,33 @@ class LangfuseSettings(BaseModel):
     host: str = "https://cloud.langfuse.com"
     projects: dict[str, LangfuseProjectCreds] = Field(default_factory=dict)
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_legacy_single_project_keys(cls, data: Any) -> Any:
+        """Strip the pre-block ``public_key``/``secret_key`` fields.
+
+        A deployed ``config.json`` written before the credential block
+        existed carries these at the top of ``langfuse``.  ``extra="forbid"``
+        would otherwise reject the whole file and crash-loop the container on
+        the first start after an image upgrade.
+
+        The values are **not** migrated — per the standard there is no
+        credential fallback, so an unmigrated deployment traces nothing and
+        reports no projects until its config is rewritten.  Dropping them
+        only keeps that a visible, fixable state instead of an outage.
+        """
+        if isinstance(data, dict):
+            legacy = [k for k in ("public_key", "secret_key") if k in data]
+            if legacy:
+                data = {k: v for k, v in data.items() if k not in legacy}
+                _logger.warning(
+                    "Ignoring legacy langfuse.%s — credentials now live in "
+                    "langfuse.projects.<project-name>; this deployment will "
+                    "not trace until its config is migrated",
+                    "/".join(legacy),
+                )
+        return data
 
     def creds(self, project: str) -> LangfuseProjectCreds:
         """Return credentials for *project*, or empty creds when absent.
@@ -278,6 +308,26 @@ class MemorySettings(BaseModel):
     embedding: MemoryEmbeddingSettings = Field(default_factory=MemoryEmbeddingSettings)
     langfuse_project: str = PROJECT_MEMORY
     model_config = ConfigDict(extra="forbid")
+
+    @model_validator(mode="before")
+    @classmethod
+    def _drop_legacy_langfuse_block(cls, data: Any) -> Any:
+        """Strip the removed ``memory.langfuse`` credential sub-block.
+
+        Deployed configs written before the migration still carry it; with
+        ``extra="forbid"`` that would reject the file outright and crash-loop
+        the container on the first start after an image upgrade.  The
+        credentials are not migrated — the memory project's keys now live in
+        the top-level block under ``memory.langfuse_project``'s name.
+        """
+        if isinstance(data, dict) and "langfuse" in data:
+            data = {k: v for k, v in data.items() if k != "langfuse"}
+            _logger.warning(
+                "Ignoring legacy memory.langfuse — the memory project's "
+                "credentials now live in the top-level langfuse.projects "
+                "block, keyed by memory.langfuse_project"
+            )
+        return data
 
 
 class RefDocsSettings(BaseModel):
