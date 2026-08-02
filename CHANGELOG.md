@@ -1,5 +1,7 @@
 ## 0.0.0 (unreleased)
 
+- Split `tests/repo/direct/test_direct_repo.py` (4052 lines, 110 tests) into 9
+  per-tool test modules with shared fixtures in `conftest.py`.
 - Add dedicated unit tests for `BoardClient` (`tests/repo/direct/test_board_client.py`) covering `get_ticket_state`, `resume_blocked_ticket`, `get_ticket_data`, and `count_implement_cycles` (17 tests, respx-mocked HTTP).
 - Removed 14 deprecated wrapper methods from `DirectRepoClient` that had zero
   production callers (all delegated to `BoardClient`, `ActionsClient`, or
