@@ -360,8 +360,11 @@ Feedback tickets are filed against a set of allowed target repos. The set is res
    is empty, the runner falls back to `["robotsix-chat"]` and logs a warning so the feedback
    pipeline continues to function in a degraded state.
 
-The `DEPLOY_API_KEY` environment variable may be set to pass an `X-API-Key` header to the
-central-deploy API (optional; needed only when the deploy server requires authentication).
+The `feedback.deploy_api_key` config field (see the table above) supplies the `X-API-Key` header for
+the central-deploy API; it is needed only when the deploy server requires authentication. There is
+no environment-variable equivalent — per the config standard's
+[`environment:` rule](https://damien-robotsix.github.io/robotsix-standards/config-standard/#5-what-environment-is-for),
+first-party credentials live in the config file and nowhere else.
 
 ### Direct Repo (GitHub App)
 
