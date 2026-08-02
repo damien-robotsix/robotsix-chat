@@ -591,10 +591,16 @@ def _build_periodic_input(
         "operator decision — stuck in human_issue_approval, waiting on an "
         '"Option A or B?" choice, or otherwise blocked on a human '
         "direction — do NOT silently reply NO_CHANGE run after run.  "
-        "Instead, call complete_subsession with a summary recommending "
-        "pause and explaining what decision is needed.  This surfaces the "
-        "blocker so the operator can act on it rather than waiting for the "
-        "auto-stop timeout.\n\n"
+        "Instead, call complete_subsession with a summary that includes a "
+        "CONCRETE RECOMMENDATION: state whether you recommend approving or "
+        "closing the ticket and why (e.g. 'I recommend approving — this "
+        "is a standard pre-authorized rollout step' or 'I recommend closing "
+        "— the change is already covered by ticket X').  Explain what "
+        "decision is needed and set expectations: mention that the system "
+        "will auto-escalate after the human_approval_timeout window if no "
+        "decision is made.  This surfaces the blocker with actionable "
+        "guidance so the operator can act on it rather than waiting for "
+        "the auto-stop timeout.\n\n"
     )
     if pre_authorized_patterns:
         ticket_id_raw = info.checkpoint.get("ticket_id") if info.checkpoint else None
