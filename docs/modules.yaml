@@ -211,9 +211,18 @@ modules:
       - src/robotsix_chat/repo/direct/client.py
       - src/robotsix_chat/repo/direct/skill.md
       - tests/repo/direct/__init__.py
+      - tests/repo/direct/conftest.py
       - tests/repo/direct/test_board_client.py
-      - tests/repo/direct/test_direct_repo.py
+      - tests/repo/direct/test_build_tools.py
+      - tests/repo/direct/test_direct_fix.py
       - tests/repo/direct/test_github_auth_dependency.py
+      - tests/repo/direct/test_merge.py
+      - tests/repo/direct/test_open_pr.py
+      - tests/repo/direct/test_patch_file.py
+      - tests/repo/direct/test_push.py
+      - tests/repo/direct/test_reset_counter.py
+      - tests/repo/direct/test_update_pr_branch.py
+      - tests/repo/direct/test_workflow_runs.py
   - id: repo-study
     description: "Repo-study tools — temporary local repo snapshots (GitHub tarball, no git binary) the agent can list, read, and regex-search before they expire; auth reuses the direct_repo GitHub App credentials."
     paths:
