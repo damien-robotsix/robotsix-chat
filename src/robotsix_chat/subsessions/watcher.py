@@ -1,16 +1,19 @@
-"""Background watcher that resumes paused and timeout-escalated periodic monitors.
+"""Background watcher that resumes paused periodic monitors.
 
-When a periodic subsession is auto-paused by ``max_idle_runs`` (closed
-with reason ``"paused"``), auto-escalated while stuck in
-``human_issue_approval`` (closed with reason ``"human_approval_timeout"``),
-or immediately escalated for a pre-authorized ticket (closed with reason
+When a periodic subsession is auto-paused by ``max_idle_runs`` (set to
+``PAUSED`` status with ``close_reason="paused"``), or auto-escalated
+while stuck in ``human_issue_approval`` (``CLOSED`` with reason
+``"human_approval_timeout"``), or immediately escalated for a
+pre-authorized ticket (``CLOSED`` with reason
 ``"pre_authorized_approval"``), it stops ticking.  This module provides
 a lightweight asyncio task that periodically polls the mill for each
 such monitor's ticket state **and** — when the monitor's checkpoint
-records a tracked PR — polls GitHub for merge status.  When the
-ticket's ``state`` differs from the checkpoint's ``last_known_state``
-*or* the tracked PR has been merged, the monitor is reopened and its
-worker re-spawned.
+records a tracked PR — polls GitHub for merge status.
+
+For ``PAUSED`` monitors the worker is still alive, blocking on an inbox
+event — the watcher sends an inbox message to wake it immediately
+(event-driven resume).  For ``CLOSED`` monitors there is no worker; the
+watcher reopens the record and spawns a fresh worker.
 """
 
 from __future__ import annotations
@@ -84,7 +87,13 @@ async def _resume_paused_monitor(
     env: SubsessionEnv,
     sub_id: str,
 ) -> None:
-    """Reopen a paused/timeout monitor and re-spawn its worker task."""
+    """Reopen a paused/timeout monitor and re-spawn its worker task.
+
+    Used for CLOSED monitors (legacy records from before the ``PAUSED``
+    status existed) and for ``human_approval_timeout`` /
+    ``pre_authorized_approval`` records which are always CLOSED.
+    For live ``PAUSED`` monitors use :func:`_wake_paused_monitor` instead.
+    """
     from .worker import _subsession_worker
 
     info = env.registry.reopen(sub_id)
@@ -119,6 +128,40 @@ async def _resume_paused_monitor(
                 "link": ticket_id,
             },
         )
+
+
+async def _wake_paused_monitor(
+    env: SubsessionEnv,
+    sub_id: str,
+    ticket_id: str,
+    new_state: str,
+) -> bool:
+    """Send a wake message to a live PAUSED monitor's inbox.
+
+    The monitor's worker is alive and blocking on ``wait_for_inbox`` —
+    the message wakes it immediately.  Returns ``True`` on success,
+    ``False`` when the subsession is unknown or the message could not
+    be delivered.
+    """
+    message = (
+        f"Ticket {ticket_id} state changed to '{new_state}' — ticket state "
+        f"changed, resuming monitor."
+    )
+    ok = env.registry.enqueue_message(sub_id, "system", message)
+    if ok:
+        logger.info(
+            "Watcher: sent wake message to paused monitor %s (ticket %s → %s).",
+            sub_id,
+            ticket_id,
+            new_state,
+        )
+    else:
+        logger.debug(
+            "Watcher: could not deliver wake message to monitor %s — "
+            "worker may be dead, falling back to reopen.",
+            sub_id,
+        )
+    return ok
 
 
 async def _resume_merged_pr_monitor(
@@ -239,7 +282,18 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                         last_known_str,
                         current_state,
                     )
-                    await _resume_paused_monitor(env, info.id)
+                    # PAUSED monitors have a live worker — wake it via
+                    # inbox message for instant event-driven resume.
+                    if info.status == "paused":
+                        woken = await _wake_paused_monitor(
+                            env, info.id, ticket_id, current_state
+                        )
+                        if not woken:
+                            # Worker may be dead (e.g. after a restart) —
+                            # fall back to reopen+spawn.
+                            await _resume_paused_monitor(env, info.id)
+                    else:
+                        await _resume_paused_monitor(env, info.id)
                 else:
                     logger.debug(
                         "Watcher: subsession %s ticket %s still '%s' — keeping closed.",

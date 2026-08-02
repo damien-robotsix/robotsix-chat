@@ -856,6 +856,77 @@ async def _run_user_chat_turn(env: SubsessionEnv, sub_id: str) -> list[InboxMess
     return env.registry.drain_inbox(sub_id)
 
 
+# How long a paused monitor blocks on wait_for_inbox before looping —
+# the watcher sends an inbox message immediately when it detects a
+# ticket-state change, so the timeout is only a safety net.
+_PAUSED_WAIT_TIMEOUT_SECONDS: float = 300.0
+
+
+async def _paused_wait_loop(
+    env: SubsessionEnv,
+    info: SubsessionInfo,
+    sub_id: str,
+    previous_result: str | None,
+    consecutive_no_change: int,
+) -> tuple[list[InboxMessage], str | None, int] | None:
+    """Block until a ticket-state-change signal arrives or the worker is cancelled.
+
+    Called after ``mark_paused`` — the worker stays alive and waits on
+    the inbox event.  When the watcher detects a state change and sends
+    a message, this returns ``(pending, previous_result, consecutive_no_change)``
+    so the worker can resume its normal periodic loop.  Returns ``None``
+    when the subsession was externally closed while paused.
+    """
+    registry = env.registry
+    while True:
+        woke = await registry.wait_for_inbox(
+            sub_id, timeout=_PAUSED_WAIT_TIMEOUT_SECONDS
+        )
+        if not woke:
+            # Timeout — re-verify the subsession is still paused.
+            current = registry.get(sub_id)
+            if current is None or current.status is not SubsessionStatus.PAUSED:
+                return None
+            continue
+
+        messages = registry.drain_inbox(sub_id)
+        for msg in messages:
+            if msg.role == "system" and "ticket state changed" in msg.text.lower():
+                logger.info(
+                    "Subsession %s: resume signal received — resuming.",
+                    sub_id,
+                )
+                resumed = registry.resume(sub_id)
+                if resumed is None:
+                    return None
+                # Publish an SSE notification for the UI.
+                if env.event_sink is not None:
+                    ticket_id_raw = (
+                        info.checkpoint.get("ticket_id") if info.checkpoint else ""
+                    )
+                    ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+                    env.event_sink.publish(
+                        info.owner_session_id,
+                        {
+                            "type": SSE_NOTIFICATION_TYPE,
+                            "title": f"Monitor resumed: {info.title}",
+                            "body": (
+                                f"Monitor {sub_id[:8]} tracking ticket {ticket_id} "
+                                f"resumed after ticket state change."
+                            ),
+                            "urgency": "low",
+                            "link": ticket_id,
+                        },
+                    )
+                return [], previous_result, consecutive_no_change
+
+        # Message received but not a resume signal — loop and wait again.
+        logger.debug(
+            "Subsession %s: woke with non-resume messages; continuing wait.",
+            sub_id,
+        )
+
+
 async def _run_periodic_turn(
     env: SubsessionEnv,
     info: SubsessionInfo,
@@ -863,7 +934,7 @@ async def _run_periodic_turn(
     reply: str,
     previous_result: str | None,
     consecutive_no_change: int,
-) -> tuple[list[InboxMessage], str, int] | None:
+) -> tuple[list[InboxMessage], str | None, int] | None:
     """Handle PERIODIC post-turn: update status, deliver, check limits, sleep.
 
     Returns ``None`` when the worker should stop (max_runs / auto_stop
@@ -1021,24 +1092,23 @@ async def _run_periodic_turn(
     if idle_cap > 0 and consecutive_no_change >= idle_cap:
         logger.info(
             "Subsession %s: auto-pausing after %d consecutive no-change runs. "
-            "The monitor will resume when the ticket state changes or an "
-            "external trigger occurs.",
+            "The monitor will wait for a ticket-state change and resume "
+            "automatically.",
             sub_id,
             consecutive_no_change,
         )
         summary = (
             f"Auto-paused after {idle_cap} consecutive no-change runs. "
-            f"The monitor will resume when the ticket state changes or "
-            f"when you report progress — no action needed until then."
+            f"The monitor will resume automatically when the ticket state "
+            f"changes — no action needed until then."
         )
-        closed = registry.mark_closed(
+        paused = registry.mark_paused(
             sub_id,
             summary=summary,
             reason="paused",
-            closed_by="system",
         )
-        if closed is not None:
-            await env.delivery.deliver_summary(closed, summary, "paused")
+        if paused is not None:
+            await env.delivery.deliver_summary(paused, summary, "paused")
             if env.event_sink is not None:
                 ticket_id_raw = checkpoint.get("ticket_id")
                 ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
@@ -1055,6 +1125,10 @@ async def _run_periodic_turn(
                         "link": ticket_id,
                     },
                 )
+            # -- paused wait loop: block on inbox, wake on resume signal --
+            return await _paused_wait_loop(
+                env, info, sub_id, previous_result, consecutive_no_change
+            )
         return None
 
     no_change_cap = env.settings.subsessions.auto_stop_no_change_runs
@@ -1150,6 +1224,22 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                         timestamp=env.registry.now(),
                     )
                 ]
+
+        # -- paused restart: if the subsession was PAUSED before a server
+        #    restart, go straight to the paused wait loop — do not run
+        #    an agent turn.
+        if info.status is SubsessionStatus.PAUSED:
+            logger.info(
+                "Subsession %s: restored in PAUSED state — entering wait loop.",
+                sub_id,
+            )
+            result = await _paused_wait_loop(
+                env, info, sub_id, previous_result, consecutive_no_change
+            )
+            if result is None:
+                return
+            pending, previous_result, consecutive_no_change = result
+            # Fall through to the main loop — the subsession is now RUNNING.
 
         # -- component_request availability check ----------------------
         _cd = getattr(env.settings, "central_deploy", None)

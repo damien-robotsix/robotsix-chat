@@ -47,17 +47,21 @@ class SubsessionStatus(StrEnum):
     RUNNING = "running"  # an agent turn is in flight
     WAITING = "waiting"  # idle, waiting for an inbox message (user_chat)
     SLEEPING = "sleeping"  # periodic, waiting for the next scheduled run
+    PAUSED = "paused"  # periodic, auto-paused by idle-guard — retains worker
     CLOSED = "closed"
     FAILED = "failed"
     INTERRUPTED = "interrupted"  # server restarted while the work was live
 
 
 # Statuses that count against the concurrency cap and accept inbox messages.
+# PAUSED is active (its worker is alive and can receive inbox messages) but
+# is excluded from the concurrency cap by ``count_active`` — see note there.
 ACTIVE_STATUSES = frozenset(
     {
         SubsessionStatus.RUNNING,
         SubsessionStatus.WAITING,
         SubsessionStatus.SLEEPING,
+        SubsessionStatus.PAUSED,
     }
 )
 

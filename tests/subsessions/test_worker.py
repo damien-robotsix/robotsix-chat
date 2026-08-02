@@ -418,16 +418,23 @@ async def test_periodic_max_idle_runs_pauses_after_consecutive_no_change() -> No
     )
 
     sub_id = _spawn(env, kind=SubsessionKind.PERIODIC, interval_seconds=0.02)
-    await _await_worker(env, sub_id)
+    # The worker enters a PAUSED wait loop and never finishes — wait
+    # briefly for it to reach the paused state, then cancel it.
+    await asyncio.sleep(0.15)
+    task = env.registry._running.get(sub_id)
+    if task is not None and not task.done():
+        task.cancel()
+    # Let cancellation propagate.
+    await asyncio.sleep(0.05)
 
     info = env.registry.get(sub_id)
     assert info is not None
-    assert info.status is SubsessionStatus.CLOSED
+    assert info.status is SubsessionStatus.PAUSED
     assert info.close_reason == "paused"
     assert info.summary == (
         "Auto-paused after 3 consecutive no-change runs. "
-        "The monitor will resume when the ticket state changes or "
-        "when you report progress — no action needed until then."
+        "The monitor will resume automatically when the ticket state "
+        "changes — no action needed until then."
     )
     assert len(agent.calls) == 3
 
