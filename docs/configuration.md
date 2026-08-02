@@ -517,12 +517,12 @@ or navigation beyond the initial page load is permitted. Requires the `render-ur
 (`playwright`) in the image as well as a Playwright Chromium browser installation. Disabled by
 default.
 
-| JSON key                     | Type      | Default | Description                              |
-| ---------------------------- | --------- | ------- | ---------------------------------------- |
-| `render_url.enabled`         | `boolean` | `false` | Master switch.                           |
-| `render_url.timeout`         | `number`  | `30.0`  | Per-request page-load timeout (seconds). |
-| `render_url.viewport_width`  | `integer` | `1280`  | Browser viewport width (pixels).         |
-| `render_url.viewport_height` | `integer` | `720`   | Browser viewport height (pixels).        |
+| JSON key                     | Type                        | Default | Description                                                                                                                                                                                             |
+| ---------------------------- | --------------------------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `render_url.enabled`         | `boolean`                   | `false` | Master switch.                                                                                                                                                                                          |
+| `render_url.timeout`         | `number`                    | `30.0`  | Per-request page-load timeout (seconds).                                                                                                                                                                |
+| `render_url.viewport_width`  | `integer`                   | `1280`  | Browser viewport width (pixels).                                                                                                                                                                        |
+| `render_url.viewport_height` | `integer`                   | `720`   | Browser viewport height (pixels).                                                                                                                                                                       |
 | `render_url.fleet_auth`      | `FleetAuthSettings \| null` | `null`  | Optional server-side credentials for authenticated fleet UIs. When set, requests to hosts in `fleet_auth.auth_hosts` carry HTTP basic-auth headers injected by the server (never visible to the agent). |
 
 The `FleetAuthSettings` object accepts:
