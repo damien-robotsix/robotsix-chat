@@ -522,11 +522,26 @@ class AutonomousRunner:
         require_approval = defn.get("self_refine_require_approval", False)
 
         # Capture conversation history for the LLM refinement prompt.
+        # Use the raw transcript (both User and Agent sides) so the
+        # refinement LLM sees operator feedback, approvals, rejections,
+        # and comments — not just the agent's monologue.
         try:
-            history = self._store.agent_history(session_id)
+            history = self._store.history(session_id)
             history_text = "\n".join(
-                f"Agent: {turn[1]}" for turn in history[-20:]
+                f"User: {turn[0]}\nAgent: {turn[1]}" for turn in history
             )
+            # Cap the transcript at a generous character limit to avoid
+            # overflowing the refinement LLM's context window.  When
+            # truncated, keep the beginning (plan/approval) and the end
+            # (outcome) while dropping the middle (auto-continue turns).
+            max_chars = 30_000
+            if len(history_text) > max_chars:
+                head = history_text[:max_chars // 3]
+                tail = history_text[-(max_chars * 2 // 3):]
+                history_text = (
+                    f"{head}\n\n... [transcript truncated — "
+                    f"{len(history)} turns, showing beginning and end] ...\n\n{tail}"
+                )
         except Exception:
             logger.exception(
                 "Failed to read history for refinement of session %s",

@@ -472,7 +472,12 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
                 return refinement_agent
 
             refinement_agent_factory = _refinement_agent_factory
+            refinement_persist_path = str(
+                Path(settings.autonomous.persist_path).parent
+                / "autonomous_refinements.json"
+            )
             refinement_store = RefinementStore(
+                persist_path=refinement_persist_path,
                 agent_factory=refinement_agent_factory,
             )
         except Exception:

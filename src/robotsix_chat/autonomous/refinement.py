@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import json
 import logging
+import threading
 import time
 import uuid
 from dataclasses import dataclass, field
@@ -27,12 +28,12 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 # Maximum number of accepted refinement entries to retain per definition.
-# When exceeded the oldest accepted entries are summarised into a single
-# condensed entry to bound prompt growth.
+# When exceeded the oldest accepted entries are dropped to bound storage
+# growth.
 _MAX_ACCEPTED_REFINEMENTS = 10
 
 # Maximum character length of the accumulated refinement addendum before
-# older lessons are summarised.
+# older lessons are truncated.
 _MAX_ADDENDUM_CHARS = 2_000
 
 # Default persist path for refinement state.
@@ -95,6 +96,22 @@ class RefinementStore:
         self._persist_path = Path(persist_path)
         self._agent_factory = agent_factory
         self._states: dict[str, DefinitionRefinementState] = self._load()
+        # One lock per definition guards concurrent mutation (particularly
+        # ``propose_refinement`` which has await points that can interleave
+        # with other calls).
+        self._locks: dict[str, threading.Lock] = {}
+        self._locks_guard = threading.Lock()
+
+    def _get_lock(self, definition_name: str) -> threading.Lock:
+        """Return (creating if needed) the per-definition threading lock."""
+        lock = self._locks.get(definition_name)
+        if lock is None:
+            with self._locks_guard:
+                lock = self._locks.get(definition_name)
+                if lock is None:
+                    lock = threading.Lock()
+                    self._locks[definition_name] = lock
+        return lock
 
     # -- persistence -------------------------------------------------------
 
@@ -238,6 +255,10 @@ class RefinementStore:
             )
             return None
 
+        # Read state BEFORE the LLM call so the refinement prompt reflects
+        # the current addendum.  The LLM call is outside the lock so two
+        # concurrent proposals for different definitions don't serialise
+        # on each other.  The mutation at the end is guarded by the lock.
         state = self.get_state(definition_name, base_prompt)
 
         # Build the refinement LLM prompt.
@@ -272,60 +293,68 @@ class RefinementStore:
             )
             return None
 
-        # Build the entry.
-        status = "accepted" if auto_accept else "pending"
-        entry = RefinementEntry(
-            id=uuid.uuid4().hex,
-            timestamp=time.time(),
-            base_prompt=base_prompt,
-            previous_addendum=state.accepted_addendum,
-            proposed_addendum=proposed_addendum,
-            feedback_summary=_summarise_history(conversation_history),
-            session_id=session_id,
-            status=status,
-        )
-        state.entries.append(entry)
+        # Guard mutation with a per-definition lock so two concurrent
+        # proposals for the same definition cannot produce a lost-update
+        # race on state.entries or state.accepted_addendum.
+        with self._get_lock(definition_name):
+            # Re-read state under the lock: the addendum may have changed
+            # during the LLM call (another proposal was accepted/rejected).
+            state = self.get_state(definition_name, base_prompt)
 
-        if auto_accept:
-            state.accepted_addendum = proposed_addendum
-            self._compact(state)
-            logger.info(
-                "Auto-accepted refinement %s for %r (addendum %d → %d chars)",
-                entry.id,
-                definition_name,
-                len(entry.previous_addendum),
-                len(proposed_addendum),
+            status = "accepted" if auto_accept else "pending"
+            entry = RefinementEntry(
+                id=uuid.uuid4().hex,
+                timestamp=time.time(),
+                base_prompt=base_prompt,
+                previous_addendum=state.accepted_addendum,
+                proposed_addendum=proposed_addendum,
+                feedback_summary=_summarise_history(conversation_history),
+                session_id=session_id,
+                status=status,
             )
-        else:
-            logger.info(
-                "Pending refinement %s for %r (awaiting operator approval)",
-                entry.id,
-                definition_name,
-            )
+            state.entries.append(entry)
 
-        self._save()
-        return entry
+            if auto_accept:
+                state.accepted_addendum = proposed_addendum
+                self._compact(state)
+                logger.info(
+                    "Auto-accepted refinement %s for %r (addendum %d → %d chars)",
+                    entry.id,
+                    definition_name,
+                    len(entry.previous_addendum),
+                    len(proposed_addendum),
+                )
+            else:
+                logger.info(
+                    "Pending refinement %s for %r (awaiting operator approval)",
+                    entry.id,
+                    definition_name,
+                )
+
+            self._save()
+            return entry
 
     def accept_refinement(self, definition_name: str, refinement_id: str) -> bool:
         """Accept a pending refinement by *refinement_id*.
 
         Returns ``True`` when the refinement was found and accepted.
         """
-        state = self._states.get(definition_name)
-        if state is None:
-            return False
-        for entry in state.entries:
-            if entry.id == refinement_id and entry.status == "pending":
-                entry.status = "accepted"
-                state.accepted_addendum = entry.proposed_addendum
-                self._compact(state)
-                logger.info(
-                    "Accepted refinement %s for %r",
-                    refinement_id,
-                    definition_name,
-                )
-                self._save()
-                return True
+        with self._get_lock(definition_name):
+            state = self._states.get(definition_name)
+            if state is None:
+                return False
+            for entry in state.entries:
+                if entry.id == refinement_id and entry.status == "pending":
+                    entry.status = "accepted"
+                    state.accepted_addendum = entry.proposed_addendum
+                    self._compact(state)
+                    logger.info(
+                        "Accepted refinement %s for %r",
+                        refinement_id,
+                        definition_name,
+                    )
+                    self._save()
+                    return True
         return False
 
     def reject_refinement(self, definition_name: str, refinement_id: str) -> bool:
@@ -333,19 +362,20 @@ class RefinementStore:
 
         Returns ``True`` when the refinement was found and rejected.
         """
-        state = self._states.get(definition_name)
-        if state is None:
-            return False
-        for entry in state.entries:
-            if entry.id == refinement_id and entry.status == "pending":
-                entry.status = "rejected"
-                logger.info(
-                    "Rejected refinement %s for %r",
-                    refinement_id,
-                    definition_name,
-                )
-                self._save()
-                return True
+        with self._get_lock(definition_name):
+            state = self._states.get(definition_name)
+            if state is None:
+                return False
+            for entry in state.entries:
+                if entry.id == refinement_id and entry.status == "pending":
+                    entry.status = "rejected"
+                    logger.info(
+                        "Rejected refinement %s for %r",
+                        refinement_id,
+                        definition_name,
+                    )
+                    self._save()
+                    return True
         return False
 
     def reset_refinements(self, definition_name: str) -> bool:
@@ -353,12 +383,13 @@ class RefinementStore:
 
         Returns ``True`` when state existed and was reset.
         """
-        state = self._states.pop(definition_name, None)
-        if state is None:
-            return False
-        logger.info("Reset all refinements for %r", definition_name)
-        self._save()
-        return True
+        with self._get_lock(definition_name):
+            state = self._states.pop(definition_name, None)
+            if state is None:
+                return False
+            logger.info("Reset all refinements for %r", definition_name)
+            self._save()
+            return True
 
     # -- internal ----------------------------------------------------------
 
@@ -366,7 +397,7 @@ class RefinementStore:
         """Bound the number of accepted entries and addendum length.
 
         When the accepted count exceeds ``_MAX_ACCEPTED_REFINEMENTS``, the
-        oldest entries are summarised into one condensed entry.  When the
+        oldest accepted entries are dropped from the list.  When the
         addendum exceeds ``_MAX_ADDENDUM_CHARS`` it is truncated with a
         note.
         """
@@ -441,8 +472,14 @@ def _summarise_history(conversation_history: str) -> str:
     """Produce a short summary of the run outcome from its transcript."""
     if not conversation_history:
         return "(empty run)"
-    # Take the last 300 chars as a rough outcome summary.
-    tail = conversation_history[-300:].strip()
-    if len(conversation_history) > 300:
-        tail = f"...\n{tail}"
-    return tail
+    # Capture both the beginning (plan, approval) and the end (outcome)
+    # so the summary is more informative than an arbitrary tail slice.
+    text = conversation_history.strip()
+    if len(text) <= 500:
+        return text
+    head = text[:200].strip()
+    tail = text[-300:].strip()
+    # Avoid duplicating if head and tail overlap.
+    if head[-50:] == tail[:50]:
+        return head + tail[50:]
+    return f"{head}\n...\n{tail}"
