@@ -294,3 +294,15 @@ class TestChatJsFunctions:
         # randomId survives only as the offline fallback session id.
         assert "randomId" in funcs
         assert "-client-id" not in static_js
+
+    def test_presets_editor_functions(self, static_js: str) -> None:
+        """Presets editor functions for autonomous.sessions exist."""
+        funcs = self._functions_in(static_js)
+        assert "renderPresetsEditor" in funcs
+        assert "rebuildPresetRows" in funcs
+        assert "renderPresetRow" in funcs
+        assert "showPresetForm" in funcs
+        assert "makeFormRow" in funcs
+        assert "savePresetForm" in funcs
+        assert "deletePreset" in funcs
+        assert "addPreset" in funcs
