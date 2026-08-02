@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add dedicated unit tests for `BoardClient` (`tests/repo/direct/test_board_client.py`) covering `get_ticket_state`, `resume_blocked_ticket`, `get_ticket_data`, and `count_implement_cycles` (17 tests, respx-mocked HTTP).
 - `http_probe.fleet_auth` now documented in the HTTP Probe settings reference table (`docs/configuration.md`), matching the Render URL and Public Fetch sections.
 - Surface human-approval tickets with a concrete recommendation (approve/close + specific reason) and set expectations about the auto-escalation timeout window, preventing silent stalls in autonomous workflows.
 - Settings UI: render `agent_instruction` as a multi-line textarea instead of a single-line text input, so long instruction strings wrap and are comfortably readable and editable.
