@@ -199,6 +199,7 @@ modules:
       - tests/common/test_github_auth.py
       - tests/common/test_http.py
       - tests/common/test_json_store.py
+      - tests/common/test_unified_diff.py
       - tests/common/test_hypothesis_json_store.py
 
   - id: direct-repo
