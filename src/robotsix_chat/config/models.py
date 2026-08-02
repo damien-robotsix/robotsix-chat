@@ -1092,6 +1092,14 @@ class AutonomousSessionDefinition(BaseModel):
             ``periodic`` trigger.  Ignored for ``on_close``.  Default 45 s.
         enabled: When ``False``, the definition is skipped — no session is
             created for it.
+        self_refine: When ``True``, after each run completes an LLM
+            refinement step proposes an updated prompt addendum that folds
+            in the run's feedback.  The next run uses the refined prompt.
+            Default ``False`` (static presets keep running verbatim).
+        self_refine_require_approval: When ``True``, refinements enter
+            ``pending`` state and require operator approval before they
+            take effect.  When ``False``, refinements are auto-accepted.
+            Default ``False``.
 
     """
 
@@ -1100,6 +1108,8 @@ class AutonomousSessionDefinition(BaseModel):
     trigger_type: TriggerType = TriggerType.periodic
     trigger_interval_seconds: float = Field(default=45.0, ge=0.0)
     enabled: bool = True
+    self_refine: bool = False
+    self_refine_require_approval: bool = False
     model_config = ConfigDict(extra="forbid")
 
 

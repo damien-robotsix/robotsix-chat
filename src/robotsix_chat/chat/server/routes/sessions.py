@@ -474,6 +474,27 @@ async def autonomous_definitions_list_endpoint(request: Request) -> JSONResponse
         owner_id = runner.owner_id_for_definition(name)
         defn = runner.get_definition(name) or {}
         active_session_id = runner.active_session_id_for_definition(name)
+        # Build refinement summary when a refinement store is present.
+        refinement = None
+        ref_store = runner.refinement_store
+        if ref_store is not None:
+            ref_state = ref_store.get_state(name, defn.get("prompt", ""))
+            pending_count = sum(1 for e in ref_state.entries if e.status == "pending")
+            accepted_count = sum(1 for e in ref_state.entries if e.status == "accepted")
+            refinement = {
+                "self_refine": defn.get("self_refine", False),
+                "self_refine_require_approval": defn.get(
+                    "self_refine_require_approval", False
+                ),
+                "effective_prompt": ref_store.effective_prompt(
+                    name, defn.get("prompt", "")
+                ),
+                "base_prompt": defn.get("prompt", ""),
+                "accepted_addendum": ref_state.accepted_addendum,
+                "pending_count": pending_count,
+                "accepted_count": accepted_count,
+                "total_entries": len(ref_state.entries),
+            }
         definitions.append(
             {
                 "name": name,
@@ -481,8 +502,13 @@ async def autonomous_definitions_list_endpoint(request: Request) -> JSONResponse
                 "trigger_type": defn.get("trigger_type", "periodic"),
                 "trigger_interval_seconds": defn.get("trigger_interval_seconds", 45.0),
                 "enabled": defn.get("enabled", True),
+                "self_refine": defn.get("self_refine", False),
+                "self_refine_require_approval": defn.get(
+                    "self_refine_require_approval", False
+                ),
                 "owner_id": owner_id,
                 "active_session_id": active_session_id,
+                "refinement": refinement,
             }
         )
 
@@ -546,3 +572,157 @@ async def autonomous_definitions_run_endpoint(request: Request) -> JSONResponse:
             "definition_name": name,
         }
     )
+
+
+# -- autonomous refinement endpoints ---------------------------------------
+
+
+async def autonomous_refinements_list_endpoint(request: Request) -> JSONResponse:
+    """List refinement entries for an autonomous session definition.
+
+    ``GET /autonomous/definitions/{name}/refinements`` returns::
+
+        {
+          "definition_name": "...",
+          "base_prompt": "...",
+          "accepted_addendum": "...",
+          "effective_prompt": "...",
+          "entries": [
+            {
+              "id": "...",
+              "timestamp": 1234567890.0,
+              "status": "accepted",
+              "feedback_summary": "...",
+              "proposed_addendum": "...",
+              "previous_addendum": "...",
+              "session_id": "..."
+            },
+            ...
+          ]
+        }
+    """
+    name = request.path_params["name"]
+    runner = request.app.state.autonomous_runner
+    if runner is None:
+        return JSONResponse(
+            {"error": "autonomous sessions are not enabled"}, status_code=404
+        )
+
+    ref_store = runner.refinement_store
+    if ref_store is None:
+        return JSONResponse(
+            {"error": "refinement store is not available"}, status_code=404
+        )
+
+    defn = runner.get_definition(name)
+    if defn is None:
+        return JSONResponse({"error": f"unknown definition {name!r}"}, status_code=404)
+
+    base_prompt = defn.get("prompt", "")
+    state = ref_store.get_state(name, base_prompt)
+    entries = [
+        {
+            "id": e.id,
+            "timestamp": e.timestamp,
+            "status": e.status,
+            "feedback_summary": e.feedback_summary,
+            "proposed_addendum": e.proposed_addendum,
+            "previous_addendum": e.previous_addendum,
+            "session_id": e.session_id,
+        }
+        for e in state.entries
+    ]
+
+    return JSONResponse(
+        {
+            "definition_name": name,
+            "base_prompt": state.base_prompt,
+            "accepted_addendum": state.accepted_addendum,
+            "effective_prompt": ref_store.effective_prompt(name, base_prompt),
+            "entries": entries,
+        }
+    )
+
+
+async def autonomous_refinements_accept_endpoint(request: Request) -> JSONResponse:
+    """Accept a pending refinement.
+
+    ``POST /autonomous/definitions/{name}/refinements/{refinement_id}/accept``
+
+    Returns ``{"accepted": true}`` on success, ``404`` when the refinement
+    is not found or is not pending.
+    """
+    name = request.path_params["name"]
+    refinement_id = request.path_params["refinement_id"]
+    runner = request.app.state.autonomous_runner
+    if runner is None:
+        return JSONResponse(
+            {"error": "autonomous sessions are not enabled"}, status_code=404
+        )
+
+    ref_store = runner.refinement_store
+    if ref_store is None:
+        return JSONResponse(
+            {"error": "refinement store is not available"}, status_code=404
+        )
+
+    if ref_store.accept_refinement(name, refinement_id):
+        return JSONResponse({"accepted": True})
+    return JSONResponse(
+        {"error": f"refinement {refinement_id!r} not found or not pending"},
+        status_code=404,
+    )
+
+
+async def autonomous_refinements_reject_endpoint(request: Request) -> JSONResponse:
+    """Reject a pending refinement.
+
+    ``POST /autonomous/definitions/{name}/refinements/{refinement_id}/reject``
+
+    Returns ``{"rejected": true}`` on success, ``404`` when the refinement
+    is not found or is not pending.
+    """
+    name = request.path_params["name"]
+    refinement_id = request.path_params["refinement_id"]
+    runner = request.app.state.autonomous_runner
+    if runner is None:
+        return JSONResponse(
+            {"error": "autonomous sessions are not enabled"}, status_code=404
+        )
+
+    ref_store = runner.refinement_store
+    if ref_store is None:
+        return JSONResponse(
+            {"error": "refinement store is not available"}, status_code=404
+        )
+
+    if ref_store.reject_refinement(name, refinement_id):
+        return JSONResponse({"rejected": True})
+    return JSONResponse(
+        {"error": f"refinement {refinement_id!r} not found or not pending"},
+        status_code=404,
+    )
+
+
+async def autonomous_refinements_reset_endpoint(request: Request) -> JSONResponse:
+    """Reset all refinements for a definition — clears the addendum.
+
+    ``POST /autonomous/definitions/{name}/refinements/reset``
+
+    Returns ``{"reset": true}`` on success.
+    """
+    name = request.path_params["name"]
+    runner = request.app.state.autonomous_runner
+    if runner is None:
+        return JSONResponse(
+            {"error": "autonomous sessions are not enabled"}, status_code=404
+        )
+
+    ref_store = runner.refinement_store
+    if ref_store is None:
+        return JSONResponse(
+            {"error": "refinement store is not available"}, status_code=404
+        )
+
+    ref_store.reset_refinements(name)
+    return JSONResponse({"reset": True})

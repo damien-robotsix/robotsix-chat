@@ -451,6 +451,37 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     # -- autonomous runner -------------------------------------------------
     autonomous_runner: AutonomousRunner | None = None
     if settings.autonomous.enabled:
+        # Refinement agent: a lighter, tool-less agent for the prompt-
+        # refinement step.  Uses the same model level as the feedback runner
+        # for consistency — a cheaper tier than the main autonomous agent.
+        from robotsix_chat.autonomous.refinement import RefinementStore
+
+        refinement_agent_factory: Callable[[], LlmioChatAgent] | None = None
+        refinement_store: RefinementStore | None = None
+        try:
+            refinement_agent = create_agent_from_settings(
+                settings=settings,
+                conversation_store=conversation_store,
+                model_level=settings.llmio_model_level,
+                bare=True,
+                diagnostic_store=diagnostic_store,
+                knowledge_store=knowledge_store,
+            )
+
+            def _refinement_agent_factory() -> LlmioChatAgent:
+                return refinement_agent
+
+            refinement_agent_factory = _refinement_agent_factory
+            refinement_store = RefinementStore(
+                agent_factory=refinement_agent_factory,
+            )
+        except Exception:
+            logger.warning(
+                "Failed to create refinement agent — self-refinement "
+                "will be unavailable for autonomous presets",
+                exc_info=True,
+            )
+
         autonomous_runner = AutonomousRunner(
             settings=settings,
             conversation_store=conversation_store,
@@ -458,6 +489,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             run_serializer=run_serializer,
             event_sink=event_bus,
             subsession_registry=subsession_registry,
+            refinement_store=refinement_store,
         )
         logger.info(
             "Autonomous sessions enabled (max_auto_turns=%d)",

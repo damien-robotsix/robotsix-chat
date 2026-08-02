@@ -75,6 +75,10 @@ from .routes import (
     RunSerializer,
     autonomous_definitions_list_endpoint,
     autonomous_definitions_run_endpoint,
+    autonomous_refinements_accept_endpoint,
+    autonomous_refinements_list_endpoint,
+    autonomous_refinements_reject_endpoint,
+    autonomous_refinements_reset_endpoint,
     cancel_queued_endpoint,
     chat_endpoint,
     config_get_endpoint,
@@ -426,6 +430,26 @@ def create_app(
         Route(
             "/autonomous/definitions/{name}/run",
             autonomous_definitions_run_endpoint,
+            methods=["POST"],
+        ),
+        Route(
+            "/autonomous/definitions/{name}/refinements",
+            autonomous_refinements_list_endpoint,
+            methods=["GET"],
+        ),
+        Route(
+            "/autonomous/definitions/{name}/refinements/{refinement_id}/accept",
+            autonomous_refinements_accept_endpoint,
+            methods=["POST"],
+        ),
+        Route(
+            "/autonomous/definitions/{name}/refinements/{refinement_id}/reject",
+            autonomous_refinements_reject_endpoint,
+            methods=["POST"],
+        ),
+        Route(
+            "/autonomous/definitions/{name}/refinements/reset",
+            autonomous_refinements_reset_endpoint,
             methods=["POST"],
         ),
         Route(

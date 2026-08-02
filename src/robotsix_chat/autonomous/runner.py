@@ -11,6 +11,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, cast
 
 from robotsix_chat.autonomous.models import AutonomousSession, AutonomousState
+from robotsix_chat.autonomous.refinement import RefinementStore
 from robotsix_chat.chat.events import (
     EventSink,
     agent_message_frame,
@@ -64,6 +65,7 @@ class AutonomousRunner:
         run_serializer: RunSerializer,
         event_sink: EventSink | None = None,
         subsession_registry: Any = None,
+        refinement_store: RefinementStore | None = None,
     ) -> None:
         """Create a runner with settings, store, agent factory, and serializer."""
         self._settings = settings
@@ -72,6 +74,7 @@ class AutonomousRunner:
         self._run_serializer = run_serializer
         self._event_sink = event_sink
         self._subsession_registry = subsession_registry
+        self._refinement_store = refinement_store
         self._persist_path = Path(settings.autonomous.persist_path)
         self._sessions: dict[str, AutonomousSession] = self._load_sessions()
         # Strong references to in-flight auto-continue tasks (see asyncio
@@ -180,6 +183,8 @@ class AutonomousRunner:
             "trigger_type": "periodic",
             "trigger_interval_seconds": continue_interval_seconds,
             "enabled": True,
+            "self_refine": False,
+            "self_refine_require_approval": False,
         }
         return {DEFAULT_SESSION_NAME: definition}
 
@@ -202,6 +207,8 @@ class AutonomousRunner:
                     else d.trigger_type,
                     "trigger_interval_seconds": d.trigger_interval_seconds,
                     "enabled": d.enabled,
+                    "self_refine": d.self_refine,
+                    "self_refine_require_approval": d.self_refine_require_approval,
                 }
                 for d in configured
                 if d.enabled
@@ -488,6 +495,61 @@ class AutonomousRunner:
         except Exception:
             logger.exception("Auto-restart failed for owner %s", owner_id)
 
+    # -- self-refinement ---------------------------------------------------
+
+    @property
+    def refinement_store(self) -> RefinementStore | None:
+        """The :class:`RefinementStore` used by this runner, or ``None``."""
+        return self._refinement_store
+
+    def _schedule_refinement(self, session_id: str, aq: AutonomousSession) -> None:
+        """Schedule a refinement step after *aq* completes, if self_refine is on.
+
+        Reads the conversation history from the store, then calls the
+        refinement store's ``propose_refinement`` in a background task.
+        No-op when the definition does not have ``self_refine`` enabled,
+        or when no refinement store is configured.
+        """
+        if self._refinement_store is None:
+            return
+
+        defn = self._definition_for_owner(aq.owner_id)
+        if defn is None or not defn.get("self_refine"):
+            return
+
+        definition_name = defn.get("name", "")
+        base_prompt = defn.get("prompt", "")
+        require_approval = defn.get("self_refine_require_approval", False)
+
+        # Capture conversation history for the LLM refinement prompt.
+        try:
+            history = self._store.agent_history(session_id)
+            history_text = "\n".join(
+                f"Agent: {turn[1]}" for turn in history[-20:]
+            )
+        except Exception:
+            logger.exception(
+                "Failed to read history for refinement of session %s",
+                session_id,
+            )
+            return
+
+        async def _refine() -> None:
+            try:
+                await self._refinement_store.propose_refinement(  # type: ignore[union-attr]
+                    definition_name=definition_name,
+                    base_prompt=base_prompt,
+                    session_id=session_id,
+                    conversation_history=history_text,
+                    auto_accept=not require_approval,
+                )
+            except Exception:
+                logger.exception(
+                    "Refinement step failed for definition %r", definition_name
+                )
+
+        self._schedule_background(_refine)
+
     # -- marker detection ---------------------------------------------------
 
     def check_reply_for_markers(
@@ -536,6 +598,9 @@ class AutonomousRunner:
             # so the operator always has one live session.
             owner_id = aq.owner_id
             self._schedule_background(lambda: self._auto_restart(owner_id))
+            # Self-refinement: if this definition has self_refine enabled,
+            # schedule a refinement step after the run completes.
+            self._schedule_refinement(session_id, aq)
             return AutonomousState.completed
 
         # Check proposal marker.
@@ -774,7 +839,17 @@ class AutonomousRunner:
                 custom_prompt = defn.get("prompt", "") if defn else ""
                 rejected_note = _rejected_subjects_note(self._sessions.get(session_id))
                 if custom_prompt:
-                    prompt = f"{restart_notice}{custom_prompt}{rejected_note}"
+                    # Apply self-refinement addendum when enabled.
+                    effective = custom_prompt
+                    if (
+                        defn
+                        and defn.get("self_refine")
+                        and self._refinement_store is not None
+                    ):
+                        effective = self._refinement_store.effective_prompt(
+                            defn.get("name", ""), custom_prompt
+                        )
+                    prompt = f"{restart_notice}{effective}{rejected_note}"
                 else:
                     initial_task = self._settings.autonomous.initial_task
                     if initial_task:
