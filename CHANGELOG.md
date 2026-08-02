@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Settings UI: render `agent_instruction` as a multi-line textarea instead of a single-line text input, so long instruction strings wrap and are comfortably readable and editable.
 - Document `render_url.fleet_auth` in the Render URL configuration table, matching the `public_fetch.fleet_auth` pattern.
 - Document 5 missing `memory.*` config fields in the Memory (cognee) table: `subsession_enabled`, `autonomous_enabled`, `auto_recovery_enabled`, `frozen_store_recovery_minutes`, and `recovery_cooldown_minutes`.
 - Enable `mypy_baseline` periodic workflow to track mypy baseline entry counts and catch type regressions.
