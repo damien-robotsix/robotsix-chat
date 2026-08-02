@@ -8,9 +8,7 @@ import httpx
 import pytest
 import respx
 
-from robotsix_chat.repo.direct.client import (
-    DirectRepoClient,
-)
+from robotsix_chat.repo.direct.actions_client import ActionsClient
 
 from .conftest import _prepopulate_installation_token, _settings
 
@@ -28,7 +26,7 @@ async def test_list_workflow_runs_returns_runs(
     _prepopulate_installation_token(settings)
 
     respx_mock.get(
-        "https://api.github.com/repos/org/repo/actions/runs?per_page=5"
+        "https://api.github.com/repos/org/repo/actions/runs?per_page=10"
     ).mock(
         return_value=httpx.Response(
             200,
@@ -49,7 +47,7 @@ async def test_list_workflow_runs_returns_runs(
         )
     )
 
-    client = DirectRepoClient(settings)
+    client = ActionsClient(settings)
     runs = await client.list_workflow_runs("org/repo")
     assert len(runs) == 1
     assert runs[0]["id"] == 1
@@ -73,12 +71,12 @@ async def test_list_workflow_runs_with_branch_filter(
         )
     )
 
-    client = DirectRepoClient(settings)
+    client = ActionsClient(settings)
     await client.list_workflow_runs("org/repo", branch="develop")
 
     last_url = str(route.calls.last.request.url)
     assert "branch=develop" in last_url
-    assert "per_page=5" in last_url
+    assert "per_page=10" in last_url
 
 
 @pytest.mark.asyncio
@@ -90,10 +88,10 @@ async def test_list_workflow_runs_returns_empty_on_error(
     _prepopulate_installation_token(settings)
 
     respx_mock.get(
-        "https://api.github.com/repos/org/repo/actions/runs?per_page=5"
+        "https://api.github.com/repos/org/repo/actions/runs?per_page=10"
     ).mock(return_value=httpx.Response(403, text="Forbidden"))
 
-    client = DirectRepoClient(settings)
+    client = ActionsClient(settings)
     runs = await client.list_workflow_runs("org/repo")
     assert runs == []
 
@@ -115,7 +113,7 @@ async def test_list_workflow_runs_respects_per_page(
         )
     )
 
-    client = DirectRepoClient(settings)
+    client = ActionsClient(settings)
     await client.list_workflow_runs("org/repo", per_page=200)
 
     last_url = str(route.calls.last.request.url)
@@ -157,7 +155,7 @@ async def test_get_workflow_run_jobs_returns_jobs(
         )
     )
 
-    client = DirectRepoClient(settings)
+    client = ActionsClient(settings)
     jobs = await client.get_workflow_run_jobs("org/repo", 42)
     assert len(jobs) == 1
     assert jobs[0]["name"] == "build"
@@ -175,7 +173,7 @@ async def test_get_workflow_run_jobs_returns_empty_on_error(
         return_value=httpx.Response(500, text="Internal Server Error")
     )
 
-    client = DirectRepoClient(settings)
+    client = ActionsClient(settings)
     jobs = await client.get_workflow_run_jobs("org/repo", 99)
     assert jobs == []
 
@@ -187,7 +185,7 @@ async def test_get_workflow_run_jobs_returns_empty_on_error(
 
 def test_diagnose_billing_failure_never_started() -> None:
     """Run with no run_started_at → never-started diagnostic."""
-    client = DirectRepoClient(_settings())
+    client = ActionsClient(_settings())
     runs: list[dict[str, object]] = [
         {
             "id": 2,
@@ -206,7 +204,7 @@ def test_diagnose_billing_failure_never_started() -> None:
 
 def test_diagnose_billing_failure_no_match() -> None:
     """Successful runs → no billing diagnostic."""
-    client = DirectRepoClient(_settings())
+    client = ActionsClient(_settings())
     runs: list[dict[str, object]] = [
         {
             "id": 3,
@@ -222,7 +220,7 @@ def test_diagnose_billing_failure_no_match() -> None:
 
 def test_diagnose_billing_failure_in_progress_skipped() -> None:
     """In-progress runs are not misdiagnosed as billing failures."""
-    client = DirectRepoClient(_settings())
+    client = ActionsClient(_settings())
     runs: list[dict[str, object]] = [
         {
             "id": 4,
@@ -238,6 +236,6 @@ def test_diagnose_billing_failure_in_progress_skipped() -> None:
 
 def test_diagnose_billing_failure_empty_runs() -> None:
     """Empty run list → None (no diagnostic)."""
-    client = DirectRepoClient(_settings())
+    client = ActionsClient(_settings())
     diag = client._diagnose_billing_failure([])
     assert diag is None

@@ -10,9 +10,7 @@ import pytest
 import respx
 
 from robotsix_chat.repo.direct import build_direct_repo_tools
-from robotsix_chat.repo.direct.client import (
-    DirectRepoClient,
-)
+from robotsix_chat.repo.direct.board_client import BoardClient
 
 from .conftest import _settings
 
@@ -166,7 +164,7 @@ async def test_get_ticket_data_returns_full_json(
         )
     )
 
-    client = DirectRepoClient(settings)
+    client = BoardClient(settings)
     data = await client.get_ticket_data("t-full")
     assert data is not None
     assert data["id"] == "t-full"
@@ -184,7 +182,7 @@ async def test_get_ticket_data_returns_none_on_error(
         return_value=httpx.Response(500, text="boom")
     )
 
-    client = DirectRepoClient(settings)
+    client = BoardClient(settings)
     data = await client.get_ticket_data("t-err2")
     assert data is None
 
@@ -216,7 +214,7 @@ async def test_count_implement_cycles_from_events(
         )
     )
 
-    client = DirectRepoClient(settings)
+    client = BoardClient(settings)
     cycles = await client.count_implement_cycles("t-cycles")
     assert cycles == 5  # 3 starts + 2 completes
 
@@ -246,7 +244,7 @@ async def test_count_implement_cycles_fallback_history(
         )
     )
 
-    client = DirectRepoClient(settings)
+    client = BoardClient(settings)
     cycles = await client.count_implement_cycles("t-hist")
     assert cycles == 2
 
@@ -271,7 +269,7 @@ async def test_count_implement_cycles_fallback_direct_field(
         )
     )
 
-    client = DirectRepoClient(settings)
+    client = BoardClient(settings)
     cycles = await client.count_implement_cycles("t-count")
     assert cycles == 5
 
@@ -290,6 +288,6 @@ async def test_count_implement_cycles_no_data_returns_zero(
         )
     )
 
-    client = DirectRepoClient(settings)
+    client = BoardClient(settings)
     cycles = await client.count_implement_cycles("t-nodata")
     assert cycles == 0
