@@ -213,6 +213,7 @@ modules:
       - src/robotsix_chat/repo/direct/skill.md
       - tests/repo/direct/__init__.py
       - tests/repo/direct/conftest.py
+      - tests/repo/direct/test_actions_client.py
       - tests/repo/direct/test_board_client.py
       - tests/repo/direct/test_build_tools.py
       - tests/repo/direct/test_direct_fix.py

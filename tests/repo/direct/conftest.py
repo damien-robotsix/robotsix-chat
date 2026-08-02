@@ -2,14 +2,13 @@
 
 from __future__ import annotations
 
+from types import SimpleNamespace
 from typing import Any
 
 import pytest
 
 from robotsix_chat.config import DirectRepoSettings
-from robotsix_chat.repo.direct.client import (
-    _INSTALLATION_TOKEN_CACHE,
-)
+from robotsix_chat.repo.direct.client import _INSTALLATION_TOKEN_CACHE
 
 
 def _prepopulate_installation_token(settings: DirectRepoSettings) -> None:
@@ -35,7 +34,6 @@ def _settings(**kw: Any) -> DirectRepoSettings:
 def _mock_github_auth(monkeypatch: pytest.MonkeyPatch) -> None:
     """Mock mint_installation_token so the shared library is never imported."""
     import sys
-    from types import SimpleNamespace
 
     def _fake_mint(**kw: object) -> object:
         return SimpleNamespace(token="ghs_test_installation_token")
