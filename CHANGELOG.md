@@ -1,6 +1,13 @@
 ## 0.0.0 (unreleased)
 
 - Add dedicated unit tests for `BoardClient` (`tests/repo/direct/test_board_client.py`) covering `get_ticket_state`, `resume_blocked_ticket`, `get_ticket_data`, and `count_implement_cycles` (17 tests, respx-mocked HTTP).
+- Removed 14 deprecated wrapper methods from `DirectRepoClient` that had zero
+  production callers (all delegated to `BoardClient`, `ActionsClient`, or
+  `unified_diff.apply_patch`): `_fetch_ticket_field`, `get_ticket_state`,
+  `resume_blocked_ticket`, `get_ticket_data`, `count_implement_cycles`,
+  `get_job_log`, `_get_repo_public_key`, `set_actions_secret`,
+  `dispatch_workflow`, `list_workflow_runs`, `get_workflow_run_jobs`,
+  `get_workflow_run_annotations`, `apply_patch`, `_diagnose_billing_failure`.
 - `http_probe.fleet_auth` now documented in the HTTP Probe settings reference table (`docs/configuration.md`), matching the Render URL and Public Fetch sections.
 - Surface human-approval tickets with a concrete recommendation (approve/close + specific reason) and set expectations about the auto-escalation timeout window, preventing silent stalls in autonomous workflows.
 - Settings UI: render `agent_instruction` as a multi-line textarea instead of a single-line text input, so long instruction strings wrap and are comfortably readable and editable.

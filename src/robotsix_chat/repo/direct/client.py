@@ -401,34 +401,6 @@ class DirectRepoClient:
             f"try again."
         )
 
-    async def _fetch_ticket_field(
-        self, ticket_id: str, label_suffix: str, field: str | None = None
-    ) -> Any:
-        """Fetch a ticket from the board API and return *field* or the full dict.
-
-        .. deprecated::
-            Use :class:`robotsix_chat.repo.direct.board_client.BoardClient`
-            instead.  This wrapper is kept for backward compatibility.
-
-        """
-        from robotsix_chat.repo.direct.board_client import BoardClient
-
-        return await BoardClient(self._s)._fetch_ticket_field(
-            ticket_id, label_suffix, field=field
-        )
-
-    async def get_ticket_state(self, ticket_id: str) -> str | None:
-        """Return the ticket's state (e.g. ``"BLOCKED"``), or ``None`` on failure.
-
-        .. deprecated::
-            Use :class:`robotsix_chat.repo.direct.board_client.BoardClient`
-            instead.  This wrapper is kept for backward compatibility.
-
-        """
-        from robotsix_chat.repo.direct.board_client import BoardClient
-
-        return await BoardClient(self._s).get_ticket_state(ticket_id)
-
     async def push_branch(
         self,
         *,
@@ -580,44 +552,6 @@ class DirectRepoClient:
         """
         return await self._get_json(f"/repos/{repo_full_name}/pulls/{pr_number}")
 
-    async def resume_blocked_ticket(self, ticket_id: str, justification: str) -> bool:
-        """Resume a blocked ticket via the board API.
-
-        .. deprecated::
-            Use :class:`robotsix_chat.repo.direct.board_client.BoardClient`
-            instead.  This wrapper is kept for backward compatibility.
-
-        """
-        from robotsix_chat.repo.direct.board_client import BoardClient
-
-        return await BoardClient(self._s).resume_blocked_ticket(
-            ticket_id, justification
-        )
-
-    async def get_ticket_data(self, ticket_id: str) -> dict[str, Any] | None:
-        """Return the full ticket JSON from the board API, or None on failure.
-
-        .. deprecated::
-            Use :class:`robotsix_chat.repo.direct.board_client.BoardClient`
-            instead.  This wrapper is kept for backward compatibility.
-
-        """
-        from robotsix_chat.repo.direct.board_client import BoardClient
-
-        return await BoardClient(self._s).get_ticket_data(ticket_id)
-
-    async def count_implement_cycles(self, ticket_id: str) -> int | None:
-        """Return the number of implement cycles for *ticket_id*, or None on failure.
-
-        .. deprecated::
-            Use :class:`robotsix_chat.repo.direct.board_client.BoardClient`
-            instead.  This wrapper is kept for backward compatibility.
-
-        """
-        from robotsix_chat.repo.direct.board_client import BoardClient
-
-        return await BoardClient(self._s).count_implement_cycles(ticket_id)
-
     async def push_commit_to_branch(
         self,
         *,
@@ -671,18 +605,6 @@ class DirectRepoClient:
             return f"Error pushing commit: {exc}"
         except Exception as exc:
             return f"Error pushing commit: {exc}"
-
-    async def get_job_log(self, repo_full_name: str, job_id: int) -> str:
-        """Fetch the plain-text log for a GitHub Actions job.
-
-        .. deprecated::
-            Use :class:`robotsix_chat.repo.direct.actions_client.ActionsClient`
-            instead.  This wrapper is kept for backward compatibility.
-
-        """
-        from robotsix_chat.repo.direct.actions_client import ActionsClient
-
-        return await ActionsClient(self._s).get_job_log(repo_full_name, job_id)
 
     async def set_security_and_analysis(
         self,
@@ -743,119 +665,6 @@ class DirectRepoClient:
             return f"Error updating security settings: {exc}"
         except Exception as exc:
             return f"Error updating security settings: {exc}"
-
-    # -- GitHub Actions helpers --------------------------------------------
-
-    async def _get_repo_public_key(self, repo_full_name: str) -> tuple[str, str]:
-        """Return ``(key_id, public_key_b64)`` for Actions secret encryption.
-
-        .. deprecated::
-            Use :class:`robotsix_chat.repo.direct.actions_client.ActionsClient`
-            instead.  This wrapper is kept for backward compatibility.
-
-        """
-        from robotsix_chat.repo.direct.actions_client import ActionsClient
-
-        return await ActionsClient(self._s)._get_repo_public_key(repo_full_name)
-
-    async def set_actions_secret(
-        self,
-        repo_full_name: str,
-        secret_name: str,
-        secret_value: str,
-    ) -> str:
-        """Create or update a repository Actions secret.
-
-        .. deprecated::
-            Use :class:`robotsix_chat.repo.direct.actions_client.ActionsClient`
-            instead.  This wrapper is kept for backward compatibility.
-
-        """
-        from robotsix_chat.repo.direct.actions_client import ActionsClient
-
-        return await ActionsClient(self._s).set_actions_secret(
-            repo_full_name, secret_name, secret_value
-        )
-
-    async def dispatch_workflow(
-        self,
-        repo_full_name: str,
-        workflow_id: str,
-        ref: str,
-        inputs: dict[str, str] | None = None,
-    ) -> str:
-        """Trigger a workflow_dispatch event.
-
-        .. deprecated::
-            Use :class:`robotsix_chat.repo.direct.actions_client.ActionsClient`
-            instead.  This wrapper is kept for backward compatibility.
-
-        """
-        from robotsix_chat.repo.direct.actions_client import ActionsClient
-
-        return await ActionsClient(self._s).dispatch_workflow(
-            repo_full_name, workflow_id, ref, inputs
-        )
-
-    # -- workflow run query helpers ----------------------------------------
-
-    async def list_workflow_runs(
-        self,
-        repo_full_name: str,
-        *,
-        branch: str | None = None,
-        per_page: int = 5,
-    ) -> list[dict[str, Any]]:
-        """Return recent workflow runs for *repo_full_name*.
-
-        .. deprecated::
-            Use :class:`robotsix_chat.repo.direct.actions_client.ActionsClient`
-            instead.  This wrapper is kept for backward compatibility.
-
-        """
-        from robotsix_chat.repo.direct.actions_client import ActionsClient
-
-        return await ActionsClient(self._s).list_workflow_runs(
-            repo_full_name, branch=branch, per_page=per_page
-        )
-
-    async def get_workflow_run_jobs(
-        self,
-        repo_full_name: str,
-        run_id: int,
-    ) -> list[dict[str, Any]]:
-        """Return the jobs for a specific workflow run.
-
-        .. deprecated::
-            Use :class:`robotsix_chat.repo.direct.actions_client.ActionsClient`
-            instead.  This wrapper is kept for backward compatibility.
-
-        """
-        from robotsix_chat.repo.direct.actions_client import ActionsClient
-
-        return await ActionsClient(self._s).get_workflow_run_jobs(
-            repo_full_name, run_id
-        )
-
-    async def get_workflow_run_annotations(
-        self,
-        repo_full_name: str,
-        run_id: int,
-        *,
-        max_check_runs: int = 20,
-    ) -> str:
-        """Fetch annotations for all check runs in a workflow run.
-
-        .. deprecated::
-            Use :class:`robotsix_chat.repo.direct.actions_client.ActionsClient`
-            instead.  This wrapper is kept for backward compatibility.
-
-        """
-        from robotsix_chat.repo.direct.actions_client import ActionsClient
-
-        return await ActionsClient(self._s).get_workflow_run_annotations(
-            repo_full_name, run_id
-        )
 
     # -- merge helpers -----------------------------------------------------
 
@@ -1106,19 +915,6 @@ class DirectRepoClient:
 
         return text, sha
 
-    @staticmethod
-    def apply_patch(original: str, patch_text: str) -> str:
-        """Apply a unified diff to *original* and return the patched content.
-
-        .. deprecated::
-            Use :func:`robotsix_chat.common.unified_diff.apply_patch` instead.
-            This wrapper is kept for backward compatibility.
-
-        """
-        from robotsix_chat.common.unified_diff import apply_patch as _apply
-
-        return _apply(original, patch_text)
-
     async def push_patched_file(
         self,
         *,
@@ -1147,7 +943,9 @@ class DirectRepoClient:
             return f"Error fetching file '{file_path}' from {repo_full_name}: {exc}"
 
         try:
-            patched = self.apply_patch(original, patch_text)
+            from robotsix_chat.common.unified_diff import apply_patch
+
+            patched = apply_patch(original, patch_text)
         except ValueError as exc:
             return f"Error applying patch to '{file_path}' in {repo_full_name}: {exc}"
 
@@ -1166,18 +964,3 @@ class DirectRepoClient:
         )
 
         return result
-
-    def _diagnose_billing_failure(
-        self,
-        runs: list[dict[str, Any]],
-    ) -> str | None:
-        """Inspect recent workflow runs for a private-repo billing failure.
-
-        .. deprecated::
-            Use :class:`robotsix_chat.repo.direct.actions_client.ActionsClient`
-            instead.  This wrapper is kept for backward compatibility.
-
-        """
-        from robotsix_chat.repo.direct.actions_client import ActionsClient
-
-        return ActionsClient(self._s)._diagnose_billing_failure(runs)

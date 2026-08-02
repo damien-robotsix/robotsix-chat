@@ -15,8 +15,11 @@ import httpx
 import pytest
 import respx
 
+from robotsix_chat.common.unified_diff import apply_patch
 from robotsix_chat.config import DirectRepoSettings
 from robotsix_chat.repo.direct import build_direct_repo_tools
+from robotsix_chat.repo.direct.actions_client import ActionsClient
+from robotsix_chat.repo.direct.board_client import BoardClient
 from robotsix_chat.repo.direct.client import (
     _INSTALLATION_TOKEN_CACHE,
     DirectRepoClient,
@@ -2529,7 +2532,7 @@ async def test_get_ticket_data_returns_full_json(
         )
     )
 
-    client = DirectRepoClient(settings)
+    client = BoardClient(settings)
     data = await client.get_ticket_data("t-full")
     assert data is not None
     assert data["id"] == "t-full"
@@ -2547,7 +2550,7 @@ async def test_get_ticket_data_returns_none_on_error(
         return_value=httpx.Response(500, text="boom")
     )
 
-    client = DirectRepoClient(settings)
+    client = BoardClient(settings)
     data = await client.get_ticket_data("t-err2")
     assert data is None
 
@@ -2579,7 +2582,7 @@ async def test_count_implement_cycles_from_events(
         )
     )
 
-    client = DirectRepoClient(settings)
+    client = BoardClient(settings)
     cycles = await client.count_implement_cycles("t-cycles")
     assert cycles == 5  # 3 starts + 2 completes
 
@@ -2609,7 +2612,7 @@ async def test_count_implement_cycles_fallback_history(
         )
     )
 
-    client = DirectRepoClient(settings)
+    client = BoardClient(settings)
     cycles = await client.count_implement_cycles("t-hist")
     assert cycles == 2
 
@@ -2634,7 +2637,7 @@ async def test_count_implement_cycles_fallback_direct_field(
         )
     )
 
-    client = DirectRepoClient(settings)
+    client = BoardClient(settings)
     cycles = await client.count_implement_cycles("t-count")
     assert cycles == 5
 
@@ -2653,7 +2656,7 @@ async def test_count_implement_cycles_no_data_returns_zero(
         )
     )
 
-    client = DirectRepoClient(settings)
+    client = BoardClient(settings)
     cycles = await client.count_implement_cycles("t-nodata")
     assert cycles == 0
 
@@ -2941,7 +2944,7 @@ async def test_list_workflow_runs_returns_runs(
     _prepopulate_installation_token(settings)
 
     respx_mock.get(
-        "https://api.github.com/repos/org/repo/actions/runs?per_page=5"
+        "https://api.github.com/repos/org/repo/actions/runs?per_page=10"
     ).mock(
         return_value=httpx.Response(
             200,
@@ -2962,7 +2965,7 @@ async def test_list_workflow_runs_returns_runs(
         )
     )
 
-    client = DirectRepoClient(settings)
+    client = ActionsClient(settings)
     runs = await client.list_workflow_runs("org/repo")
     assert len(runs) == 1
     assert runs[0]["id"] == 1
@@ -2986,12 +2989,12 @@ async def test_list_workflow_runs_with_branch_filter(
         )
     )
 
-    client = DirectRepoClient(settings)
+    client = ActionsClient(settings)
     await client.list_workflow_runs("org/repo", branch="develop")
 
     last_url = str(route.calls.last.request.url)
     assert "branch=develop" in last_url
-    assert "per_page=5" in last_url
+    assert "per_page=10" in last_url
 
 
 @pytest.mark.asyncio
@@ -3003,10 +3006,10 @@ async def test_list_workflow_runs_returns_empty_on_error(
     _prepopulate_installation_token(settings)
 
     respx_mock.get(
-        "https://api.github.com/repos/org/repo/actions/runs?per_page=5"
+        "https://api.github.com/repos/org/repo/actions/runs?per_page=10"
     ).mock(return_value=httpx.Response(403, text="Forbidden"))
 
-    client = DirectRepoClient(settings)
+    client = ActionsClient(settings)
     runs = await client.list_workflow_runs("org/repo")
     assert runs == []
 
@@ -3028,7 +3031,7 @@ async def test_list_workflow_runs_respects_per_page(
         )
     )
 
-    client = DirectRepoClient(settings)
+    client = ActionsClient(settings)
     await client.list_workflow_runs("org/repo", per_page=200)
 
     last_url = str(route.calls.last.request.url)
@@ -3070,7 +3073,7 @@ async def test_get_workflow_run_jobs_returns_jobs(
         )
     )
 
-    client = DirectRepoClient(settings)
+    client = ActionsClient(settings)
     jobs = await client.get_workflow_run_jobs("org/repo", 42)
     assert len(jobs) == 1
     assert jobs[0]["name"] == "build"
@@ -3088,7 +3091,7 @@ async def test_get_workflow_run_jobs_returns_empty_on_error(
         return_value=httpx.Response(500, text="Internal Server Error")
     )
 
-    client = DirectRepoClient(settings)
+    client = ActionsClient(settings)
     jobs = await client.get_workflow_run_jobs("org/repo", 99)
     assert jobs == []
 
@@ -3100,7 +3103,7 @@ async def test_get_workflow_run_jobs_returns_empty_on_error(
 
 def test_diagnose_billing_failure_never_started() -> None:
     """Run with no run_started_at → never-started diagnostic."""
-    client = DirectRepoClient(_settings())
+    client = ActionsClient(_settings())
     runs: list[dict[str, object]] = [
         {
             "id": 2,
@@ -3119,7 +3122,7 @@ def test_diagnose_billing_failure_never_started() -> None:
 
 def test_diagnose_billing_failure_no_match() -> None:
     """Successful runs → no billing diagnostic."""
-    client = DirectRepoClient(_settings())
+    client = ActionsClient(_settings())
     runs: list[dict[str, object]] = [
         {
             "id": 3,
@@ -3135,7 +3138,7 @@ def test_diagnose_billing_failure_no_match() -> None:
 
 def test_diagnose_billing_failure_in_progress_skipped() -> None:
     """In-progress runs are not misdiagnosed as billing failures."""
-    client = DirectRepoClient(_settings())
+    client = ActionsClient(_settings())
     runs: list[dict[str, object]] = [
         {
             "id": 4,
@@ -3151,7 +3154,7 @@ def test_diagnose_billing_failure_in_progress_skipped() -> None:
 
 def test_diagnose_billing_failure_empty_runs() -> None:
     """Empty run list → None (no diagnostic)."""
-    client = DirectRepoClient(_settings())
+    client = ActionsClient(_settings())
     diag = client._diagnose_billing_failure([])
     assert diag is None
 
@@ -3413,14 +3416,14 @@ async def test_patch_direct_repo_file_rejects_out_of_scope(
 
 
 # ---------------------------------------------------------------------------
-# DirectRepoClient.apply_patch — static method unit tests
+# apply_patch — pure function unit tests
 # ---------------------------------------------------------------------------
 
 
 def test_apply_patch_insert_at_beginning_of_empty_file() -> None:
     """@@ -0,0 +1,N @@ hunk against an empty file inserts at position 0."""
     patch = "@@ -0,0 +1,2 @@\n+line 1\n+line 2\n"
-    result = DirectRepoClient.apply_patch("", patch)
+    result = apply_patch("", patch)
     assert result == "line 1\nline 2\n"
 
 
@@ -3428,7 +3431,7 @@ def test_apply_patch_insert_at_beginning_of_non_empty_file() -> None:
     """@@ -0,0 +1,N @@ hunk against a non-empty file inserts before line 1."""
     original = "existing line\n"
     patch = "@@ -0,0 +1,1 @@\n+new first line\n"
-    result = DirectRepoClient.apply_patch(original, patch)
+    result = apply_patch(original, patch)
     assert result == "new first line\nexisting line\n"
 
 
@@ -3436,7 +3439,7 @@ def test_apply_patch_normal_context_hunk() -> None:
     """A standard hunk with context, removal, and addition."""
     original = "line 1\nline 2\nline 3\nline 4\nline 5\n"
     patch = "@@ -2,3 +2,4 @@\n line 2\n-line 3\n+new line 3a\n+new line 3b\n line 4\n"
-    result = DirectRepoClient.apply_patch(original, patch)
+    result = apply_patch(original, patch)
     assert result == "line 1\nline 2\nnew line 3a\nnew line 3b\nline 4\nline 5\n"
 
 
@@ -3444,7 +3447,7 @@ def test_apply_patch_multiple_hunks() -> None:
     """Two hunks applied in order with cumulative offset tracking."""
     original = "a\nb\nc\nd\ne\nf\n"
     patch = "@@ -2,2 +2,3 @@\n b\n-c\n+cc\n+ccc\n d\n@@ -5,1 +6,0 @@\n-e\n"
-    result = DirectRepoClient.apply_patch(original, patch)
+    result = apply_patch(original, patch)
     assert result == "a\nb\ncc\nccc\nd\nf\n"
 
 
@@ -3452,7 +3455,7 @@ def test_apply_patch_removal_only() -> None:
     """Hunk that only removes lines."""
     original = "keep\nremove me\nalso keep\n"
     patch = "@@ -2,1 +1,0 @@\n-remove me\n"
-    result = DirectRepoClient.apply_patch(original, patch)
+    result = apply_patch(original, patch)
     assert result == "keep\nalso keep\n"
 
 
@@ -3460,7 +3463,7 @@ def test_apply_patch_addition_only() -> None:
     """Hunk that only adds lines (context-only with additions)."""
     original = "header\nfooter\n"
     patch = "@@ -2,1 +2,3 @@\n footer\n+middle 1\n+middle 2\n"
-    result = DirectRepoClient.apply_patch(original, patch)
+    result = apply_patch(original, patch)
     assert result == "header\nfooter\nmiddle 1\nmiddle 2\n"
 
 
@@ -3469,7 +3472,7 @@ def test_apply_patch_context_mismatch_raises_value_error() -> None:
     original = "line 1\nline 2\n"
     patch = "@@ -1,1 +1,1 @@\n wrong\n+replacement\n"
     with pytest.raises(ValueError, match="context mismatch"):
-        DirectRepoClient.apply_patch(original, patch)
+        apply_patch(original, patch)
 
 
 def test_apply_patch_no_newline_at_eof_marker() -> None:
@@ -3479,7 +3482,7 @@ def test_apply_patch_no_newline_at_eof_marker() -> None:
         "@@ -1,2 +1,3 @@\n line 1\n-line 2\n+line 2\n+line 3\n"
         "\\ No newline at end of file\n"
     )
-    result = DirectRepoClient.apply_patch(original, patch)
+    result = apply_patch(original, patch)
     assert result == "line 1\nline 2\nline 3\n"
 
 
@@ -3491,7 +3494,7 @@ def test_apply_patch_insert_at_zero_with_prior_offset() -> None:
     """
     original = "a\nb\nc\n"
     patch = "@@ -3,1 +3,2 @@\n c\n+d\n@@ -0,0 +1,1 @@\n+preface\n"
-    result = DirectRepoClient.apply_patch(original, patch)
+    result = apply_patch(original, patch)
     assert result == "preface\na\nb\nc\nd\n"
 
 
@@ -3499,7 +3502,7 @@ def test_apply_patch_empty_hunk_at_zero() -> None:
     """@@ -0,0 +0,0 @@ (empty add at beginning) is a no-op."""
     original = "a\nb\n"
     patch = "@@ -0,0 +0,0 @@\n"
-    result = DirectRepoClient.apply_patch(original, patch)
+    result = apply_patch(original, patch)
     assert result == "a\nb\n"
 
 
@@ -3507,7 +3510,7 @@ def test_apply_patch_preserves_trailing_newline() -> None:
     """Files ending with newline keep it after patching."""
     original = "line 1\n"
     patch = "@@ -0,0 +1,1 @@\n+line 0\n"
-    result = DirectRepoClient.apply_patch(original, patch)
+    result = apply_patch(original, patch)
     assert result == "line 0\nline 1\n"
 
 
@@ -3515,7 +3518,7 @@ def test_apply_patch_preserves_no_trailing_newline() -> None:
     """Files without trailing newline keep that property after patching."""
     original = "only line"
     patch = "@@ -0,0 +1,1 @@\n+prefix\n"
-    result = DirectRepoClient.apply_patch(original, patch)
+    result = apply_patch(original, patch)
     # When original has no trailing newline, splitlines(keepends=True)
     # returns ["only line"] (no \n). The result should also lack a
     # trailing newline.
