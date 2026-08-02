@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- `http_probe.fleet_auth` now documented in the HTTP Probe settings reference table (`docs/configuration.md`), matching the Render URL and Public Fetch sections.
 - Surface human-approval tickets with a concrete recommendation (approve/close + specific reason) and set expectations about the auto-escalation timeout window, preventing silent stalls in autonomous workflows.
 - Settings UI: render `agent_instruction` as a multi-line textarea instead of a single-line text input, so long instruction strings wrap and are comfortably readable and editable.
 - Autonomous session presets now support self-refinement (`self_refine: true`): after each run completes, an LLM step analyses the outcome and proposes an updated "lessons learned" addendum for the next run.  Configurable per-preset; optionally requires operator approval before the refinement takes effect (`self_refine_require_approval: true`).  Refinements are bounded (capped addendum length, max history entries) and auditable (logged old → new with triggering feedback).  New API endpoints: `GET /autonomous/definitions/{name}/refinements`, `POST .../{id}/accept`, `POST .../{id}/reject`, `POST .../reset`.

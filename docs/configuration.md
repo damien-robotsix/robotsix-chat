@@ -452,13 +452,22 @@ tool. Enabled by default.
 
 Read-only HTTP uptime/render-probe tool for the agent. Enabled by default.
 
-| JSON key                    | Type            | Default                                | Description                                                                  |
-| --------------------------- | --------------- | -------------------------------------- | ---------------------------------------------------------------------------- |
-| `http_probe.enabled`        | `boolean`       | `true`                                 | Master switch. When `false`, no `http_probe` tool is offered.                |
-| `http_probe.timeout`        | `number`        | `10.0`                                 | Per-request HTTP timeout (seconds).                                          |
-| `http_probe.allowlist`      | `array[string]` | `["www.robotsix.net", "robotsix.net"]` | Hostnames the tool is permitted to probe. Empty permits any public hostname. |
-| `http_probe.max_body_bytes` | `integer`       | `2048`                                 | Maximum bytes of the response body to return (~2 KB).                        |
-| `http_probe.max_redirects`  | `integer`       | `5`                                    | Maximum number of redirects to follow.                                       |
+| JSON key                    | Type                        | Default                                | Description                                                                                                                                                                                                                                         |
+| --------------------------- | --------------------------- | -------------------------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `http_probe.enabled`        | `boolean`                   | `true`                                 | Master switch. When `false`, no `http_probe` tool is offered.                                                                                                                                                                                       |
+| `http_probe.timeout`        | `number`                    | `10.0`                                 | Per-request HTTP timeout (seconds).                                                                                                                                                                                                                 |
+| `http_probe.allowlist`      | `array[string]`             | `["www.robotsix.net", "robotsix.net"]` | Hostnames the tool is permitted to probe. Empty permits any public hostname.                                                                                                                                                                        |
+| `http_probe.max_body_bytes` | `integer`                   | `2048`                                 | Maximum bytes of the response body to return (~2 KB).                                                                                                                                                                                               |
+| `http_probe.max_redirects`  | `integer`                   | `5`                                    | Maximum number of redirects to follow.                                                                                                                                                                                                              |
+| `http_probe.fleet_auth`     | `FleetAuthSettings \| null` | `null`                                 | Optional server-side credentials for authenticated fleet UIs. When set, requests to hosts in `fleet_auth.auth_hosts` carry HTTP basic-auth headers injected by the server (never visible to the agent), and those hosts are implicitly allowlisted. |
+
+The `FleetAuthSettings` object accepts:
+
+| JSON key                         | Type              | Default | Description                                                                                                                                   |
+| -------------------------------- | ----------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
+| `fleet_auth.basic_auth_username` | `string`          | `""`    | Username for HTTP basic authentication. Leave empty when auth is not required.                                                                |
+| `fleet_auth.basic_auth_password` | `string` (secret) | `""`    | Password for HTTP basic authentication (`SecretStr` — never serialised in logs or exposed to the agent).                                      |
+| `fleet_auth.auth_hosts`          | `array[string]`   | `[]`    | Hostnames (no protocol, no path) for which the basic-auth header is attached. Requests to hosts not on this list proceed without credentials. |
 
 ### Autonomous
 
