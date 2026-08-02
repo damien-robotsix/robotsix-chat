@@ -10,9 +10,6 @@ import respx
 
 from robotsix_chat.common.unified_diff import apply_patch
 from robotsix_chat.repo.direct import build_direct_repo_tools
-from robotsix_chat.repo.direct.client import (
-    DirectRepoClient,
-)
 
 from .conftest import _settings
 
