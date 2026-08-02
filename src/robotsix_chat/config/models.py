@@ -898,14 +898,6 @@ class GitHubSecuritySettings(BaseModel):
     deploy_api_key: SecretStr = SecretStr("")
     model_config = ConfigDict(extra="forbid")
 
-    @model_validator(mode="before")
-    @classmethod
-    def _strip_legacy_timeout(cls, data: Any) -> Any:
-        """Strip legacy ``timeout`` key (removed 2026-07-28) before validation."""
-        if isinstance(data, dict):
-            data.pop("timeout", None)
-        return data
-
 
 class GitHubActionsSettings(BaseModel):
     """GitHub Actions secrets and workflow dispatch via the GitHub App installation.
@@ -941,14 +933,6 @@ class GitHubActionsSettings(BaseModel):
     github_org: str = "damien-robotsix"
     deploy_api_key: SecretStr = SecretStr("")
     model_config = ConfigDict(extra="forbid")
-
-    @model_validator(mode="before")
-    @classmethod
-    def _strip_legacy_timeout(cls, data: Any) -> Any:
-        """Strip legacy ``timeout`` key (removed 2026-07-28) before validation."""
-        if isinstance(data, dict):
-            data.pop("timeout", None)
-        return data
 
 
 class NotificationSettings(BaseModel):
