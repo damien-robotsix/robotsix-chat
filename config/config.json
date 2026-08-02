@@ -10,9 +10,8 @@
   "correlation_id_header": "X-Request-ID",
   "compaction_min_turns": 3,
   "langfuse": {
-    "public_key": "",
-    "secret_key": "",
-    "host": "https://cloud.langfuse.com"
+    "host": "https://cloud.langfuse.com",
+    "projects": {}
   },
   "langfuse_inspect": {
     "enabled": false,
@@ -42,11 +41,7 @@
       "api_key": "",
       "huggingface_tokenizer": "BAAI/bge-m3"
     },
-    "langfuse": {
-      "public_key": "",
-      "secret_key": "",
-      "host": "https://cloud.langfuse.com"
-    }
+    "langfuse_project": "robotsix-chat-cognee"
   },
   "central_deploy": {
     "url": "",

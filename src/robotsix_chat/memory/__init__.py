@@ -23,18 +23,27 @@ from typing import TYPE_CHECKING
 from .base import ChatMemory, NullMemory, ReadOnlyMemory
 
 if TYPE_CHECKING:
-    from robotsix_chat.config import MemorySettings
+    from robotsix_chat.config import LangfuseSettings, MemorySettings
 
 __all__ = ["ChatMemory", "NullMemory", "ReadOnlyMemory", "build_memory"]
 
 
-def build_memory(settings: MemorySettings) -> ChatMemory:
+def build_memory(
+    settings: MemorySettings, langfuse: LangfuseSettings | None = None
+) -> ChatMemory:
     """Return a :class:`ChatMemory` for the given ``MemorySettings``.
 
     Returns a :class:`NullMemory` when memory is disabled or the cognee extra
     is not importable; otherwise a configured
     :class:`~robotsix_chat.memory.cognee.CogneeMemory`. Importing cognee is
     deferred to here so the base package never requires the heavy extra.
+
+    Args:
+        settings: Memory configuration.
+        langfuse: The component's canonical Langfuse credential block, from
+            which cognee resolves its own project (``langfuse_project``).
+            Omitted means cognee LLM calls are not traced.
+
     """
     if not settings.enabled:
         return NullMemory()
@@ -54,4 +63,4 @@ def build_memory(settings: MemorySettings) -> ChatMemory:
 
     from .cognee import CogneeMemory
 
-    return CogneeMemory(settings)
+    return CogneeMemory(settings, langfuse)

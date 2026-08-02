@@ -105,9 +105,10 @@ is used when off or when the extra is absent — the agent then behaves exactly 
     `http://host:11434/v1`). Embeddings are **not** run on the chat host.
 - **Storage**: cognee's stores live under `memory.data_dir` (default `/data/cognee`) — keep it on
   the persistent `/data` volume so memory survives redeploys.
-- **Tracing**: cognee traffic uses its **own** Langfuse project (`robotsix-chat-cognee`) with
-  dedicated `memory.langfuse.*` credential fields — never the main `langfuse.*` credentials
-  (component standard: one Langfuse project per LLM-generating function).
+- **Tracing**: cognee traffic uses its **own** Langfuse project — named by `memory.langfuse_project`
+  (default `robotsix-chat-cognee`) and resolved against the canonical top-level `langfuse.projects`
+  block — never the main `robotsix-chat` project's credentials (component standard: one Langfuse
+  project per LLM-generating function).
 - **Safety**: `recall`/`remember` never raise into the chat path (errors are logged; the reply
   proceeds without memory).
 - **Resilience caveat**: memory depends on the embedding server being reachable; while it's down,

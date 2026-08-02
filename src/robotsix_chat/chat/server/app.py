@@ -969,9 +969,9 @@ def create_agent_from_settings(
     if bare:
         memory: ChatMemory = NullMemory()
     elif memory_enabled:
-        memory = build_memory(settings.memory)
+        memory = build_memory(settings.memory, settings.langfuse)
     elif settings.memory.enabled and settings.memory.background_recall_enabled:
-        memory = ReadOnlyMemory(build_memory(settings.memory))
+        memory = ReadOnlyMemory(build_memory(settings.memory, settings.langfuse))
     else:
         memory = NullMemory()
     # Deep on-demand memory search: the automatic per-message recall is

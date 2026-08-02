@@ -110,7 +110,10 @@ class Settings(BaseModel):
             UI is hosted on a different origin than the server.
         correlation_id_header: HTTP header name used for the correlation /
             request-id (both inbound and outbound). Default ``X-Request-ID``.
-        langfuse: Main-agent Langfuse observability credentials.
+        langfuse: The component's canonical Langfuse credential block —
+            instance host plus every project it traces to, keyed by project
+            name (``robotsix-chat`` for the main agent,
+            ``robotsix-chat-cognee`` for the memory subsystem).
         langfuse_inspect: Langfuse trace-inspection tool — lets the agent
             fetch and summarise recent implement traces for a given ticket
             or trace id.  Default-disabled.
@@ -1306,7 +1309,7 @@ class Settings(BaseModel):
 
         # Nested object fields inside MemorySettings
         if isinstance(data.get("memory"), dict):
-            for key in ("llm", "langfuse", "embedding"):
+            for key in ("llm", "embedding"):
                 mv = data["memory"].get(key)
                 if mv == "" or (isinstance(mv, str) and mv in _bad):
                     data["memory"][key] = {}
