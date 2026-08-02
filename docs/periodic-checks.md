@@ -103,9 +103,11 @@ POST /subsessions/{subsession_id}/close
 ### Paused-monitor resume behaviour (watcher)
 
 When a periodic monitor accumulates `subsessions.max_idle_runs` consecutive `NO_CHANGE` replies, the
-subsession pauses itself by closing with reason `"paused"` (calling
-`registry.mark_closed(reason="paused")`). Once paused, the monitor stops ticking and remains
-terminal — **until the monitored ticket's state changes**.
+subsession enters a real `PAUSED` status (distinct from `CLOSED`) by calling
+`registry.mark_paused()` with reason `"paused"`. Unlike a closed subsession, a paused monitor's
+**worker stays alive**: it stops running agent turns and blocks on an event-driven inbox signal
+instead of terminating. The monitor resumes **when the monitored ticket's state changes** (or when
+it is explicitly reopened).
 
 A background **watcher** task (`watch_paused_monitors` in `subsessions/watcher.py`) runs for the
 lifetime of the server process. On every poll tick it:
@@ -114,8 +116,12 @@ lifetime of the server process. On every poll tick it:
 2. For each paused monitor, fetches the current ticket state from the mill API via the
    `board_api_base_url` configured in `direct_repo`.
 3. Compares the fetched state against the checkpoint's `last_known_state`.
-4. If the state differs, the watcher calls `registry.reopen(sub_id)` to transition the record back
-   to `RUNNING` and spawns a new worker task that resumes monitoring.
+4. If the state differs, the watcher sends an immediate inbox **wake message** to the live `PAUSED`
+   worker (`_wake_paused_monitor`), which unblocks it and resumes polling right away. If the worker
+   is not reachable (e.g. it died after a server restart), the watcher falls back to `reopen()` +
+   spawning a fresh worker.
+5. A second pass also polls GitHub for a tracked PR's merge status, resuming the monitor via the
+   same wake/reopen path when the PR is merged.
 
 The poll interval is controlled by:
 
@@ -131,10 +137,10 @@ The watcher is started automatically during the server's `startup` phase (in `cl
 `_resume_autonomous` lifespan hook). If `board_api_base_url` is not configured, the watcher returns
 immediately with a debug log line and does not loop.
 
-The `reopen()` method on `SubsessionRegistry` only transitions records that are `CLOSED` with
-`close_reason == "paused"` and `kind == PERIODIC`. All other terminal records (completed, max_runs,
-explicit close, etc.) are left untouched — the watcher will never accidentally revive a deliberately
-closed subsession.
+The `reopen()` method on `SubsessionRegistry` transitions records that are `PAUSED`, or `CLOSED`
+with `close_reason == "paused"`, `"human_approval_timeout"`, or `"pre_authorized_approval"`, and
+`kind == PERIODIC`. All other terminal records (completed, max_runs, explicit close, etc.) are left
+untouched — the watcher will never accidentally revive a deliberately closed subsession.
 
 ## Retry behaviour for user_chat and task subsessions
 
@@ -313,12 +319,15 @@ run once and a transient failure would silently lose the work.
     notice injected into the parent conversation, preventing unnecessary parent-agent noise on every
     redeploy. Results continue to be delivered via their normal `subsession_result` frames.
 
-    **Auto-closed monitors are also re-spawned on restart.** If a periodic monitor was auto-closed
-    with one of the following reasons — `no_change_auto_stop` (consecutive no-change runs), `paused`
-    (max idle runs), or `human_approval_timeout` — the resume hook re-spawns the worker so it can
-    re-verify the ticket state. The underlying condition (no change, idle, pending approval) may
-    have resolved during the outage; the worker's `_check_resume_status` inspects the current ticket
-    state on its first post-restart tick and closes immediately if conditions have not improved.
+    **Auto-paused monitors are also restored on restart.** If a periodic monitor was auto-paused
+    with reason `paused` (max idle runs), its `PAUSED` state is persisted; the resume hook re-spawns
+    the worker and immediately returns it to the paused wait loop (it does not run an agent turn),
+    so the live watcher can wake it when the ticket state changes. Monitors auto-closed with
+    `no_change_auto_stop` (consecutive no-change runs) or `human_approval_timeout` are re-spawned
+    normally so they can re-verify the ticket state — the underlying condition (no change, idle,
+    pending approval) may have resolved during the outage; the worker's `_check_resume_status`
+    inspects the current ticket state on its first post-restart tick and closes immediately if
+    conditions have not improved.
 
     Monitors closed explicitly (e.g. `completed` by the agent, `max_runs` by user cap, or any
     explicit close by the user) are **not** re-spawned — the shutdown was intentional.

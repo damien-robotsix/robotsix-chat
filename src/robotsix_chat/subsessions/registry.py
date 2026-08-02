@@ -641,21 +641,90 @@ class SubsessionRegistry:
             closed_by=closed_by,
         )
 
-    def reopen(self, sub_id: str) -> SubsessionInfo | None:
-        """Reopen a paused or human-approval-timeout periodic subsession.
+    def mark_paused(
+        self, sub_id: str, *, summary: str, reason: str = "paused"
+    ) -> SubsessionInfo | None:
+        """Transition a live periodic subsession to ``PAUSED``.
 
-        Accepts records whose status is ``CLOSED``, kind is ``PERIODIC``,
-        and ``close_reason`` is ``"paused"``, ``"human_approval_timeout"``,
-        or ``"pre_authorized_approval"``.
-        Other terminal records are left untouched.  Returns the updated
-        record or ``None`` when the subsession is unknown, not in a
-        reopenable state, or already active.
+        Sets ``PAUSED`` status and publishes a ``subsession_updated``
+        frame — the worker stays alive and blocks on a resume signal
+        instead of terminating.  No-op (returns ``None``) when the
+        subsession is unknown or already terminal.
         """
         info = self._subs.get(sub_id)
-        if info is None or info.is_active:
+        if info is None or not info.is_active:
+            return None
+        if info.status in (SubsessionStatus.CLOSED, SubsessionStatus.FAILED):
+            return None
+        info.status = SubsessionStatus.PAUSED
+        info.summary = summary
+        info.close_reason = reason
+        info.last_activity_at = self._clock()
+        self._publish(
+            info.owner_session_id,
+            subsession_updated_frame(
+                sub_id,
+                status="paused",
+                runs=info.runs,
+                last_activity_at=info.last_activity_at,
+                last_result=info.last_result,
+            ),
+        )
+        self._store.persist()
+        return info
+
+    def resume(self, sub_id: str) -> SubsessionInfo | None:
+        """Resume a paused periodic subsession — PAUSED → RUNNING.
+
+        Clears *close_reason* and *summary*, publishes an update frame,
+        and persists.  Returns ``None`` when the subsession is unknown or
+        not currently ``PAUSED``.
+        """
+        info = self._subs.get(sub_id)
+        if info is None:
+            return None
+        if info.status is not SubsessionStatus.PAUSED:
+            return None
+        info.status = SubsessionStatus.RUNNING
+        info.last_activity_at = self._clock()
+        info.close_reason = None
+        info.summary = None
+        # Reset the human_approval_since timestamp so the resumed
+        # monitor does not immediately time out again.
+        if info.checkpoint is not None:
+            info.checkpoint.pop("human_approval_since", None)
+        self._publish(
+            info.owner_session_id,
+            subsession_updated_frame(
+                sub_id,
+                status="running",
+                runs=info.runs,
+                last_activity_at=info.last_activity_at,
+                last_result=info.last_result,
+            ),
+        )
+        self._store.persist()
+        return info
+
+    def reopen(self, sub_id: str) -> SubsessionInfo | None:
+        """Reopen a terminal periodic subsession.
+
+        Accepts records whose status is ``CLOSED`` or ``PAUSED``, kind is
+        ``PERIODIC``, and ``close_reason`` is ``"paused"``,
+        ``"human_approval_timeout"``, or ``"pre_authorized_approval"``.
+        Other records are left untouched.  Returns the updated record or
+        ``None`` when the subsession is unknown, not in a reopenable
+        state, or already active (excluding PAUSED).
+        """
+        info = self._subs.get(sub_id)
+        if info is None:
+            return None
+        # PAUSED subsessions are "active" but their worker may be dead
+        # after a restart — allow reopen for them.
+        if info.is_active and info.status is not SubsessionStatus.PAUSED:
             return None
         if (
-            info.status is not SubsessionStatus.CLOSED
+            info.status not in (SubsessionStatus.CLOSED, SubsessionStatus.PAUSED)
             or info.kind is not SubsessionKind.PERIODIC
             or info.close_reason
             not in ("paused", "human_approval_timeout", "pre_authorized_approval")
@@ -683,21 +752,22 @@ class SubsessionRegistry:
         return info
 
     def find_paused_periodic(self) -> list[SubsessionInfo]:
-        """Return every auto-paused periodic subsession waiting for a state change.
+        """Return every paused periodic subsession waiting for a state change.
 
-        Includes monitors closed with reason ``"paused"`` (auto-paused by
-        ``max_idle_runs``), ``"human_approval_timeout"`` (auto-escalated
-        while stuck in ``human_issue_approval``), and
-        ``"pre_authorized_approval"`` (immediately escalated for
-        pre-authorized tickets).  All three are waiting for a ticket-state
-        change — typically a PR merge or an operator action — before they
-        can safely resume.
+        Includes monitors in ``PAUSED`` status (auto-paused by
+        ``max_idle_runs`` — worker is alive, waiting on an inbox signal),
+        and monitors closed with reason ``"paused"``,
+        ``"human_approval_timeout"``, or ``"pre_authorized_approval"``
+        (legacy records from before the ``PAUSED`` status existed).
+        All are waiting for a ticket-state change — typically a PR merge
+        or an operator action — before they can safely resume.
         """
         result: list[SubsessionInfo] = []
         for info in self._subs.values():
-            if (
+            if info.kind is not SubsessionKind.PERIODIC:
+                continue
+            if info.status is SubsessionStatus.PAUSED or (
                 info.status is SubsessionStatus.CLOSED
-                and info.kind is SubsessionKind.PERIODIC
                 and info.close_reason
                 in ("paused", "human_approval_timeout", "pre_authorized_approval")
             ):
@@ -822,8 +892,17 @@ class SubsessionRegistry:
         return sorted(self._subs.values(), key=lambda i: i.created_at)
 
     def count_active(self) -> int:
-        """Return the number of active subsessions process-wide."""
-        return sum(1 for info in self._subs.values() if info.is_active)
+        """Return the number of active subsessions process-wide.
+
+        PAUSED subsessions are excluded — their workers are alive but
+        idle, waiting on a resume signal, and should not count against
+        the concurrency cap.
+        """
+        return sum(
+            1
+            for info in self._subs.values()
+            if info.is_active and info.status is not SubsessionStatus.PAUSED
+        )
 
     def claim_run(self, sub_id: str, run_n: int) -> bool:
         """Atomically claim a periodic run number.
@@ -930,18 +1009,21 @@ class SubsessionRegistry:
     def is_duplicate_auto_pause(self, ticket_id: str, exclude_sub_id: str) -> bool:
         """Check for a duplicate auto-pause / no-change report for *ticket_id*.
 
-        Returns ``True`` when a different (already-CLOSED) subsession has
-        already reported the same ticket as auto-paused, auto-stopped, or
-        terminal — when a prior monitor has already notified the user that
-        the ticket needs no attention, a second monitor's no-change notice
-        for that ticket is a duplicate and should be suppressed to avoid
-        a redundant (and often noisy) reaction turn in the parent
-        conversation.
+        Returns ``True`` when a different (already-PAUSED or CLOSED)
+        subsession has already reported the same ticket as auto-paused,
+        auto-stopped, or terminal — when a prior monitor has already
+        notified the user that the ticket needs no attention, a second
+        monitor's no-change notice for that ticket is a duplicate and
+        should be suppressed to avoid a redundant (and often noisy)
+        reaction turn in the parent conversation.
         """
         for info in self._subs.values():
             if info.id == exclude_sub_id:
                 continue
-            if info.status is not SubsessionStatus.CLOSED:
+            if info.status not in (
+                SubsessionStatus.CLOSED,
+                SubsessionStatus.PAUSED,
+            ):
                 continue
             cp = info.checkpoint
             if cp is None:

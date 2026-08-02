@@ -220,6 +220,8 @@ def _resume_periodic_entry(
     sub_id: str,
     owner: str,
     title: str,
+    *,
+    original_status: str = "",
 ) -> _ResumeFate | None:
     """Respawn a periodic subsession under its original id.
 
@@ -227,6 +229,11 @@ def _resume_periodic_entry(
     the ticket was already finished before the restart — close the
     subsession without spawning a worker so it does not poll a ticket
     whose monitor had already been cleanly stopped.
+
+    *original_status* (the persisted status string) is used to restore
+    ``PAUSED`` monitors to their paused state after the worker is
+    spawned, so the worker immediately enters the wait loop instead of
+    running an agent turn.
     """
     if _handle_terminal_on_resume(env, entry, sub_id):
         return None
@@ -250,6 +257,15 @@ def _resume_periodic_entry(
         dedup_key=dedup_key,
         retry_count=retry_count,
     )
+    # Restore PAUSED state so the worker enters the wait loop instead of
+    # running an agent turn on a subsession that was auto-paused.
+    if original_status == "paused":
+        info = env.registry.get(sub_id)
+        if info is not None and info.status is SubsessionStatus.RUNNING:
+            info.status = SubsessionStatus.PAUSED
+            info.close_reason = _entry_opt_str(entry, "close_reason") or "paused"
+            info.summary = _entry_opt_str(entry, "summary")
+            env.registry.persist()
     return _ResumeFate(
         owner_session_id=owner,
         sub_id=sub_id,
@@ -382,10 +398,14 @@ def _resume_entry(
                 status == "closed"
                 and _entry_str(entry, "close_reason") in _AUTO_CLOSE_REASONS
             ):
-                return _resume_periodic_entry(env, entry, sub_id, owner, title)
+                return _resume_periodic_entry(
+                    env, entry, sub_id, owner, title, original_status=status
+                )
             _restore_entry(env.registry, entry)
             return None
-        return _resume_periodic_entry(env, entry, sub_id, owner, title)
+        return _resume_periodic_entry(
+            env, entry, sub_id, owner, title, original_status=status
+        )
 
     # Non-periodic kinds: terminal entries are restored without a worker.
     if status not in {s.value for s in ACTIVE_STATUSES}:
