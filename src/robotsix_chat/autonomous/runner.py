@@ -536,8 +536,8 @@ class AutonomousRunner:
             # (outcome) while dropping the middle (auto-continue turns).
             max_chars = 30_000
             if len(history_text) > max_chars:
-                head = history_text[:max_chars // 3]
-                tail = history_text[-(max_chars * 2 // 3):]
+                head = history_text[: max_chars // 3]
+                tail = history_text[-(max_chars * 2 // 3) :]
                 history_text = (
                     f"{head}\n\n... [transcript truncated — "
                     f"{len(history)} turns, showing beginning and end] ...\n\n{tail}"
