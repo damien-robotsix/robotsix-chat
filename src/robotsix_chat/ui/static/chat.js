@@ -3539,6 +3539,13 @@
       if (Number.isInteger(value)) numInput.step = "1";
       else numInput.step = "any";
       wrap.appendChild(numInput);
+    } else if (key === "agent_instruction") {
+      var ta = document.createElement("textarea");
+      ta.rows = 8;
+      ta.value = typeof value === "string" ? value : JSON.stringify(value);
+      ta.setAttribute("data-path", path);
+      ta.setAttribute("data-type", "string");
+      wrap.appendChild(ta);
     } else {
       var inputType = isSecretKey(key) ? "password" : "text";
       var input = document.createElement("input");
@@ -3620,8 +3627,12 @@
       var value;
 
       if (el.tagName === "TEXTAREA") {
-        try { value = JSON.parse(el.value); }
-        catch (_) { value = el.value; }
+        if (type === "array") {
+          try { value = JSON.parse(el.value); }
+          catch (_) { value = el.value; }
+        } else {
+          value = el.value;
+        }
       } else if (el.type === "checkbox") {
         value = el.checked;
       } else if (el.type === "number") {
