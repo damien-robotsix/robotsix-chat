@@ -8,6 +8,7 @@
   `get_job_log`, `_get_repo_public_key`, `set_actions_secret`,
   `dispatch_workflow`, `list_workflow_runs`, `get_workflow_run_jobs`,
   `get_workflow_run_annotations`, `apply_patch`, `_diagnose_billing_failure`.
+- Removed dead `_strip_legacy_timeout` model validators from `GitHubSecuritySettings` and `GitHubActionsSettings` — the legacy `timeout` key was fully removed from both config sections on 2026-07-28.
 - `http_probe.fleet_auth` now documented in the HTTP Probe settings reference table (`docs/configuration.md`), matching the Render URL and Public Fetch sections.
 - Surface human-approval tickets with a concrete recommendation (approve/close + specific reason) and set expectations about the auto-escalation timeout window, preventing silent stalls in autonomous workflows.
 - Settings UI: render `agent_instruction` as a multi-line textarea instead of a single-line text input, so long instruction strings wrap and are comfortably readable and editable.
