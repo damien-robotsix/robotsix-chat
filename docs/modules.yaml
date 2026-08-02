@@ -97,6 +97,7 @@ modules:
       - src/robotsix_chat/autonomous/__init__.py
       - src/robotsix_chat/autonomous/models.py
       - src/robotsix_chat/autonomous/prompts.py
+      - src/robotsix_chat/autonomous/refinement.py
       - src/robotsix_chat/autonomous/runner.py
       - tests/autonomous/__init__.py
       - tests/autonomous/test_models.py
