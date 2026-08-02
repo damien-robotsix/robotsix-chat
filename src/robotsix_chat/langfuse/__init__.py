@@ -22,6 +22,7 @@ if TYPE_CHECKING:
     from robotsix_chat.config import LangfuseInspectSettings, LangfuseSettings
 
 from robotsix_chat.common.http import HttpResult, safe_http_request
+from robotsix_chat.config.models import PROJECT_MAIN
 
 __all__ = ["build_langfuse_inspect_tools", "load_langfuse_inspect_skill"]
 
@@ -91,8 +92,8 @@ def build_langfuse_inspect_tools(
     Args:
         inspect_settings: LangfuseInspect configuration (``enabled`` master
             switch, ``max_traces`` cap).
-        langfuse_settings: Main Langfuse credentials (``public_key``,
-            ``secret_key``, ``host``) used for API authentication.
+        langfuse_settings: The canonical Langfuse block; the main project's
+            credentials (``PROJECT_MAIN``) are used for API authentication.
 
     Returns:
         A single-element list containing the ``inspect_langfuse_trace`` async
@@ -103,8 +104,9 @@ def build_langfuse_inspect_tools(
         return []
 
     # Resolve secrets at build time so the closure captures plain strings.
-    pk = langfuse_settings.public_key.get_secret_value()
-    sk = langfuse_settings.secret_key.get_secret_value()
+    creds = langfuse_settings.creds(PROJECT_MAIN)
+    pk = creds.public_key.get_secret_value()
+    sk = creds.secret_key.get_secret_value()
     host = langfuse_settings.host.rstrip("/")
     max_traces = inspect_settings.max_traces
 

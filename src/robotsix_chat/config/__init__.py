@@ -6,6 +6,8 @@ Re-exports every public symbol at the package top level so existing
 
 from robotsix_chat.config.constants import level_needs_api_key
 from robotsix_chat.config.models import (
+    PROJECT_MAIN,
+    PROJECT_MEMORY,
     AutonomousSettings,
     CentralDeploySettings,
     ComponentClientSettings,
@@ -22,6 +24,7 @@ from robotsix_chat.config.models import (
     HttpProbeSettings,
     KnowledgeSettings,
     LangfuseInspectSettings,
+    LangfuseProjectCreds,
     LangfuseSettings,
     LifecycleSettings,
     MailSettings,
@@ -45,6 +48,8 @@ from robotsix_chat.config.settings import (
 )
 
 __all__ = [
+    "PROJECT_MAIN",
+    "PROJECT_MEMORY",
     "SYSTEM_PROMPT_VERSION",
     "VALID_MODEL_LEVELS",
     "AutonomousSettings",
@@ -63,6 +68,7 @@ __all__ = [
     "HttpProbeSettings",
     "KnowledgeSettings",
     "LangfuseInspectSettings",
+    "LangfuseProjectCreds",
     "LangfuseSettings",
     "LifecycleSettings",
     "MailSettings",

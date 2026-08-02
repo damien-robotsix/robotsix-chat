@@ -11,14 +11,73 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, model_validator
 
+#: Langfuse project for the main chat agent's LLM traffic.  The component
+#: standard fixes a component's main project name as ``<repo>``.
+PROJECT_MAIN = "robotsix-chat"
 
-class LangfuseSettings(BaseModel):
-    """Langfuse observability credentials."""
+#: Langfuse project for the cognee memory subsystem's own LLM traffic.  Per
+#: the one-project-per-function rule each LLM-generating subsystem traces to
+#: its own ``<repo>-<function>`` project, never the component's main one.
+PROJECT_MEMORY = "robotsix-chat-cognee"
+
+
+class LangfuseProjectCreds(BaseModel):
+    """Credentials for one Langfuse project.
+
+    Attributes:
+        public_key: Langfuse public key for the project.
+        secret_key: Langfuse secret key for the project.
+        project_id: Langfuse project id.  Optional — only consumers that
+            address a project by id rather than by name need it.
+
+    """
 
     public_key: SecretStr = SecretStr("")
     secret_key: SecretStr = SecretStr("")
-    host: str = "https://cloud.langfuse.com"
+    project_id: str = ""
     model_config = ConfigDict(extra="forbid")
+
+    def is_configured(self) -> bool:
+        """Return ``True`` when both key halves are set."""
+        return bool(
+            self.public_key.get_secret_value() and self.secret_key.get_secret_value()
+        )
+
+
+class LangfuseSettings(BaseModel):
+    """Canonical Langfuse credential block (component standard).
+
+    One block per component, holding the instance ``host`` and every
+    Langfuse project the component traces to, keyed by the project's
+    **name**.  The component standard fixes those names as ``<repo>`` for
+    the component's main LLM function and ``<repo>-<function>`` for each
+    additional LLM-generating subsystem — so this component declares
+    ``robotsix-chat`` (main agent) and ``robotsix-chat-cognee`` (memory).
+
+    Keeping every project in one standard block is what lets central-deploy
+    enumerate the fleet's credentials uniformly and dispatch them to the
+    consumers that need them (the chat trace proxy, cost-monitor's
+    reconciliation).  See ``PROJECT_MAIN`` / ``PROJECT_MEMORY`` in
+    :mod:`robotsix_chat.config` for this component's names.
+
+    Attributes:
+        host: Langfuse instance base URL.
+        projects: Langfuse project name → credentials.
+
+    """
+
+    host: str = "https://cloud.langfuse.com"
+    projects: dict[str, LangfuseProjectCreds] = Field(default_factory=dict)
+    model_config = ConfigDict(extra="forbid")
+
+    def creds(self, project: str) -> LangfuseProjectCreds:
+        """Return credentials for *project*, or empty creds when absent.
+
+        Absent and half-filled projects both yield credentials whose
+        ``is_configured()`` is ``False``, so callers degrade to "tracing
+        off" rather than raising.
+        """
+        return self.projects.get(project) or LangfuseProjectCreds()
 
 
 class LangfuseInspectSettings(BaseModel):
@@ -187,10 +246,12 @@ class MemorySettings(BaseModel):
             Default ``0.5``.
         llm: Extraction-LLM config (graph building / consolidation).
         embedding: Embedding-server config (semantic search).
-        langfuse: Dedicated Langfuse credentials for the
-            ``robotsix-chat-cognee`` project (separate from the main chat's
-            Langfuse project). When the public key is empty, cognee LLM calls
-            are not traced.
+        langfuse_project: Name of the Langfuse project cognee's own LLM
+            traffic traces to — looked up in the top-level ``langfuse``
+            block, which is where the credentials live.  Separate from the
+            main chat project by the one-project-per-function rule; when
+            that project is absent or half-configured, cognee LLM calls are
+            not traced.
 
     """
 
@@ -215,7 +276,7 @@ class MemorySettings(BaseModel):
     write_throttle_seconds: float = 0.5
     llm: MemoryLlmSettings = Field(default_factory=MemoryLlmSettings)
     embedding: MemoryEmbeddingSettings = Field(default_factory=MemoryEmbeddingSettings)
-    langfuse: LangfuseSettings = Field(default_factory=LangfuseSettings)
+    langfuse_project: str = PROJECT_MEMORY
     model_config = ConfigDict(extra="forbid")
 
 

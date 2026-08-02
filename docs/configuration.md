@@ -61,9 +61,8 @@ traces.
 Secret fields include:
 
 - `llmio_api_key`
-- `langfuse.public_key`, `langfuse.secret_key`
+- `langfuse.projects.<project>.public_key`, `langfuse.projects.<project>.secret_key`
 - `memory.llm.api_key`, `memory.embedding.api_key`
-- `memory.langfuse.public_key`, `memory.langfuse.secret_key`
 - `central_deploy.api_token`
 - `mail.api_token`
 - `direct_repo.github_app_private_key`, `direct_repo.board_api_token`
@@ -104,15 +103,36 @@ ______________________________________________________________________
 
 ### Langfuse (tracing)
 
-| JSON key              | Type              | Default                        | Description          |
-| --------------------- | ----------------- | ------------------------------ | -------------------- |
-| `langfuse.public_key` | `string` (secret) | `""`                           | Langfuse public key. |
-| `langfuse.secret_key` | `string` (secret) | `""`                           | Langfuse secret key. |
-| `langfuse.host`       | `string`          | `"https://cloud.langfuse.com"` | Langfuse host.       |
+The canonical component-standard credential block: the instance host plus every Langfuse project
+this component traces to, keyed by **project name**.
 
-These keys trace the main chat agent. When memory is enabled, a **separate** Langfuse project
-(`memory.langfuse.*`) traces the cognee/LiteLLM pipeline independently — see
-[Memory](#memory-cognee).
+| JSON key                                    | Type              | Default                        | Description                                       |
+| ------------------------------------------- | ----------------- | ------------------------------ | ------------------------------------------------- |
+| `langfuse.host`                             | `string`          | `"https://cloud.langfuse.com"` | Langfuse instance base URL.                       |
+| `langfuse.projects.<project>.public_key`    | `string` (secret) | `""`                           | Langfuse public key for that project.             |
+| `langfuse.projects.<project>.secret_key`    | `string` (secret) | `""`                           | Langfuse secret key for that project.             |
+| `langfuse.projects.<project>.project_id`    | `string`          | `""`                           | Optional Langfuse project id.                     |
+
+This component declares two projects, per the component standard's one-project-per-LLM-function
+rule:
+
+- `robotsix-chat` — the main chat agent.
+- `robotsix-chat-cognee` — the cognee/LiteLLM memory pipeline, named by
+  `memory.langfuse_project`. See [Memory](#memory-cognee).
+
+```json
+"langfuse": {
+  "host": "https://langfuse.example.net",
+  "projects": {
+    "robotsix-chat":        {"public_key": "pk-lf-…", "secret_key": "sk-lf-…", "project_id": ""},
+    "robotsix-chat-cognee": {"public_key": "pk-lf-…", "secret_key": "sk-lf-…", "project_id": ""}
+  }
+}
+```
+
+Keeping every component's credentials in this one standard block is what lets central-deploy
+enumerate them uniformly and hand them to the fleet consumers that need them (the chat trace proxy,
+cost-monitor's reconciliation).
 
 ### Langfuse Inspect
 
@@ -155,9 +175,7 @@ Persistent, cross-conversation episodic memory via embedded cognee. Disabled by 
 | `memory.embedding.dimensions`            | `integer`         | `1024`                                    | Embedding vector dimensions.                                                                                                                                                                                              |
 | `memory.embedding.api_key`               | `string` (secret) | `""`                                      | Bearer token for the embedding server.                                                                                                                                                                                    |
 | `memory.embedding.huggingface_tokenizer` | `string`          | `"BAAI/bge-m3"`                           | HuggingFace tokenizer name.                                                                                                                                                                                               |
-| `memory.langfuse.public_key`             | `string` (secret) | `""`                                      | Langfuse public key (robotsix-chat-cognee project).                                                                                                                                                                       |
-| `memory.langfuse.secret_key`             | `string` (secret) | `""`                                      | Langfuse secret key (robotsix-chat-cognee project).                                                                                                                                                                       |
-| `memory.langfuse.host`                   | `string`          | `"https://cloud.langfuse.com"`            | Langfuse host for cognee tracing.                                                                                                                                                                                         |
+| `memory.langfuse_project`                | `string`          | `"robotsix-chat-cognee"`                  | Name of the Langfuse project cognee's own LLM traffic traces to; its credentials are resolved from the top-level `langfuse` block.                                                                                          |
 
 ### Central Deploy
 

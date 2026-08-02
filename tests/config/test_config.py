@@ -568,19 +568,60 @@ def test_allowed_image_media_types_default() -> None:
 
 
 def test_langfuse_settings_defaults() -> None:
-    """Langfuse settings have correct defaults."""
+    """The canonical Langfuse block defaults to a host and no projects."""
     settings = Settings()
-    assert settings.langfuse.public_key.get_secret_value() == ""
-    assert settings.langfuse.secret_key.get_secret_value() == ""
     assert settings.langfuse.host == "https://cloud.langfuse.com"
+    assert settings.langfuse.projects == {}
 
 
-def test_memory_langfuse_settings_defaults() -> None:
-    """Memory langfuse settings have correct defaults."""
+def test_langfuse_creds_absent_project_is_unconfigured() -> None:
+    """An absent project yields empty creds rather than raising."""
     settings = Settings()
-    assert settings.memory.langfuse.public_key.get_secret_value() == ""
-    assert settings.memory.langfuse.secret_key.get_secret_value() == ""
-    assert settings.memory.langfuse.host == "https://cloud.langfuse.com"
+    creds = settings.langfuse.creds("robotsix-chat")
+    assert creds.public_key.get_secret_value() == ""
+    assert creds.secret_key.get_secret_value() == ""
+    assert creds.is_configured() is False
+
+
+def test_langfuse_projects_are_parsed_and_resolvable() -> None:
+    """Both of this component's projects round-trip through the block."""
+    settings = Settings(
+        langfuse={
+            "host": "https://langfuse.example.net",
+            "projects": {
+                "robotsix-chat": {
+                    "public_key": "pk-main",
+                    "secret_key": "sk-main",
+                    "project_id": "cm-main",
+                },
+                "robotsix-chat-cognee": {
+                    "public_key": "pk-mem",
+                    "secret_key": "sk-mem",
+                },
+            },
+        }  # type: ignore[arg-type]
+    )
+    main = settings.langfuse.creds("robotsix-chat")
+    assert main.public_key.get_secret_value() == "pk-main"
+    assert main.project_id == "cm-main"
+    assert main.is_configured() is True
+    mem = settings.langfuse.creds("robotsix-chat-cognee")
+    assert mem.secret_key.get_secret_value() == "sk-mem"
+    assert mem.project_id == ""
+
+
+def test_langfuse_half_filled_project_is_not_configured() -> None:
+    """A project missing one key half is treated as unconfigured."""
+    settings = Settings(
+        langfuse={"projects": {"robotsix-chat": {"public_key": "pk-only"}}}  # type: ignore[arg-type]
+    )
+    assert settings.langfuse.creds("robotsix-chat").is_configured() is False
+
+
+def test_memory_langfuse_project_default() -> None:
+    """Memory names its own project rather than carrying credentials."""
+    settings = Settings()
+    assert settings.memory.langfuse_project == "robotsix-chat-cognee"
 
 
 # ---------------------------------------------------------------------------
@@ -636,18 +677,16 @@ def test_coerce_component_client_components_empty_string_to_list() -> None:
 def test_coerce_memory_nested_empty_string_to_dict() -> None:
     """Coerce ``memory.llm=""`` and friends to ``{}`` → defaults.
 
-    ``memory.llm=""``, ``memory.langfuse=""``, and ``memory.embedding=""``
-    are each coerced to ``{}`` → defaults.
+    ``memory.llm=""`` and ``memory.embedding=""`` are each coerced to
+    ``{}`` → defaults.
     """
     settings = Settings(
         memory={
             "llm": "",
-            "langfuse": "",
             "embedding": "",
         }  # type: ignore[arg-type]
     )
     assert settings.memory.llm.model == "openrouter/openai/gpt-5-mini"
-    assert settings.memory.langfuse.host == "https://cloud.langfuse.com"
     assert settings.memory.embedding.model == "bge-m3"
 
 
@@ -679,12 +718,11 @@ def test_coerce_object_object_sentinel_nested_memory_embedding() -> None:
     assert settings.memory.embedding.model == "bge-m3"
 
 
-def test_coerce_object_object_sentinel_nested_memory_langfuse() -> None:
-    """``memory.langfuse="[object Object]"`` is coerced to ``{}`` → defaults."""
-    settings = Settings(
-        memory={"langfuse": "[object Object]"}  # type: ignore[arg-type]
-    )
-    assert settings.memory.langfuse.host == "https://cloud.langfuse.com"
+def test_coerce_object_object_sentinel_top_level_langfuse() -> None:
+    """``langfuse="[object Object]"`` is coerced to ``{}`` → defaults."""
+    settings = Settings(langfuse="[object Object]")  # type: ignore[arg-type]
+    assert settings.langfuse.host == "https://cloud.langfuse.com"
+    assert settings.langfuse.projects == {}
 
 
 def test_coerce_object_object_sentinel_top_level_list() -> None:
@@ -753,15 +791,16 @@ def test_roundtrip_empty_array_field_preserves_structure() -> None:
 
 def test_roundtrip_empty_object_field_preserves_structure() -> None:
     """Empty ``dict`` fields round-trip as ``{}``, not ``""``."""
-    # Start from defaults — memory.langfuse is an object with defaults
+    # Start from defaults — langfuse is an object with defaults
     original = Settings()
     dumped = original.model_dump()
     reloaded = Settings.model_validate(dumped)
-    assert isinstance(reloaded.memory.langfuse, dict) or hasattr(
-        reloaded.memory.langfuse, "model_dump"
+    assert isinstance(reloaded.langfuse, dict) or hasattr(
+        reloaded.langfuse, "model_dump"
     )
-    # Verify it's not a string
-    assert not isinstance(dumped.get("memory", {}).get("langfuse"), str)
+    # Verify it's not a string, and the projects map survives as a dict
+    assert not isinstance(dumped.get("langfuse"), str)
+    assert dumped["langfuse"]["projects"] == {}
 
 
 # ---------------------------------------------------------------------------

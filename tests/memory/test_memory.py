@@ -512,13 +512,24 @@ def cognee_memory_with_langfuse_creds(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Any
 ) -> tuple[CogneeMemory, Any, Any, Any]:
     """CogneeMemory with dedicated Langfuse creds and stubbed litellm/otel."""
+    from robotsix_chat.config import LangfuseProjectCreds, LangfuseSettings
+
     fake_cognee = _install_fake_cognee(monkeypatch)
     fake_litellm = _install_fake_litellm(monkeypatch)
     fake_otel = _install_fake_opentelemetry(monkeypatch)
     settings = _enabled_settings(str(tmp_path / "cognee"))
-    settings.langfuse.public_key = SecretStr("pk-lf-dedicated")
-    settings.langfuse.secret_key = SecretStr("sk-lf-dedicated")
-    mem = CogneeMemory(settings)
+    # Credentials live in the component's canonical block, under the memory
+    # subsystem's OWN project — never the main chat project.
+    langfuse = LangfuseSettings(
+        host="https://cloud.langfuse.com",
+        projects={
+            settings.langfuse_project: LangfuseProjectCreds(
+                public_key=SecretStr("pk-lf-dedicated"),
+                secret_key=SecretStr("sk-lf-dedicated"),
+            )
+        },
+    )
+    mem = CogneeMemory(settings, langfuse)
     return mem, fake_cognee, fake_litellm, fake_otel
 
 
@@ -528,7 +539,7 @@ async def test_litellm_langfuse_callback_configured_with_dedicated_creds(
 ) -> None:
     """When dedicated creds are set, litellm's Langfuse callback is wired."""
     mem, _, fake_litellm, _ = cognee_memory_with_langfuse_creds
-    mem._settings.langfuse.host = "https://langfuse.robotsix.net"
+    mem._langfuse.host = "https://langfuse.robotsix.net"
     await mem.setup()
 
     # An explicitly-configured LangfuseOtelLogger INSTANCE is registered (the
@@ -565,7 +576,7 @@ async def test_litellm_langfuse_callback_skipped_without_host(
 ) -> None:
     """Empty host -> no callback (never default to Langfuse US cloud)."""
     mem, _, fake_litellm, _ = cognee_memory_with_langfuse_creds
-    mem._settings.langfuse.host = ""
+    mem._langfuse.host = ""
     await mem.setup()
 
     assert fake_litellm.callbacks == []

@@ -27,7 +27,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Any, TypeVar
 
 if TYPE_CHECKING:
-    from robotsix_chat.config import MemorySettings
+    from robotsix_chat.config import LangfuseSettings, MemorySettings
     from robotsix_chat.memory.base import RecoverCallback
 
 _T = TypeVar("_T")
@@ -65,9 +65,24 @@ class CogneeMemory:
     in the background by the agent.
     """
 
-    def __init__(self, settings: MemorySettings) -> None:
-        """Store settings; actual cognee configuration is deferred to ``setup``."""
+    def __init__(
+        self, settings: MemorySettings, langfuse: LangfuseSettings | None = None
+    ) -> None:
+        """Store settings; actual cognee configuration is deferred to ``setup``.
+
+        Args:
+            settings: Memory configuration, including ``langfuse_project`` —
+                the name of the Langfuse project cognee's own LLM traffic
+                traces to.
+            langfuse: The component's canonical Langfuse credential block,
+                where that project's credentials live.  Omitted (or empty)
+                means cognee LLM calls are not traced.
+
+        """
+        from robotsix_chat.config.models import LangfuseSettings as _LangfuseSettings
+
         self._settings = settings
+        self._langfuse = langfuse if langfuse is not None else _LangfuseSettings()
         self._setup_done = False
         self._setup_lock = asyncio.Lock()
         # Serialise writes: concurrent cognify() runs would contend on cognee's
@@ -254,25 +269,27 @@ class CogneeMemory:
         own endpoint + Basic-auth header, so neither the process env nor
         llmio's already-initialized tracing is involved at all.
 
-        Cognee's internal LLM traffic lands in the separate
-        ``robotsix-chat-cognee`` Langfuse project (per-standards: one
-        Langfuse project per repo/function).  Graceful no-op when dedicated
-        creds are absent.
+        Cognee's internal LLM traffic lands in its own Langfuse project —
+        the one named by ``MemorySettings.langfuse_project``, resolved
+        against the component's canonical ``langfuse`` block (per-standards:
+        one Langfuse project per repo/function).  Graceful no-op when that
+        project is absent or half-configured.
         """
-        s = self._settings
-        lf_public = s.langfuse.public_key.get_secret_value()
-        lf_secret = s.langfuse.secret_key.get_secret_value()
-        if not lf_public or not lf_secret:
+        creds = self._langfuse.creds(self._settings.langfuse_project)
+        if not creds.is_configured():
             logger.debug(
-                "cognee Langfuse creds not set; skipping litellm Langfuse callback"
+                "Langfuse project %r not configured; skipping litellm callback",
+                self._settings.langfuse_project,
             )
             return
 
-        # Read the host from the memory-specific Langfuse config so that
-        # ``memory.langfuse.host`` in config.json is actually honored
-        # (instead of relying on env vars set from the top-level
-        # ``langfuse.host`` by the server CLI).
-        lf_host = s.langfuse.host
+        lf_public = creds.public_key.get_secret_value()
+        lf_secret = creds.secret_key.get_secret_value()
+
+        # Host comes from the canonical block, so config.json is honored
+        # rather than whatever the server CLI happened to export to env for
+        # the *main* project.
+        lf_host = self._langfuse.host
         if not lf_host:
             logger.warning(
                 "cognee Langfuse creds set but no LANGFUSE_BASE_URL/LANGFUSE_HOST; "

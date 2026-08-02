@@ -25,7 +25,7 @@ from robotsix_chat.chat.server import (
     run_server_from_config,
 )
 from robotsix_chat.chat.server.cli import _export_langfuse_env
-from robotsix_chat.config import LangfuseSettings, Settings
+from robotsix_chat.config import LangfuseProjectCreds, LangfuseSettings, Settings
 from robotsix_chat.config.models import (
     DirectRepoSettings,
     GitHubActionsSettings,
@@ -1203,7 +1203,7 @@ def test_create_agent_from_settings_memory_enabled_builds_memory() -> None:
     ) as build:
         agent = create_agent_from_settings(settings=settings)
 
-    build.assert_called_once_with(settings.memory)
+    build.assert_called_once_with(settings.memory, settings.langfuse)
     assert agent._memory is sentinel
 
 
@@ -2245,9 +2245,13 @@ class TestExportLangfuseEnv:
         sk = "sk-lf-test"  # pragma: allowlist secret
         settings = Settings(
             langfuse=LangfuseSettings(
-                public_key=SecretStr("pk-lf-test"),
-                secret_key=SecretStr(sk),
                 host="https://langfuse.example.com",
+                projects={
+                    "robotsix-chat": LangfuseProjectCreds(
+                        public_key=SecretStr("pk-lf-test"),
+                        secret_key=SecretStr(sk),
+                    )
+                },
             )
         )
 
@@ -2278,9 +2282,13 @@ class TestExportLangfuseEnv:
         sk = "sk-config"  # pragma: allowlist secret
         settings = Settings(
             langfuse=LangfuseSettings(
-                public_key=SecretStr("pk-config"),
-                secret_key=SecretStr(sk),
                 host="https://config.example.com",
+                projects={
+                    "robotsix-chat": LangfuseProjectCreds(
+                        public_key=SecretStr("pk-config"),
+                        secret_key=SecretStr(sk),
+                    )
+                },
             )
         )
 

@@ -27,10 +27,17 @@ def _inspect_settings(**kw: Any) -> LangfuseInspectSettings:
 
 
 def _langfuse_settings(**kw: Any) -> LangfuseSettings:
+    """Canonical block carrying this component's MAIN project credentials."""
+    from robotsix_chat.config import PROJECT_MAIN
+
     base: dict[str, Any] = {
-        "public_key": "pk-test",
-        "secret_key": "sk-test",  # pragma: allowlist secret
         "host": "https://cloud.langfuse.com",
+        "projects": {
+            PROJECT_MAIN: {
+                "public_key": "pk-test",
+                "secret_key": "sk-test",  # pragma: allowlist secret
+            }
+        },
     }
     base.update(kw)
     return LangfuseSettings(**base)
@@ -101,7 +108,7 @@ async def test_inspect_no_credentials() -> None:
     """When public/secret key are empty, tool returns a config error."""
     tools = build_langfuse_inspect_tools(
         _inspect_settings(),
-        _langfuse_settings(public_key="", secret_key=""),
+        _langfuse_settings(projects={}),
     )
     result = json.loads(await tools[0](trace_id="abc"))
     assert result["error"]
