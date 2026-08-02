@@ -211,6 +211,7 @@ modules:
       - src/robotsix_chat/repo/direct/client.py
       - src/robotsix_chat/repo/direct/skill.md
       - tests/repo/direct/__init__.py
+      - tests/repo/direct/test_board_client.py
       - tests/repo/direct/test_direct_repo.py
       - tests/repo/direct/test_github_auth_dependency.py
   - id: repo-study
