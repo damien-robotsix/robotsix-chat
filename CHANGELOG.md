@@ -1,5 +1,11 @@
 ## 0.0.0 (unreleased)
 
+- Add PRE-SPAWN GUARD directive to the agent system prompt: before spawning any
+  subsession (task, user_chat, periodic), the agent MUST call list_subsessions
+  and check for an existing OPEN subsession with the same purpose or dedup_key,
+  reusing it instead of creating a duplicate. Includes specific guidance for
+  user_chat subsessions where a single decision queue should have exactly one
+  subsession.
 - Document `autonomous.max_idle_auto_turns` in the Autonomous configuration table (was declared in the model and consumed at runtime but missing from the docs).
 - System prompt: add directive to avoid redundant ticket-history repetition when the user re-asks for monitoring status. The agent now directly states current state and next action without re-listing full ticket history or echoing already-seen subsession summaries. (v82)
 - Added `### Docker Digest` documentation section to `docs/configuration.md` covering `docker_digest.enabled`, `docker_digest.timeout`, `docker_digest.registry_host`, and `docker_digest.auth_url` — the last wired settings group that was missing its config-doc table.

@@ -3,6 +3,27 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v83 — 2026-08-02 — prevent-duplicate-subsession-creation-fo-6f8a
+
+**Summary:** Add a PRE-SPAWN GUARD directive to the subsessions section:
+before spawning any subsession (task, user_chat, or periodic), the agent
+MUST call list_subsessions and check for an existing OPEN subsession with
+the same purpose or dedup_key. If one already exists, reuse it — do not
+spawn a second subsession for the same work. This applies especially to
+user_chat subsessions where a single decision queue should have exactly
+one user_chat subsession. The dedup_key system-level suppression only
+catches exact key matches — list_subsessions is the authoritative guard
+against logical duplicates.
+
+**Rationale:** The assistant spawned two user_chat subsessions for the
+same operator decision queue despite the plan explicitly stating to open
+ONE subsession. The existing "Check list_subsessions before spawning"
+hint was too weak — it was a trailing clause on a nesting bullet and
+was easy to miss. A standalone, prominent, MUST-level directive with
+specific user_chat guidance prevents this recurring risk.
+
+**SHA256:** `fdca869c6f6a7276665c5fee815776d4b7e387065f55d48509cb420f0326b77e`
+
 ## v82 — 2026-08-02 — avoid-redundant-status-repetition-on-re-ask-4130
 
 **Summary:** Add a directive for when the user re-asks about monitoring
