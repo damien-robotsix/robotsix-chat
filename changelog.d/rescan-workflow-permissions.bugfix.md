@@ -1,0 +1,3 @@
+The weekly container vulnerability rescan now actually runs. Every run since the workflow was added ended in `startup_failure`, so it never scanned anything and never reported: GitHub refused to start it, which produces no logs and no check runs, leaving nothing to notice.
+
+A calling job's `permissions:` block replaces the workflow-level block rather than merging with it, so the top-level `contents: read` did not reach the `rescan` job — it granted only `security-events: write`. Since a reusable workflow cannot request more than its calling job was given, and the shared `scan-container.yml` declares both `contents: read` and `security-events: write`, the missing scope killed the call before it began. The job now grants both.
