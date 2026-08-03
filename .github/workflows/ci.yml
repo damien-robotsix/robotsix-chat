@@ -45,13 +45,7 @@ jobs:
         # cryptography 49.0.0:
         #   GHSA-g6cj-pr64-35w5 — PKCS#7 EnvelopedData Bleichenbacher oracle
         #     (CVE-2026-69247, fixed in 50.0.0)
-        run: >-
-          uv --preview-features audit-command audit
-          --ignore-until-fixed GHSA-w8v5-vhqr-4h9v
-          --ignore-until-fixed GHSA-mfx4-hv73-q22v
-          --ignore-until-fixed GHSA-mq44-7p77-q5h7
-          --ignore-until-fixed GHSA-cq5v-8q36-5273
-          --ignore-until-fixed GHSA-g6cj-pr64-35w5
+        run: uv --preview-features audit-command audit --ignore-until-fixed GHSA-w8v5-vhqr-4h9v --ignore-until-fixed GHSA-mfx4-hv73-q22v --ignore-until-fixed GHSA-mq44-7p77-q5h7 --ignore-until-fixed GHSA-cq5v-8q36-5273 --ignore-until-fixed GHSA-g6cj-pr64-35w5
 
   ci:
     name: Python CI (shared)
