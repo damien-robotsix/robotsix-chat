@@ -201,6 +201,51 @@ async def test_cognee_remember_never_raises(
 
 
 # ---------------------------------------------------------------------------
+# Warm start — regression: cold-start cost billed to the first turns
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_warm_primes_setup_and_search(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """warm() must configure cognee AND issue a priming search.
+
+    Configuration alone is not enough: the first *search* is what opens the
+    vector tables, and that was observed exceeding the recall deadline on its
+    own even after setup had already completed.
+    """
+    mem, fake = cognee_memory
+    await mem.warm()
+    fake.config.set_llm_provider.assert_called()
+    fake.search.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_warm_never_raises(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """A warm-up failure only forfeits the head start — it must not propagate.
+
+    It runs as a detached startup task, so an exception here would surface as
+    an unretrieved task exception rather than anything actionable.
+    """
+    mem, fake = cognee_memory
+    fake.search = AsyncMock(side_effect=RuntimeError("store down"))
+    await mem.warm()  # must not raise
+
+
+@pytest.mark.asyncio
+async def test_warm_leaves_recall_working(
+    cognee_memory: tuple[CogneeMemory, Any],
+) -> None:
+    """After warm(), a real recall still returns normally (setup is idempotent)."""
+    mem, _ = cognee_memory
+    await mem.warm()
+    assert await mem.recall("who?") == "recalled fact"
+
+
+# ---------------------------------------------------------------------------
 # Recall concurrency — regression: startup thundering herd
 # ---------------------------------------------------------------------------
 
