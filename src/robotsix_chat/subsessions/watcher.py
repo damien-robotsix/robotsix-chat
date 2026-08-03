@@ -26,6 +26,8 @@ from typing import TYPE_CHECKING
 import httpx
 
 from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE
+from robotsix_chat.repo.direct.board_client import BoardClient
+from robotsix_chat.subsessions.worker_mill import _TICKET_STATE_TERMINAL
 
 if TYPE_CHECKING:
     from .worker import SubsessionEnv
@@ -236,6 +238,10 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
         logger.info("Watcher: polling disabled — paused monitors will not auto-resume.")
         return
 
+    # Track which (sub_id, condition) pairs have already been notified
+    # so we don't spam the user on every poll cycle.
+    _notified_conditions: dict[str, set[str]] = {}
+
     logger.info(
         "Watcher: started (poll interval %.0f s, board_url=%s)",
         poll_interval,
@@ -355,6 +361,198 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                                 continue
 
                             merged = pr_data.get("merged")
+                            pr_state = pr_data.get("state")
+                            mergeable = pr_data.get("mergeable")
+
+                            # --- PR closed without merging ---
+                            # Detect when a PR is closed (not open) but was
+                            # never merged — the change was lost silently.
+                            if pr_state == "closed" and merged is not True:
+                                cond_key = "closed_unmerged"
+                                notified = _notified_conditions.setdefault(
+                                    info.id, set()
+                                )
+                                if cond_key not in notified:
+                                    notified.add(cond_key)
+                                    logger.warning(
+                                        "Watcher: subsession %s PR #%d in %s "
+                                        "was CLOSED WITHOUT MERGING "
+                                        "(state=%s, merged=%s).",
+                                        info.id,
+                                        pr_number_raw,
+                                        repo_raw,
+                                        pr_state,
+                                        merged,
+                                    )
+                                    ticket_id_for_pr = checkpoint.get("ticket_id")
+                                    ticket_id_str = (
+                                        ticket_id_for_pr
+                                        if isinstance(ticket_id_for_pr, str)
+                                        else ""
+                                    )
+                                    # Check whether the owning ticket is
+                                    # already in a terminal state — if so,
+                                    # this is expected and we skip the alarm.
+                                    ticket_terminal = False
+                                    if ticket_id_str:
+                                        ticket_state = await _query_ticket_state(
+                                            board_url,
+                                            ticket_id_str,
+                                            info.id,
+                                        )
+                                        if ticket_state is not None:
+                                            ticket_terminal = (
+                                                ticket_state.lower()
+                                                in _TICKET_STATE_TERMINAL
+                                            )
+                                    if not ticket_terminal:
+                                        if env.event_sink is not None:
+                                            env.event_sink.publish(
+                                                info.owner_session_id,
+                                                {
+                                                    "type": SSE_NOTIFICATION_TYPE,
+                                                    "title": (
+                                                        f"PR #{pr_number_raw} "
+                                                        f"closed without merging"
+                                                    ),
+                                                    "body": (
+                                                        f"PR #{pr_number_raw} in "
+                                                        f"{repo_raw} was closed "
+                                                        f"without being merged. "
+                                                        f"The changes may be lost. "
+                                                        f"Ticket: {ticket_id_str}"
+                                                    ),
+                                                    "urgency": "high",
+                                                    "link": (
+                                                        f"https://github.com/"
+                                                        f"{repo_raw}/pull/"
+                                                        f"{pr_number_raw}"
+                                                    ),
+                                                },
+                                            )
+                                        # Try to open a follow-up ticket on
+                                        # the board so the operator sees it.
+                                        try:
+                                            board = BoardClient(
+                                                env.settings.direct_repo
+                                            )
+                                            followup_id = await board.create_ticket(
+                                                title=(
+                                                    f"PR #{pr_number_raw} in "
+                                                    f"{repo_raw} was closed "
+                                                    f"without merging"
+                                                ),
+                                                description=(
+                                                    f"PR [#{pr_number_raw}]"
+                                                    f"(https://github.com/"
+                                                    f"{repo_raw}/pull/"
+                                                    f"{pr_number_raw}) in "
+                                                    f"`{repo_raw}` was closed "
+                                                    f"without being merged.\n\n"
+                                                    f"Original ticket: "
+                                                    f"{ticket_id_str}\n"
+                                                    f"Monitor subsession: "
+                                                    f"{info.id}\n\n"
+                                                    f"The changes may have "
+                                                    f"been lost — review and "
+                                                    f"re-open if needed."
+                                                ),
+                                                kind="task",
+                                                source="agent",
+                                            )
+                                            if followup_id:
+                                                logger.info(
+                                                    "Watcher: created follow-up "
+                                                    "ticket %s for closed-"
+                                                    "unmerged PR #%d in %s.",
+                                                    followup_id,
+                                                    pr_number_raw,
+                                                    repo_raw,
+                                                )
+                                        except Exception:
+                                            logger.debug(
+                                                "Watcher: could not create "
+                                                "follow-up ticket for "
+                                                "closed-unmerged PR #%d "
+                                                "in %s (board may be "
+                                                "unreachable).",
+                                                pr_number_raw,
+                                                repo_raw,
+                                            )
+                                    else:
+                                        logger.debug(
+                                            "Watcher: subsession %s PR #%d "
+                                            "in %s closed unmerged but "
+                                            "ticket %s is terminal (%s) — "
+                                            "no alarm.",
+                                            info.id,
+                                            pr_number_raw,
+                                            repo_raw,
+                                            ticket_id_str,
+                                            ticket_state,
+                                        )
+                                # Resume the monitor so it can report the
+                                # failure to the user and stop polling.
+                                if info.status == "paused":
+                                    woken = await _wake_paused_monitor(
+                                        env,
+                                        info.id,
+                                        ticket_id_str,
+                                        f"PR #{pr_number_raw} closed without merging",
+                                    )
+                                    if not woken:
+                                        await _resume_paused_monitor(env, info.id)
+                                else:
+                                    await _resume_paused_monitor(env, info.id)
+                                continue
+
+                            # --- Merge conflict detection ---
+                            # Flag merge conflicts as soon as they are
+                            # detected instead of waiting for a monitor
+                            # report.
+                            if mergeable is False:
+                                cond_key = "merge_conflict"
+                                notified = _notified_conditions.setdefault(
+                                    info.id, set()
+                                )
+                                if cond_key not in notified:
+                                    notified.add(cond_key)
+                                    logger.warning(
+                                        "Watcher: subsession %s PR #%d in %s "
+                                        "has MERGE CONFLICTS "
+                                        "(mergeable=%s, mergeable_state=%s).",
+                                        info.id,
+                                        pr_number_raw,
+                                        repo_raw,
+                                        mergeable,
+                                        pr_data.get("mergeable_state", "unknown"),
+                                    )
+                                    if env.event_sink is not None:
+                                        env.event_sink.publish(
+                                            info.owner_session_id,
+                                            {
+                                                "type": SSE_NOTIFICATION_TYPE,
+                                                "title": (
+                                                    f"PR #{pr_number_raw} "
+                                                    f"has merge conflicts"
+                                                ),
+                                                "body": (
+                                                    f"PR #{pr_number_raw} in "
+                                                    f"{repo_raw} has merge "
+                                                    f"conflicts and cannot be "
+                                                    f"merged.  Resolve the "
+                                                    f"conflicts or rebase the "
+                                                    f"branch."
+                                                ),
+                                                "urgency": "high",
+                                                "link": (
+                                                    f"https://github.com/"
+                                                    f"{repo_raw}/pull/"
+                                                    f"{pr_number_raw}"
+                                                ),
+                                            },
+                                        )
+
                             if merged is True:
                                 logger.info(
                                     "Watcher: subsession %s PR #%d in %s "

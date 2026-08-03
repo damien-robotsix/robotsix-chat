@@ -1,6 +1,13 @@
 ## 0.0.0 (unreleased)
 
 - Enable `pin_bump` periodic workflow for automated fleet dependency pin bumps.
+- Watcher now detects PRs closed without merging when the owning ticket
+  is not yet terminal — publishes a high-urgency SSE notification and
+  attempts to create a follow-up ticket on the board so the operator
+  sees it immediately rather than only at monitor-report time.
+  Merge conflicts on tracked PRs are also flagged with a high-urgency
+  notification as soon as the watcher detects them, instead of waiting
+  for the monitor to report.
 - Add PRE-SPAWN GUARD directive to the agent system prompt: before spawning any
   subsession (task, user_chat, periodic), the agent MUST call list_subsessions
   and check for an existing OPEN subsession with the same purpose or dedup_key,
