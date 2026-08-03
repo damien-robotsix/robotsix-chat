@@ -289,6 +289,51 @@ async def test_recall_concurrency_is_bounded(
 
 
 @pytest.mark.asyncio
+async def test_recall_bound_is_shared_across_instances(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """The bound is process-wide, not per-instance.
+
+    Regression: the server builds one CogneeMemory per agent — the main chat
+    agent plus one per background agent via ``ReadOnlyMemory(build_memory(…))``
+    — and production was observed running **six**, each logging its own
+    "cognee memory configured". They all contend on the same process-global
+    cognee stores, so an instance-scoped semaphore of 2 would really admit 12.
+    """
+    fake = _install_fake_cognee(monkeypatch)
+
+    def _mem() -> CogneeMemory:
+        s = _enabled_settings(str(tmp_path / "cognee"))
+        s.recall_max_concurrency = 2
+        return CogneeMemory(s)
+
+    instances = [_mem() for _ in range(6)]
+
+    in_flight = 0
+    peak = 0
+
+    async def _slow_search(**_kwargs: Any) -> list[str]:
+        nonlocal in_flight, peak
+        in_flight += 1
+        peak = max(peak, in_flight)
+        try:
+            await asyncio.sleep(0.01)
+            return ["fact"]
+        finally:
+            in_flight -= 1
+
+    fake.search = _slow_search
+
+    # Three concurrent recalls per instance, across all six.
+    results = await asyncio.gather(
+        *(m.recall(f"q{i}") for i, m in enumerate(instances) for _ in range(3))
+    )
+
+    assert peak <= 2, f"expected at most 2 concurrent recalls process-wide, saw {peak}"
+    assert results == ["fact"] * 18
+
+
+@pytest.mark.asyncio
 async def test_recall_semaphore_released_on_failure(
     monkeypatch: pytest.MonkeyPatch, tmp_path: Any
 ) -> None:
