@@ -1064,3 +1064,79 @@ class DirectRepoClient:
         )
 
         return result
+
+    # -- board API delegation ----------------------------------------------
+
+    async def get_ticket_data(self, ticket_id: str) -> dict[str, Any] | None:
+        """Return the full ticket JSON from the board API, or None on failure.
+
+        Delegates to :class:`BoardClient`.
+        """
+        from robotsix_chat.repo.direct.board_client import BoardClient
+
+        return await BoardClient(self._s).get_ticket_data(ticket_id)
+
+    async def count_implement_cycles(self, ticket_id: str) -> int | None:
+        """Return the number of implement cycles for *ticket_id*, or None.
+
+        Delegates to :class:`BoardClient`.
+        """
+        from robotsix_chat.repo.direct.board_client import BoardClient
+
+        return await BoardClient(self._s).count_implement_cycles(ticket_id)
+
+    # -- actions API delegation --------------------------------------------
+
+    async def list_workflow_runs(
+        self,
+        repo_full_name: str,
+        *,
+        branch: str | None = None,
+        per_page: int = 10,
+    ) -> list[dict[str, Any]]:
+        """List recent workflow runs for a repository.
+
+        Delegates to :class:`ActionsClient`.
+        """
+        from robotsix_chat.repo.direct.actions_client import ActionsClient
+
+        return await ActionsClient(self._s).list_workflow_runs(
+            repo_full_name, branch=branch, per_page=per_page
+        )
+
+    async def get_workflow_run_jobs(
+        self,
+        repo_full_name: str,
+        run_id: int,
+    ) -> list[dict[str, Any]]:
+        """Return jobs for a specific workflow run.
+
+        Delegates to :class:`ActionsClient`.
+        """
+        from robotsix_chat.repo.direct.actions_client import ActionsClient
+
+        return await ActionsClient(self._s).get_workflow_run_jobs(
+            repo_full_name, run_id
+        )
+
+    def _diagnose_billing_failure(
+        self,
+        runs: list[dict[str, Any]],
+    ) -> str | None:
+        """Inspect recent workflow runs for a private-repo billing failure.
+
+        Delegates to :class:`ActionsClient`.
+        """
+        from robotsix_chat.repo.direct.actions_client import ActionsClient
+
+        return ActionsClient(self._s)._diagnose_billing_failure(runs)
+
+    @staticmethod
+    def apply_patch(original: str, patch_text: str) -> str:
+        """Apply a unified diff to original text and return the result.
+
+        Delegates to :func:`robotsix_chat.common.unified_diff.apply_patch`.
+        """
+        from robotsix_chat.common.unified_diff import apply_patch as _apply
+
+        return _apply(original, patch_text)

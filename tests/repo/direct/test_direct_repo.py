@@ -2945,7 +2945,7 @@ async def test_list_workflow_runs_returns_runs(
     _prepopulate_installation_token(settings)
 
     respx_mock.get(
-        "https://api.github.com/repos/org/repo/actions/runs?per_page=5"
+        "https://api.github.com/repos/org/repo/actions/runs?per_page=10"
     ).mock(
         return_value=httpx.Response(
             200,
@@ -2995,7 +2995,7 @@ async def test_list_workflow_runs_with_branch_filter(
 
     last_url = str(route.calls.last.request.url)
     assert "branch=develop" in last_url
-    assert "per_page=5" in last_url
+    assert "per_page=10" in last_url
 
 
 @pytest.mark.asyncio
@@ -3007,7 +3007,7 @@ async def test_list_workflow_runs_returns_empty_on_error(
     _prepopulate_installation_token(settings)
 
     respx_mock.get(
-        "https://api.github.com/repos/org/repo/actions/runs?per_page=5"
+        "https://api.github.com/repos/org/repo/actions/runs?per_page=10"
     ).mock(return_value=httpx.Response(403, text="Forbidden"))
 
     client = DirectRepoClient(settings)
