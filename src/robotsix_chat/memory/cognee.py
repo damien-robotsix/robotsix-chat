@@ -416,7 +416,7 @@ class CogneeMemory:
 
             # opentelemetry-exporter-otlp-proto-http ships with the ``tracing``
             # extra; import-check so we fail fast with a warning, not at call-time.
-            from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # type: ignore[import-not-found]  # noqa: F401
+            from opentelemetry.exporter.otlp.proto.http.trace_exporter import (  # noqa: F401
                 OTLPSpanExporter,
             )
         except ImportError as exc:
