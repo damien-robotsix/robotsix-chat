@@ -79,6 +79,7 @@ modules:
       - Makefile
       - memory-ledger.json
       - package.json
+      - reserved
       - package-lock.json
       - README.md
       - SECURITY.md
