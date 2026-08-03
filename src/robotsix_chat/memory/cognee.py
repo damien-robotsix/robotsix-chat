@@ -86,8 +86,17 @@ class CogneeMemory:
         self._setup_done = False
         self._setup_lock = asyncio.Lock()
         # Serialise writes: concurrent cognify() runs would contend on cognee's
-        # shared stores. Recalls stay parallel.
+        # shared stores.
         self._write_lock = asyncio.Lock()
+        # Bound (rather than serialise) recalls. cognee already serialises
+        # internally on its SQLite metadata store, so an unbounded fan-in does
+        # not run faster — it just parks every caller on the same contended
+        # resource until they all hit the deadline together. Admitting a few at
+        # a time keeps each search in its uncontended 0.5-1.3 s range and lets
+        # a queued burst drain well inside one recall timeout.
+        self._recall_semaphore = asyncio.Semaphore(
+            max(1, settings.recall_max_concurrency)
+        )
         # Serialise backlog drains so overlapping drain calls cannot silently
         # drop entries or replay duplicates.
         self._drain_lock = asyncio.Lock()
@@ -430,7 +439,12 @@ class CogneeMemory:
             )
             return _format_results(results)
 
-        return await _search()
+        # Acquired *inside* the caller's timeout, deliberately: queue time is
+        # part of the recall's latency budget, so a pathological backlog still
+        # degrades to "no memory" on schedule rather than stalling the turn
+        # past the deadline the caller was promised.
+        async with self._recall_semaphore:
+            return await _search()
 
     async def recall_deep(self, query: str) -> str:
         """Run the expensive, LLM-mediated graph search on demand.
