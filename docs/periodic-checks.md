@@ -123,6 +123,25 @@ lifetime of the server process. On every poll tick it:
 5. A second pass also polls GitHub for a tracked PR's merge status, resuming the monitor via the
    same wake/reopen path when the PR is merged.
 
+In addition to resuming monitors, the watcher's GitHub pass actively watches for two
+PR states that would otherwise go unnoticed until a monitor report:
+
+- **PR closed without merging.** If the tracked PR has `state == "closed"` but was never merged
+  (`merged is not True`), the change was silently lost. The watcher:
+  1. Checks the owning ticket's current state (from the board API).
+  2. If the ticket is **not** in a terminal state (`closed`/`done`), it publishes a
+     **high-urgency** SSE notification to the conversation and attempts to create a
+     **follow-up ticket** on the board (`BoardClient.create_ticket`) so the operator sees the loss
+     immediately. It then resumes the monitor so it can report the failure.
+  3. If the ticket is already terminal, the closure is expected and no alarm is raised.
+
+- **Merge conflict.** If the tracked PR reports `mergeable == false`, the watcher publishes a
+  **high-urgency** SSE notification naming the PR and repo, so the conflict is surfaced as soon as
+  it is detected instead of only when the monitor next reports.
+
+Notifications are published once per condition per subsession (tracked with an internal
+deduplication set), so they are not spammed on every poll cycle.
+
 The poll interval is controlled by:
 
 | Config key                                         | Default | Description                                                                                                                         |
