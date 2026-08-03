@@ -39,6 +39,7 @@ class SubsessionKind(StrEnum):
     TASK = "task"
     PERIODIC = "periodic"
     USER_CHAT = "user_chat"
+    ON_CLOSE = "on_close"
 
 
 class SubsessionStatus(StrEnum):
