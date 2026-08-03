@@ -1,11 +1,13 @@
 ## 0.0.0 (unreleased)
 
+- Added `verify_pr_ci_status` direct-repo tool: fetches live PR state and CI workflow run status from
+  GitHub. The agent must call this before asserting PR/CI success — never rely on cached or inferred data.
 - **Post-deploy defacement detection:** add `scripts/http_probe_cli.py`, a standalone CLI that probes a live URL and exits non-zero when known defacement indicators (attacker signatures, unexpected CMS installs, AI-generated spam pages) are found. Designed as a zero-dependency-beyond-httpx post-deploy gate for any CI pipeline. The `http_probe` skill document now lists defacement-specific `expect_absent` patterns.
 - **CI health check:** The paused-monitor watcher now detects zero-job
   CI workflow runs on tracked PRs and emits a high-urgency SSE
   notification when the CI infrastructure is broken (workflow file parses
   but produces no jobs — typically a misconfigured trigger, invalid
-  conditional, or billing issue).  Previously, silently-broken CI could
+  condition, or billing issue).  Previously, silently-broken CI could
   persist for extended periods, allowing code issues to accumulate
   undetected before surfacing all at once when CI was eventually fixed.
 - Add `chat_model_level` config (default `null`) to override the LLM model level for the main interactive chat agent independently of `llmio_model_level`. This enables tier rebalancing — e.g. routing chat to `claude-fable-5` (level 4) while subsession/autonomous agents stay at their configured levels. Bump `robotsix-llmio` to latest main.
@@ -65,6 +67,7 @@
 - System prompt: add directive to avoid redundant ticket-history repetition when the user re-asks for monitoring status. The agent now directly states current state and next action without re-listing full ticket history or echoing already-seen subsession summaries. (v82)
 - Added `### Docker Digest` documentation section to `docs/configuration.md` covering `docker_digest.enabled`, `docker_digest.timeout`, `docker_digest.registry_host`, and `docker_digest.auth_url` — the last wired settings group that was missing its config-doc table.
 - Added `on_close` as a new `SubsessionKind`: subsessions of this kind wait until the parent session closes, then execute as a one-shot task — use `spawn_subsession(kind="on_close", ...)` to schedule work that fires when a conversation ends.
+
 - Added comprehensive test coverage for ``ActionsClient`` (`tests/repo/direct/test_actions_client.py`, 26 tests) — covering `dispatch_workflow`, `list_workflow_runs`, `get_workflow_run_jobs`, `get_job_log`, `set_actions_secret`, `get_workflow_run_annotations`, `_diagnose_billing_failure`, and auth-failure paths. Extracted shared fixtures to `tests/repo/direct/conftest.py`.
 - Document 5 missing `memory.*` fields in the Memory (cognee) settings table in `docs/configuration.md`: `background_recall_enabled`, `deep_recall_search_type`, `deep_recall_timeout_seconds`, `remember_max_attempts`, and `remember_retry_backoff_seconds`. Also fix stale defaults for `recall_search_type`, `remember_timeout_seconds`, and `memory.llm.model` that had drifted from the model.
 - Document `direct_repo.direct_fix_enabled` in the Direct Repo (GitHub App) config table (`docs/configuration.md`). (mill: direct_repo.direct_fix_enabled missing from ### Direct Repo table in docs/configuration.md — sibling-pattern doc gap (20260802T052249Z-direct-repo-direct-fix-enabled-missing-f-86ee))
