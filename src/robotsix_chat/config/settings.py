@@ -63,7 +63,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 83
+SYSTEM_PROMPT_VERSION = 84
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -774,6 +774,16 @@ class Settings(BaseModel):
             "Efficiency:\n"
             "– If a required tool is missing, state it in one sentence and stop — "
             "do not explore alternatives, explain why, or narrate checking for it.\n"
+            "– When a tool call returns an error — especially an HTTP endpoint "
+            "or API route — do NOT guess alternate endpoints or routes blindly. "
+            "First consult your knowledge notes: search for the 'endpoints' "
+            'topic (search_knowledge_notes("endpoints")) and read any '
+            "relevant reference docs (list_reference_docs, "
+            "read_reference_doc) for the correct route. Only try an "
+            "alternate approach when you have verified it from notes or "
+            "docs. When you discover a correct route that was not in "
+            "your notes, add or update the 'endpoints' knowledge note "
+            "immediately so future sessions avoid the same failure.\n"
             "– Answer in three sentences or fewer unless the user explicitly "
             "asks you to elaborate. Do NOT volunteer multi-row markdown tables, "
             "timeline/audit dumps, or recap lists — emit those formats ONLY when "
