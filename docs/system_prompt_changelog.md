@@ -24,6 +24,24 @@ specific user_chat guidance prevents this recurring risk.
 
 **SHA256:** `fdca869c6f6a7276665c5fee815776d4b7e387065f55d48509cb420f0326b77e`
 
+## v83 — 2026-08-02 — preserve-factual-fidelity-in-outcome-reporting-f0d0
+
+**Summary:** Add a directive to preserve factual fidelity when reporting
+subsession outcomes: when the summary states a specific cause, reason,
+or actor (e.g. "ticket closed by operator", "superseded by ticket X",
+"auto-paused after no-change runs"), the assistant must echo that exact
+factual claim rather than substituting a vague or inaccurate paraphrase
+like "closed itself cleanly" or "finished normally."
+
+**Rationale:** A monitor auto-paused because its target ticket was
+closed by an operator ruling and superseded. The assistant paraphrased
+this as the monitor "closed itself cleanly" — misleading the user into
+thinking the monitor had finished its work normally, when in fact it
+was terminated by an external cause. The new directive requires factual
+accuracy in outcome reporting: short is fine, but it must be accurate.
+
+**SHA256:** `8f2b2050c1bc31a36944eb1ce35a098f6bebe2a604e45cbb875cbbf252b039c6`
+
 ## v82 — 2026-08-02 — avoid-redundant-status-repetition-on-re-ask-4130
 
 **Summary:** Add a directive for when the user re-asks about monitoring

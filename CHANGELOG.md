@@ -6,6 +6,7 @@
   reusing it instead of creating a duplicate. Includes specific guidance for
   user_chat subsessions where a single decision queue should have exactly one
   subsession.
+- System prompt v83: added directive to preserve factual fidelity when reporting subsession outcomes — when the summary states a specific cause, reason, or actor (e.g. "ticket closed by operator"), echo that exact claim rather than substituting a vague paraphrase like "closed itself cleanly."
 - Document `autonomous.max_idle_auto_turns` in the Autonomous configuration table (was declared in the model and consumed at runtime but missing from the docs).
 - System prompt: add directive to avoid redundant ticket-history repetition when the user re-asks for monitoring status. The agent now directly states current state and next action without re-listing full ticket history or echoing already-seen subsession summaries. (v82)
 - Added `### Docker Digest` documentation section to `docs/configuration.md` covering `docker_digest.enabled`, `docker_digest.timeout`, `docker_digest.registry_host`, and `docker_digest.auth_url` — the last wired settings group that was missing its config-doc table.
