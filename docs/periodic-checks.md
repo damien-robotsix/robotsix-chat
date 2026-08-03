@@ -162,6 +162,40 @@ with `close_reason == "paused"`, `"human_approval_timeout"`, or `"pre_authorized
 `kind == PERIODIC`. All other terminal records (completed, max_runs, explicit close, etc.) are left
 untouched — the watcher will never accidentally revive a deliberately closed subsession.
 
+## Self-adjusting periodic monitors
+
+A periodic monitor can revise its own purpose as the monitored situation evolves, staying within
+operator-configured bounds. The sub-agent makes these adjustments on its own initiative through
+three dedicated tools exposed **only** to periodic subsessions:
+
+| Tool                           | What it does                                                              | Bounds                                                                  |
+| ------------------------------ | ------------------------------------------------------------------------- | ----------------------------------------------------------------------- |
+| `update_periodic_instructions` | Replaces the monitor's full prompt/instructions (applies from next tick). | Non-empty string                                                        |
+| `adjust_periodic_interval`     | Changes the polling interval (seconds).                                   | Clamped to `[min_interval_seconds, periodic_max_interval_seconds]`      |
+| `adjust_periodic_budget`       | Changes the remaining run budget (`max_runs`).                            | Clamped to `[0, periodic_max_total_runs]`; `0` = run until auto-stopped |
+
+- `update_periodic_instructions` — narrow or broaden what the monitor checks and reports on each
+  tick (e.g. switch from "watch for any change" to "watch specifically for CI failure X once the
+  ticket enters a build stage"). The new instructions replace the old prompt entirely and take
+  effect from the **next** tick; the current tick is unaffected.
+- `adjust_periodic_interval` — poll faster near a terminal transition or slower while the monitored
+  subject is idle. Values outside `[min_interval_seconds, periodic_max_interval_seconds]` are
+  **clamped** to the nearest bound.
+- `adjust_periodic_budget` — extend the total run budget for more monitoring cycles, or shorten it
+  when the watched condition is nearing resolution. Values above `periodic_max_total_runs` are
+  clamped; `0` runs until auto-stopped by consecutive `NO_CHANGE` runs or an explicit close.
+
+Every self-mutation (prompt change, interval change, budget change) and every out-of-bounds clamp is
+recorded in the audit log with the before/after values and an optional *reason*, so the operator can
+see exactly why the monitor's behavior changed. An adjustment that would exceed an operator bound is
+clamped to that bound (or rejected) — it never silently exceeds operator limits. These three tools
+are **not** available to the main chat agent or to non-periodic (task / user_chat) subsessions.
+
+| Config key                                  | Default  | Description                                                               |
+| ------------------------------------------- | -------- | ------------------------------------------------------------------------- |
+| `subsessions.periodic_max_interval_seconds` | `3600.0` | Upper bound (seconds) for a periodic subsession's self-adjusted interval. |
+| `subsessions.periodic_max_total_runs`       | `100`    | Upper bound for a periodic subsession's self-adjusted `max_runs` budget.  |
+
 ## Retry behaviour for user_chat and task subsessions
 
 When a **user_chat** (user-facing decision prompt) or **task** (one-shot background job) subsession
@@ -303,11 +337,18 @@ run once and a transient failure would silently lose the work.
       open a second decision chat for the same ticket, the spawn is refused with a
       `SubsessionUserChatSpawnError`. Non-`user_chat` children (e.g. `task`) from a `user_chat`
       parent are still allowed.
-    - **Periodic nesting restriction:** a **periodic** subsession cannot spawn another periodic
-      child. If the periodic agent attempts to spawn a periodic monitor, the error message suggests
-      actionable alternatives: use a one-shot task subsession instead, modify the existing monitor's
-      prompt to cover the additional scope, or ask the operator to spawn a top-level periodic
-      monitor.
+    - **Periodic sibling spawning (escalation / remediation).** A **periodic** subsession MAY spawn
+      a `task` (remediation) or `user_chat` (operator-escalation) subsession as a parallel
+      **sibling** attached to the periodic's holding parent conversation — not nested under the
+      periodic itself. The sibling appears at the periodic's own depth, sharing the periodic's
+      parent. Use these for genuine escalation/remediation only (a real operator decision or real
+      remediation work triggered by a detected condition), **not** as a per-tick reflex — a tick
+      that detects no condition performs no spawn.
+    - **Forbidden spawns from a periodic.** A periodic subsession MUST NOT spawn a nested
+      **periodic** child (runaway monitors, spurious escalations) nor an **on_close** child.
+      Forbidden spawns are rejected **silently**: no `user_chat` or operator escalation is ever
+      opened, the refusal is recorded in the audit log (attempted kind + reason), and the spawn tool
+      returns a non-fatal error message so the periodic tick continues without crashing.
 
 06. **Terminal-state discipline (three-source verification + CI loop guard).** The sub-agent calls
     its `complete_subsession(summary)` tool as soon as the monitored condition reaches a verified

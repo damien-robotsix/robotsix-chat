@@ -935,6 +935,45 @@ class SubsessionRegistry:
         self._store.persist()
         return True
 
+    def update_prompt(self, sub_id: str, new_prompt: str) -> bool:
+        """Replace the prompt for *sub_id* and persist.
+
+        Returns ``True`` when the update was applied; ``False`` when the
+        subsession is unknown or no longer active.
+        """
+        info = self._subs.get(sub_id)
+        if info is None or not info.is_active:
+            return False
+        info.prompt = new_prompt
+        self._store.persist()
+        return True
+
+    def update_interval(self, sub_id: str, new_interval: float) -> bool:
+        """Replace the interval_seconds for *sub_id* and persist.
+
+        Returns ``True`` when the update was applied; ``False`` when the
+        subsession is unknown or no longer active.
+        """
+        info = self._subs.get(sub_id)
+        if info is None or not info.is_active:
+            return False
+        info.interval_seconds = new_interval
+        self._store.persist()
+        return True
+
+    def update_max_runs(self, sub_id: str, new_max_runs: int) -> bool:
+        """Replace the max_runs for *sub_id* and persist.
+
+        Returns ``True`` when the update was applied; ``False`` when the
+        subsession is unknown or no longer active.
+        """
+        info = self._subs.get(sub_id)
+        if info is None or not info.is_active:
+            return False
+        info.max_runs = new_max_runs
+        self._store.persist()
+        return True
+
     def is_dedup_key_active(self, dedup_key: str) -> str | None:
         """Return the active subsession id for *dedup_key*, or ``None``.
 

@@ -728,6 +728,16 @@ class SubsessionsSettings(BaseModel):
         mill_recovery_max_retries: Maximum number of recovery retries
             before the subsession is permanently closed.  Default ``10``.
             Env override: ``SUBSESSIONS_MILL_RECOVERY_MAX_RETRIES``.
+        periodic_max_interval_seconds: Upper bound (seconds) for a
+            periodic subsession's self-adjusted interval.  The
+            ``adjust_periodic_interval`` tool clamps to this value.
+            Default ``3600.0`` (1 hour).
+            Env override: ``SUBSESSIONS_PERIODIC_MAX_INTERVAL_SECONDS``.
+        periodic_max_total_runs: Upper bound for a periodic subsession's
+            self-adjusted ``max_runs`` (total run budget).  The
+            ``adjust_periodic_budget`` tool clamps to this value.
+            Default ``100``.
+            Env override: ``SUBSESSIONS_PERIODIC_MAX_TOTAL_RUNS``.
         user_chat_max_retries: Maximum number of automatic retries for
             ``user_chat`` and ``task`` subsession failures.  Each retry
             re-launches the subsession with the prior error folded into
@@ -790,6 +800,22 @@ class SubsessionsSettings(BaseModel):
             "``last_known_state`` the monitor is reopened and "
             "re-spawned.  Set to ``0`` to disable runtime polling "
             "(paused monitors only resume on service restart)."
+        ),
+    )
+    periodic_max_interval_seconds: float = Field(
+        default=3600.0,
+        description=(
+            "Upper bound (seconds) for a periodic subsession's "
+            "self-adjusted interval.  The adjust_periodic_interval tool "
+            "clamps to this value.  Default 3600 (1 hour)."
+        ),
+    )
+    periodic_max_total_runs: int = Field(
+        default=100,
+        description=(
+            "Upper bound for a periodic subsession's self-adjusted "
+            "max_runs (total run budget).  The adjust_periodic_budget "
+            "tool clamps to this value.  Default 100."
         ),
     )
     user_chat_max_retries: int = 3
