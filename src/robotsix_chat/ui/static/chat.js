@@ -345,12 +345,20 @@
     return origin + "/chat";
   }
 
-  // ---- Conversation client id (localStorage-backed) --------------------
-  // A stable per-browser id sent with every message so the server can thread
-  // consecutive messages into one conversation (and reset to a new one after
-  // it's been idle). Persisted so a page reload continues the conversation.
+  // ---- Conversation owner ----------------------------------------------
+  // This deployment is single-user: there is no login and no per-browser
+  // identity. Every access point is the same person, so the owner sent with
+  // every request is a fixed constant — which is what makes the session list
+  // identical on every computer, browser, and private window.
+  //
+  // Previously this was a random UUID minted into localStorage, so a second
+  // computer (or cleared site data) silently became a *different* owner and
+  // was served an empty session list. The server canonicalises any owner id
+  // it receives (see canonical_owner_id in chat/conversation.py), so a stale
+  // cached copy of this file still lands in the same pool.
   var PROJECT_TITLE = document.querySelector('meta[name="project-title"]').content;
-  var CLIENT_ID_KEY = PROJECT_TITLE + "-client-id";
+  var OPERATOR_OWNER = "operator";  // MUST match OPERATOR_OWNER in chat/conversation.py
+  var clientId = OPERATOR_OWNER;
 
   function randomId() {
     try {
@@ -361,20 +369,6 @@
     return "c-" + Date.now().toString(36) + "-" +
       Math.random().toString(36).slice(2, 10);
   }
-
-  function getClientId() {
-    try {
-      var id = localStorage.getItem(CLIENT_ID_KEY);
-      if (!id) { id = randomId(); localStorage.setItem(CLIENT_ID_KEY, id); }
-      return id;
-    } catch (_) {
-      // Private mode / storage disabled — fall back to a per-session id so the
-      // request still works (continuity just won't survive a reload).
-      return randomId();
-    }
-  }
-
-  var clientId = getClientId();
 
   // ---- Session management (localStorage-backed) -----------------------
   var ACTIVE_SESSION_KEY = PROJECT_TITLE + "-active-session-id";
@@ -3250,8 +3244,12 @@
     if (localSid) {
       setActiveSessionId(localSid);
     } else {
-      // Last resort: use clientId as a fallback session_id for backwards compat.
-      setActiveSessionId(clientId);
+      // Last resort (the sessions endpoint is unreachable): a throwaway
+      // session id so the page still functions. Never the owner id — that
+      // would mint a session whose id collides with the shared owner. Once
+      // /sessions answers again this id is not in the server list, so the
+      // bootstrap above discards it.
+      setActiveSessionId(randomId());
     }
     loadHistory();
     fetchSubsessions();

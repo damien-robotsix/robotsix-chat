@@ -8,7 +8,11 @@ from itertools import count
 from pathlib import Path
 from typing import cast
 
-from robotsix_chat.chat.conversation import ConversationStore
+from robotsix_chat.chat.conversation import (
+    OPERATOR_OWNER,
+    ConversationStore,
+    canonical_owner_id,
+)
 
 
 class _FakeWallClock:
@@ -235,9 +239,11 @@ def test_persist_writes_to_file_on_record() -> None:
         store.record(sid, "c1", "hello", "hi there")
 
         raw = json.loads(persist_path.read_text(encoding="utf-8"))
-        assert "c1" in raw
-        assert raw["c1"]["active_session_id"] == sid
-        assert raw["c1"]["sessions"][0]["turns"] == [["hello", "hi there"]]
+        # Single-user: "c1" is persisted under the canonical operator owner.
+        assert "c1" not in raw
+        assert OPERATOR_OWNER in raw
+        assert raw[OPERATOR_OWNER]["active_session_id"] == sid
+        assert raw[OPERATOR_OWNER]["sessions"][0]["turns"] == [["hello", "hi there"]]
     finally:
         persist_path.unlink(missing_ok=True)
 
@@ -664,7 +670,7 @@ def test_persist_is_atomic_no_tmp_left_behind() -> None:
         store.record(sid, "c1", "hello", "hi")
 
         raw = json.loads(persist_path.read_text(encoding="utf-8"))
-        assert raw["c1"]["sessions"][0]["turns"] == [["hello", "hi"]]
+        assert raw[OPERATOR_OWNER]["sessions"][0]["turns"] == [["hello", "hi"]]
         tmp_path = persist_path.with_suffix(persist_path.suffix + ".tmp")
         assert not tmp_path.exists()
     finally:
@@ -701,3 +707,117 @@ def test_corrupt_persist_file_is_preserved_not_overwritten() -> None:
         persist_path.unlink(missing_ok=True)
         for b in persist_path.parent.glob(persist_path.name + ".corrupt-*"):
             b.unlink(missing_ok=True)
+
+
+# -- single-user owner collapse -----------------------------------------
+
+
+def test_canonical_owner_id_collapses_client_ids() -> None:
+    """Any client-supplied owner id normalises to the operator owner."""
+    assert canonical_owner_id("cc1f1d6f-3a69-4e31-b3d1-03f275a99088") == OPERATOR_OWNER
+    assert canonical_owner_id("842d4e8c-047a-4aa6-908b-5e6d36243dab") == OPERATOR_OWNER
+    assert canonical_owner_id("default") == OPERATOR_OWNER
+    assert canonical_owner_id(OPERATOR_OWNER) == OPERATOR_OWNER
+
+
+def test_canonical_owner_id_preserves_autonomous_owners() -> None:
+    """The autonomous runner's reserved owners keep their own pools."""
+    assert canonical_owner_id("autonomous") == "autonomous"
+    assert canonical_owner_id("autonomous:nightly") == "autonomous:nightly"
+
+
+def test_two_browsers_see_the_same_sessions() -> None:
+    """The bug: a second access point was served its own empty session list.
+
+    Two different client-minted owner ids must resolve to one shared pool, so
+    a session created on one computer is listed on the other.
+    """
+    store = _store()
+    created = cast(str, store.create_session("browser-a")["session_id"])
+    store.record(created, "browser-a", "hello", "hi")
+
+    sessions, active = store.list_sessions("browser-b")
+
+    assert [s["session_id"] for s in sessions] == [created]
+    assert active == created
+    # And the second browser must not have spawned a default husk.
+    assert len(sessions) == 1
+
+
+def test_autonomous_owner_stays_separate_from_the_operator() -> None:
+    """Autonomous sessions are not folded into the operator's own list."""
+    store = _store()
+    store.register_session("autonomous", "auto-1", make_active=True)
+    mine = cast(str, store.create_session("browser-a")["session_id"])
+
+    operator_sessions, _ = store.list_sessions("browser-b")
+    auto_sessions, _ = store.list_sessions("autonomous", create_default=False)
+
+    assert [s["session_id"] for s in operator_sessions] == [mine]
+    assert [s["session_id"] for s in auto_sessions] == ["auto-1"]
+
+
+def test_load_folds_legacy_per_browser_owners_into_one_pool() -> None:
+    """Persisted per-browser owners are merged on load, not dropped.
+
+    Real deployments accumulated one owner per browser that ever opened the
+    UI.  All of their sessions must survive the collapse, and the surviving
+    active pointer must be the most recently active one.
+    """
+    data = {
+        "browser-a": {
+            "active_session_id": "s-old",
+            "sessions": [
+                {
+                    "session_id": "s-old",
+                    "title": "old",
+                    "last_active": 100.0,
+                    "turn_count": 1,
+                    "turns": [["q1", "a1"]],
+                }
+            ],
+        },
+        "browser-b": {
+            "active_session_id": "s-new",
+            "sessions": [
+                {
+                    "session_id": "s-new",
+                    "title": "new",
+                    "last_active": 900.0,
+                    "turn_count": 1,
+                    "turns": [["q2", "a2"]],
+                }
+            ],
+        },
+        "autonomous": {
+            "active_session_id": "s-auto",
+            "sessions": [
+                {
+                    "session_id": "s-auto",
+                    "title": "auto",
+                    "last_active": 500.0,
+                    "turn_count": 0,
+                    "turns": [],
+                }
+            ],
+        },
+    }
+    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as f:
+        persist_path = Path(f.name)
+    persist_path.write_text(json.dumps(data), encoding="utf-8")
+
+    try:
+        store = _store(persist_path=persist_path)
+        sessions, active = store.list_sessions("any-browser")
+
+        assert {s["session_id"] for s in sessions} == {"s-old", "s-new"}
+        # Most recently active of the two merged pointers wins.
+        assert active == "s-new"
+        # History from both former owners is intact.
+        assert store.history("s-old") == [("q1", "a1")]
+        assert store.history("s-new") == [("q2", "a2")]
+        # The autonomous pool is untouched by the merge.
+        auto_sessions, _ = store.list_sessions("autonomous", create_default=False)
+        assert [s["session_id"] for s in auto_sessions] == ["s-auto"]
+    finally:
+        persist_path.unlink(missing_ok=True)

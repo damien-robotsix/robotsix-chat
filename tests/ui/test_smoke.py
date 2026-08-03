@@ -280,8 +280,17 @@ class TestChatJsFunctions:
         """Relative time formatting function exists."""
         assert "relativeTime" in self._functions_in(static_js)
 
-    def test_client_id_functions(self, static_js: str) -> None:
-        """Client id functions exist."""
+    def test_owner_is_a_fixed_constant(self, static_js: str) -> None:
+        """The UI must not mint a per-browser identity.
+
+        A localStorage-backed random client id made every new computer,
+        browser, and private window its own owner — each served an empty
+        session list.  Single-user deployment: the owner is a constant.
+        """
         funcs = self._functions_in(static_js)
-        assert "getClientId" in funcs
+        assert "getClientId" not in funcs
+        assert "var clientId = OPERATOR_OWNER;" in static_js
+        assert 'var OPERATOR_OWNER = "operator";' in static_js
+        # randomId survives only as the offline fallback session id.
         assert "randomId" in funcs
+        assert "-client-id" not in static_js
