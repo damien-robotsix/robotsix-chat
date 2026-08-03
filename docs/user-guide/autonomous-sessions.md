@@ -127,7 +127,13 @@ ______________________________________________________________________
 - **Dedup / lock** — a session cannot overlap with itself. A manual trigger returns `409` while a
   run of the same definition is active.
 - **Confirmation gating** — confirmation-gated mutations remain gated inside autonomous runs; the
-  agent still drafts a plan and awaits operator approval before executing tool calls.
+  agent still drafts a plan and awaits operator approval before executing tool calls. The one
+  exception: a **user-requested ticket** (one the operator explicitly asks the agent to file, e.g.
+  "file a ticket for X") is treated as pre-authorized — the agent includes `kind: user-request` and
+  `priority: high` markers in the ticket metadata and immediately approves it out of
+  draft/`human_issue_approval` in the same turn, since the filing request constitutes consent for
+  both filing and approval. Auto-filed chores and feedback tickets still flow through the normal
+  approval gate.
 - **Auditability** — each run records its definition name, trigger reason, start/end and summary, so
   autonomous activity is traceable.
 
