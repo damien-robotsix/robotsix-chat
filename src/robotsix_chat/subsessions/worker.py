@@ -27,6 +27,7 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
 
+import httpx
 from robotsix_llmio.openrouter import is_openrouter_transient
 
 from robotsix_chat.chat.events import SSE_NOTIFICATION_TYPE, subsession_result_frame
@@ -884,6 +885,57 @@ async def _run_user_chat_turn(env: SubsessionEnv, sub_id: str) -> list[InboxMess
 _PAUSED_WAIT_TIMEOUT_SECONDS: float = 300.0
 
 
+async def _query_mill_ticket_state(
+    board_url: str, ticket_id: str, sub_id: str
+) -> str | None:
+    """Return the current state string for *ticket_id*, or ``None`` on error.
+
+    A lightweight copy of :func:`watcher._query_ticket_state` used by
+    :func:`_paused_wait_loop` for per-monitor long-polling — avoids a
+    circular import from the watcher module.
+    """
+    try:
+        base = httpx.URL(board_url.rstrip("/"))
+        ticket_url = base.copy_with(path=f"/tickets/{ticket_id}")
+    except Exception:
+        logger.exception("Could not construct ticket URL for subsession %s", sub_id)
+        return None
+
+    try:
+        async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
+            response = await client.get(str(ticket_url))
+            response.raise_for_status()
+            ticket_data: dict[str, object] = response.json()
+    except httpx.HTTPStatusError as exc:
+        logger.debug(
+            "Long-poll: mill returned %d for ticket %s (subsession %s)",
+            exc.response.status_code,
+            ticket_id,
+            sub_id,
+        )
+        return None
+    except (httpx.TimeoutException, httpx.ConnectError, OSError) as exc:
+        logger.debug(
+            "Long-poll: mill unreachable for ticket %s (subsession %s): %s",
+            ticket_id,
+            sub_id,
+            exc,
+        )
+        return None
+    except Exception:
+        logger.exception(
+            "Long-poll: unexpected error querying mill for ticket %s (subsession %s)",
+            ticket_id,
+            sub_id,
+        )
+        return None
+
+    state = ticket_data.get("state")
+    return (
+        state if isinstance(state, str) else str(state) if state is not None else None
+    )
+
+
 async def _paused_wait_loop(
     env: SubsessionEnv,
     info: SubsessionInfo,
@@ -894,59 +946,133 @@ async def _paused_wait_loop(
     """Block until a ticket-state-change signal arrives or the worker is cancelled.
 
     Called after ``mark_paused`` — the worker stays alive and waits on
-    the inbox event.  When the watcher detects a state change and sends
-    a message, this returns ``(pending, previous_result, consecutive_no_change)``
-    so the worker can resume its normal periodic loop.  Returns ``None``
-    when the subsession was externally closed while paused.
+    the inbox event (watcher-sent wake messages) AND polls the mill API
+    directly at a shorter long-poll interval.  When either mechanism
+    detects a state change, this returns ``(pending, previous_result,
+    consecutive_no_change)`` so the worker can resume its normal periodic
+    loop.  Returns ``None`` when the subsession was externally closed
+    while paused.
     """
     registry = env.registry
-    while True:
-        woke = await registry.wait_for_inbox(
-            sub_id, timeout=_PAUSED_WAIT_TIMEOUT_SECONDS
+
+    # -- long-poll setup -------------------------------------------------
+    checkpoint = info.checkpoint or {}
+    ticket_id_raw = checkpoint.get("ticket_id")
+    ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+    last_known_state = checkpoint.get("last_known_state")
+    last_known_str: str | None = (
+        (
+            last_known_state
+            if isinstance(last_known_state, str)
+            else str(last_known_state)
         )
-        if not woke:
-            # Timeout — re-verify the subsession is still paused.
-            current = registry.get(sub_id)
-            if current is None or current.status is not SubsessionStatus.PAUSED:
-                return None
-            continue
+        if last_known_state is not None
+        else None
+    )
 
-        messages = registry.drain_inbox(sub_id)
-        for msg in messages:
-            if msg.role == "system" and "ticket state changed" in msg.text.lower():
-                logger.info(
-                    "Subsession %s: resume signal received — resuming.",
-                    sub_id,
-                )
-                resumed = registry.resume(sub_id)
-                if resumed is None:
-                    return None
-                # Publish an SSE notification for the UI.
-                if env.event_sink is not None:
-                    ticket_id_raw = (
-                        info.checkpoint.get("ticket_id") if info.checkpoint else ""
-                    )
-                    ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
-                    env.event_sink.publish(
-                        info.owner_session_id,
-                        {
-                            "type": SSE_NOTIFICATION_TYPE,
-                            "title": f"Monitor resumed: {info.title}",
-                            "body": (
-                                f"Monitor {sub_id[:8]} tracking ticket {ticket_id} "
-                                f"resumed after ticket state change."
-                            ),
-                            "urgency": "low",
-                            "link": ticket_id,
-                        },
-                    )
-                return [], previous_result, consecutive_no_change
-
-        # Message received but not a resume signal — loop and wait again.
+    direct_repo = getattr(env.settings, "direct_repo", None)
+    board_url: str = (
+        getattr(direct_repo, "board_api_base_url", "")
+        if direct_repo is not None
+        else ""
+    )
+    long_poll_interval: float = getattr(
+        env.settings.subsessions,
+        "paused_monitor_long_poll_interval_seconds",
+        15.0,
+    )
+    can_long_poll = bool(
+        board_url and ticket_id and last_known_str and long_poll_interval > 0
+    )
+    if can_long_poll:
         logger.debug(
-            "Subsession %s: woke with non-resume messages; continuing wait.",
+            "Subsession %s: long-poll enabled for ticket %s "
+            "(interval=%.0fs, last_known=%s).",
             sub_id,
+            ticket_id,
+            long_poll_interval,
+            last_known_str,
         )
+    # --------------------------------------------------------------------
+
+    async def _try_resume(
+        reason: str,
+    ) -> tuple[list[InboxMessage], str | None, int] | None:
+        """Resume the subsession and publish an SSE notification."""
+        resumed = registry.resume(sub_id)
+        if resumed is None:
+            return None
+        if env.event_sink is not None:
+            env.event_sink.publish(
+                info.owner_session_id,
+                {
+                    "type": SSE_NOTIFICATION_TYPE,
+                    "title": f"Monitor resumed: {info.title}",
+                    "body": (
+                        f"Monitor {sub_id[:8]} tracking ticket {ticket_id} "
+                        f"resumed after {reason}."
+                    ),
+                    "urgency": "low",
+                    "link": ticket_id,
+                },
+            )
+        return [], previous_result, consecutive_no_change
+
+    while True:
+        timeout = long_poll_interval if can_long_poll else _PAUSED_WAIT_TIMEOUT_SECONDS
+        woke = await registry.wait_for_inbox(sub_id, timeout=timeout)
+
+        # Verify the subsession is still paused.
+        current = registry.get(sub_id)
+        if current is None or current.status is not SubsessionStatus.PAUSED:
+            return None
+
+        if woke:
+            # ----------- inbox wake: check for resume signal -------------
+            messages = registry.drain_inbox(sub_id)
+            for msg in messages:
+                if msg.role == "system" and "ticket state changed" in msg.text.lower():
+                    logger.info(
+                        "Subsession %s: resume signal received via inbox — resuming.",
+                        sub_id,
+                    )
+                    return await _try_resume("ticket state change")
+
+            # Non-resume messages — loop and wait again.
+            logger.debug(
+                "Subsession %s: woke with non-resume messages; continuing wait.",
+                sub_id,
+            )
+        else:
+            # ----------- timeout: long-poll the mill directly -------------
+            if not can_long_poll:
+                # Safety-net timeout with long-poll disabled — just loop.
+                continue
+
+            if not ticket_id or not last_known_str:
+                # Defensive: can_long_poll should guarantee these are set,
+                # but if something mutated the checkpoint, fall through.
+                continue
+
+            current_state = await _query_mill_ticket_state(board_url, ticket_id, sub_id)
+            if current_state is not None and current_state != last_known_str:
+                logger.info(
+                    "Subsession %s: ticket %s state changed from '%s' to '%s' "
+                    "(detected via long-poll) — resuming.",
+                    sub_id,
+                    ticket_id,
+                    last_known_str,
+                    current_state,
+                )
+                return await _try_resume("ticket state change (long-poll)")
+
+            # State unchanged — loop back and wait again.
+            logger.debug(
+                "Subsession %s: ticket %s still '%s' (long-poll) — continuing wait.",
+                sub_id,
+                ticket_id,
+                current_state,
+            )
 
 
 async def _run_periodic_turn(
