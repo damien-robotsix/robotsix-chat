@@ -60,6 +60,32 @@ def _is_lock_freeze_error(exc: BaseException) -> bool:
     return bool(_LOCK_FREEZE_RE.search(str(exc)))
 
 
+# Process-wide recall gate, and the (limit, loop) it was built for.
+_RECALL_GATE: asyncio.Semaphore | None = None
+_RECALL_GATE_KEY: tuple[int, int] | None = None
+
+
+def _recall_gate(limit: int) -> asyncio.Semaphore:
+    """Return the **process-wide** recall semaphore, created on first use.
+
+    Deliberately not per-instance. cognee's stores are process-global, but the
+    server builds a separate ``CogneeMemory`` for every agent — the main chat
+    agent plus one per background agent via ``ReadOnlyMemory(build_memory(…))``.
+    Production runs six of them, so an instance-scoped bound of 4 would really
+    admit 24 concurrent searches to the same contended SQLite layer, which is
+    the exact pile-up the bound exists to prevent.
+
+    Keyed by the running loop as well as the limit so tests (each with a fresh
+    loop) cannot inherit a semaphore bound to a loop that has since closed.
+    """
+    global _RECALL_GATE, _RECALL_GATE_KEY
+    key = (max(1, limit), id(asyncio.get_running_loop()))
+    if _RECALL_GATE is None or key != _RECALL_GATE_KEY:
+        _RECALL_GATE = asyncio.Semaphore(key[0])
+        _RECALL_GATE_KEY = key
+    return _RECALL_GATE
+
+
 class CogneeMemory:
     """Long-term agent memory backed by cognee.
 
@@ -98,9 +124,9 @@ class CogneeMemory:
         # resource until they all hit the deadline together. Admitting a few at
         # a time keeps each search in its uncontended 0.5-1.3 s range and lets
         # a queued burst drain well inside one recall timeout.
-        self._recall_semaphore = asyncio.Semaphore(
-            max(1, settings.recall_max_concurrency)
-        )
+        # The gate itself is process-wide (see :func:`_recall_gate`) — it is
+        # resolved lazily in ``_recall_core`` because it needs a running loop.
+        self._recall_limit = max(1, settings.recall_max_concurrency)
         # Serialise backlog drains so overlapping drain calls cannot silently
         # drop entries or replay duplicates.
         self._drain_lock = asyncio.Lock()
@@ -478,7 +504,7 @@ class CogneeMemory:
         # part of the recall's latency budget, so a pathological backlog still
         # degrades to "no memory" on schedule rather than stalling the turn
         # past the deadline the caller was promised.
-        async with self._recall_semaphore:
+        async with _recall_gate(self._recall_limit):
             return await _search()
 
     async def recall_deep(self, query: str) -> str:
