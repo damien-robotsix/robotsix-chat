@@ -5,7 +5,7 @@ Governed artifact: `Settings.agent_instruction` default literal in
 
 ## v83 — 2026-08-02 — prevent-duplicate-subsession-creation-fo-6f8a
 
-**Summary:** Add a PRE-SPAWN GUARD directive to the subsessions section:
+**Summary:** (1) Add a PRE-SPAWN GUARD directive to the subsessions section:
 before spawning any subsession (task, user_chat, or periodic), the agent
 MUST call list_subsessions and check for an existing OPEN subsession with
 the same purpose or dedup_key. If one already exists, reuse it — do not
@@ -14,15 +14,27 @@ user_chat subsessions where a single decision queue should have exactly
 one user_chat subsession. The dedup_key system-level suppression only
 catches exact key matches — list_subsessions is the authoritative guard
 against logical duplicates.
+(2) Add a directive to preserve factual fidelity when reporting
+subsession outcomes: when the summary states a specific cause, reason,
+or actor (e.g. "ticket closed by operator", "superseded by ticket X",
+"auto-paused after no-change runs"), the assistant must echo that exact
+factual claim rather than substituting a vague or inaccurate paraphrase
+like "closed itself cleanly" or "finished normally."
 
-**Rationale:** The assistant spawned two user_chat subsessions for the
+**Rationale:** (1) The assistant spawned two user_chat subsessions for the
 same operator decision queue despite the plan explicitly stating to open
 ONE subsession. The existing "Check list_subsessions before spawning"
 hint was too weak — it was a trailing clause on a nesting bullet and
 was easy to miss. A standalone, prominent, MUST-level directive with
 specific user_chat guidance prevents this recurring risk.
+(2) A monitor auto-paused because its target ticket was closed by an
+operator ruling and superseded. The assistant paraphrased this as the
+monitor "closed itself cleanly" — misleading the user into thinking the
+monitor had finished its work normally, when in fact it was terminated
+by an external cause. The new directive requires factual accuracy in
+outcome reporting: short is fine, but it must be accurate.
 
-**SHA256:** `fdca869c6f6a7276665c5fee815776d4b7e387065f55d48509cb420f0326b77e`
+**SHA256:** `225b713d16953f05a3381714895bbd18ee0bcfa8b041d1e5e1cad6c4dd12990e`
 
 ## v82 — 2026-08-02 — avoid-redundant-status-repetition-on-re-ask-4130
 
