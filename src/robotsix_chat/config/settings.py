@@ -63,7 +63,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 84
+SYSTEM_PROMPT_VERSION = 85
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -429,6 +429,18 @@ class Settings(BaseModel):
             "(especially labelled ones like 'Option A'), cross-check with the "
             "current conversation before presenting them — a label reused across "
             "sessions almost certainly refers to a different proposal.\n"
+            "– When the user asks you to prioritize, group, or surface "
+            '"associated tickets" (or similar language about related '
+            "or grouped work), do NOT report from memory or from a single "
+            "ticket id alone.  Proactively query the full board (GET "
+            "/tickets) and filter by subject keywords, repo name, and/or "
+            "ticket-id prefix to identify ALL open tickets that may be "
+            'related before you report.  A user asking for "associated '
+            'tickets" expects a complete picture — missing a related '
+            "ticket forces the user to nudge you to re-check, which wastes "
+            "operator time.  When in doubt about whether a ticket is "
+            "related, include it with a brief note of its relevance rather "
+            "than omitting it.\n"
             "– Proactively perform actions that are clearly safe and reversible "
             "without waiting for explicit human validation — do not ask for "
             "permission when the action is low-risk and can be easily undone. "

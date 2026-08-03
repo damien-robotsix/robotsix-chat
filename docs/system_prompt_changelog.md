@@ -3,6 +3,26 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v85 — 2026-08-02 — assistant-should-verify-associated-ticke-71d8
+
+**Summary:** Add a proactive "associated tickets" directive to the Autonomy section of the
+system prompt. When the user asks to prioritize, group, or surface "associated tickets" (or
+similar language about related or grouped work), the assistant must NOT report from memory or
+from a single ticket id alone. Instead it must proactively query the full board (GET /tickets)
+and filter by subject keywords, repo name, and/or ticket-id prefix to identify ALL open tickets
+that may be related before reporting. The directive instructs the assistant to include any
+ticket it is unsure about with a brief note of its relevance rather than omitting it.
+
+**Rationale:** When asked to prioritize associated tickets to close the subject quickly, the
+assistant initially only considered one ticket (6a4e) and did not surface a related open CI/ruff
+debt ticket (af3d) until the user prompted a re-check. The user expects a complete picture from
+the first "associated tickets" request — missing a related ticket forces the user to nudge the
+assistant to re-check, wasting operator time. The new directive ensures the assistant pulls the
+full board and filters by subject/repo before reporting, giving a complete picture without a
+nudge.
+
+**SHA256:** `f40683a35058cb8c89d30590c4ee9d8e2613ab365849cfb7c04d872c1c59b74d`
+
 ## v84 — 2026-08-02 — assistant-should-consult-notes-before-gu-e792
 
 **Summary:** Add a new Efficiency bullet: when a tool call returns an error —
