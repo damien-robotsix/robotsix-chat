@@ -1,0 +1,3 @@
+A chat turn now degrades to another capability tier when the Claude credential expires, instead of failing. Previously the tier fallback was wired to `ClaudeSDKUsageExhaustedError` alone, so an expired OAuth token — which every claudeSDK tier shares, since they all drive the same `claude` CLI against the same `.credentials.json` — took the whole conversation down until someone re-authenticated, even with a healthy OpenRouter key configured.
+
+`ClaudeSDKAuthError` now triggers the same fallback, with enough reach to walk past every keyless claudeSDK tier to a keyed provider, and the agent forwards its OpenRouter key to fallback tiers that take one (keyless tiers are still called without it). Usage exhaustion keeps its existing single-promotion behaviour.

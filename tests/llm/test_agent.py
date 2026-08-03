@@ -929,3 +929,182 @@ async def test_model_level_passed_to_build_agent() -> None:
 
     assert create_model.call_args.kwargs["level"] == 3
     assert provider.build_agent.call_args.kwargs["level"] == 3
+
+
+# ---------------------------------------------------------------------------
+# Auth-failure tier fallback
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_auth_failure_falls_back_past_every_claude_sdk_tier() -> None:
+    """An expired Claude credential is shared by every claudeSDK tier.
+
+    The live outage: levels 4 and 3 both drive the same `claude` CLI against
+    the same `.credentials.json`, so a one-step fallback lands on level 3 and
+    fails identically. The walk must reach a keyed provider (level 2) for the
+    turn to be rescued — and the key must be forwarded there even though the
+    primary level is keyless.
+    """
+    from robotsix_llmio.claude_sdk import ClaudeSDKAuthError
+
+    def _dead_credential_provider() -> MagicMock:
+        handle = MagicMock()
+
+        async def expired(_message: str, *, message_history: object = None) -> None:
+            raise ClaudeSDKAuthError(
+                "Failed to authenticate. API Error: 401 OAuth access token has expired."
+            )
+
+        handle.run = expired
+        handle.close = MagicMock()
+        provider = MagicMock()
+        provider.build_agent.return_value = handle
+        return provider
+
+    level2_handle = MagicMock()
+
+    async def recovered(_message: str, *, message_history: object = None) -> MagicMock:
+        result = MagicMock()
+        result.output = "openrouter reply"
+        return result
+
+    level2_handle.run = recovered
+    level2_handle.close = MagicMock()
+    level2_provider = MagicMock()
+    level2_provider.build_agent.return_value = level2_handle
+
+    # level 4 (primary), level 4 again (the loop's own starting-level retry),
+    # level 3 (same dead credential), then level 2 (keyed, works).
+    create_model_patch = MagicMock(
+        side_effect=[
+            _dead_credential_provider(),
+            _dead_credential_provider(),
+            _dead_credential_provider(),
+            level2_provider,
+        ]
+    )
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
+        agent = LlmioChatAgent(
+            model_level=4,
+            instruction="Be helpful.",
+            api_key="or-key",  # pragma: allowlist secret
+        )
+        chunks = [c async for c in agent.stream("hi")]
+
+    assert chunks == ["openrouter reply"]
+    assert create_model_patch.call_args_list == [
+        # Keyless claudeSDK tiers must never receive an api_key.
+        call(level=4),
+        call(level=4),
+        call(level=3),
+        # The keyed tier must, or the fallback cannot actually serve.
+        call(level=2, api_key="or-key"),  # pragma: allowlist secret
+    ]
+
+
+@pytest.mark.asyncio
+async def test_usage_exhausted_fallback_stays_one_step() -> None:
+    """Widening the reach for auth failures must not widen it for exhaustion.
+
+    Usage exhaustion is scoped to the tier that reported it, so the next tier
+    is already a working one — cascading further would burn tiers needlessly.
+    """
+    from robotsix_llmio.claude_sdk import ClaudeSDKUsageExhaustedError
+
+    def _failing_provider(exc: Exception) -> MagicMock:
+        handle = MagicMock()
+
+        async def boom(_message: str, *, message_history: object = None) -> None:
+            raise exc
+
+        handle.run = boom
+        handle.close = MagicMock()
+        provider = MagicMock()
+        provider.build_agent.return_value = handle
+        return provider
+
+    create_model_patch = MagicMock(
+        side_effect=[
+            _failing_provider(ClaudeSDKUsageExhaustedError("out of usage credits")),
+            _failing_provider(ClaudeSDKUsageExhaustedError("out of usage credits")),
+            _failing_provider(RuntimeError("opus is also down")),
+        ]
+    )
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
+        agent = LlmioChatAgent(
+            model_level=4,
+            instruction="Be helpful.",
+            api_key="or-key",  # pragma: allowlist secret
+        )
+        with pytest.raises(RuntimeError, match="opus is also down"):
+            _ = [c async for c in agent.stream("hi")]
+
+    # Stops after the single promotion — never reaches level 2 or 1.
+    assert create_model_patch.call_count == 3
+
+
+@pytest.mark.asyncio
+async def test_keyless_primary_level_never_receives_the_api_key() -> None:
+    """Holding the key must not change what the primary level is given.
+
+    The agent now always carries the configured OpenRouter key so a fallback
+    can reach a keyed tier — but a keyless claudeSDK provider rejects an
+    api_key, so the primary call must still be made without one.
+    """
+    handle = MagicMock()
+
+    async def reply(_message: str, *, message_history: object = None) -> MagicMock:
+        result = MagicMock()
+        result.output = "sdk reply"
+        return result
+
+    handle.run = reply
+    handle.close = MagicMock()
+    provider = MagicMock()
+    provider.build_agent.return_value = handle
+    create_model_patch = MagicMock(return_value=provider)
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
+        agent = LlmioChatAgent(
+            model_level=4,
+            instruction="Be helpful.",
+            api_key="or-key",  # pragma: allowlist secret
+        )
+        chunks = [c async for c in agent.stream("hi")]
+
+    assert chunks == ["sdk reply"]
+    create_model_patch.assert_called_once_with(level=4)
+
+
+@pytest.mark.asyncio
+async def test_keyed_primary_level_still_receives_the_api_key() -> None:
+    """The pre-existing behaviour for a keyed primary level is unchanged."""
+    handle = MagicMock()
+
+    async def reply(_message: str, *, message_history: object = None) -> MagicMock:
+        result = MagicMock()
+        result.output = "openrouter reply"
+        return result
+
+    handle.run = reply
+    handle.close = MagicMock()
+    provider = MagicMock()
+    provider.build_agent.return_value = handle
+    create_model_patch = MagicMock(return_value=provider)
+
+    with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
+        agent = LlmioChatAgent(
+            model_level=2,
+            instruction="Be helpful.",
+            api_key="or-key",  # pragma: allowlist secret
+        )
+        chunks = [c async for c in agent.stream("hi")]
+
+    assert chunks == ["openrouter reply"]
+    create_model_patch.assert_called_once_with(
+        level=2,
+        api_key="or-key",  # pragma: allowlist secret
+    )

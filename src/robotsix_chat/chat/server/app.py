@@ -29,7 +29,7 @@ from robotsix_chat.chat.conversation import ConversationStore
 from robotsix_chat.chat.events import EventBus, EventSink
 from robotsix_chat.component_access import build_component_access_tools
 from robotsix_chat.component_client import build_component_tools
-from robotsix_chat.config import Settings, level_needs_api_key
+from robotsix_chat.config import Settings
 from robotsix_chat.diagnostics import build_diagnostics_tools
 from robotsix_chat.docker_digest import (
     build_docker_digest_tools,
@@ -909,11 +909,12 @@ def create_agent_from_settings(
     effective_level = (
         model_level if model_level is not None else settings.llmio_model_level
     )
-    api_key = (
-        settings.llmio_api_key.get_secret_value()
-        if level_needs_api_key(effective_level)
-        else ""
-    )
+    # Always hand over the configured key, even for a keyless (claudeSDK)
+    # level. LlmioChatAgent forwards it only to levels whose provider takes
+    # one, and it needs to be holding it for the tier fallback to reach a
+    # keyed provider when the shared Claude credential expires — the failure
+    # mode that takes every claudeSDK tier down at once.
+    api_key = settings.llmio_api_key.get_secret_value()
 
     tools = _build_static_tools(
         settings,
