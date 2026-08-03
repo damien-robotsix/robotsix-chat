@@ -125,13 +125,12 @@ On `"done"` the client knows the reply is complete and can re-enable the input.
 
 ### Session ownership
 
-The deployment is single-user: there is no login and no per-browser identity.
-`owner_id` is still accepted on the wire (and still required, for backwards
-compatibility), but the server canonicalises every client-supplied value to one
-operator pool — so the same session list is served to every computer, browser,
-and private window. The only exception is the autonomous runner's reserved
-owners (`autonomous` and `autonomous:<definition>`), which keep their own pool
-and are fetched by the UI as a separate list.
+The deployment is single-user: there is no login and no per-browser identity. `owner_id` is still
+accepted on the wire (and still required, for backwards compatibility), but the server canonicalises
+every client-supplied value to one operator pool — so the same session list is served to every
+computer, browser, and private window. The only exception is the autonomous runner's reserved owners
+(`autonomous` and `autonomous:<definition>`), which keep their own pool and are fetched by the UI as
+a separate list.
 
 ______________________________________________________________________
 
