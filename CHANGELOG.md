@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Added comprehensive test coverage for ``ActionsClient`` (`tests/repo/direct/test_actions_client.py`, 26 tests) — covering `dispatch_workflow`, `list_workflow_runs`, `get_workflow_run_jobs`, `get_job_log`, `set_actions_secret`, `get_workflow_run_annotations`, `_diagnose_billing_failure`, and auth-failure paths. Extracted shared fixtures to `tests/repo/direct/conftest.py`.
 - Added unit tests for `robotsix_chat.common.unified_diff.apply_patch` (22 tests covering single/multiple hunks, edge cases, and error paths).
 - Wire ticket-ID resolution into ``merge_pull_request`` and direct-repo tools (``reset_implement_spawn_counter``, ``_assert_blocked_and_scoped``, ``_check_blocked_exhausted``) so paraphrased / abbreviated ticket IDs are resolved against the live board before constructing board API URLs, preventing 404 failures.
 - Periodic monitors now enter a true `PAUSED` state (not `CLOSED`) when auto-paused by the idle-guard. The worker stays alive and blocks on an event-driven inbox signal; the watcher sends an immediate wake message when the tracked ticket's state changes, so auto-resume actually works end-to-end. The pause notice wording now accurately reflects the real behavior.
