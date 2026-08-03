@@ -1,0 +1,1 @@
+ci_fix: out-of-scope CI failure — uv audit (pre-commit hook + Lockfile and audit job) + pip-audit (Security scan) in uv.lock (upgrade aiohttp to >=3.14.3 and cryptography to >=50.0.0) or .pre-commit-config.yaml + ci.yml (add new CVE IDs to --ignore-until-fixed list)
