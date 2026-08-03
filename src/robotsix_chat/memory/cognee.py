@@ -37,6 +37,10 @@ logger = logging.getLogger(__name__)
 # Cap recalled context so a large graph can't blow up the prompt.
 _MAX_RECALL_CHARS = 4000
 
+# Throwaway query used to prime the read path on startup. Its result is
+# discarded — only the lazy initialisation it forces matters.
+_WARMUP_QUERY = "warm up"
+
 # First 16 bytes of every SQLite database file.
 _SQLITE_MAGIC = b"SQLite format 3\x00"
 
@@ -172,6 +176,37 @@ class CogneeMemory:
                 return
             self._configure()
             self._setup_done = True
+
+    async def warm(self) -> None:
+        """Pay cognee's cold-start cost off the request path (never raises).
+
+        ``recall`` calls :meth:`setup` *inside* the caller's timeout, so
+        without this the first turns after a restart are billed for cognee's
+        import and configuration plus the lazy store opens that the very first
+        search triggers. Live, that ran past the recall deadline and the
+        opening turns of every restart proceeded memory-less: the boot window
+        produced a burst of timeouts whose first one landed 17 ms after the
+        "cognee memory configured" line — i.e. setup alone had consumed the
+        whole budget.
+
+        Intended to be fired as a background task at server startup: it must
+        not block readiness, and a failure here only forfeits the head start.
+        """
+        start = time.monotonic()
+        try:
+            await self.setup()
+            # Prime the read path too. Configuration alone is not enough —
+            # the first search is what opens the vector tables, and that was
+            # observed timing out on its own even after setup had completed.
+            await self._recall_core(_WARMUP_QUERY)
+        except Exception as exc:
+            logger.warning(
+                "cognee memory warm-up failed (%s) — the first recall will pay "
+                "the cold-start cost instead",
+                exc,
+            )
+            return
+        logger.info("cognee memory warm-up complete in %.1fs", time.monotonic() - start)
 
     def _configure(self) -> None:
         """Configure cognee's global state from the stored settings.

@@ -613,9 +613,29 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         task.add_done_callback(env._tasks.discard)
         logger.info("Paused-monitor watcher started.")
 
+    # -- warm the memory backend off the request path ----------------------
+    def _start_memory_warmup() -> None:
+        """Fire cognee's cold start as a background task, if the backend wants one.
+
+        Deliberately not awaited: warming imports cognee and opens the vector
+        tables, which takes tens of seconds, and blocking here would delay
+        readiness. Backends without a ``warm`` hook (NullMemory, ReadOnlyMemory
+        over one) are simply skipped.
+        """
+        # Both hops are probed: ``ChatAgent`` does not declare ``memory``, and
+        # not every backend behind it offers a warm-up.
+        warm = getattr(getattr(agent, "memory", None), "warm", None)
+        if warm is None:
+            return
+        task = asyncio.create_task(warm())
+        env._tasks.add(task)
+        task.add_done_callback(env._tasks.discard)
+        logger.info("Memory warm-up started in the background.")
+
     # -- resume autonomous sessions on restart -----------------------------
     async def _resume_autonomous() -> None:
         """Auto-close completed autonomous sessions and resume executing ones."""
+        _start_memory_warmup()
         if autonomous_runner is not None:
             await autonomous_runner.resume_sessions()
         # Start the paused-monitor watcher.
