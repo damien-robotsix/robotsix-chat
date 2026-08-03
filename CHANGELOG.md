@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Enable `pin_bump` periodic workflow for automated fleet dependency pin bumps.
 - Add PRE-SPAWN GUARD directive to the agent system prompt: before spawning any
   subsession (task, user_chat, periodic), the agent MUST call list_subsessions
   and check for an existing OPEN subsession with the same purpose or dedup_key,
