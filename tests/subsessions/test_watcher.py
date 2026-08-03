@@ -674,9 +674,7 @@ async def test_watcher_notifies_on_pr_closed_unmerged() -> None:
     sink = RecordingSink()
     env = build_env(settings=settings, event_sink=sink)
 
-    info = _make_paused_monitor_with_pr(
-        env, ticket_id="T-PR", last_known="in_progress"
-    )
+    info = _make_paused_monitor_with_pr(env, ticket_id="T-PR", last_known="in_progress")
 
     # Mock the mill to return a non-terminal ticket state.
     mock_ticket_client = _mock_ticket_client(state="in_progress")
@@ -742,9 +740,7 @@ async def test_watcher_no_alarm_on_closed_unmerged_terminal_ticket() -> None:
     sink = RecordingSink()
     env = build_env(settings=settings, event_sink=sink)
 
-    info = _make_paused_monitor_with_pr(
-        env, ticket_id="T-PR", last_known="in_progress"
-    )
+    info = _make_paused_monitor_with_pr(env, ticket_id="T-PR", last_known="in_progress")
 
     # The ticket is already in a terminal state ("done").
     mock_ticket_client = _mock_ticket_client(state="done")
@@ -793,9 +789,7 @@ async def test_watcher_notifies_on_merge_conflict() -> None:
     sink = RecordingSink()
     env = build_env(settings=settings, event_sink=sink)
 
-    _make_paused_monitor_with_pr(
-        env, ticket_id="T-PR", last_known="in_progress"
-    )
+    _make_paused_monitor_with_pr(env, ticket_id="T-PR", last_known="in_progress")
 
     # Mock the mill to return a non-terminal ticket state.
     mock_ticket_client = _mock_ticket_client(state="in_progress")
