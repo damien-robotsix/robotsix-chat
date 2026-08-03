@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Added `on_close` as a new `SubsessionKind`: subsessions of this kind wait until the parent session closes, then execute as a one-shot task — use `spawn_subsession(kind="on_close", ...)` to schedule work that fires when a conversation ends.
 - Added comprehensive test coverage for ``ActionsClient`` (`tests/repo/direct/test_actions_client.py`, 26 tests) — covering `dispatch_workflow`, `list_workflow_runs`, `get_workflow_run_jobs`, `get_job_log`, `set_actions_secret`, `get_workflow_run_annotations`, `_diagnose_billing_failure`, and auth-failure paths. Extracted shared fixtures to `tests/repo/direct/conftest.py`.
 - Document 5 missing `memory.*` fields in the Memory (cognee) settings table in `docs/configuration.md`: `background_recall_enabled`, `deep_recall_search_type`, `deep_recall_timeout_seconds`, `remember_max_attempts`, and `remember_retry_backoff_seconds`. Also fix stale defaults for `recall_search_type`, `remember_timeout_seconds`, and `memory.llm.model` that had drifted from the model.
 - Added unit tests for `robotsix_chat.common.unified_diff.apply_patch` (22 tests covering single/multiple hunks, edge cases, and error paths).

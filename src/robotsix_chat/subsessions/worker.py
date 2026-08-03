@@ -374,9 +374,9 @@ def spawn_subsession(
                     "(3) ask the operator to spawn a top-level periodic "
                     "monitor."
                 )
-            if kind is SubsessionKind.TASK:
+            if kind in (SubsessionKind.TASK, SubsessionKind.ON_CLOSE):
                 raise SubsessionPeriodicSpawnError(
-                    "periodic subsessions cannot spawn task children"
+                    "periodic subsessions cannot spawn task or on_close children"
                 )
     if kind is SubsessionKind.USER_CHAT and parent_id is not None:
         parent = env.registry.get(parent_id)
@@ -1277,6 +1277,21 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
                 return
 
             registry.set_status(sub_id, SubsessionStatus.RUNNING)
+
+            # -- on_close: wait for the parent session to close, then run
+            #    as a one-shot task.  Polls is_session_closed every 5 s;
+            #    exits cleanly when the subsession is externally closed
+            #    while waiting.
+            if info.kind is SubsessionKind.ON_CLOSE and first_turn:
+                while not env.conversation_store.is_session_closed(
+                    info.owner_session_id
+                ):
+                    info = registry.get(sub_id)
+                    if info is None or not info.is_active:
+                        return
+                    await asyncio.sleep(5.0)
+                # Parent is now closed — proceed as a one-shot task below.
+
             if info.kind is SubsessionKind.PERIODIC:
                 # -- run guard: prevent duplicate execution of run N -----
                 next_run = info.runs + 1
@@ -1473,6 +1488,7 @@ async def _subsession_worker(env: SubsessionEnv, sub_id: str) -> None:
         if info is not None and info.kind in (
             SubsessionKind.USER_CHAT,
             SubsessionKind.TASK,
+            SubsessionKind.ON_CLOSE,
         ):
             max_retries = env.settings.subsessions.user_chat_max_retries
             if info.retry_count < max_retries:
@@ -1539,7 +1555,7 @@ async def _handle_kind_continuation(
     continue, or ``None`` to stop (the subsession reached a terminal
     state).
     """
-    if info.kind is SubsessionKind.TASK:
+    if info.kind is SubsessionKind.TASK or info.kind is SubsessionKind.ON_CLOSE:
         pending = await _run_task_turn(env, sub_id, reply)
         if not pending:
             return None

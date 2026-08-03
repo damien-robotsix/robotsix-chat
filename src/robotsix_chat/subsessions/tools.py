@@ -127,11 +127,15 @@ def _build_spawn_and_control_tools(
         conversation), "periodic" (re-runs the instructions every
         interval_seconds until closed — for monitoring/polling; the
         sub-agent replies NO_CHANGE when nothing changed and calls
-        complete_subsession when the watched condition is terminal), or
+        complete_subsession when the watched condition is terminal),
         "user_chat" (opens a side-chat with the user for a focused
         question or discussion — use it instead of blocking this
         conversation on a pending decision; the user replies in a
-        dedicated panel and a summary comes back here when it closes).
+        dedicated panel and a summary comes back here when it closes),
+        or "on_close" (like a one-shot task, but the subsession waits
+        until this parent session is closed before executing — use it
+        to schedule work that should fire when the conversation ends,
+        such as proposing the next autonomous job).
 
         instructions must be complete and self-contained — the subsession
         agent starts with NO conversation history. For user_chat decision
