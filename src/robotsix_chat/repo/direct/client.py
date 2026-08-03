@@ -788,6 +788,48 @@ class DirectRepoClient:
             f"{message or 'unknown reason'} (SHA: {sha})"
         )
 
+    async def check_auto_merge_enabled(
+        self,
+        *,
+        repo_full_name: str,
+    ) -> str:
+        """Check whether auto-merge is enabled on a repository.
+
+        Calls ``GET /repos/{owner}/{repo}`` and reads the
+        ``allow_auto_merge`` field from the repository object.
+
+        Args:
+            repo_full_name: ``"owner/name"``.
+
+        Returns:
+            A human-readable message indicating whether auto-merge is
+            enabled, or an error message if the repository could not be
+            fetched.
+
+        Never raises — returns an error string on any failure.
+
+        """
+        try:
+            repo = await self._get_json(f"/repos/{repo_full_name}")
+        except RuntimeError as exc:
+            return f"Error fetching repository metadata for {repo_full_name}: {exc}"
+
+        allow_auto_merge = repo.get("allow_auto_merge", False)
+        if allow_auto_merge:
+            return (
+                f"Auto-merge is **enabled** on {repo_full_name}.  "
+                f"PRs with auto-merge armed will be merged automatically "
+                f"once all required conditions (CI, reviews, branch "
+                f"protection) are satisfied."
+            )
+        return (
+            f"Auto-merge is **disabled** on {repo_full_name}.  "
+            f"The repository has ``allow_auto_merge`` set to false.  "
+            f"PRs cannot be armed for automatic merging — all merges "
+            f"must be performed manually via the GitHub UI or the "
+            f"``merge_direct_repo_pr`` tool."
+        )
+
     async def arm_auto_merge(
         self,
         *,
@@ -848,7 +890,9 @@ class DirectRepoClient:
                     f"Cannot enable auto-merge on PR #{pr_number} in "
                     f"{repo_full_name}: the repository may not have "
                     f"auto-merge enabled, or branch protection rules "
-                    f"prevent it.  GitHub response: {msg}"
+                    f"prevent it.  Use ``check_direct_repo_auto_merge`` "
+                    f"to verify the repository's auto-merge setting.  "
+                    f"GitHub response: {msg}"
                 )
             return (
                 f"Error enabling auto-merge on PR #{pr_number} in "
@@ -964,3 +1008,79 @@ class DirectRepoClient:
         )
 
         return result
+
+    # -- board API delegation ----------------------------------------------
+
+    async def get_ticket_data(self, ticket_id: str) -> dict[str, Any] | None:
+        """Return the full ticket JSON from the board API, or None on failure.
+
+        Delegates to :class:`BoardClient`.
+        """
+        from robotsix_chat.repo.direct.board_client import BoardClient
+
+        return await BoardClient(self._s).get_ticket_data(ticket_id)
+
+    async def count_implement_cycles(self, ticket_id: str) -> int | None:
+        """Return the number of implement cycles for *ticket_id*, or None.
+
+        Delegates to :class:`BoardClient`.
+        """
+        from robotsix_chat.repo.direct.board_client import BoardClient
+
+        return await BoardClient(self._s).count_implement_cycles(ticket_id)
+
+    # -- actions API delegation --------------------------------------------
+
+    async def list_workflow_runs(
+        self,
+        repo_full_name: str,
+        *,
+        branch: str | None = None,
+        per_page: int = 10,
+    ) -> list[dict[str, Any]]:
+        """List recent workflow runs for a repository.
+
+        Delegates to :class:`ActionsClient`.
+        """
+        from robotsix_chat.repo.direct.actions_client import ActionsClient
+
+        return await ActionsClient(self._s).list_workflow_runs(
+            repo_full_name, branch=branch, per_page=per_page
+        )
+
+    async def get_workflow_run_jobs(
+        self,
+        repo_full_name: str,
+        run_id: int,
+    ) -> list[dict[str, Any]]:
+        """Return jobs for a specific workflow run.
+
+        Delegates to :class:`ActionsClient`.
+        """
+        from robotsix_chat.repo.direct.actions_client import ActionsClient
+
+        return await ActionsClient(self._s).get_workflow_run_jobs(
+            repo_full_name, run_id
+        )
+
+    def _diagnose_billing_failure(
+        self,
+        runs: list[dict[str, Any]],
+    ) -> str | None:
+        """Inspect recent workflow runs for a private-repo billing failure.
+
+        Delegates to :class:`ActionsClient`.
+        """
+        from robotsix_chat.repo.direct.actions_client import ActionsClient
+
+        return ActionsClient(self._s)._diagnose_billing_failure(runs)
+
+    @staticmethod
+    def apply_patch(original: str, patch_text: str) -> str:
+        """Apply a unified diff to original text and return the result.
+
+        Delegates to :func:`robotsix_chat.common.unified_diff.apply_patch`.
+        """
+        from robotsix_chat.common.unified_diff import apply_patch as _apply
+
+        return _apply(original, patch_text)

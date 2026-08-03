@@ -818,6 +818,8 @@ def test_tool_docstrings_forbid_merge() -> None:
     PRs).
     """
     merge_tool_names = {"merge_direct_repo_pr", "arm_direct_repo_auto_merge"}
+    # Read-only tools that don't require BLOCKED state
+    readonly_tool_names = {"check_direct_repo_auto_merge"}
 
     tools = build_direct_repo_tools(_settings())
     for tool in tools:
@@ -826,7 +828,7 @@ def test_tool_docstrings_forbid_merge() -> None:
         assert "force-push" not in doc, (
             f"Tool {tool.__name__} docstring mentions 'force-push'"
         )
-        if tool.__name__ in merge_tool_names:
+        if tool.__name__ in merge_tool_names | readonly_tool_names:
             continue
         # Must mention the BLOCKED guardrail
         assert "blocked" in doc, (
