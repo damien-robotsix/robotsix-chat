@@ -181,14 +181,14 @@ filing (include the exact value) and merge review (verify the diff has no defaul
 ## v80 — 2026-07-31 — reconcile-direct-repo-merge-capability-docs-074f
 
 **Summary:** Update the direct-repo guardrail text in the system prompt and
-``DirectRepoSettings`` docstring to acknowledge the ``merge_pr`` tool (available for
+`DirectRepoSettings` docstring to acknowledge the `merge_pr` tool (available for
 BLOCKED tickets) instead of claiming no merge capability exists on the direct-repo path.
-When a PR is approved and mergeable, the agent should prefer ``merge_pr``; for
+When a PR is approved and mergeable, the agent should prefer `merge_pr`; for
 pre-BLOCKED tickets or when unavailable, the mill's merge endpoint is the fallback.
 
-**Rationale:** The ``merge_pr`` tool was introduced on the direct-repo path but two
-guardrail doc sites (the ``DirectRepoSettings`` model docstring and the system prompt
-``agent_instruction``) still claimed "no merge capability exists" — causing the agent to
+**Rationale:** The `merge_pr` tool was introduced on the direct-repo path but two
+guardrail doc sites (the `DirectRepoSettings` model docstring and the system prompt
+`agent_instruction`) still claimed "no merge capability exists" — causing the agent to
 incorrectly report it cannot merge and route the operator to a less direct path.
 
 **SHA256:** `b7de916c4cb865a4ea1deffd3f1500b6d6cc0e4f39b4e806b459d9ec4dbb6faa`
