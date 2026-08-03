@@ -108,8 +108,8 @@ describe("processSSEStream", () => {
   // ------------------------------------------------------------------
   it("handles a frame split across two chunks", async () => {
     const { frames, errors } = await pumpStream([
-      "data: hel",
-      "lo\n\n",
+      "data: he",
+      "llo\n\n",
     ]);
     expect(frames).toEqual(["hello"]);
     expect(errors).toHaveLength(0);
