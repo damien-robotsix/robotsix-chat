@@ -3,8 +3,7 @@ on:
   schedule:
     - cron: '0 6 * * 1'
   workflow_dispatch:
-permissions:
-  contents: read  # baseline: checkout the repo
+permissions: {}
 
 concurrency:
   group: scan-container-${{ github.ref }}
@@ -13,6 +12,12 @@ concurrency:
 jobs:
   rescan:
     name: Weekly Trivy rescan (shared)
+    # A calling job's permissions REPLACE the workflow-level block rather
+    # than merging with it, so the top-level `contents: read` did NOT apply
+    # here — the callee declares contents:read + security-events:write, and
+    # granting only the latter made GitHub reject the call before it started
+    # (startup_failure, which emits no logs and no check runs).
     permissions:
+      contents: read  # checkout inside the called workflow
       security-events: write  # upload Trivy SARIF to Code Scanning
     uses: damien-robotsix/robotsix-github-workflows/.github/workflows/scan-container.yml@0234f4b82365d776fc021c774dc104c5e7042c29  # main
