@@ -534,28 +534,27 @@ def _build_self_update_tool(
         fields = ", ".join(changed)
         return f"Self-update applied: changed {fields}.  Effective next tick."
 
-    self_update_subsession.__doc__ = (  # nosec B608
-        """Update THIS periodic subsession's own run configuration.
-
-        Call this to change what a periodic monitor does or how often it
-        runs — the natural alternative to spawning a new periodic child
-        (which is not allowed from within a periodic context).  Changes
-        take effect on the next scheduled tick.
-
-        instructions: rewrite or extend the instruction text this
-          subsession executes each tick — e.g. add a second ticket id to
-          watch, change the terminal-state criteria.  Must not exceed
-          8000 characters.  Omit (or pass None) to leave unchanged.
-        interval_seconds: change the polling interval (minimum """
+    self_update_subsession.__doc__ = (
+        "Update THIS periodic subsession's own run configuration.\n"  # nosec B608
+        "\n"
+        "Call this to change what a periodic monitor does or how often it\n"
+        "runs — the natural alternative to spawning a new periodic child\n"
+        "(which is not allowed from within a periodic context).  Changes\n"
+        "take effect on the next scheduled tick.\n"
+        "\n"
+        "instructions: rewrite or extend the instruction text this\n"
+        "  subsession executes each tick — e.g. add a second ticket id to\n"
+        "  watch, change the terminal-state criteria.  Must not exceed\n"
+        "  8000 characters.  Omit (or pass None) to leave unchanged.\n"
+        "interval_seconds: change the polling interval (minimum "
         f"{min_interval}s applies).  Omit (or pass None) to leave "
-        """unchanged.
-        max_runs: adjust the remaining max-run cap.  Pass None to remove
-          the cap entirely.  The run counter is NEVER reset — self-update
-          cannot bypass max-run limits.
-
-        Only works from within a periodic subsession.  Returns a
-        confirmation string listing which fields were changed.
-        """
+        "unchanged.\n"
+        "max_runs: adjust the remaining max-run cap.  Pass None to remove\n"
+        "  the cap entirely.  The run counter is NEVER reset — self-update\n"
+        "  cannot bypass max-run limits.\n"
+        "\n"
+        "Only works from within a periodic subsession.  Returns a\n"
+        "confirmation string listing which fields were changed.\n"
     )
 
     return self_update_subsession
