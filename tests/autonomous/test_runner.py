@@ -11,7 +11,11 @@ import pytest
 
 from robotsix_chat.autonomous.models import AutonomousState
 from robotsix_chat.autonomous.runner import AutonomousRunner
-from robotsix_chat.chat.conversation import ConversationStore, Session
+from robotsix_chat.chat.conversation import (
+    OPERATOR_OWNER,
+    ConversationStore,
+    Session,
+)
 from robotsix_chat.chat.events import SSE_AGENT_MESSAGE_TYPE, SSE_AUTONOMOUS_TOKEN_TYPE
 
 
@@ -675,12 +679,16 @@ class TestStorePublicMethods:
     """Tests for the new public ConversationStore methods."""
 
     def test_owner_for_session(self) -> None:
-        """owner_for_session returns the owning owner_id."""
+        """owner_for_session returns the owning owner_id.
+
+        Single-user: a client-supplied owner resolves to the canonical
+        operator owner, so that is what comes back.
+        """
         store = ConversationStore()
         store.create_session("owner1")
         sessions, _active = store.list_sessions("owner1")
         sid = sessions[0]["session_id"]
-        assert store.owner_for_session(sid) == "owner1"
+        assert store.owner_for_session(sid) == OPERATOR_OWNER
         assert store.owner_for_session("nonexistent") is None
 
     def test_iter_sessions(self) -> None:
@@ -759,9 +767,11 @@ class TestConversationStoreRegistration:
             aq = runner.create_session("owner1", schedule_kickoff=False)
 
             # The persisted file must contain the owner with this session.
+            # "owner1" is a client-supplied id, so it lands in the canonical
+            # single-user pool.
             raw = json.loads(persist.read_text())
-            assert "owner1" in raw
-            persisted_ids = {s["session_id"] for s in raw["owner1"]["sessions"]}
+            assert OPERATOR_OWNER in raw
+            persisted_ids = {s["session_id"] for s in raw[OPERATOR_OWNER]["sessions"]}
             assert aq.session_id in persisted_ids
 
     @pytest.mark.asyncio

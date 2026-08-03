@@ -3,9 +3,16 @@
 The chat agent is stateless per call, so on its own it treats every message as a
 brand-new conversation. :class:`ConversationStore` adds session-scoped continuity:
 conversations are now addressable by ``session_id`` and grouped under an
-``owner_id`` (the stable per-browser identity).  Each owner can have multiple
-named sessions; the store maintains per-session turn history and per-owner
-metadata (title, last-active timestamp, turn count, active session).
+``owner_id``.  Each owner can have multiple named sessions; the store maintains
+per-session turn history and per-owner metadata (title, last-active timestamp,
+turn count, active session).
+
+This deployment is **single-user**: there is no login, no account, and no
+per-browser identity.  Every human-facing owner id collapses to
+:data:`OPERATOR_OWNER` (see :func:`canonical_owner_id`), so the same session
+list is served to every browser, device, and private window.  The only owner
+ids that keep their own pool are the autonomous runner's reserved ones — those
+sessions are machine-owned and the UI fetches them as a separate list.
 
 Sessions are **persistent**: history is never wiped on idle timeout —
 sessions survive idle/restart indefinitely.
@@ -42,6 +49,32 @@ _DEFAULT_TITLE = "New chat"
 
 # Max characters for auto-derived titles (first user message, truncated).
 _MAX_TITLE_CHARS = 60
+
+# The one and only human owner.  Single-user deployment: every browser is the
+# same person, so every non-reserved owner id normalises to this.
+OPERATOR_OWNER = "operator"
+
+# Reserved owner ids belonging to the autonomous runner: the bootstrap owner
+# and the ``autonomous:<definition>`` per-definition owners.  These keep their
+# own pools — the runner manages their lifecycle and the UI lists them
+# separately.  MUST match ``BOOTSTRAP_OWNER`` / ``_OWNER_ID_PREFIX`` in
+# ``robotsix_chat/autonomous/runner.py`` (duplicated rather than imported to
+# keep this module free of an autonomous → conversation import cycle).
+_AUTONOMOUS_OWNER = "autonomous"
+_AUTONOMOUS_OWNER_PREFIX = "autonomous:"
+
+
+def canonical_owner_id(owner_id: str) -> str:
+    """Return the owner pool *owner_id* belongs to.
+
+    Reserved autonomous owners are returned unchanged; everything else — any
+    client-supplied id, however it was minted — collapses to
+    :data:`OPERATOR_OWNER`.  This is what makes the session list identical
+    from every access point.
+    """
+    if owner_id == _AUTONOMOUS_OWNER or owner_id.startswith(_AUTONOMOUS_OWNER_PREFIX):
+        return owner_id
+    return OPERATOR_OWNER
 
 
 def _derive_title(first_user_message: str) -> str:
@@ -109,6 +142,39 @@ class _OwnerState:
     # session_id → Session (backref into the store's global _sessions dict,
     # kept as a set for fast membership test)
     session_ids: set[str] = field(default_factory=set)
+
+
+def _merge_owner(
+    owners: dict[str, _OwnerState],
+    sessions: OrderedDict[str, Session],
+    owner_id: str,
+    active_session_id: str,
+    session_ids: set[str],
+) -> None:
+    """Fold one persisted owner record into *owners* under its canonical id.
+
+    On-disk state predating the single-user collapse holds one owner per
+    browser that ever opened the UI.  Those all canonicalise to the same key,
+    so the records are unioned rather than overwritten — otherwise the last
+    owner read would silently drop every earlier browser's sessions.  The
+    surviving active pointer is the more recently active of the candidates.
+    """
+    existing = owners.get(owner_id)
+    if existing is None:
+        owners[owner_id] = _OwnerState(
+            active_session_id=active_session_id,
+            session_ids=session_ids,
+        )
+        return
+
+    existing.session_ids |= session_ids
+
+    def _last_active(sid: str) -> float:
+        session = sessions.get(sid)
+        return session.wall_last_active if session is not None else -1.0
+
+    if _last_active(active_session_id) > _last_active(existing.active_session_id):
+        existing.active_session_id = active_session_id
 
 
 class ConversationStoreSerializer:
@@ -223,9 +289,12 @@ class ConversationStoreSerializer:
                 turn_count=len(turns),
             )
             sessions[session_id] = session
-            owners[client_id] = _OwnerState(
-                active_session_id=session_id,
-                session_ids={session_id},
+            _merge_owner(
+                owners,
+                sessions,
+                canonical_owner_id(client_id),
+                session_id,
+                {session_id},
             )
 
     def _load_current_format(
@@ -316,9 +385,12 @@ class ConversationStoreSerializer:
                 if isinstance(active, str) and active in session_ids
                 else next(iter(session_ids))
             )
-            owners[owner_id] = _OwnerState(
-                active_session_id=active_sid,
-                session_ids=session_ids,
+            _merge_owner(
+                owners,
+                sessions,
+                canonical_owner_id(owner_id),
+                active_sid,
+                session_ids,
             )
 
     # -- persist ------------------------------------------------------------
@@ -517,7 +589,7 @@ class ConversationStore:
         self._sessions.move_to_end(session_id)
 
         if owner_id:
-            owner = self._owners.get(owner_id)
+            owner = self._owners.get(canonical_owner_id(owner_id))
             if owner is not None:
                 owner.active_session_id = session_id
                 owner.session_ids.add(session_id)
@@ -531,6 +603,7 @@ class ConversationStore:
 
         Best-effort: if the owner has no active session the turn is dropped.
         """
+        owner_id = canonical_owner_id(owner_id)
         owner = self._owners.get(owner_id)
         if owner is None:
             return
@@ -613,6 +686,7 @@ class ConversationStore:
         un-closable "New chat" (it is owned by the pseudo-owner, not the
         browser client).
         """
+        owner_id = canonical_owner_id(owner_id)
         owner = self._owners.get(owner_id)
         if owner is None:
             if not create_default:
@@ -674,6 +748,7 @@ class ConversationStore:
         session (default ``False`` to preserve the owner's current active
         session and the single-active-session invariant).
         """
+        owner_id = canonical_owner_id(owner_id)
         session = self._sessions.get(session_id)
         if session is None:
             session = Session(
@@ -705,6 +780,7 @@ class ConversationStore:
 
         Returns the session metadata dict.
         """
+        owner_id = canonical_owner_id(owner_id)
         sid = self._session_factory()
         now = self._wall_clock()
         session = Session(session_id=sid, wall_last_active=now)
@@ -750,7 +826,7 @@ class ConversationStore:
         background tasks / check loops is the caller's responsibility (the
         ``DELETE /sessions`` endpoint does both).
         """
-        owner = self._owners.get(owner_id)
+        owner = self._owners.get(canonical_owner_id(owner_id))
         if owner is None or session_id not in owner.session_ids:
             return {
                 "deleted": False,
@@ -800,7 +876,7 @@ class ConversationStore:
         unknown or the session is not owned by it.  Idempotent: closing an
         already-closed session succeeds but is a no-op.
         """
-        owner = self._owners.get(owner_id)
+        owner = self._owners.get(canonical_owner_id(owner_id))
         if owner is None or session_id not in owner.session_ids:
             return {"closed": False, "reason": "session not found"}
         session = self._sessions.get(session_id)
