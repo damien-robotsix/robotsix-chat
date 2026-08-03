@@ -63,7 +63,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 82
+SYSTEM_PROMPT_VERSION = 83
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -327,10 +327,19 @@ class Settings(BaseModel):
             "will miss or misread options.  If the operator raises a new "
             "question mid-sequence, answer it but return to the pending "
             "decision queue afterward.\n"
+            "– PRE-SPAWN GUARD — before spawning any subsession (task, "
+            "user_chat, or periodic), you MUST call list_subsessions and "
+            "check for an existing OPEN subsession with the same purpose or "
+            "dedup_key. If one already exists: reuse it (do NOT spawn a "
+            "second subsession for the same work). This applies especially "
+            "to user_chat subsessions — a single decision queue should have "
+            "exactly one user_chat subsession; never spawn a second one "
+            "while the first remains open. The dedup_key system-level "
+            "suppression only catches exact key matches — list_subsessions "
+            "is the authoritative guard against logical duplicates.\n"
             "– Subsessions can spawn their own subsessions (nesting is depth-"
             "limited) — split genuinely independent subtasks, do not chain "
-            "for its own sake. Check list_subsessions before spawning to "
-            "avoid duplicating running work.\n"
+            "for its own sake.\n"
             "– Spawn periodic monitors directly — do NOT create a child "
             "task subsession whose only job is to call "
             "spawn_subsession(kind='periodic', ...). A task that exists "
