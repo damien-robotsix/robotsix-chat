@@ -3,7 +3,6 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
-<<<<<<< HEAD
 ## v85 — 2026-08-02 — assistant-should-verify-associated-ticke-71d8
 
 **Summary:** Add a proactive "associated tickets" directive to the Autonomy section of the
@@ -22,9 +21,7 @@ assistant to re-check, wasting operator time. The new directive ensures the assi
 full board and filters by subject/repo before reporting, giving a complete picture without a
 nudge.
 
-**SHA256:** (must be computed from the live `agent_instruction` default as
-`hashlib.sha256(Settings.model_fields["agent_instruction"].default.encode()).hexdigest()` —
-requires executing the governance test; cannot be reproduced here)
+**SHA256:** `f40683a35058cb8c89d30590c4ee9d8e2613ab365849cfb7c04d872c1c59b74d`
 
 ## v84 — 2026-08-02 — assistant-should-consult-notes-before-gu-e792
 
@@ -43,29 +40,6 @@ teaches the agent to front-load a notes check before guessing, and to close the
 loop by persisting newly discovered routes.
 
 **SHA256:** `9a8a68c9e0274453100d7710069ddaee65e931401c31eeb7fa2915247261b9fd`
-=======
-## v84 — 2026-08-02 — assistant-should-verify-associated-ticke-71d8
-
-**Summary:** Add a proactive "associated tickets" directive to the Autonomy section of the
-system prompt. When the user asks to prioritize, group, or surface "associated tickets" (or
-similar language about related or grouped work), the assistant must NOT report from memory or
-from a single ticket id alone. Instead it must proactively query the full board (GET /tickets)
-and filter by subject keywords, repo name, and/or ticket-id prefix to identify ALL open tickets
-that may be related before reporting. The directive instructs the assistant to include any
-ticket it is unsure about with a brief note of its relevance rather than omitting it.
-
-**Rationale:** When asked to prioritize associated tickets to close the subject quickly, the
-assistant initially only considered one ticket (6a4e) and did not surface a related open CI/ruff
-debt ticket (af3d) until the user prompted a re-check. The user expects a complete picture from
-the first "associated tickets" request — missing a related ticket forces the user to nudge the
-assistant to re-check, wasting operator time. The new directive ensures the assistant pulls the
-full board and filters by subject/repo before reporting, giving a complete picture without a
-nudge.
-
-**SHA256:** (must be computed from the live `agent_instruction` default as
-`hashlib.sha256(Settings.model_fields["agent_instruction"].default.encode()).hexdigest()` —
-requires executing the governance test; cannot be reproduced here)
->>>>>>> ab5bcab (mill(docs): Assistant should verify associated tickets when prioritizing — missed related open ticket on same subject (20260802T135133Z-assistant-should-verify-associated-ticke-71d8))
 
 ## v83 — 2026-08-02 — prevent-duplicate-subsession-creation-fo-6f8a
 
