@@ -85,6 +85,7 @@ def build_direct_repo_tools(
 
     from robotsix_chat.common.unified_diff import apply_patch as _apply_patch
 
+    from .actions_client import ActionsClient
     from .board_client import BoardClient
     from .client import DirectRepoClient, _count_cycles_from_data
 
@@ -635,6 +636,107 @@ def build_direct_repo_tools(
 
         return "\n".join(lines)
 
+    async def verify_pr_ci_status(
+        repo_full_name: str,
+        pr_number: int,
+    ) -> str:
+        """Fetch live CI run status and PR state from GitHub.
+
+        Combines PR metadata (state, mergeability, draft status) with the
+        latest CI workflow runs for the PR's head branch into a single
+        human-readable summary.  Use this tool BEFORE asserting success or
+        signalling the operator about CI/PR status — never rely on cached
+        or inferred data.
+
+        **Read-only.** Does not modify any repository state.
+        **No BLOCKED-state requirement.** This is a pure diagnostic tool —
+        it does not require a ticket to be in BLOCKED state.
+
+        When GitHub is unreachable the tool returns an explicit error
+        message rather than guessing.
+
+        Args:
+            repo_full_name: GitHub ``owner/name`` (e.g.
+                ``"robotsix/robotsix-chat"``).
+            pr_number: The PR number to inspect.
+
+        Returns:
+            A multi-line summary: PR state, mergeability, draft status,
+            and the latest CI workflow runs for the PR's head branch.
+
+        """
+        # Scope check (no BLOCKED-state requirement — this is read-only)
+        if component_request is None and (
+            scope_error := await client.check_installation_scope(repo_full_name)
+        ):
+            return scope_error
+
+        try:
+            pr = await client.get_pr(
+                repo_full_name=repo_full_name,
+                pr_number=pr_number,
+            )
+        except Exception as exc:
+            return f"Error fetching PR #{pr_number} in {repo_full_name}: {exc}"
+
+        title = pr.get("title", "(no title)")
+        state = pr.get("state", "unknown")
+        html_url = pr.get("html_url", "")
+        mergeable = pr.get("mergeable")
+        mergeable_state = pr.get("mergeable_state", "unknown")
+        draft = pr.get("draft", False)
+        merged = pr.get("merged", False)
+        head = pr.get("head", {})
+        head_branch = head.get("ref", "")
+
+        lines = [
+            f"PR #{pr_number} in {repo_full_name}: {title}",
+            f"URL: {html_url}",
+            f"State: {state}",
+            f"Draft: {draft}",
+            f"Merged: {merged}",
+            f"Mergeable state: {mergeable_state}",
+        ]
+
+        if mergeable is None:
+            lines.append("Mergeability: still being computed by GitHub.")
+        elif mergeable is True:
+            lines.append("Mergeability: clean — no conflicts.")
+        elif mergeable is False:
+            lines.append("Mergeability: conflicts detected.")
+
+        # --- CI workflow runs for the PR's head branch ---
+        if head_branch:
+            try:
+                actions_client = ActionsClient(settings)
+                runs = await actions_client.list_workflow_runs(
+                    repo_full_name, branch=head_branch, per_page=5
+                )
+            except Exception as exc:
+                lines.append(f"CI status: could not fetch workflow runs — {exc}")
+                return "\n".join(lines)
+
+            if not runs:
+                lines.append(
+                    f"CI status: no recent workflow runs found "
+                    f"for branch '{head_branch}'."
+                )
+            else:
+                lines.append(
+                    f"CI status for branch '{head_branch}' ({len(runs)} recent run(s)):"
+                )
+                for r in runs[:5]:
+                    lines.append(
+                        f"  - {r.get('name', '?')} "
+                        f"(run {r.get('id')}): "
+                        f"status={r.get('status')}, "
+                        f"conclusion={r.get('conclusion')}"
+                    )
+        else:
+            lines.append("CI status: could not determine head branch from PR data.")
+
+        return "\n".join(lines)
+
     async def recover_auto_merge(
         repo_full_name: str,
         pr_number: int,
@@ -1153,6 +1255,7 @@ def build_direct_repo_tools(
         open_direct_repo_pr,
         update_pr_branch,
         check_pr_merge_conflict,
+        verify_pr_ci_status,
         recover_auto_merge,
         check_direct_repo_auto_merge,
         merge_direct_repo_pr,
