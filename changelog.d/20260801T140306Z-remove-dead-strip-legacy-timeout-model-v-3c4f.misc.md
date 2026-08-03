@@ -1,1 +1,0 @@
-Remove dead _strip_legacy_timeout model validators from GitHubSecuritySettings and GitHubActionsSettings

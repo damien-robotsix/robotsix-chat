@@ -1,1 +1,0 @@
-Memory table missing 5 deep-recall/background/remember fields (deep_recall_search_type, deep_recall_timeout_seconds, background_recall_enabled, remember_max_attempts, remember_retry_backoff_seconds) in docs/configuration.md — sibling-pattern doc gap

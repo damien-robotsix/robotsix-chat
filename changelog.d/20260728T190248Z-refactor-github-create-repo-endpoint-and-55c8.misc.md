@@ -1,1 +1,0 @@
-Refactor github_create_repo_endpoint and github_job_log_endpoint to use _github_endpoint, and add missing installation-scope check to github_create_repo_endpoint

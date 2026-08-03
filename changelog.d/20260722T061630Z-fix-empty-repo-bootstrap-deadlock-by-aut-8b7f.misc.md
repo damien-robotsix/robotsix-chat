@@ -1,1 +1,0 @@
-Fix empty-repo bootstrap deadlock by auto-initializing new repos
