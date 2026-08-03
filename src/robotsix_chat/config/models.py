@@ -218,6 +218,14 @@ class MemorySettings(BaseModel):
         recall_timeout_seconds: Hard timeout (seconds) for a single automatic
             ``recall`` call.  On expiry the recall degrades to ``""`` — the
             agent proceeds without memory.  Default 60 s.
+        recall_max_concurrency: How many recalls may run inside cognee at
+            once; further callers queue.  Bounded because cognee serialises
+            internally on its SQLite metadata store: letting every caller in
+            at once does not make them finish sooner, it makes them all miss
+            the deadline together.  Observed in production as thundering
+            herds — 15 recalls issued within seconds of boot all expired at
+            the same instant, while every recall that ran uncontended
+            returned in 0.5-1.3 s.  Default 4.
         deep_recall_search_type: cognee ``SearchType`` for the on-demand
             ``search_memory`` tool.  Default ``GRAPH_COMPLETION`` — the
             expensive, LLM-mediated graph search, now paid only when the
@@ -292,6 +300,7 @@ class MemorySettings(BaseModel):
     data_dir: str = "/data/cognee"
     recall_search_type: str = "CHUNKS"
     recall_timeout_seconds: float = 60.0
+    recall_max_concurrency: int = 4
     deep_recall_search_type: str = "GRAPH_COMPLETION"
     deep_recall_timeout_seconds: float = 180.0
     remember_timeout_seconds: float = 900.0

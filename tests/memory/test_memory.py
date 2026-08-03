@@ -201,6 +201,67 @@ async def test_cognee_remember_never_raises(
 
 
 # ---------------------------------------------------------------------------
+# Recall concurrency — regression: startup thundering herd
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_recall_concurrency_is_bounded(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """No more than ``recall_max_concurrency`` recalls may be in cognee at once.
+
+    Regression: recalls were deliberately unbounded, so a burst of sessions
+    resuming at boot put every caller into cognee's internally-serialised
+    search at the same moment and they all expired on the same deadline —
+    15 timeouts within seconds of startup, in one observed day.
+    """
+    fake = _install_fake_cognee(monkeypatch)
+    settings = _enabled_settings(str(tmp_path / "cognee"))
+    settings.recall_max_concurrency = 2
+    mem = CogneeMemory(settings)
+
+    in_flight = 0
+    peak = 0
+
+    async def _slow_search(**_kwargs: Any) -> list[str]:
+        nonlocal in_flight, peak
+        in_flight += 1
+        peak = max(peak, in_flight)
+        try:
+            await asyncio.sleep(0.01)
+            return ["fact"]
+        finally:
+            in_flight -= 1
+
+    fake.search = _slow_search
+
+    results = await asyncio.gather(*(mem.recall(f"q{i}") for i in range(10)))
+
+    assert peak <= 2, f"expected at most 2 concurrent recalls, saw {peak}"
+    # Bounding must not drop work — every caller still gets its answer.
+    assert results == ["fact"] * 10
+
+
+@pytest.mark.asyncio
+async def test_recall_semaphore_released_on_failure(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """A failing recall must not leak its slot, or the bound becomes a deadlock."""
+    fake = _install_fake_cognee(monkeypatch)
+    settings = _enabled_settings(str(tmp_path / "cognee"))
+    settings.recall_max_concurrency = 1
+    mem = CogneeMemory(settings)
+
+    fake.search = AsyncMock(side_effect=RuntimeError("backend down"))
+    assert await mem.recall("who?") == ""
+
+    # The single slot is free again, so a healthy recall still succeeds.
+    fake.search = AsyncMock(return_value=["recovered"])
+    assert await mem.recall("who?") == "recovered"
+
+
+# ---------------------------------------------------------------------------
 # Session scoping — regression: concurrent windows must not share guidance
 # ---------------------------------------------------------------------------
 
