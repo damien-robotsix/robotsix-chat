@@ -3,6 +3,25 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v89 — 2026-08-02 — auto-prioritize-user-requested-tickets-46db
+
+**Summary:** Add user-requested-ticket guidance to the ticket-filing rules. When the operator
+explicitly asks the agent to file a ticket (e.g. "file a ticket for X"), the resulting ticket is
+user-requested — it represents the operator's own intent and carries higher priority than auto-filed
+chores. User-requested tickets MUST include `kind: user-request` and `priority: high` markers in the
+body metadata block (the `--- kind: ...` line). After filing, the agent must immediately transition
+the ticket out of draft / `human_issue_approval` to `ready` using the board API — the operator's
+request to file constitutes consent for both filing and approval, so the gate is bypassed in the
+same turn. Auto-filed chores and feedback tickets (initiated on the agent's own initiative) still go
+through the normal approval gate.
+
+**Rationale:** User-requested tickets sat in 'draft' for days because the mill's workflow required
+human review while auto-filed chores jumped ahead, delaying the operator's core goals. The new
+guidance makes the filing request double as explicit consent, so user-requested tickets skip the
+draft/human_issue_approval gate immediately without a separate manual approval cycle.
+
+**SHA256:** `a56e40f28e86f2aef0d8350a155200bb924f7a2596162d24a30fa5d7cea44a2d`
+
 ## v88 — 2026-08-01 — fix-merge-capability-doc-references-to-u-39ff
 
 **Summary:** Fix two references to the non-existent ``merge_pr`` tool in the
