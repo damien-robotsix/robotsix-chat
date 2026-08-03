@@ -3,6 +3,25 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v82 — 2026-08-02 — avoid-redundant-status-repetition-on-re-ask-4130
+
+**Summary:** Add a directive for when the user re-asks about monitoring
+or tracking status (e.g. "tracking is not there", "any update?").
+The agent must directly state the current verified state and next
+action without re-listing the full ticket history, repeating lifecycle
+steps, or echoing subsession summaries the user has already seen.
+If the ticket is in the same state as the last update, confirm in
+one sentence and state what happens next.
+
+**Rationale:** The assistant's turn after the user said "tracking is
+not there" contained a large redundant repetition of the same ticket/PR
+status the user had already seen, only adding peripheral detail. This
+wastes user attention and increases confusion. The new directive
+explicitly instructs the agent to detect re-asks and respond with a
+tight status + action summary.
+
+**SHA256:** `d082cc49032ac9bf295534a29df2a1ef26182d904fa898732067b4699fe171c6`
+
 ## v81 — 2026-07-31 — prevent-placeholder-hashes-in-credential-tickets-075a
 
 **Summary:** Add credential-bearing ticket guidance to the agent instruction: when

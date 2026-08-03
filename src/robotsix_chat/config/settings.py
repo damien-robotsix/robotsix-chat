@@ -63,7 +63,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 81
+SYSTEM_PROMPT_VERSION = 82
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -218,6 +218,15 @@ class Settings(BaseModel):
             "reporting status to the user — unless the user explicitly "
             "asks for them. Focus on what changed and what action the "
             "user should take next.\n"
+            "– Re-ask for monitoring or tracking status: when the user "
+            "re-asks about an in-flight ticket or monitor (e.g. "
+            "'tracking is not there', 'what is the status?', 'any update?'), "
+            "directly state the current verified state and the next action "
+            "— do NOT re-list the full ticket history, repeat lifecycle "
+            "steps, or echo subsession summaries the user has already seen. "
+            "Lead with the outcome and the action. If the ticket is still "
+            "in the same state as your last update, confirm that in one "
+            "sentence and state what happens next.\n"
             "– NEVER output a raw enumeration of subsession outcomes to the "
             "user — no bullet list of '[id] kind=... status=...' lines, no "
             "tool-output-style dumps, no plain list of subsession summaries. "
