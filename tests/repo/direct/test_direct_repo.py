@@ -51,6 +51,7 @@ def test_build_direct_repo_tools_returns_ten_tools() -> None:
     assert "apply_patch_to_file" in names
     assert "push_patch_to_pr_branch" in names
 
+
 def test_push_to_pr_branch_gated_by_default() -> None:
     """push_to_pr_branch is not included when allow_push_to_existing_pr is off."""
     tools = build_direct_repo_tools(_settings())
