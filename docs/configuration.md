@@ -385,6 +385,7 @@ Push-branch and open-PR as the robotsix-mill GitHub App. Disabled by default.
 | `direct_repo.board_api_base_url`         | `string`          | `"http://127.0.0.1:8077"`  | Board HTTP API base URL for ticket-state lookups.     |
 | `direct_repo.board_api_token`            | `string` (secret) | `""`                       | Optional bearer token for the board API.              |
 | `direct_repo.timeout`                    | `number`          | `30.0`                     | Per-request HTTP timeout (seconds).                   |
+| `direct_repo.direct_fix_enabled`         | `boolean`         | `false`                    | Enables the `direct_fix` branch-push tool (requires `enabled`). |
 
 ### GitHub Security
 
