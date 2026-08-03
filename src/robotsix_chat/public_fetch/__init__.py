@@ -376,12 +376,20 @@ def build_public_fetch_tools(
                         # Handle error status codes
                         if response.status_code >= 400:
                             if response.status_code in (401, 403):
-                                result["error"] = (
-                                    f"Server returned "
-                                    f"{response.status_code} — URL requires "
-                                    "authentication. Only public, "
-                                    "unauthenticated URLs are supported."
-                                )
+                                if current_host in fleet_auth_hosts:
+                                    result["error"] = (
+                                        f"Server returned "
+                                        f"{response.status_code} — fleet-auth "
+                                        "credentials may need updating. Check "
+                                        "the fleet_auth configuration."
+                                    )
+                                else:
+                                    result["error"] = (
+                                        f"Server returned "
+                                        f"{response.status_code} — URL requires "
+                                        "authentication. Only public, "
+                                        "unauthenticated URLs are supported."
+                                    )
                             else:
                                 result["error"] = (
                                     f"HTTP {response.status_code}: "
