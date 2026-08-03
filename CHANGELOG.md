@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Periodic subsessions gain sibling spawn capability: a periodic/monitor can now spawn `task` (remediation) and `user_chat` (escalation) subsessions as siblings attached to the holding parent conversation rather than as nested children. Nested `periodic` and `on_close` spawns remain forbidden and are silently rejected with audit logging. New self-adjustment tools (`update_periodic_instructions`, `adjust_periodic_interval`, `adjust_periodic_budget`) let a periodic monitor revise its own purpose within operator-configured bounds (`periodic_max_interval_seconds`, `periodic_max_total_runs`).
 - Enable `pin_bump` periodic workflow for automated fleet dependency pin bumps.
 - Watcher now detects PRs closed without merging when the owning ticket
   is not yet terminal — publishes a high-urgency SSE notification and

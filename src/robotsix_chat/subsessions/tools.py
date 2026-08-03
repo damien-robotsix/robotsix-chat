@@ -64,6 +64,14 @@ def build_subsession_tools(
             )
         )
         tools.append(_build_set_checkpoint_tool(ctx.subsession_id, env.registry))
+        # Periodic self-adjustment tools — only for periodic subsessions.
+        info = env.registry.get(ctx.subsession_id)
+        if info is not None and info.kind is SubsessionKind.PERIODIC:
+            tools.extend(
+                _build_periodic_self_adjustment_tools(
+                    env, ctx.subsession_id, env.settings
+                )
+            )
     return tools
 
 
@@ -182,6 +190,38 @@ def _build_spawn_and_control_tools(
             return f"Unknown kind {kind!r} — expected one of: {_KIND_VALUES}."
         if env.conversation_store.is_session_closed(ctx.owner_session_id):
             return "This session is closed — no new subsessions can be started."
+
+        # Periodic/monitor sibling spawning and forbidden-kind pre-check.
+        # When the spawning agent is a periodic subsession:
+        #   - ALLOWED: task (remediation) and user_chat (escalation) spawn
+        #     as SIBLINGS attached to the holding parent conversation, not
+        #     nested under the periodic itself.
+        #   - FORBIDDEN: periodic (nested monitors — runaway risk) and
+        #     on_close (no meaningful use case from a periodic).
+        #   - Forbidden attempts are rejected silently (logged, no
+        #     operator-facing escalation).
+        effective_parent_id = ctx.subsession_id
+        effective_depth = ctx.depth + 1
+        if ctx.subsession_id is not None:
+            agent_info = env.registry.get(ctx.subsession_id)
+            if agent_info is not None and agent_info.kind is SubsessionKind.PERIODIC:
+                if kind_enum in (SubsessionKind.PERIODIC, SubsessionKind.ON_CLOSE):
+                    logger.warning(
+                        "Periodic subsession %s attempted forbidden spawn "
+                        "kind=%s — rejected silently.",
+                        ctx.subsession_id,
+                        kind,
+                    )
+                    return (
+                        f"Periodic monitors cannot spawn {kind} subsessions. "
+                        "Use 'task' for remediation or 'user_chat' for "
+                        "escalation instead."
+                    )
+                # Sibling spawn: attach to the periodic's parent at the
+                # periodic's own depth (peer, not child).
+                effective_parent_id = agent_info.parent_id
+                effective_depth = agent_info.depth
+
         # Check whether a dedup hit is expected before calling
         # spawn_subsession — after a fresh create the new record
         # always matches its own dedup_key, so a post-hoc check cannot
@@ -200,8 +240,8 @@ def _build_spawn_and_control_tools(
                 env=env,
                 kind=kind_enum,
                 owner_session_id=ctx.owner_session_id,
-                parent_id=ctx.subsession_id,
-                depth=ctx.depth + 1,
+                parent_id=effective_parent_id,
+                depth=effective_depth,
                 title=title,
                 prompt=instructions,
                 model_level=model_level if model_level is not None else default_level,
@@ -423,6 +463,141 @@ def _build_set_checkpoint_tool(sub_id: str, registry: SubsessionRegistry) -> Any
         return f"Checkpoint updated ({len(cleaned)} keys)."
 
     return set_checkpoint
+
+
+def _build_periodic_self_adjustment_tools(
+    env: SubsessionEnv,
+    sub_id: str,
+    settings: Any,
+) -> list[Any]:
+    """Build self-adjustment tools for a periodic subsession.
+
+    These tools let a periodic monitor revise its own purpose as the
+    monitored situation evolves — within operator-configured bounds.
+    All mutations are logged at WARNING level for auditability.
+    """
+    registry = env.registry
+    cfg = settings.subsessions
+    min_interval = cfg.min_interval_seconds
+    max_interval = getattr(cfg, "periodic_max_interval_seconds", 3600.0)
+    max_total_runs = getattr(cfg, "periodic_max_total_runs", 100)
+
+    async def update_periodic_instructions(new_instructions: str) -> str:
+        """Revise this periodic monitor's instructions/prompt.
+
+        Use this to narrow or broaden the monitor's focus as the
+        monitored situation evolves (e.g. switch from "watch for any
+        change" to "watch for CI failure X once the ticket enters a
+        build stage").  Pass the COMPLETE new instructions — they
+        replace the old ones entirely.
+
+        The new instructions apply from the NEXT tick onward; the
+        current tick (if mid-turn) is unaffected.
+        """
+        if not isinstance(new_instructions, str) or not new_instructions.strip():
+            return (
+                "update_periodic_instructions: instructions must be a non-empty string."
+            )
+        ok = registry.update_prompt(sub_id, new_instructions)
+        if not ok:
+            return "update_periodic_instructions: this subsession is no longer active."
+        logger.warning(
+            "Periodic subsession %s self-adjusted instructions (new length=%d).",
+            sub_id,
+            len(new_instructions),
+        )
+        return "Instructions updated — the new prompt takes effect on the next tick."
+
+    async def adjust_periodic_interval(interval_seconds: float) -> str:
+        """Adjust this periodic monitor's polling interval (seconds).
+
+        Must be between the configured minimum (default 60 s) and
+        maximum (default 3600 s = 1 hour).  Values outside this range
+        are clamped to the nearest bound; the clamped value is logged.
+        Use shorter intervals when nearing a terminal transition, and
+        longer intervals while the monitored subject is idle.
+        """
+        if not isinstance(interval_seconds, (int, float)) or interval_seconds <= 0:
+            return (
+                "adjust_periodic_interval: interval_seconds must be a positive number."
+            )
+        original = float(interval_seconds)
+        clamped = max(min_interval, min(original, max_interval))
+        ok = registry.update_interval(sub_id, clamped)
+        if not ok:
+            return "adjust_periodic_interval: this subsession is no longer active."
+        if clamped != original:
+            logger.warning(
+                "Periodic subsession %s self-adjusted interval "
+                "%.1f -> %.1f (clamped to bounds [%.1f, %.1f]).",
+                sub_id,
+                original,
+                clamped,
+                min_interval,
+                max_interval,
+            )
+            return (
+                f"Interval adjusted to {clamped:.0f} s "
+                f"(requested {original:.0f} s was outside bounds "
+                f"[{min_interval:.0f}, {max_interval:.0f}])."
+            )
+        logger.warning(
+            "Periodic subsession %s self-adjusted interval to %.1f s.",
+            sub_id,
+            clamped,
+        )
+        return f"Interval adjusted to {clamped:.0f} s."
+
+    async def adjust_periodic_budget(max_runs: int) -> str:
+        """Adjust this periodic monitor's remaining run budget (max_runs).
+
+        Must be between 0 and the configured maximum (default 100).
+        Values outside this range are clamped.  Set to 0 to let the
+        monitor run until auto-stopped by consecutive NO_CHANGE runs
+        or an explicit close.  Use this to extend the budget when a
+        ticket needs more monitoring cycles, or shorten it when the
+        watched condition is nearing resolution.
+        """
+        if not isinstance(max_runs, int) or max_runs < 0:
+            return "adjust_periodic_budget: max_runs must be a non-negative integer."
+        clamped = min(max_runs, max_total_runs)
+        ok = registry.update_max_runs(sub_id, clamped)
+        if not ok:
+            return "adjust_periodic_budget: this subsession is no longer active."
+        if clamped != max_runs:
+            logger.warning(
+                "Periodic subsession %s self-adjusted budget "
+                "%d -> %d (clamped to max %d).",
+                sub_id,
+                max_runs,
+                clamped,
+                max_total_runs,
+            )
+            return (
+                f"Budget adjusted to {clamped} runs "
+                f"(requested {max_runs} exceeds maximum {max_total_runs})."
+            )
+        logger.warning(
+            "Periodic subsession %s self-adjusted budget to %d runs.",
+            sub_id,
+            clamped,
+        )
+        if clamped == 0:
+            return "Budget adjusted to unlimited (runs until auto-stopped or closed)."
+        return f"Budget adjusted to {clamped} runs."
+
+    update_periodic_instructions.__name__ = "update_periodic_instructions"
+    update_periodic_instructions.__qualname__ = "update_periodic_instructions"
+    adjust_periodic_interval.__name__ = "adjust_periodic_interval"
+    adjust_periodic_interval.__qualname__ = "adjust_periodic_interval"
+    adjust_periodic_budget.__name__ = "adjust_periodic_budget"
+    adjust_periodic_budget.__qualname__ = "adjust_periodic_budget"
+
+    return [
+        update_periodic_instructions,
+        adjust_periodic_interval,
+        adjust_periodic_budget,
+    ]
 
 
 def _format_info(info: SubsessionInfo) -> str:

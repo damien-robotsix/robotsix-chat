@@ -203,27 +203,35 @@ async def test_spawn_tool_periodic_parent_periodic_child_refusal() -> None:
         model_level=3,
     )
 
-    assert result.startswith("Could not start the subsession:")
-    assert "periodic" in result
+    assert "cannot spawn periodic" in result
 
 
 @pytest.mark.asyncio
-async def test_spawn_tool_periodic_parent_task_child_refusal() -> None:
-    """A periodic subsession spawning a task child is refused politely."""
-    env = build_env()
+async def test_spawn_tool_periodic_parent_task_child_allowed() -> None:
+    """A periodic subsession can spawn a task as a sibling (remediation)."""
+    agent = FakeAgent(["done quickly"])
+    env = build_env(agent=agent)
     parent = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=10.0)
     tools = build_subsession_tools(env, ctx=_ctx(subsession_id=parent.id, depth=1))
     spawn = _by_name(tools, "spawn_subsession")
 
     result = await spawn(
         "task",
-        "child task",
-        "check ticket",
+        "remediation task",
+        "fix the issue",
         model_level=3,
     )
 
-    assert result.startswith("Could not start the subsession:")
-    assert "periodic" in result
+    assert result.startswith("Started task subsession ")
+    assert "'remediation task'" in result
+    # Verify it's a sibling: same depth as the periodic, parent is
+    # the periodic's parent (None in this case).
+    infos = env.registry.list_for_owner(OWNER)
+    tasks = [i for i in infos if i.kind is SubsessionKind.TASK]
+    assert len(tasks) == 1
+    assert tasks[0].depth == parent.depth
+    assert tasks[0].parent_id == parent.parent_id
+    await wait_until(lambda: not tasks[0].is_active)
 
 
 @pytest.mark.asyncio
@@ -847,3 +855,287 @@ async def test_spawn_tool_dedup_key_non_user_chat_deduplicated() -> None:
         model_level=3,
     )
     assert second.startswith("Deduplicated: ")
+
+
+# ---------------------------------------------------------------------------
+# Periodic sibling spawning & forbidden-kind pre-check
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_spawn_tool_periodic_on_close_refusal() -> None:
+    """A periodic subsession spawning on_close is refused silently (logged)."""
+    env = build_env()
+    parent = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=10.0)
+    tools = build_subsession_tools(env, ctx=_ctx(subsession_id=parent.id, depth=1))
+    spawn = _by_name(tools, "spawn_subsession")
+
+    result = await spawn(
+        "on_close",
+        "cleanup",
+        "clean up later",
+        model_level=3,
+    )
+
+    assert "cannot spawn on_close" in result
+
+
+@pytest.mark.asyncio
+async def test_spawn_tool_periodic_user_chat_sibling() -> None:
+    """A periodic subsession spawning user_chat creates a SIBLING."""
+    agent = FakeAgent(["decision made"])
+    env = build_env(agent=agent)
+    # Create the periodic with a known parent (a task subsession).
+    task_parent = _register(env, kind=SubsessionKind.TASK)
+    periodic = _register(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=10.0,
+        parent_id=task_parent.id,
+        depth=2,
+    )
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=periodic.id, depth=periodic.depth)
+    )
+    spawn = _by_name(tools, "spawn_subsession")
+
+    result = await spawn(
+        "user_chat",
+        "escalation",
+        "operator decision needed",
+        model_level=3,
+    )
+
+    assert result.startswith("Started user_chat subsession ")
+    # Verify it's a sibling: same depth as periodic, same parent.
+    infos = env.registry.list_for_owner(OWNER)
+    chats = [i for i in infos if i.kind is SubsessionKind.USER_CHAT]
+    assert len(chats) == 1
+    assert chats[0].depth == periodic.depth
+    assert chats[0].parent_id == periodic.parent_id
+
+
+@pytest.mark.asyncio
+async def test_spawn_tool_periodic_task_sibling_depth() -> None:
+    """A periodic at depth 2 spawns a task sibling also at depth 2."""
+    agent = FakeAgent(["remediated"])
+    env = build_env(agent=agent)
+    # Create a task at depth 1, then a periodic child at depth 2.
+    depth1 = _register(env, kind=SubsessionKind.TASK, depth=1)
+    periodic = _register(
+        env,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=10.0,
+        parent_id=depth1.id,
+        depth=2,
+    )
+    tools = build_subsession_tools(
+        env, ctx=_ctx(subsession_id=periodic.id, depth=periodic.depth)
+    )
+    spawn = _by_name(tools, "spawn_subsession")
+
+    result = await spawn(
+        "task",
+        "remediation",
+        "fix the issue",
+        model_level=3,
+    )
+
+    assert result.startswith("Started task subsession ")
+    infos = env.registry.list_for_owner(OWNER)
+    tasks = [
+        i for i in infos if i.kind is SubsessionKind.TASK and i.title == "remediation"
+    ]
+    assert len(tasks) == 1
+    # Sibling: same depth as periodic, parent is depth1 (not the periodic).
+    assert tasks[0].depth == periodic.depth
+    assert tasks[0].parent_id == periodic.parent_id
+    assert tasks[0].parent_id == depth1.id
+
+
+# ---------------------------------------------------------------------------
+# Periodic self-adjustment tools
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_update_periodic_instructions() -> None:
+    """Periodic monitor can revise its own instructions."""
+    env = build_env()
+    periodic = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=10.0)
+    tools = build_subsession_tools(
+        env,
+        ctx=_ctx(subsession_id=periodic.id, depth=periodic.depth),
+        close_state=CloseState(),
+    )
+    update = _by_name(tools, "update_periodic_instructions")
+
+    result = await update("watch for CI failure X specifically")
+    assert "updated" in result.lower()
+
+    info = env.registry.get(periodic.id)
+    assert info is not None
+    assert info.prompt == "watch for CI failure X specifically"
+
+
+@pytest.mark.asyncio
+async def test_update_periodic_instructions_empty_rejected() -> None:
+    """Empty instructions are rejected."""
+    env = build_env()
+    periodic = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=10.0)
+    tools = build_subsession_tools(
+        env,
+        ctx=_ctx(subsession_id=periodic.id, depth=periodic.depth),
+        close_state=CloseState(),
+    )
+    update = _by_name(tools, "update_periodic_instructions")
+
+    result = await update("   ")
+    assert "non-empty" in result
+
+
+@pytest.mark.asyncio
+async def test_adjust_periodic_interval_within_bounds() -> None:
+    """Interval adjustment within bounds succeeds."""
+    env = build_env()
+    periodic = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=10.0)
+    tools = build_subsession_tools(
+        env,
+        ctx=_ctx(subsession_id=periodic.id, depth=periodic.depth),
+        close_state=CloseState(),
+    )
+    adjust = _by_name(tools, "adjust_periodic_interval")
+
+    result = await adjust(120.0)
+    assert "adjusted" in result
+
+    info = env.registry.get(periodic.id)
+    assert info is not None
+    assert info.interval_seconds == 120.0
+
+
+@pytest.mark.asyncio
+async def test_adjust_periodic_interval_clamped_to_max() -> None:
+    """Interval above max is clamped and logged."""
+    settings = make_settings(periodic_max_interval_seconds=300.0)
+    env = build_env(settings=settings)
+    periodic = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=10.0)
+    tools = build_subsession_tools(
+        env,
+        ctx=_ctx(subsession_id=periodic.id, depth=periodic.depth),
+        close_state=CloseState(),
+    )
+    adjust = _by_name(tools, "adjust_periodic_interval")
+
+    result = await adjust(9999.0)
+    assert "clamped" in result.lower() or "outside bounds" in result.lower()
+
+    info = env.registry.get(periodic.id)
+    assert info is not None
+    assert info.interval_seconds == 300.0  # clamped to max
+
+
+@pytest.mark.asyncio
+async def test_adjust_periodic_interval_clamped_to_min() -> None:
+    """Interval below min is clamped."""
+    settings = make_settings(min_interval_seconds=30.0)
+    env = build_env(settings=settings)
+    periodic = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+    tools = build_subsession_tools(
+        env,
+        ctx=_ctx(subsession_id=periodic.id, depth=periodic.depth),
+        close_state=CloseState(),
+    )
+    adjust = _by_name(tools, "adjust_periodic_interval")
+
+    _result = await adjust(1.0)
+    # Should clamp to min (30.0)
+    info = env.registry.get(periodic.id)
+    assert info is not None
+    assert info.interval_seconds == 30.0
+
+
+@pytest.mark.asyncio
+async def test_adjust_periodic_budget_within_bounds() -> None:
+    """Budget adjustment within bounds succeeds."""
+    env = build_env()
+    periodic = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=10.0)
+    tools = build_subsession_tools(
+        env,
+        ctx=_ctx(subsession_id=periodic.id, depth=periodic.depth),
+        close_state=CloseState(),
+    )
+    adjust = _by_name(tools, "adjust_periodic_budget")
+
+    result = await adjust(42)
+    assert "adjusted" in result
+
+    info = env.registry.get(periodic.id)
+    assert info is not None
+    assert info.max_runs == 42
+
+
+@pytest.mark.asyncio
+async def test_adjust_periodic_budget_clamped_to_max() -> None:
+    """Budget above max is clamped."""
+    settings = make_settings(periodic_max_total_runs=50)
+    env = build_env(settings=settings)
+    periodic = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=10.0)
+    tools = build_subsession_tools(
+        env,
+        ctx=_ctx(subsession_id=periodic.id, depth=periodic.depth),
+        close_state=CloseState(),
+    )
+    adjust = _by_name(tools, "adjust_periodic_budget")
+
+    result = await adjust(999)
+    assert "clamped" in result.lower() or "exceeds maximum" in result.lower()
+
+    info = env.registry.get(periodic.id)
+    assert info is not None
+    assert info.max_runs == 50  # clamped
+
+
+@pytest.mark.asyncio
+async def test_adjust_periodic_budget_zero_unlimited() -> None:
+    """Budget of 0 means unlimited."""
+    env = build_env()
+    periodic = _register(env, kind=SubsessionKind.PERIODIC, interval_seconds=10.0)
+    tools = build_subsession_tools(
+        env,
+        ctx=_ctx(subsession_id=periodic.id, depth=periodic.depth),
+        close_state=CloseState(),
+    )
+    adjust = _by_name(tools, "adjust_periodic_budget")
+
+    result = await adjust(0)
+    assert "unlimited" in result.lower()
+
+    info = env.registry.get(periodic.id)
+    assert info is not None
+    assert info.max_runs == 0
+
+
+@pytest.mark.asyncio
+async def test_self_adjustment_tools_not_available_to_task() -> None:
+    """Self-adjustment tools are not available to non-periodic subsessions."""
+    env = build_env()
+    task = _register(env, kind=SubsessionKind.TASK)
+    tools = build_subsession_tools(
+        env,
+        ctx=_ctx(subsession_id=task.id, depth=task.depth),
+        close_state=CloseState(),
+    )
+    names = _tool_names(tools)
+    assert "update_periodic_instructions" not in names
+    assert "adjust_periodic_interval" not in names
+    assert "adjust_periodic_budget" not in names
+
+
+@pytest.mark.asyncio
+async def test_self_adjustment_tools_not_available_to_main_agent() -> None:
+    """Self-adjustment tools are not available to the main chat agent."""
+    env = build_env()
+    tools = build_subsession_tools(env, ctx=_ctx(depth=0))
+    names = _tool_names(tools)
+    assert "update_periodic_instructions" not in names

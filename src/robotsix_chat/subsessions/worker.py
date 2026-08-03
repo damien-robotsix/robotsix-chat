@@ -366,6 +366,12 @@ def spawn_subsession(
         parent = env.registry.get(parent_id)
         if parent is not None and parent.kind is SubsessionKind.PERIODIC:
             if kind is SubsessionKind.PERIODIC:
+                logger.warning(
+                    "Subsession %s: periodic spawn of nested periodic child "
+                    "rejected (kind=%s).",
+                    parent_id,
+                    kind.value,
+                )
                 raise SubsessionPeriodicSpawnError(
                     "periodic subsessions cannot spawn periodic children. "
                     "Alternatives: (1) use a one-shot task subsession to "
@@ -374,9 +380,15 @@ def spawn_subsession(
                     "(3) ask the operator to spawn a top-level periodic "
                     "monitor."
                 )
-            if kind in (SubsessionKind.TASK, SubsessionKind.ON_CLOSE):
+            if kind is SubsessionKind.ON_CLOSE:
+                logger.warning(
+                    "Subsession %s: periodic spawn of on_close child "
+                    "rejected (kind=%s).",
+                    parent_id,
+                    kind.value,
+                )
                 raise SubsessionPeriodicSpawnError(
-                    "periodic subsessions cannot spawn task or on_close children"
+                    "periodic subsessions cannot spawn on_close children"
                 )
     if kind is SubsessionKind.USER_CHAT and parent_id is not None:
         parent = env.registry.get(parent_id)
