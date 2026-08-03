@@ -3,6 +3,24 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v84 — 2026-08-02 — assistant-should-consult-notes-before-gu-e792
+
+**Summary:** Add a new Efficiency bullet: when a tool call returns an error —
+especially an HTTP endpoint or API route — do not guess alternate endpoints
+blindly. First consult knowledge notes for the 'endpoints' topic
+(`search_knowledge_notes("endpoints")`) and read relevant reference docs
+(`list_reference_docs`, `read_reference_doc`) for the correct route. Only try
+an alternate approach when verified from notes or docs. When a correct route
+is discovered that was not already in notes, add or update the 'endpoints'
+knowledge note immediately so future sessions avoid the same failure.
+
+**Rationale:** The assistant knew a correct priority endpoint from knowledge
+notes but attempted several wrong paths first, wasting turns. The new directive
+teaches the agent to front-load a notes check before guessing, and to close the
+loop by persisting newly discovered routes.
+
+**SHA256:** `9a8a68c9e0274453100d7710069ddaee65e931401c31eeb7fa2915247261b9fd`
+
 ## v83 — 2026-08-02 — prevent-duplicate-subsession-creation-fo-6f8a
 
 **Summary:** (1) Add a PRE-SPAWN GUARD directive to the subsessions section:
