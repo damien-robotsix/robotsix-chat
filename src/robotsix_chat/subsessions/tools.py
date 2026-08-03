@@ -482,7 +482,9 @@ def _build_periodic_self_adjustment_tools(
     max_interval = getattr(cfg, "periodic_max_interval_seconds", 3600.0)
     max_total_runs = getattr(cfg, "periodic_max_total_runs", 100)
 
-    async def update_periodic_instructions(new_instructions: str) -> str:
+    async def update_periodic_instructions(
+        new_instructions: str, reason: str | None = None
+    ) -> str:
         """Revise this periodic monitor's instructions/prompt.
 
         Use this to narrow or broaden the monitor's focus as the
@@ -493,22 +495,32 @@ def _build_periodic_self_adjustment_tools(
 
         The new instructions apply from the NEXT tick onward; the
         current tick (if mid-turn) is unaffected.
+
+        Pass an optional *reason* (one sentence) so the operator can
+        see why the monitor changed its behaviour in the audit log.
         """
         if not isinstance(new_instructions, str) or not new_instructions.strip():
             return (
                 "update_periodic_instructions: instructions must be a non-empty string."
             )
+        info_before = registry.get(sub_id)
+        old_len = len(info_before.prompt) if info_before else 0
         ok = registry.update_prompt(sub_id, new_instructions)
         if not ok:
             return "update_periodic_instructions: this subsession is no longer active."
+        reason_suffix = f" — {reason}" if reason else ""
         logger.warning(
-            "Periodic subsession %s self-adjusted instructions (new length=%d).",
+            "Periodic subsession %s self-adjusted instructions (length %d → %d)%s.",
             sub_id,
+            old_len,
             len(new_instructions),
+            reason_suffix,
         )
         return "Instructions updated — the new prompt takes effect on the next tick."
 
-    async def adjust_periodic_interval(interval_seconds: float) -> str:
+    async def adjust_periodic_interval(
+        interval_seconds: float, reason: str | None = None
+    ) -> str:
         """Adjust this periodic monitor's polling interval (seconds).
 
         Must be between the configured minimum (default 60 s) and
@@ -516,6 +528,9 @@ def _build_periodic_self_adjustment_tools(
         are clamped to the nearest bound; the clamped value is logged.
         Use shorter intervals when nearing a terminal transition, and
         longer intervals while the monitored subject is idle.
+
+        Pass an optional *reason* (one sentence) so the operator can
+        see why the monitor changed its behaviour in the audit log.
         """
         if not isinstance(interval_seconds, (int, float)) or interval_seconds <= 0:
             return (
@@ -523,18 +538,24 @@ def _build_periodic_self_adjustment_tools(
             )
         original = float(interval_seconds)
         clamped = max(min_interval, min(original, max_interval))
+        info_before = registry.get(sub_id)
+        old_interval = info_before.interval_seconds if info_before else None
         ok = registry.update_interval(sub_id, clamped)
         if not ok:
             return "adjust_periodic_interval: this subsession is no longer active."
+        reason_suffix = f" — {reason}" if reason else ""
         if clamped != original:
             logger.warning(
                 "Periodic subsession %s self-adjusted interval "
-                "%.1f -> %.1f (clamped to bounds [%.1f, %.1f]).",
+                "%.1f → %.1f (requested %.1f, clamped to bounds "
+                "[%.1f, %.1f])%s.",
                 sub_id,
-                original,
+                old_interval if old_interval is not None else clamped,
                 clamped,
-                min_interval,
+                original,
                 max_interval,
+                min_interval,
+                reason_suffix,
             )
             return (
                 f"Interval adjusted to {clamped:.0f} s "
@@ -542,13 +563,15 @@ def _build_periodic_self_adjustment_tools(
                 f"[{min_interval:.0f}, {max_interval:.0f}])."
             )
         logger.warning(
-            "Periodic subsession %s self-adjusted interval to %.1f s.",
+            "Periodic subsession %s self-adjusted interval %.1f → %.1f s%s.",
             sub_id,
+            old_interval if old_interval is not None else clamped,
             clamped,
+            reason_suffix,
         )
         return f"Interval adjusted to {clamped:.0f} s."
 
-    async def adjust_periodic_budget(max_runs: int) -> str:
+    async def adjust_periodic_budget(max_runs: int, reason: str | None = None) -> str:
         """Adjust this periodic monitor's remaining run budget (max_runs).
 
         Must be between 0 and the configured maximum (default 100).
@@ -557,30 +580,40 @@ def _build_periodic_self_adjustment_tools(
         or an explicit close.  Use this to extend the budget when a
         ticket needs more monitoring cycles, or shorten it when the
         watched condition is nearing resolution.
+
+        Pass an optional *reason* (one sentence) so the operator can
+        see why the monitor changed its behaviour in the audit log.
         """
         if not isinstance(max_runs, int) or max_runs < 0:
             return "adjust_periodic_budget: max_runs must be a non-negative integer."
         clamped = min(max_runs, max_total_runs)
+        info_before = registry.get(sub_id)
+        old_max_runs = info_before.max_runs if info_before else None
         ok = registry.update_max_runs(sub_id, clamped)
         if not ok:
             return "adjust_periodic_budget: this subsession is no longer active."
+        reason_suffix = f" — {reason}" if reason else ""
         if clamped != max_runs:
             logger.warning(
                 "Periodic subsession %s self-adjusted budget "
-                "%d -> %d (clamped to max %d).",
+                "%s → %d (requested %d, clamped to max %d)%s.",
                 sub_id,
-                max_runs,
+                str(old_max_runs) if old_max_runs is not None else "?",
                 clamped,
+                max_runs,
                 max_total_runs,
+                reason_suffix,
             )
             return (
                 f"Budget adjusted to {clamped} runs "
                 f"(requested {max_runs} exceeds maximum {max_total_runs})."
             )
         logger.warning(
-            "Periodic subsession %s self-adjusted budget to %d runs.",
+            "Periodic subsession %s self-adjusted budget %s → %d runs%s.",
             sub_id,
+            str(old_max_runs) if old_max_runs is not None else "?",
             clamped,
+            reason_suffix,
         )
         if clamped == 0:
             return "Budget adjusted to unlimited (runs until auto-stopped or closed)."
