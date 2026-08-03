@@ -454,3 +454,240 @@ async def test_watcher_resumes_human_approval_timeout_when_state_changes() -> No
     # human_approval_since must be cleared on reopen.
     assert reopened.checkpoint is not None
     assert "human_approval_since" not in reopened.checkpoint
+
+
+# -- PR closed-unmerged / merge-conflict detection --------------------------
+
+
+def _make_pr_monitor(
+    env,
+    ticket_id="T-PR",
+    pr_number=42,
+    repo_full_name="org/repo",
+):
+    """Create a paused periodic monitor with a tracked PR in its checkpoint."""
+    info = env.registry.create(
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id=OWNER,
+        parent_id=None,
+        depth=1,
+        title="pr monitor",
+        prompt="monitor",
+        model_level=3,
+        interval_seconds=60.0,
+        checkpoint={
+            "ticket_id": ticket_id,
+            "pr_number": pr_number,
+            "repo_full_name": repo_full_name,
+            "last_known_state": "in_progress",
+        },
+    )
+    env.registry.mark_closed(
+        info.id, summary="paused", reason="paused", closed_by="system"
+    )
+    return info
+
+
+def _mock_direct_repo_client(*, merged=False, state="open", mergeable=True):
+    """Build a mock ``DirectRepoClient`` returning given PR data."""
+    mock_client = MagicMock()
+    mock_client._token = AsyncMock(return_value="fake-token")
+    mock_client.get_pr = AsyncMock(
+        return_value={
+            "merged": merged,
+            "state": state,
+            "mergeable": mergeable,
+            "mergeable_state": "clean" if mergeable else "dirty",
+            "title": "Test PR",
+            "html_url": "https://github.com/org/repo/pull/42",
+        }
+    )
+    return mock_client
+
+
+@pytest.mark.asyncio
+async def test_watcher_notifies_on_pr_closed_unmerged() -> None:
+    """When a tracked PR is closed without merging, the watcher notifies.
+
+    It publishes a high-urgency SSE notification, tries to create a follow-up
+    ticket on the board, and resumes the monitor.
+    """
+    settings = make_settings()
+    settings.direct_repo = type(
+        "_ns",
+        (),
+        {
+            "enabled": True,
+            "board_api_base_url": "https://mill.example.com",
+            "board_api_token": type("_st", (), {"get_secret_value": lambda: ""})(),
+            "timeout": 10.0,
+        },
+    )()
+    settings.subsessions.paused_monitor_poll_interval_seconds = 0.01
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_pr_monitor(env, ticket_id="T-PR")
+
+    # Mock the mill to return a non-terminal ticket state.
+    mock_ticket_client = _mock_ticket_client(state="in_progress")
+    # Mock the DirectRepoClient to return a closed-unmerged PR.
+    mock_gh = _mock_direct_repo_client(merged=False, state="closed")
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            MagicMock(return_value=mock_gh),
+        ),
+        patch("httpx.AsyncClient", mock_ticket_client),
+        patch(
+            "robotsix_chat.subsessions.watcher.BoardClient",
+            MagicMock(
+                return_value=MagicMock(
+                    create_ticket=AsyncMock(return_value="FOLLOWUP-1")
+                )
+            ),
+        ),
+    ):
+        await asyncio.sleep(0.20)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # The monitor should be resumed.
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.is_active
+
+    # An SSE notification should have been published with high urgency.
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    assert len(notifications) >= 1
+    notification_bodies = [str(frame["body"]) for _sid, frame in notifications]
+    closed_unmerged_notification = [
+        b for b in notification_bodies if "closed without being merged" in b
+    ]
+    assert len(closed_unmerged_notification) == 1
+
+    urgency_values = [
+        frame["urgency"]
+        for _sid, frame in notifications
+        if "closed without being merged" in str(frame["body"])
+    ]
+    assert urgency_values == ["high"]
+
+
+@pytest.mark.asyncio
+async def test_watcher_no_alarm_on_closed_unmerged_terminal_ticket() -> None:
+    """When the PR is closed unmerged but the ticket is terminal, no alarm fires.
+
+    The watcher logs a debug message but does NOT publish an SSE
+    notification or create a follow-up ticket.
+    """
+    settings = make_settings()
+    settings.direct_repo = type(
+        "_ns",
+        (),
+        {
+            "enabled": True,
+            "board_api_base_url": "https://mill.example.com",
+            "board_api_token": type("_st", (), {"get_secret_value": lambda: ""})(),
+            "timeout": 10.0,
+        },
+    )()
+    settings.subsessions.paused_monitor_poll_interval_seconds = 0.01
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    info = _make_pr_monitor(env, ticket_id="T-PR")
+
+    # The ticket is already in a terminal state ("done").
+    mock_ticket_client = _mock_ticket_client(state="done")
+    # Mock the DirectRepoClient to return a closed-unmerged PR.
+    mock_gh = _mock_direct_repo_client(merged=False, state="closed")
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            MagicMock(return_value=mock_gh),
+        ),
+        patch("httpx.AsyncClient", mock_ticket_client),
+    ):
+        await asyncio.sleep(0.20)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # The monitor should no longer be in its original paused state
+    # (it was resumed, the worker detected a terminal ticket, and
+    # closed the monitor again with a terminal reason).
+    reopened = env.registry.get(info.id)
+    assert reopened is not None
+    assert reopened.close_reason != "paused"
+
+    # No "closed without merging" notification should be published.
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    closed_unmerged_notifications = [
+        frame
+        for _sid, frame in notifications
+        if "closed without being merged" in str(frame["body"])
+    ]
+    assert len(closed_unmerged_notifications) == 0
+
+
+@pytest.mark.asyncio
+async def test_watcher_notifies_on_merge_conflict() -> None:
+    """When a tracked PR has merge conflicts, the watcher notifies with high urgency."""
+    settings = make_settings()
+    settings.direct_repo = type(
+        "_ns",
+        (),
+        {
+            "enabled": True,
+            "board_api_base_url": "https://mill.example.com",
+            "board_api_token": type("_st", (), {"get_secret_value": lambda: ""})(),
+            "timeout": 10.0,
+        },
+    )()
+    settings.subsessions.paused_monitor_poll_interval_seconds = 0.01
+    sink = RecordingSink()
+    env = build_env(settings=settings, event_sink=sink)
+
+    _make_pr_monitor(env, ticket_id="T-PR")
+
+    # Mock the mill to return a non-terminal ticket state.
+    mock_ticket_client = _mock_ticket_client(state="in_progress")
+    # Mock the DirectRepoClient to return a PR with merge conflicts.
+    mock_gh = _mock_direct_repo_client(merged=False, state="open", mergeable=False)
+
+    watcher_task = asyncio.create_task(watch_paused_monitors(env))
+
+    with (
+        patch(
+            "robotsix_chat.repo.direct.client.DirectRepoClient",
+            MagicMock(return_value=mock_gh),
+        ),
+        patch("httpx.AsyncClient", mock_ticket_client),
+    ):
+        await asyncio.sleep(0.20)
+
+    watcher_task.cancel()
+    with pytest.raises(asyncio.CancelledError):
+        _ = await watcher_task
+
+    # An SSE notification should be published for merge conflicts.
+    notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
+    merge_conflict_notifications = [
+        frame
+        for _sid, frame in notifications
+        if "merge conflicts" in str(frame["body"])
+    ]
+    assert len(merge_conflict_notifications) == 1
+
+    urgency_values = [frame["urgency"] for frame in merge_conflict_notifications]
+    assert urgency_values == ["high"]

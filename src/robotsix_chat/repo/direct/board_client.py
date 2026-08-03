@@ -322,6 +322,82 @@ class BoardClient:
             await self._fetch_ticket_field(ticket_id, "data"),
         )
 
+    async def create_ticket(
+        self,
+        title: str,
+        description: str = "",
+        kind: str = "task",
+        source: str = "agent",
+        repo_id: str | None = None,
+    ) -> str | None:
+        """Create a new ticket via the board API.
+
+        Sends ``POST /tickets`` with the ticket fields.  Returns the
+        created ticket's ``id`` on success (HTTP 201), ``None`` on any
+        error (logged as a warning).
+        """
+        url = f"{self._board_url}/tickets"
+        headers: dict[str, str] = {
+            "Accept": "application/json",
+            "Content-Type": "application/json",
+        }
+        if self._s.board_api_token.get_secret_value():
+            headers["Authorization"] = (
+                f"Bearer {self._s.board_api_token.get_secret_value()}"
+            )
+        body: dict[str, Any] = {
+            "title": title,
+            "description": description,
+            "kind": kind,
+            "source": source,
+        }
+        if repo_id is not None:
+            body["repo_id"] = repo_id
+        result = await safe_http_request(
+            "POST",
+            url,
+            headers=headers,
+            json_body=body,
+            timeout=self._s.timeout,
+            label=f"Board API (create-ticket {title[:60]})",
+        )
+        if result.error:
+            logger.warning(
+                "Failed to create ticket '%s': %s",
+                title[:80],
+                result.error,
+            )
+            return None
+        if result.status_code and result.status_code >= 400:
+            logger.warning(
+                "Board API returned %d for create ticket '%s'",
+                result.status_code,
+                title[:80],
+            )
+            return None
+        try:
+            data = json.loads(result.text or "{}")
+        except json.JSONDecodeError:
+            logger.warning(
+                "Non-JSON response for create ticket '%s': %s",
+                title[:80],
+                (result.text or "")[:200],
+            )
+            return None
+        ticket_id = data.get("id")
+        if isinstance(ticket_id, str) and ticket_id:
+            logger.info(
+                "BoardClient: created ticket %s (%s)",
+                ticket_id,
+                title[:80],
+            )
+            return ticket_id
+        logger.warning(
+            "Board API create ticket response missing 'id': %s",
+            (result.text or "")[:200],
+        )
+        return None
+
     async def count_implement_cycles(self, ticket_id: str) -> int | None:
         """Return the number of implement cycles for *ticket_id*, or None on failure.
 

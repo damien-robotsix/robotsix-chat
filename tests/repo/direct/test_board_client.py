@@ -299,3 +299,71 @@ async def test_count_implement_cycles_api_failure_returns_none(
     client = _client()
     cycles = await client.count_implement_cycles("t-1")
     assert cycles is None
+
+
+# ---------------------------------------------------------------------------
+# create_ticket
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_returns_id_on_201(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Successful ticket creation returns the ticket id."""
+    respx_mock.post("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(
+            201,
+            text=json.dumps(
+                {"id": "new-ticket-1", "title": "Test ticket", "state": "draft"}
+            ),
+        )
+    )
+    client = _client()
+    ticket_id = await client.create_ticket(
+        title="Test ticket",
+        description="A test follow-up",
+    )
+    assert ticket_id == "new-ticket-1"
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_returns_none_on_400(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """HTTP 400 returns None."""
+    respx_mock.post("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(400, text="Bad request")
+    )
+    client = _client()
+    ticket_id = await client.create_ticket(title="Bad ticket")
+    assert ticket_id is None
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_returns_none_on_non_json(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Non-JSON 201 response returns None."""
+    respx_mock.post("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(201, text="<html>OK</html>")
+    )
+    client = _client()
+    ticket_id = await client.create_ticket(title="HTML response")
+    assert ticket_id is None
+
+
+@pytest.mark.asyncio
+async def test_create_ticket_returns_none_when_missing_id(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Valid JSON without an 'id' field returns None."""
+    respx_mock.post("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(
+            201,
+            text=json.dumps({"title": "no id field"}),
+        )
+    )
+    client = _client()
+    ticket_id = await client.create_ticket(title="Missing id")
+    assert ticket_id is None
