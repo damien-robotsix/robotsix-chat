@@ -3,7 +3,7 @@
 ## Agent tool: `verify_pr_ci_status`
 
 Fetch live CI run status and PR state from GitHub — PR metadata (state, mergeability, draft status)
-combined with the latest CI workflow runs for the PR's head branch.  The agent MUST call this tool
+combined with the latest CI workflow runs for the PR's head branch. The agent MUST call this tool
 before asserting success or signalling the operator about CI/PR status; never rely on cached,
 inferred, or incomplete data.
 
@@ -18,8 +18,8 @@ state.
 ### Returned information
 
 - PR title, URL, state (open/closed/merged), draft flag, merged flag, mergeable state.
-- CI: up to 5 most recent workflow runs on the PR's head branch, each with name, run id, status,
-  and conclusion.
+- CI: up to 5 most recent workflow runs on the PR's head branch, each with name, run id, status, and
+  conclusion.
 
 ### Error responses
 
@@ -27,7 +27,7 @@ state.
 | ------------------------------ | --------------------------------------------------------------- |
 | Repo not in installation scope | `The robotsix-mill GitHub App is not installed on 'owner/name'` |
 | PR not found / API error       | `Error fetching PR #... in owner/name: <detail>`                |
-| GitHub Actions unreachable     | `CI status: could not fetch workflow runs — <detail>`            |
+| GitHub Actions unreachable     | `CI status: could not fetch workflow runs — <detail>`           |
 
 ______________________________________________________________________
 
