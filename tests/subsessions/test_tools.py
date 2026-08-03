@@ -1048,7 +1048,7 @@ async def test_adjust_periodic_interval_clamped_to_min() -> None:
     )
     adjust = _by_name(tools, "adjust_periodic_interval")
 
-    _result = await adjust(1.0)
+    await adjust(1.0)
     # Should clamp to min (30.0)
     info = env.registry.get(periodic.id)
     assert info is not None
