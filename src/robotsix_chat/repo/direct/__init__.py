@@ -204,22 +204,27 @@ def build_direct_repo_tools(
         ):
             return scope_error, 0
 
+        # Resolve paraphrased / abbreviated IDs against the live board
+        # before fetching ticket data.
+        resolved_map = await board.resolve_ticket_ids([ticket_id])
+        effective_id = resolved_map.get(ticket_id) or ticket_id
+
         # --- single API call for state + cycles ---
         if component_request is not None:
             # Retry the roster path with exponential backoff (absorbs
             # transient connectivity failures), then fall back to the
             # direct board-API path when the roster path fails entirely
             # — same pattern used by _assert_blocked_and_scoped.
-            resp = await _retry_component_ticket_fetch(component_request, ticket_id)
+            resp = await _retry_component_ticket_fetch(component_request, effective_id)
             if resp.startswith("Error:"):
-                data = await board.get_ticket_data(ticket_id)
+                data = await board.get_ticket_data(effective_id)
                 if data is None:
                     board_url = board._board_url
                     return (
                         f"Error: could not fetch ticket data for "
-                        f"{ticket_id}.  Verify the ticket id and board "
+                        f"{effective_id}.  Verify the ticket id and board "
                         f"API connectivity (tried roster path and "
-                        f"{board_url}/tickets/{ticket_id}).",
+                        f"{board_url}/tickets/{effective_id}).",
                         0,
                     )
                 state = data.get("state")
@@ -232,14 +237,14 @@ def build_direct_repo_tools(
                 except ValueError:
                     return (
                         f"Error: could not parse component_request "
-                        f"response for ticket {ticket_id} (no status "
+                        f"response for ticket {effective_id} (no status "
                         f"line)",
                         0,
                     )
                 if not status_line.startswith("HTTP "):
                     return (
                         f"Error: unexpected component_request response for "
-                        f"ticket {ticket_id}: {status_line!r}",
+                        f"ticket {effective_id}: {status_line!r}",
                         0,
                     )
                 try:
@@ -248,13 +253,13 @@ def build_direct_repo_tools(
                     return (
                         f"Error: unparsable HTTP status in "
                         f"component_request response for ticket "
-                        f"{ticket_id}: {status_line!r}",
+                        f"{effective_id}: {status_line!r}",
                         0,
                     )
                 if status_code >= 400:
                     return (
                         f"Error: board API returned HTTP {status_code} for "
-                        f"ticket {ticket_id} via component_request",
+                        f"ticket {effective_id} via component_request",
                         0,
                     )
                 try:
@@ -262,19 +267,19 @@ def build_direct_repo_tools(
                 except json.JSONDecodeError, TypeError:
                     return (
                         f"Error: non-JSON response for ticket "
-                        f"{ticket_id} via component_request",
+                        f"{effective_id} via component_request",
                         0,
                     )
                 state = data.get("state")
                 cycles = _count_cycles_from_data(data)
         else:
-            data = await board.get_ticket_data(ticket_id)
+            data = await board.get_ticket_data(effective_id)
             if data is None:
                 board_url = board._board_url
                 return (
-                    f"Error: could not fetch ticket data for {ticket_id}. "
+                    f"Error: could not fetch ticket data for {effective_id}. "
                     f"Verify the ticket id and board API connectivity "
-                    f"(tried {board_url}/tickets/{ticket_id}).",
+                    f"(tried {board_url}/tickets/{effective_id}).",
                     0,
                 )
             state = data.get("state")
@@ -283,14 +288,14 @@ def build_direct_repo_tools(
         # --- state check ---
         if state is None:
             return (
-                f"Error: ticket {ticket_id} data did not contain a state "
+                f"Error: ticket {effective_id} data did not contain a state "
                 "field (response was received but is missing required "
                 "fields — the ticket may not exist or may be malformed).",
                 0,
             )
         if state.upper() != "BLOCKED":
             return (
-                f"Refused: ticket {ticket_id} is in state '{state}', not BLOCKED. "
+                f"Refused: ticket {effective_id} is in state '{state}', not BLOCKED. "
                 "Direct-repo actions are only permitted for BLOCKED tickets.",
                 0,
             )
@@ -346,40 +351,47 @@ def build_direct_repo_tools(
         ):
             return scope_error
 
+        # Resolve paraphrased / abbreviated IDs against the live board
+        # before fetching ticket state.  This prevents 404 failures when
+        # an ID was derived from narrative text rather than from a board
+        # API response.
+        resolved_map = await board.resolve_ticket_ids([ticket_id])
+        effective_id = resolved_map.get(ticket_id) or ticket_id
+
         if component_request is not None:
             state, error = await _get_ticket_state_via_component(
-                component_request, ticket_id
+                component_request, effective_id
             )
             # Fall back to the direct board-API client when the
             # roster-based (component_request) path fails, so a
             # transient connectivity issue on one path does not
             # hard-fail the entire tool invocation.
             if error is not None:
-                fallback_state = await board.get_ticket_state(ticket_id)
+                fallback_state = await board.get_ticket_state(effective_id)
                 if fallback_state is not None:
                     state = fallback_state
                     error = None
         else:
-            state = await board.get_ticket_state(ticket_id)
+            state = await board.get_ticket_state(effective_id)
             if state is not None:
                 error = None
             else:
                 board_url = board._board_url
                 error = (
                     f"Error: could not determine state for ticket "
-                    f"{ticket_id}. Verify the ticket id and board API "
-                    f"connectivity (tried {board_url}/tickets/{ticket_id})."
+                    f"{effective_id}. Verify the ticket id and board API "
+                    f"connectivity (tried {board_url}/tickets/{effective_id})."
                 )
         if error is not None:
             return error
         if state is not None and state.upper() != "BLOCKED":
             return (
-                f"Refused: ticket {ticket_id} is in state '{state}', not BLOCKED. "
+                f"Refused: ticket {effective_id} is in state '{state}', not BLOCKED. "
                 "Direct-repo actions are only permitted for BLOCKED tickets."
             )
         if state is None:
             return (
-                f"Error: ticket {ticket_id} returned no state field. "
+                f"Error: ticket {effective_id} returned no state field. "
                 "Verify the ticket id and board API connectivity."
             )
 
@@ -837,6 +849,10 @@ def build_direct_repo_tools(
             why the reset failed.
 
         """
+        # Resolve paraphrased / abbreviated IDs before making the request.
+        resolved_map = await board.resolve_ticket_ids([ticket_id])
+        effective_id = resolved_map.get(ticket_id) or ticket_id
+
         justification = (
             "Spawn counter reset — allowing re-implement after spawn limit reached."
         )
@@ -846,32 +862,32 @@ def build_direct_repo_tools(
             resp = await component_request(
                 "mill",
                 "POST",
-                f"/tickets/{ticket_id}/resume-blocked",
+                f"/tickets/{effective_id}/resume-blocked",
                 json_body={"justification": justification},
             )
             if resp.startswith("HTTP 2"):
                 return (
-                    f"Implement spawn counter reset for ticket {ticket_id} "
+                    f"Implement spawn counter reset for ticket {effective_id} "
                     "(via roster path). The ticket can now be re-spawned."
                 )
             logger.info(
                 "reset_implement_spawn_counter roster path failed for %s; "
                 "falling back to direct board API",
-                ticket_id,
+                effective_id,
             )
 
         # Fall back to the direct board API path.
-        ok = await board.resume_blocked_ticket(ticket_id, justification)
+        ok = await board.resume_blocked_ticket(effective_id, justification)
         if ok:
             return (
-                f"Implement spawn counter reset for ticket {ticket_id}. "
+                f"Implement spawn counter reset for ticket {effective_id}. "
                 "The ticket can now be re-spawned."
             )
 
         board_url = board._board_url
         return (
             f"Error: could not reset implement spawn counter for ticket "
-            f"{ticket_id}.  Verify the ticket id and board API connectivity "
+            f"{effective_id}.  Verify the ticket id and board API connectivity "
             f"({board_url})."
         )
 

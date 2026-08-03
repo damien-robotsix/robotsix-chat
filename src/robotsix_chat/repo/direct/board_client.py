@@ -120,6 +120,149 @@ class BoardClient:
             return data.get(field)
         return data
 
+    async def resolve_ticket_ids(
+        self, candidate_ids: list[str]
+    ) -> dict[str, str | None]:
+        """Resolve candidate ticket IDs against the live board.
+
+        Fetches ``GET /tickets`` and for each candidate ID tries, in order:
+
+        1. **Exact match** — the candidate ID appears verbatim in the board.
+        2. **Hash-suffix match** — the last 4 hex chars of the candidate
+           uniquely match one ticket's hash suffix.
+        3. **Slug-substring match** — the non-timestamp, non-hash portion
+           of the candidate appears as a substring of exactly one ticket's
+           full ID.
+
+        Returns a dict mapping each candidate ID to its resolved full
+        ticket ID, or ``None`` when the candidate could not be resolved.
+        """
+        import re
+
+        if not candidate_ids:
+            return {}
+
+        if not self._board_url:
+            return {cid: None for cid in candidate_ids}
+
+        url = f"{self._board_url}/tickets"
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if self._s.board_api_token.get_secret_value():
+            headers["Authorization"] = (
+                f"Bearer {self._s.board_api_token.get_secret_value()}"
+            )
+
+        try:
+            async with httpx.AsyncClient(timeout=self._s.timeout) as client:
+                retry_client = RetryClient(client, config=_BOARD_RETRY_CONFIG)
+                response = await retry_client.get(url, headers=headers)
+                response.raise_for_status()
+                tickets_data = response.json()
+        except Exception as exc:
+            logger.warning(
+                "BoardClient: failed to fetch ticket list for ID resolution: %s",
+                exc,
+            )
+            return {cid: None for cid in candidate_ids}
+
+        # Extract ticket IDs from the response.
+        if isinstance(tickets_data, list):
+            ticket_objects = tickets_data
+        elif isinstance(tickets_data, dict):
+            ticket_objects = tickets_data.get("tickets", [])
+            if not isinstance(ticket_objects, list):
+                logger.warning(
+                    "BoardClient: unexpected GET /tickets response "
+                    "format — expected list or {tickets: [...]}"
+                )
+                return {cid: None for cid in candidate_ids}
+        else:
+            logger.warning(
+                "BoardClient: unexpected GET /tickets response type %s",
+                type(tickets_data).__name__,
+            )
+            return {cid: None for cid in candidate_ids}
+
+        all_ids: list[str] = [
+            t["ticket_id"]
+            for t in ticket_objects
+            if isinstance(t, dict) and isinstance(t.get("ticket_id"), str)
+        ]
+
+        # Build a reverse index: hash-suffix → list of matching full IDs.
+        suffix_index: dict[str, list[str]] = {}
+        for tid in all_ids:
+            m = re.search(r"-([0-9a-f]{4})$", tid)
+            if m:
+                suffix_index.setdefault(m.group(1), []).append(tid)
+
+        result: dict[str, str | None] = {}
+        for cid in candidate_ids:
+            if not isinstance(cid, str) or not cid.strip():
+                result[cid] = None
+                continue
+
+            # 1. Exact match.
+            if cid in all_ids:
+                result[cid] = cid
+                continue
+
+            # 2. Hash-suffix match.
+            suffix_match = re.search(r"([0-9a-f]{4})$", cid)
+            if suffix_match:
+                suffix = suffix_match.group(1)
+                matches = suffix_index.get(suffix, [])
+                if len(matches) == 1:
+                    resolved = matches[0]
+                    logger.info(
+                        "BoardClient: resolved %r → %r (hash suffix %r)",
+                        cid,
+                        resolved,
+                        suffix,
+                    )
+                    result[cid] = resolved
+                    continue
+                if len(matches) > 1:
+                    logger.warning(
+                        "BoardClient: ambiguous hash suffix %r for %r — matches %s",
+                        suffix,
+                        cid,
+                        matches,
+                    )
+
+            # 3. Slug-substring match.
+            slug = re.sub(r"^\d{8}T\d{6}Z-", "", cid)
+            slug = re.sub(r"-?[0-9a-f]{4}$", "", slug)
+            if slug and len(slug) >= 4:
+                slug_matches = [tid for tid in all_ids if slug.lower() in tid.lower()]
+                if len(slug_matches) == 1:
+                    resolved = slug_matches[0]
+                    logger.info(
+                        "BoardClient: resolved %r → %r (slug match %r)",
+                        cid,
+                        resolved,
+                        slug,
+                    )
+                    result[cid] = resolved
+                    continue
+                if len(slug_matches) > 1:
+                    logger.warning(
+                        "BoardClient: ambiguous slug %r for %r — matches %s",
+                        slug,
+                        cid,
+                        slug_matches,
+                    )
+
+            logger.warning(
+                "BoardClient: could not resolve %r against "
+                "the board (%d tickets listed)",
+                cid,
+                len(all_ids),
+            )
+            result[cid] = None
+
+        return result
+
     async def get_ticket_state(self, ticket_id: str) -> str | None:
         """Return the ticket's state (e.g. ``"BLOCKED"``), or ``None`` on failure.
 

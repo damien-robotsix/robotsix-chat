@@ -955,3 +955,40 @@ async def test_merge_pull_request_unexpected_exception(
 
     assert "mr-uex" in result
     assert "something exploded" in result
+
+
+# ---------------------------------------------------------------------------
+# merge_pull_request — ID resolution
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_merge_pull_request_resolves_paraphrased_id(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Paraphrased ID is resolved via hash-suffix match before the merge-now POST."""
+    real_id = "20260731T020731Z-merge-resolution-test-761f"
+
+    # Mock GET /tickets listing
+    respx_mock.get("http://board:8077/tickets").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"ticket_id": real_id, "state": "waiting_auto_merge"},
+                {"ticket_id": "20260730T232905Z-other-ticket-a3f2", "state": "DONE"},
+            ],
+        )
+    )
+
+    # The merge-now POST should be for the resolved real ID
+    route = respx_mock.post(f"http://board:8077/tickets/{real_id}/merge-now").mock(
+        return_value=httpx.Response(200, json={"status": "merged", "sha": "abc123"})
+    )
+
+    tools = build_merge_pull_request_tool(_settings())
+    # Pass a paraphrased ID — only the hash suffix matches
+    result = await tools[0]("...-so-validate-c-761f")
+
+    assert route.called
+    assert "merged" in result
+    assert "abc123" in result
