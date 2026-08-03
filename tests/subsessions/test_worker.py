@@ -329,6 +329,103 @@ def test_build_periodic_input_includes_loop_guard_instructions() -> None:
     assert "will REJECT any summary" in result
 
 
+def test_build_periodic_input_pre_authorized_via_dedup_key() -> None:
+    """PRE-AUTHORIZED instruction is injected when dedup_key matches a pattern.
+
+    Even when ticket_id is not yet in the checkpoint (first run).
+    """
+    from robotsix_chat.subsessions.models import SubsessionInfo, SubsessionKind
+
+    info = SubsessionInfo(
+        id="sub-x",
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id="sess-1",
+        parent_id=None,
+        depth=1,
+        title="monitor",
+        prompt="watch ticket TICKET-1",
+        model_level=3,
+        status="active",  # type: ignore[arg-type]
+        created_at=0.0,
+        last_activity_at=0.0,
+        interval_seconds=60.0,
+        dedup_key="TICKET-1",
+        # No checkpoint yet — first run.
+    )
+
+    result = _build_periodic_input(
+        info,
+        previous_result=None,
+        steering=[],
+        pre_authorized_patterns=["TICKET-*"],
+    )
+
+    assert "PRE-AUTHORIZED TICKET" in result
+    assert "human_issue_approval gate does NOT apply" in result
+
+
+def test_build_periodic_input_pre_authorized_via_checkpoint_ticket_id() -> None:
+    """PRE-AUTHORIZED instruction is injected when checkpoint ticket_id matches."""
+    from robotsix_chat.subsessions.models import SubsessionInfo, SubsessionKind
+
+    info = SubsessionInfo(
+        id="sub-x",
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id="sess-1",
+        parent_id=None,
+        depth=1,
+        title="monitor",
+        prompt="watch ticket TICKET-2",
+        model_level=3,
+        status="active",  # type: ignore[arg-type]
+        created_at=0.0,
+        last_activity_at=0.0,
+        interval_seconds=60.0,
+        checkpoint={"ticket_id": "TICKET-2"},
+    )
+
+    result = _build_periodic_input(
+        info,
+        previous_result=None,
+        steering=[],
+        pre_authorized_patterns=["TICKET-*"],
+    )
+
+    assert "PRE-AUTHORIZED TICKET" in result
+    assert "human_issue_approval gate does NOT apply" in result
+
+
+def test_build_periodic_input_pre_authorized_no_match() -> None:
+    """PRE-AUTHORIZED instruction is omitted when no patterns match the ticket."""
+    from robotsix_chat.subsessions.models import SubsessionInfo, SubsessionKind
+
+    info = SubsessionInfo(
+        id="sub-x",
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id="sess-1",
+        parent_id=None,
+        depth=1,
+        title="monitor",
+        prompt="watch ticket OTHER-1",
+        model_level=3,
+        status="active",  # type: ignore[arg-type]
+        created_at=0.0,
+        last_activity_at=0.0,
+        interval_seconds=60.0,
+        dedup_key="OTHER-1",
+        checkpoint={"ticket_id": "OTHER-1"},
+    )
+
+    result = _build_periodic_input(
+        info,
+        previous_result=None,
+        steering=[],
+        pre_authorized_patterns=["TICKET-*"],
+    )
+
+    assert "PRE-AUTHORIZED TICKET" not in result
+
+
 @pytest.mark.asyncio
 async def test_periodic_run_delivers_result_frame_only() -> None:
     """Each non-suppressed run publishes a result frame to the event sink.

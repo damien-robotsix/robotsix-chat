@@ -599,6 +599,27 @@ def _build_periodic_input(
         "with a concise acknowledgment of the change (the parent will not "
         "see this — it is for the transcript only).  DO NOT reply NO_CHANGE "
         "when a transition occurred.\n\n"
+    )
+    # Inject the PRE-AUTHORIZED instruction BEFORE the
+    # decision-blocked paragraph so it has priority — a monitor that
+    # sees both must follow the pre-authorized directive.
+    if pre_authorized_patterns:
+        ticket_id_raw = info.checkpoint.get("ticket_id") if info.checkpoint else None
+        ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+        # Fall back to dedup_key when the checkpoint has not yet recorded
+        # the ticket_id — the dedup_key for ticket monitors is always the
+        # ticket id, so it is authoritative even on the first run.
+        if not ticket_id and info.dedup_key:
+            ticket_id = info.dedup_key
+        if ticket_id and _is_ticket_pre_authorized(ticket_id, pre_authorized_patterns):
+            parts.append(
+                "PRE-AUTHORIZED TICKET: this ticket has been pre-authorized "
+                "under a standing operator directive.  The "
+                "human_issue_approval gate does NOT apply — do not treat "
+                "this ticket as decision-blocked.  Continue monitoring "
+                "normally as if the approval were already granted.\n\n"
+            )
+    parts.append(
         "Decision-blocked tickets: when the monitored ticket is awaiting an "
         "operator decision — stuck in human_issue_approval, waiting on an "
         '"Option A or B?" choice, or otherwise blocked on a human '
@@ -614,17 +635,6 @@ def _build_periodic_input(
         "guidance so the operator can act on it rather than waiting for "
         "the auto-stop timeout.\n\n"
     )
-    if pre_authorized_patterns:
-        ticket_id_raw = info.checkpoint.get("ticket_id") if info.checkpoint else None
-        ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
-        if ticket_id and _is_ticket_pre_authorized(ticket_id, pre_authorized_patterns):
-            parts.append(
-                "PRE-AUTHORIZED TICKET: this ticket has been pre-authorized "
-                "under a standing operator directive.  The "
-                "human_issue_approval gate does NOT apply — do not treat "
-                "this ticket as decision-blocked.  Continue monitoring "
-                "normally as if the approval were already granted."
-            )
     parts.append(
         "Terminal-state double-check + loop guard: before calling "
         "complete_subsession for a done or closed ticket, you MUST verify "

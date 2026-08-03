@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Pre-authorized ticket monitors now receive the standing-authority directive from the first run (via `dedup_key` fallback), so they no longer surface `human_issue_approval` gates that the operator already authorized. The PRE-AUTHORIZED instruction is also ordered before the decision-blocked paragraph to give it priority.
 - Added guidance to the agent system prompt: when the user asks to prioritize or surface "associated tickets," the assistant now proactively queries the full board (GET /tickets) and filters by subject/repo/ticket-id prefix before reporting, ensuring the user gets a complete picture without needing to nudge for a re-check.
 - Periodic subsessions gain sibling spawn capability: a periodic/monitor can now spawn `task` (remediation) and `user_chat` (escalation) subsessions as siblings attached to the holding parent conversation rather than as nested children. Nested `periodic` and `on_close` spawns remain forbidden and are silently rejected with audit logging. New self-adjustment tools (`update_periodic_instructions`, `adjust_periodic_interval`, `adjust_periodic_budget`) let a periodic monitor revise its own purpose within operator-configured bounds (`periodic_max_interval_seconds`, `periodic_max_total_runs`).
 - Agent instruction: when a tool call returns an HTTP error, consult
