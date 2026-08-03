@@ -632,12 +632,12 @@ Docker image digest resolution tool for the agent. When enabled, the agent gains
 target platform to its immutable `sha256:...` content digest by querying the Docker Registry v2 HTTP
 API. Used by tooling that needs pinned image digests (e.g. CI workflows, Dockerfiles).
 
-| JSON key                    | Type      | Default                      | Description                                                                      |
-| --------------------------- | --------- | ---------------------------- | -------------------------------------------------------------------------------- |
-| `docker_digest.enabled`     | `boolean` | `true`                       | Master switch. When `false`, no docker_digest tool is offered to the agent.      |
-| `docker_digest.timeout`     | `number`  | `30.0`                       | Per-request HTTP timeout in seconds for registry API calls.                      |
-| `docker_digest.registry_host` | `string` | `"registry-1.docker.io"`     | Docker Registry v2 hostname for manifest lookups.                                |
-| `docker_digest.auth_url`    | `string`  | `"https://auth.docker.io/token"` | Token-authentication endpoint for bearer tokens (Docker Hub's auth service). |
+| JSON key                      | Type      | Default                          | Description                                                                  |
+| ----------------------------- | --------- | -------------------------------- | ---------------------------------------------------------------------------- |
+| `docker_digest.enabled`       | `boolean` | `true`                           | Master switch. When `false`, no docker_digest tool is offered to the agent.  |
+| `docker_digest.timeout`       | `number`  | `30.0`                           | Per-request HTTP timeout in seconds for registry API calls.                  |
+| `docker_digest.registry_host` | `string`  | `"registry-1.docker.io"`         | Docker Registry v2 hostname for manifest lookups.                            |
+| `docker_digest.auth_url`      | `string`  | `"https://auth.docker.io/token"` | Token-authentication endpoint for bearer tokens (Docker Hub's auth service). |
 
 ______________________________________________________________________
 
