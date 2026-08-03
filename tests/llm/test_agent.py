@@ -987,7 +987,9 @@ async def test_auth_failure_falls_back_past_every_claude_sdk_tier() -> None:
 
     with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
         agent = LlmioChatAgent(
-            model_level=4, instruction="Be helpful.", api_key="or-key"
+            model_level=4,
+            instruction="Be helpful.",
+            api_key="or-key",  # pragma: allowlist secret
         )
         chunks = [c async for c in agent.stream("hi")]
 
@@ -998,7 +1000,7 @@ async def test_auth_failure_falls_back_past_every_claude_sdk_tier() -> None:
         call(level=4),
         call(level=3),
         # The keyed tier must, or the fallback cannot actually serve.
-        call(level=2, api_key="or-key"),
+        call(level=2, api_key="or-key"),  # pragma: allowlist secret
     ]
 
 
@@ -1033,7 +1035,9 @@ async def test_usage_exhausted_fallback_stays_one_step() -> None:
 
     with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
         agent = LlmioChatAgent(
-            model_level=4, instruction="Be helpful.", api_key="or-key"
+            model_level=4,
+            instruction="Be helpful.",
+            api_key="or-key",  # pragma: allowlist secret
         )
         with pytest.raises(RuntimeError, match="opus is also down"):
             _ = [c async for c in agent.stream("hi")]
@@ -1065,7 +1069,9 @@ async def test_keyless_primary_level_never_receives_the_api_key() -> None:
 
     with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
         agent = LlmioChatAgent(
-            model_level=4, instruction="Be helpful.", api_key="or-key"
+            model_level=4,
+            instruction="Be helpful.",
+            api_key="or-key",  # pragma: allowlist secret
         )
         chunks = [c async for c in agent.stream("hi")]
 
@@ -1091,9 +1097,14 @@ async def test_keyed_primary_level_still_receives_the_api_key() -> None:
 
     with patch("robotsix_chat.llm.agent.create_model", create_model_patch):
         agent = LlmioChatAgent(
-            model_level=2, instruction="Be helpful.", api_key="or-key"
+            model_level=2,
+            instruction="Be helpful.",
+            api_key="or-key",  # pragma: allowlist secret
         )
         chunks = [c async for c in agent.stream("hi")]
 
     assert chunks == ["openrouter reply"]
-    create_model_patch.assert_called_once_with(level=2, api_key="or-key")
+    create_model_patch.assert_called_once_with(
+        level=2,
+        api_key="or-key",  # pragma: allowlist secret
+    )
