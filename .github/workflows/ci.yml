@@ -321,6 +321,28 @@ jobs:
       - name: Run deptry
         run: uv run deptry src/ --known-first-party robotsix_chat
 
+  frontend-js:
+    name: Frontend JS tests (vitest)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read  # checkout the repo
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@cdca7365b2dadb8aad0a33bc7601856ffabcc48e  # v4.3.0
+        with:
+          node-version: "22"
+          cache: npm
+      - name: Install
+        run: npm ci
+      - name: Run vitest
+        run: npm run test:js
+
   pyright:
     name: Pyright type checker
     runs-on: ubuntu-latest
@@ -393,7 +415,7 @@ jobs:
 
   check:
     name: All CI checks passed
-    needs: [lockfile, ci, security, changelog, pre-commit, check-sse-types, check-subsession-kinds, check-activity-kinds, check-subsession-statuses, check-autonomous-states, image-scan, check-config-schema, deptry, pyright, mypy]
+    needs: [lockfile, ci, security, changelog, pre-commit, check-sse-types, check-subsession-kinds, check-activity-kinds, check-subsession-statuses, check-autonomous-states, image-scan, check-config-schema, deptry, frontend-js, pyright, mypy]
     # Use !cancelled() so the job still runs when a reusable-workflow call
     # (ci, security) is misreported as "skipped" due to a known GitHub
     # Actions edge case: when a reusable workflow has conditionally-skipped
@@ -422,6 +444,7 @@ jobs:
           IMAGE_SCAN_RESULT: ${{ needs.image-scan.result }}
           CHECK_CONFIG_SCHEMA_RESULT: ${{ needs.check-config-schema.result }}
           DEPTRY_RESULT: ${{ needs.deptry.result }}
+          FRONTEND_JS_RESULT: ${{ needs.frontend-js.result }}
           PYRIGHT_RESULT: ${{ needs.pyright.result }}
           MYPY_RESULT: ${{ needs.mypy.result }}
         run: |
@@ -453,6 +476,7 @@ jobs:
           check "$IMAGE_SCAN_RESULT"                  image-scan
           check "$CHECK_CONFIG_SCHEMA_RESULT"         check-config-schema
           check "$DEPTRY_RESULT"                      deptry
+          check "$FRONTEND_JS_RESULT"                frontend-js
           check "$PYRIGHT_RESULT"                     pyright
           check "$MYPY_RESULT"                       mypy
           echo "All CI checks passed"

@@ -88,6 +88,7 @@ modules:
       - mkdocs.yml
       - pyproject.toml
       - typos.toml
+      - vitest.config.js
       - uv.lock
       - vulture_whitelist.py
       - changelog.d/.gitkeep
@@ -380,7 +381,13 @@ modules:
       - src/robotsix_chat/ui/index.html
       - src/robotsix_chat/ui/static/chat.css
       - src/robotsix_chat/ui/static/chat.js
+      - src/robotsix_chat/ui/static/message-queue.js
+      - src/robotsix_chat/ui/static/reconnect-guard.js
+      - src/robotsix_chat/ui/static/sse-parser.js
       - docs/user-guide/settings-ui.md
+      - tests/js/message-queue.test.js
+      - tests/js/reconnect-guard.test.js
+      - tests/js/sse-parser.test.js
       - tests/ui/__init__.py
       - tests/ui/conftest.py
       - tests/ui/test_chat_integration.py
