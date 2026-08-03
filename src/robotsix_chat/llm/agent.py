@@ -32,6 +32,7 @@ from typing import Any
 from robotsix_http import RetryConfig, acall_with_retry
 from robotsix_llmio.claude_sdk import (
     ClaudeSDKActivityEvent,
+    ClaudeSDKAuthError,
     ClaudeSDKUsageExhaustedError,
     activity_events,
 )
@@ -41,9 +42,15 @@ from robotsix_llmio.core.tier_fallback import acall_with_tier_fallback
 from robotsix_llmio.openrouter import is_openrouter_transient
 
 from robotsix_chat.chat.events import EventSink, activity_frame
+from robotsix_chat.config import level_needs_api_key
 from robotsix_chat.memory import ChatMemory, NullMemory
 
 logger = logging.getLogger(__name__)
+
+# Promotions allowed when a tier reports exhausted usage credits. One step is
+# enough: exhaustion is scoped to the tier that reported it, so the very next
+# tier is already a working one.
+_USAGE_FALLBACK_DEPTH = 1
 
 # A prior conversation turn replayed to the agent: ``(user, assistant)``.
 Turn = tuple[str, str]
@@ -213,6 +220,13 @@ class LlmioChatAgent:
     ) -> None:
         """Store the agent configuration for later ``stream`` calls.
 
+        *api_key* is the configured OpenRouter key, if any — **not** a key for
+        *model_level* specifically. Pass it even when *model_level* is a
+        keyless (claudeSDK) tier: it is forwarded only to levels whose
+        provider actually takes one, and holding it is what lets a tier
+        fallback reach a keyed provider when the shared Claude credential is
+        the thing that failed.
+
         *request_tools_factory* is called once per ``stream`` invocation with
         the request's *client_id* to produce per-request tools (e.g. the
         subsession tools whose closures capture that session id).  It keeps
@@ -360,9 +374,12 @@ class LlmioChatAgent:
                 f"{_MEMORY_PROMPT_HEADER}{recalled}{_MEMORY_PROMPT_FOOTER}\n{message}"
             )
 
-        # Forward the key only when one is configured; keyless levels
-        # (claudeSDK) must not receive an api_key (the provider rejects it).
-        if self._api_key:
+        # Forward the key only to levels whose provider takes one; keyless
+        # levels (claudeSDK) must not receive an api_key (the provider rejects
+        # it). Gated on the level rather than on whether a key happens to be
+        # set, because ``self._api_key`` may now be populated for a keyless
+        # primary level purely so the tier fallback can reach a keyed one.
+        if level_needs_api_key(self._model_level) and self._api_key:
             provider = create_model(level=self._model_level, api_key=self._api_key)
         else:
             provider = create_model(level=self._model_level)
@@ -432,15 +449,26 @@ class LlmioChatAgent:
                 is_transient_fn=is_openrouter_transient,
                 what="chat turn",
             )
-        except ClaudeSDKUsageExhaustedError as exc:
+        except (ClaudeSDKUsageExhaustedError, ClaudeSDKAuthError) as exc:
+            # Two different causes, one conclusion: this tier cannot serve the
+            # turn, and no retry against it will change that — credits stay
+            # exhausted until they reset, a dead credential stays dead until a
+            # human re-authenticates. Falling back keeps the conversation alive
+            # through either.
             logger.warning(
-                "model_level %d usage credits exhausted (%s) — "
-                "falling back to another tier for this turn",
+                "model_level %d cannot serve this turn (%s: %s) — "
+                "falling back to another tier",
                 self._model_level,
+                type(exc).__name__,
                 exc,
             )
-            result = await self._run_with_usage_fallback(
-                prompt, message_history, tools_arg, session_id, trace_metadata
+            result = await self._run_with_tier_fallback(
+                prompt,
+                message_history,
+                tools_arg,
+                session_id,
+                trace_metadata,
+                credential_is_dead=isinstance(exc, ClaudeSDKAuthError),
             )
 
         # The loop above always either raises or breaks with `result` set.
@@ -451,37 +479,50 @@ class LlmioChatAgent:
             self._schedule_remember(message, text, session_id)
             yield text
 
-    async def _run_with_usage_fallback(
+    async def _run_with_tier_fallback(
         self,
         prompt: object,
         message_history: list[Any] | None,
         tools_arg: list[Any] | None,
         session_id: str | None,
         trace_metadata: dict[str, str] | None = None,
+        *,
+        credential_is_dead: bool = False,
     ) -> Any:
-        """Retry the same turn at a different tier after a usage-exhaustion.
+        """Retry the same turn at a different tier when this one cannot serve.
 
         Triggered by
-        :class:`~robotsix_llmio.claude_sdk.ClaudeSDKUsageExhaustedError` at
+        :class:`~robotsix_llmio.claude_sdk.ClaudeSDKUsageExhaustedError` or
+        :class:`~robotsix_llmio.claude_sdk.ClaudeSDKAuthError` at
         ``self._model_level``. Reuses robotsix-llmio's tier-escalation
         machinery
         (:func:`~robotsix_llmio.core.tier_fallback.acall_with_tier_fallback` —
         higher-then-lower, revisit-avoiding, depth-bounded) rather than
-        hand-rolling a fallback chain, so it is entered ONLY once this
-        specific cause has already been identified — any other failure
-        during the primary attempt still raises immediately as before.
+        hand-rolling a fallback chain, so it is entered ONLY once one of those
+        two causes has already been identified — any other failure during the
+        primary attempt still raises immediately as before.
 
-        Scoped to one promotion (``max_fallback_depth=1``): the only known
-        need today is claudeSDK level 4 (fable) -> level 3 (opus), both
-        keyless, so this never needs to forward an OpenRouter key for a
-        lower tier this agent was not otherwise configured with one for.
+        *credential_is_dead* distinguishes the two causes, because they need
+        different reach:
 
-        Note: ``acall_with_tier_fallback`` always retries its *starting*
-        level once before escalating (it has no way to know this level was
-        already just attempted). That first retry is expected to fail
-        identically (the credits are still exhausted) and fail fast — a
-        harmless, cheap redundant call, not a bug — before the loop falls
-        back to the next tier.
+        * **Usage exhaustion** is per-tier, so one promotion is enough —
+          claudeSDK level 4 (fable) -> level 3 (opus) leaves the exhausted
+          tier behind.
+        * **An expired credential is shared by every claudeSDK tier**, since
+          they all drive the same ``claude`` CLI against the same
+          ``.credentials.json``. A single promotion would land on level 3 and
+          fail identically. Recovery means walking down to a keyed provider,
+          so the depth is widened to reach one. The intervening keyless tier
+          is still attempted and still fails — but it now fails *fast*
+          (``ClaudeSDKAuthError`` is not transient, so it burns no retries)
+          rather than being skipped by logic that would have to hard-code
+          which providers share a credential.
+
+        Note: ``acall_with_tier_fallback`` always retries its *starting* level
+        once before escalating (it has no way to know this level was already
+        just attempted). That first retry is expected to fail identically and
+        fail fast — a harmless, cheap redundant call, not a bug — before the
+        loop falls back to the next tier.
         """
         tier_config = TierConfig()
         level_by_model = {
@@ -497,7 +538,15 @@ class LlmioChatAgent:
             level = level_by_model[tlc.model]
 
             async def _call() -> Any:
-                fallback_provider = create_model(level=level)
+                # The fallback tier may need a key even when the primary did
+                # not — that is the whole point when the shared claudeSDK
+                # credential is what died. Keyless providers reject an
+                # api_key, so ask per level rather than reusing the primary's
+                # answer.
+                if level_needs_api_key(level) and self._api_key:
+                    fallback_provider = create_model(level=level, api_key=self._api_key)
+                else:
+                    fallback_provider = create_model(level=level)
                 fallback_handle = fallback_provider.build_agent(
                     level=level,
                     system_prompt=self._instruction,
@@ -522,8 +571,17 @@ class LlmioChatAgent:
             tier_config=tier_config,
             level=TierLevel(f"level{self._model_level}"),
             fallback_enabled=True,
-            max_fallback_depth=1,
-            what="chat turn (usage-exhausted fallback)",
+            # A dead credential can take every claudeSDK tier with it, so the
+            # walk must be able to reach a keyed provider; usage exhaustion is
+            # per-tier and needs only the one step it has always taken.
+            max_fallback_depth=(
+                len(TierLevel) - 1 if credential_is_dead else _USAGE_FALLBACK_DEPTH
+            ),
+            what=(
+                "chat turn (auth-failure fallback)"
+                if credential_is_dead
+                else "chat turn (usage-exhausted fallback)"
+            ),
         )
 
     def _schedule_remember(
