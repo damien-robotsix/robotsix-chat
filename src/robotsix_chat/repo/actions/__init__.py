@@ -265,42 +265,30 @@ def build_github_actions_tools(
 
         return await actions.get_workflow_run_annotations(repo_full_name, run_id)
 
-    async def fetch_workflow_job_log(
+    async def fetch_job_log(
         repo_name: str,
-        run_id: int,
-        job_name: str,
+        job_id: int,
     ) -> str:
-        """Fetch the raw log for a specific job in a GitHub Actions workflow run.
+        """Fetch the raw plain-text log for a GitHub Actions job.
 
-        Looks up the job by name within a workflow run and returns its
-        full console log.  This is the most detailed source of truth for
-        CI failures — it contains every line of output printed by each
-        step, including test failure messages, compiler errors, stack
-        traces, and shell output that annotations alone cannot capture.
+        The GitHub API returns a 302 redirect to a signed URL; this tool
+        follows it server-side and returns the log content directly.
+        Long logs are truncated at 8000 characters.
 
-        Use this when ``fetch_workflow_run_annotations`` does not provide
-        enough detail to pinpoint a CI failure, or when you need to see
-        the exact test output, build error, or command output from a
-        specific job.
+        Use this as a fallback when ``fetch_workflow_run_annotations``
+        returns a permission error (403) — job logs use a different API
+        endpoint that may still be accessible.
 
         **Read-only.**  Does not modify any repository state.
-
-        **Cost note:** Job logs can be very large (multi-megabyte).
-        The tool returns the full log but the agent should focus on the
-        failing-step sections rather than replaying the entire log.
 
         Args:
             repo_name: Repository name (not owner/name) — the org is
                 configured server-side (default ``damien-robotsix``).
-            run_id: The workflow run id (the numeric id shown in the
-                Actions tab URL and returned by ``check_workflow_run``).
-            job_name: The name of the job whose log to fetch (e.g.
-                ``"test (3.14)"``, ``"lint"``, ``"build"``).  Must match
-                a job name exactly as shown in the workflow run.
+            job_id: The GitHub Actions job ID (integer, found in the
+                Actions tab URL or from ``check_workflow_run`` output).
 
         Returns:
-            The raw job log text, or an error message when the job is not
-            found or the log cannot be retrieved.
+            The raw job log text (possibly truncated), or an error message.
 
         """
         repo_full_name = f"{org}/{repo_name}"
@@ -308,60 +296,25 @@ def build_github_actions_tools(
         if scope_error := await client.check_installation_scope(repo_full_name):
             return scope_error
 
-        # Find the job by name.
-        jobs = await actions.get_workflow_run_jobs(repo_full_name, run_id)
-        if not jobs:
-            return (
-                f"No jobs found for workflow run {run_id} on {repo_full_name}. "
-                f"The run may have no jobs (possible billing issue) or the "
-                f"run id may be incorrect."
-            )
-
-        matching: list[dict[str, Any]] = [j for j in jobs if j.get("name") == job_name]
-        if not matching:
-            available = ", ".join(f"'{j.get('name', '?')}'" for j in jobs)
-            return (
-                f"No job named '{job_name}' in workflow run {run_id} on "
-                f"{repo_full_name}.  Available jobs: {available}."
-            )
-
-        target = matching[0]
-        job_id: Any | None = target.get("id")
-        if job_id is None:
-            return (
-                f"Job '{job_name}' in run {run_id} has no job id — "
-                f"cannot fetch its log."
-            )
-
         try:
-            log_text = await actions.get_job_log(repo_full_name, job_id)
+            log = await actions.get_job_log(repo_full_name, job_id)
         except RuntimeError as exc:
-            return f"Error fetching job log for '{job_name}' (id {job_id}): {exc}"
-
-        if not log_text:
             return (
-                f"Job '{job_name}' (id {job_id}) in run {run_id} on "
-                f"{repo_full_name} returned an empty log — the job may "
-                f"not have started yet or may have produced no output."
+                f"Error fetching job log for job {job_id} on "
+                f"{repo_full_name}: {exc}\n\n"
+                f"**Suggestion:** check the logs manually at "
+                f"https://github.com/{repo_full_name}"
+                f"/actions/runs?query=job_id%3A{job_id}"
             )
 
-        # Truncate very large logs to the last 200 KB (and note truncation).
-        max_bytes = 200 * 1024
-        if len(log_text) > max_bytes:
-            header = (
-                f"# Job log: {job_name} (run {run_id}, {repo_full_name})\n"
-                f"# Full log is {len(log_text)} bytes; showing last "
-                f"{max_bytes} bytes.\n\n"
-                f"... [truncated — {len(log_text) - max_bytes} bytes omitted] ...\n\n"
-            )
-            log_text = header + log_text[-max_bytes:]
-
-        return log_text
+        if len(log) > 8000:
+            log = log[:8000] + "\n\n... [log truncated at 8000 chars]"
+        return log
 
     return [
         set_actions_secret,
         dispatch_workflow,
         check_workflow_run,
         fetch_workflow_run_annotations,
-        fetch_workflow_job_log,
+        fetch_job_log,
     ]

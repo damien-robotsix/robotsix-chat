@@ -619,7 +619,10 @@ async def test_get_workflow_run_annotations_api_error(
 
     client = ActionsClient(settings)
     result = await client.get_workflow_run_annotations("org/repo", 42)
-    assert "Error fetching workflow run annotations" in result
+    # After the fallback change, API errors trigger a fallback to job logs.
+    # When jobs listing also fails (unmocked), we get a clear limitation message.
+    assert "unable to diagnose" in result.lower()
+    assert "suggestion" in result.lower()
 
 
 # ---------------------------------------------------------------------------
