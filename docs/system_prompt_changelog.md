@@ -1723,3 +1723,46 @@ pre-existing "You are a helpful assistant." prefix. This entry locks in that kno
 `git log -p -- src/robotsix_chat/config/settings.py` scoped to the `agent_instruction` block.
 
 **SHA256:** `09b73c46b24449484a5e2e9484137b85d73cfe210aa31eac05c81ca4f0698674`
+
+______________________________________________________________________
+
+## Autonomous Prompt Changelog
+
+Governed artifact: `build_autonomous_instruction()` in
+`src/robotsix_chat/autonomous/prompts.py`. Version stamp: `AUTONOMOUS_PROMPT_VERSION` in the same module.
+
+The hash is computed on the output of `build_autonomous_instruction(Settings())` — i.e. with all
+autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
+``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
+
+## AUTONOMOUS v1 — 2026-08-04 — extend-system-prompt-governance-to-the-a-e556
+
+**Summary:** Baseline — the current `build_autonomous_instruction()` output as of post-#1165
+(CONDITIONAL AUTHORIZATION block added in commit 3434b8f) and post-#1157 (PRE-AUTHORIZED
+ESCALATION block). This entry establishes governance coverage for the autonomous appendix,
+which previously had no versioning, SHA pinning, or changelog record despite two prompt edits
+shipping without bumps.
+
+**Rationale:** The autonomous appendix is appended to the governed `agent_instruction` at
+runtime (cli.py:436) but sat outside the existing `SYSTEM_PROMPT_VERSION` / SHA256 / changelog
+governance, so edits to it landed silently with no CI signal. This entry locks in the known-good
+state and enables future drift detection.
+
+**SHA256:** `9d428fa0104b04c956f19c370079500cf680c9a2335967cf7c9f5dd86988a29d`
+
+______________________________________________________________________
+
+### Governance policy
+
+Every change to the `build_autonomous_instruction()` return text in
+`src/robotsix_chat/autonomous/prompts.py` **MUST**:
+
+1. **Bump** `AUTONOMOUS_PROMPT_VERSION` to the next integer.
+1. **Add a new entry** at the top of this section (reverse-chronological, newest first) with the
+   header `## AUTONOMOUS v<N> — <YYYY-MM-DD> — <ticket-id>`.
+1. **Record the SHA256** of the new output (computed as
+   `hashlib.sha256(build_autonomous_instruction(Settings()).encode()).hexdigest()`) in the entry.
+
+A CI test (`tests/config/test_system_prompt_governance.py`) enforces that the latest entry's version
+matches `AUTONOMOUS_PROMPT_VERSION` and its recorded hash matches the live output — edits that skip
+this file **will fail CI**.
