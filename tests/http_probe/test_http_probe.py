@@ -7,7 +7,9 @@ no real network calls.
 from __future__ import annotations
 
 import json
+import socket
 from typing import Any
+from unittest import mock
 
 import httpx
 import pytest
@@ -16,6 +18,36 @@ import respx
 from robotsix_chat.config import HttpProbeSettings
 from robotsix_chat.config.models import FleetAuthSettings
 from robotsix_chat.http_probe import build_http_probe_tools, load_http_probe_skill
+
+# ---------------------------------------------------------------------------
+# DNS mock — return a public IP so SSRF checks pass in sandbox
+# ---------------------------------------------------------------------------
+
+_MOCK_SOCKET_RETURN = [
+    (
+        socket.AF_INET,
+        socket.SOCK_STREAM,
+        6,
+        "",
+        ("93.184.216.34", 0),  # example.com public IP
+    )
+]
+
+
+@pytest.fixture(autouse=True)
+def _mock_dns() -> None:
+    """Mock DNS resolution to return a public IP for all tests.
+
+    ``_host_is_private`` from ``common.http_fetch`` calls
+    ``socket.getaddrinfo`` directly — without this mock, tests in the
+    sandbox (no DNS) would always treat every hostname as private and
+    block every SSRF-gated request.
+    """
+    with mock.patch(
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+        return_value=_MOCK_SOCKET_RETURN,
+    ):
+        yield
 
 
 def _settings(**kw: Any) -> HttpProbeSettings:
@@ -255,6 +287,94 @@ async def test_http_probe_rejects_non_http_scheme() -> None:
 
     assert result["healthy"] is False
     assert "scheme" in result["error"].lower()
+
+
+# ---------------------------------------------------------------------------
+# SSRF protection
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_http_probe_blocks_private_ip_loopback() -> None:
+    """127.0.0.1 is blocked by SSRF protection."""
+    with mock.patch(
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+        return_value=[
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                6,
+                "",
+                ("127.0.0.1", 0),
+            )
+        ],
+    ):
+        tools = build_http_probe_tools(_settings(allowlist=["127.0.0.1"]))
+        result = json.loads(await tools[0]("http://127.0.0.1/"))
+
+    assert result["healthy"] is False
+    assert "SSRF" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_http_probe_blocks_private_ip_10() -> None:
+    """10.x.x.x is blocked by SSRF protection."""
+    with mock.patch(
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+        return_value=[
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                6,
+                "",
+                ("10.0.0.1", 0),
+            )
+        ],
+    ):
+        tools = build_http_probe_tools(_settings(allowlist=["10.0.0.1"]))
+        result = json.loads(await tools[0]("http://10.0.0.1/"))
+
+    assert result["healthy"] is False
+    assert "SSRF" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_http_probe_fleet_auth_host_skips_ssrf(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Fleet-auth hosts skip the SSRF check (operator-trusted)."""
+    respx_mock.get("https://deploy.robotsix.net/internal").mock(
+        return_value=httpx.Response(200, text="ok")
+    )
+
+    # deploy.robotsix.net is in fleet_auth_hosts → SSRF check skipped.
+    # Mock DNS to return a private IP — the probe should still succeed
+    # because fleet-auth hosts are trusted.
+    with mock.patch(
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+        return_value=[
+            (
+                socket.AF_INET,
+                socket.SOCK_STREAM,
+                6,
+                "",
+                ("10.0.0.5", 0),
+            )
+        ],
+    ):
+        settings = _settings(
+            allowlist=["deploy.robotsix.net"],
+            fleet_auth=FleetAuthSettings(
+                basic_auth_username="op",
+                basic_auth_password="pw",  # pragma: allowlist secret
+                auth_hosts=["deploy.robotsix.net"],
+            ),
+        )
+        tools = build_http_probe_tools(settings)
+        result = json.loads(await tools[0]("https://deploy.robotsix.net/internal"))
+
+    assert result["healthy"] is True
+    assert result["body_snippet"] == "ok"
 
 
 # ---------------------------------------------------------------------------

@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Deduplicate fleet-auth, hostname-allowlist, URL-scheme-validation, and SSRF protection logic between `http_probe` and `public_fetch` by using the shared helpers in `common/http_fetch`. Add DNS-level private-IP SSRF checks to `http_probe` (previously missing — it relied solely on a configurable hostname allowlist).
 - Extend system prompt governance to the autonomous appendix (`build_autonomous_instruction()`). Added `AUTONOMOUS_PROMPT_VERSION` constant, SHA256-pinned changelog entries in `docs/system_prompt_changelog.md`, and CI governance tests (`test_autonomous_version_stamp_matches_changelog_latest`, `test_autonomous_sha256_matches_live_output`) so any future silent edit to the autonomous prompt fails CI.
 - Replace `docs/repo/actions/skill.md` (stale copy) with a symlink to `src/robotsix_chat/repo/actions/skill.md`, matching the `docs/repo/security/skill.md` pattern so the user-facing skill doc stays in sync with the shipped source.
 - Add CONDITIONAL AUTHORIZATION prompt instruction: when the operator gives a vague or conditional directive (e.g. "merge if the implementation is good"), the assistant now explicitly states its evaluation criteria and asks for confirmation rather than applying its own unstated interpretation.

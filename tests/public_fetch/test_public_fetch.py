@@ -91,7 +91,7 @@ async def test_fetch_basic_success(respx_mock: respx.MockRouter) -> None:
     )
 
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
         tools = build_public_fetch_tools(_settings())
@@ -121,7 +121,7 @@ async def test_fetch_github_raw(respx_mock: respx.MockRouter) -> None:
     )
 
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
         tools = build_public_fetch_tools(_settings())
@@ -151,7 +151,7 @@ async def test_fetch_gitlab_raw(respx_mock: respx.MockRouter) -> None:
     )
 
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
         tools = build_public_fetch_tools(_settings())
@@ -180,7 +180,7 @@ async def test_fetch_redirect_followed(respx_mock: respx.MockRouter) -> None:
     )
 
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
         tools = build_public_fetch_tools(_settings())
@@ -201,7 +201,7 @@ async def test_fetch_truncation(respx_mock: respx.MockRouter) -> None:
     )
 
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
         tools = build_public_fetch_tools(_settings(max_body_bytes=1000))
@@ -224,7 +224,7 @@ async def test_fetch_truncation(respx_mock: respx.MockRouter) -> None:
 async def test_fetch_rejects_non_http_scheme() -> None:
     """ftp:// and other schemes are blocked."""
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
         tools = build_public_fetch_tools(_settings())
@@ -253,7 +253,7 @@ _PRIVATE_IP_SOCKADDR = [
 async def test_fetch_blocks_loopback() -> None:
     """127.0.0.1 is blocked by SSRF protection."""
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_PRIVATE_IP_SOCKADDR,
     ):
         tools = build_public_fetch_tools(_settings())
@@ -267,7 +267,7 @@ async def test_fetch_blocks_loopback() -> None:
 async def test_fetch_blocks_private_10() -> None:
     """10.x.x.x is blocked by SSRF protection."""
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=[
             (
                 socket.AF_INET,
@@ -288,7 +288,7 @@ async def test_fetch_blocks_private_10() -> None:
 async def test_fetch_blocks_private_192_168() -> None:
     """192.168.x.x is blocked by SSRF protection."""
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=[
             (
                 socket.AF_INET,
@@ -309,7 +309,7 @@ async def test_fetch_blocks_private_192_168() -> None:
 async def test_fetch_blocks_private_172_16() -> None:
     """172.16.x.x is blocked by SSRF protection."""
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=[
             (
                 socket.AF_INET,
@@ -330,7 +330,7 @@ async def test_fetch_blocks_private_172_16() -> None:
 async def test_fetch_blocks_link_local() -> None:
     """169.254.x.x is blocked by SSRF protection."""
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=[
             (
                 socket.AF_INET,
@@ -351,7 +351,7 @@ async def test_fetch_blocks_link_local() -> None:
 async def test_fetch_blocks_ipv4_mapped_ipv6_loopback() -> None:
     """IPv4-mapped IPv6 loopback (::ffff:127.0.0.1) is blocked."""
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=[
             (
                 socket.AF_INET6,
@@ -372,7 +372,7 @@ async def test_fetch_blocks_ipv4_mapped_ipv6_loopback() -> None:
 async def test_fetch_blocks_ipv4_mapped_ipv6_private_10() -> None:
     """IPv4-mapped IPv6 10.x (::ffff:10.0.0.1) is blocked."""
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=[
             (
                 socket.AF_INET6,
@@ -393,7 +393,7 @@ async def test_fetch_blocks_ipv4_mapped_ipv6_private_10() -> None:
 async def test_fetch_blocks_zero_address() -> None:
     """0.0.0.0 is blocked by SSRF protection."""
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=[
             (
                 socket.AF_INET,
@@ -414,7 +414,7 @@ async def test_fetch_blocks_zero_address() -> None:
 async def test_fetch_blocks_unresolvable_host() -> None:
     """A hostname that fails DNS resolution is treated as unsafe."""
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         side_effect=socket.gaierror("Name or service not known"),
     ):
         tools = build_public_fetch_tools(_settings())
@@ -445,7 +445,7 @@ async def test_fetch_ssrf_redirect_check(respx_mock: respx.MockRouter) -> None:
         return _MOCK_SOCKET_RETURN
 
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         side_effect=_getaddrinfo,
     ):
         tools = build_public_fetch_tools(_settings())
@@ -470,7 +470,7 @@ async def test_fetch_allowlist_permits_listed_host(
     )
 
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
         tools = build_public_fetch_tools(
@@ -486,7 +486,7 @@ async def test_fetch_allowlist_permits_listed_host(
 async def test_fetch_allowlist_blocks_unlisted_host() -> None:
     """A host not in the allowlist is blocked."""
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
         tools = build_public_fetch_tools(
@@ -512,7 +512,7 @@ async def test_fetch_rate_limit_blocks_excess(
     )
 
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
         tools = build_public_fetch_tools(
@@ -542,7 +542,7 @@ async def test_fetch_401_reports_auth_required(
     )
 
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
         tools = build_public_fetch_tools(_settings())
@@ -562,7 +562,7 @@ async def test_fetch_403_reports_auth_required(
     )
 
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
         tools = build_public_fetch_tools(_settings())
@@ -599,7 +599,7 @@ async def test_fleet_auth_injects_authorization_header(
     )
 
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
         tools = build_public_fetch_tools(settings)
@@ -632,7 +632,7 @@ async def test_non_fleet_host_does_not_get_auth_header(
     )
 
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
         tools = build_public_fetch_tools(settings)
@@ -666,7 +666,7 @@ async def test_fleet_auth_bypasses_domain_allowlist(
     )
 
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
         tools = build_public_fetch_tools(settings)
@@ -698,7 +698,7 @@ async def test_fleet_auth_bypasses_ssrf_on_initial_host(
     )
 
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_PRIVATE_IP_SOCKADDR,
     ):
         tools = build_public_fetch_tools(settings)
@@ -743,7 +743,7 @@ async def test_fleet_auth_bypasses_ssrf_on_redirect_hop(
         return _MOCK_SOCKET_RETURN
 
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         side_effect=_getaddrinfo,
     ):
         tools = build_public_fetch_tools(settings)
@@ -775,7 +775,7 @@ async def test_fleet_auth_401_reports_stale_credentials(
     )
 
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
         tools = build_public_fetch_tools(settings)
@@ -800,7 +800,7 @@ async def test_fetch_timeout(respx_mock: respx.MockRouter) -> None:
     )
 
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
         tools = build_public_fetch_tools(_settings())
@@ -819,7 +819,7 @@ async def test_fetch_too_many_redirects(
     )
 
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
         tools = build_public_fetch_tools(_settings())
@@ -843,7 +843,7 @@ async def test_fetch_404_returns_error(
     )
 
     with mock.patch(
-        "robotsix_chat.public_fetch.socket.getaddrinfo",
+        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
         tools = build_public_fetch_tools(_settings())

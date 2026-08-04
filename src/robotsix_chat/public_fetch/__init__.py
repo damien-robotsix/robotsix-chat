@@ -19,10 +19,8 @@ which returns the component skill markdown.
 from __future__ import annotations
 
 import hashlib
-import ipaddress
 import json
 import logging
-import socket
 import time
 from collections.abc import Callable
 from pathlib import Path
@@ -31,80 +29,19 @@ from urllib.parse import urlparse
 
 import httpx
 
+from robotsix_chat.common.http_fetch import (
+    _build_fleet_auth_header,
+    _check_hostname_allowlist,
+    _host_is_private,
+    _validate_url_scheme,
+)
+
 if TYPE_CHECKING:
     from robotsix_chat.config import PublicFetchSettings
 
 __all__ = ["build_public_fetch_tools", "load_public_fetch_skill"]
 
 logger = logging.getLogger(__name__)
-
-# ---------------------------------------------------------------------------
-# SSRF protection — private / internal IP ranges
-# ---------------------------------------------------------------------------
-
-_PRIVATE_NETWORKS: tuple[ipaddress.IPv4Network | ipaddress.IPv6Network, ...] = (
-    ipaddress.IPv4Network("0.0.0.0/8"),  # "this host on this network"
-    ipaddress.IPv4Network("127.0.0.0/8"),  # loopback
-    ipaddress.IPv4Network("10.0.0.0/8"),  # private
-    ipaddress.IPv4Network("172.16.0.0/12"),  # private
-    ipaddress.IPv4Network("192.168.0.0/16"),  # private
-    ipaddress.IPv4Network("169.254.0.0/16"),  # link-local
-    ipaddress.IPv6Network("::1/128"),  # loopback
-    ipaddress.IPv6Network("fc00::/7"),  # unique local
-    ipaddress.IPv6Network("fe80::/10"),  # link-local
-    ipaddress.IPv6Network("::ffff:0:0/96"),  # IPv4-mapped IPv6
-)
-
-# Sentinel network for explicit IPv4-mapped extraction (defence in depth —
-# the ::ffff:0:0/96 entry above catches mapped addresses directly, but we
-# also unpack the embedded IPv4 and check it against private IPv4 ranges).
-_IPV4_MAPPED = ipaddress.IPv6Network("::ffff:0:0/96")
-
-# Private IPv4 networks for IPv4-mapped extraction check.
-_PRIVATE_V4_NETWORKS: tuple[ipaddress.IPv4Network, ...] = (
-    ipaddress.IPv4Network("0.0.0.0/8"),
-    ipaddress.IPv4Network("127.0.0.0/8"),
-    ipaddress.IPv4Network("10.0.0.0/8"),
-    ipaddress.IPv4Network("172.16.0.0/12"),
-    ipaddress.IPv4Network("192.168.0.0/16"),
-    ipaddress.IPv4Network("169.254.0.0/16"),
-)
-
-
-def _host_is_private(host: str) -> bool:
-    """Return ``True`` when *host* resolves to any private/internal IP.
-
-    A host that cannot be resolved at all is treated as unsafe (returns
-    ``True``) so the tool rejects it rather than making a blind request.
-
-    IPv4-mapped IPv6 addresses (``::ffff:x.x.x.x``) are handled in two
-    layers: the mapped address itself is checked against the
-    ``::ffff:0:0/96`` entry in ``_PRIVATE_NETWORKS``, **and** the
-    embedded IPv4 is extracted and checked against the private IPv4
-    ranges — defence in depth so a mapped address cannot slip through.
-    """
-    try:
-        addrinfo = socket.getaddrinfo(host, None)
-    except socket.gaierror:
-        return True  # can't resolve — treat as unsafe
-    for _, _, _, _, sockaddr in addrinfo:
-        ip_str = sockaddr[0]
-        try:
-            ip = ipaddress.ip_address(ip_str)
-        except ValueError:
-            continue
-        # Defence in depth: extract embedded IPv4 from mapped addresses
-        # and check against private IPv4 ranges.
-        if isinstance(ip, ipaddress.IPv6Address) and ip in _IPV4_MAPPED:
-            ipv4 = ip.ipv4_mapped
-            if ipv4 is not None:
-                for v4net in _PRIVATE_V4_NETWORKS:
-                    if ipv4 in v4net:
-                        return True
-        for net in _PRIVATE_NETWORKS:
-            if ip in net:
-                return True
-    return False
 
 
 # ---------------------------------------------------------------------------
@@ -171,19 +108,7 @@ def build_public_fetch_tools(
     # Pre-compute the basic-auth header value when fleet-auth is
     # configured — the agent never sees the credential; it is injected
     # server-side for matching hosts only.
-    fleet_auth_header: str | None = None
-    fleet_auth_hosts: set[str] = set()
-    if settings.fleet_auth is not None:
-        username = settings.fleet_auth.basic_auth_username
-        password = settings.fleet_auth.basic_auth_password.get_secret_value()
-        if username and password:
-            import base64 as _base64
-
-            encoded = _base64.b64encode(f"{username}:{password}".encode()).decode(
-                "ascii"
-            )
-            fleet_auth_header = f"Basic {encoded}"
-            fleet_auth_hosts = set(settings.fleet_auth.auth_hosts)
+    fleet_auth_header, fleet_auth_hosts = _build_fleet_auth_header(settings.fleet_auth)
 
     async def fetch_public_url(url: str) -> str:
         """Fetch a public URL and return raw text contents with metadata.
@@ -224,11 +149,9 @@ def build_public_fetch_tools(
 
         # --- URL scheme validation ---
         parsed = urlparse(url)
-        if parsed.scheme not in ("http", "https"):
-            result["error"] = (
-                f"Unsupported URL scheme {parsed.scheme!r} — "
-                "only http and https are allowed."
-            )
+        scheme_error = _validate_url_scheme(parsed.scheme)
+        if scheme_error is not None:
+            result["error"] = scheme_error
             _audit(result, "blocked:scheme")
             return json.dumps(result, ensure_ascii=False)
 
@@ -243,16 +166,11 @@ def build_public_fetch_tools(
         # explicitly listed them in auth_hosts), so the agent can
         # reach authenticated fleet UIs without duplicating every
         # hostname in the main allowlist.
-        if (
-            allowed_hosts
-            and hostname not in allowed_hosts
-            and hostname not in fleet_auth_hosts
-        ):
-            all_allowed = sorted(allowed_hosts | fleet_auth_hosts)
-            result["error"] = (
-                f"Hostname {hostname!r} is not in the public_fetch domain "
-                f"allowlist. Allowed hosts: {all_allowed}"
-            )
+        allowlist_error = _check_hostname_allowlist(
+            hostname, allowed_hosts, fleet_auth_hosts, "public_fetch"
+        )
+        if allowlist_error is not None:
+            result["error"] = allowlist_error
             _audit(result, "blocked:allowlist")
             return json.dumps(result, ensure_ascii=False)
 
