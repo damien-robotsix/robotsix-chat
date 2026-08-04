@@ -29,6 +29,13 @@ from urllib.parse import urlparse
 
 import httpx
 
+from robotsix_chat.common.http_fetch import (
+    _build_fleet_auth_header,
+    _check_hostname_allowlist,
+    _host_is_private,
+    _validate_url_scheme,
+)
+
 if TYPE_CHECKING:
     from robotsix_chat.config import HttpProbeSettings
 
@@ -75,19 +82,7 @@ def build_http_probe_tools(
     # Pre-compute the basic-auth header value when fleet-auth is
     # configured — the agent never sees the credential; it is injected
     # server-side for matching hosts only.
-    fleet_auth_header: str | None = None
-    fleet_auth_hosts: set[str] = set()
-    if settings.fleet_auth is not None:
-        username = settings.fleet_auth.basic_auth_username
-        password = settings.fleet_auth.basic_auth_password.get_secret_value()
-        if username and password:
-            import base64 as _base64
-
-            encoded = _base64.b64encode(f"{username}:{password}".encode()).decode(
-                "ascii"
-            )
-            fleet_auth_header = f"Basic {encoded}"
-            fleet_auth_hosts = set(settings.fleet_auth.auth_hosts)
+    fleet_auth_header, fleet_auth_hosts = _build_fleet_auth_header(settings.fleet_auth)
 
     async def http_probe(
         url: str,
@@ -145,30 +140,35 @@ def build_http_probe_tools(
             "error": "",
         }
 
+        parsed = urlparse(url)
+        hostname = parsed.hostname or ""
+
+        # --- URL scheme validation ---
+        scheme_error = _validate_url_scheme(parsed.scheme)
+        if scheme_error is not None:
+            result["error"] = scheme_error
+            result["healthy"] = False
+            return json.dumps(result, ensure_ascii=False)
+
         # --- Hostname allowlist check ---
         # Fleet-auth hosts are implicitly allowed (the operator
         # explicitly listed them in auth_hosts), so the agent can
         # reach authenticated fleet UIs without duplicating every
         # hostname in the main allowlist.
-        parsed = urlparse(url)
-        hostname = parsed.hostname or ""
-        if (
-            allowed_hosts
-            and hostname not in allowed_hosts
-            and hostname not in fleet_auth_hosts
-        ):
-            all_allowed = sorted(allowed_hosts | fleet_auth_hosts)
-            result["error"] = (
-                f"Hostname {hostname!r} is not in the http_probe allowlist. "
-                f"Allowed hosts: {all_allowed}"
-            )
+        allowlist_error = _check_hostname_allowlist(
+            hostname, allowed_hosts, fleet_auth_hosts, "http_probe"
+        )
+        if allowlist_error is not None:
+            result["error"] = allowlist_error
             result["healthy"] = False
             return json.dumps(result, ensure_ascii=False)
 
-        if parsed.scheme not in ("http", "https"):
+        # --- SSRF check ---
+        # Fleet-auth hosts are trusted by the operator — skip SSRF check.
+        if hostname and hostname not in fleet_auth_hosts and _host_is_private(hostname):
             result["error"] = (
-                f"Unsupported URL scheme {parsed.scheme!r} — "
-                "only http and https are allowed."
+                f"Hostname {hostname!r} resolves to a private/internal IP "
+                "address — SSRF protection blocked the request."
             )
             result["healthy"] = False
             return json.dumps(result, ensure_ascii=False)
