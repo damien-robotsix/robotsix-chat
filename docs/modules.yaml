@@ -190,11 +190,12 @@ modules:
       - tests/chat/server/test_prompt_style_governance.py
 
   - id: common
-    description: "Shared utilities — provides safe_http_request() for consistent httpx error handling across HTTP clients, and JsonStoreBase for JSON-persisted dataclass stores."
+    description: "Shared utilities — provides safe_http_request() for consistent httpx error handling across HTTP clients, JsonStoreBase for JSON-persisted dataclass stores, and SSRF/allowlist helpers for http_probe and public_fetch."
     paths:
       - src/robotsix_chat/common/__init__.py
       - src/robotsix_chat/common/github_auth.py
       - src/robotsix_chat/common/http.py
+      - src/robotsix_chat/common/http_fetch.py
       - src/robotsix_chat/common/json_store.py
       - src/robotsix_chat/common/unified_diff.py
       - tests/common/__init__.py
