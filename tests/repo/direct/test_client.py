@@ -995,7 +995,7 @@ async def test_set_security_and_analysis_success(
     result = await client.set_security_and_analysis(
         "org/repo",
         dependency_graph="enabled",
-        secret_scanning="disabled",
+        secret_scanning="disabled",  # pragma: allowlist secret
     )
     assert "Security settings updated" in result
     assert "dependency_graph" in result
