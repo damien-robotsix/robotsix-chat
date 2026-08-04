@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add CONDITIONAL AUTHORIZATION prompt instruction: when the operator gives a vague or conditional directive (e.g. "merge if the implementation is good"), the assistant now explicitly states its evaluation criteria and asks for confirmation rather than applying its own unstated interpretation.
 - Upgraded aiohttp from 3.14.1 to 3.14.3 and cryptography from 49.0.0 to 50.0.0 to resolve CVE advisories flagged by `uv audit`.
 - Pre-authorized ticket monitors now receive the standing-authority directive from the first run (via `dedup_key` fallback), so they no longer surface `human_issue_approval` gates that the operator already authorized. The PRE-AUTHORIZED instruction is also ordered before the decision-blocked paragraph to give it priority.
 - Added guidance to the agent system prompt: when the user asks to prioritize or surface "associated tickets," the assistant now proactively queries the full board (GET /tickets) and filters by subject/repo/ticket-id prefix before reporting, ensuring the user gets a complete picture without needing to nudge for a re-check.
