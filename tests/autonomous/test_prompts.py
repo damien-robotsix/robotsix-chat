@@ -29,6 +29,7 @@ class TestBuildAutonomousInstruction:
         assert "MUTATION AUTHORIZATION" in result
         assert "read-only work" in result
         assert "CONSENT SCOPING" in result
+        assert "CONDITIONAL AUTHORIZATION" in result
         assert "HUMAN_ISSUE_APPROVAL" in result
         assert "human_issue_approval" in result
         assert "gate-specific" in result
