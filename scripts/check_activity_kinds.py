@@ -23,6 +23,12 @@ import re
 import sys
 from pathlib import Path
 
+from _check_common import (
+    iter_matching_strings,
+    parse_str_enum,
+    run_consistency_checks,
+)
+
 # ---------------------------------------------------------------------------
 # Step 1 — extract canonical ACTIVITY_KINDS from events.py
 # ---------------------------------------------------------------------------
@@ -33,13 +39,6 @@ _ACTIVITY_KINDS_START_RE = re.compile(
 
 # Matches a single- or double-quoted string and captures its content.
 _QUOTED_STRING_RE = re.compile(r"""["']([^"']+)["']""")
-
-# ---------------------------------------------------------------------------
-# Step 2 — extract SubsessionKind values to avoid false positives
-# ---------------------------------------------------------------------------
-
-_KIND_VALUE_RE = re.compile(r'^\s+(\w+)\s*=\s*"(?P<value>[^"]+)"$')
-_CLASS_HEADER_RE = re.compile(r"^class SubsessionKind\(StrEnum\):")
 
 
 def _parse_activity_kinds(events_path: Path) -> set[str]:
@@ -63,38 +62,18 @@ def _parse_activity_kinds(events_path: Path) -> set[str]:
     return set()
 
 
-def _parse_subsession_kinds(models_path: Path) -> set[str]:
-    """Return the set of canonical SubsessionKind string values."""
-    lines = models_path.read_text(encoding="utf-8").splitlines()
-    in_class = False
-    values: set[str] = set()
-    for line in lines:
-        if _CLASS_HEADER_RE.match(line.rstrip()):
-            in_class = True
-            continue
-        if in_class:
-            if line and not line[0].isspace():
-                break
-            m = _KIND_VALUE_RE.match(line.rstrip())
-            if m:
-                values.add(m.group("value"))
-    return values
+# ---------------------------------------------------------------------------
+# Step 2 — extract SubsessionKind values to avoid false positives
+# ---------------------------------------------------------------------------
 
+_KIND_VALUE_RE = re.compile(r'^\s+(\w+)\s*=\s*"(?P<value>[^"]+)"$')
+_CLASS_HEADER_RE = re.compile(r"^class SubsessionKind\(StrEnum\):")
 
 # ---------------------------------------------------------------------------
 # Step 3 — find frame.kind comparisons in chat.js
 # ---------------------------------------------------------------------------
 
 _FRAME_KIND_RE = re.compile(r'frame\.kind\s*[=!]==?\s*"(?P<kind>[a-z_][a-z_0-9]*)"')
-
-
-def _iter_frame_kind_strings(js_path: Path) -> list[str]:
-    """Yield every frame.kind comparison string literal found in the JS."""
-    text = js_path.read_text(encoding="utf-8")
-    found: list[str] = []
-    for m in _FRAME_KIND_RE.finditer(text):
-        found.append(m.group("kind"))
-    return found
 
 
 def main() -> int:
@@ -120,13 +99,14 @@ def main() -> int:
     # ------------------------------------------------------------------
     # Parse SubsessionKind values (for false-positive exclusion)
     # ------------------------------------------------------------------
-    subsession_values = _parse_subsession_kinds(models_py)
+    subsession_values = set(
+        parse_str_enum(models_py, _CLASS_HEADER_RE, _KIND_VALUE_RE).values()
+    )
 
     # ------------------------------------------------------------------
     # Collect frame.kind comparison strings from chat.js
     # ------------------------------------------------------------------
-    js_strings = _iter_frame_kind_strings(chat_js)
-    js_values: set[str] = set(js_strings)
+    js_values = set(iter_matching_strings(chat_js, _FRAME_KIND_RE))
 
     # Exclude SubsessionKind values — those are checked by
     # check_subsession_kinds.py (which deliberately excludes
@@ -134,22 +114,15 @@ def main() -> int:
     # a SubsessionKind comparison, not an activity-kind comparison).
     activity_like = js_values - subsession_values
 
-    violations = False
-
-    # ------------------------------------------------------------------
-    # Check: frame.kind string not in canonical activity set
-    # ------------------------------------------------------------------
-    unrecognised = activity_like - canonical_values
-    if unrecognised:
-        violations = True
-        print(
+    violations = run_consistency_checks(
+        canonical_values=canonical_values,
+        scanned_values=activity_like,
+        missing_label=None,
+        unrecognised_label=(
             "Unrecognised frame.kind strings in chat.js"
-            " (no matching activity kind in ACTIVITY_KINDS):",
-            file=sys.stderr,
-        )
-        for val in sorted(unrecognised):
-            print(f"  {val}", file=sys.stderr)
-        print(file=sys.stderr)
+            " (no matching activity kind in ACTIVITY_KINDS):"
+        ),
+    )
 
     if violations:
         print(
