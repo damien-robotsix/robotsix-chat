@@ -220,6 +220,7 @@ modules:
       - tests/repo/direct/test_actions_client.py
       - tests/repo/direct/test_board_client.py
       - tests/repo/direct/test_build_tools.py
+      - tests/repo/direct/test_client.py
       - tests/repo/direct/test_direct_fix.py
       - tests/repo/direct/test_direct_repo.py
       - tests/repo/direct/test_github_auth_dependency.py
