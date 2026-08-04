@@ -63,10 +63,10 @@ def test_build_github_actions_tools_disabled() -> None:
 
 
 def test_build_github_actions_tools_returns_five_tools() -> None:
-    """Enabled github_actions returns four tools.
+    """Enabled github_actions returns five tools.
 
     set_actions_secret, dispatch_workflow, check_workflow_run,
-    and fetch_workflow_run_annotations.
+    fetch_workflow_run_annotations, and fetch_job_log.
     """
     tools = build_github_actions_tools(_actions_settings(), _direct_repo_settings())
     assert len(tools) == 5
