@@ -1752,7 +1752,7 @@ state and enables future drift detection.
 
 ______________________________________________________________________
 
-## Governance policy
+### Governance policy
 
 Every change to the `build_autonomous_instruction()` return text in
 `src/robotsix_chat/autonomous/prompts.py` **MUST**:
