@@ -136,8 +136,8 @@ Fetch the raw plain-text log for a specific GitHub Actions job. This is a lower-
 retrieves the job's console output directly from the GitHub API (follows the 302 redirect to the
 signed log URL server-side).
 
-Use this as a **fallback** when `fetch_workflow_run_annotations` returns a permission error (403)
-or when the check-run annotations endpoint is unavailable — job logs use a different API endpoint
+Use this as a **fallback** when `fetch_workflow_run_annotations` returns a permission error (403) or
+when the check-run annotations endpoint is unavailable — job logs use a different API endpoint
 (`/repos/{owner}/{repo}/actions/jobs/{job_id}/logs`) that may still be accessible even when the
 checks API is not.
 
@@ -161,5 +161,5 @@ When a CI run fails and you need to diagnose the root cause:
    checking the GitHub Actions UI manually, including the direct URL to the workflow run.
 
 **Limitation:** When the GitHub App installation lacks both `checks: read` and `actions: read`
-permissions, neither annotations nor job logs are accessible. In this case, the user must check
-the logs manually at `https://github.com/{owner}/{repo}/actions/runs/{run_id}`.
+permissions, neither annotations nor job logs are accessible. In this case, the user must check the
+logs manually at `https://github.com/{owner}/{repo}/actions/runs/{run_id}`.
