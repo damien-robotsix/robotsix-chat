@@ -338,6 +338,27 @@ jobs:
       - name: Run pyright
         run: uv run --with pyright pyright src/ tests/
 
+  mypy:
+    name: Mypy type checker (standalone)
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read  # checkout the repo
+    steps:
+      - name: Harden Runner
+        uses: step-security/harden-runner@bf7454d06d71f1098171f2acdf0cd4708d7b5920  # v2.20.0
+        with:
+          egress-policy: audit
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1  # v7.0.1
+        with:
+          persist-credentials: false
+      - uses: astral-sh/setup-uv@11f9893b081a58869d3b5fccaea48c9e9e46f990  # v8.3.2
+      - name: Install
+        run: uv sync --frozen
+        env:
+          UV_MALWARE_CHECK: "1"
+      - name: Run mypy
+        run: uv run mypy src/ --strict
+
   benchmark:
     name: Chat microbenchmarks
     if: github.event_name == 'push' && github.ref == 'refs/heads/main'
@@ -368,7 +389,7 @@ jobs:
 
   check:
     name: All CI checks passed
-    needs: [lockfile, ci, security, changelog, pre-commit, check-sse-types, check-subsession-kinds, check-activity-kinds, check-subsession-statuses, check-autonomous-states, image-scan, check-config-schema, deptry, pyright]
+    needs: [lockfile, ci, security, changelog, pre-commit, check-sse-types, check-subsession-kinds, check-activity-kinds, check-subsession-statuses, check-autonomous-states, image-scan, check-config-schema, deptry, pyright, mypy]
     # Use !cancelled() so the job still runs when a reusable-workflow call
     # (ci, security) is misreported as "skipped" due to a known GitHub
     # Actions edge case: when a reusable workflow has conditionally-skipped
@@ -398,6 +419,7 @@ jobs:
           CHECK_CONFIG_SCHEMA_RESULT: ${{ needs.check-config-schema.result }}
           DEPTRY_RESULT: ${{ needs.deptry.result }}
           PYRIGHT_RESULT: ${{ needs.pyright.result }}
+          MYPY_RESULT: ${{ needs.mypy.result }}
         run: |
           set -euo pipefail
           check() {  # usage: check <result> <label> [allow-skipped]
@@ -428,4 +450,5 @@ jobs:
           check "$CHECK_CONFIG_SCHEMA_RESULT"         check-config-schema
           check "$DEPTRY_RESULT"                      deptry
           check "$PYRIGHT_RESULT"                     pyright
+          check "$MYPY_RESULT"                       mypy
           echo "All CI checks passed"
