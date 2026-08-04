@@ -35,7 +35,7 @@ _MOCK_SOCKET_RETURN = [
 
 
 @pytest.fixture(autouse=True)
-def _mock_dns() -> None:
+def _mock_dns():
     """Mock DNS resolution to return a public IP for all tests.
 
     ``_host_is_private`` from ``common.http_fetch`` calls
