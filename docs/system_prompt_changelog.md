@@ -1726,7 +1726,7 @@ pre-existing "You are a helpful assistant." prefix. This entry locks in that kno
 
 ______________________________________________________________________
 
-# Autonomous Prompt Changelog
+## Autonomous Prompt Changelog
 
 Governed artifact: `build_autonomous_instruction()` in
 `src/robotsix_chat/autonomous/prompts.py`. Version stamp: `AUTONOMOUS_PROMPT_VERSION` in the same module.
