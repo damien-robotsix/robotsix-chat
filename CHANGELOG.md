@@ -1,5 +1,9 @@
 ## 0.0.0 (unreleased)
 
+- **Lifecycle client**: `list_lifecycle_services` (and all other lifecycle API methods) now
+  return a clear error message when `lifecycle.base_url` is empty or malformed, instead of a
+  confusing `httpx.InvalidURL` traceback.  Validation runs once at client construction time;
+  every request path checks for an empty base URL before attempting an HTTP call.
 - Remove dead `ConversationStore.get_compacted_summary` method (zero callers; removal was already documented in changelog but the code had not been deleted)
 - Document `central_deploy.component_credentials` in `docs/configuration.md` Central Deploy section.
 - Deduplicate fleet-auth, hostname-allowlist, URL-scheme-validation, and SSRF protection logic between `http_probe` and `public_fetch` by using the shared helpers in `common/http_fetch`. Add DNS-level private-IP SSRF checks to `http_probe` (previously missing — it relied solely on a configurable hostname allowlist).

@@ -12,6 +12,7 @@ import json
 import logging
 import time
 from typing import Any
+from urllib.parse import urlparse
 
 from robotsix_chat.common.http import safe_http_request
 from robotsix_chat.config import LifecycleSettings
@@ -53,6 +54,23 @@ def _ensure_url_scheme(raw: str, default_protocol: str) -> str:
         fixed,
     )
     return fixed
+
+
+def _validate_http_url(url: str) -> bool:
+    """Return ``True`` if *url* is a valid absolute HTTP(S) URL.
+
+    The URL must have a recognised scheme (``http`` or ``https``) and a
+    non-empty host component.  This is stricter than ``urlparse``'s own
+    parsing — it rejects relative URLs, protocol-only stubs (e.g.
+    ``http://``), and URLs with unrecognised schemes.
+    """
+    if not url:
+        return False
+    try:
+        parsed = urlparse(url)
+        return bool(parsed.scheme in _KNOWN_SCHEMES and parsed.netloc)
+    except Exception:
+        return False
 
 
 def _is_transient_error(result: str) -> bool:
@@ -225,6 +243,15 @@ class LifecycleClient:
                 "lifecycle.base_url is empty — all lifecycle API calls "
                 "will fail with a URL protocol error."
             )
+        elif not _validate_http_url(base_url):
+            logger.warning(
+                "lifecycle.base_url %r is malformed — all lifecycle API "
+                "calls will fail.  Set lifecycle.base_url to a valid "
+                "HTTP URL (e.g. http://central-deploy:8100) and restart "
+                "the chat server.",
+                base_url,
+            )
+            base_url = ""
         self._base_url = base_url
 
     # -- public methods ---------------------------------------------------
@@ -486,6 +513,17 @@ class LifecycleClient:
         *,
         raw: bool = False,
     ) -> str | None:
+        if not self._base_url:
+            return (
+                None
+                if raw
+                else (
+                    "Lifecycle base URL is not configured or is malformed. "
+                    "Set lifecycle.base_url to a valid HTTP URL "
+                    "(e.g. http://central-deploy:8100) and restart the "
+                    "chat server."
+                )
+            )
         url = f"{self._base_url}{path}"
         result = await safe_http_request(
             method,
