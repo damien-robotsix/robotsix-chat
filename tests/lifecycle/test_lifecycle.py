@@ -19,6 +19,7 @@ from robotsix_chat.lifecycle.client import (
     _diagnose_self_restart_failure,
     _ensure_url_scheme,
     _is_transient_error,
+    _validate_http_url,
 )
 
 
@@ -935,3 +936,176 @@ def test_diagnose_unclassified_error_fallback() -> None:
     out = _diagnose_self_restart_failure(result, attempts=1, max_retries=3)
     assert "unexpected error" in out.lower()
     assert "base_url" in out.lower()
+
+
+# ---------------------------------------------------------------------------
+# _validate_http_url
+# ---------------------------------------------------------------------------
+
+
+def test_validate_http_url_empty() -> None:
+    """Empty string is not a valid URL."""
+    assert _validate_http_url("") is False
+
+
+def test_validate_http_url_http_with_host() -> None:
+    """A standard http:// URL with host is valid."""
+    assert _validate_http_url("http://central-deploy:8100") is True
+
+
+def test_validate_http_url_https_with_host() -> None:
+    """A standard https:// URL with host is valid."""
+    assert _validate_http_url("https://deploy.example.com") is True
+
+
+def test_validate_http_url_no_scheme() -> None:
+    """A URL with no scheme is not valid."""
+    assert _validate_http_url("central-deploy:8100") is False
+
+
+def test_validate_http_url_relative() -> None:
+    """A relative URL (/services) is not valid."""
+    assert _validate_http_url("/services") is False
+
+
+def test_validate_http_url_protocol_only() -> None:
+    """A protocol-only stub (http://) is not valid."""
+    assert _validate_http_url("http://") is False
+
+
+def test_validate_http_url_unrecognised_scheme() -> None:
+    """A URL with an unrecognised scheme (ftp://) is not valid."""
+    assert _validate_http_url("ftp://deploy:8100") is False
+
+
+def test_validate_http_url_whitespace_only() -> None:
+    """A whitespace-only string is not valid."""
+    assert _validate_http_url("   ") is False
+
+
+def test_validate_http_url_malformed() -> None:
+    """A malformed string is not a valid URL."""
+    assert _validate_http_url("not a valid url at all !!!") is False
+
+
+# ---------------------------------------------------------------------------
+# empty / malformed base_url — list_services and other read-only methods
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_list_services_empty_base_url_returns_clear_message() -> None:
+    """When base_url is empty, list_services returns a clear error message."""
+    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
+    out = await client.list_services()
+    assert "base url" in out.lower()
+    assert "http://central-deploy:8100" in out
+
+
+@pytest.mark.asyncio
+async def test_list_services_malformed_base_url_returns_clear_message() -> None:
+    """Base_url is malformed (e.g. protocol-only) → clear error message."""
+    client = LifecycleClient(_settings(base_url="http://", default_protocol="http"))
+    out = await client.list_services()
+    assert "base url" in out.lower()
+    assert "http://central-deploy:8100" in out
+
+
+@pytest.mark.asyncio
+async def test_service_status_empty_base_url_returns_clear_message() -> None:
+    """When base_url is empty, service_status returns a clear error message."""
+    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
+    out = await client.service_status("chat")
+    assert "base url" in out.lower()
+    assert "http://central-deploy:8100" in out
+
+
+@pytest.mark.asyncio
+async def test_service_config_empty_base_url_returns_clear_message() -> None:
+    """When base_url is empty, service_config returns a clear error message."""
+    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
+    out = await client.service_config("chat")
+    assert "base url" in out.lower()
+    assert "http://central-deploy:8100" in out
+
+
+@pytest.mark.asyncio
+async def test_service_env_empty_base_url_returns_clear_message() -> None:
+    """When base_url is empty, service_env returns a clear error message."""
+    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
+    out = await client.service_env("chat")
+    assert "base url" in out.lower()
+    assert "http://central-deploy:8100" in out
+
+
+@pytest.mark.asyncio
+async def test_restart_service_empty_base_url_returns_clear_message() -> None:
+    """When base_url is empty, restart_service returns a clear error message."""
+    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
+    out = await client.restart_service("chat")
+    assert "base url" in out.lower()
+    assert "http://central-deploy:8100" in out
+
+
+@pytest.mark.asyncio
+async def test_update_service_config_empty_base_url_returns_clear_message() -> None:
+    """When base_url is empty, update_service_config returns a clear error message."""
+    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
+    out = await client.update_service_config("chat", {"log_level": "DEBUG"})
+    assert "base url" in out.lower()
+    assert "http://central-deploy:8100" in out
+
+
+@pytest.mark.asyncio
+async def test_update_service_env_empty_base_url_returns_clear_message() -> None:
+    """When base_url is empty, update_service_env returns a clear error message."""
+    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
+    out = await client.update_service_env("chat", {"MY_VAR": "val"})
+    assert "base url" in out.lower()
+    assert "http://central-deploy:8100" in out
+
+
+@pytest.mark.asyncio
+async def test_watch_service_redeploy_empty_base_url_returns_error() -> None:
+    """When base_url is empty, watch_service_redeploy returns an error message."""
+    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
+    out = await client.watch_service_redeploy(
+        "mill", max_wait_seconds=5.0, poll_interval_seconds=5.0
+    )
+    assert "Could not reach" in out
+
+
+@pytest.mark.asyncio
+async def test_self_restart_empty_base_url_still_uses_dedicated_guard() -> None:
+    """When base_url is empty, the dedicated self_restart guard fires first.
+
+    The existing dedicated guard (which mentions service_name) still fires
+    before the generic _request guard.
+    """
+    client = LifecycleClient(_settings(base_url="", default_protocol="http"))
+    out = await client.self_restart()
+    assert "base_url is empty" in out
+    assert "http://central-deploy:8100" in out
+
+
+@pytest.mark.asyncio
+async def test_malformed_base_url_is_treated_as_empty_for_all_methods(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A malformed base URL causes all methods to return the clear error.
+
+    No HTTP request is ever made (respx has no matching route).
+    """
+    client = LifecycleClient(_settings(base_url="http://", default_protocol="http"))
+    out = await client.list_services()
+    assert "base url" in out.lower()
+
+    out = await client.service_status("chat")
+    assert "base url" in out.lower()
+
+    out = await client.restart_service("chat")
+    assert "base url" in out.lower()
+
+    # Also verify no HTTP call was attempted (respx_mock would fail
+    # on an unmatched route, so reaching here without error proves
+    # the guard short-circuited before any request).
