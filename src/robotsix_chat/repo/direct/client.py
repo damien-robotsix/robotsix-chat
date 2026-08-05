@@ -9,8 +9,6 @@ Board/ticket API operations have moved to
 operations have moved to
 :mod:`robotsix_chat.repo.direct.actions_client`.  The unified-diff
 applicator has moved to :mod:`robotsix_chat.common.unified_diff`.
-Deprecated wrapper methods remain on this class for backward
-compatibility.
 """
 
 from __future__ import annotations
