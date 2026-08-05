@@ -959,18 +959,6 @@ class ConversationStore:
             current = session.compacted_into
         return current
 
-    def get_compacted_summary(self, session_id: str) -> str | None:
-        """Return the compaction summary stored for *session_id*, or ``None``.
-
-        A compaction summary is a plain-text summary of the preceding session's
-        conversation that is injected into the agent context when a new session
-        is created after an idle timeout.
-        """
-        session = self._sessions.get(session_id)
-        if session is None:
-            return None
-        return session.compacted_summary
-
     # ------------------------------------------------------------------
     # Internals
     # ------------------------------------------------------------------
