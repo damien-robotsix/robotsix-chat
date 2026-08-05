@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Removed stale "Deprecated wrapper methods remain on this class" sentence from `DirectRepoClient` module docstring — the 14 referenced methods were already removed.
 - **Lifecycle client**: `list_lifecycle_services` (and all other lifecycle API methods) now
   return a clear error message when `lifecycle.base_url` is empty or malformed, instead of a
   confusing `httpx.InvalidURL` traceback.  Validation runs once at client construction time;
