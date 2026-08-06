@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Added unit tests for ``robotsix_chat.common.http_fetch`` SSRF / fleet-auth / allowlist / URL-scheme helpers (35 tests covering ``_host_is_private``, ``_build_fleet_auth_header``, ``_check_hostname_allowlist``, ``_validate_url_scheme``).
 - Removed stale "Deprecated wrapper methods remain on this class" sentence from `DirectRepoClient` module docstring — the 14 referenced methods were already removed.
 - **Lifecycle client**: `list_lifecycle_services` (and all other lifecycle API methods) now
   return a clear error message when `lifecycle.base_url` is empty or malformed, instead of a
