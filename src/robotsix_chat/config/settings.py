@@ -125,6 +125,11 @@ class Settings(BaseModel):
             image.  Default ``5_242_880`` (5 MiB).
         allowed_image_media_types: Media types accepted for image attachments.
             Default ``["image/png", "image/jpeg", "image/gif", "image/webp"]``.
+        low_risk_actions: Action names or descriptions that the agent may
+            perform without requesting human confirmation.  When non-empty,
+            the system prompt instructs the agent that these actions are
+            pre-authorized and any safety gates on them are lifted —
+            the agent should execute them without asking.  Default ``[]``.
 
     """
 
@@ -1138,6 +1143,9 @@ class Settings(BaseModel):
     allowed_image_media_types: list[str] = Field(
         default_factory=lambda: ["image/png", "image/jpeg", "image/gif", "image/webp"],
         json_schema_extra={"advanced": True},
+    )
+    low_risk_actions: list[str] = Field(
+        default_factory=list, json_schema_extra={"advanced": True}
     )
 
     model_config = ConfigDict(extra="forbid")

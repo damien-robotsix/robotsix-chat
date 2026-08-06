@@ -1,5 +1,11 @@
 ## 0.0.0 (unreleased)
 
+- Added `low_risk_actions` configuration option: a list of action names or
+  descriptions that the agent may perform without requesting human confirmation.
+  When non-empty, the system prompt instructs the agent that these actions are
+  pre-authorized, lifting the default ask-before-acting gate for them.
+  Default `[]` (no actions are pre-authorized beyond the prompt's built-in
+  low-risk heuristics).
 - Removed stale "Deprecated wrapper methods remain on this class" sentence from `DirectRepoClient` module docstring — the 14 referenced methods were already removed.
 - **Lifecycle client**: `list_lifecycle_services` (and all other lifecycle API methods) now
   return a clear error message when `lifecycle.base_url` is empty or malformed, instead of a
