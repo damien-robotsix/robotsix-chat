@@ -102,7 +102,7 @@ def _run_mdformat_on_changed_md_files(repo_dir: Path) -> None:
     log.debug("mdformat: no available runner — skipping")
 
 
-class DocumentStage(Stage):  # Stage is from untyped robotsix_mill
+class DocumentStage(Stage):  # type: ignore[misc]  # Stage is from untyped robotsix_mill
     """Update project documentation from the implemented code changes."""
 
     name = "document"

@@ -281,7 +281,7 @@ def _is_noop_draft(title: str | None) -> bool:
     return bool(is_noop_report(title))
 
 
-class RetrospectStage(Stage):  # Stage is from untyped robotsix_mill
+class RetrospectStage(Stage):  # type: ignore[misc]  # Stage is from untyped robotsix_mill
     """Run a deep-analysis retrospective on completed tickets.
 
     Optionally spawn follow-up draft tickets.
@@ -346,7 +346,7 @@ class RetrospectStage(Stage):  # Stage is from untyped robotsix_mill
             draft.id,
             target_service.board_id or "<default>",
         )
-        return draft.id
+        return draft.id  # type: ignore[no-any-return]
 
     def _maybe_spawn_follow_up(
         self,
@@ -399,7 +399,7 @@ class RetrospectStage(Stage):  # Stage is from untyped robotsix_mill
             draft.id,
             target_service.board_id or "<default>",
         )
-        return draft.id
+        return draft.id  # type: ignore[no-any-return]
 
     def _suppress_duplicate_agented_proposals(
         self,
