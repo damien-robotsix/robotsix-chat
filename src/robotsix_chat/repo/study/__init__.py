@@ -6,6 +6,11 @@ no ``git`` binary) into a temporary workspace and study it locally: list
 files, read them with line numbers, and regex-search across the tree.
 Returns no tools when repo_study is disabled, so the chat runs exactly as
 before.
+
+When *diagnostic_store* is provided, every ``fetch_repo_for_study`` failure
+is automatically recorded as a ``CLONE_TARGET`` diagnostic event so the
+:class:`~robotsix_chat.diagnostics.fixes.RecurrenceDetector` and
+:func:`check_recurring_categories` tool can surface systemic clone issues.
 """
 
 from __future__ import annotations
@@ -16,6 +21,7 @@ from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from robotsix_chat.config import DirectRepoSettings, RepoStudySettings
+    from robotsix_chat.diagnostics.store import DiagnosticStore
 
 logger = logging.getLogger(__name__)
 
@@ -25,6 +31,8 @@ __all__ = ["build_repo_study_tools"]
 def build_repo_study_tools(
     settings: RepoStudySettings,
     direct_repo: DirectRepoSettings,
+    *,
+    diagnostic_store: DiagnosticStore | None = None,
 ) -> list[Callable[..., Any]]:
     """Return the repo-study tools for the agent, or ``[]`` when disabled."""
     if not settings.enabled:
@@ -57,6 +65,12 @@ def build_repo_study_tools(
         try:
             return await manager.fetch(repo, ref)
         except WorkspaceError as exc:
+            if diagnostic_store is not None:
+                diagnostic_store.record_event(
+                    category="CLONE_TARGET",
+                    message=f"Repo fetch failed for {repo}: {exc}",
+                    details={"repo": repo, "ref": ref, "error": str(exc)},
+                )
             return f"Error: {exc}"
 
     async def list_repo_files(
