@@ -94,8 +94,10 @@ def build_memory(
         )
         return NullMemory()
 
-    key = settings.model_dump_json() + "|" + (
-        langfuse.model_dump_json() if langfuse is not None else ""
+    key = (
+        settings.model_dump_json()
+        + "|"
+        + (langfuse.model_dump_json() if langfuse is not None else "")
     )
     cached = _MEMORY_CACHE.get(key)
     if cached is not None:
