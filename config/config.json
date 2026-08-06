@@ -248,5 +248,6 @@
     "image/jpeg",
     "image/gif",
     "image/webp"
-  ]
+  ],
+  "low_risk_actions": []
 }
