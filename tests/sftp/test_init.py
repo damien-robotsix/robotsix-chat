@@ -134,9 +134,7 @@ class TestBuildSftpToolsEnabled:
         exists_fn = tools[3]
         result = await exists_fn("/srv/config.txt")
         assert result == "true"
-        self.mock_client_instance.file_exists.assert_called_once_with(
-            "/srv/config.txt"
-        )
+        self.mock_client_instance.file_exists.assert_called_once_with("/srv/config.txt")
 
     @pytest.mark.asyncio
     async def test_file_exists_false(self) -> None:
