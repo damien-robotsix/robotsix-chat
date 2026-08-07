@@ -461,6 +461,7 @@ def _build_set_checkpoint_tool(sub_id: str, registry: SubsessionRegistry) -> Any
 
     return set_checkpoint
 
+
 def _build_self_update_tool(
     sub_id: str,
     registry: SubsessionRegistry,
