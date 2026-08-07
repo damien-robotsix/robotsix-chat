@@ -64,14 +64,11 @@ def build_subsession_tools(
             )
         )
         tools.append(_build_set_checkpoint_tool(ctx.subsession_id, env.registry))
-        # Periodic self-adjustment tools — only for periodic subsessions.
-        info = env.registry.get(ctx.subsession_id)
-        if info is not None and info.kind is SubsessionKind.PERIODIC:
-            tools.extend(
-                _build_periodic_self_adjustment_tools(
-                    env, ctx.subsession_id, env.settings
-                )
+        tools.append(
+            _build_self_update_tool(
+                ctx.subsession_id, env.registry, env.settings.subsessions
             )
+        )
     return tools
 
 
@@ -465,172 +462,103 @@ def _build_set_checkpoint_tool(sub_id: str, registry: SubsessionRegistry) -> Any
     return set_checkpoint
 
 
-def _build_periodic_self_adjustment_tools(
-    env: SubsessionEnv,
+def _build_self_update_tool(
     sub_id: str,
-    settings: Any,
-) -> list[Any]:
-    """Build self-adjustment tools for a periodic subsession.
-
-    These tools let a periodic monitor revise its own purpose as the
-    monitored situation evolves — within operator-configured bounds.
-    All mutations are logged at WARNING level for auditability.
-    """
-    registry = env.registry
-    cfg = settings.subsessions
+    registry: SubsessionRegistry,
+    cfg: Any,
+) -> Any:
+    """Build the self-update tool for periodic subsessions."""
     min_interval = cfg.min_interval_seconds
-    max_interval = getattr(cfg, "periodic_max_interval_seconds", 3600.0)
-    max_total_runs = getattr(cfg, "periodic_max_total_runs", 100)
 
-    async def update_periodic_instructions(
-        new_instructions: str, reason: str | None = None
+    async def self_update_subsession(
+        instructions: str | None = None,
+        interval_seconds: float | None = None,
+        max_runs: int | None = None,
     ) -> str:
-        """Revise this periodic monitor's instructions/prompt.
-
-        Use this to narrow or broaden the monitor's focus as the
-        monitored situation evolves (e.g. switch from "watch for any
-        change" to "watch for CI failure X once the ticket enters a
-        build stage").  Pass the COMPLETE new instructions — they
-        replace the old ones entirely.
-
-        The new instructions apply from the NEXT tick onward; the
-        current tick (if mid-turn) is unaffected.
-
-        Pass an optional *reason* (one sentence) so the operator can
-        see why the monitor changed its behaviour in the audit log.
-        """
-        if not isinstance(new_instructions, str) or not new_instructions.strip():
+        info = registry.get(sub_id)
+        if info is None or not info.is_active:
+            return f"self_update_subsession: subsession {sub_id} is not active."
+        if info.kind is not SubsessionKind.PERIODIC:
             return (
-                "update_periodic_instructions: instructions must be a non-empty string."
+                "self_update_subsession: only periodic subsessions can "
+                "self-update — this subsession is kind "
+                f"'{info.kind.value}'."
             )
-        info_before = registry.get(sub_id)
-        old_len = len(info_before.prompt) if info_before else 0
-        ok = registry.update_prompt(sub_id, new_instructions)
-        if not ok:
-            return "update_periodic_instructions: this subsession is no longer active."
-        reason_suffix = f" — {reason}" if reason else ""
-        logger.warning(
-            "Periodic subsession %s self-adjusted instructions (length %d → %d)%s.",
+
+        changed: list[str] = []
+
+        if instructions is not None:
+            if not isinstance(instructions, str):
+                return "self_update_subsession: instructions must be a string."
+            if len(instructions) > 8000:
+                return (
+                    "self_update_subsession: instructions too long "
+                    f"({len(instructions)} chars, max 8000)."
+                )
+            changed.append("instructions")
+
+        if interval_seconds is not None:
+            if not isinstance(interval_seconds, (int, float)):
+                return "self_update_subsession: interval_seconds must be a number."
+            if interval_seconds < min_interval:
+                return (
+                    "self_update_subsession: interval_seconds must be "
+                    f">= {min_interval}s (got {interval_seconds})."
+                )
+            changed.append("interval")
+
+        if max_runs is not None:
+            if not isinstance(max_runs, int):
+                return "self_update_subsession: max_runs must be an integer."
+            if max_runs < 0:
+                return "self_update_subsession: max_runs must be >= 0."
+            changed.append("max_runs")
+
+        if not changed:
+            return (
+                "self_update_subsession: no fields to update — pass at "
+                "least one of instructions, interval_seconds, or max_runs."
+            )
+
+        ok = registry.update_periodic_config(
             sub_id,
-            old_len,
-            len(new_instructions),
-            reason_suffix,
+            prompt=instructions if instructions is not None else None,
+            interval_seconds=interval_seconds,
+            max_runs=max_runs,
         )
-        return "Instructions updated — the new prompt takes effect on the next tick."
-
-    async def adjust_periodic_interval(
-        interval_seconds: float, reason: str | None = None
-    ) -> str:
-        """Adjust this periodic monitor's polling interval (seconds).
-
-        Must be between the configured minimum (default 60 s) and
-        maximum (default 3600 s = 1 hour).  Values outside this range
-        are clamped to the nearest bound; the clamped value is logged.
-        Use shorter intervals when nearing a terminal transition, and
-        longer intervals while the monitored subject is idle.
-
-        Pass an optional *reason* (one sentence) so the operator can
-        see why the monitor changed its behaviour in the audit log.
-        """
-        if not isinstance(interval_seconds, (int, float)) or interval_seconds <= 0:
-            return (
-                "adjust_periodic_interval: interval_seconds must be a positive number."
-            )
-        original = float(interval_seconds)
-        clamped = max(min_interval, min(original, max_interval))
-        info_before = registry.get(sub_id)
-        old_interval = info_before.interval_seconds if info_before else None
-        ok = registry.update_interval(sub_id, clamped)
         if not ok:
-            return "adjust_periodic_interval: this subsession is no longer active."
-        reason_suffix = f" — {reason}" if reason else ""
-        if clamped != original:
-            logger.warning(
-                "Periodic subsession %s self-adjusted interval "
-                "%.1f → %.1f (requested %.1f, clamped to bounds "
-                "[%.1f, %.1f])%s.",
-                sub_id,
-                old_interval if old_interval is not None else clamped,
-                clamped,
-                original,
-                max_interval,
-                min_interval,
-                reason_suffix,
-            )
             return (
-                f"Interval adjusted to {clamped:.0f} s "
-                f"(requested {original:.0f} s was outside bounds "
-                f"[{min_interval:.0f}, {max_interval:.0f}])."
+                "self_update_subsession: update failed — subsession may "
+                "have closed between the guard check and the write."
             )
-        logger.warning(
-            "Periodic subsession %s self-adjusted interval %.1f → %.1f s%s.",
-            sub_id,
-            old_interval if old_interval is not None else clamped,
-            clamped,
-            reason_suffix,
-        )
-        return f"Interval adjusted to {clamped:.0f} s."
 
-    async def adjust_periodic_budget(max_runs: int, reason: str | None = None) -> str:
-        """Adjust this periodic monitor's remaining run budget (max_runs).
+        fields = ", ".join(changed)
+        return f"Self-update applied: changed {fields}.  Effective next tick."
 
-        Must be between 0 and the configured maximum (default 100).
-        Values outside this range are clamped.  Set to 0 to let the
-        monitor run until auto-stopped by consecutive NO_CHANGE runs
-        or an explicit close.  Use this to extend the budget when a
-        ticket needs more monitoring cycles, or shorten it when the
-        watched condition is nearing resolution.
+    self_update_subsession.__doc__ = (
+        "Update THIS periodic subsession's own run configuration.\n"  # nosec B608
+        "\n"
+        "Call this to change what a periodic monitor does or how often it\n"
+        "runs — the natural alternative to spawning a new periodic child\n"
+        "(which is not allowed from within a periodic context).  Changes\n"
+        "take effect on the next scheduled tick.\n"
+        "\n"
+        "instructions: rewrite or extend the instruction text this\n"
+        "  subsession executes each tick — e.g. add a second ticket id to\n"
+        "  watch, change the terminal-state criteria.  Must not exceed\n"
+        "  8000 characters.  Omit (or pass None) to leave unchanged.\n"
+        "interval_seconds: change the polling interval (minimum "
+        f"{min_interval}s applies).  Omit (or pass None) to leave "
+        "unchanged.\n"
+        "max_runs: adjust the remaining max-run cap.  Pass None to remove\n"
+        "  the cap entirely.  The run counter is NEVER reset — self-update\n"
+        "  cannot bypass max-run limits.\n"
+        "\n"
+        "Only works from within a periodic subsession.  Returns a\n"
+        "confirmation string listing which fields were changed.\n"
+    )
 
-        Pass an optional *reason* (one sentence) so the operator can
-        see why the monitor changed its behaviour in the audit log.
-        """
-        if not isinstance(max_runs, int) or max_runs < 0:
-            return "adjust_periodic_budget: max_runs must be a non-negative integer."
-        clamped = min(max_runs, max_total_runs)
-        info_before = registry.get(sub_id)
-        old_max_runs = info_before.max_runs if info_before else None
-        ok = registry.update_max_runs(sub_id, clamped)
-        if not ok:
-            return "adjust_periodic_budget: this subsession is no longer active."
-        reason_suffix = f" — {reason}" if reason else ""
-        if clamped != max_runs:
-            logger.warning(
-                "Periodic subsession %s self-adjusted budget "
-                "%s → %d (requested %d, clamped to max %d)%s.",
-                sub_id,
-                str(old_max_runs) if old_max_runs is not None else "?",
-                clamped,
-                max_runs,
-                max_total_runs,
-                reason_suffix,
-            )
-            return (
-                f"Budget adjusted to {clamped} runs "
-                f"(requested {max_runs} exceeds maximum {max_total_runs})."
-            )
-        logger.warning(
-            "Periodic subsession %s self-adjusted budget %s → %d runs%s.",
-            sub_id,
-            str(old_max_runs) if old_max_runs is not None else "?",
-            clamped,
-            reason_suffix,
-        )
-        if clamped == 0:
-            return "Budget adjusted to unlimited (runs until auto-stopped or closed)."
-        return f"Budget adjusted to {clamped} runs."
-
-    update_periodic_instructions.__name__ = "update_periodic_instructions"
-    update_periodic_instructions.__qualname__ = "update_periodic_instructions"
-    adjust_periodic_interval.__name__ = "adjust_periodic_interval"
-    adjust_periodic_interval.__qualname__ = "adjust_periodic_interval"
-    adjust_periodic_budget.__name__ = "adjust_periodic_budget"
-    adjust_periodic_budget.__qualname__ = "adjust_periodic_budget"
-
-    return [
-        update_periodic_instructions,
-        adjust_periodic_interval,
-        adjust_periodic_budget,
-    ]
+    return self_update_subsession
 
 
 def _format_info(info: SubsessionInfo) -> str:

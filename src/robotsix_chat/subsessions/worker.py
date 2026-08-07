@@ -376,8 +376,10 @@ def spawn_subsession(
                 raise SubsessionPeriodicSpawnError(
                     "periodic subsessions cannot spawn periodic children. "
                     "Alternatives: (1) use a one-shot task subsession to "
-                    "spawn the periodic monitor, (2) modify the existing "
-                    "monitor's prompt to cover the additional scope, or "
+                    "spawn the periodic monitor, (2) call "
+                    "self_update_subsession from within the periodic "
+                    "monitor to broaden its scope or change its tempo "
+                    "(the supported path for self-amendment), or "
                     "(3) ask the operator to spawn a top-level periodic "
                     "monitor."
                 )
