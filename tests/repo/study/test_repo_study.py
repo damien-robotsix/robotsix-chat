@@ -13,6 +13,7 @@ import respx
 from httpx import Response
 
 from robotsix_chat.config import DirectRepoSettings, RepoStudySettings
+from robotsix_chat.diagnostics.store import DiagnosticStore
 from robotsix_chat.repo.study import build_repo_study_tools
 from robotsix_chat.repo.study.workspace import (
     WorkspaceError,
@@ -567,3 +568,41 @@ def test_list_repo_files_path_is_a_glob_prefix(tmp_path: Path) -> None:
 
     assert "a.md" in listing
     assert "b.py" not in listing
+
+
+# ---------------------------------------------------------------------------
+# diagnostic store integration
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_fetch_failure_records_diagnostic_event(tmp_path: Path) -> None:
+    """A fetch failure records a CLONE_TARGET diagnostic event when a store is given."""
+    store = DiagnosticStore(str(tmp_path / "diag.json"))
+    tools = build_repo_study_tools(
+        RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")),
+        DirectRepoSettings(),
+        diagnostic_store=store,
+    )
+    by_name = {t.__name__: t for t in tools}
+
+    result = await by_name["fetch_repo_for_study"]("bad name")
+    assert result.startswith("Error:")
+
+    events = store.list_events("CLONE_TARGET")
+    assert len(events) == 1
+    assert events[0].category == "CLONE_TARGET"
+    assert events[0].details is not None
+    assert events[0].details["repo"] == "bad name"
+
+
+@pytest.mark.asyncio
+async def test_fetch_failure_no_store_no_crash(tmp_path: Path) -> None:
+    """When no diagnostic_store is provided, fetch failures still work."""
+    tools = build_repo_study_tools(
+        RepoStudySettings(enabled=True, data_dir=str(tmp_path / "ws")),
+        DirectRepoSettings(),
+    )
+    by_name = {t.__name__: t for t in tools}
+    result = await by_name["fetch_repo_for_study"]("bad name")
+    assert result.startswith("Error:")

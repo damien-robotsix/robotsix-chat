@@ -1,5 +1,7 @@
 ## 0.0.0 (unreleased)
 
+- `fetch_repo_for_study` now records a `CLONE_TARGET` diagnostic event on failure,
+  enabling the recurrence detector to surface systemic repo-access issues.
 - `fetch_workflow_run_annotations`: when the GitHub Checks API returns 403
   (token lacks `checks: read` permission), the tool now falls back to
   fetching raw job logs via the Actions API instead of returning a generic
