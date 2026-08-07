@@ -64,7 +64,11 @@ jobs:
     with:
       install-extras: ""
       trufflehog-pr-diff: true
-      trufflehog-extra-args: "--results=verified,unknown"
+      # justification: TruffleHog v3.96.0 Lob detector produces false positives on
+      # test function names (e.g. test_self_update_changes_instructions). No actual
+      # Lob API keys exist in the repo — exhaustive grep for live_/test_/live_pub_/
+      # test_pub_ hex patterns returned zero matches across the full PR diff.
+      trufflehog-extra-args: "--results=verified,unknown --exclude-detectors=Lob"
     permissions:
       contents: read          # checkout the repo
       security-events: write  # required by python-security.yml's nested jobs for SARIF upload

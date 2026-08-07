@@ -388,10 +388,10 @@ run once and a transient failure would silently lose the work.
       Forbidden spawns are rejected **silently**: no `user_chat` or operator escalation is ever
       opened, the refusal is recorded in the audit log (attempted kind + reason), and the spawn tool
       returns a non-fatal error message so the periodic tick continues without crashing.
-    - **Periodic self-update.** Instead of spawning nested periodic children (which is forbidden),
-      a periodic monitor can call `self_update_subsession` to revise its own instructions,
-      polling interval, or max-run budget from within — the supported path for self-amendment
-      when the monitored scope or tempo evolves.
+    - **Periodic self-update.** Instead of spawning nested periodic children (which is forbidden), a
+      periodic monitor can call `self_update_subsession` to revise its own instructions, polling
+      interval, or max-run budget from within — the supported path for self-amendment when the
+      monitored scope or tempo evolves.
 
 06. **Terminal-state discipline (three-source verification + CI loop guard).** The sub-agent calls
     its `complete_subsession(summary)` tool as soon as the monitored condition reaches a verified
