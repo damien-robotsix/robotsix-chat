@@ -102,7 +102,7 @@ branch, applies a unified diff, and pushes the result as a new commit on the sam
 
 Standard unified diff (as produced by `diff -u` or `git diff`):
 
-```
+```diff
 --- a/path
 +++ b/path
 @@ -start,count +start,count @@
