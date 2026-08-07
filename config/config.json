@@ -115,6 +115,7 @@
     "mill_recovery_max_backoff_seconds": 3600.0,
     "mill_recovery_max_retries": 10,
     "paused_monitor_poll_interval_seconds": 60.0,
+    "paused_monitor_long_poll_interval_seconds": 15.0,
     "periodic_max_interval_seconds": 3600.0,
     "periodic_max_total_runs": 100,
     "user_chat_max_retries": 3,
