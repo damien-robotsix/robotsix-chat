@@ -427,6 +427,12 @@ class LlmioChatAgent:
                 system_prompt=system_prompt,
                 tools=tools_arg,
                 builtin_tools=False,
+                # Read-only web access. The filesystem and shell stay denied;
+                # these two only fetch. Without them a research subsession
+                # cannot look anything up, and — because a refused tool call
+                # is indistinguishable from an empty result — it reports
+                # "sources fetched, all empty" rather than "I cannot search".
+                web_tools=True,
             )
             try:
                 with (
@@ -552,6 +558,7 @@ class LlmioChatAgent:
                     system_prompt=self._instruction,
                     tools=tools_arg,
                     builtin_tools=False,
+                    web_tools=True,  # see the primary handle above
                 )
                 try:
                     with (
