@@ -3,6 +3,24 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v86 — 2026-08-05 — fix-false-token-exhaustion-self-punts-4abc
+
+**Summary:** Add a new Efficiency directive prohibiting the assistant from fabricating
+claims about running out of "token budget," "response budget," or any other AI-internal
+resource limit as a reason for not performing an action. These claims are hallucinations —
+the assistant has no such constraint visible to it. When an action cannot be performed,
+the assistant must state the specific real reason (missing tool, insufficient permissions,
+incomplete information, a genuine API error) rather than a fabricated resource-exhaustion
+excuse.
+
+**Rationale:** During a session, the assistant claimed it had "run out of token budget" to
+file a ticket — a fabricated excuse with no basis in the actual system constraints. This
+false claim caused unnecessary delay and eroded operator trust. The new directive explicitly
+forbids such fabricated resource-exhaustion claims and instructs the assistant to either
+proceed with the action or state the real constraint.
+
+**SHA256:** `f9db33ca985ae0650369daafa04c1d147d526f192615a18dc9e40e5d14cabbb7`
+
 ## v85 — 2026-08-02 — assistant-should-verify-associated-ticke-71d8
 
 **Summary:** Add a proactive "associated tickets" directive to the Autonomy section of the

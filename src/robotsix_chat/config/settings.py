@@ -63,7 +63,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 85
+SYSTEM_PROMPT_VERSION = 86
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -791,6 +791,15 @@ class Settings(BaseModel):
             "Efficiency:\n"
             "– If a required tool is missing, state it in one sentence and stop — "
             "do not explore alternatives, explain why, or narrate checking for it.\n"
+            '– Do NOT claim you have run out of "token budget," "response '
+            'budget," or any other AI-internal resource limit as a reason for '
+            "not performing an action — you have no such constraint visible to "
+            "you, and these claims are fabricated excuses that erode trust.  If "
+            "you can perform the action with the tools and information available, "
+            "do it.  If you cannot perform it for a real reason (missing tool, "
+            "insufficient permissions, incomplete information, a genuine API "
+            "error), state that specific reason — not a fabricated "
+            "resource-exhaustion claim.\n"
             "– When a tool call returns an error — especially an HTTP endpoint "
             "or API route — do NOT guess alternate endpoints or routes blindly. "
             "First consult your knowledge notes: search for the 'endpoints' "

@@ -1,5 +1,12 @@
 ## 0.0.0 (unreleased)
 
+- Prompt: forbid fabricated "token budget exhausted" claims; when an action cannot be performed the assistant must state the actual reason rather than inventing resource-limit excuses.
+- Remove dead `ConversationStore.get_compacted_summary` method (zero callers; removal was already documented in changelog but the code had not been deleted)
+- Document `central_deploy.component_credentials` in `docs/configuration.md` Central Deploy section.
+- Deduplicate fleet-auth, hostname-allowlist, URL-scheme-validation, and SSRF protection logic between `http_probe` and `public_fetch` by using the shared helpers in `common/http_fetch`. Add DNS-level private-IP SSRF checks to `http_probe` (previously missing — it relied solely on a configurable hostname allowlist).
+- Extend system prompt governance to the autonomous appendix (`build_autonomous_instruction()`). Added `AUTONOMOUS_PROMPT_VERSION` constant, SHA256-pinned changelog entries in `docs/system_prompt_changelog.md`, and CI governance tests (`test_autonomous_version_stamp_matches_changelog_latest`, `test_autonomous_sha256_matches_live_output`) so any future silent edit to the autonomous prompt fails CI.
+- Replace `docs/repo/actions/skill.md` (stale copy) with a symlink to `src/robotsix_chat/repo/actions/skill.md`, matching the `docs/repo/security/skill.md` pattern so the user-facing skill doc stays in sync with the shipped source.
+- Add CONDITIONAL AUTHORIZATION prompt instruction: when the operator gives a vague or conditional directive (e.g. "merge if the implementation is good"), the assistant now explicitly states its evaluation criteria and asks for confirmation rather than applying its own unstated interpretation.
 - `fetch_repo_for_study` now records a `CLONE_TARGET` diagnostic event on failure,
   enabling the recurrence detector to surface systemic repo-access issues.
 - `fetch_workflow_run_annotations`: when the GitHub Checks API returns 403
@@ -15,7 +22,7 @@
   pre-authorized, lifting the default ask-before-acting gate for them.
   Default `[]` (no actions are pre-authorized beyond the prompt's built-in
   low-risk heuristics).
-- Removed stale "Deprecated wrapper methods remain on this class" sentence from `DirectRepoClient` module docstring — the 14 referenced methods were already removed.
+- Removed stale "Deprecated wrapper methods remain on this class" sentence from `DirectRepoClient` module docstring — the 14 referenced methods were already removed. (mill: Fix false token-exhaustion self-punts (20260805T103640Z-fix-false-token-exhaustion-self-punts-4abc))
 - Upgraded aiohttp from 3.14.1 to 3.14.3 and cryptography from 49.0.0 to 50.0.0 to resolve CVE advisories flagged by `uv audit`.
 - Pre-authorized ticket monitors now receive the standing-authority directive from the first run (via `dedup_key` fallback), so they no longer surface `human_issue_approval` gates that the operator already authorized. The PRE-AUTHORIZED instruction is also ordered before the decision-blocked paragraph to give it priority.
 - Added guidance to the agent system prompt: when the user asks to prioritize or surface "associated tickets," the assistant now proactively queries the full board (GET /tickets) and filters by subject/repo/ticket-id prefix before reporting, ensuring the user gets a complete picture without needing to nudge for a re-check.
