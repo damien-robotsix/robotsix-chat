@@ -1324,3 +1324,62 @@ def test_stamp_outcome_noop_when_get_recording_span_is_none() -> None:
     """_stamp_outcome is a no-op when get_recording_span is None."""
     with patch("robotsix_chat.feedback.runner.get_recording_span", None):
         FeedbackRunner._stamp_outcome(filed=0, total=0, failed=0)
+
+
+class TestDeployBaseUrl:
+    """The roster lookup must use the configured deploy address.
+
+    It hardcoded ``http://central-deploy:8100``, a hostname that only resolves
+    on the deploy stack's internal compose network. chat is attached only to
+    ``central-deploy-proxy``, so every lookup failed DNS and silently fell back
+    to ``["robotsix-chat"]`` — narrowing feedback to one repo with nothing but a
+    log line to show for it.
+    """
+
+    @pytest.mark.asyncio
+    async def test_uses_configured_base_url(self) -> None:
+        """The roster call goes to the configured host, not the hardcoded one."""
+        respx_mock = pytest.importorskip("respx")
+        from robotsix_chat.feedback import runner as target_module
+
+        # Only the configured host is mocked. respx fails any unmatched
+        # request, so a call to the old hardcoded host fails this test.
+        with respx_mock.mock:
+            route = respx_mock.mock.get("http://deploy-host:8100/chat/components").mock(
+                return_value=httpx.Response(200, json=[])
+            )
+            await target_module._do_resolve_allowed_repos(
+                "key", "http://deploy-host:8100"
+            )
+        assert route.called
+
+    @pytest.mark.asyncio
+    async def test_trailing_slash_does_not_double_up(self) -> None:
+        """A base_url with a trailing slash still builds one clean path."""
+        respx_mock = pytest.importorskip("respx")
+        from robotsix_chat.feedback import runner as target_module
+
+        with respx_mock.mock:
+            route = respx_mock.mock.get("http://deploy-host:8100/chat/components").mock(
+                return_value=httpx.Response(200, json=[])
+            )
+            await target_module._do_resolve_allowed_repos(
+                "key", "http://deploy-host:8100/"
+            )
+        assert route.called
+
+    @pytest.mark.asyncio
+    async def test_empty_falls_back_to_the_documented_default(self) -> None:
+        """An unset base_url keeps the old address.
+
+        Deployments where that hostname does resolve are unaffected.
+        """
+        respx_mock = pytest.importorskip("respx")
+        from robotsix_chat.feedback import runner as target_module
+
+        with respx_mock.mock:
+            route = respx_mock.mock.get(
+                "http://central-deploy:8100/chat/components"
+            ).mock(return_value=httpx.Response(200, json=[]))
+            await target_module._do_resolve_allowed_repos("key", "")
+        assert route.called
