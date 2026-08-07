@@ -6,6 +6,9 @@ resolution-markers = [
     "python_full_version < '3.15'",
 ]
 
+[manifest]
+constraints = [{ name = "pypdf", specifier = ">=6.15.0" }]
+
 [[package]]
 name = "aiofiles"
 version = "25.1.0"
@@ -2957,7 +2960,6 @@ github-actions = [
 ]
 memory = [
     { name = "cognee" },
-    { name = "pypdf" },
     { name = "transformers" },
 ]
 openrouter = [
@@ -3007,7 +3009,6 @@ requires-dist = [
     { name = "playwright", marker = "extra == 'render-url'" },
     { name = "pydantic" },
     { name = "pynacl", marker = "extra == 'github-actions'" },
-    { name = "pypdf", marker = "extra == 'memory'", specifier = ">=6.15.0" },
     { name = "robotsix-config", git = "https://github.com/damien-robotsix/robotsix-config.git?rev=424f8ec5140e14e9699b92d5c3755d929625b570" },
     { name = "robotsix-github-auth", git = "https://github.com/damien-robotsix/robotsix-github-auth.git?rev=e6214c41fd743120aa987bacb4e9b2bc88e73943" },
     { name = "robotsix-http", git = "https://github.com/damien-robotsix/robotsix-http.git?rev=ba90d55ea2bcbd02f605f392e837cea7b485d73d" },

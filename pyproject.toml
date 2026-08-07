@@ -70,7 +70,7 @@ tracing = ["robotsix-llmio[tracing]"]
 # previously a shadow/WAL self-heal). An unnoticed engine change silently
 # destroyed the live knowledge graph on every startup. Re-pin deliberately,
 # and re-read `memory/cognee.py` against the new engine's on-disk layout.
-memory = ["cognee==1.4.0", "pypdf>=6.15.0", "transformers"]
+memory = ["cognee==1.4.0", "transformers"]
 # render-url: Playwright + headless Chromium for the render_url(url) tool
 # (full-page screenshots + accessibility tree extraction).  Optional —
 # when absent the factory returns no tools.
@@ -125,6 +125,11 @@ robotsix-llmio = { git = "https://github.com/damien-robotsix/robotsix-llmio.git"
 robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.git", rev = "d7c5e59980516de6e050db02ff54aef4e15ff5c3" }  # pragma: allowlist secret
 robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "ba90d55ea2bcbd02f605f392e837cea7b485d73d" }  # pragma: allowlist secret
 robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git", rev = "e6214c41fd743120aa987bacb4e9b2bc88e73943" }  # pragma: allowlist secret
+
+# Force pypdf>=6.15.0 (transitive dep of cognee) to resolve GHSA-fwg2-594c-jp42.
+# Constraint-dependencies avoids making pypdf a direct (deptry-visible) dependency.
+[tool.uv]
+constraint-dependencies = ["pypdf>=6.15.0"]
 
 [tool.towncrier]
 package = "robotsix_chat"
