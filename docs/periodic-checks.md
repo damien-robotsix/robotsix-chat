@@ -105,11 +105,11 @@ POST /subsessions/{subsession_id}/close
 When a periodic monitor accumulates `subsessions.max_idle_runs` consecutive `NO_CHANGE` replies, the
 subsession enters a real `PAUSED` status (distinct from `CLOSED`) by calling
 `registry.mark_paused()` with reason `"paused"`. Unlike a closed subsession, a paused monitor's
-**worker stays alive**: it stops running agent turns and blocks on its wait loop
-instead of terminating. The monitor resumes **when the monitored ticket's state changes** (or when
-it is explicitly reopened), waking either on an inbox **wake message** from the background watcher
-or — faster in the common case — by **directly long-polling** the mill for its tracked ticket's
-state at a short interval (see the config table below).
+**worker stays alive**: it stops running agent turns and blocks on its wait loop instead of
+terminating. The monitor resumes **when the monitored ticket's state changes** (or when it is
+explicitly reopened), waking either on an inbox **wake message** from the background watcher or —
+faster in the common case — by **directly long-polling** the mill for its tracked ticket's state at
+a short interval (see the config table below).
 
 A background **watcher** task (`watch_paused_monitors` in `subsessions/watcher.py`) runs for the
 lifetime of the server process. On every poll tick it:
@@ -147,20 +147,20 @@ deduplication set), so they are not spammed on every poll cycle.
 
 The poll interval is controlled by:
 
-| Config key                                                   | Default | Description                                                                                                                         |
-| ------------------------------------------------------------ | ------- | ----------------------------------------------------------------------------------------------------------------------------------- |
-| `subsessions.paused_monitor_poll_interval_seconds`           | `60.0`  | Seconds between watcher polls. Set to `0` to disable runtime polling; paused monitors then only resume on the next service restart. |
-| `subsessions.paused_monitor_long_poll_interval_seconds`      | `15.0`  | Seconds between **direct** mill API polls by a paused monitor's own wait loop. Set to `0` to disable per-monitor long-polling (watcher-only wake). |
+| Config key                                              | Default | Description                                                                                                                                        |
+| ------------------------------------------------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `subsessions.paused_monitor_poll_interval_seconds`      | `60.0`  | Seconds between watcher polls. Set to `0` to disable runtime polling; paused monitors then only resume on the next service restart.                |
+| `subsessions.paused_monitor_long_poll_interval_seconds` | `15.0`  | Seconds between **direct** mill API polls by a paused monitor's own wait loop. Set to `0` to disable per-monitor long-polling (watcher-only wake). |
 
 **Per-monitor long-polling (wait-for-change).** While the watcher's `60 s` poll serves as a
 safety-net backup, each paused monitor also polls the mill API **directly** at the shorter
 `paused_monitor_long_poll_interval_seconds` interval (default `15 s`). Its wait loop therefore owns
 its own poll cadence rather than relying solely on the centralized watcher, reducing wake-up latency
 from up to 60s to ~15s. When the polled state differs from the checkpoint's `last_known_state`, the
-monitor resumes **immediately** — zero added latency. Long-polling requires
-`board_api_base_url` to be configured and a `ticket_id` with a `last_known_state` in the paused
-monitor's checkpoint; when those prerequisites are missing (or the long-poll interval is `0`), the
-monitor falls back to watcher-only wake.
+monitor resumes **immediately** — zero added latency. Long-polling requires `board_api_base_url` to
+be configured and a `ticket_id` with a `last_known_state` in the paused monitor's checkpoint; when
+those prerequisites are missing (or the long-poll interval is `0`), the monitor falls back to
+watcher-only wake.
 
 When no paused monitors exist, the watcher sleeps for 30 seconds before checking again (avoiding
 busy-wait). If the mill endpoint is unreachable during a poll tick, the watcher logs a debug message
