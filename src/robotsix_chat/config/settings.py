@@ -87,6 +87,12 @@ class Settings(BaseModel):
         llmio_api_key: Provider API key, forwarded to llmio when the chosen
             level's provider needs one (e.g. ``openrouter``); unused
             by keyless providers like ``claudeSDK``.
+        chat_model_level: Optional override of ``llmio_model_level`` for the
+            main interactive chat agent.  When ``None`` (default), the chat
+            agent uses ``llmio_model_level``.  Set to a specific level to
+            route chat turns to a different tier (e.g. ``4`` for fable-5)
+            while other consumers (subsessions, autonomous, summary) still
+            use ``llmio_model_level`` or their own overrides.
         summary_model_level: Capability level used to generate the
             structured conversation summary (``POST /summary``, regenerated
             after every assistant turn). Defaults to the cheapest tier since
@@ -135,6 +141,9 @@ class Settings(BaseModel):
 
     llmio_model_level: int = 3
     llmio_api_key: SecretStr = SecretStr("")
+    chat_model_level: int | None = Field(
+        default=None, json_schema_extra={"advanced": True}
+    )
     summary_model_level: int = Field(default=1, json_schema_extra={"advanced": True})
     agent_instruction: str = Field(
         default=(
@@ -1191,6 +1200,14 @@ class Settings(BaseModel):
                 f"{self.llmio_model_level} (its provider needs a key) — provide "
                 "it via the `llmio.api_key` field of your config file "
                 "(or use model_level 3, which is keyless)"
+            )
+        if (
+            self.chat_model_level is not None
+            and self.chat_model_level not in VALID_MODEL_LEVELS
+        ):
+            failures.append(
+                f"chat_model_level must be one of {sorted(VALID_MODEL_LEVELS)} "
+                f"or null, got {self.chat_model_level!r}"
             )
         if self.summary_model_level not in VALID_MODEL_LEVELS:
             failures.append(
