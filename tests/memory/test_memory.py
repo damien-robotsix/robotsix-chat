@@ -23,12 +23,30 @@ from robotsix_chat.config import (
     MemoryLlmSettings,
     MemorySettings,
 )
-from robotsix_chat.memory import NullMemory, build_memory
+from robotsix_chat.memory import (
+    NullMemory,
+    ReadOnlyMemory,
+    build_memory,
+    reset_build_memory_cache,
+)
 from robotsix_chat.memory.cognee import (
     _SQLITE_MAGIC,
     CogneeMemory,
     _format_results,
 )
+
+
+@pytest.fixture(autouse=True)
+def _fresh_build_memory_cache() -> Any:
+    """Isolate the process-wide ``build_memory`` cache between tests.
+
+    A cached backend holds asyncio primitives bound to the event loop it was
+    first awaited on; every pytest case gets a fresh loop, so leaking one
+    across tests fails with "bound to a different event loop".
+    """
+    reset_build_memory_cache()
+    yield
+    reset_build_memory_cache()
 
 
 def _enabled_settings(data_dir: str = "/data/cognee") -> MemorySettings:
@@ -73,6 +91,54 @@ def test_build_memory_enabled_with_cognee_returns_cognee(
         lambda name: object() if name == "cognee" else None,
     )
     assert isinstance(build_memory(_enabled_settings()), CogneeMemory)
+
+
+def test_build_memory_shares_one_backend_per_configuration(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Equal settings yield the SAME backend; different settings a new one.
+
+    The server builds a memory per agent (main chat + background agents +
+    runtime-spawned subsessions) over the same loaded config. cognee's state
+    is process-global and its cold start costs 47-105 s live, so distinct
+    instances only multiply the number of first recalls that pay it — sharing
+    means the single startup warm-up covers every agent, including ones
+    spawned after warm-up ran.
+    """
+    import importlib.util
+
+    monkeypatch.setattr(
+        importlib.util,
+        "find_spec",
+        lambda name: object() if name == "cognee" else None,
+    )
+    first = build_memory(_enabled_settings())
+    second = build_memory(_enabled_settings())
+    other = build_memory(_enabled_settings("/data/elsewhere"))
+    assert first is second
+    assert other is not first
+
+
+def test_readonly_background_memory_wraps_the_shared_backend(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """The app's ``ReadOnlyMemory(build_memory(…))`` shares the main backend.
+
+    Mirrors the two construction paths in ``app.py``: the main agent gets the
+    backend directly, background agents get it wrapped read-only. Both must
+    resolve to one CogneeMemory or the wrapper warms (and degrades) apart
+    from the instance the server actually warmed.
+    """
+    import importlib.util
+
+    monkeypatch.setattr(
+        importlib.util,
+        "find_spec",
+        lambda name: object() if name == "cognee" else None,
+    )
+    main = build_memory(_enabled_settings())
+    background = ReadOnlyMemory(build_memory(_enabled_settings()))
+    assert background._inner is main
 
 
 # ---------------------------------------------------------------------------
@@ -349,6 +415,51 @@ async def test_recall_semaphore_released_on_failure(
     # The single slot is free again, so a healthy recall still succeeds.
     fake.search = AsyncMock(return_value=["recovered"])
     assert await mem.recall("who?") == "recovered"
+
+
+@pytest.mark.asyncio
+async def test_setup_survives_caller_cancellation(
+    monkeypatch: pytest.MonkeyPatch, tmp_path: Any
+) -> None:
+    """A caller cancelled mid-setup abandons the wait, not the configuration.
+
+    Regression: cognee's cold start runs 47-105 s live while prod recall
+    deadlines are far shorter, so the first recall through an unwarmed
+    instance was always cancelled inside ``_configure`` — and, because the
+    cancellation threw the half-done work away, every later recall restarted
+    (and re-lost) the same cold start. The instance stayed memory-less
+    forever. Setup must instead keep progressing across cancelled callers
+    and configure exactly once.
+    """
+    import threading
+
+    _install_fake_cognee(monkeypatch)
+    mem = CogneeMemory(_enabled_settings(str(tmp_path / "cognee")))
+
+    calls = 0
+    release = threading.Event()
+
+    def _slow_configure() -> None:
+        nonlocal calls
+        calls += 1
+        release.wait(timeout=5)
+
+    monkeypatch.setattr(mem, "_configure", _slow_configure)
+
+    # First caller hits its (recall) deadline while setup is still working.
+    with pytest.raises(TimeoutError):
+        async with asyncio.timeout(0.05):
+            await mem.setup()
+
+    # The deadline cancelled the caller — the setup task must live on.
+    assert mem._setup_task is not None
+    assert not mem._setup_task.done()
+
+    # Let the in-flight configuration finish; the next caller reuses it.
+    release.set()
+    await mem.setup()
+    assert mem._setup_done
+    assert calls == 1
 
 
 # ---------------------------------------------------------------------------

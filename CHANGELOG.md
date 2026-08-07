@@ -1,5 +1,19 @@
 ## 0.0.0 (unreleased)
 
+- Added `low_risk_actions` configuration option: a list of action names or
+  descriptions that the agent may perform without requesting human confirmation.
+  When non-empty, the system prompt instructs the agent that these actions are
+  pre-authorized, lifting the default ask-before-acting gate for them.
+  Default `[]` (no actions are pre-authorized beyond the prompt's built-in
+  low-risk heuristics).
+- Removed stale "Deprecated wrapper methods remain on this class" sentence from `DirectRepoClient` module docstring — the 14 referenced methods were already removed.
+- **Lifecycle client**: `list_lifecycle_services` (and all other lifecycle API methods) now
+  return a clear error message when `lifecycle.base_url` is empty or malformed, instead of a
+  confusing `httpx.InvalidURL` traceback.  Validation runs once at client construction time;
+  every request path checks for an empty base URL before attempting an HTTP call.
+- Remove dead `ConversationStore.get_compacted_summary` method (zero callers; removal was already documented in changelog but the code had not been deleted)
+- Document `central_deploy.component_credentials` in `docs/configuration.md` Central Deploy section.
+- Deduplicate fleet-auth, hostname-allowlist, URL-scheme-validation, and SSRF protection logic between `http_probe` and `public_fetch` by using the shared helpers in `common/http_fetch`. Add DNS-level private-IP SSRF checks to `http_probe` (previously missing — it relied solely on a configurable hostname allowlist).
 - Extend system prompt governance to the autonomous appendix (`build_autonomous_instruction()`). Added `AUTONOMOUS_PROMPT_VERSION` constant, SHA256-pinned changelog entries in `docs/system_prompt_changelog.md`, and CI governance tests (`test_autonomous_version_stamp_matches_changelog_latest`, `test_autonomous_sha256_matches_live_output`) so any future silent edit to the autonomous prompt fails CI.
 - Replace `docs/repo/actions/skill.md` (stale copy) with a symlink to `src/robotsix_chat/repo/actions/skill.md`, matching the `docs/repo/security/skill.md` pattern so the user-facing skill doc stays in sync with the shipped source.
 - Add CONDITIONAL AUTHORIZATION prompt instruction: when the operator gives a vague or conditional directive (e.g. "merge if the implementation is good"), the assistant now explicitly states its evaluation criteria and asks for confirmation rather than applying its own unstated interpretation.

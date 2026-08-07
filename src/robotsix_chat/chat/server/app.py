@@ -684,6 +684,22 @@ def _inject_skills(
     if style:
         instruction = f"{instruction}\n\n{style}"
 
+    # Pre-authorized low-risk actions — injected early so they take
+    # precedence over the base instruction's default gating rules.
+    if settings.low_risk_actions:
+        actions_list = "\n".join(
+            f"    – {action}" for action in settings.low_risk_actions
+        )
+        instruction = (
+            f"{instruction}\n\n"
+            "Pre-authorized low-risk actions:\n"
+            "– The following actions are pre-authorized by the operator and "
+            "do NOT require confirmation — execute them without asking:\n"
+            f"{actions_list}\n"
+            "– For these pre-authorized actions, the default "
+            "ask-before-acting gate is lifted.  Act on them proactively."
+        )
+
     if bare:
         return instruction
 
