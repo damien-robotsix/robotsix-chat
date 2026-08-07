@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Added dedicated unit test coverage for `build_sftp_tools` factory (`tests/sftp/test_init.py`): disabled gating, tool wiring, SftpError/SftpPathError translation, ImportError fallback, and empty-directory special-casing.
 - Added per-monitor long-poll wake-up mechanism for paused periodic subsessions. Each paused monitor now polls the mill API directly at `paused_monitor_long_poll_interval_seconds` (default 15s) instead of relying solely on the centralized 60s watcher poll, reducing wake-up latency from up to 60s to ~15s. The background watcher remains as a safety-net backup.
 - Added `low_risk_actions` configuration option: a list of action names or
   descriptions that the agent may perform without requesting human confirmation.
