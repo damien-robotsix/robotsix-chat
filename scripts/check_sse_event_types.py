@@ -26,6 +26,12 @@ import re
 import sys
 from pathlib import Path
 
+from _check_common import (
+    iter_matching_strings,
+    parse_constant_sets,
+    run_consistency_checks,
+)
+
 # ---------------------------------------------------------------------------
 # Step 1 — extract canonical SSE_TYPE values from events.py
 # ---------------------------------------------------------------------------
@@ -45,19 +51,6 @@ _FRAME_COMPARISON_RE = re.compile(
 _TYPE_PROPERTY_RE = re.compile(r'type\s*:\s*"(?P<type>[a-z_][a-z_0-9]*)"')
 
 
-def _iter_html_js_strings(html_path: Path) -> list[str]:
-    """Yield every SSE-type-looking string literal found in the HTML JS."""
-    text = html_path.read_text(encoding="utf-8")
-    # Strip HTML comments so they aren't scanned.
-    text = re.sub(r"<!--.*?-->", "", text, flags=re.DOTALL)
-    found: list[str] = []
-    for m in _FRAME_COMPARISON_RE.finditer(text):
-        found.append(m.group("type"))
-    for m in _TYPE_PROPERTY_RE.finditer(text):
-        found.append(m.group("type"))
-    return found
-
-
 def main() -> int:
     """Check SSE event-type string consistency and return 0 (ok) or 1 (violations)."""
     repo_root = Path(__file__).resolve().parent.parent
@@ -68,11 +61,7 @@ def main() -> int:
     # ------------------------------------------------------------------
     # Parse canonical constants
     # ------------------------------------------------------------------
-    canonical: dict[str, str] = {}  # constant_name → value
-    for line in events_py.read_text(encoding="utf-8").splitlines():
-        m = _SSE_CONST_RE.match(line.strip())
-        if m:
-            canonical[m.string.split("=")[0].strip()] = m.group("value")
+    canonical = parse_constant_sets(events_py, _SSE_CONST_RE)
 
     if not canonical:
         print(
@@ -81,51 +70,42 @@ def main() -> int:
         )
         return 1
 
-    canonical_values: set[str] = set(canonical.values())
+    canonical_values = set(canonical.values())
 
     # ------------------------------------------------------------------
     # Collect SSE-type strings from HTML + chat.js
     # ------------------------------------------------------------------
-    html_strings = _iter_html_js_strings(index_html) + _iter_html_js_strings(chat_js)
+    html_strings = iter_matching_strings(
+        index_html, _FRAME_COMPARISON_RE, _TYPE_PROPERTY_RE
+    ) + iter_matching_strings(chat_js, _FRAME_COMPARISON_RE, _TYPE_PROPERTY_RE)
     # We only care about strings that match any canonical value; avoid
     # flagging unrelated strings like "error", "warn", etc.
     html_sse_strings = [s for s in html_strings if s in canonical_values]
 
-    html_values: set[str] = set(html_sse_strings)
+    html_values = set(html_sse_strings)
 
     violations = False
 
     # ------------------------------------------------------------------
     # Check 1: canonical value missing from HTML
     # ------------------------------------------------------------------
-    missing_from_html = canonical_values - html_values
-    if missing_from_html:
-        violations = True
-        print(
-            "SSE event-type constant values missing from index.html:",
-            file=sys.stderr,
-        )
-        for val in sorted(missing_from_html):
-            # Find the constant name for the value
-            names = [k for k, v in canonical.items() if v == val]
-            print(
-                f"  {val}  (Python constant: {', '.join(names)})",
-                file=sys.stderr,
-            )
-        print(file=sys.stderr)
+    violations = run_consistency_checks(
+        canonical_values=canonical_values,
+        scanned_values=html_values,
+        missing_label="SSE event-type constant values missing from index.html:",
+        unrecognised_label=None,
+        report_names_for_value=lambda val: ", ".join(
+            k for k, v in canonical.items() if v == val
+        ),
+    )
 
     # ------------------------------------------------------------------
     # Check 2: HTML string not in canonical set
     # ------------------------------------------------------------------
-    # Re-scan without pre-filtering so we catch strings that don't match
-    # any canonical value but still look like SSE type references.
-    raw_html_strings = _iter_html_js_strings(index_html) + _iter_html_js_strings(
-        chat_js
-    )
-    # Deduplicate while preserving uniqueness
+    # Deduplicate while preserving uniqueness.
     unique_html: list[str] = []
     seen: set[str] = set()
-    for s in raw_html_strings:
+    for s in html_strings:
         if s not in seen:
             seen.add(s)
             unique_html.append(s)
