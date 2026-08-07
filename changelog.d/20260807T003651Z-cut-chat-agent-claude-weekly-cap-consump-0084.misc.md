@@ -1,1 +1,1 @@
-Cut chat-agent Claude weekly-cap consumption: cache static prefix + tier-rebalance opus
+Cut chat-agent Claude weekly-cap consumption: tier-rebalance opus (prompt caching deferred to cross-repo work)

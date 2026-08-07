@@ -1201,6 +1201,14 @@ class Settings(BaseModel):
                 "it via the `llmio.api_key` field of your config file "
                 "(or use model_level 3, which is keyless)"
             )
+        if (
+            self.chat_model_level is not None
+            and self.chat_model_level not in VALID_MODEL_LEVELS
+        ):
+            failures.append(
+                f"chat_model_level must be one of {sorted(VALID_MODEL_LEVELS)} "
+                f"or null, got {self.chat_model_level!r}"
+            )
         if self.summary_model_level not in VALID_MODEL_LEVELS:
             failures.append(
                 f"summary_model_level must be one of {sorted(VALID_MODEL_LEVELS)}, "
