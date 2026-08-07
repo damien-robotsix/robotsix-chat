@@ -638,7 +638,7 @@
     },
     "LifecycleSettings": {
       "additionalProperties": false,
-      "description": "Deploy-lifecycle API access for the agent.\n\nWhen enabled, the chat agent gains tools to inspect the\ncentral-deploy lifecycle server: list services, check service status\nand health, read configuration and environment (with secrets\nalready masked as ``***`` server-side by ``_mask_secrets``), and\nrestart services.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no lifecycle tools are\n        offered.\n    base_url: Base URL of the deploy-lifecycle API server (no trailing\n        slash), e.g. ``http://central-deploy:8100``.\n    api_key: API key sent as the ``X-API-Key`` header.\n    service_name: This service's own name as registered with the deploy\n        server (e.g. ``\"chat\"``).  Required for ``self_restart`` \u2014 the\n        deploy server has no bare ``/self/restart`` route, so a service\n        restarts itself by naming itself at\n        ``POST /chat/services/{service_name}/restart``.  When empty,\n        ``self_restart`` (and the cognee frozen-store auto-recovery that\n        depends on it) is unavailable.\n    timeout: Per-request HTTP timeout in seconds.\n    config_import_enabled: When ``True``, the server will attempt a\n        one-time config import from central-deploy on first boot if no\n        config file exists.  Also gates the ``POST /config/import``\n        endpoint.\n    config_import_url: Optional override for the config-export endpoint\n        URL.  When empty, the URL is constructed from ``base_url`` as\n        ``{base_url}/chat/services/{service_name}/config/export``.",
+      "description": "Deploy-lifecycle API access for the agent.\n\nWhen enabled, the chat agent gains tools to inspect the\ncentral-deploy lifecycle server: list services, check service status\nand health, read configuration and environment (with secrets\nalready masked as ``***`` server-side by ``_mask_secrets``), and\nrestart services.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no lifecycle tools are\n        offered.\n    base_url: Base URL of the deploy-lifecycle API server (no trailing\n        slash), e.g. ``http://central-deploy:8100``.\n    api_key: API key sent as the ``X-API-Key`` header.\n    service_name: This service's own name as registered with the deploy\n        server (e.g. ``\"chat\"``).  Required for ``self_restart`` \u2014 the\n        deploy server has no bare ``/self/restart`` route, so a service\n        restarts itself by naming itself at\n        ``POST /chat/services/{service_name}/restart``.  When empty,\n        ``self_restart`` (and the cognee frozen-store auto-recovery that\n        depends on it) is unavailable.\n    timeout: Per-request HTTP timeout in seconds.",
       "properties": {
         "enabled": {
           "default": false,
@@ -686,16 +686,6 @@
           "default": 30.0,
           "title": "Self Restart Backoff Cap",
           "type": "number"
-        },
-        "config_import_enabled": {
-          "default": false,
-          "title": "Config Import Enabled",
-          "type": "boolean"
-        },
-        "config_import_url": {
-          "default": "",
-          "title": "Config Import Url",
-          "type": "string"
         }
       },
       "title": "LifecycleSettings",

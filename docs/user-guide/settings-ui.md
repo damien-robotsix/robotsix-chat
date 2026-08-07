@@ -20,9 +20,7 @@ The settings panel is backed by HTTP endpoints on the chat server:
   each version.
 - **`POST /config/rollback`** — reverts to a previous version and creates a new version entry
   (history is append-only, never destructive).
-- **`POST /config/import`** — one-time config import from central-deploy's export endpoint. Pulls
-  the full runtime config (with real secret values) from the deploy plane and writes it to the local
-  config file. Requires `lifecycle.config_import_enabled` to be `true`.
+
 
 ### Deep-merge (non-destructive save)
 
@@ -291,69 +289,3 @@ validation (the schema may have changed since that version was recorded):
 }
 ```
 
-### `POST /config/import`
-
-One-time config import from central-deploy's export endpoint. Pulls the full runtime config (with
-real, unmasked secret values) from the deploy plane and writes it to the local config file. This is
-the migration path for components that previously had their config managed by central-deploy.
-
-**Prerequisites:**
-
-- `lifecycle.enabled` must be `true`
-- `lifecycle.config_import_enabled` must be `true`
-- `lifecycle.base_url` must point to the central-deploy lifecycle API
-- `lifecycle.service_name` must match the component's registered name in central-deploy
-- `lifecycle.api_key` must be a valid API key for the central-deploy API
-
-**Request body** (JSON object, all fields optional):
-
-```json
-{
-  "service_name": "robotsix-chat"
-}
-```
-
-If `service_name` is omitted, `lifecycle.service_name` from the config file is used.
-
-**Response** `200 OK`:
-
-```json
-{
-  "version": 1,
-  "status": "ok"
-}
-```
-
-**Response** `400 Bad Request` — import not enabled or missing prerequisites:
-
-```json
-{
-  "type": "about:blank",
-  "title": "Config import not enabled",
-  "status": 400,
-  "detail": "lifecycle.config_import_enabled must be true to use this endpoint. ..."
-}
-```
-
-**Response** `422 Unprocessable Entity` — the imported config fails current `Settings` validation:
-
-```json
-{
-  "type": "about:blank",
-  "title": "Imported config validation failed",
-  "status": 422,
-  "detail": "The imported config fails current Settings validation: ..."
-}
-```
-
-**Response** `502 Bad Gateway` — the central-deploy export endpoint is unreachable or returned an
-error:
-
-```json
-{
-  "type": "about:blank",
-  "title": "Config import failed",
-  "status": 502,
-  "detail": "Central-deploy export endpoint returned an error: ..."
-}
-```

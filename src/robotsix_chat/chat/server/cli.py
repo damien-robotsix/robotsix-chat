@@ -207,116 +207,6 @@ def _configure_logging(settings: Settings) -> None:
         uvicorn_logger.propagate = True
 
 
-def _maybe_import_config_from_central_deploy(settings: Settings) -> None:
-    """One-time config import from central-deploy on first boot.
-
-    When ``lifecycle.config_import_enabled`` is true and the resolved
-    config file does not exist (or is empty), this function calls the
-    central-deploy config-export endpoint to pull in the component's
-    full runtime config and writes it to the local config file.
-
-    After a successful import the server must be restarted so the new
-    config takes effect.  This function logs the result and returns —
-    the caller is responsible for deciding whether to restart.
-    """
-    lifecycle = settings.lifecycle
-    if not lifecycle.enabled or not lifecycle.config_import_enabled:
-        return
-
-    from robotsix_config import resolve_config_path
-
-    config_path = resolve_config_path()
-    if config_path.exists():
-        try:
-            raw = config_path.read_text(encoding="utf-8").strip()
-        except OSError:
-            logger.warning(
-                "Cannot read config file at %s — skipping import bootstrap",
-                config_path,
-            )
-            return
-        if raw and raw != "{}":
-            logger.debug(
-                "Config file exists at %s — skipping import bootstrap",
-                config_path,
-            )
-            return
-
-    if not lifecycle.base_url:
-        logger.warning(
-            "lifecycle.config_import_enabled is true but lifecycle.base_url "
-            "is empty — cannot import config from central-deploy"
-        )
-        return
-
-    if not lifecycle.service_name:
-        logger.warning(
-            "lifecycle.config_import_enabled is true but lifecycle.service_name "
-            "is empty — cannot import config from central-deploy"
-        )
-        return
-
-    from robotsix_chat.lifecycle.client import LifecycleClient
-
-    client = LifecycleClient(lifecycle)
-    import_url = lifecycle.config_import_url or (
-        f"{lifecycle.base_url.rstrip('/')}"
-        f"/chat/services/{lifecycle.service_name}/config/export"
-    )
-
-    logger.info(
-        "Config file missing or empty at %s — attempting one-time import from %s",
-        config_path,
-        import_url,
-    )
-
-    # We must run the async import in a fresh event loop since we are
-    # before the uvicorn event loop starts.
-    try:
-        result = asyncio.run(
-            client.import_service_config(lifecycle.service_name, url=import_url)
-        )
-    except Exception:
-        logger.exception("Config import raised an unexpected exception")
-        return
-
-    if result.startswith("Lifecycle"):
-        logger.warning("Config import failed: %s", result)
-        return
-
-    # Parse and validate.
-    import json
-
-    try:
-        imported = json.loads(result)
-    except json.JSONDecodeError as exc:
-        logger.warning("Config import returned invalid JSON: %s", exc)
-        return
-    if not isinstance(imported, dict):
-        logger.warning("Config import returned a non-object JSON value")
-        return
-
-    # Write the imported config.
-    try:
-        tmp = config_path.with_suffix(config_path.suffix + ".tmp")
-        tmp.write_text(
-            json.dumps(imported, indent=2, ensure_ascii=False) + "\n",
-            encoding="utf-8",
-        )
-        tmp.replace(config_path)
-    except OSError:
-        logger.exception("Failed to write imported config to %s", config_path)
-        return
-
-    logger.info(
-        "Config imported successfully from %s — %d top-level keys written to %s. "
-        "Restart the server to pick up the new config.",
-        import_url,
-        len(imported),
-        config_path,
-    )
-
-
 def run_server_from_config(agent: ChatAgent | None = None) -> None:
     """Start the chat SSE server using ``Settings.load()`` for configuration.
 
@@ -332,12 +222,6 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
     from . import run_server as _run_server
 
     settings = Settings.load()
-
-    # -- one-time config import from central-deploy ------------------------
-    # On first boot after migration, if no config file exists yet and
-    # lifecycle.config_import_enabled is true, pull the full config from
-    # central-deploy's one-time export endpoint and seed the local store.
-    _maybe_import_config_from_central_deploy(settings)
 
     _configure_logging(settings)
 

@@ -887,13 +887,6 @@ class LifecycleSettings(BaseModel):
             ``self_restart`` (and the cognee frozen-store auto-recovery that
             depends on it) is unavailable.
         timeout: Per-request HTTP timeout in seconds.
-        config_import_enabled: When ``True``, the server will attempt a
-            one-time config import from central-deploy on first boot if no
-            config file exists.  Also gates the ``POST /config/import``
-            endpoint.
-        config_import_url: Optional override for the config-export endpoint
-            URL.  When empty, the URL is constructed from ``base_url`` as
-            ``{base_url}/chat/services/{service_name}/config/export``.
 
     """
 
@@ -906,8 +899,6 @@ class LifecycleSettings(BaseModel):
     self_restart_max_retries: int = 3
     self_restart_backoff_base: float = 1.0
     self_restart_backoff_cap: float = 30.0
-    config_import_enabled: bool = False
-    config_import_url: str = ""
     model_config = ConfigDict(extra="forbid")
 
 

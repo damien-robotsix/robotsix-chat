@@ -82,7 +82,6 @@ from .routes import (
     cancel_queued_endpoint,
     chat_endpoint,
     config_get_endpoint,
-    config_import_endpoint,
     config_rollback_endpoint,
     config_save_endpoint,
     config_versions_endpoint,
@@ -508,7 +507,6 @@ def create_app(
         Route("/config", config_save_endpoint, methods=["PUT"]),
         Route("/config/versions", config_versions_endpoint, methods=["GET"]),
         Route("/config/rollback", config_rollback_endpoint, methods=["POST"]),
-        Route("/config/import", config_import_endpoint, methods=["POST"]),
         Route(
             "/diagnostics/events",
             diagnostics_create_endpoint,

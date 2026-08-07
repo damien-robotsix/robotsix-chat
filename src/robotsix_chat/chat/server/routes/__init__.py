@@ -21,7 +21,6 @@ from .chat import (
 )
 from .config import (
     config_get_endpoint,
-    config_import_endpoint,
     config_rollback_endpoint,
     config_save_endpoint,
     config_versions_endpoint,
@@ -109,7 +108,6 @@ __all__ = [
     "cancel_queued_endpoint",
     "chat_endpoint",
     "config_get_endpoint",
-    "config_import_endpoint",
     "config_rollback_endpoint",
     "config_save_endpoint",
     "config_versions_endpoint",
