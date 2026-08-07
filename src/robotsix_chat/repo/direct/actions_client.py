@@ -141,6 +141,17 @@ class ActionsClient:
 
     # -- workflow run annotations ------------------------------------------
 
+    @staticmethod
+    def _is_checks_permission_error(exc: RuntimeError) -> bool:
+        """Return ``True`` when *exc* is a 403 on the GitHub Checks API.
+
+        The Checks API returns 403 when the installation token lacks the
+        ``checks: read`` permission.  This is distinguishable from other
+        403 errors (e.g. rate-limiting) by the path prefix.
+        """
+        msg = str(exc)
+        return "error 403" in msg and ("/check-suites/" in msg or "/check-runs/" in msg)
+
     async def get_workflow_run_annotations(
         self,
         repo_full_name: str,
@@ -158,6 +169,10 @@ class ActionsClient:
         3. For each check run with annotations,
            ``GET /repos/{owner}/{repo}/check-runs/{check_run_id}/annotations``.
 
+        When the Checks API returns 403 (installation token lacks
+        ``checks: read`` permission), the method falls back to fetching raw
+        job logs via the Actions API instead.
+
         Returns a formatted Markdown string listing all annotations grouped
         by check run, or a diagnostic message when no annotations are found.
         """
@@ -174,11 +189,23 @@ class ActionsClient:
                 )
 
             # 2. List check runs for the check suite.
-            suite_data = await self._client._get_json(
-                f"/repos/{repo_full_name}/check-suites/{check_suite_id}"
-                f"/check-runs?per_page={min(max_check_runs, 100)}"
-                f"&filter=latest"
-            )
+            try:
+                suite_data = await self._client._get_json(
+                    f"/repos/{repo_full_name}/check-suites/{check_suite_id}"
+                    f"/check-runs?per_page={min(max_check_runs, 100)}"
+                    f"&filter=latest"
+                )
+            except RuntimeError as exc:
+                if self._is_checks_permission_error(exc):
+                    logger.info(
+                        "Checks API returned 403 for run %d on %s — "
+                        "falling back to raw job logs.",
+                        run_id,
+                        repo_full_name,
+                    )
+                    return await self._get_failed_job_logs(repo_full_name, run_id)
+                raise
+
             check_runs: list[dict[str, Any]] = suite_data.get("check_runs", [])
 
             if not check_runs:
@@ -216,6 +243,13 @@ class ActionsClient:
                             f"{len(annotations)} annotation(s))"
                         )
                 except RuntimeError as exc:
+                    if self._is_checks_permission_error(exc):
+                        logger.info(
+                            "Checks API returned 403 for check run %d — "
+                            "falling back to raw job logs.",
+                            cr_id,
+                        )
+                        return await self._get_failed_job_logs(repo_full_name, run_id)
                     logger.warning(
                         "Failed to fetch annotations for check run %d: %s",
                         cr_id,
@@ -276,6 +310,99 @@ class ActionsClient:
             return f"Error fetching workflow run annotations: {exc}"
 
     # -- job log retrieval -------------------------------------------------
+
+    async def _get_failed_job_logs(
+        self,
+        repo_full_name: str,
+        run_id: int,
+        *,
+        max_log_bytes: int = 32_000,
+    ) -> str:
+        """Fallback: fetch raw logs for failed jobs in a workflow run.
+
+        Used when the Checks API is inaccessible (e.g. the GitHub App token
+        lacks ``checks: read`` permission).  The Actions API endpoints
+        (``/actions/runs/{run_id}/jobs`` and ``/actions/jobs/{job_id}/logs``)
+        require ``actions: read`` scope, which is often granted separately.
+
+        Returns a formatted Markdown string with truncated log content for
+        each failed job, or a diagnostic message when no failed jobs are
+        found.
+        """
+        jobs = await self.get_workflow_run_jobs(repo_full_name, run_id)
+        if not jobs:
+            return (
+                f"Workflow run {run_id} on {repo_full_name} has no jobs — "
+                f"cannot fetch logs."
+            )
+
+        failed_jobs = [
+            j
+            for j in jobs
+            if j.get("conclusion") in ("failure", "timed_out", "cancelled")
+        ]
+        if not failed_jobs:
+            return (
+                f"Workflow run {run_id} on {repo_full_name} has "
+                f"{len(jobs)} job(s) but none with a failed conclusion — "
+                f"no failed-job logs to fetch."
+            )
+
+        lines: list[str] = [
+            f"## Workflow run {run_id} job logs ({repo_full_name})",
+            "",
+            f"_Annotations unavailable (Checks API returned 403 — the GitHub "
+            f"App token likely lacks the `checks: read` permission). "
+            f"Falling back to raw job logs for {len(failed_jobs)} failed "
+            f"job(s)._",
+            "",
+        ]
+
+        per_job_limit = max(max_log_bytes // max(len(failed_jobs), 1), 2000)
+
+        for j in failed_jobs:
+            job_id = j.get("id")
+            job_name = j.get("name", str(job_id))
+            job_conclusion = j.get("conclusion", "?")
+
+            lines.append(f"### {job_name} (conclusion={job_conclusion})")
+            lines.append("")
+
+            if job_id is None:
+                lines.append("_No job id available — cannot fetch log._")
+                lines.append("")
+                continue
+
+            try:
+                log_text = await self.get_job_log(repo_full_name, job_id)
+            except RuntimeError as exc:
+                lines.append(f"_Error fetching log: {exc}_")
+                lines.append("")
+                continue
+
+            if not log_text.strip():
+                lines.append("_(empty log)_")
+                lines.append("")
+                continue
+
+            # Truncate long logs to keep the agent context manageable.
+            if len(log_text) > per_job_limit:
+                truncated = log_text[-per_job_limit:]
+                lines.append(
+                    f"_Log truncated to last {per_job_limit} bytes "
+                    f"(full log is {len(log_text)} bytes)._"
+                )
+                lines.append("")
+                lines.append("```")
+                lines.append(truncated)
+                lines.append("```")
+            else:
+                lines.append("```")
+                lines.append(log_text)
+                lines.append("```")
+            lines.append("")
+
+        return "\n".join(lines)
 
     async def get_job_log(self, repo_full_name: str, job_id: int) -> str:
         """Fetch the plain-text log for a GitHub Actions job.

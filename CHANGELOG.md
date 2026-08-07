@@ -1,5 +1,10 @@
 ## 0.0.0 (unreleased)
 
+- `fetch_workflow_run_annotations`: when the GitHub Checks API returns 403
+  (token lacks `checks: read` permission), the tool now falls back to
+  fetching raw job logs via the Actions API instead of returning a generic
+  error.  This lets the agent self-diagnose CI failures even when the
+  GitHub App installation doesn't have the `checks: read` permission.
 - Added dedicated unit test coverage for `build_sftp_tools` factory (`tests/sftp/test_init.py`): disabled gating, tool wiring, SftpError/SftpPathError translation, ImportError fallback, and empty-directory special-casing.
 - Added per-monitor long-poll wake-up mechanism for paused periodic subsessions. Each paused monitor now polls the mill API directly at `paused_monitor_long_poll_interval_seconds` (default 15s) instead of relying solely on the centralized 60s watcher poll, reducing wake-up latency from up to 60s to ~15s. The background watcher remains as a safety-net backup.
 - Added `low_risk_actions` configuration option: a list of action names or
