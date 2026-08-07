@@ -92,6 +92,7 @@ def test_subsession_agent_gets_complete_tool_too() -> None:
         "list_subsessions",
         "complete_subsession",
         "set_checkpoint",
+        "self_update_subsession",
     ]
 
 
@@ -103,7 +104,11 @@ def test_agent_at_max_depth_gets_only_complete_tool() -> None:
         env, ctx=_ctx(subsession_id="sub-1", depth=2), close_state=CloseState()
     )
 
-    assert _tool_names(tools) == ["complete_subsession", "set_checkpoint"]
+    assert _tool_names(tools) == [
+        "complete_subsession",
+        "set_checkpoint",
+        "self_update_subsession",
+    ]
 
 
 def test_no_close_state_at_max_depth_yields_no_tools() -> None:
