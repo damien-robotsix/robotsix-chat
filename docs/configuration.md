@@ -445,19 +445,17 @@ ______________________________________________________________________
 Deploy-lifecycle API client for inspecting and restarting the agent's own service. Disabled by
 default.
 
-| JSON key                              | Type              | Default  | Description                                                                                                                                               |
-| ------------------------------------- | ----------------- | -------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `lifecycle.enabled`                   | `boolean`         | `false`  | Master switch.                                                                                                                                            |
-| `lifecycle.base_url`                  | `string`          | `""`     | Base URL of the deploy-lifecycle API (no trailing slash). If the URL has no scheme (e.g. `central-deploy:8100`), `default_protocol` is prepended.         |
-| `lifecycle.default_protocol`          | `string`          | `"http"` | Protocol scheme prepended when `base_url` lacks one (e.g. `"https"` for TLS). Ignored when `base_url` already has a recognised scheme (`http`/`https`).   |
-| `lifecycle.api_key`                   | `string` (secret) | `""`     | Optional API key for the deploy-lifecycle API.                                                                                                            |
-| `lifecycle.service_name`              | `string`          | `""`     | Name of this service as registered with the deploy server.                                                                                                |
-| `lifecycle.timeout`                   | `number`          | `30.0`   | Per-request HTTP timeout (seconds).                                                                                                                       |
-| `lifecycle.self_restart_max_retries`  | `integer`         | `3`      | Maximum number of retries for transient `self_restart` failures (5xx, timeouts, connection errors). 0 = no retries.                                       |
-| `lifecycle.self_restart_backoff_base` | `number`          | `1.0`    | Initial exponential-backoff delay in seconds. Doubled each retry: `base * 2^(attempt-1)`.                                                                 |
-| `lifecycle.self_restart_backoff_cap`  | `number`          | `30.0`   | Maximum exponential-backoff delay in seconds (ceiling). Retries never wait longer than this.                                                              |
-| `lifecycle.config_import_enabled`     | `boolean`         | `false`  | When `true`, attempt a one-time config import from central-deploy on first boot if no config file exists. Also gates the `POST /config/import` endpoint.  |
-| `lifecycle.config_import_url`         | `string`          | `""`     | Optional override for the config-export endpoint URL. When empty, constructed from `base_url` as `{base_url}/chat/services/{service_name}/config/export`. |
+| JSON key                              | Type              | Default  | Description                                                                                                                                             |
+| ------------------------------------- | ----------------- | -------- | ------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `lifecycle.enabled`                   | `boolean`         | `false`  | Master switch.                                                                                                                                          |
+| `lifecycle.base_url`                  | `string`          | `""`     | Base URL of the deploy-lifecycle API (no trailing slash). If the URL has no scheme (e.g. `central-deploy:8100`), `default_protocol` is prepended.       |
+| `lifecycle.default_protocol`          | `string`          | `"http"` | Protocol scheme prepended when `base_url` lacks one (e.g. `"https"` for TLS). Ignored when `base_url` already has a recognised scheme (`http`/`https`). |
+| `lifecycle.api_key`                   | `string` (secret) | `""`     | Optional API key for the deploy-lifecycle API.                                                                                                          |
+| `lifecycle.service_name`              | `string`          | `""`     | Name of this service as registered with the deploy server.                                                                                              |
+| `lifecycle.timeout`                   | `number`          | `30.0`   | Per-request HTTP timeout (seconds).                                                                                                                     |
+| `lifecycle.self_restart_max_retries`  | `integer`         | `3`      | Maximum number of retries for transient `self_restart` failures (5xx, timeouts, connection errors). 0 = no retries.                                     |
+| `lifecycle.self_restart_backoff_base` | `number`          | `1.0`    | Initial exponential-backoff delay in seconds. Doubled each retry: `base * 2^(attempt-1)`.                                                               |
+| `lifecycle.self_restart_backoff_cap`  | `number`          | `30.0`   | Maximum exponential-backoff delay in seconds (ceiling). Retries never wait longer than this.                                                            |
 
 ______________________________________________________________________
 
