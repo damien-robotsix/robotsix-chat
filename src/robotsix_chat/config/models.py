@@ -802,6 +802,21 @@ class SubsessionsSettings(BaseModel):
             "(paused monitors only resume on service restart)."
         ),
     )
+    paused_monitor_long_poll_interval_seconds: float = Field(
+        default=15.0,
+        description=(
+            "Interval (seconds) between direct mill API polls by a "
+            "paused periodic monitor in its wait loop.  Each paused "
+            "monitor polls the mill for its tracked ticket's state "
+            "at this interval; when the state differs from the "
+            "checkpoint's ``last_known_state`` the monitor resumes "
+            "immediately (zero added latency).  The background "
+            "watcher's ``paused_monitor_poll_interval_seconds`` "
+            "(60 s default) serves as a safety-net backup.  Set to "
+            "``0`` to disable per-monitor long-polling (watcher-only "
+            "wake)."
+        ),
+    )
     periodic_max_interval_seconds: float = Field(
         default=3600.0,
         description=(
