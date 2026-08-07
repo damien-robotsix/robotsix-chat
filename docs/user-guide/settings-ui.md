@@ -21,7 +21,6 @@ The settings panel is backed by HTTP endpoints on the chat server:
 - **`POST /config/rollback`** — reverts to a previous version and creates a new version entry
   (history is append-only, never destructive).
 
-
 ### Deep-merge (non-destructive save)
 
 The most important design property: **the save handler never blanks a field the UI doesn't render.**
@@ -288,4 +287,3 @@ validation (the schema may have changed since that version was recorded):
   "detail": "version 1 fails current config validation: ..."
 }
 ```
-
