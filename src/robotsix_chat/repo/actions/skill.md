@@ -117,13 +117,13 @@ annotations are found.
 ### Permission fallback
 
 When the GitHub App installation token lacks the `checks: read` permission, the Checks API returns
-403 and annotations are unavailable.  In that case the tool falls back to fetching raw job logs via
-the Actions API (`/actions/jobs/{job_id}/logs`) for every failed job in the run.  The raw logs are
+403 and annotations are unavailable. In that case the tool falls back to fetching raw job logs via
+the Actions API (`/actions/jobs/{job_id}/logs`) for every failed job in the run. The raw logs are
 returned as truncated Markdown code blocks — less structured than annotations, but often contain the
 same diagnostic output (linter errors, test failures, stack traces).
 
 If the Actions API also fails or the run has no failed jobs, the tool returns a diagnostic message
-explaining the gap.  When you receive raw logs instead of annotations, note the permission gap and
+explaining the gap. When you receive raw logs instead of annotations, note the permission gap and
 suggest the repo admin grant the `checks: read` permission on the GitHub App installation for richer
 diagnostics in the future.
 
