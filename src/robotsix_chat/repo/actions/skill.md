@@ -129,3 +129,23 @@ diagnostics in the future.
 
 **Read-only.** Does not modify any repository state. No confirmation gating — safe to call anytime
 to investigate a CI failure.
+
+## Agent tool: `fetch_workflow_job_log`
+
+Fetch the raw console log for a specific job in a GitHub Actions workflow run. Looks up the job by
+name within a workflow run and returns its full log — every line of output printed by each step,
+including test failure messages, compiler errors, stack traces, and shell output.
+
+Use this when annotations alone are insufficient to diagnose a failure (e.g. when you need to see
+the exact pytest output, a build error in context, or the full shell trace of a failing step).
+
+Takes a repository name, a workflow run id (the numeric id from the Actions tab URL), and the exact
+job name (e.g. `"test (3.14)"`, `"lint"`, `"build"`). Returns the raw log text, or an error message
+when the job is not found or the log cannot be retrieved.
+
+**Read-only.** Does not modify any repository state. No confirmation gating — safe to call anytime
+to investigate a CI failure.
+
+**Cost note:** Job logs can be multi-megabyte. The tool truncates logs longer than 200 KB to the
+trailing portion (which typically contains the failure output). When the log is truncated a header
+notes the original size.
