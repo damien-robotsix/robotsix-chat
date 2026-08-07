@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Add `chat_model_level` config (default `null`) to override the LLM model level for the main interactive chat agent independently of `llmio_model_level`. This enables tier rebalancing — e.g. routing chat to `claude-fable-5` (level 4) while subsession/autonomous agents stay at their configured levels. Bump `robotsix-llmio` to latest main.
 - Added `fetch_workflow_job_log` agent tool: accepts a repo name, workflow run ID, and job name, and returns the full console log for that job. Helps diagnose CI failures when annotations alone are insufficient.
 - Prompt: forbid fabricated "token budget exhausted" claims; when an action cannot be performed the assistant must state the actual reason rather than inventing resource-limit excuses.
 - Remove dead `ConversationStore.get_compacted_summary` method (zero callers; removal was already documented in changelog but the code had not been deleted)
