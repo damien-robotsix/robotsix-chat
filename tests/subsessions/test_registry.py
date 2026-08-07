@@ -1464,3 +1464,143 @@ def test_reopen_pre_authorized_approval() -> None:
     assert reopened.close_reason is None
     # Second reopen is a no-op (already active).
     assert registry.reopen(info.id) is None
+
+
+# ---------------------------------------------------------------------------
+# update_periodic_config
+# ---------------------------------------------------------------------------
+
+
+def test_update_periodic_config_updates_prompt() -> None:
+    """``update_periodic_config`` updates the prompt/instructions."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+
+    ok = registry.update_periodic_config(info.id, prompt="new instructions")
+
+    assert ok is True
+    assert info.prompt == "new instructions"
+
+
+def test_update_periodic_config_updates_interval() -> None:
+    """``update_periodic_config`` updates interval_seconds."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+
+    ok = registry.update_periodic_config(info.id, interval_seconds=120.0)
+
+    assert ok is True
+    assert info.interval_seconds == 120.0
+
+
+def test_update_periodic_config_updates_max_runs() -> None:
+    """``update_periodic_config`` updates max_runs."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+
+    ok = registry.update_periodic_config(info.id, max_runs=15)
+
+    assert ok is True
+    assert info.max_runs == 15
+
+
+def test_update_periodic_config_multiple_fields() -> None:
+    """``update_periodic_config`` can update several fields at once."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+
+    ok = registry.update_periodic_config(
+        info.id,
+        prompt="watch T-99",
+        interval_seconds=300.0,
+        max_runs=5,
+    )
+
+    assert ok is True
+    assert info.prompt == "watch T-99"
+    assert info.interval_seconds == 300.0
+    assert info.max_runs == 5
+
+
+def test_update_periodic_config_none_leaves_field_unchanged() -> None:
+    """Fields left at None are not touched."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+    info.prompt = "original"
+    info.max_runs = 10
+
+    ok = registry.update_periodic_config(
+        info.id,
+        interval_seconds=90.0,
+    )
+
+    assert ok is True
+    assert info.prompt == "original"  # unchanged
+    assert info.interval_seconds == 90.0
+    assert info.max_runs == 10  # unchanged
+
+
+def test_update_periodic_config_does_not_reset_runs() -> None:
+    """The runs counter is never reset by update_periodic_config."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(
+        registry,
+        kind=SubsessionKind.PERIODIC,
+        interval_seconds=60.0,
+        runs=5,
+    )
+
+    registry.update_periodic_config(
+        info.id, prompt="new", interval_seconds=30.0, max_runs=3
+    )
+
+    assert info.runs == 5  # unchanged
+
+
+def test_update_periodic_config_rejects_non_periodic() -> None:
+    """Returns False for task/user_chat subsessions."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.TASK)
+
+    ok = registry.update_periodic_config(info.id, prompt="new")
+
+    assert ok is False
+    assert info.prompt == "do the thing"  # unchanged
+
+
+def test_update_periodic_config_rejects_inactive() -> None:
+    """Returns False for closed/terminal subsessions."""
+    registry = SubsessionRegistry(store_path=None)
+    info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+    registry.mark_closed(info.id, summary="done", reason="completed")
+
+    ok = registry.update_periodic_config(info.id, prompt="new")
+
+    assert ok is False
+    assert info.prompt == "do the thing"  # unchanged
+
+
+def test_update_periodic_config_rejects_unknown_id() -> None:
+    """Returns False for unknown subsession ids."""
+    registry = SubsessionRegistry(store_path=None)
+
+    ok = registry.update_periodic_config("nonexistent", prompt="new")
+
+    assert ok is False
+
+
+def test_update_periodic_config_persists(tmp_path: Path) -> None:
+    """Changes are persisted to the JSON store."""
+    store_path = tmp_path / "subsessions.json"
+    registry = SubsessionRegistry(store_path=store_path)
+    info = _create(registry, kind=SubsessionKind.PERIODIC, interval_seconds=60.0)
+
+    registry.update_periodic_config(
+        info.id, prompt="persisted prompt", interval_seconds=42.0
+    )
+
+    # Re-load from disk — the change should survive.
+    raw = json.loads(store_path.read_text())
+    entry = next(e for e in raw if e["subsession_id"] == info.id)
+    assert entry["prompt"] == "persisted prompt"
+    assert entry["interval_seconds"] == 42.0

@@ -85,6 +85,32 @@ You can also call the REST API directly:
 GET /subsessions?session_id=<your-session-id>
 ```
 
+## Self-updating a periodic monitor
+
+A periodic subsession **cannot** spawn a new periodic child (the system rejects it with "periodic
+subsessions cannot spawn periodic children" to prevent runaway nesting). When a running periodic
+monitor needs to broaden its scope or change its tempo, the supported path is **self-update**: the
+monitor calls its own `self_update_subsession` tool to amend its instructions, interval, and/or
+max-run cap. Changes take effect on the **next scheduled tick**.
+
+The tool is only available to periodic subsession agents (not the main conversation agent, and not
+task or user_chat subsessions). Guardrails:
+
+- **Instructions** must be a string ≤ 8000 characters.
+- **Interval** must be at least the configured minimum (`subsessions.min_interval_seconds`).
+- **Max runs** can be raised or removed, but the run **counter is never reset** — a monitor cannot
+  bypass the max-run limit by self-updating.
+- At least one field must be provided; omitted fields are left unchanged.
+
+Example agent-side call (the agent does this autonomously — you don't need to issue this command):
+
+```text
+self_update_subsession(
+    instructions="Watch tickets T-42 and T-99; report any state change.",
+    interval_seconds=600,
+)
+```
+
 ## Steering or cancelling a check
 
 Ask:
@@ -362,6 +388,10 @@ run once and a transient failure would silently lose the work.
       Forbidden spawns are rejected **silently**: no `user_chat` or operator escalation is ever
       opened, the refusal is recorded in the audit log (attempted kind + reason), and the spawn tool
       returns a non-fatal error message so the periodic tick continues without crashing.
+    - **Periodic self-update.** Instead of spawning nested periodic children (which is forbidden), a
+      periodic monitor can call `self_update_subsession` to revise its own instructions, polling
+      interval, or max-run budget from within — the supported path for self-amendment when the
+      monitored scope or tempo evolves.
 
 06. **Terminal-state discipline (three-source verification + CI loop guard).** The sub-agent calls
     its `complete_subsession(summary)` tool as soon as the monitored condition reaches a verified

@@ -125,6 +125,11 @@
 - Removed misleading instruction from monitor_9d6a periodic prompt overlay that asked agents to manually resolve abbreviated ticket IDs before calling `ticket_poll()` (the tool already handles this automatically).
 - Extract `_board_connection` helper in `ticket_poll` to eliminate duplicated board-connection setup boilerplate across `build_merge_pull_request_tool` and `build_ticket_poll_tools`.
 - Auto-continue prompts are now suppressed while any subsession is active (including periodic monitors sleeping between ticks). Previously, "Continue." prompts fired even when background work was in progress, producing spurious popups in the chat UI.
+- Periodic subsessions can now self-update their own instructions,
+  interval, and max-run cap via the new `self_update_subsession` tool,
+  available to periodic subsession agents.  This is the supported path
+  for broadening or re-tempoing an active monitor without nesting
+  (periodic children remain disallowed from within periodic contexts).
 - Fix `patch_direct_repo_file` / `direct_fix` connectivity and cycle-count gate: the roster-based board-API path now uses retries with exponential backoff and falls back to the direct API; resume/unblock events are counted as evidence of prior exhaustion so the ≥3-cycle gate survives a resume-blocked reset.
 - Deduplicate auto-pause notices in periodic subsessions: when a second monitor for the same ticket auto-pauses or auto-stops after the first already reported the no-change/terminal outcome, the second notice is suppressed before reaching the LLM, eliminating redundant "no change" reaction turns.
 - Add "Tool failure interpretation" guidance to the implement agent system prompt and `ticket_poll` skill: teach the assistant to distinguish transient I/O failures (timeout, HTTP 5xx, unreachable) from facts about the queried resource's state, preventing conflation like "the board API returned an error, so the ticket must be closed."
