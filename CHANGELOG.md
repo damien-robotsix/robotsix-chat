@@ -2292,3 +2292,4 @@ adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
   timestamp, turn count) and an active session pointer. Sessions are persistent — history is never
   wiped on idle timeout. New `GET /sessions` and `POST /sessions` HTTP endpoints enable listing and
   creating sessions. Existing endpoints (`POST /chat
+

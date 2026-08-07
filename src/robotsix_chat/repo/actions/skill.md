@@ -140,8 +140,8 @@ Use this when annotations alone are insufficient to diagnose a failure (e.g. whe
 the exact pytest output, a build error in context, or the full shell trace of a failing step).
 
 Takes a repository name, a workflow run id (the numeric id from the Actions tab URL), and the exact
-job name (e.g. ``"test (3.14)"``, ``"lint"``, ``"build"``). Returns the raw log text, or an error
-message when the job is not found or the log cannot be retrieved.
+job name (e.g. `"test (3.14)"`, `"lint"`, `"build"`). Returns the raw log text, or an error message
+when the job is not found or the log cannot be retrieved.
 
 **Read-only.** Does not modify any repository state. No confirmation gating — safe to call anytime
 to investigate a CI failure.
