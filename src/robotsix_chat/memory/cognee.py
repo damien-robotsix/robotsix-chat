@@ -278,6 +278,13 @@ class CogneeMemory:
         os.environ.setdefault("ENABLE_BACKEND_ACCESS_CONTROL", "false")
         os.environ.setdefault("TELEMETRY_DISABLED", "1")
         os.environ.setdefault("MONITORING_TOOL", "none")
+        # cognee 1.4's session memory (SQL cache) writes session context on
+        # every search/add.  Chat never reads it back, and on the shared-HDD
+        # deploy host the cache sqlite hit a 626 MB un-checkpointable WAL —
+        # every turn then stalled ~30 s in a "database is locked" busy-wait
+        # inside the recall path (2026-08-07 incident, #1201).  Disabled:
+        # SessionManager no-ops cleanly when caching is off.
+        os.environ.setdefault("CACHING", "false")
 
         # Bound LanceDB's DataFusion memory pool so a single large merge_insert
         # cannot OOM the worker subprocess.  DataFusion reads
