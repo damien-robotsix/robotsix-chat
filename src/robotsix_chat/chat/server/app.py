@@ -783,7 +783,11 @@ def _build_static_tools(
         *build_mail_tools(settings.mail),
         *build_component_tools(settings.component_client),
         *build_refdocs_tools(settings.refdocs, settings.direct_repo),
-        *build_repo_study_tools(settings.repo_study, settings.direct_repo),
+        *build_repo_study_tools(
+            settings.repo_study,
+            settings.direct_repo,
+            diagnostic_store=diagnostic_store,
+        ),
         *build_direct_repo_tools(
             settings.direct_repo, component_request=component_request
         ),
