@@ -517,6 +517,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
         agent = create_agent_from_settings(
             settings=settings,
             conversation_store=conversation_store,
+            model_level=settings.chat_model_level,
             subsession_env=env,
             event_sink=event_bus,
             diagnostic_store=diagnostic_store,
