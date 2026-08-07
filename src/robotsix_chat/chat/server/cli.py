@@ -593,6 +593,7 @@ def run_server_from_config(agent: ChatAgent | None = None) -> None:
             settings.feedback,
             feedback_agent,
             subsession_registry=subsession_registry,
+            deploy_base_url=settings.lifecycle.base_url,
         )
         logger.info("Feedback runner enabled (model_level=%d)", feedback_model_level)
     else:
