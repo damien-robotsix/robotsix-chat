@@ -25,18 +25,51 @@ from .base import ChatMemory, NullMemory, ReadOnlyMemory
 if TYPE_CHECKING:
     from robotsix_chat.config import LangfuseSettings, MemorySettings
 
-__all__ = ["ChatMemory", "NullMemory", "ReadOnlyMemory", "build_memory"]
+__all__ = [
+    "ChatMemory",
+    "NullMemory",
+    "ReadOnlyMemory",
+    "build_memory",
+    "reset_build_memory_cache",
+]
+
+
+# Process-wide cache of CogneeMemory backends, keyed by their configuration.
+# cognee's stores and config are process-global, so distinct instances over the
+# same settings buy nothing — but each one pays cognee's cold start (measured
+# 47-105 s live) on its first recall. The server builds a memory per agent (the
+# main chat agent plus every background agent and runtime-spawned subsession);
+# sharing the backend means the single startup warm-up covers all of them,
+# including agents that don't exist yet at warm-up time.
+_MEMORY_CACHE: dict[str, ChatMemory] = {}
+
+
+def reset_build_memory_cache() -> None:
+    """Drop all cached backends (test isolation only).
+
+    Each pytest case runs on a fresh event loop; a cached backend holds asyncio
+    primitives bound to the loop it was first awaited on, so leaking one across
+    tests raises "bound to a different event loop" in whichever test comes
+    second.
+    """
+    _MEMORY_CACHE.clear()
 
 
 def build_memory(
     settings: MemorySettings, langfuse: LangfuseSettings | None = None
 ) -> ChatMemory:
-    """Return a :class:`ChatMemory` for the given ``MemorySettings``.
+    """Return the :class:`ChatMemory` for the given ``MemorySettings``.
 
     Returns a :class:`NullMemory` when memory is disabled or the cognee extra
     is not importable; otherwise a configured
     :class:`~robotsix_chat.memory.cognee.CogneeMemory`. Importing cognee is
     deferred to here so the base package never requires the heavy extra.
+
+    Calls with equal configuration return the **same** backend instance —
+    see ``_MEMORY_CACHE``. The cache key is the settings' JSON dump, in which
+    pydantic masks secrets; configurations differing *only* in a secret value
+    therefore share a backend. Within one process that cannot happen — every
+    caller passes the same loaded config.
 
     Args:
         settings: Memory configuration.
@@ -61,6 +94,17 @@ def build_memory(
         )
         return NullMemory()
 
+    key = (
+        settings.model_dump_json()
+        + "|"
+        + (langfuse.model_dump_json() if langfuse is not None else "")
+    )
+    cached = _MEMORY_CACHE.get(key)
+    if cached is not None:
+        return cached
+
     from .cognee import CogneeMemory
 
-    return CogneeMemory(settings, langfuse)
+    memory = CogneeMemory(settings, langfuse)
+    _MEMORY_CACHE[key] = memory
+    return memory
