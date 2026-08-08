@@ -17,6 +17,7 @@ from __future__ import annotations
 
 import json
 import logging
+import stat
 from copy import deepcopy
 from datetime import datetime, timezone
 from pathlib import Path
@@ -171,6 +172,11 @@ def _write_config_json(path: Path, data: dict[str, Any]) -> None:
 
     Uses a temp-file + rename strategy so a crash mid-write never
     leaves a truncated config.
+
+    The replacement carries the original file's permission bits. The temp
+    file is created fresh, so without this the config — which holds API keys
+    and other secrets — is left world-readable at the process umask after
+    every save, silently widening a 0600 file.
     """
     tmp = path.with_suffix(path.suffix + ".tmp")
     tmp.write_text(
@@ -178,6 +184,12 @@ def _write_config_json(path: Path, data: dict[str, Any]) -> None:
         json.dumps(data, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
+    try:
+        tmp.chmod(stat.S_IMODE(path.stat().st_mode))
+    except OSError:
+        # No existing file to copy from (first write), or the mode could not
+        # be read — fall back to owner-only, never wider.
+        tmp.chmod(0o600)
     tmp.replace(path)
 
 
