@@ -251,6 +251,15 @@ def _build_spawn_and_control_tools(
                     is not None
                 )
 
+        # Pre-populate the checkpoint with ticket_id for event-driven
+        # monitors — the dedup_key is always the ticket id for monitors,
+        # so writing it into the checkpoint at spawn time avoids an
+        # intermittent startup failure where the first agent turn fails
+        # to record the id before the event-wait loop needs it.
+        checkpoint: dict[str, object] | None = None
+        if kind_enum is SubsessionKind.WAIT_FOR_EVENT and dedup_key is not None:
+            checkpoint = {"ticket_id": dedup_key}
+
         try:
             sub_id = spawn_subsession(
                 env=env,
@@ -266,6 +275,7 @@ def _build_spawn_and_control_tools(
                 max_runs=max_runs,
                 inherit_context=inherit_context,
                 dedup_key=dedup_key,
+                checkpoint=checkpoint,
                 event_timeout_seconds=(
                     env.settings.subsessions.event_driven_timeout_seconds
                     if kind_enum is SubsessionKind.WAIT_FOR_EVENT

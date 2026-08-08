@@ -1291,6 +1291,11 @@ async def _event_wait_loop(
     checkpoint = info.checkpoint or {}
     ticket_id_raw = checkpoint.get("ticket_id")
     ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+    # Fall back to dedup_key when the checkpoint has not yet recorded
+    # the ticket_id — the dedup_key for ticket monitors is always the
+    # ticket id, so it is authoritative even on the first run.
+    if not ticket_id and info.dedup_key:
+        ticket_id = info.dedup_key
 
     if not ticket_id:
         logger.error(

@@ -1,0 +1,1 @@
+Fix intermittent `wait_for_event` subsession startup failure where the event-wait loop closed the monitor with `missing_ticket_id` because the checkpoint had not yet recorded the ticket id. The ticket id is now pre-populated into the checkpoint at spawn time (structured parameter) and the event-wait loop falls back to `dedup_key` as a safety net.
