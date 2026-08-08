@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- **Post-deploy defacement detection:** add `scripts/http_probe_cli.py`, a standalone CLI that probes a live URL and exits non-zero when known defacement indicators (attacker signatures, unexpected CMS installs, AI-generated spam pages) are found. Designed as a zero-dependency-beyond-httpx post-deploy gate for any CI pipeline. The `http_probe` skill document now lists defacement-specific `expect_absent` patterns.
 - **CI health check:** The paused-monitor watcher now detects zero-job
   CI workflow runs on tracked PRs and emits a high-urgency SSE
   notification when the CI infrastructure is broken (workflow file parses
