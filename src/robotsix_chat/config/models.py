@@ -1167,8 +1167,9 @@ class PublicFetchSettings(BaseModel):
     a plain HTTP(S) GET to a user-provided public URL, returns the raw
     text/file contents with metadata, and writes an audit-log entry per
     fetch.  SSRF protection blocks internal/private IP ranges for public
-    hosts; hosts listed in ``fleet_auth.auth_hosts`` are trusted by the
-    operator and bypass the SSRF check.
+    hosts.  Hosts listed in the top-level ``fleet_auth.auth_hosts`` are
+    trusted by the operator: they bypass the SSRF check and the domain
+    allowlist, and their requests carry server-injected basic auth.
 
     Attributes:
         enabled: Master switch.  When ``False``, no tool is offered.
@@ -1183,9 +1184,6 @@ class PublicFetchSettings(BaseModel):
             ``rate_limit_window_seconds`` (default 10).
         rate_limit_window_seconds: Sliding window in seconds for the
             rate limiter (default 60.0).
-        Hosts listed in the top-level ``fleet_auth.auth_hosts`` are
-        implicitly allowed through the domain allowlist and the SSRF
-        checks, and their requests carry server-injected basic-auth.
 
     """
 
