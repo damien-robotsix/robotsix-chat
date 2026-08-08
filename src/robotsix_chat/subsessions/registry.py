@@ -392,8 +392,28 @@ class SubsessionRegistry:
         if sub_id is not None and sub_id in self._subs:
             return self._subs[sub_id]
         now = self._clock()
+        resolved_id = sub_id or self._id_factory()
+        # Run dedup checks BEFORE inserting the entry so a failure
+        # (e.g. self-match on a resumed periodic with
+        # dedup_key == checkpoint.ticket_id) does not leave a
+        # half-registered RUNNING entry with no worker task attached.
+        if dedup_key is not None:
+            existing_id = self._active_dedup_keys.get(dedup_key)
+            if existing_id is not None:
+                existing_info = self._subs.get(existing_id)
+                if existing_info is not None and existing_info.is_active:
+                    raise SubsessionDedupError(existing_id)
+                # Stale entry — clean up proactively.
+                self._active_dedup_keys.pop(dedup_key, None)
+            # Cross-reference: a PERIODIC subsession may have been
+            # created without a dedup_key but recorded the watched
+            # ticket_id in its checkpoint after the first run.
+            if kind is SubsessionKind.PERIODIC:
+                cp_match = self.find_active_periodic_by_ticket_id(dedup_key)
+                if cp_match is not None:
+                    raise SubsessionDedupError(cp_match)
         info = SubsessionInfo(
-            id=sub_id or self._id_factory(),
+            id=resolved_id,
             kind=kind,
             owner_session_id=owner_session_id,
             parent_id=parent_id,
@@ -419,20 +439,6 @@ class SubsessionRegistry:
         self._wake_events[info.id] = asyncio.Event()
         self._by_owner[owner_session_id].add(info.id)
         if dedup_key is not None:
-            existing_id = self._active_dedup_keys.get(dedup_key)
-            if existing_id is not None:
-                existing_info = self._subs.get(existing_id)
-                if existing_info is not None and existing_info.is_active:
-                    raise SubsessionDedupError(existing_id)
-                # Stale entry — clean up proactively.
-                self._active_dedup_keys.pop(dedup_key, None)
-            # Cross-reference: a PERIODIC subsession may have been
-            # created without a dedup_key but recorded the watched
-            # ticket_id in its checkpoint after the first run.
-            if kind is SubsessionKind.PERIODIC:
-                cp_match = self.find_active_periodic_by_ticket_id(dedup_key)
-                if cp_match is not None:
-                    raise SubsessionDedupError(cp_match)
             self._active_dedup_keys[dedup_key] = info.id
         self._store.prune_terminal()
         self._publish(owner_session_id, subsession_started_frame(info.snapshot()))

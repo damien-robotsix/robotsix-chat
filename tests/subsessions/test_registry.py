@@ -978,6 +978,71 @@ def test_create_raises_dedup_error_for_checkpoint_ticket_id_match() -> None:
     assert exc_info.value.existing_id == first.id
 
 
+@pytest.mark.asyncio
+async def test_create_dedup_self_match_on_resume_with_checkpoint() -> None:
+    """A resumed periodic with dedup_key==checkpoint.ticket_id does NOT self-match.
+
+    Regression: before the dedup checks were moved ahead of registry
+    insertion, ``find_active_periodic_by_ticket_id(dedup_key)`` matched the
+    entry that ``create()`` had just inserted (same checkpoint.ticket_id)
+    and raised ``SubsessionDedupError``.  ``spawn_subsession`` caught the
+    error and returned the existing id — but no worker task was ever
+    launched, leaving a RUNNING zombie that sat idle forever.
+
+    The resume path calls ``spawn_subsession`` with ``sub_id``,
+    ``checkpoint``, and ``dedup_key`` all carried over from the persisted
+    store.  This test simulates that path and asserts a worker IS attached.
+    """
+    from robotsix_chat.subsessions.worker import spawn_subsession
+    from tests.common.subsession_fakes import build_env, make_settings
+
+    registry = SubsessionRegistry(store_path=None)
+    env = build_env(registry=registry, settings=make_settings())
+
+    ticket_id = "ticket-self-match-99"
+    sub_id = "periodic-resume-self"
+    checkpoint = {"ticket_id": ticket_id, "last_known_state": "open"}
+
+    # Simulate _resume_periodic_entry: dedup_key == checkpoint.ticket_id.
+    result_id = spawn_subsession(
+        env=env,
+        kind=SubsessionKind.PERIODIC,
+        owner_session_id="sess-main",
+        parent_id=None,
+        depth=1,
+        title="monitor-self-match",
+        prompt="check ticket",
+        model_level=3,
+        interval_seconds=60.0,
+        max_runs=5,
+        sub_id=sub_id,
+        runs=1,
+        completed_runs={1},
+        checkpoint=checkpoint,
+        dedup_key=ticket_id,
+    )
+
+    # The spawn must return the sub_id (a worker was launched).
+    assert result_id == sub_id
+
+    # The registry entry must be present and RUNNING.
+    info = registry.get(sub_id)
+    assert info is not None
+    assert info.is_active
+
+    # A worker task must be attached — not a zombie.
+    task = registry._running.get(sub_id)
+    assert task is not None, (
+        "_running has no task for sub_id; registry entry is a zombie "
+        "(half-registered RUNNING with no worker)."
+    )
+
+    # Clean up the worker so the test doesn't leak an asyncio task.
+    registry.cancel_and_close(sub_id, reason="teardown", closed_by="system")
+    with contextlib.suppress(asyncio.CancelledError):
+        await asyncio.wait_for(task, 2.0)
+
+
 # ---------------------------------------------------------------------------
 # is_duplicate_ticket_terminal
 # ---------------------------------------------------------------------------

@@ -431,6 +431,12 @@ def spawn_subsession(
             retry_count=retry_count,
         )
     except SubsessionDedupError as exc:
+        logger.info(
+            "spawn_subsession: dedup_key %r already covered by subsession %s; "
+            "returning existing id (no new worker launched).",
+            dedup_key,
+            exc.existing_id,
+        )
         return exc.existing_id
     # spawn_subsession runs inside the parent agent's turn, so a plain
     # create_task would snapshot that turn's context — including the active
