@@ -108,11 +108,13 @@ attempted (which may surface a 404).
 ticket_poll("20250101T120000Z-my-ticket-a1b2")
 
 # Bulk triage of blocked tickets — fetch all at once, then classify
-ticket_poll_batch([
-    "20250101T120000Z-ticket-a-a1b2",
-    "20250102T090000Z-ticket-b-c3d4",
-    "20250102T150000Z-ticket-c-e5f6",
-])
+ticket_poll_batch(
+    [
+        "20250101T120000Z-ticket-a-a1b2",
+        "20250102T090000Z-ticket-b-c3d4",
+        "20250102T150000Z-ticket-c-e5f6",
+    ]
+)
 # → inspect each ticket's data.events history to identify failure signatures:
 #   "implement-loop/3of3", "git-failure", "capability-gap", ...
 
