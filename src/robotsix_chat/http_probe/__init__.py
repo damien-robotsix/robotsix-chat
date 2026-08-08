@@ -37,7 +37,7 @@ from robotsix_chat.common.http_fetch import (
 )
 
 if TYPE_CHECKING:
-    from robotsix_chat.config import HttpProbeSettings
+    from robotsix_chat.config import FleetAuthSettings, HttpProbeSettings
 
 __all__ = ["build_http_probe_tools", "load_http_probe_skill"]
 
@@ -62,12 +62,17 @@ def load_http_probe_skill() -> str:
 
 def build_http_probe_tools(
     settings: HttpProbeSettings,
+    fleet_auth: FleetAuthSettings | None = None,
 ) -> list[Callable[..., Any]]:
     """Return the ``http_probe`` tool, or an empty list when disabled.
 
     Args:
         settings: HttpProbe configuration (``enabled`` master switch,
             timeout, allowlist, body-cap, max redirects).
+        fleet_auth: Shared fleet reverse-proxy credentials, from the
+            top-level ``fleet_auth`` setting.  When set, requests to hosts
+            in ``fleet_auth.auth_hosts`` carry server-injected basic auth
+            (never visible to the agent).
 
     Returns:
         A single-element list containing the ``http_probe`` async callable,
@@ -82,7 +87,7 @@ def build_http_probe_tools(
     # Pre-compute the basic-auth header value when fleet-auth is
     # configured — the agent never sees the credential; it is injected
     # server-side for matching hosts only.
-    fleet_auth_header, fleet_auth_hosts = _build_fleet_auth_header(settings.fleet_auth)
+    fleet_auth_header, fleet_auth_hosts = _build_fleet_auth_header(fleet_auth)
 
     async def http_probe(
         url: str,

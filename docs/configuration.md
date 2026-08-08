@@ -475,15 +475,24 @@ Read-only HTTP uptime/render-probe tool for the agent. Enabled by default.
 | `http_probe.allowlist`      | `array[string]`             | `["www.robotsix.net", "robotsix.net"]` | Hostnames the tool is permitted to probe. Empty permits any public hostname.                                                                                                                                                                        |
 | `http_probe.max_body_bytes` | `integer`                   | `2048`                                 | Maximum bytes of the response body to return (~2 KB).                                                                                                                                                                                               |
 | `http_probe.max_redirects`  | `integer`                   | `5`                                    | Maximum number of redirects to follow.                                                                                                                                                                                                              |
-| `http_probe.fleet_auth`     | `FleetAuthSettings \| null` | `null`                                 | Optional server-side credentials for authenticated fleet UIs. When set, requests to hosts in `fleet_auth.auth_hosts` carry HTTP basic-auth headers injected by the server (never visible to the agent), and those hosts are implicitly allowlisted. |
 
-The `FleetAuthSettings` object accepts:
+
+## Fleet auth
+
+`fleet_auth` is a single top-level setting shared by every tool that makes
+outbound HTTP requests (`http_probe`, `render_url`, `public_fetch`). The fleet
+has one reverse-proxy basic-auth realm, so there is one credential and one
+place to set it — the tools do not authenticate independently.
+
+Requests to a host in `fleet_auth.auth_hosts` carry server-injected
+credentials, never visible to the agent, and those hosts are implicitly
+allowed through each tool's own host allowlist and SSRF checks.
 
 | JSON key                         | Type              | Default | Description                                                                                                                                   |
 | -------------------------------- | ----------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
 | `fleet_auth.basic_auth_username` | `string`          | `""`    | Username for HTTP basic authentication. Leave empty when auth is not required.                                                                |
 | `fleet_auth.basic_auth_password` | `string` (secret) | `""`    | Password for HTTP basic authentication (`SecretStr` — never serialised in logs or exposed to the agent).                                      |
-| `fleet_auth.auth_hosts`          | `array[string]`   | `[]`    | Hostnames (no protocol, no path) for which the basic-auth header is attached. Requests to hosts not on this list proceed without credentials. |
+| `fleet_auth.auth_hosts`          | `array[string]`   | `[]`    | Hostnames (no protocol, no path) for which credentials are attached. Requests to hosts not on this list proceed unauthenticated.              |
 
 ### Autonomous
 
@@ -575,15 +584,7 @@ default.
 | `render_url.timeout`         | `number`                    | `30.0`  | Per-request page-load timeout (seconds).                                                                                                                                                                |
 | `render_url.viewport_width`  | `integer`                   | `1280`  | Browser viewport width (pixels).                                                                                                                                                                        |
 | `render_url.viewport_height` | `integer`                   | `720`   | Browser viewport height (pixels).                                                                                                                                                                       |
-| `render_url.fleet_auth`      | `FleetAuthSettings \| null` | `null`  | Optional server-side credentials for authenticated fleet UIs. When set, requests to hosts in `fleet_auth.auth_hosts` carry HTTP basic-auth headers injected by the server (never visible to the agent). |
 
-The `FleetAuthSettings` object accepts:
-
-| JSON key                         | Type              | Default | Description                                                                                                                                   |
-| -------------------------------- | ----------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fleet_auth.basic_auth_username` | `string`          | `""`    | Username for HTTP basic authentication. Leave empty when auth is not required.                                                                |
-| `fleet_auth.basic_auth_password` | `string` (secret) | `""`    | Password for HTTP basic authentication (`SecretStr` — never serialised in logs or exposed to the agent).                                      |
-| `fleet_auth.auth_hosts`          | `array[string]`   | `[]`    | Hostnames (no protocol, no path) for which the basic-auth header is attached. Requests to hosts not on this list proceed without credentials. |
 
 ______________________________________________________________________
 
@@ -604,15 +605,7 @@ the operator and bypass the SSRF check.
 | `public_fetch.domain_allowlist`          | `array[string]`             | `[]`      | Optional list of hostnames (no protocol, no path) permitted for fetch. Empty = any public host is allowed.                                                                                                                                                                                   |
 | `public_fetch.rate_limit_requests`       | `integer`                   | `10`      | Maximum requests allowed within `rate_limit_window_seconds`.                                                                                                                                                                                                                                 |
 | `public_fetch.rate_limit_window_seconds` | `number`                    | `60.0`    | Sliding window in seconds for the rate limiter.                                                                                                                                                                                                                                              |
-| `public_fetch.fleet_auth`                | `FleetAuthSettings \| null` | `null`    | Optional server-side credentials for authenticated fleet UIs. When set, requests to hosts in `fleet_auth.auth_hosts` carry HTTP basic-auth headers injected by the server (never visible to the agent), and those hosts are implicitly allowed through the domain allowlist and SSRF checks. |
 
-The `FleetAuthSettings` object accepts:
-
-| JSON key                         | Type              | Default | Description                                                                                                                                   |
-| -------------------------------- | ----------------- | ------- | --------------------------------------------------------------------------------------------------------------------------------------------- |
-| `fleet_auth.basic_auth_username` | `string`          | `""`    | Username for HTTP basic authentication. Leave empty when auth is not required.                                                                |
-| `fleet_auth.basic_auth_password` | `string` (secret) | `""`    | Password for HTTP basic authentication (`SecretStr` — never serialised in logs or exposed to the agent).                                      |
-| `fleet_auth.auth_hosts`          | `array[string]`   | `[]`    | Hostnames (no protocol, no path) for which the basic-auth header is attached. Requests to hosts not on this list proceed without credentials. |
 
 ### SFTP
 
