@@ -276,6 +276,50 @@ def _resume_periodic_entry(
     )
 
 
+def _resume_wait_for_event_entry(
+    env: SubsessionEnv,
+    entry: Mapping[str, object],
+    sub_id: str,
+    owner: str,
+    title: str,
+    *,
+    original_status: str = "",  # noqa: ARG001
+) -> _ResumeFate | None:
+    """Respawn a wait_for_event subsession under its original id."""
+    if _handle_terminal_on_resume(env, entry, sub_id):
+        return None
+
+    checkpoint = _rebuild_checkpoint(entry)
+    completed_runs = _rebuild_completed_runs(entry)
+    runs = max(completed_runs) if completed_runs else _entry_int(entry, "runs")
+    dedup_key = _entry_opt_str(entry, "dedup_key")
+    retry_count = _entry_retry_count(entry)
+    event_timeout_seconds = _entry_opt_float(entry, "event_timeout_seconds")
+    spawn_subsession(
+        env=env,
+        kind=SubsessionKind.WAIT_FOR_EVENT,
+        owner_session_id=owner,
+        **_entry_to_common_kwargs(entry),
+        max_runs=_entry_opt_int(entry, "max_runs"),
+        sub_id=sub_id,
+        runs=runs,
+        completed_runs=completed_runs,
+        turn_history=_rebuild_turn_history(entry),
+        checkpoint=checkpoint,
+        dedup_key=dedup_key,
+        retry_count=retry_count,
+        event_timeout_seconds=event_timeout_seconds,
+    )
+    return _ResumeFate(
+        owner_session_id=owner,
+        sub_id=sub_id,
+        kind="wait_for_event",
+        title=title,
+        fate="resumed",
+        detail="Will wait for the next ticket state-change event.",
+    )
+
+
 def _resume_user_chat_entry(
     env: SubsessionEnv,
     entry: Mapping[str, object],
@@ -404,6 +448,14 @@ def _resume_entry(
             _restore_entry(env.registry, entry)
             return None
         return _resume_periodic_entry(
+            env, entry, sub_id, owner, title, original_status=status
+        )
+
+    if kind is SubsessionKind.WAIT_FOR_EVENT:
+        if status not in {s.value for s in ACTIVE_STATUSES}:
+            _restore_entry(env.registry, entry)
+            return None
+        return _resume_wait_for_event_entry(
             env, entry, sub_id, owner, title, original_status=status
         )
 

@@ -29,6 +29,7 @@ __all__ = [
     "SubsessionPeriodicSpawnError",
     "SubsessionStatus",
     "SubsessionUserChatSpawnError",
+    "SubsessionWaitForEventSpawnError",
     "TranscriptEntry",
 ]
 
@@ -38,6 +39,7 @@ class SubsessionKind(StrEnum):
 
     TASK = "task"
     PERIODIC = "periodic"
+    WAIT_FOR_EVENT = "wait_for_event"
     USER_CHAT = "user_chat"
     ON_CLOSE = "on_close"
 
@@ -84,7 +86,17 @@ class SubsessionLevelError(ValueError):
 
 
 class SubsessionPeriodicSpawnError(RuntimeError):
-    """Raised when a periodic subsession attempts to spawn a periodic or task child."""
+    """Raised when a periodic or wait_for_event subsession.
+
+    attempts to spawn a periodic or wait_for_event child.
+    """
+
+
+class SubsessionWaitForEventSpawnError(RuntimeError):
+    """Raised when a wait_for_event subsession attempts to.
+
+    spawn a periodic or wait_for_event child.
+    """
 
 
 class SubsessionUserChatSpawnError(RuntimeError):
@@ -150,6 +162,8 @@ class SubsessionInfo:
     # run guard (persisted) — tracks which run numbers have been executed
     # so a duplicate worker cannot re-execute runs that already completed.
     completed_runs: set[int] = field(default_factory=set)
+    # wait_for_event-only fields:
+    event_timeout_seconds: float | None = None
     # terminal fields:
     summary: str | None = None
     close_reason: str | None = None
@@ -211,6 +225,7 @@ class SubsessionInfo:
             "close_reason": self.close_reason,
             "error": self.error,
             "completed_runs": sorted(self.completed_runs),
+            "event_timeout_seconds": self.event_timeout_seconds,
             "turn_history": [list(pair) for pair in self.turn_history],
             "checkpoint": self.checkpoint,
             "dedup_key": self.dedup_key,

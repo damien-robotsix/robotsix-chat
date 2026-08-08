@@ -817,6 +817,15 @@ class SubsessionsSettings(BaseModel):
             "wake)."
         ),
     )
+    event_driven_timeout_seconds: float = Field(
+        default=900.0,
+        description=(
+            "Default timeout (seconds) for wait-for-event subsessions. "
+            "When no matching mill event arrives within this window, the "
+            "monitor runs a safety-net turn to verify state via the board "
+            "API in case an event was lost, then re-arms the wait."
+        ),
+    )
     periodic_max_interval_seconds: float = Field(
         default=3600.0,
         description=(

@@ -330,6 +330,9 @@ class SubsessionRegistry:
         # dedup_key → sub_id for active subsessions — prevents
         # duplicate side-chats for the same known global issue.
         self._active_dedup_keys: dict[str, str] = {}
+        # ticket_id -> set of sub_ids for WAIT_FOR_EVENT subsessions
+        # currently blocked in the event wait loop.
+        self._event_waiters: dict[str, set[str]] = defaultdict(set)
 
         # Extracted collaborators.
         self._store = RegistryStore(
@@ -368,6 +371,7 @@ class SubsessionRegistry:
         checkpoint: dict[str, object] | None = None,
         dedup_key: str | None = None,
         retry_count: int = 0,
+        event_timeout_seconds: float | None = None,
     ) -> SubsessionInfo:
         """Register a new subsession and publish ``subsession_started``.
 
@@ -408,7 +412,7 @@ class SubsessionRegistry:
             # Cross-reference: a PERIODIC subsession may have been
             # created without a dedup_key but recorded the watched
             # ticket_id in its checkpoint after the first run.
-            if kind is SubsessionKind.PERIODIC:
+            if kind in (SubsessionKind.PERIODIC, SubsessionKind.WAIT_FOR_EVENT):
                 cp_match = self.find_active_periodic_by_ticket_id(dedup_key)
                 if cp_match is not None:
                     raise SubsessionDedupError(cp_match)
@@ -433,6 +437,7 @@ class SubsessionRegistry:
             checkpoint=checkpoint,
             dedup_key=dedup_key,
             retry_count=retry_count,
+            event_timeout_seconds=event_timeout_seconds,
         )
         self._subs[info.id] = info
         self._inboxes[info.id] = deque()
@@ -992,21 +997,30 @@ class SubsessionRegistry:
         return sub_id
 
     def find_active_periodic_by_ticket_id(self, ticket_id: str) -> str | None:
-        """Return the id of an active PERIODIC sub whose checkpoint carries *ticket_id*.
+        """Return the id of an active PERIODIC or WAIT_FOR_EVENT.
+
+        subsession whose checkpoint carries *ticket_id*.
 
         Returns ``None`` when no match is found.
 
-        This is a cross-reference complement to ``is_dedup_key_active``:
-        a periodic monitor may have been spawned without a dedup_key (the
-        agent forgot), but after its first run the checkpoint records the
-        watched ``ticket_id``.  When a new spawn arrives WITH a dedup_key,
-        this method catches the match that ``is_dedup_key_active`` misses
-        because the original dedup_key was never set.
+        This is a cross-reference complement to
+        ``is_dedup_key_active``: a monitor may have been
+        spawned without a dedup_key (the agent forgot), but
+        after its first run the checkpoint records the
+        watched ``ticket_id``.  When a new spawn arrives
+        WITH a dedup_key, this method catches the match
+        that ``is_dedup_key_active`` misses because the
+        original dedup_key was never set.
         """
-        from .models import SubsessionKind as _SubsessionKind
-
         for info in self._subs.values():
-            if info.kind is not _SubsessionKind.PERIODIC or not info.is_active:
+            if (
+                info.kind
+                not in (
+                    SubsessionKind.PERIODIC,
+                    SubsessionKind.WAIT_FOR_EVENT,
+                )
+                or not info.is_active
+            ):
                 continue
             cp = info.checkpoint
             if cp is None:
@@ -1015,6 +1029,59 @@ class SubsessionRegistry:
             if isinstance(cp_ticket_id, str) and cp_ticket_id == ticket_id:
                 return info.id
         return None
+
+    def register_event_waiter(self, sub_id: str, ticket_id: str) -> None:
+        """Register *sub_id* as waiting for events on *ticket_id*."""
+        self._event_waiters[ticket_id].add(sub_id)
+
+    def unregister_event_waiter(self, sub_id: str, ticket_id: str) -> None:
+        """Remove *sub_id* from the event-waiter set for *ticket_id*."""
+        waiters = self._event_waiters.get(ticket_id)
+        if waiters is not None:
+            waiters.discard(sub_id)
+            if not waiters:
+                del self._event_waiters[ticket_id]
+
+    def route_mill_event(self, ticket_id: str, event_payload: dict[str, object]) -> int:
+        """Route an incoming mill state-change event to waiting monitors."""
+        waiters = self._event_waiters.get(ticket_id)
+        if not waiters:
+            return 0
+
+        old_state = event_payload.get("old_state", "")
+        new_state = event_payload.get("new_state", "")
+        timestamp = event_payload.get("timestamp", "")
+        event_text = (
+            f"Mill event: ticket {ticket_id} state changed from "
+            f"'{old_state}' to '{new_state}' at {timestamp}. "
+            f"This event was pushed from the mill — you MUST verify "
+            f"the current state via a live GET of the ticket API "
+            f"before acting on it."
+        )
+
+        woken = 0
+        for sub_id in list(waiters):
+            if self.enqueue_message(sub_id, "system", event_text):
+                woken += 1
+            else:
+                waiters.discard(sub_id)
+
+        if not waiters:
+            del self._event_waiters[ticket_id]
+
+        if woken:
+            logger.info(
+                "Routed mill event for ticket %s to %d monitor(s).",
+                ticket_id,
+                woken,
+            )
+        else:
+            logger.debug(
+                "Mill event for ticket %s had no active waiters — ignored.",
+                ticket_id,
+            )
+
+        return woken
 
     def is_duplicate_ticket_terminal(self, ticket_id: str, exclude_sub_id: str) -> bool:
         """Check for a duplicate terminal report for *ticket_id*.

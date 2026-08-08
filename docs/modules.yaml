@@ -158,6 +158,7 @@ modules:
       - src/robotsix_chat/chat/server/routes/errors.py
       - src/robotsix_chat/chat/server/routes/events.py
       - src/robotsix_chat/chat/server/routes/github.py
+      - src/robotsix_chat/chat/server/routes/mill_events.py
       - src/robotsix_chat/chat/server/routes/sessions.py
       - src/robotsix_chat/chat/server/routes/subsessions.py
       - src/robotsix_chat/chat/server/routes/config.py
