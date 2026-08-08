@@ -1275,6 +1275,7 @@ import { processSSEStream } from "./sse-parser.js";
   function subsKindLabel(kind) {
     if (kind === "task") return "⚙ task";
     if (kind === "periodic") return "⏱ periodic";
+    if (kind === "wait_for_event") return "⏳ event";
     if (kind === "user_chat") return "💬 chat";
     if (kind === "on_close") return "🔒 on-close";
     return "⚙ task";
