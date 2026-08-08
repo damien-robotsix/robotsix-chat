@@ -3,6 +3,23 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v87 — 2026-08-01 — config-ownership-migration-robotsix-chat-f7dd
+
+**Summary:** Remove references to the deprecated lifecycle config-store tools
+(`get_lifecycle_service_config`, `update_lifecycle_service_config`,
+`watch_service_redeploy`) from the system prompt. These tools were removed as
+part of the config-ownership migration: each component now owns its configuration
+internally via its own `/config` endpoints, and the central-deploy config-store
+API is no longer used at runtime. The prompt text in the Deploy API section and
+the periodic-monitor deploy-preflight section has been updated accordingly.
+
+**Rationale:** The central-deploy runtime config-store (`GET/PUT
+/services/{name}/config`) is being decommissioned as each component migrates to
+self-owned configuration.  The system prompt must not direct the agent to use
+tools that no longer exist.
+
+**SHA256:** `413dc7d2d7b07dafde7d78393b63575f10313c11ef4fb1debb26898d050564c3`
+
 ## v86 — 2026-08-05 — fix-false-token-exhaustion-self-punts-4abc
 
 **Summary:** Add a new Efficiency directive prohibiting the assistant from fabricating
