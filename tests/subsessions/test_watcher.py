@@ -543,7 +543,6 @@ def _mock_direct_repo_client(
     return mock
 
 
-
 # -- CI health check (zero-job detection) ----------------------------------
 
 
@@ -700,6 +699,7 @@ async def test_watcher_ci_health_check_graceful_on_actions_error() -> None:
     notifications = sink.of_type(SSE_NOTIFICATION_TYPE)
     ci_notifications = [n for n in notifications if n[1].get("urgency") == "high"]
     assert len(ci_notifications) == 0
+
 
 # -- PR-merge pass: resume on merged PR ------------------------------------
 
