@@ -1,0 +1,1 @@
+Add direct-repo tool naming convention rule to AGENT.md: agent-facing docs must reference tools by their exported callable name (e.g. `merge_direct_repo_pr`), never the internal client method name (e.g. `merge_pr`).
