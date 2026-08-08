@@ -62,6 +62,11 @@ def _settings(**kw: Any) -> HttpProbeSettings:
     return HttpProbeSettings(**base)
 
 
+def _tools(fleet_auth: FleetAuthSettings | None = None, **kw: Any) -> list[Any]:
+    """Build the tool. fleet_auth is a top-level setting, not a per-tool one."""
+    return build_http_probe_tools(_settings(**kw), fleet_auth)
+
+
 # ---------------------------------------------------------------------------
 # build_http_probe_tools
 # ---------------------------------------------------------------------------
@@ -362,7 +367,7 @@ async def test_http_probe_fleet_auth_host_skips_ssrf(
             )
         ],
     ):
-        settings = _settings(
+        tools = _tools(
             allowlist=["deploy.robotsix.net"],
             fleet_auth=FleetAuthSettings(
                 basic_auth_username="op",
@@ -370,7 +375,6 @@ async def test_http_probe_fleet_auth_host_skips_ssrf(
                 auth_hosts=["deploy.robotsix.net"],
             ),
         )
-        tools = build_http_probe_tools(settings)
         result = json.loads(await tools[0]("https://deploy.robotsix.net/internal"))
 
     assert result["healthy"] is True
@@ -454,7 +458,7 @@ async def test_http_probe_fleet_auth_sends_header(
         return_value=httpx.Response(200, text="authenticated")
     )
 
-    settings = _settings(
+    tools = _tools(
         allowlist=["deploy.robotsix.net"],
         fleet_auth=FleetAuthSettings(
             basic_auth_username="operator",
@@ -462,7 +466,6 @@ async def test_http_probe_fleet_auth_sends_header(
             auth_hosts=["deploy.robotsix.net"],
         ),
     )
-    tools = build_http_probe_tools(settings)
     result = json.loads(await tools[0]("https://deploy.robotsix.net/docs"))
 
     assert result["healthy"] is True
@@ -487,14 +490,13 @@ async def test_http_probe_fleet_auth_host_not_matching(
         return_value=httpx.Response(200, text="public")
     )
 
-    settings = _settings(
+    tools = _tools(
         fleet_auth=FleetAuthSettings(
             basic_auth_username="operator",
             basic_auth_password="s3cret",  # pragma: allowlist secret
             auth_hosts=["deploy.robotsix.net"],
         ),
     )
-    tools = build_http_probe_tools(settings)
     result = json.loads(await tools[0]("https://www.robotsix.net/"))
 
     assert result["healthy"] is True
@@ -513,7 +515,7 @@ async def test_http_probe_fleet_auth_none(
         return_value=httpx.Response(200, text="public")
     )
 
-    tools = build_http_probe_tools(_settings(fleet_auth=None))
+    tools = _tools(fleet_auth=None)
     result = json.loads(await tools[0]("https://www.robotsix.net/"))
 
     assert result["healthy"] is True
@@ -531,7 +533,7 @@ async def test_http_probe_fleet_auth_host_allowed_without_main_allowlist(
     )
 
     # The main allowlist does NOT include deploy.robotsix.net.
-    settings = _settings(
+    tools = _tools(
         allowlist=["www.robotsix.net", "robotsix.net"],
         fleet_auth=FleetAuthSettings(
             basic_auth_username="operator",
@@ -539,7 +541,6 @@ async def test_http_probe_fleet_auth_host_allowed_without_main_allowlist(
             auth_hosts=["deploy.robotsix.net"],
         ),
     )
-    tools = build_http_probe_tools(settings)
     result = json.loads(await tools[0]("https://deploy.robotsix.net/docs"))
 
     assert result["healthy"] is True
@@ -560,7 +561,7 @@ async def test_http_probe_fleet_auth_empty_credentials_no_header(
         return_value=httpx.Response(200, text="ok")
     )
 
-    settings = _settings(
+    tools = _tools(
         allowlist=["deploy.robotsix.net"],
         fleet_auth=FleetAuthSettings(
             basic_auth_username="",
@@ -568,7 +569,6 @@ async def test_http_probe_fleet_auth_empty_credentials_no_header(
             auth_hosts=["deploy.robotsix.net"],
         ),
     )
-    tools = build_http_probe_tools(settings)
     result = json.loads(await tools[0]("https://deploy.robotsix.net/docs"))
 
     assert result["healthy"] is True
