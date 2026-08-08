@@ -13,6 +13,7 @@ applicator has moved to :mod:`robotsix_chat.common.unified_diff`.
 
 from __future__ import annotations
 
+import asyncio
 import base64
 import json
 import logging
@@ -164,13 +165,19 @@ class DirectRepoClient:
         url: str,
         **kwargs: Any,
     ) -> Any:
-        """Make an HTTP request with one retry on 401 (installation token expiry).
+        """Make an HTTP request with retry on 401 / 429 / rate-limit 403.
 
-        On the first 401 response the cached installation token is cleared
-        and a fresh token is exchanged before retrying exactly once.
+        - **401** (expired installation token): invalidate cache, refresh,
+          retry exactly once.
+        - **429** (rate-limited) or **403** with a rate-limit message:
+          sleep 60 s, then retry once.
+        - All other responses are returned as-is.
+
         Returns the ``safe_http_request`` ``HttpResult``.
         """
         result = await safe_http_request(method, url, **kwargs)
+
+        # -- 401: installation token expired ---------------------------------
         if result.status_code == 401:
             logger.info(
                 "GitHub API returned 401 — refreshing installation token and retrying"
@@ -178,7 +185,45 @@ class DirectRepoClient:
             self._invalidate_token()
             if "headers" in kwargs:
                 kwargs["headers"] = await self._gh_headers()
-            result = await safe_http_request(method, url, **kwargs)
+            return await safe_http_request(method, url, **kwargs)
+
+        # -- 429 / rate-limit 403: back off and retry once -------------------
+        status = result.status_code
+        if status is not None and status in (429, 403):
+            # Only retry when the response body indicates a rate-limit
+            # condition (not a genuine authZ 403).
+            is_rate_limit = status == 429 or (
+                status == 403
+                and result.text is not None
+                and (
+                    "rate limit" in result.text.lower()
+                    or "secondary rate limit" in result.text.lower()
+                )
+            )
+            if is_rate_limit:
+                # safe_http_request doesn't expose response headers, so
+                # we can't read Retry-After.  60 s is a reasonable default
+                # for GitHub secondary rate limits.
+                retry_after: float = 60.0
+                logger.warning(
+                    "GitHub API returned %d (rate-limited) on %s %s — "
+                    "waiting %.0f s before single retry.",
+                    status,
+                    method,
+                    url,
+                    retry_after,
+                )
+                await asyncio.sleep(retry_after)
+                result = await safe_http_request(method, url, **kwargs)
+                if result.status_code in (429, 403):
+                    logger.warning(
+                        "GitHub API still rate-limited after backoff "
+                        "(%d on %s %s) — giving up.",
+                        result.status_code,
+                        method,
+                        url,
+                    )
+
         return result
 
     async def _get_json(self, path: str) -> Any:
