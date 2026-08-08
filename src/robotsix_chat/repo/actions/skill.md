@@ -130,22 +130,36 @@ diagnostics in the future.
 **Read-only.** Does not modify any repository state. No confirmation gating — safe to call anytime
 to investigate a CI failure.
 
-## Agent tool: `fetch_workflow_job_log`
+## Agent tool: `fetch_job_log`
 
-Fetch the raw console log for a specific job in a GitHub Actions workflow run. Looks up the job by
-name within a workflow run and returns its full log — every line of output printed by each step,
-including test failure messages, compiler errors, stack traces, and shell output.
+Fetch the raw plain-text log for a specific GitHub Actions job. This is a lower-level tool that
+retrieves the job's console output directly from the GitHub API (follows the 302 redirect to the
+signed log URL server-side).
 
-Use this when annotations alone are insufficient to diagnose a failure (e.g. when you need to see
-the exact pytest output, a build error in context, or the full shell trace of a failing step).
+Use this as a **fallback** when `fetch_workflow_run_annotations` returns a permission error (403) or
+when the check-run annotations endpoint is unavailable — job logs use a different API endpoint
+(`/repos/{owner}/{repo}/actions/jobs/{job_id}/logs`) that may still be accessible even when the
+checks API is not.
 
-Takes a repository name, a workflow run id (the numeric id from the Actions tab URL), and the exact
-job name (e.g. `"test (3.14)"`, `"lint"`, `"build"`). Returns the raw log text, or an error message
-when the job is not found or the log cannot be retrieved.
+Long logs are automatically truncated at 8000 characters to fit within the agent's context window.
 
 **Read-only.** Does not modify any repository state. No confirmation gating — safe to call anytime
 to investigate a CI failure.
 
-**Cost note:** Job logs can be multi-megabyte. The tool truncates logs longer than 200 KB to the
-trailing portion (which typically contains the failure output). When the log is truncated a header
-notes the original size.
+### Fallback strategy for CI diagnosis
+
+When a CI run fails and you need to diagnose the root cause:
+
+1. **First**, call `fetch_workflow_run_annotations` to get inline annotations (linter errors, test
+   failures, etc.).
+2. **If that fails** (especially with a 403 permission error), `fetch_workflow_run_annotations`
+   automatically falls back to raw job logs for failed jobs. The returned message will include
+   whatever logs could be retrieved.
+3. **For a specific job's log**, call `fetch_job_log` directly with the job ID (found via
+   `check_workflow_run` or in the Actions tab URL).
+4. **If everything fails**, the tool will clearly state that logs are inaccessible and suggest
+   checking the GitHub Actions UI manually, including the direct URL to the workflow run.
+
+**Limitation:** When the GitHub App installation lacks both `checks: read` and `actions: read`
+permissions, neither annotations nor job logs are accessible. In this case, the user must check the
+logs manually at `https://github.com/{owner}/{repo}/actions/runs/{run_id}`.

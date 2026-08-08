@@ -302,12 +302,132 @@ class ActionsClient:
                     lines.append(f"  _Location: {loc}_")
                 lines.append("")
 
+        except RuntimeError as exc:
+            annotation_error = str(exc)
+        except Exception as exc:
+            annotation_error = str(exc)
+        else:
             return "\n".join(lines)
 
+        # -- fallback: fetch raw job logs ----------------------------------
+        return await self._fallback_job_logs(repo_full_name, run_id, annotation_error)
+
+    async def _fallback_job_logs(
+        self,
+        repo_full_name: str,
+        run_id: int,
+        annotation_error: str,
+    ) -> str:
+        """Fallback for ``get_workflow_run_annotations``: fetch raw job logs.
+
+        Called when the check-run / annotations API returns an error
+        (typically 403 — insufficient permissions).  Attempts to list
+        the workflow run's jobs and fetch raw logs for any that failed.
+
+        Returns a Markdown string with whatever logs could be retrieved,
+        plus explicit limitation messaging when everything is inaccessible.
+        """
+        run_url = f"https://github.com/{repo_full_name}/actions/runs/{run_id}"
+        permission_note = (
+            "The GitHub App installation may lack 'checks: read' permission "
+            "for this repository — check-run annotations require that scope."
+        )
+
+        try:
+            jobs_data = await self._client._get_json(
+                f"/repos/{repo_full_name}/actions/runs/{run_id}/jobs"
+            )
+            jobs: list[dict[str, Any]] = jobs_data.get("jobs", [])
         except RuntimeError as exc:
-            return f"Error fetching workflow run annotations: {exc}"
+            return (
+                f"Unable to diagnose workflow run {run_id} on {repo_full_name}.\n\n"
+                f"**Check-run annotations:** not accessible ({annotation_error})\n"
+                f"**Job listing:** also failed ({exc})\n\n"
+                f"{permission_note}\n\n"
+                f"**Suggestion:** check the logs manually at {run_url}"
+            )
         except Exception as exc:
-            return f"Error fetching workflow run annotations: {exc}"
+            return (
+                f"Unable to diagnose workflow run {run_id} on {repo_full_name}.\n\n"
+                f"**Check-run annotations:** not accessible ({annotation_error})\n"
+                f"**Job listing:** also failed ({exc})\n\n"
+                f"**Suggestion:** check the logs manually at {run_url}"
+            )
+
+        if not jobs:
+            return (
+                f"Workflow run {run_id} on {repo_full_name} has no jobs — "
+                f"this is a strong signal that GitHub Actions billing "
+                f"is not enabled for this private repository. "
+                f"Check the repo's Settings > Actions > General, "
+                f"or verify billing at the organisation level."
+            )
+
+        # Collect logs for failed / cancelled / timed-out jobs.
+        log_results: list[str] = []
+        failed_job_ids: list[str] = []
+        success_count = 0
+        failure_count = 0
+
+        for job in jobs:
+            job_id = job.get("id")
+            if job_id is None:
+                continue
+            job_name = job.get("name", str(job_id))
+            conclusion = job.get("conclusion", "")
+
+            if conclusion in ("failure", "cancelled", "timed_out"):
+                try:
+                    log = await self.get_job_log(repo_full_name, job_id)
+                    if len(log) > 8000:
+                        log = log[:8000] + "\n\n... [log truncated at 8000 chars]"
+                    log_results.append(
+                        f"### Job: {job_name} (id {job_id}, conclusion={conclusion})\n"
+                        f"\n```\n{log}\n```"
+                    )
+                    success_count += 1
+                except RuntimeError as exc:
+                    log_results.append(
+                        f"### Job: {job_name} (id {job_id}, conclusion={conclusion})\n"
+                        f"\n_Log unavailable: {exc}_"
+                    )
+                    failed_job_ids.append(str(job_id))
+                    failure_count += 1
+                except Exception as exc:
+                    log_results.append(
+                        f"### Job: {job_name} (id {job_id}, conclusion={conclusion})\n"
+                        f"\n_Log unavailable: {exc}_"
+                    )
+                    failed_job_ids.append(str(job_id))
+                    failure_count += 1
+
+        if not log_results:
+            return (
+                f"Workflow run {run_id} on {repo_full_name} has "
+                f"{len(jobs)} job(s) but none with a failed conclusion. "
+                f"Check-run annotations were not accessible "
+                f"({annotation_error})."
+            )
+
+        header = (
+            f"## Workflow run {run_id} ({repo_full_name})\n\n"
+            f"_Check-run annotations were not accessible — "
+            f"falling back to raw job logs._\n\n"
+            f"({success_count} log(s) retrieved"
+            + (f", {failure_count} unavailable" if failure_count else "")
+            + ")\n"
+        )
+
+        if failure_count > 0:
+            header += (
+                f"\n**Limitation:** could not retrieve logs for jobs "
+                f"{', '.join(failed_job_ids)}. "
+                f"{permission_note}\n"
+            )
+
+        header += f"\n**Manual check:** {run_url}\n"
+
+        return header + "\n\n".join(log_results)
 
     # -- job log retrieval -------------------------------------------------
 
