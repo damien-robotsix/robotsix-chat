@@ -7,6 +7,7 @@ masking, version history, rollback, and RFC 9457 error responses.
 from __future__ import annotations
 
 import json
+import stat
 from pathlib import Path
 
 from starlette.testclient import TestClient
@@ -243,6 +244,30 @@ def test_write_and_read_roundtrip(tmp_path: Path) -> None:
     _write_config_json(path, data)
     result = _read_config_json(path)
     assert result == data
+
+
+def test_write_preserves_restrictive_mode(tmp_path: Path) -> None:
+    """A 0600 config stays 0600 across a save.
+
+    The write goes to a fresh temp file and renames over the target, so
+    without an explicit chmod the config — which holds API keys — comes back
+    world-readable at the process umask.
+    """
+    path = tmp_path / "config.json"
+    _write_config_json(path, {"a": 1})
+    path.chmod(0o600)
+
+    _write_config_json(path, {"a": 2})
+
+    assert stat.S_IMODE(path.stat().st_mode) == 0o600
+    assert _read_config_json(path) == {"a": 2}
+
+
+def test_write_defaults_to_owner_only_for_new_file(tmp_path: Path) -> None:
+    """A config created by the writer is never world-readable."""
+    path = tmp_path / "config.json"
+    _write_config_json(path, {"a": 1})
+    assert stat.S_IMODE(path.stat().st_mode) & 0o077 == 0
 
 
 # ---------------------------------------------------------------------------
