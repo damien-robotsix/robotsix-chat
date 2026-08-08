@@ -192,12 +192,15 @@ class DirectRepoClient:
         if status is not None and status in (429, 403):
             # Only retry when the response body indicates a rate-limit
             # condition (not a genuine authZ 403).
+            # safe_http_request returns text=None for HTTP errors; the
+            # body is embedded in result.error.  Combine both so we
+            # catch rate-limit wording regardless of where it lands.
+            body_text = (result.text or "") + " " + (result.error or "")
             is_rate_limit = status == 429 or (
                 status == 403
-                and result.text is not None
                 and (
-                    "rate limit" in result.text.lower()
-                    or "secondary rate limit" in result.text.lower()
+                    "rate limit" in body_text.lower()
+                    or "secondary rate limit" in body_text.lower()
                 )
             )
             if is_rate_limit:
@@ -215,7 +218,17 @@ class DirectRepoClient:
                 )
                 await asyncio.sleep(retry_after)
                 result = await safe_http_request(method, url, **kwargs)
-                if result.status_code in (429, 403):
+                # Re-check rate-limit status after the retry so the log
+                # message is accurate.
+                retry_body = (result.text or "") + " " + (result.error or "")
+                still_rate_limited = result.status_code == 429 or (
+                    result.status_code == 403
+                    and (
+                        "rate limit" in retry_body.lower()
+                        or "secondary rate limit" in retry_body.lower()
+                    )
+                )
+                if still_rate_limited:
                     logger.warning(
                         "GitHub API still rate-limited after backoff "
                         "(%d on %s %s) — giving up.",

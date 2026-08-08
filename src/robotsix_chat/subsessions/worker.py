@@ -770,11 +770,14 @@ async def _run_turn_with_transient_retry(
             raise  # timeout is handled separately; never retried
         except Exception as exc:
             last_exc = exc
-            is_periodic = info.kind is SubsessionKind.PERIODIC
-            is_transient = is_openrouter_transient(exc) or (
-                is_periodic and _is_github_rate_limit_error(exc)
+            is_monitor = info.kind in (
+                SubsessionKind.PERIODIC,
+                SubsessionKind.WAIT_FOR_EVENT,
             )
-            if not is_periodic or not is_transient:
+            is_transient = is_openrouter_transient(exc) or (
+                is_monitor and _is_github_rate_limit_error(exc)
+            )
+            if not is_monitor or not is_transient:
                 raise
 
             if attempt < max_retries:
