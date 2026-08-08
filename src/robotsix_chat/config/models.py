@@ -1046,12 +1046,18 @@ class FeedbackSettings(BaseModel):
 class FleetAuthSettings(BaseModel):
     """Server-side HTTP basic-auth credentials for authenticated fleet UIs.
 
-    When configured, the ``http_probe`` and ``render_url`` tools
-    automatically attach an ``Authorization: Basic …`` header to
-    requests targeting hosts in *auth_hosts* — the credentials are
-    injected server-side and never exposed to the chat agent.
+    Configured once, at ``fleet_auth`` on the top-level settings, and
+    shared by every tool that makes outbound HTTP requests
+    (``http_probe``, ``render_url``, ``public_fetch``).  There is one
+    credential — the fleet's reverse-proxy basic-auth realm — so there is
+    one setting; the tools do not authenticate independently.
 
-    Authenticated hosts must still pass the owning tool's host
+    When configured, those tools attach an ``Authorization: Basic …``
+    header (or the equivalent browser credentials) to requests targeting
+    hosts in *auth_hosts*.  Credentials are injected server-side and never
+    exposed to the chat agent.
+
+    Authenticated hosts must still pass the calling tool's own host
     allowlist (``http_probe.allowlist``, ``render_url.auth_hosts``).
 
     Attributes:
@@ -1087,10 +1093,6 @@ class RenderUrlSettings(BaseModel):
         timeout: Per-request timeout in seconds for the page load.
         viewport_width: Browser viewport width in pixels.
         viewport_height: Browser viewport height in pixels.
-        fleet_auth: Optional server-side credentials for authenticated
-            fleet UIs.  When set, requests to hosts in
-            ``fleet_auth.auth_hosts`` carry HTTP basic-auth headers
-            injected by the server (never visible to the agent).
 
     """
 
@@ -1098,7 +1100,6 @@ class RenderUrlSettings(BaseModel):
     timeout: float = 30.0
     viewport_width: int = 1280
     viewport_height: int = 720
-    fleet_auth: FleetAuthSettings | None = None
     model_config = ConfigDict(extra="forbid")
 
 
@@ -1120,10 +1121,6 @@ class HttpProbeSettings(BaseModel):
         max_body_bytes: Maximum bytes of the response body to read and
             return to the agent (default 2048 — ~2 KB).
         max_redirects: Maximum number of redirects to follow (default 5).
-        fleet_auth: Optional server-side credentials for authenticated
-            fleet UIs.  When set, requests to hosts in
-            ``fleet_auth.auth_hosts`` carry HTTP basic-auth headers
-            injected by the server (never visible to the agent).
 
     """
 
@@ -1134,7 +1131,6 @@ class HttpProbeSettings(BaseModel):
     )
     max_body_bytes: int = 2048
     max_redirects: int = 5
-    fleet_auth: FleetAuthSettings | None = None
     model_config = ConfigDict(extra="forbid")
 
 
@@ -1187,12 +1183,9 @@ class PublicFetchSettings(BaseModel):
             ``rate_limit_window_seconds`` (default 10).
         rate_limit_window_seconds: Sliding window in seconds for the
             rate limiter (default 60.0).
-        fleet_auth: Optional server-side credentials for authenticated
-            fleet UIs.  When set, requests to hosts in
-            ``fleet_auth.auth_hosts`` carry HTTP basic-auth headers
-            injected by the server (never visible to the agent), and
-            those hosts are implicitly allowed through the domain
-            allowlist and SSRF checks.
+        Hosts listed in the top-level ``fleet_auth.auth_hosts`` are
+        implicitly allowed through the domain allowlist and the SSRF
+        checks, and their requests carry server-injected basic-auth.
 
     """
 
@@ -1203,7 +1196,6 @@ class PublicFetchSettings(BaseModel):
     domain_allowlist: list[str] = Field(default_factory=list)
     rate_limit_requests: int = 10
     rate_limit_window_seconds: float = 60.0
-    fleet_auth: FleetAuthSettings | None = None
     model_config = ConfigDict(extra="forbid")
 
 
