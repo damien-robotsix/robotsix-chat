@@ -510,13 +510,13 @@ def build_ticket_poll_tools(
         Use this when ``component_request`` is unavailable or as an
         independent verification of ticket state.
         """
-        data = await board_client.get_ticket_data(ticket_id)
+        data, reason = await board_client.get_ticket_data_detailed(ticket_id)
         if data is None:
             return json.dumps(
                 {
                     "ticket_id": ticket_id,
                     "state": None,
-                    "error": "Board API request failed",
+                    "error": reason or "Board API request failed",
                 },
                 ensure_ascii=False,
             )
@@ -625,13 +625,13 @@ def build_ticket_poll_tools(
 
         async def _fetch_one_direct(ticket_id: str) -> dict[str, Any]:
             async with sem:
-                data = await board_client.get_ticket_data(ticket_id)
+                data, reason = await board_client.get_ticket_data_detailed(ticket_id)
                 if data is None:
                     return {
                         "ticket_id": ticket_id,
                         "state": None,
                         "data": None,
-                        "error": "Board API request failed",
+                        "error": reason or "Board API request failed",
                     }
                 return {
                     "ticket_id": ticket_id,

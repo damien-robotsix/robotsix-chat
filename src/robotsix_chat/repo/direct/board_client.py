@@ -16,7 +16,7 @@ import logging
 from typing import TYPE_CHECKING, Any, cast
 
 import httpx
-from robotsix_http import RetryClient, RetryConfig
+from robotsix_http import ExternalHTTPError, RetryClient, RetryConfig
 
 from robotsix_chat.common.http import safe_http_request
 
@@ -61,6 +61,22 @@ class BoardClient:
         Uses ``RetryClient`` so transient network blips don't surface as
         "board API unreachable" to callers (same retry policy as ticket_poll).
         """
+        data, _reason = await self._fetch_ticket(ticket_id, label_suffix)
+        if data is None:
+            return None
+        if field is not None:
+            return data.get(field)
+        return data
+
+    async def _fetch_ticket(
+        self, ticket_id: str, label_suffix: str
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        """Fetch a ticket, returning ``(data, None)`` or ``(None, reason)``.
+
+        The *reason* string distinguishes the failure classes callers need
+        to react to differently — most importantly a 404 (bad/paraphrased
+        ticket ID) from an API outage. Every failure is also logged.
+        """
         url = f"{self._board_url}/tickets/{ticket_id}"
         headers: dict[str, str] = {"Accept": "application/json"}
         if self._s.board_api_token.get_secret_value():
@@ -73,8 +89,16 @@ class BoardClient:
                 response = await retry_client.get(url, headers=headers)
                 response.raise_for_status()
                 text = response.text
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 404:
+        except (httpx.HTTPStatusError, ExternalHTTPError) as exc:
+            # RetryClient re-raises HTTP errors that survived its retry
+            # policy as ExternalHTTPError; direct raise_for_status yields
+            # httpx.HTTPStatusError. Both carry the status code.
+            code = (
+                exc.status_code
+                if isinstance(exc, ExternalHTTPError)
+                else exc.response.status_code
+            )
+            if code == 404:
                 logger.warning(
                     "Board API: ticket %r not found (404) when fetching %s. "
                     "This ID may have been derived from narrative text "
@@ -83,14 +107,18 @@ class BoardClient:
                     ticket_id,
                     label_suffix,
                 )
-            else:
-                logger.warning(
-                    "Board API request for ticket %s %s failed: HTTP %s",
-                    ticket_id,
-                    label_suffix,
-                    exc.response.status_code,
+                return None, (
+                    f"ticket not found (404): no ticket {ticket_id!r} on the "
+                    "board — the ID may be paraphrased or stale; verify it "
+                    "against the board ticket list"
                 )
-            return None
+            logger.warning(
+                "Board API request for ticket %s %s failed: HTTP %s",
+                ticket_id,
+                label_suffix,
+                code,
+            )
+            return None, f"Board API error: HTTP {code}"
         except httpx.TimeoutException:
             logger.warning(
                 "Board API request for ticket %s %s timed out after %ss",
@@ -98,7 +126,7 @@ class BoardClient:
                 label_suffix,
                 self._s.timeout,
             )
-            return None
+            return None, f"Board API timeout after {self._s.timeout}s"
         except Exception as exc:
             logger.warning(
                 "Board API request for ticket %s %s failed: %s",
@@ -106,7 +134,7 @@ class BoardClient:
                 label_suffix,
                 exc,
             )
-            return None
+            return None, f"Board API unreachable: {exc}"
         try:
             data = json.loads(text)
         except json.JSONDecodeError, TypeError:
@@ -115,10 +143,8 @@ class BoardClient:
                 ticket_id,
                 text[:200],
             )
-            return None
-        if field is not None:
-            return data.get(field)
-        return data
+            return None, "Board API returned a non-JSON response"
+        return data, None
 
     async def resolve_ticket_ids(
         self, candidate_ids: list[str]
@@ -321,6 +347,18 @@ class BoardClient:
             "dict[str, Any] | None",
             await self._fetch_ticket_field(ticket_id, "data"),
         )
+
+    async def get_ticket_data_detailed(
+        self, ticket_id: str
+    ) -> tuple[dict[str, Any] | None, str | None]:
+        """Like :meth:`get_ticket_data`, but return ``(data, failure_reason)``.
+
+        ``(data, None)`` on success. On failure ``(None, reason)``, where
+        *reason* distinguishes a 404 (bad or paraphrased ticket ID) from an
+        API outage — callers surface it verbatim instead of a generic
+        "Board API request failed".
+        """
+        return await self._fetch_ticket(ticket_id, "data")
 
     async def create_ticket(
         self,
