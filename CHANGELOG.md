@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- Document `central_deploy.component_credentials` in the Central Deploy configuration table.
 - **CI health check:** The paused-monitor watcher now detects zero-job
   CI workflow runs on tracked PRs and emits a high-urgency SSE
   notification when the CI infrastructure is broken (workflow file parses
