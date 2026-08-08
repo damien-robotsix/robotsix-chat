@@ -291,3 +291,39 @@ async def test_count_implement_cycles_no_data_returns_zero(
     client = BoardClient(settings)
     cycles = await client.count_implement_cycles("t-nodata")
     assert cycles == 0
+
+
+@pytest.mark.asyncio
+async def test_reset_implement_spawn_counter_resolves_paraphrased_id(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Paraphrased ID is resolved via hash-suffix before resume-blocked POST."""
+    real_id = "20260731T020731Z-reset-resolution-test-761f"
+
+    # Mock GET /tickets listing for ID resolution
+    respx_mock.get("http://127.0.0.1:8077/tickets").mock(
+        return_value=httpx.Response(
+            200,
+            json=[
+                {"ticket_id": real_id, "state": "BLOCKED"},
+                {"ticket_id": "20260730T232905Z-other-ticket-a3f2", "state": "DONE"},
+            ],
+        )
+    )
+
+    # The resume-blocked POST should be for the resolved real ID
+    route = respx_mock.post(
+        f"http://127.0.0.1:8077/tickets/{real_id}/resume-blocked"
+    ).mock(return_value=httpx.Response(200))
+
+    tools = build_direct_repo_tools(_settings())  # component_request=None
+    reset_fn = [t for t in tools if t.__name__ == "reset_implement_spawn_counter"][0]
+
+    out = await reset_fn(ticket_id="...-so-validate-c-761f")
+    assert route.called
+    assert "reset" in out
+
+
+# ============================================================================
+# direct_fix
+# ============================================================================
