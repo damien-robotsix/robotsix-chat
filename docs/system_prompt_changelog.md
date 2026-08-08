@@ -20,7 +20,7 @@ human review while auto-filed chores jumped ahead, delaying the operator's core 
 guidance makes the filing request double as explicit consent, so user-requested tickets skip the
 draft/human_issue_approval gate immediately without a separate manual approval cycle.
 
-**SHA256:** `a56e40f28e86f2aef0d8350a155200bb924f7a2596162d24a30fa5d7cea44a2d`
+**SHA256:** `8d58eb6b6a6a5c05f4c06d50aa5088f74ca803d98bb93a555e2f9e44f2bf5bff`
 
 ## v88 — 2026-08-01 — fix-merge-capability-doc-references-to-u-39ff
 
@@ -1803,6 +1803,22 @@ Governed artifact: `build_autonomous_instruction()` in
 The hash is computed on the output of `build_autonomous_instruction(Settings())` — i.e. with all
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
+
+## AUTONOMOUS v3 — 2026-08-02 — auto-prioritize-user-requested-tickets-46db
+
+**Summary:** Add user-requested-ticket exceptions to the autonomous MUTATION AUTHORIZATION rules.
+The autonomous protocol now acknowledges that tickets filed at the operator's explicit instruction
+(`kind: user-request`, `priority: high`) are pre-authorized for both filing and approval — the
+operator's filing request constitutes consent. The exceptions are added to the 'Filing new tickets'
+and 'Approving human_issue_approval tickets' restriction lists, and to the HUMAN_ISSUE_APPROVAL
+consent-scoping paragraph.
+
+**Rationale:** The autonomous MUTATION AUTHORIZATION rules previously treated all ticket filing
+and approval as restricted without considering the operator's explicit intent. User-requested
+tickets filed at the operator's direct instruction should be auto-approved in the same turn
+without waiting for a separate gate-level consent cycle.
+
+**SHA256:** `4c2775e783bc271213c12c45e77704b424520c46409bd9c85bb28f70f311536f`
 
 ## AUTONOMOUS v2 — 2026-07-31 — require-explicit-user-confirmation-for-s-6503
 
