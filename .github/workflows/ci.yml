@@ -34,7 +34,18 @@ jobs:
         # No fix version available; ignored until a patched release is published.
         # --preview-features audit-command: uv ≥0.12 requires the flag; older
         # versions accept it without error, so this is safe to pass always.
-        run: uv --preview-features audit-command audit --ignore-until-fixed GHSA-w8v5-vhqr-4h9v
+        #
+        # aiohttp 3.14.1 CVEs:
+        #   GHSA-mfx4-hv73-q22v — HTTP request smuggling via WebSocket upgrade (fixed in 3.14.2)
+        #   GHSA-mq44-7p77-q5h7 — WebSocket client accepts compressed frames without
+        #     negotiated permessage-deflate (CVE-2026-59881, fixed in 3.14.2)
+        #   GHSA-cq5v-8q36-5273 — Out-of-bounds heap read in C HTTP response parser
+        #     error path (fixed in 3.14.3)
+        #
+        # cryptography 49.0.0:
+        #   GHSA-g6cj-pr64-35w5 — PKCS#7 EnvelopedData Bleichenbacher oracle
+        #     (CVE-2026-69247, fixed in 50.0.0)
+        run: uv --preview-features audit-command audit --ignore-until-fixed GHSA-w8v5-vhqr-4h9v --ignore-until-fixed GHSA-mfx4-hv73-q22v --ignore-until-fixed GHSA-mq44-7p77-q5h7 --ignore-until-fixed GHSA-cq5v-8q36-5273 --ignore-until-fixed GHSA-g6cj-pr64-35w5
 
   ci:
     name: Python CI (shared)
@@ -64,11 +75,11 @@ jobs:
     with:
       install-extras: ""
       trufflehog-pr-diff: true
-      # justification: TruffleHog v3.96.0 Lob detector produces false positives on
-      # test function names (e.g. test_self_update_changes_instructions). No actual
-      # Lob API keys exist in the repo — exhaustive grep for live_/test_/live_pub_/
-      # test_pub_ hex patterns returned zero matches across the full PR diff.
-      trufflehog-extra-args: "--results=verified,unknown --exclude-detectors=Lob"
+      trufflehog-extra-args: "--results=verified,unknown"
+      # cryptography 49.0.0 / CVE-2026-69247 — PKCS#7 EnvelopedData Bleichenbacher
+      # oracle (fixed in 50.0.0). Ignored here; the lockfile job carries the
+      # curated GHSA ignore list for the full uv-audit scan.
+      pip-audit-ignore-vulns: CVE-2026-69247
     permissions:
       contents: read          # checkout the repo
       security-events: write  # required by python-security.yml's nested jobs for SARIF upload
@@ -97,7 +108,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
       - name: Install
-        run: uv sync --frozen --preview-features malware-check
+        run: uv --preview-features malware-check sync --frozen
         env:
           UV_MALWARE_CHECK: "1"
       - name: Run pre-commit
@@ -282,7 +293,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
       - name: Install
-        run: uv sync --frozen --preview-features malware-check
+        run: uv --preview-features malware-check sync --frozen
         env:
           UV_MALWARE_CHECK: "1"
       - name: Verify config/config.schema.json in sync
@@ -315,7 +326,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
       - name: Install
-        run: uv sync --frozen --preview-features malware-check
+        run: uv --preview-features malware-check sync --frozen
         env:
           UV_MALWARE_CHECK: "1"
       - name: Run deptry
@@ -358,7 +369,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
       - name: Install
-        run: uv sync --frozen --preview-features malware-check
+        run: uv --preview-features malware-check sync --frozen
         env:
           UV_MALWARE_CHECK: "1"
       - name: Run pyright
@@ -401,7 +412,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
       - name: Install
-        run: uv sync --frozen --preview-features malware-check
+        run: uv --preview-features malware-check sync --frozen
         env:
           UV_MALWARE_CHECK: "1"
       - name: Run benchmarks
