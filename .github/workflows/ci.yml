@@ -286,19 +286,7 @@ jobs:
         env:
           UV_MALWARE_CHECK: "1"
       - name: Verify config/config.schema.json in sync
-        run: |
-          uv run python - <<'EOF'
-          import json, sys
-          from robotsix_chat.config import Settings
-          live = Settings.model_json_schema()
-          committed = json.loads(open("config/config.schema.json").read())
-          if live != committed:
-              print("ERROR: config/config.schema.json is out of sync.")
-              print("Regenerate:")
-              print("  python -c 'import json; from robotsix_chat.config import Settings; "
-                    "print(json.dumps(Settings.model_json_schema(), indent=2))' > config/config.schema.json")
-              sys.exit(1)
-          EOF
+        run: uv run python scripts/regenerate_schema.py --check
 
   deptry:
     name: Dependency hygiene (deptry)
