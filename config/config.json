@@ -175,13 +175,9 @@
       "robotsix.net"
     ],
     "max_body_bytes": 2048,
-    "max_redirects": 5,
-    "fleet_auth": {
-      "basic_auth_username": "",
-      "basic_auth_password": "",
-      "auth_hosts": []
-    }
+    "max_redirects": 5
   },
+  "fleet_auth": null,
   "docker_digest": {
     "enabled": false,
     "timeout": 30.0
@@ -193,8 +189,7 @@
     "max_redirects": 5,
     "domain_allowlist": [],
     "rate_limit_requests": 10,
-    "rate_limit_window_seconds": 60.0,
-    "fleet_auth": null
+    "rate_limit_window_seconds": 60.0
   },
   "sftp": {
     "enabled": false,
@@ -211,12 +206,7 @@
     "enabled": false,
     "timeout": 30.0,
     "viewport_width": 1280,
-    "viewport_height": 720,
-    "fleet_auth": {
-      "basic_auth_username": "",
-      "basic_auth_password": "",
-      "auth_hosts": []
-    }
+    "viewport_height": 720
   },
   "feedback": {
     "enabled": false,

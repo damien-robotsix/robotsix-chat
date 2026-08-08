@@ -37,7 +37,7 @@ from robotsix_chat.common.http_fetch import (
 )
 
 if TYPE_CHECKING:
-    from robotsix_chat.config import PublicFetchSettings
+    from robotsix_chat.config import FleetAuthSettings, PublicFetchSettings
 
 __all__ = ["build_public_fetch_tools", "load_public_fetch_skill"]
 
@@ -86,11 +86,16 @@ def load_public_fetch_skill() -> str:
 
 def build_public_fetch_tools(
     settings: PublicFetchSettings,
+    fleet_auth: FleetAuthSettings | None = None,
 ) -> list[Callable[..., Any]]:
     """Return the ``fetch_public_url`` tool, or an empty list when disabled.
 
     Args:
         settings: PublicFetch configuration.
+        fleet_auth: Shared fleet reverse-proxy credentials, from the
+            top-level ``fleet_auth`` setting.  When set, requests to hosts
+            in ``fleet_auth.auth_hosts`` carry server-injected basic auth
+            (never visible to the agent).
 
     Returns:
         A single-element list containing the ``fetch_public_url`` async
@@ -108,7 +113,7 @@ def build_public_fetch_tools(
     # Pre-compute the basic-auth header value when fleet-auth is
     # configured — the agent never sees the credential; it is injected
     # server-side for matching hosts only.
-    fleet_auth_header, fleet_auth_hosts = _build_fleet_auth_header(settings.fleet_auth)
+    fleet_auth_header, fleet_auth_hosts = _build_fleet_auth_header(fleet_auth)
 
     async def fetch_public_url(url: str) -> str:
         """Fetch a public URL and return raw text contents with metadata.
