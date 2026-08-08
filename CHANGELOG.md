@@ -127,6 +127,7 @@
   bearer auth, retry, and JSON parsing.  `BoardClient._fetch_ticket_field`
   now uses `RetryClient` so both `repo/direct` and `ticket_poll` benefit
   from the same retry policy (max_retries=2). (mill: Migrate ticket_poll's direct board-API fetch to the new BoardClient in repo/direct/board_client.py (20260801T000333Z-migrate-ticket-poll-s-direct-board-api-f-f73e))
+- Added PR-evidence guard to the paused-monitor watcher: when a ticket transitions to ``closed``/``done`` the watcher now verifies a merged PR exists before resuming the monitor.  Tickets closed with ``pr_url=null`` and no checkpoint PR info stay paused with a warning log instead of silently accepting the terminal state.
 - Split `DirectRepoClient` (1407→~1189 lines) into three focused modules:
   - `ActionsClient` (`repo/direct/actions_client.py`) — GitHub Actions workflow management (dispatch, runs, jobs, annotations, secrets, billing diagnosis).
   - `BoardClient` (`repo/direct/board_client.py`) — mill board API for ticket-state verification and lifecycle ops.

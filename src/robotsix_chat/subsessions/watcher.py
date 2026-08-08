@@ -41,14 +41,18 @@ _IDLE_POLL_INTERVAL_SECONDS: float = 30.0
 
 async def _query_ticket_state(
     board_url: str, ticket_id: str, sub_id: str
-) -> str | None:
-    """Return the current state string for *ticket_id*, or ``None`` on error."""
+) -> tuple[str | None, str | None]:
+    """Return ``(state, pr_url)`` for *ticket_id*, or ``(None, None)`` on error.
+
+    *pr_url* is the ticket's linked PR URL from the board API (may be
+    ``None`` when the field is absent or null).
+    """
     try:
         base = httpx.URL(board_url.rstrip("/"))
         ticket_url = base.copy_with(path=f"/tickets/{ticket_id}")
     except Exception:
         logger.exception("Could not construct ticket URL for subsession %s", sub_id)
-        return None
+        return (None, None)
 
     try:
         async with httpx.AsyncClient(timeout=httpx.Timeout(10.0)) as client:
@@ -62,7 +66,7 @@ async def _query_ticket_state(
             ticket_id,
             sub_id,
         )
-        return None
+        return (None, None)
     except (httpx.TimeoutException, httpx.ConnectError, OSError) as exc:
         logger.debug(
             "Watcher: mill unreachable for ticket %s (subsession %s): %s",
@@ -70,19 +74,86 @@ async def _query_ticket_state(
             sub_id,
             exc,
         )
-        return None
+        return (None, None)
     except Exception:
         logger.exception(
             "Watcher: unexpected error querying mill for ticket %s (subsession %s)",
             ticket_id,
             sub_id,
         )
-        return None
+        return (None, None)
 
     state = ticket_data.get("state")
-    return (
+    state_str = (
         state if isinstance(state, str) else str(state) if state is not None else None
     )
+    pr_url = ticket_data.get("pr_url")
+    pr_url_str = pr_url if isinstance(pr_url, str) and pr_url else None
+    return (state_str, pr_url_str)
+
+
+async def _check_pr_merged(
+    env: SubsessionEnv,
+    repo_full_name: str,
+    pr_number: int,
+    sub_id: str,
+) -> bool | None:
+    """Check whether a GitHub PR was merged.
+
+    Returns ``True`` when merged, ``False`` when not merged (or PR not
+    found / 404), and ``None`` when the GitHub API is unreachable and
+    the check should be retried on the next poll cycle.
+    """
+    direct_repo_settings = getattr(env.settings, "direct_repo", None)
+    if direct_repo_settings is None or not getattr(
+        direct_repo_settings, "enabled", False
+    ):
+        logger.debug(
+            "Watcher: direct_repo not enabled — cannot verify PR #%d in %s.",
+            pr_number,
+            repo_full_name,
+        )
+        return None
+
+    try:
+        from robotsix_chat.repo.direct.client import DirectRepoClient
+
+        gh_client = DirectRepoClient(direct_repo_settings)
+        token = await gh_client._token()
+    except Exception:
+        logger.debug(
+            "Watcher: could not create GitHub client for PR #%d in %s "
+            "(subsession %s) — deferring.",
+            pr_number,
+            repo_full_name,
+            sub_id,
+        )
+        return None
+
+    if token is None:
+        logger.debug(
+            "Watcher: no GitHub token available — cannot verify PR #%d in %s.",
+            pr_number,
+            repo_full_name,
+        )
+        return None
+
+    try:
+        pr_data = await gh_client.get_pr(
+            repo_full_name=repo_full_name,
+            pr_number=pr_number,
+        )
+    except Exception:
+        logger.debug(
+            "Watcher: could not fetch PR #%d in %s (subsession %s) — deferring.",
+            pr_number,
+            repo_full_name,
+            sub_id,
+        )
+        return None
+
+    merged = pr_data.get("merged")
+    return merged is True
 
 
 async def _resume_paused_monitor(
@@ -275,7 +346,9 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                     else None
                 )
 
-                current_state = await _query_ticket_state(board_url, ticket_id, info.id)
+                current_state, pr_url = await _query_ticket_state(
+                    board_url, ticket_id, info.id
+                )
                 if current_state is None:
                     # Mill unreachable or ticket gone — skip this monitor
                     # this round; we'll try again on the next poll cycle.
@@ -284,6 +357,97 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                 # Resume when the ticket state has changed from what the
                 # monitor last observed.
                 if last_known_str is not None and current_state != last_known_str:
+                    # When the ticket transitioned to a terminal state
+                    # (closed/done), guard against bogus closes: if there
+                    # is no PR evidence (checkpoint has no pr_number and
+                    # the board ticket's pr_url is null), keep the monitor
+                    # paused rather than silently accepting a terminal
+                    # state with no code merged.
+                    if current_state.lower() in _TICKET_STATE_TERMINAL:
+                        pr_number_raw = checkpoint.get("pr_number")
+                        repo_raw = checkpoint.get("repo_full_name")
+                        if (
+                            isinstance(pr_number_raw, int)
+                            and pr_number_raw > 0
+                            and isinstance(repo_raw, str)
+                            and repo_raw
+                        ):
+                            # Checkpoint tracks a PR — verify it was
+                            # actually merged on GitHub before accepting
+                            # the terminal state.
+                            merged = await _check_pr_merged(
+                                env,
+                                repo_full_name=repo_raw,
+                                pr_number=pr_number_raw,
+                                sub_id=info.id,
+                            )
+                            if merged is True:
+                                logger.info(
+                                    "Watcher: subsession %s ticket %s terminal "
+                                    "(%s) — tracked PR #%d in %s is merged; "
+                                    "resuming.",
+                                    info.id,
+                                    ticket_id,
+                                    current_state,
+                                    pr_number_raw,
+                                    repo_raw,
+                                )
+                            elif merged is None:
+                                # GitHub unreachable — defer; keep paused.
+                                logger.warning(
+                                    "Watcher: subsession %s ticket %s terminal "
+                                    "(%s) — could not verify PR #%d in %s "
+                                    "(GitHub unreachable); keeping paused.",
+                                    info.id,
+                                    ticket_id,
+                                    current_state,
+                                    pr_number_raw,
+                                    repo_raw,
+                                )
+                                continue
+                            else:
+                                # PR exists but is NOT merged — the
+                                # terminal state is bogus; keep paused.
+                                logger.warning(
+                                    "Watcher: subsession %s ticket %s terminal "
+                                    "(%s) but tracked PR #%d in %s is NOT "
+                                    "merged — keeping paused (possible "
+                                    "premature close with no code merged).",
+                                    info.id,
+                                    ticket_id,
+                                    current_state,
+                                    pr_number_raw,
+                                    repo_raw,
+                                )
+                                continue
+                        elif pr_url:
+                            # Board ticket has a recorded pr_url — let the
+                            # resume proceed; the second-pass merge check
+                            # will catch unmerged PRs on the next cycle.
+                            logger.info(
+                                "Watcher: subsession %s ticket %s terminal "
+                                "(%s) — board pr_url is present; resuming.",
+                                info.id,
+                                ticket_id,
+                                current_state,
+                            )
+                        else:
+                            # No PR evidence at all — the ticket was
+                            # closed with pr_url=null and no checkpoint PR
+                            # info.  This is the exact systemic gap the
+                            # operator flagged: the board transitioned the
+                            # ticket to closed but no PR was ever merged.
+                            logger.warning(
+                                "Watcher: subsession %s ticket %s terminal "
+                                "(%s) but pr_url is null and checkpoint has "
+                                "no pr_number — keeping paused (ticket was "
+                                "closed with no PR evidence).",
+                                info.id,
+                                ticket_id,
+                                current_state,
+                            )
+                            continue
+
                     logger.info(
                         "Watcher: subsession %s ticket %s state changed "
                         "from '%s' to '%s' — resuming.",
@@ -405,8 +569,10 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                                             info.id,
                                         )
                                         if ticket_state is not None:
+                                            state_str = ticket_state[0]
                                             ticket_terminal = (
-                                                ticket_state.lower()
+                                                state_str is not None
+                                                and state_str.lower()
                                                 in _TICKET_STATE_TERMINAL
                                             )
                                     if not ticket_terminal:

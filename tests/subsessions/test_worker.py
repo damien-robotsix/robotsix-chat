@@ -1943,7 +1943,12 @@ async def test_check_resume_status_terminal_closes_and_delivers():
         last_known_state="open",
     )
 
-    mock = _mock_async_client(response_json={"state": "closed"})
+    mock = _mock_async_client(
+        response_json={
+            "state": "closed",
+            "pr_url": "https://github.com/owner/repo/pull/42",
+        }
+    )
     with patch("httpx.AsyncClient", mock):
         should_continue, context_msg = await _check_resume_status(env, info, info.id)
 
