@@ -1,0 +1,1 @@
+`ticket_poll` now surfaces the real board-API failure instead of a generic "Board API request failed": a 404 says the ticket does not exist (likely a paraphrased/stale ID, with a hint to list tickets), and HTTP errors, timeouts, connection failures, and non-JSON bodies each carry their own reason.
