@@ -1785,6 +1785,24 @@ The hash is computed on the output of `build_autonomous_instruction(Settings())`
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
 
+## AUTONOMOUS v2 — 2026-07-31 — require-explicit-user-confirmation-for-s-6503
+
+**Summary:** Add `SECURITY-SENSITIVE APPROVAL` section to the autonomous protocol.
+Security-sensitive tickets (credential changes, password resets, .htpasswd modifications,
+API key rotations, authentication/authorization changes) must receive explicit per-ticket
+operator confirmation before being transitioned out of `human_issue_approval`.  Broader
+consent or standing directives do not cover security-sensitive tickets — even when the
+operator requested the work that produced the ticket, the approval gate requires its own
+explicit authorization.
+
+**Rationale:** The assistant auto-approved security-sensitive tickets (e.g. admin password
+reset, placeholder hash replacement) without separate per-ticket confirmation.  The new
+section closes this gap by requiring the assistant to flag security-sensitive tickets
+explicitly, explain why they are security-sensitive, and obtain per-ticket confirmation
+from the operator before transitioning them.
+
+**SHA256:** `b9fb86c6b2ca619cea0ef00eadc91562bcd5e5531be4461beccd6b90ea282a2c`
+
 ## AUTONOMOUS v1 — 2026-08-04 — extend-system-prompt-governance-to-the-a-e556
 
 **Summary:** Baseline — the current `build_autonomous_instruction()` output as of post-#1165
