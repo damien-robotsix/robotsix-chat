@@ -340,6 +340,9 @@ class CogneeMemory:
         cognee.config.set_llm_model(s.llm.model)
         cognee.config.set_llm_endpoint(s.llm.endpoint)
         cognee.config.set_llm_api_key(s.llm.api_key.get_secret_value())
+        cognee.config.set_llm_config(
+            {"llm_max_completion_tokens": s.llm.max_completion_tokens}
+        )
 
         # Embeddings — remote OpenAI-compatible server (Ollama / bge-m3).
         cognee.config.set_embedding_config(

@@ -29,7 +29,7 @@
     "write_throttle_seconds": 0.5,
     "llm": {
       "provider": "custom",
-      "model": "openrouter/openai/gpt-5-mini",
+      "model": "openrouter/openai/gpt-5-nano",
       "endpoint": "https://openrouter.ai/api/v1",
       "api_key": ""
     },
