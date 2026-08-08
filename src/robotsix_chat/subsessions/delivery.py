@@ -43,11 +43,6 @@ from robotsix_chat.chat.events import agent_message_frame
 
 from .models import SubsessionInfo, SubsessionKind
 
-# Terminal ticket states — matches worker_mill._TICKET_STATE_TERMINAL.
-# Defined locally to avoid a circular import (delivery ← worker_mill ←
-# worker ← delivery).
-_TICKET_STATE_TERMINAL: frozenset[str] = frozenset({"closed", "done"})
-
 if TYPE_CHECKING:
     from robotsix_chat.autonomous.runner import AutonomousRunner
     from robotsix_chat.chat.conversation import ConversationStore
@@ -301,6 +296,8 @@ class ParentDelivery:
             # Suppress auto-pause delivery when the monitored ticket is
             # already in a terminal state — stale monitors for
             # already-closed tickets should not distract the user.
+            from .worker_mill import _TICKET_STATE_TERMINAL
+
             last_known = _extract_last_known_state(info)
             if last_known is not None and last_known.lower() in _TICKET_STATE_TERMINAL:
                 logger.info(
