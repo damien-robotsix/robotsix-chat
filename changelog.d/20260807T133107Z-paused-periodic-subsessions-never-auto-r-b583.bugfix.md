@@ -1,0 +1,1 @@
+Changed auto-pause notice for periodic subsessions to no longer promise automatic resume. The notice now directs the parent agent to resume via `message_subsession`, and any inbox message (including parent messages) now wakes a paused monitor so the documented resume path actually works.

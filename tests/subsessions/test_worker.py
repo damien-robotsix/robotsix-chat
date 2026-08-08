@@ -530,8 +530,9 @@ async def test_periodic_max_idle_runs_pauses_after_consecutive_no_change() -> No
     assert info.close_reason == "paused"
     assert info.summary == (
         "Auto-paused after 3 consecutive no-change runs. "
-        "The monitor is idle — no changes detected for the watched "
-        "ticket."
+        "To resume monitoring, send a message to this subsession "
+        "via message_subsession — the monitor will wake and re-check "
+        "the ticket state on its next run."
     )
     assert len(agent.calls) == 3
 
@@ -542,6 +543,44 @@ async def test_periodic_max_idle_runs_pauses_after_consecutive_no_change() -> No
     assert frame["title"] == f"Monitor auto-paused: {info.title}"
     assert f" — {info.summary}" in str(frame["body"])
     assert frame["urgency"] == "low"
+
+
+@pytest.mark.asyncio
+async def test_paused_periodic_resumes_on_parent_message() -> None:
+    """A parent message via enqueue_message wakes a paused periodic worker."""
+    agent = FakeAgent(["NO_CHANGE", "NO_CHANGE", "NO_CHANGE"])
+    env = build_env(
+        agent=agent,
+        settings=make_settings(max_idle_runs=3, auto_stop_no_change_runs=10),
+    )
+
+    sub_id = _spawn(env, kind=SubsessionKind.PERIODIC, interval_seconds=0.02)
+
+    # Wait for auto-pause — the worker consumes the 3 NO_CHANGE replies
+    # and enters the paused wait loop.
+    await wait_until(lambda: len(agent.calls) >= 3)
+    await asyncio.sleep(0.15)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert info.status is SubsessionStatus.PAUSED
+
+    # Send a parent message — the paused worker should wake and resume.
+    env.registry.enqueue_message(sub_id, "parent", "please resume monitoring")
+
+    # The worker resumes and runs at least one more turn.
+    await wait_until(lambda: len(agent.calls) >= 4)
+
+    # Clean up — cancel the worker so it doesn't loop forever.
+    task = env.registry._running.get(sub_id)
+    if task is not None and not task.done():
+        task.cancel()
+    await asyncio.sleep(0.05)
+
+    # Verify the subsession was resumed (status no longer PAUSED).
+    info = env.registry.get(sub_id)
+    assert info is not None
+    assert len(agent.calls) >= 4
 
 
 @pytest.mark.asyncio
