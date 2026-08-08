@@ -1,5 +1,6 @@
 ## 0.0.0 (unreleased)
 
+- User-requested tickets now auto-prioritize and skip the draft approval gate: when the operator explicitly asks the agent to file a ticket, the agent includes `kind: user-request` and `priority: high` in the body metadata, and immediately transitions the ticket from draft / human_issue_approval to ready — the operator's filing request constitutes consent for both filing and approval. The autonomous mutation-authorization rules now carry explicit exceptions for user-requested tickets filed in the same turn.
 - **CI health check:** The paused-monitor watcher now detects zero-job
   CI workflow runs on tracked PRs and emits a high-urgency SSE
   notification when the CI infrastructure is broken (workflow file parses

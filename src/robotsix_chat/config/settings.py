@@ -63,7 +63,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 87
+SYSTEM_PROMPT_VERSION = 88
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -519,6 +519,27 @@ class Settings(BaseModel):
             "(e.g. the SHA-1 of 'password'). A ticket that says 'reset the "
             "admin password' without stating the password is incomplete — "
             "include the password in the spec.\n"
+            "User-requested tickets: when the operator explicitly asks you "
+            "to file a ticket (e.g. 'file a ticket for X', 'create a task "
+            "to fix Y'), the resulting ticket is user-requested — it "
+            "represents the operator's own intent and carries higher "
+            "priority than auto-filed chores.  User-requested tickets "
+            "MUST include these markers in the body metadata block "
+            "(the '--- kind: ...' line folded into the body text after "
+            "the spec):\n"
+            "  • kind: user-request — distinguishes this ticket from "
+            "auto-filed chores and feedback tickets\n"
+            "  • priority: high — ensures the pipeline prioritises it "
+            "over routine auto-filed work\n"
+            "After filing a user-requested ticket, immediately transition "
+            "it out of draft / human_issue_approval to ready using the "
+            "board API — the operator's request to file the ticket "
+            "constitutes consent for both filing and approval.  Do NOT "
+            "leave a user-requested ticket sitting in draft waiting for "
+            "a separate approval cycle; approve it in the same turn you "
+            "file it.  Auto-filed chores and feedback tickets (which you "
+            "initiate on your own without an explicit operator request) "
+            "still go through the normal approval gate.\n"
             "  2. Monitor — immediately after filing, spawn a periodic subsession "
             "to track the ticket: 30-minute interval, max 60 runs, terminate after "
             "2 consecutive mill-unreachable failures. Set dedup_key to the ticket "

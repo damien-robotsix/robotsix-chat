@@ -3,6 +3,25 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v88 — 2026-08-02 — auto-prioritize-user-requested-tickets-46db
+
+**Summary:** Add user-requested-ticket guidance to the ticket-filing rules. When the operator
+explicitly asks the agent to file a ticket (e.g. "file a ticket for X"), the resulting ticket is
+user-requested — it represents the operator's own intent and carries higher priority than auto-filed
+chores. User-requested tickets MUST include `kind: user-request` and `priority: high` markers in the
+body metadata block (the `--- kind: ...` line). After filing, the agent must immediately transition
+the ticket out of draft / `human_issue_approval` to `ready` using the board API — the operator's
+request to file constitutes consent for both filing and approval, so the gate is bypassed in the
+same turn. Auto-filed chores and feedback tickets (initiated on the agent's own initiative) still go
+through the normal approval gate.
+
+**Rationale:** User-requested tickets sat in 'draft' for days because the mill's workflow required
+human review while auto-filed chores jumped ahead, delaying the operator's core goals. The new
+guidance makes the filing request double as explicit consent, so user-requested tickets skip the
+draft/human_issue_approval gate immediately without a separate manual approval cycle.
+
+**SHA256:** `8d58eb6b6a6a5c05f4c06d50aa5088f74ca803d98bb93a555e2f9e44f2bf5bff`
+
 ## v87 — 2026-08-01 — config-ownership-migration-robotsix-chat-f7dd
 
 **Summary:** Remove references to the deprecated lifecycle config-store tools
@@ -147,14 +166,14 @@ filing (include the exact value) and merge review (verify the diff has no defaul
 ## v80 — 2026-07-31 — reconcile-direct-repo-merge-capability-docs-074f
 
 **Summary:** Update the direct-repo guardrail text in the system prompt and
-``DirectRepoSettings`` docstring to acknowledge the ``merge_pr`` tool (available for
+`DirectRepoSettings` docstring to acknowledge the `merge_pr` tool (available for
 BLOCKED tickets) instead of claiming no merge capability exists on the direct-repo path.
-When a PR is approved and mergeable, the agent should prefer ``merge_pr``; for
+When a PR is approved and mergeable, the agent should prefer `merge_pr`; for
 pre-BLOCKED tickets or when unavailable, the mill's merge endpoint is the fallback.
 
-**Rationale:** The ``merge_pr`` tool was introduced on the direct-repo path but two
-guardrail doc sites (the ``DirectRepoSettings`` model docstring and the system prompt
-``agent_instruction``) still claimed "no merge capability exists" — causing the agent to
+**Rationale:** The `merge_pr` tool was introduced on the direct-repo path but two
+guardrail doc sites (the `DirectRepoSettings` model docstring and the system prompt
+`agent_instruction`) still claimed "no merge capability exists" — causing the agent to
 incorrectly report it cannot merge and route the operator to a less direct path.
 
 **SHA256:** `b7de916c4cb865a4ea1deffd3f1500b6d6cc0e4f39b4e806b459d9ec4dbb6faa`
@@ -1769,6 +1788,22 @@ Governed artifact: `build_autonomous_instruction()` in
 The hash is computed on the output of `build_autonomous_instruction(Settings())` — i.e. with all
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
+
+## AUTONOMOUS v2 — 2026-08-02 — auto-prioritize-user-requested-tickets-46db
+
+**Summary:** Add user-requested-ticket exceptions to the autonomous MUTATION AUTHORIZATION rules.
+The autonomous protocol now acknowledges that tickets filed at the operator's explicit instruction
+(`kind: user-request`, `priority: high`) are pre-authorized for both filing and approval — the
+operator's filing request constitutes consent. The exceptions are added to the 'Filing new tickets'
+and 'Approving human_issue_approval tickets' restriction lists, and to the HUMAN_ISSUE_APPROVAL
+consent-scoping paragraph.
+
+**Rationale:** The autonomous MUTATION AUTHORIZATION rules previously treated all ticket filing
+and approval as restricted without considering the operator's explicit intent. User-requested
+tickets filed at the operator's direct instruction should be auto-approved in the same turn
+without waiting for a separate gate-level consent cycle.
+
+**SHA256:** `4c2775e783bc271213c12c45e77704b424520c46409bd9c85bb28f70f311536f`
 
 ## AUTONOMOUS v1 — 2026-08-04 — extend-system-prompt-governance-to-the-a-e556
 

@@ -481,6 +481,12 @@ run once and a transient failure would silently lose the work.
     | `subsessions.human_approval_timeout_runs`    | `5`     | Consecutive `NO_CHANGE` runs in `human_issue_approval` state before auto-escalate.   |
     | `subsessions.human_approval_timeout_seconds` | `300.0` | Wall-clock seconds in `human_issue_approval` state before auto-escalate (5 minutes). |
 
+    > **Note on user-requested tickets.** This stuck-ticket gate applies to auto-filed chores and
+    > feedback tickets. A **user-requested ticket** (one the operator explicitly asked the agent to
+    > file) is pre-authorized at filing: the agent includes `kind: user-request` / `priority: high`
+    > markers and transitions it out of `draft` / `human_issue_approval` to `ready` in the same turn,
+    > so it should never stall at this gate waiting for operator direction.
+
 10. **Mill-recovery mode.** If the mill is unreachable, the monitor enters a recovery loop with
     exponential backoff (see [Mill-recovery behaviour](#mill-recovery-behaviour) above), probing the
     mill health endpoint and resuming automatically when it recovers.
