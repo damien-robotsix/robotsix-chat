@@ -1267,6 +1267,12 @@
           "title": "Paused Monitor Long Poll Interval Seconds",
           "type": "number"
         },
+        "event_driven_timeout_seconds": {
+          "default": 900.0,
+          "description": "Default timeout (seconds) for wait-for-event subsessions. When no matching mill event arrives within this window, the monitor runs a safety-net turn to verify state via the board API in case an event was lost, then re-arms the wait.",
+          "title": "Event Driven Timeout Seconds",
+          "type": "number"
+        },
         "periodic_max_interval_seconds": {
           "default": 3600.0,
           "description": "Upper bound (seconds) for a periodic subsession's self-adjusted interval.  The adjust_periodic_interval tool clamps to this value.  Default 3600 (1 hour).",

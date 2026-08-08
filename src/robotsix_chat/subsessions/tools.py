@@ -31,6 +31,7 @@ from .models import (
     SubsessionLevelError,
     SubsessionPeriodicSpawnError,
     SubsessionUserChatSpawnError,
+    SubsessionWaitForEventSpawnError,
 )
 from .registry import SubsessionRegistry
 from .worker import CloseState, SubsessionContext, SubsessionEnv, spawn_subsession
@@ -133,6 +134,12 @@ def _build_spawn_and_control_tools(
         interval_seconds until closed — for monitoring/polling; the
         sub-agent replies NO_CHANGE when nothing changed and calls
         complete_subsession when the watched condition is terminal),
+        "wait_for_event" (event-driven ticket monitor — waits for
+        mill push events instead of polling; wakes only when a matching
+        ticket state-change event arrives or a safety-net timeout fires;
+        no interval_seconds needed; the sub-agent verifies state via the
+        board API on every wake and calls complete_subsession when the
+        ticket reaches a terminal state),
         "user_chat" (opens a side-chat with the user for a focused
         question or discussion — use it instead of blocking this
         conversation on a pending decision; the user replies in a
@@ -189,28 +196,37 @@ def _build_spawn_and_control_tools(
             return "This session is closed — no new subsessions can be started."
 
         # Periodic/monitor sibling spawning and forbidden-kind pre-check.
-        # When the spawning agent is a periodic subsession:
+        # When the spawning agent is a periodic or wait_for_event subsession:
         #   - ALLOWED: task (remediation) and user_chat (escalation) spawn
         #     as SIBLINGS attached to the holding parent conversation, not
-        #     nested under the periodic itself.
-        #   - FORBIDDEN: periodic (nested monitors — runaway risk) and
-        #     on_close (no meaningful use case from a periodic).
+        #     nested under the monitor itself.
+        #   - FORBIDDEN: periodic, wait_for_event (nested monitors —
+        #     runaway risk) and on_close (no meaningful use case from a
+        #     monitor).
         #   - Forbidden attempts are rejected silently (logged, no
         #     operator-facing escalation).
         effective_parent_id = ctx.subsession_id
         effective_depth = ctx.depth + 1
         if ctx.subsession_id is not None:
             agent_info = env.registry.get(ctx.subsession_id)
-            if agent_info is not None and agent_info.kind is SubsessionKind.PERIODIC:
-                if kind_enum in (SubsessionKind.PERIODIC, SubsessionKind.ON_CLOSE):
+            if agent_info is not None and agent_info.kind in (
+                SubsessionKind.PERIODIC,
+                SubsessionKind.WAIT_FOR_EVENT,
+            ):
+                if kind_enum in (
+                    SubsessionKind.PERIODIC,
+                    SubsessionKind.WAIT_FOR_EVENT,
+                    SubsessionKind.ON_CLOSE,
+                ):
                     logger.warning(
-                        "Periodic subsession %s attempted forbidden spawn "
+                        "%s subsession %s attempted forbidden spawn "
                         "kind=%s — rejected silently.",
+                        agent_info.kind.value,
                         ctx.subsession_id,
                         kind,
                     )
                     return (
-                        f"Periodic monitors cannot spawn {kind} subsessions. "
+                        f"Monitors cannot spawn {kind} subsessions. "
                         "Use 'task' for remediation or 'user_chat' for "
                         "escalation instead."
                     )
@@ -226,7 +242,10 @@ def _build_spawn_and_control_tools(
         was_dedup = False
         if dedup_key is not None:
             was_dedup = env.registry.is_dedup_key_active(dedup_key) is not None
-            if not was_dedup and kind_enum is SubsessionKind.PERIODIC:
+            if not was_dedup and kind_enum in (
+                SubsessionKind.PERIODIC,
+                SubsessionKind.WAIT_FOR_EVENT,
+            ):
                 was_dedup = (
                     env.registry.find_active_periodic_by_ticket_id(dedup_key)
                     is not None
@@ -247,6 +266,11 @@ def _build_spawn_and_control_tools(
                 max_runs=max_runs,
                 inherit_context=inherit_context,
                 dedup_key=dedup_key,
+                event_timeout_seconds=(
+                    env.settings.subsessions.event_driven_timeout_seconds
+                    if kind_enum is SubsessionKind.WAIT_FOR_EVENT
+                    else None
+                ),
             )
         except (
             SubsessionCapacityError,
@@ -254,6 +278,7 @@ def _build_spawn_and_control_tools(
             SubsessionIntervalError,
             SubsessionLevelError,
             SubsessionPeriodicSpawnError,
+            SubsessionWaitForEventSpawnError,
             SubsessionUserChatSpawnError,
         ) as exc:
             return f"Could not start the subsession: {exc}"
