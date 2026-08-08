@@ -737,3 +737,172 @@ async def test_get_job_log_auth_failure(
     client = ActionsClient(settings)
     with pytest.raises(RuntimeError):
         await client.get_job_log("org/repo", 100)
+
+
+# ---------------------------------------------------------------------------
+# Actions variables
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_set_actions_variable_creates(respx_mock: respx.MockRouter) -> None:
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    ac = ActionsClient(s)
+
+    route = respx_mock.post("https://api.github.com/repos/o/r/actions/variables").mock(
+        return_value=httpx.Response(201, text="{}")
+    )
+
+    result = await ac.set_actions_variable("o/r", "RELEASE_APP_ID", "3752211")
+    assert "created" in result
+    body = json.loads(route.calls[0].request.content or "{}")
+    assert body == {"name": "RELEASE_APP_ID", "value": "3752211"}
+
+
+@pytest.mark.asyncio
+async def test_set_actions_variable_falls_back_to_patch(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """The create call 409s when the variable exists; the update must run."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    ac = ActionsClient(s)
+
+    respx_mock.post("https://api.github.com/repos/o/r/actions/variables").mock(
+        return_value=httpx.Response(409, text="already exists")
+    )
+    patch_route = respx_mock.patch(
+        "https://api.github.com/repos/o/r/actions/variables/RELEASE_APP_ID"
+    ).mock(return_value=httpx.Response(204, text=""))
+
+    result = await ac.set_actions_variable("o/r", "RELEASE_APP_ID", "3752211")
+    assert "updated" in result
+    assert patch_route.called
+
+
+@pytest.mark.asyncio
+async def test_set_actions_variable_reports_error(respx_mock: respx.MockRouter) -> None:
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    ac = ActionsClient(s)
+
+    respx_mock.post("https://api.github.com/repos/o/r/actions/variables").mock(
+        return_value=httpx.Response(500, text="boom")
+    )
+    respx_mock.patch("https://api.github.com/repos/o/r/actions/variables/X").mock(
+        return_value=httpx.Response(500, text="boom")
+    )
+
+    result = await ac.set_actions_variable("o/r", "X", "v")
+    assert "Error setting variable" in result
+
+
+# ---------------------------------------------------------------------------
+# Release-automation bootstrap
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_wires_variable_secret_and_workflow(
+    respx_mock: respx.MockRouter,
+) -> None:
+    import base64
+
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    ac = ActionsClient(s)
+
+    respx_mock.post("https://api.github.com/repos/o/robotsix-x/actions/variables").mock(
+        return_value=httpx.Response(201, text="{}")
+    )
+    respx_mock.get(
+        "https://api.github.com/repos/o/robotsix-x/actions/secrets/public-key"
+    ).mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"key_id": "kid", "key": "cHVibGlj"})
+        )
+    )
+    secret_route = respx_mock.put(
+        "https://api.github.com/repos/o/robotsix-x/actions/secrets/RELEASE_APP_PRIVATE_KEY"
+    ).mock(return_value=httpx.Response(204, text=""))
+    # Workflow absent -> 404 on the read, then created.
+    respx_mock.get(
+        "https://api.github.com/repos/o/robotsix-x/contents/.github/workflows/auto-release.yml"
+    ).mock(return_value=httpx.Response(404, text="Not Found"))
+    put_route = respx_mock.put(
+        "https://api.github.com/repos/o/robotsix-x/contents/.github/workflows/auto-release.yml"
+    ).mock(return_value=httpx.Response(201, text="{}"))
+
+    lines = await ac.bootstrap_release_automation("o/robotsix-x")
+
+    assert any("created" in line for line in lines)
+    assert secret_route.called
+    assert put_route.called
+
+    body = json.loads(put_route.calls[0].request.content or "{}")
+    # Padded base64 — the Contents API rejects the unpadded form the secrets
+    # helper uses.
+    decoded = base64.b64decode(body["content"]).decode()
+    assert "name: Auto Release" in decoded
+    assert "vars.RELEASE_APP_ID" in decoded
+    assert "app-private-key" in decoded
+    # Must pin the App-based revision, not the older release-token one. Assert
+    # against the module constant rather than a literal SHA, so the test tracks
+    # a deliberate pin bump instead of failing on it.
+    from robotsix_chat.repo.direct.actions_client import _REUSABLE_REF
+
+    assert f"@{_REUSABLE_REF}" in decoded
+    assert len(_REUSABLE_REF) == 40, "pin must be a full git SHA"
+    assert "5fdc956e" not in decoded
+
+
+@pytest.mark.asyncio
+async def test_bootstrap_leaves_an_existing_workflow_alone(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Never clobber a workflow the repo already has — it may be customised."""
+    from tests.repo.direct.conftest import _prepopulate_installation_token, _settings
+
+    s = _settings()
+    _prepopulate_installation_token(s)
+    ac = ActionsClient(s)
+
+    respx_mock.post("https://api.github.com/repos/o/robotsix-x/actions/variables").mock(
+        return_value=httpx.Response(201, text="{}")
+    )
+    respx_mock.get(
+        "https://api.github.com/repos/o/robotsix-x/actions/secrets/public-key"
+    ).mock(
+        return_value=httpx.Response(
+            200, text=json.dumps({"key_id": "kid", "key": "cHVibGlj"})
+        )
+    )
+    respx_mock.put(
+        "https://api.github.com/repos/o/robotsix-x/actions/secrets/RELEASE_APP_PRIVATE_KEY"
+    ).mock(return_value=httpx.Response(204, text=""))
+    respx_mock.get(
+        "https://api.github.com/repos/o/robotsix-x/contents/.github/workflows/auto-release.yml"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {"encoding": "base64", "content": "bmFtZTogeA==", "sha": "abc"}
+            ),
+        )
+    )
+    put_route = respx_mock.put(
+        "https://api.github.com/repos/o/robotsix-x/contents/.github/workflows/auto-release.yml"
+    ).mock(return_value=httpx.Response(201, text="{}"))
+
+    lines = await ac.bootstrap_release_automation("o/robotsix-x")
+    assert any("already present" in line for line in lines)
+    assert not put_route.called

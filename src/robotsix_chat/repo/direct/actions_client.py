@@ -9,6 +9,7 @@ Shares the same GitHub App authentication plumbing as
 
 from __future__ import annotations
 
+import base64
 import logging
 from typing import TYPE_CHECKING, Any
 
@@ -19,6 +20,56 @@ if TYPE_CHECKING:
     from robotsix_chat.repo.direct.client import DirectRepoClient
 
 logger = logging.getLogger(__name__)
+
+
+#: Reusable release workflow, pinned by SHA per fleet convention. Must stay in
+#: step with what the other fleet repos call: the older `5fdc956e` revision
+#: requires a `release-token` PAT instead of the GitHub App and fails at
+#: startup with "Secret release-token is required, but not provided".
+_REUSABLE_REF = (
+    "0234f4b82365d776fc021c774dc104c5e7042c29"  # pragma: allowlist secret — git SHA
+)
+_REUSABLE_USES = (
+    "damien-robotsix/robotsix-github-workflows/.github/workflows/auto-release.yml"
+)
+
+#: Content committed to a new fleet repo as
+#: ``.github/workflows/auto-release.yml``. Kept as a literal rather than read
+#: from disk so it ships with the package and cannot drift from the pin above.
+#:
+#: The `uses:` line is substituted rather than interpolated — an f-string or
+#: ``.format()`` would mangle the ``${{ … }}`` GitHub expressions below.
+AUTO_RELEASE_WORKFLOW = """\
+name: Auto Release
+
+# Shared towncrier-driven 0.x release workflow (repo baseline): when
+# changelog.d/ has fragments, it derives the bump from fragment types, builds
+# CHANGELOG.md, bumps pyproject.toml, and pushes the v* tag.
+#
+# Required by robotsix-standards changelog-driven-releases.md §4 ("Every repo
+# wires the shared auto-release workflow"), which also specifies the weekly
+# (and on-demand) cadence. A no-op when changelog.d/ is empty.
+on:
+  schedule:
+    - cron: "0 9 * * 1"  # every Monday at 09:00 UTC
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  release:
+    permissions:
+      contents: write       # push release commit + v* tag (or release branch)
+      pull-requests: write  # open the fallback release PR with auto-merge
+    uses: __REUSABLE__  # main
+    # Authenticates as the fleet GitHub App — the installation token is minted
+    # inside the reusable workflow, so there is no PAT to rotate. A tag pushed
+    # with GITHUB_TOKEN would not trigger downstream release workflows.
+    with:
+      app-id: ${{ vars.RELEASE_APP_ID }}
+    secrets:
+      app-private-key: ${{ secrets.RELEASE_APP_PRIVATE_KEY }}
+""".replace("__REUSABLE__", f"{_REUSABLE_USES}@{_REUSABLE_REF}")
 
 
 class ActionsClient:
@@ -36,6 +87,7 @@ class ActionsClient:
         """
         from robotsix_chat.repo.direct.client import DirectRepoClient
 
+        self._s = settings
         self._client: DirectRepoClient = DirectRepoClient(settings)
 
     # -- workflow dispatch -------------------------------------------------
@@ -617,6 +669,129 @@ class ActionsClient:
             return f"Error setting secret: {exc}"
         except Exception as exc:
             return f"Error setting secret: {exc}"
+
+    # -- Actions variables -------------------------------------------------
+
+    async def set_actions_variable(
+        self,
+        repo_full_name: str,
+        name: str,
+        value: str,
+    ) -> str:
+        """Create or update a repository Actions variable.
+
+        Variables are not secrets, so there is no encryption step — but the
+        API is split: ``POST .../actions/variables`` creates and fails if the
+        variable exists, while ``PATCH .../actions/variables/{name}`` updates
+        and fails if it does not. Try the create first and fall back to the
+        update, so the call is idempotent either way.
+
+        Never raises — returns a success/error message string.
+        """
+        try:
+            await self._client._request_json(
+                "POST",
+                f"/repos/{repo_full_name}/actions/variables",
+                {"name": name, "value": value},
+            )
+            return f"Variable '{name}' created on {repo_full_name}."
+        except Exception as exc:
+            # Most likely already present; fall through to the update path.
+            logger.debug("Variable create failed for %s, will PATCH: %s", name, exc)
+
+        try:
+            await self._client._request_json(
+                "PATCH",
+                f"/repos/{repo_full_name}/actions/variables/{name}",
+                {"name": name, "value": value},
+            )
+            return f"Variable '{name}' updated on {repo_full_name}."
+        except RuntimeError as exc:
+            return f"Error setting variable: {exc}"
+        except Exception as exc:
+            return f"Error setting variable: {exc}"
+
+    # -- release automation bootstrap --------------------------------------
+
+    async def bootstrap_release_automation(self, repo_full_name: str) -> list[str]:
+        """Provision the shared auto-release workflow on a new fleet repo.
+
+        robotsix-standards ``changelog-driven-releases.md`` §4 requires every
+        repo to wire the shared auto-release workflow. Doing it at creation
+        time is the only way it actually happens — a sweep of the fleet found
+        nine repos that had never wired it and therefore had never cut a
+        single release tag, which is precisely the failure mode the standard
+        describes for consumers pinning a git SHA.
+
+        Three steps, all idempotent:
+
+        1. ``RELEASE_APP_ID`` variable — the App this client already
+           authenticates as, so a new repo needs no new credential.
+        2. ``RELEASE_APP_PRIVATE_KEY`` secret — the same key, sealed-box
+           encrypted for the target repo.
+        3. ``.github/workflows/auto-release.yml`` — committed only when
+           absent, so an existing (possibly customised) workflow is never
+           overwritten.
+
+        The App must be installed on the repo for the release run to mint a
+        token; the installation is org-wide, so a repo created under the org
+        is covered.
+
+        Never raises — returns one status line per step for relaying to the
+        caller.
+        """
+        results: list[str] = []
+
+        results.append(
+            await self.set_actions_variable(
+                repo_full_name, "RELEASE_APP_ID", str(self._s.github_app_id)
+            )
+        )
+
+        key = self._s.github_app_private_key
+        key_value = key.get_secret_value() if hasattr(key, "get_secret_value") else key
+        results.append(
+            await self.set_actions_secret(
+                repo_full_name, "RELEASE_APP_PRIVATE_KEY", str(key_value)
+            )
+        )
+
+        results.append(await self._commit_auto_release_workflow(repo_full_name))
+        return results
+
+    async def _commit_auto_release_workflow(self, repo_full_name: str) -> str:
+        """Commit ``auto-release.yml`` unless the repo already has one."""
+        path = ".github/workflows/auto-release.yml"
+        try:
+            await self._client.get_file_content(repo_full_name, path)
+            return f"Workflow '{path}' already present on {repo_full_name}, kept."
+        except Exception as exc:
+            # Absent (404) or unreadable — either way, attempt to create it.
+            logger.debug(
+                "No existing %s on %s (%s); creating.", path, repo_full_name, exc
+            )
+
+        # Padded base64 here, NOT the module's `_b64encode` — that helper
+        # strips `=` padding for the secrets API, and the Contents API rejects
+        # unpadded content.
+        content_b64 = base64.b64encode(AUTO_RELEASE_WORKFLOW.encode("utf-8")).decode(
+            "ascii"
+        )
+
+        try:
+            await self._client._request_json(
+                "PUT",
+                f"/repos/{repo_full_name}/contents/{path}",
+                {
+                    "message": "ci: wire the shared auto-release workflow",
+                    "content": content_b64,
+                },
+            )
+            return f"Workflow '{path}' created on {repo_full_name}."
+        except RuntimeError as exc:
+            return f"Error creating {path}: {exc}"
+        except Exception as exc:
+            return f"Error creating {path}: {exc}"
 
     # -- zero-job workflow detection ---------------------------------------
 
