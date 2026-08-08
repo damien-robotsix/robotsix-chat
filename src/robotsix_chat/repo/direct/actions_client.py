@@ -26,7 +26,9 @@ logger = logging.getLogger(__name__)
 #: step with what the other fleet repos call: the older `5fdc956e` revision
 #: requires a `release-token` PAT instead of the GitHub App and fails at
 #: startup with "Secret release-token is required, but not provided".
-_REUSABLE_REF = "0234f4b82365d776fc021c774dc104c5e7042c29"
+_REUSABLE_REF = (
+    "0234f4b82365d776fc021c774dc104c5e7042c29"  # pragma: allowlist secret — git SHA
+)
 _REUSABLE_USES = (
     "damien-robotsix/robotsix-github-workflows/.github/workflows/auto-release.yml"
 )

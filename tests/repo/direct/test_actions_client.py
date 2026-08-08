@@ -855,8 +855,13 @@ async def test_bootstrap_wires_variable_secret_and_workflow(
     assert "name: Auto Release" in decoded
     assert "vars.RELEASE_APP_ID" in decoded
     assert "app-private-key" in decoded
-    # Must pin the App-based revision, not the older release-token one.
-    assert "0234f4b82365d776fc021c774dc104c5e7042c29" in decoded
+    # Must pin the App-based revision, not the older release-token one. Assert
+    # against the module constant rather than a literal SHA, so the test tracks
+    # a deliberate pin bump instead of failing on it.
+    from robotsix_chat.repo.direct.actions_client import _REUSABLE_REF
+
+    assert f"@{_REUSABLE_REF}" in decoded
+    assert len(_REUSABLE_REF) == 40, "pin must be a full git SHA"
     assert "5fdc956e" not in decoded
 
 
