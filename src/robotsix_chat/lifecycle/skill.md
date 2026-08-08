@@ -3,26 +3,26 @@
 The deploy-lifecycle API provides inspection and mutation of the central-deploy management plane:
 service inventory, live status and health, environment snapshots, and (when permitted by the deploy
 server's per-repo access toggle) service restart and env-write. Configuration management is owned by
-each component internally — use the component's own `/config` endpoints for configuration access, not
-the lifecycle API. All secret values in environment responses are masked as `***` server-side by
+each component internally — use the component's own `/config` endpoints for configuration access,
+not the lifecycle API. All secret values in environment responses are masked as `***` server-side by
 `_mask_secrets`.
 
 ## Allowed operations
 
-| Tool                               | HTTP                                 | Description                                                       |
-| ---------------------------------- | ------------------------------------ | ----------------------------------------------------------------- |
-| `list_lifecycle_services`          | `GET /services`                      | List all managed services and status.                             |
-| `get_lifecycle_service_status`     | `GET /services/{name}/status`        | Live status + health-check history.                               |
-| `get_lifecycle_service_env`        | `GET /services/{name}/env`           | Runtime environment (secrets masked).                             |
-| `restart_lifecycle_service`        | `POST /services/{name}/restart`      | Restart a service (requires per-repo access toggle).              |
-| `self_restart`                     | `POST /chat/services/{name}/restart` | Restart this service (named via `lifecycle.service_name`).        |
-| `update_lifecycle_service_env`     | `PUT /services/{name}/env`           | Update service environment (requires per-repo access toggle).     |
+| Tool                           | HTTP                                 | Description                                                   |
+| ------------------------------ | ------------------------------------ | ------------------------------------------------------------- |
+| `list_lifecycle_services`      | `GET /services`                      | List all managed services and status.                         |
+| `get_lifecycle_service_status` | `GET /services/{name}/status`        | Live status + health-check history.                           |
+| `get_lifecycle_service_env`    | `GET /services/{name}/env`           | Runtime environment (secrets masked).                         |
+| `restart_lifecycle_service`    | `POST /services/{name}/restart`      | Restart a service (requires per-repo access toggle).          |
+| `self_restart`                 | `POST /chat/services/{name}/restart` | Restart this service (named via `lifecycle.service_name`).    |
+| `update_lifecycle_service_env` | `PUT /services/{name}/env`           | Update service environment (requires per-repo access toggle). |
 
 ## Configuration ownership
 
 Configuration is owned by each component internally — use the component's own `/config` endpoints
-(e.g. `GET /config`, `PUT /config`, `POST /config/rollback`) for configuration reads and writes,
-not the lifecycle API. The lifecycle API no longer exposes config-store endpoints
+(e.g. `GET /config`, `PUT /config`, `POST /config/rollback`) for configuration reads and writes, not
+the lifecycle API. The lifecycle API no longer exposes config-store endpoints
 (`GET /services/{name}/config`, `PUT /services/{name}/config`).
 
 ## Restricted operations (per-repo access toggle)
