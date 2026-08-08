@@ -1,0 +1,1 @@
+Remove the stale `refdocs.github_token` and `version_check.github_token` rows from `docs/configuration.md` — neither field exists in the models (both settings classes use `extra=\"forbid\"`, so setting a documented-but-removed key crash-loops the config); GitHub auth reuses the `direct_repo` App credentials.
