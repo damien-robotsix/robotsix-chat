@@ -42,11 +42,7 @@ from robotsix_chat.autonomous.models import AutonomousState
 from robotsix_chat.chat.events import agent_message_frame
 
 from .models import SubsessionInfo, SubsessionKind
-
-# Terminal ticket states — matches worker_mill._TICKET_STATE_TERMINAL.
-# Defined locally to avoid a circular import (delivery ← worker_mill ←
-# worker ← delivery).
-_TICKET_STATE_TERMINAL: frozenset[str] = frozenset({"closed", "done"})
+from .worker_mill import _TICKET_STATE_TERMINAL
 
 if TYPE_CHECKING:
     from robotsix_chat.autonomous.runner import AutonomousRunner
