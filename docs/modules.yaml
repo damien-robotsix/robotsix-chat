@@ -162,6 +162,7 @@ modules:
       - src/robotsix_chat/chat/server/routes/sessions.py
       - src/robotsix_chat/chat/server/routes/subsessions.py
       - src/robotsix_chat/chat/server/routes/config.py
+      - src/robotsix_chat/chat/server/routes/chat_skill.py
       - src/robotsix_chat/chat/server/routes/diagnostics.py
       - src/robotsix_chat/chat/server/routes/draft.py
       - docs/chat/server.md
@@ -178,6 +179,7 @@ modules:
       - tests/chat/server/routes/__init__.py
       - tests/chat/server/routes/conftest.py
       - tests/chat/server/routes/test_admin.py
+      - tests/chat/server/routes/test_chat_skill.py
       - tests/chat/server/routes/test_shared.py
       - tests/chat/server/routes/test_config.py
       - tests/chat/server/routes/test_chat.py
