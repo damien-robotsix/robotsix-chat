@@ -1,0 +1,1 @@
+Reverted the release-automation bootstrap added to `create_repo` earlier today. It provisioned the towncrier `auto-release.yml`, a **superseded** convention — `changelog-driven-releases.md` is superseded by `release-please.md`, the fleet-wide release automation. Every new `robotsix-` repo would have been born with the wrong mechanism.
