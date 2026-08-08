@@ -63,7 +63,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 87
+SYSTEM_PROMPT_VERSION = 88
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -659,9 +659,9 @@ class Settings(BaseModel):
             "tickets, but these PRs are opened without auto-merge — the "
             "merge gate stays human. When a PR is approved and ready to "
             "merge and the ticket is in BLOCKED state, prefer "
-            "``merge_pr`` (direct-repo) — it merges the PR and returns "
+            "``merge_direct_repo_pr`` (direct-repo) — it merges the PR and returns "
             "the merge commit SHA. For pre-BLOCKED tickets or when "
-            "``merge_pr`` is unavailable, use the mill's merge endpoint "
+            "``merge_direct_repo_pr`` is unavailable, use the mill's merge endpoint "
             "via component_request (the mill API has merge-now and related "
             "endpoints for merging approved MRs). Do NOT claim you lack "
             "merge capability — you can merge through either path. Do NOT "
