@@ -39,6 +39,11 @@
 - Fix recurring CI pre-commit failures: resolved ruff format issue in ticket_poll skill.md, removed five unused mypy ``type: ignore`` comments, and added ``list[X] | None`` narrowing for three service-query call-sites in the retrospect stage
 - Pre-authorized ticket monitors now receive the standing-authority directive from the first run (via `dedup_key` fallback), so they no longer surface `human_issue_approval` gates that the operator already authorized. The PRE-AUTHORIZED instruction is also ordered before the decision-blocked paragraph to give it priority.
 - Added guidance to the agent system prompt: when the user asks to prioritize or surface "associated tickets," the assistant now proactively queries the full board (GET /tickets) and filters by subject/repo/ticket-id prefix before reporting, ensuring the user gets a complete picture without needing to nudge for a re-check.
+- Added `push_to_pr_branch` direct-repo tool for pushing multiple file changes to an
+  existing PR's head branch without requiring BLOCKED state or implement-cycle
+  exhaustion. Gated behind the new `allow_push_to_existing_pr` config flag
+  (default off). Safeguards: PR must be open and associated with the ticket,
+  content limited to 200 KB, every invocation logged at WARNING level.
 - Periodic subsessions gain sibling spawn capability: a periodic/monitor can now spawn `task` (remediation) and `user_chat` (escalation) subsessions as siblings attached to the holding parent conversation rather than as nested children. Nested `periodic` and `on_close` spawns remain forbidden and are silently rejected with audit logging. New self-adjustment tools (`update_periodic_instructions`, `adjust_periodic_interval`, `adjust_periodic_budget`) let a periodic monitor revise its own purpose within operator-configured bounds (`periodic_max_interval_seconds`, `periodic_max_total_runs`).
 - Agent instruction: when a tool call returns an HTTP error, consult
   knowledge notes and reference docs for the correct endpoint before
@@ -68,6 +73,7 @@
 - Document `direct_repo.direct_fix_enabled` in the Direct Repo (GitHub App) config table (`docs/configuration.md`). (mill: direct_repo.direct_fix_enabled missing from ### Direct Repo table in docs/configuration.md — sibling-pattern doc gap (20260802T052249Z-direct-repo-direct-fix-enabled-missing-f-86ee))
 - Added unit tests for `robotsix_chat.common.unified_diff.apply_patch` (22 tests covering single/multiple hunks, edge cases, and error paths).
 - Wire ticket-ID resolution into ``merge_pull_request`` and direct-repo tools (``reset_implement_spawn_counter``, ``_assert_blocked_and_scoped``, ``_check_blocked_exhausted``) so paraphrased / abbreviated ticket IDs are resolved against the live board before constructing board API URLs, preventing 404 failures.
+
 - Periodic monitors now enter a true `PAUSED` state (not `CLOSED`) when auto-paused by the idle-guard. The worker stays alive and blocks on an event-driven inbox signal; the watcher sends an immediate wake message when the tracked ticket's state changes, so auto-resume actually works end-to-end. The pause notice wording now accurately reflects the real behavior.
 - Split `tests/repo/direct/test_direct_repo.py` (4052 lines, 110 tests) into 9
   per-tool test modules with shared fixtures in `conftest.py`.

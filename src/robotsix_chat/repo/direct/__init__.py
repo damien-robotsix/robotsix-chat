@@ -1123,6 +1123,205 @@ def build_direct_repo_tools(
     ]
 
     # ------------------------------------------------------------------
+    # push_to_pr_branch — push files to existing PR (gated on config)
+    # ------------------------------------------------------------------
+
+    if settings.allow_push_to_existing_pr:
+
+        async def push_to_pr_branch(
+            ticket_id: str,
+            repo_full_name: str,
+            pr_number: int,
+            files_json: str,
+            commit_message: str = "",
+        ) -> str:
+            """Push file changes to an existing pull request's head branch.
+
+            Fetches the PR to verify it exists and is open, resolves its head
+            branch, and pushes the given files as a new commit on that branch.
+            This is the standard path for updating a PR with code changes
+            after CI feedback — no new branch is created, and no BLOCKED-state
+            or implement-cycle gate is enforced.
+
+            **Preconditions (all enforced by the tool):**
+            1. The PR must exist and be open (not merged or closed).
+            2. The PR's head branch must belong to the same repository
+               (*repo_full_name*) — cross-repo PR updates are refused.
+            3. The PR title, body, or head branch name must reference the
+               *ticket_id* so the change is traceable.
+            4. When called through the component roster (i.e. the
+               ``component_request`` credential is available) the GitHub App
+               installation scope check is bypassed — the mill already has
+               its own GitHub access.  For direct board-API calls,
+               *repo_full_name* MUST be in the GitHub App installation
+               scope.
+
+            **Safeguards:**
+            - Total content size across all files is limited to 200 KB.
+              Larger changes must use the standard
+              ``push_direct_repo_branch`` + ``open_direct_repo_pr`` flow.
+            - Every invocation is logged at WARNING level for auditability.
+
+            Args:
+                ticket_id: The ticket this PR update addresses (e.g.
+                    ``"20250624T020652Z-my-ticket-a1b2"``).
+                repo_full_name: GitHub ``owner/name`` (e.g.
+                    ``"robotsix/robotsix-chat"``).
+                pr_number: The PR number to push to.
+                files_json: JSON array of ``{"path": "...", "content": "..."}``
+                    objects describing the files to create or overwrite.
+                    Paths are relative to the repo root.
+                commit_message: Commit message.  Defaults to a message that
+                    references the *ticket_id*.
+
+            Returns:
+                A status message with the commit SHA on success, or an error
+                message describing why the push was refused or failed.
+
+            """
+            _logger = logging.getLogger(__name__)
+
+            # --- validate files_json ---
+            try:
+                files: list[dict[str, str]] = json.loads(files_json)
+            except json.JSONDecodeError, TypeError:
+                return (
+                    "Error: files_json must be a valid JSON array "
+                    "of {path, content} objects."
+                )
+
+            if not isinstance(files, list):
+                return "Error: files_json must be a JSON array."
+
+            # --- size safeguard: max 200 KB total ---
+            total_bytes = sum(len(f.get("content", "").encode("utf-8")) for f in files)
+            if total_bytes > 200_000:
+                return (
+                    f"Refused: total file content size ({total_bytes} bytes) "
+                    f"exceeds the 200 KB limit for push_to_pr_branch. "
+                    f"Use push_direct_repo_branch + open_direct_repo_pr "
+                    f"for larger changes."
+                )
+
+            # --- ensure changelog fragments end with a newline ---
+            for f in files:
+                if (
+                    f.get("path", "").startswith("changelog.d/")
+                    and f["path"].endswith(".md")
+                    and not f.get("content", "").endswith("\n")
+                ):
+                    f["content"] = f["content"] + "\n"
+
+            # --- scope check: skipped when mill pipeline credential available ---
+            if component_request is None and (
+                scope_error := await client.check_installation_scope(repo_full_name)
+            ):
+                return scope_error
+
+            # --- fetch PR and verify ---
+            try:
+                pr = await client.get_pr(
+                    repo_full_name=repo_full_name,
+                    pr_number=pr_number,
+                )
+            except Exception as exc:
+                return f"Error fetching PR #{pr_number} in {repo_full_name}: {exc}"
+
+            pr_state: str | None = pr.get("state")
+            if pr_state != "open":
+                return (
+                    f"Refused: PR #{pr_number} in {repo_full_name} is "
+                    f"'{pr_state}', not 'open'.  Only open PRs can receive "
+                    f"new commits."
+                )
+
+            head_info = pr.get("head", {})
+            head_branch: str | None = head_info.get("ref")
+            head_repo = head_info.get("repo", {})
+            head_repo_full_name: str | None = head_repo.get("full_name")
+
+            if not head_branch:
+                return (
+                    f"Error: PR #{pr_number} in {repo_full_name} has no "
+                    f"head branch — cannot determine where to push."
+                )
+
+            if head_repo_full_name and head_repo_full_name != repo_full_name:
+                return (
+                    f"Refused: PR #{pr_number} head branch '{head_branch}' "
+                    f"belongs to '{head_repo_full_name}', not "
+                    f"'{repo_full_name}'. Cross-repo PR updates are not "
+                    f"permitted."
+                )
+
+            # --- ticket association check ---
+            pr_title: str = pr.get("title", "")
+            pr_body: str | None = pr.get("body")
+            pr_body_str = pr_body or ""
+            # Extract the timestamp+slug part for matching (strips the
+            # trailing 4-hex suffix if present).
+            ticket_stem = ticket_id
+            if len(ticket_stem) > 5 and ticket_stem[-5] == "-":
+                ticket_stem = ticket_stem[:-5]
+            ticket_id_in_title = ticket_id in pr_title
+            ticket_stem_in_title = ticket_stem in pr_title
+            ticket_id_in_body = ticket_id in pr_body_str
+            ticket_stem_in_body = ticket_stem in pr_body_str
+            ticket_id_in_branch = ticket_id in head_branch
+            ticket_stem_in_branch = ticket_stem in head_branch
+            if not (
+                ticket_id_in_title
+                or ticket_stem_in_title
+                or ticket_id_in_body
+                or ticket_stem_in_body
+                or ticket_id_in_branch
+                or ticket_stem_in_branch
+            ):
+                return (
+                    f"Refused: PR #{pr_number} in {repo_full_name} is not "
+                    f"associated with ticket {ticket_id}.  The ticket id "
+                    f"must appear in the PR title, body, or head branch name "
+                    f"('{head_branch}')."
+                )
+
+            # --- audit log ---
+            file_paths = [f.get("path", "?") for f in files]
+            _logger.warning(
+                "push_to_pr_branch: ticket=%s repo=%s pr=%d branch=%s files=%s",
+                ticket_id,
+                repo_full_name,
+                pr_number,
+                head_branch,
+                file_paths,
+            )
+
+            # --- push the commit ---
+            msg = commit_message or (
+                f"fix: update for ticket {ticket_id} (PR #{pr_number})"
+            )
+            result = await client.push_commit_to_branch(
+                repo_full_name=repo_full_name,
+                branch_name=head_branch,
+                files=files,
+                commit_message=msg,
+                ticket_id=ticket_id,
+            )
+
+            if "Error" in result or "error" in result.lower():
+                _logger.error(
+                    "push_to_pr_branch FAILED: ticket=%s repo=%s pr=%d branch=%s: %s",
+                    ticket_id,
+                    repo_full_name,
+                    pr_number,
+                    head_branch,
+                    result,
+                )
+
+            return result
+
+        tools.append(push_to_pr_branch)
+
+    # ------------------------------------------------------------------
     # direct_fix — push directly to target branch (gated on mill exhaustion)
     # ------------------------------------------------------------------
 

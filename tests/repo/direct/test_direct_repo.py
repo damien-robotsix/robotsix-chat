@@ -52,6 +52,21 @@ def test_build_direct_repo_tools_returns_ten_tools() -> None:
     assert "push_patch_to_pr_branch" in names
 
 
+def test_push_to_pr_branch_gated_by_default() -> None:
+    """push_to_pr_branch is not included when allow_push_to_existing_pr is off."""
+    tools = build_direct_repo_tools(_settings())
+    names = [t.__name__ for t in tools]
+    assert "push_to_pr_branch" not in names
+
+
+def test_push_to_pr_branch_included_when_enabled() -> None:
+    """push_to_pr_branch is included when allow_push_to_existing_pr is True."""
+    tools = build_direct_repo_tools(_settings(allow_push_to_existing_pr=True))
+    assert len(tools) == 11
+    names = [t.__name__ for t in tools]
+    assert "push_to_pr_branch" in names
+
+
 # ---------------------------------------------------------------------------
 # BLOCKED-state precondition — push_direct_repo_branch
 # ---------------------------------------------------------------------------
@@ -3817,3 +3832,476 @@ async def test_apply_patch_to_file_rejects_non_blocked(
     assert "Refused" in out
     assert "t-aptf3" in out
     assert "draft" in out.lower()
+
+
+# ---------------------------------------------------------------------------
+# push_to_pr_branch — push files to existing PR (gated on allow_push_to_existing_pr)
+# ---------------------------------------------------------------------------
+
+
+@pytest.mark.asyncio
+async def test_push_to_pr_branch_accepts_open_pr(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Open PR with ticket id in branch name → push succeeds."""
+    _prepopulate_installation_token(_settings(allow_push_to_existing_pr=True))
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    # PR lookup
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "number": 42,
+                    "state": "open",
+                    "title": "Fix for t-aptf3",
+                    "body": "PR for ticket t-aptf3",
+                    "head": {
+                        "ref": "fix/t-aptf3",
+                        "repo": {"full_name": "org/repo"},
+                    },
+                }
+            ),
+        )
+    )
+    # Branch ref lookup for push_commit_to_branch
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/git/ref/heads/fix/t-aptf3"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"object": {"sha": "abc123"}}),
+        )
+    )
+    # Parent commit lookup (for tree SHA)
+    respx_mock.get("https://api.github.com/repos/org/repo/git/commits/abc123").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"sha": "abc123", "tree": {"sha": "tree111"}}),
+        )
+    )
+    # Blob creation
+    respx_mock.post("https://api.github.com/repos/org/repo/git/blobs").mock(
+        return_value=httpx.Response(
+            201,
+            text=json.dumps({"sha": "blob111"}),
+        )
+    )
+    # Tree creation
+    respx_mock.post("https://api.github.com/repos/org/repo/git/trees").mock(
+        return_value=httpx.Response(
+            201,
+            text=json.dumps({"sha": "tree111"}),
+        )
+    )
+    # Commit creation
+    respx_mock.post("https://api.github.com/repos/org/repo/git/commits").mock(
+        return_value=httpx.Response(
+            201,
+            text=json.dumps({"sha": "commit111"}),
+        )
+    )
+    # Ref update
+    respx_mock.patch(
+        "https://api.github.com/repos/org/repo/git/refs/heads/fix/t-aptf3"
+    ).mock(return_value=httpx.Response(200, text="{}"))
+
+    tools = build_direct_repo_tools(_settings(allow_push_to_existing_pr=True))
+    fn = [t for t in tools if t.__name__ == "push_to_pr_branch"][0]
+
+    out = await fn(
+        ticket_id="t-aptf3",
+        repo_full_name="org/repo",
+        pr_number=42,
+        files_json=json.dumps([{"path": "x.py", "content": "print('hello')"}]),
+    )
+    assert "Refused" not in out
+    assert "Commit pushed successfully" in out
+
+
+@pytest.mark.asyncio
+async def test_push_to_pr_branch_rejects_closed_pr(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Closed PR → push is refused."""
+    _prepopulate_installation_token(_settings(allow_push_to_existing_pr=True))
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "number": 42,
+                    "state": "closed",
+                    "title": "Fix for t-aptf3",
+                    "head": {
+                        "ref": "fix/t-aptf3",
+                        "repo": {"full_name": "org/repo"},
+                    },
+                }
+            ),
+        )
+    )
+
+    tools = build_direct_repo_tools(_settings(allow_push_to_existing_pr=True))
+    fn = [t for t in tools if t.__name__ == "push_to_pr_branch"][0]
+
+    out = await fn(
+        ticket_id="t-aptf3",
+        repo_full_name="org/repo",
+        pr_number=42,
+        files_json=json.dumps([{"path": "x.py", "content": "print('hello')"}]),
+    )
+    assert "Refused" in out
+    assert "closed" in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_push_to_pr_branch_rejects_unassociated_pr(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """PR not associated with ticket → push is refused."""
+    _prepopulate_installation_token(_settings(allow_push_to_existing_pr=True))
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "number": 42,
+                    "state": "open",
+                    "title": "Some other fix",
+                    "body": "Not related to any ticket",
+                    "head": {
+                        "ref": "fix/something-else",
+                        "repo": {"full_name": "org/repo"},
+                    },
+                }
+            ),
+        )
+    )
+
+    tools = build_direct_repo_tools(_settings(allow_push_to_existing_pr=True))
+    fn = [t for t in tools if t.__name__ == "push_to_pr_branch"][0]
+
+    out = await fn(
+        ticket_id="t-aptf3",
+        repo_full_name="org/repo",
+        pr_number=42,
+        files_json=json.dumps([{"path": "x.py", "content": "print('hello')"}]),
+    )
+    assert "Refused" in out
+    assert "not associated" in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_push_to_pr_branch_rejects_cross_repo_pr(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Cross-repo PR → push is refused."""
+    _prepopulate_installation_token(_settings(allow_push_to_existing_pr=True))
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "number": 42,
+                    "state": "open",
+                    "title": "Fix for t-aptf3",
+                    "head": {
+                        "ref": "fix/t-aptf3",
+                        "repo": {"full_name": "other/repo"},
+                    },
+                }
+            ),
+        )
+    )
+
+    tools = build_direct_repo_tools(_settings(allow_push_to_existing_pr=True))
+    fn = [t for t in tools if t.__name__ == "push_to_pr_branch"][0]
+
+    out = await fn(
+        ticket_id="t-aptf3",
+        repo_full_name="org/repo",
+        pr_number=42,
+        files_json=json.dumps([{"path": "x.py", "content": "print('hello')"}]),
+    )
+    assert "Refused" in out
+    assert "cross-repo" in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_push_to_pr_branch_rejects_out_of_scope(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Repo not in installation scope → push is refused."""
+    _prepopulate_installation_token(_settings(allow_push_to_existing_pr=True))
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "other/repo"}]}),
+        )
+    )
+
+    tools = build_direct_repo_tools(_settings(allow_push_to_existing_pr=True))
+    fn = [t for t in tools if t.__name__ == "push_to_pr_branch"][0]
+
+    out = await fn(
+        ticket_id="t-aptf3",
+        repo_full_name="org/repo",
+        pr_number=42,
+        files_json=json.dumps([{"path": "x.py", "content": "print('hello')"}]),
+    )
+    assert "not installed" in out.lower()
+
+
+@pytest.mark.asyncio
+async def test_push_to_pr_branch_rejects_oversized_content(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """Content exceeding 200 KB → push is refused."""
+    _prepopulate_installation_token(_settings(allow_push_to_existing_pr=True))
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "number": 42,
+                    "state": "open",
+                    "title": "Fix for t-aptf3",
+                    "head": {
+                        "ref": "fix/t-aptf3",
+                        "repo": {"full_name": "org/repo"},
+                    },
+                }
+            ),
+        )
+    )
+
+    tools = build_direct_repo_tools(_settings(allow_push_to_existing_pr=True))
+    fn = [t for t in tools if t.__name__ == "push_to_pr_branch"][0]
+
+    # Create content larger than 200 KB
+    big_content = "x" * 200_001
+
+    out = await fn(
+        ticket_id="t-aptf3",
+        repo_full_name="org/repo",
+        pr_number=42,
+        files_json=json.dumps([{"path": "x.py", "content": big_content}]),
+    )
+    assert "Refused" in out
+    assert "200 KB" in out
+
+
+@pytest.mark.asyncio
+async def test_push_to_pr_branch_handles_pr_fetch_error(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """PR fetch error → error returned."""
+    _prepopulate_installation_token(_settings(allow_push_to_existing_pr=True))
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        return_value=httpx.Response(404, text="Not Found")
+    )
+
+    tools = build_direct_repo_tools(_settings(allow_push_to_existing_pr=True))
+    fn = [t for t in tools if t.__name__ == "push_to_pr_branch"][0]
+
+    out = await fn(
+        ticket_id="t-aptf3",
+        repo_full_name="org/repo",
+        pr_number=42,
+        files_json=json.dumps([{"path": "x.py", "content": "print('hello')"}]),
+    )
+    assert "Error" in out
+
+
+@pytest.mark.asyncio
+async def test_push_to_pr_branch_associates_via_ticket_stem(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """PR associated via ticket stem (without 4-hex suffix) → push succeeds."""
+    _prepopulate_installation_token(_settings(allow_push_to_existing_pr=True))
+    respx_mock.get(
+        url__startswith="https://api.github.com/installation/repositories"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"repositories": [{"full_name": "org/repo"}]}),
+        )
+    )
+    # Ticket id with 4-hex suffix: "t-aptf3-1234"
+    # PR title only has the stem: "t-aptf3"
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "number": 42,
+                    "state": "open",
+                    "title": "Fix for t-aptf3",
+                    "head": {
+                        "ref": "fix/t-aptf3",
+                        "repo": {"full_name": "org/repo"},
+                    },
+                }
+            ),
+        )
+    )
+    # Branch ref
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/git/ref/heads/fix/t-aptf3"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"object": {"sha": "abc123"}}),
+        )
+    )
+    # Parent commit lookup (for tree SHA)
+    respx_mock.get("https://api.github.com/repos/org/repo/git/commits/abc123").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"sha": "abc123", "tree": {"sha": "tree111"}}),
+        )
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/blobs").mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "blob111"}))
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/trees").mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "tree111"}))
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/commits").mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "commit111"}))
+    )
+    respx_mock.patch(
+        "https://api.github.com/repos/org/repo/git/refs/heads/fix/t-aptf3"
+    ).mock(return_value=httpx.Response(200, text="{}"))
+
+    tools = build_direct_repo_tools(_settings(allow_push_to_existing_pr=True))
+    fn = [t for t in tools if t.__name__ == "push_to_pr_branch"][0]
+
+    out = await fn(
+        ticket_id="t-aptf3-1234",
+        repo_full_name="org/repo",
+        pr_number=42,
+        files_json=json.dumps([{"path": "x.py", "content": "print('hello')"}]),
+    )
+    assert "Refused" not in out
+    assert "Commit pushed successfully" in out
+
+
+@pytest.mark.asyncio
+async def test_push_to_pr_branch_bypasses_scope_with_component_request(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """With component_request, scope check is bypassed."""
+    _prepopulate_installation_token(_settings(allow_push_to_existing_pr=True))
+
+    async def _mock_component_request(_component: str, _method: str, _path: str) -> str:
+        return "HTTP 200\n" + json.dumps({"id": "t-aptf3", "state": "draft"})
+
+    respx_mock.get("https://api.github.com/repos/org/repo/pulls/42").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps(
+                {
+                    "number": 42,
+                    "state": "open",
+                    "title": "Fix for t-aptf3",
+                    "head": {
+                        "ref": "fix/t-aptf3",
+                        "repo": {"full_name": "org/repo"},
+                    },
+                }
+            ),
+        )
+    )
+    respx_mock.get(
+        "https://api.github.com/repos/org/repo/git/ref/heads/fix/t-aptf3"
+    ).mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"object": {"sha": "abc123"}}),
+        )
+    )
+    # Parent commit lookup (for tree SHA)
+    respx_mock.get("https://api.github.com/repos/org/repo/git/commits/abc123").mock(
+        return_value=httpx.Response(
+            200,
+            text=json.dumps({"sha": "abc123", "tree": {"sha": "tree111"}}),
+        )
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/blobs").mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "blob111"}))
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/trees").mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "tree111"}))
+    )
+    respx_mock.post("https://api.github.com/repos/org/repo/git/commits").mock(
+        return_value=httpx.Response(201, text=json.dumps({"sha": "commit111"}))
+    )
+    respx_mock.patch(
+        "https://api.github.com/repos/org/repo/git/refs/heads/fix/t-aptf3"
+    ).mock(return_value=httpx.Response(200, text="{}"))
+
+    tools = build_direct_repo_tools(
+        _settings(allow_push_to_existing_pr=True),
+        component_request=_mock_component_request,
+    )
+    fn = [t for t in tools if t.__name__ == "push_to_pr_branch"][0]
+
+    out = await fn(
+        ticket_id="t-aptf3",
+        repo_full_name="org/repo",
+        pr_number=42,
+        files_json=json.dumps([{"path": "x.py", "content": "print('hello')"}]),
+    )
+    assert "Refused" not in out
+    assert "Commit pushed successfully" in out
