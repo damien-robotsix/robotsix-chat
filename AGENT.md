@@ -274,6 +274,14 @@ across ~10 components (public_fetch, render_url, github_security/actions, ticket
 with a `load_<component>_skill()` returning the dynamic skill doc and an `(enabled, name, load_...)`
 entry in `_inject_skills`.
 
+**Rule:** When agent-facing docs (system prompt, config docstrings, skill.md) reference a
+direct-repo tool, use the exported callable name from `build_direct_repo_tools` (e.g.
+`merge_direct_repo_pr`), never the internal client method name (e.g. `merge_pr`).
+
+**Rationale:** PR #1089 / ticket 20260731T063148Z updated two doc sites (models.py:330,
+settings.py:597-599) to reference `merge_pr`, which exists only as an internal client method; the
+exported agent tool is `merge_direct_repo_pr`.
+
 ## Task tracking
 
 Persistent, human-readable task tracking lives under `tasks/` at the repo root:
