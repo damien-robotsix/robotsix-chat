@@ -66,8 +66,6 @@ Secret fields include:
 - `central_deploy.api_token`
 - `mail.api_token`
 - `direct_repo.github_app_private_key`, `direct_repo.board_api_token`
-- `refdocs.github_token`
-- `version_check.github_token`
 - `feedback.board_api_token`
 
 ## Settings reference
@@ -253,7 +251,6 @@ Read-only reference-docs tool — fetches documentation from allowlisted GitHub 
 | `refdocs.enabled`      | `boolean`         | `false`                    | Master switch. Requires non-empty `repos`. |
 | `refdocs.repos`        | `array[string]`   | `[]`                       | Allowlist of `owner/name` GitHub repos.    |
 | `refdocs.ref`          | `string`          | `"main"`                   | Default git ref/branch to read from.       |
-| `refdocs.github_token` | `string` (secret) | `""`                       | Optional PAT for private repos.            |
 | `refdocs.base_url`     | `string`          | `"https://api.github.com"` | Base URL for GitHub Enterprise.            |
 | `refdocs.timeout`      | `number`          | `30.0`                     | Per-request HTTP timeout (seconds).        |
 
@@ -284,7 +281,6 @@ by default.
 | ---------------------------- | ----------------- | -------------------------- | ------------------------------------------- |
 | `version_check.enabled`      | `boolean`         | `false`                    | Master switch.                              |
 | `version_check.repo`         | `string`          | `""`                       | GitHub `owner/name`. Required when enabled. |
-| `version_check.github_token` | `string` (secret) | `""`                       | Optional PAT to avoid rate limits.          |
 | `version_check.base_url`     | `string`          | `"https://api.github.com"` | Base URL for GitHub Enterprise.             |
 | `version_check.timeout`      | `number`          | `30.0`                     | Per-request HTTP timeout (seconds).         |
 | `version_check.cache_ttl`    | `number`          | `300.0`                    | Seconds to cache the latest-release lookup. |
