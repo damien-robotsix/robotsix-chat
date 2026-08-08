@@ -151,7 +151,7 @@ def test_memory_disabled_by_default() -> None:
     assert settings.memory.recall_search_type == "CHUNKS"
     assert settings.memory.deep_recall_search_type == "GRAPH_COMPLETION"
     assert settings.memory.deep_recall_timeout_seconds == 180.0
-    assert settings.memory.llm.model == "openrouter/openai/gpt-5-mini"
+    assert settings.memory.llm.model == "openrouter/openai/gpt-5-nano"
     assert settings.memory.embedding.provider == "openai_compatible"
     assert settings.memory.embedding.dimensions == 1024
 
@@ -723,7 +723,7 @@ def test_coerce_memory_nested_empty_string_to_dict() -> None:
             "embedding": "",
         }  # type: ignore[arg-type]
     )
-    assert settings.memory.llm.model == "openrouter/openai/gpt-5-mini"
+    assert settings.memory.llm.model == "openrouter/openai/gpt-5-nano"
     assert settings.memory.embedding.model == "bge-m3"
 
 
@@ -744,7 +744,7 @@ def test_coerce_object_object_sentinel_nested_memory_llm() -> None:
     settings = Settings(
         memory={"llm": "[object Object]"}  # type: ignore[arg-type]
     )
-    assert settings.memory.llm.model == "openrouter/openai/gpt-5-mini"
+    assert settings.memory.llm.model == "openrouter/openai/gpt-5-nano"
 
 
 def test_coerce_object_object_sentinel_nested_memory_embedding() -> None:

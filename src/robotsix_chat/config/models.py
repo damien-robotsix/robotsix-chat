@@ -132,8 +132,8 @@ class LangfuseInspectSettings(BaseModel):
 class MemoryLlmSettings(BaseModel):
     """Extraction-LLM config for cognee memory (OpenRouter via litellm).
 
-    Defaults match the validated robotsix setup: ``gpt-5-mini`` (cognee's
-    own default model, reliable json_mode structured output) through
+    Defaults match the validated robotsix setup: ``gpt-5-nano`` (cognee's
+    cheapest model, reliable json_mode structured output) through
     OpenRouter's ``custom`` provider. ``api_key`` is required when memory
     is enabled (provide it via ``MEMORY_LLM_API_KEY``).
 
@@ -144,14 +144,16 @@ class MemoryLlmSettings(BaseModel):
     """
 
     provider: str = "custom"
-    # gpt-5-mini is cognee's official default and produces reliable
-    # json_mode structured output at a fraction of a frontier model's cost.
-    # Earlier defaults were expensive (claude-haiku-4.5 — ~$20/day in
-    # production) or unreliable (deepseek-v4-flash produced malformed JSON
-    # under instructor, causing multi-minute retry stalls, 2026-07-09).
-    model: str = "openrouter/openai/gpt-5-mini"
+    # gpt-5-nano is ~10x cheaper than gpt-5-mini and still produces
+    # reliable json_mode structured output for cognee's extraction tasks.
+    # Earlier defaults were expensive (claude-haiku-4.5 — ~$20/day,
+    # gpt-5-mini — ~$15/week in production) or unreliable (deepseek-v4-flash
+    # produced malformed JSON under instructor, causing multi-minute retry
+    # stalls, 2026-07-09).
+    model: str = "openrouter/openai/gpt-5-nano"
     endpoint: str = "https://openrouter.ai/api/v1"
     api_key: SecretStr = SecretStr("")
+    max_completion_tokens: int = 1024
     model_config = ConfigDict(extra="forbid")
 
 

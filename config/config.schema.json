@@ -752,7 +752,7 @@
     },
     "MemoryLlmSettings": {
       "additionalProperties": false,
-      "description": "Extraction-LLM config for cognee memory (OpenRouter via litellm).\n\nDefaults match the validated robotsix setup: ``gpt-5-mini`` (cognee's\nown default model, reliable json_mode structured output) through\nOpenRouter's ``custom`` provider. ``api_key`` is required when memory\nis enabled (provide it via ``MEMORY_LLM_API_KEY``).\n\nThe default is deliberately a **cheap** model: cognee runs an\nextraction/consolidation LLM call per message, so an expensive default\nsilently burns credits whenever the config is reset or clobbered. Do\nnot default this to a frontier/expensive model.",
+      "description": "Extraction-LLM config for cognee memory (OpenRouter via litellm).\n\nDefaults match the validated robotsix setup: ``gpt-5-nano`` (cognee's\ncheapest model, reliable json_mode structured output) through\nOpenRouter's ``custom`` provider. ``api_key`` is required when memory\nis enabled (provide it via ``MEMORY_LLM_API_KEY``).\n\nThe default is deliberately a **cheap** model: cognee runs an\nextraction/consolidation LLM call per message, so an expensive default\nsilently burns credits whenever the config is reset or clobbered. Do\nnot default this to a frontier/expensive model.",
       "properties": {
         "provider": {
           "default": "custom",
@@ -760,7 +760,7 @@
           "type": "string"
         },
         "model": {
-          "default": "openrouter/openai/gpt-5-mini",
+          "default": "openrouter/openai/gpt-5-nano",
           "title": "Model",
           "type": "string"
         },
@@ -775,6 +775,11 @@
           "title": "Api Key",
           "type": "string",
           "writeOnly": true
+        },
+        "max_completion_tokens": {
+          "default": 1024,
+          "title": "Max Completion Tokens",
+          "type": "integer"
         }
       },
       "title": "MemoryLlmSettings",
