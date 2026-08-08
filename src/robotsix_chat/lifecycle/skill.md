@@ -1,42 +1,29 @@
 # deploy-lifecycle-api skill
 
 The deploy-lifecycle API provides inspection and mutation of the central-deploy management plane:
-service inventory, live status and health, configuration/environment snapshots, and (when permitted
-by the deploy server's per-repo access toggle) service restart, config-write, and env-write. All
-secret values in config and environment responses are masked as `***` server-side by
+service inventory, live status and health, environment snapshots, and (when permitted by the deploy
+server's per-repo access toggle) service restart and env-write. Configuration management is owned by
+each component internally — use the component's own `/config` endpoints for configuration access, not
+the lifecycle API. All secret values in environment responses are masked as `***` server-side by
 `_mask_secrets`.
 
 ## Allowed operations
 
-| Tool                              | HTTP                                 | Description                                                          |
-| --------------------------------- | ------------------------------------ | -------------------------------------------------------------------- |
-| `list_lifecycle_services`         | `GET /services`                      | List all managed services and status.                                |
-| `get_lifecycle_service_status`    | `GET /services/{name}/status`        | Live status + health-check history.                                  |
-| `get_lifecycle_service_config`    | `GET /services/{name}/config`        | Service configuration (secrets masked).                              |
-| `get_lifecycle_service_env`       | `GET /services/{name}/env`           | Runtime environment (secrets masked).                                |
-| `watch_service_redeploy`          | (polls config + status)              | Block until a service config changes (redeploy detected) or timeout. |
-| `restart_lifecycle_service`       | `POST /services/{name}/restart`      | Restart a service (requires per-repo access toggle).                 |
-| `self_restart`                    | `POST /chat/services/{name}/restart` | Restart this service (named via `lifecycle.service_name`).           |
-| `update_lifecycle_service_config` | `PUT /services/{name}/config`        | Update service configuration (requires per-repo access toggle).      |
-| `update_lifecycle_service_env`    | `PUT /services/{name}/env`           | Update service environment (requires per-repo access toggle).        |
+| Tool                               | HTTP                                 | Description                                                       |
+| ---------------------------------- | ------------------------------------ | ----------------------------------------------------------------- |
+| `list_lifecycle_services`          | `GET /services`                      | List all managed services and status.                             |
+| `get_lifecycle_service_status`     | `GET /services/{name}/status`        | Live status + health-check history.                               |
+| `get_lifecycle_service_env`        | `GET /services/{name}/env`           | Runtime environment (secrets masked).                             |
+| `restart_lifecycle_service`        | `POST /services/{name}/restart`      | Restart a service (requires per-repo access toggle).              |
+| `self_restart`                     | `POST /chat/services/{name}/restart` | Restart this service (named via `lifecycle.service_name`).        |
+| `update_lifecycle_service_env`     | `PUT /services/{name}/env`           | Update service environment (requires per-repo access toggle).     |
 
-### `watch_service_redeploy`
+## Configuration ownership
 
-A polling tool that blocks until a lifecycle-managed service is redeployed or a timeout expires. It
-snapshots the service config at call time and polls every `poll_interval_seconds` (default 15 s, min
-5 s) until the config body changes — indicating that a new deployment has rolled out. The tool
-returns early as soon as a change is detected, reporting the elapsed time, poll count, and the
-service's current status.
-
-**When to use it:** after a fix is merged into a component repo (e.g. robotsix-mill) and the
-deployed service is still running the stale digest. Call `watch_service_redeploy` to wait for the
-redeploy instead of retrying the same operation against the old deployment — this breaks the
-redraft-loop pattern where every attempt hits the same stale code.
-
-**Timeout behaviour:** if `max_wait_seconds` (default 300 s) expires without a config change, the
-tool returns a message recommending the operator trigger a manual redeploy via the central-deploy
-dashboard. It does NOT auto-spawn background monitors — each call is a single, self-contained
-polling session.
+Configuration is owned by each component internally — use the component's own `/config` endpoints
+(e.g. `GET /config`, `PUT /config`, `POST /config/rollback`) for configuration reads and writes,
+not the lifecycle API. The lifecycle API no longer exposes config-store endpoints
+(`GET /services/{name}/config`, `PUT /services/{name}/config`).
 
 ## Restricted operations (per-repo access toggle)
 
@@ -45,7 +32,6 @@ per-repo access toggle is enabled for this component. When the toggle is not ena
 return a 403 error — the agent should treat that as "not permitted" and not retry:
 
 - `POST /services/{name}/restart` — restart a service
-- `PUT  /services/{name}/config` — update service configuration
 - `PUT  /services/{name}/env` — update service environment
 
 **Enabling the toggle:** This is a per-repo setting in the central-deploy dashboard (labelled
@@ -99,9 +85,9 @@ reach them through any other path:
 
 ## Safety
 
-The five read-only tools are pure reads — they make no state changes and can be called freely for
-diagnostics and investigation. The three mutation tools (restart, config-write, env-write) make real
-state changes and are gated by the deploy server's per-repo access toggle. The `self_restart` tool
-is a mutation that restarts the agent's own service (named via `lifecycle.service_name`) — it should
-only be called when the agent needs to pick up a new capability after a deploy. Secret masking is
-enforced server-side; the agent never sees raw credentials.
+The three read-only tools are pure reads — they make no state changes and can be called freely for
+diagnostics and investigation. The two mutation tools (restart, env-write) make real state changes
+and are gated by the deploy server's per-repo access toggle. The `self_restart` tool is a mutation
+that restarts the agent's own service (named via `lifecycle.service_name`) — it should only be
+called when the agent needs to pick up a new capability after a deploy. Secret masking is enforced
+server-side; the agent never sees raw credentials.

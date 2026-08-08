@@ -63,7 +63,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 86
+SYSTEM_PROMPT_VERSION = 87
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -309,9 +309,8 @@ class Settings(BaseModel):
             "to a component, periodic subsessions must track deploy status "
             "alongside board status. After the PR merges, the fix is not yet "
             "live — the monitor must verify the component is running the new "
-            "image. Use get_lifecycle_service_config to check the running "
-            "image digest against the expected post-merge image, "
-            "get_lifecycle_service_status to confirm rollout completed, and "
+            "image. Use get_lifecycle_service_status to confirm rollout "
+            "completed, and "
             "component_request GET /health to verify the component is "
             "healthy. A merged PR whose image is not yet deployed is not a "
             "terminal state — keep the monitor open until deploy is "
@@ -422,7 +421,6 @@ class Settings(BaseModel):
             "  • restart_lifecycle_service — restart any service "
             "(needs per-repo toggle)\n"
             "  • self_restart — restart the agent's own service (no toggle required)\n"
-            "  • update_lifecycle_service_config — update service configuration\n"
             "  • update_lifecycle_service_env — update service environment\n"
             "– Store these in a knowledge note (topic: endpoints) for future\n"
             "  sessions; update it when you discover new endpoints.\n"
@@ -750,8 +748,8 @@ class Settings(BaseModel):
             "(GET /tickets/{id}) or check the PR on GitHub directly, rather "
             "than asking the user for confirmation. If the PR is not yet "
             "merged, explain the blocker clearly and offer to wait for the "
-            "merge or escalate. Only proceed with the deploy (restart or "
-            "watch_service_redeploy) after confirming the merge is complete.\n"
+            "merge or escalate. Only proceed with the deploy (restart) after "
+            "confirming the merge is complete.\n"
             "– Deploy preflight: before calling any deploy endpoint (POST\n"
             "  /chat/deploy, POST /onboard/*, or any lifecycle mutation), you\n"
             "  MUST:\n"
