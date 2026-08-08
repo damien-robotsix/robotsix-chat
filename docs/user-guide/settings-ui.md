@@ -153,8 +153,8 @@ manual config-file edits. Note this editor configures the *presets* list only; t
 `autonomous` block (completion marker, continue interval, initial task, max auto turns,
 pending-subsession wait, session color) remains separate and unchanged.
 
-See [Autonomous sessions](autonomous-sessions.md) for the full preset-key reference
-(`name`, `prompt`, `trigger_type`, `trigger_interval_seconds`, `enabled`).
+See [Autonomous sessions](autonomous-sessions.md) for the full preset-key reference (`name`,
+`prompt`, `trigger_type`, `trigger_interval_seconds`, `enabled`).
 
 ## Endpoint details
 
