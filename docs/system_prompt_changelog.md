@@ -3,6 +3,21 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v88 — 2026-08-01 — fix-merge-capability-doc-references-to-u-39ff
+
+**Summary:** Fix two references to the non-existent ``merge_pr`` tool in the
+agent_instruction system prompt — both now correctly reference
+``merge_direct_repo_pr``, the exported agent tool. The internal client method
+name ``merge_pr`` was incorrectly used in the guardrail bullet
+(``DirectRepoSettings``) and the system prompt merge/PR guidance.
+
+**Rationale:** PR #1089 updated two agent-facing doc sites but carried over the
+internal method name ``merge_pr`` instead of the exported tool name
+``merge_direct_repo_pr``. An agent directed to use ``merge_pr`` has no callable
+tool by that name.
+
+**SHA256:** `e45f904d8426ec35d18873048776d2355435c3b7dbd63e07135d199149c07641`
+
 ## v87 — 2026-08-01 — config-ownership-migration-robotsix-chat-f7dd
 
 **Summary:** Remove references to the deprecated lifecycle config-store tools

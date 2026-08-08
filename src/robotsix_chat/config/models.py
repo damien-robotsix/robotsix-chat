@@ -485,7 +485,7 @@ class DirectRepoSettings(BaseModel):
     - Actions are ONLY permitted for tickets in BLOCKED state.
     - Repo scope is resolved dynamically from the GitHub App installation.
     - PRs are opened in a reviewable state with no auto-merge.
-    - ``merge_pr`` can merge an approved, mergeable PR when the ticket is
+    - ``merge_direct_repo_pr`` can merge an approved, mergeable PR when the ticket is
       in BLOCKED state — do not merge before the human gate is satisfied.
 
     **Additional guardrails for ``direct_fix``:**
