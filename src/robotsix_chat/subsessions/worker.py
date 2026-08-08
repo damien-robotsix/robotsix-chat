@@ -1006,8 +1006,14 @@ async def _paused_wait_loop(
 
     async def _try_resume(
         reason: str,
+        pending: list[InboxMessage] | None = None,
     ) -> tuple[list[InboxMessage], str | None, int] | None:
-        """Resume the subsession and publish an SSE notification."""
+        """Resume the subsession and publish an SSE notification.
+
+        *pending* — inbox messages to hand to the worker on its next
+        turn (e.g. the parent message that triggered the resume).
+        When ``None`` (long-poll wake), defaults to an empty list.
+        """
         resumed = registry.resume(sub_id)
         if resumed is None:
             return None
@@ -1025,7 +1031,9 @@ async def _paused_wait_loop(
                     "link": ticket_id,
                 },
             )
-        return [], previous_result, consecutive_no_change
+        if pending is None:
+            pending = []
+        return pending, previous_result, consecutive_no_change
 
     while True:
         timeout = long_poll_interval if can_long_poll else _PAUSED_WAIT_TIMEOUT_SECONDS
@@ -1037,19 +1045,24 @@ async def _paused_wait_loop(
             return None
 
         if woke:
-            # ----------- inbox wake: check for resume signal -------------
+            # ----------- inbox wake: any message resumes -------------
+            # The watcher sends system messages on ticket-state change;
+            # the parent agent sends parent messages via
+            # ``message_subsession`` to manually resume.  Both paths
+            # wake the monitor and hand the message through so the
+            # subsession agent sees it on its next turn.
             messages = registry.drain_inbox(sub_id)
-            for msg in messages:
-                if msg.role == "system" and "ticket state changed" in msg.text.lower():
-                    logger.info(
-                        "Subsession %s: resume signal received via inbox — resuming.",
-                        sub_id,
-                    )
-                    return await _try_resume("ticket state change")
+            if messages:
+                logger.info(
+                    "Subsession %s: resume signal received via inbox — resuming.",
+                    sub_id,
+                )
+                return await _try_resume("inbox message", pending=messages)
 
-            # Non-resume messages — loop and wait again.
+            # Spurious wake (event set but inbox empty) — loop and wait
+            # again.
             logger.debug(
-                "Subsession %s: woke with non-resume messages; continuing wait.",
+                "Subsession %s: spurious inbox wake; continuing wait.",
                 sub_id,
             )
         else:
@@ -1646,8 +1659,9 @@ async def _run_periodic_turn(
         )
         summary = (
             f"Auto-paused after {idle_cap} consecutive no-change runs. "
-            f"The monitor is idle — no changes detected for the watched "
-            f"ticket."
+            f"To resume monitoring, send a message to this subsession "
+            f"via message_subsession — the monitor will wake and re-check "
+            f"the ticket state on its next run."
         )
         paused = registry.mark_paused(
             sub_id,
