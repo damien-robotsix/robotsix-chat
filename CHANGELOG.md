@@ -239,6 +239,9 @@
   where the mill is only reachable through the roster. (mill: Direct-path tools `ticket_poll`/`ticket_poll_batch` target wrong host (127.0.0.1:8077 instead of mill host) (20260730T130836Z-direct-path-tools-ticket-poll-ticket-pol-ca68))
 - Clarify in the agent instruction that the ticket fingerprint guard hashes only the spec text — editing the description without changing the spec will not clear the guard. This prevents agents from wasting cycles trying to bypass the guard by appending to the ticket description.
 - Added `push_patch_to_pr_branch` tool: push a unified-diff commit to an existing PR's head branch, with BLOCKED-state, scope, and same-repo authorization checks. Removes the need to create a new branch for every PR update.
+- Document ``resume-blocked`` as the standard fallback when
+  ``reset_implement_spawn_counter`` returns HTTP 405 on board builds
+  lacking the ``implement_spawn_count`` DELETE route.
 - Bumped `robotsix-llmio` (v0.1.1 → v0.1.4) and `robotsix-http` (v0.1.dev16 → v0.1.dev38) pinned git revisions to pick up upstream routing fixes for the OpenRouter 402 fallback issue (robotsix-llmio #499/#500, robotsix-http #45).
 - Add confirmation-gated merge tool (`merge_direct_repo_pr`) and auto-merge tool
   (`arm_direct_repo_auto_merge`) to the chat agent's direct-repo toolset.
