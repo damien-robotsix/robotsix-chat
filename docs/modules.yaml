@@ -58,7 +58,6 @@ modules:
       - src/robotsix_mill/stages/retrospect.py
       - src/robotsix_mill/stages/towncrier.py
       - tests/stages/**/*
-      - changelog.d/**/*
       - config/**/*
       - deploy/**/*
       - scripts/*
@@ -75,6 +74,8 @@ modules:
       - .trufflehog.yaml
       - AGENT.md
       - CHANGELOG.md
+      - release-please-config.json
+      - .release-please-manifest.json
       - CONTRIBUTING.md
       - Dockerfile
       - LICENSE
@@ -91,7 +92,6 @@ modules:
       - vitest.config.js
       - uv.lock
       - vulture_whitelist.py
-      - changelog.d/.gitkeep
       - deploy/.env.example
 
   - id: autonomous

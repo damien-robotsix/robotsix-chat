@@ -4,7 +4,7 @@ build-backend = "hatchling.build"
 
 [project]
 name = "robotsix-chat"
-version = "0.5.0"
+version = "0.6.0"
 description = "Browser + SSE chat server exposing an LLM agent to human users"
 readme = "README.md"
 requires-python = ">=3.14"
@@ -105,7 +105,6 @@ dev = [
     "respx",
     "robotsix-modules",
     "ruff",
-    "towncrier",
 ]
 docs = [
     "mkdocs-material",
@@ -130,44 +129,6 @@ robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-gith
 # Constraint-dependencies avoids making pypdf a direct (deptry-visible) dependency.
 [tool.uv]
 constraint-dependencies = ["pypdf>=6.15.0"]
-
-[tool.towncrier]
-package = "robotsix_chat"
-package_dir = "src"
-filename = "CHANGELOG.md"
-directory = "changelog.d"
-title_format = "## [{version}] - {project_date}"
-issue_format = "[#{issue}](https://github.com/damien-robotsix/robotsix-chat/issues/{issue})"
-
-[[tool.towncrier.type]]
-directory = "feature"
-name = "Features"
-showcontent = true
-
-[[tool.towncrier.type]]
-directory = "bugfix"
-name = "Bugfixes"
-showcontent = true
-
-[[tool.towncrier.type]]
-directory = "doc"
-name = "Improved Documentation"
-showcontent = true
-
-[[tool.towncrier.type]]
-directory = "removal"
-name = "Deprecations and Removals"
-showcontent = true
-
-[[tool.towncrier.type]]
-directory = "misc"
-name = "Misc"
-showcontent = false
-
-[[tool.towncrier.type]]
-directory = "breaking"
-name = "Breaking Changes"
-showcontent = true
 
 [tool.ruff]
 target-version = "py314"

@@ -1,1 +1,0 @@
-Remove the accidentally re-introduced 4083-line `test_direct_repo.py` monolith (its coverage lives in the per-tool test modules since PR #1130; the one test unique to it moved to `test_reset_counter.py`) and the stray root-level `reserved` placeholder file from PR #1147.
