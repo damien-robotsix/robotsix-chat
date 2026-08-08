@@ -126,6 +126,11 @@ robotsix-modules = { git = "https://github.com/damien-robotsix/robotsix-modules.
 robotsix-http = { git = "https://github.com/damien-robotsix/robotsix-http.git", rev = "ba90d55ea2bcbd02f605f392e837cea7b485d73d" }  # pragma: allowlist secret
 robotsix-github-auth = { git = "https://github.com/damien-robotsix/robotsix-github-auth.git", rev = "e6214c41fd743120aa987bacb4e9b2bc88e73943" }  # pragma: allowlist secret
 
+# Force pypdf>=6.15.0 (transitive dep of cognee) to resolve GHSA-fwg2-594c-jp42.
+# Constraint-dependencies avoids making pypdf a direct (deptry-visible) dependency.
+[tool.uv]
+constraint-dependencies = ["pypdf>=6.15.0"]
+
 [tool.towncrier]
 package = "robotsix_chat"
 package_dir = "src"

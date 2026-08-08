@@ -1,3 +1,5 @@
+import { processSSEStream } from "./sse-parser.js";
+
 (function () {
   "use strict";
 
@@ -2304,64 +2306,7 @@
     return div.innerHTML;
   }
 
-  // ---- SSE stream parser -----------------------------------------------
-  function processSSEStream(body, controller) {
-    // We use a ReadableStream to pipe fetch body chunks into an SSE line
-    // parser.  Each \n\n-terminated block is decoded and dispatched.
-    var reader = body.getReader();
-    var decoder = new TextDecoder();
-    var buffer = "";
-
-    function pump() {
-      reader.read().then(function (result) {
-        if (result.done) {
-          // Stream ended.  If we were still streaming (no "done" frame
-          // from /chat), treat as error.  Otherwise, if the controller
-          // provides an onDone callback (e.g. the /events channel), call
-          // it so the consumer can reconnect.
-          if (controller.onDone) {
-            controller.onDone();
-          } else if (state === "streaming") {
-            controller.error(new Error("Server closed the connection unexpectedly"));
-          }
-          return;
-        }
-
-        buffer += decoder.decode(result.value, { stream: true });
-        // Normalise \r\n → \n and strip stray \r for robustness.
-        buffer = buffer.replace(/\r\n/g, "\n").replace(/\r/g, "\n");
-        var lines = buffer.split("\n");
-        // Keep the last (possibly incomplete) segment in the buffer.
-        buffer = lines.pop();
-
-        var currentData = "";
-        for (var i = 0; i < lines.length; i++) {
-          var line = lines[i];
-          if (line.startsWith("data: ")) {
-            // Accumulate multi-line data fields (some SSE impls split
-            // JSON across several data: lines, though ours doesn't).
-            currentData += line.slice(6);
-          } else if (line === "data:") {
-            currentData += "";
-          } else if (line === "") {
-            // Empty line = end of event.  Process accumulated data.
-            if (currentData !== "") {
-              controller.onData(currentData);
-              currentData = "";
-            }
-          }
-          // Ignore lines with "event:", "id:", "retry:", or comments.
-        }
-
-        if (controller.onActivity) controller.onActivity();
-        return pump();
-      }).catch(function (err) {
-        controller.error(err);
-      });
-    }
-
-    return { start: pump };
-  }
+  // processSSEStream is now in sse-parser.js (imported at module top).
 
   // ---- Persistent /events SSE channel ----------------------------------
   function openEventStream() {
@@ -2853,6 +2798,20 @@
         state = "error";
         updateSendBusy();
         // Same as above: queued messages stay; next submit resumes draining.
+      },
+      // The SSE parser calls onDone when the stream ends gracefully (the
+      // ReadableStream's reader.read() resolves with done=true).  For the
+      // POST /chat path, an unexpected stream close while we are still
+      // "streaming" (no "done" frame from the server) is an error.
+      onDone: function () {
+        if (state === "streaming") {
+          clearPost();
+          hideTypingIndicator();
+          finaliseAssistantBubble();
+          showError("Server closed the connection unexpectedly");
+          state = "error";
+          updateSendBusy();
+        }
       }
     };
 
