@@ -499,7 +499,7 @@ def _settings_with_direct_repo(**direct_repo_kw: Any) -> SimpleNamespace:
     """Return settings with ``direct_repo`` enabled and a board URL set."""
     settings = make_settings()
     settings.subsessions.paused_monitor_poll_interval_seconds = 0.01
-    settings.direct_repo = SimpleNamespace(
+    kwargs: dict[str, Any] = dict(
         board_api_base_url="https://mill.example.com",
         enabled=True,
         github_api_base_url="https://api.github.com",
@@ -508,8 +508,9 @@ def _settings_with_direct_repo(**direct_repo_kw: Any) -> SimpleNamespace:
         github_app_installation_id="inst-id",
         board_api_token="token",  # pragma: allowlist secret
         timeout=10.0,
-        **direct_repo_kw,
     )
+    kwargs.update(direct_repo_kw)
+    settings.direct_repo = SimpleNamespace(**kwargs)
     return settings
 
 
