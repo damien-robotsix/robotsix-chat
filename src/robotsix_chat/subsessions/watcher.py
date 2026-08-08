@@ -38,11 +38,6 @@ logger = logging.getLogger(__name__)
 # (avoids busy-waiting when the watcher has nothing to do).
 _IDLE_POLL_INTERVAL_SECONDS: float = 30.0
 
-# Ticket states that are considered terminal — the monitor should only
-# accept these when there is PR evidence (a merged PR or a non-null
-# pr_url on the board ticket).
-_TICKET_STATE_TERMINAL = frozenset({"closed", "done"})
-
 
 async def _query_ticket_state(
     board_url: str, ticket_id: str, sub_id: str
@@ -574,8 +569,10 @@ async def watch_paused_monitors(env: SubsessionEnv) -> None:
                                             info.id,
                                         )
                                         if ticket_state is not None:
+                                            state_str = ticket_state[0]
                                             ticket_terminal = (
-                                                ticket_state.lower()
+                                                state_str is not None
+                                                and state_str.lower()
                                                 in _TICKET_STATE_TERMINAL
                                             )
                                     if not ticket_terminal:
