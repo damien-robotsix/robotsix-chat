@@ -309,12 +309,17 @@ class DirectRepoClient:
 
     # -- public API --------------------------------------------------------
 
+    #: Repos whose name starts with this are fleet members and get the
+    #: standards-mandated release automation wired at creation time.
+    FLEET_PREFIX = "robotsix-"
+
     async def create_repo(
         self,
         *,
         org_name: str,
         repo_name: str,
         auto_init: bool = True,
+        bootstrap_release: bool = True,
     ) -> str:
         """Create a new repository under the GitHub organisation.
 
@@ -323,6 +328,19 @@ class DirectRepoClient:
         so that workflows and branch pushes can proceed immediately
         — an empty repo has no default branch to push against, which
         creates a deadlock for any automated bootstrap process.
+
+        When *bootstrap_release* is ``True`` and the name carries the
+        ``robotsix-`` fleet prefix, also wires the shared auto-release
+        workflow and its credentials — see
+        :meth:`ActionsClient.bootstrap_release_automation`. This runs here
+        because doing it later never happens: a fleet sweep found nine repos
+        that had never wired it and so had never cut a release tag, which
+        robotsix-standards ``changelog-driven-releases.md`` §4 requires of
+        every repo.
+
+        Bootstrap failures are reported but do not fail the creation — the
+        repo exists either way, and a half-provisioned repo is easier to
+        finish by hand than to recreate.
 
         Never raises — returns a success/error message string.
         """
@@ -335,13 +353,34 @@ class DirectRepoClient:
                 },
             )
             html_url = data.get("html_url", "")
-            return f"Repository '{org_name}/{repo_name}' created successfully.\n" + (
+            msg = f"Repository '{org_name}/{repo_name}' created successfully.\n" + (
                 f"URL: {html_url}" if html_url else ""
             )
         except RuntimeError as exc:
             return f"Error creating repo: {exc}"
         except Exception as exc:
             return f"Error creating repo: {exc}"
+
+        if bootstrap_release and repo_name.startswith(self.FLEET_PREFIX):
+            msg += "\n" + await self._bootstrap_release(f"{org_name}/{repo_name}")
+        return msg
+
+    async def _bootstrap_release(self, repo_full_name: str) -> str:
+        """Wire release automation on a freshly created fleet repo.
+
+        Isolated from :meth:`create_repo` so a bootstrap problem can never
+        mask a successful creation, and so the whole step is trivial to stub
+        in tests.
+        """
+        try:
+            from robotsix_chat.repo.direct.actions_client import ActionsClient
+
+            lines = await ActionsClient(self._s).bootstrap_release_automation(
+                repo_full_name
+            )
+        except Exception as exc:  # pragma: no cover - defensive
+            return f"Release automation bootstrap failed: {exc}"
+        return "Release automation:\n" + "\n".join(f"  - {line}" for line in lines)
 
     async def list_installation_repos(self) -> list[str]:
         """Return the set of ``owner/name`` repos in the installation scope.
