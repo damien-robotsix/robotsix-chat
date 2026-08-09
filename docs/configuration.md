@@ -558,6 +558,7 @@ time, and summary.
   ]
 }
 ```
+
 ______________________________________________________________________
 
 ### Autonomy
@@ -571,14 +572,14 @@ Even at the highest tier these actions remain **hard-gated**: merges touching
 files or directories; priority/scope changes with broad blast radius; ambiguous or novel mutation
 types; and any action whose safety the agent cannot independently verify.
 
-| JSON key                                  | Type      | Default | Description                                                                                                                                                                                      |
-| ----------------------------------------- | --------- | ------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ |
-| `autonomy.auto_approve_self_authored`     | `boolean` | `false` | When `true`, the agent may auto-approve `human_issue_approval` tickets it (or a chat-agent feedback source) authored, provided the target repo is in `auto_approve_repo_allowlist` and the change is non-destructive / reversible. |
-| `autonomy.auto_approve_repo_allowlist`    | `array`   | `[]`    | Repository names (e.g. `"robotsix-chat"`) eligible for auto-approval when `auto_approve_self_authored` is enabled. Tickets targeting repos not listed here are always gated.                     |
-| `autonomy.suppress_no_change_monitors`    | `boolean` | `false` | When `true`, periodic and event monitor outcomes that carry no actionable delta (NO_CHANGE, completed normally, auto-paused) do not generate an operator-facing turn. Only blockers and terminal failures are surfaced. |
+| JSON key                               | Type      | Default | Description                                                                                                                                                                                                                        |
+| -------------------------------------- | --------- | ------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `autonomy.auto_approve_self_authored`  | `boolean` | `false` | When `true`, the agent may auto-approve `human_issue_approval` tickets it (or a chat-agent feedback source) authored, provided the target repo is in `auto_approve_repo_allowlist` and the change is non-destructive / reversible. |
+| `autonomy.auto_approve_repo_allowlist` | `array`   | `[]`    | Repository names (e.g. `"robotsix-chat"`) eligible for auto-approval when `auto_approve_self_authored` is enabled. Tickets targeting repos not listed here are always gated.                                                       |
+| `autonomy.suppress_no_change_monitors` | `boolean` | `false` | When `true`, periodic and event monitor outcomes that carry no actionable delta (NO_CHANGE, completed normally, auto-paused) do not generate an operator-facing turn. Only blockers and terminal failures are surfaced.            |
 
-**Example** — enabling auto-approval for self-authored tickets on the `robotsix-chat` repo,
-with no-change monitor suppression:
+**Example** — enabling auto-approval for self-authored tickets on the `robotsix-chat` repo, with
+no-change monitor suppression:
 
 ```json
 "autonomy": {
