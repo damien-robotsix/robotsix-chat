@@ -16,6 +16,21 @@ reaction turn to inform you. If that LLM call itself fails (e.g. API unreachable
 publishes a fallback `agent_message` frame directly — the connected browser renders it as a normal
 chat bubble, so you still see the outcome without the LLM needing to be available.
 
+## Built-in SSE notifications for monitor state changes
+
+The system also publishes **proactive SSE notifications** (type `notification`) for periodic monitor
+state transitions, regardless of the reaction turn:
+
+- **Monitor auto-paused.** When a periodic monitor enters `PAUSED` after `max_idle_runs` consecutive
+  no-change replies, a notification with title `"Monitor auto-paused: {title}"` is published to
+  connected browsers.
+- **Monitor auto-stopped.** When a periodic monitor closes after `auto_stop_no_change_runs`
+  consecutive no-change replies, a notification with title `"Monitor auto-stopped: {title}"` is
+  published to connected browsers.
+
+These notifications carry the tracked ticket id, the current state, and a summary, so the UI can
+show the status immediately without waiting for the agent's reaction turn to complete.
+
 ## Allowed operations
 
 | Tool          | Description                                       |

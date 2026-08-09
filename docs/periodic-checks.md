@@ -37,17 +37,34 @@ blocking, completion, failure, or transitions requiring user action). After a co
 consecutive `NO_CHANGE` runs (`subsessions.auto_stop_no_change_runs`, default 3) the subsession
 closes itself.
 
-### Auto-stop and failure notifications
+### Auto-stop, auto-pause, and failure notifications
 
 When a periodic monitor auto-stops (e.g. after 3 consecutive no-change runs, or after hitting its
-`max_runs` limit) or fails with an API error, the assistant **immediately notifies you** in the
-conversation — you do not need to send a message to learn what happened. The notification is
-delivered via a synthetic reaction turn:
+`max_runs` limit), auto-pauses (after `max_idle_runs` consecutive no-change runs), or fails with an
+API error, the assistant **immediately notifies you** in the conversation — you do not need to send
+a message to learn what happened. The notification is delivered via a synthetic reaction turn:
+
+The system distinguishes **two terminal states** that are often conflated:
+
+- **Auto-stopped (closed/terminated).** The monitor reached its consecutive-no-change limit
+  (`subsessions.auto_stop_no_change_runs`, default 3) or its `max_runs` cap. The worker terminates
+  permanently — it will **not** reappear on its own. The assistant uses phrasing like *"No change —
+  monitor auto-stopped (closed)"*.
+- **Auto-paused (reversible, worker still alive).** The monitor reached its idle-run limit
+  (`subsessions.max_idle_runs`) and entered a `PAUSED` wait loop. The worker stays alive and can be
+  woken by a ticket state change or a parent message. The assistant uses phrasing like *"No change —
+  monitor auto-paused (will resume on message)"*.
+
+Both states publish an **SSE notification** (`type: notification`) to connected browsers, so the UI
+can show the status immediately — the pause notification includes the tracked ticket id, and the
+stop notification includes the same. The assistant's reaction turn then adds the conversational
+context explaining what happened and what to expect next.
 
 1. **Normal case** — the main agent runs a real LLM turn that processes the outcome and replies with
    a substantive message explaining what happened, what it means, and what you can do next (e.g.
    restart the monitor, check the ticket). The prompt instructs the agent to **not** just
-   acknowledge the outcome briefly — it must provide actionable context.
+   acknowledge the outcome briefly — it must provide actionable context, and to **never conflate**
+   auto-stop (closed) with auto-pause (reversible).
 2. **LLM API failure** — if the reaction turn itself fails (e.g. OpenRouter is unreachable), the
    system falls back to publishing a plain `agent_message` frame directly into the chat. You see a
    message like
@@ -61,8 +78,8 @@ delivered via a synthetic reaction turn:
    to acknowledge the subsession outcome as a note and continue without re-requesting approval or
    restarting planning. This prevents subsession notifications from derailing approved work.
 
-Internal reason codes (e.g. `"no_change_auto_stop"`, `"failed"`, `"ticket_terminal"`) are
-automatically translated to human-readable phrases in both the prompt and fallback messages.
+Internal reason codes (e.g. `"no_change_auto_stop"`, `"paused"`, `"failed"`, `"ticket_terminal"`)
+are automatically translated to human-readable phrases in both the prompt and fallback messages.
 
 **Stale-monitor suppression.** If the monitored ticket is already in a terminal state — that is, its
 `last_known_state` is `"closed"` or `"done"` — the auto-stop/auto-pause notification is silently
