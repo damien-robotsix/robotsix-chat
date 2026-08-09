@@ -23,6 +23,7 @@ import asyncio
 import contextvars
 import fnmatch
 import logging
+import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING
@@ -1020,6 +1021,11 @@ async def _paused_wait_loop(
         "paused_monitor_long_poll_interval_seconds",
         15.0,
     )
+    auto_resume_seconds: float = getattr(
+        env.settings.subsessions,
+        "paused_monitor_auto_resume_seconds",
+        1800.0,
+    )
     can_long_poll = bool(
         board_url and ticket_id and last_known_str and long_poll_interval > 0
     )
@@ -1065,8 +1071,24 @@ async def _paused_wait_loop(
             pending = []
         return pending, previous_result, consecutive_no_change
 
+    paused_at = time.monotonic()
     while True:
         timeout = long_poll_interval if can_long_poll else _PAUSED_WAIT_TIMEOUT_SECONDS
+        # Cap the per-iteration timeout so the auto-resume check fires on time.
+        if auto_resume_seconds > 0:
+            remaining = auto_resume_seconds - (time.monotonic() - paused_at)
+            if remaining <= 0:
+                logger.info(
+                    "Subsession %s: paused for %.0fs (limit %.0fs) — auto-resuming.",
+                    sub_id,
+                    time.monotonic() - paused_at,
+                    auto_resume_seconds,
+                )
+                return await _try_resume(
+                    "auto-resume timeout",
+                    pending=registry.drain_inbox(sub_id),
+                )
+            timeout = min(timeout, remaining)
         woke = await registry.wait_for_inbox(sub_id, timeout=timeout)
 
         # Verify the subsession is still paused.

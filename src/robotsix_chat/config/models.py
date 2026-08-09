@@ -819,6 +819,19 @@ class SubsessionsSettings(BaseModel):
             "wake)."
         ),
     )
+    paused_monitor_auto_resume_seconds: float = Field(
+        default=1800.0,
+        description=(
+            "Maximum wall-clock seconds a paused periodic monitor "
+            "remains paused before auto-resuming regardless of "
+            "ticket-state changes.  When a monitor has been paused "
+            "for longer than this interval (e.g. 1800 s = 30 min), "
+            "it resumes its normal periodic cycle so the operator "
+            "does not need to manually intervene.  Set to ``0`` to "
+            "disable time-based auto-resume (monitor stays paused "
+            "until a state change or manual message arrives)."
+        ),
+    )
     event_driven_timeout_seconds: float = Field(
         default=900.0,
         description=(
