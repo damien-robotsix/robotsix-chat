@@ -21,9 +21,8 @@ import logging
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlparse
 
-from robotsix_chat.config.models import FleetAuthSettings, RenderUrlSettings
+from robotsix_chat.config.models import RenderUrlSettings
 
 logger = logging.getLogger(__name__)
 
@@ -46,17 +45,12 @@ def load_render_url_skill() -> str:
 
 def build_render_url_tools(
     settings: RenderUrlSettings,
-    fleet_auth: FleetAuthSettings | None = None,
 ) -> list[Callable[..., Any]]:
     """Return the ``render_url`` tool, or an empty list when disabled.
 
     Args:
         settings: RenderUrl configuration (``enabled`` master switch,
             timeout, viewport dimensions).
-        fleet_auth: Shared fleet reverse-proxy credentials, from the
-            top-level ``fleet_auth`` setting.  When set, requests to hosts
-            in ``fleet_auth.auth_hosts`` carry server-injected basic auth
-            (never visible to the agent).
 
     Returns:
         A single-element list containing the ``render_url`` async callable,
@@ -77,19 +71,6 @@ def build_render_url_tools(
         return []
 
     timeout_ms = settings.timeout * 1000
-
-    # Pre-compute auth credentials for fleet-auth hosts.
-    fleet_auth_hosts: set[str] = set()
-    fleet_http_credentials: dict[str, str] | None = None
-    if fleet_auth is not None:
-        username = fleet_auth.basic_auth_username
-        password = fleet_auth.basic_auth_password.get_secret_value()
-        if username and password:
-            fleet_http_credentials = {
-                "username": username,
-                "password": password,
-            }
-            fleet_auth_hosts = set(fleet_auth.auth_hosts)
 
     async def render_url(url: str, text_only: bool = False) -> str:
         """Render a URL in headless Chromium and return the page content.
@@ -136,20 +117,12 @@ def build_render_url_tools(
                 try:
                     # Attach fleet-auth credentials when the target host
                     # is in the configured auth_hosts list.
-                    parsed = urlparse(url)
-                    hostname = parsed.hostname or ""
                     context_kwargs: dict[str, Any] = {
                         "viewport": {
                             "width": settings.viewport_width,
                             "height": settings.viewport_height,
                         },
                     }
-                    if (
-                        hostname in fleet_auth_hosts
-                        and fleet_http_credentials is not None
-                    ):
-                        context_kwargs["http_credentials"] = fleet_http_credentials
-
                     context = await browser.new_context(**context_kwargs)
                     page = await context.new_page()
 

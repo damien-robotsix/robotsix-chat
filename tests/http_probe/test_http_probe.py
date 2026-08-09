@@ -16,7 +16,6 @@ import pytest
 import respx
 
 from robotsix_chat.config import HttpProbeSettings
-from robotsix_chat.config.models import FleetAuthSettings
 from robotsix_chat.http_probe import build_http_probe_tools, load_http_probe_skill
 
 # ---------------------------------------------------------------------------
@@ -62,9 +61,9 @@ def _settings(**kw: Any) -> HttpProbeSettings:
     return HttpProbeSettings(**base)
 
 
-def _tools(fleet_auth: FleetAuthSettings | None = None, **kw: Any) -> list[Any]:
-    """Build the tool. fleet_auth is a top-level setting, not a per-tool one."""
-    return build_http_probe_tools(_settings(**kw), fleet_auth)
+def _tools(central_deploy: Any = None, **kw: Any) -> list[Any]:
+    """Build the tool. Fleet reach comes from the central-deploy roster."""
+    return build_http_probe_tools(_settings(**kw), central_deploy)
 
 
 # ---------------------------------------------------------------------------
@@ -344,49 +343,6 @@ async def test_http_probe_blocks_private_ip_10() -> None:
 
 
 @pytest.mark.asyncio
-async def test_http_probe_fleet_auth_host_skips_ssrf(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """Fleet-auth hosts skip the SSRF check (operator-trusted)."""
-    respx_mock.get("https://deploy.robotsix.net/internal").mock(
-        return_value=httpx.Response(200, text="ok")
-    )
-
-    # deploy.robotsix.net is in fleet_auth_hosts → SSRF check skipped.
-    # Mock DNS to return a private IP — the probe should still succeed
-    # because fleet-auth hosts are trusted.
-    with mock.patch(
-        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
-        return_value=[
-            (
-                socket.AF_INET,
-                socket.SOCK_STREAM,
-                6,
-                "",
-                ("10.0.0.5", 0),
-            )
-        ],
-    ):
-        tools = _tools(
-            allowlist=["deploy.robotsix.net"],
-            fleet_auth=FleetAuthSettings(
-                basic_auth_username="op",
-                basic_auth_password="pw",  # pragma: allowlist secret
-                auth_hosts=["deploy.robotsix.net"],
-            ),
-        )
-        result = json.loads(await tools[0]("https://deploy.robotsix.net/internal"))
-
-    assert result["healthy"] is True
-    assert result["body_snippet"] == "ok"
-
-
-# ---------------------------------------------------------------------------
-# Network errors
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
 async def test_http_probe_timeout(respx_mock: respx.MockRouter) -> None:
     """Timeout → healthy=False with timeout error message."""
     respx_mock.get("https://www.robotsix.net/").mock(
@@ -449,128 +405,110 @@ async def test_http_probe_500_still_returns_body(
 # ---------------------------------------------------------------------------
 
 
-@pytest.mark.asyncio
-async def test_http_probe_fleet_auth_sends_header(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """When fleet_auth is configured and host matches, basic auth header is sent."""
-    respx_mock.get("https://deploy.robotsix.net/docs").mock(
-        return_value=httpx.Response(200, text="authenticated")
+# ---------------------------------------------------------------------------
+# Fleet components — resolved from the central-deploy roster
+# ---------------------------------------------------------------------------
+
+
+def _roster(*base_urls: str):
+    """Patch the central-deploy roster to advertise *base_urls*."""
+
+    async def _fake_fetch_roster(_settings):
+        return [{"id": f"c{i}", "base_url": u} for i, u in enumerate(base_urls)]
+
+    return mock.patch(
+        "robotsix_chat.component_access.roster.fetch_roster", _fake_fetch_roster
     )
 
-    tools = _tools(
-        allowlist=["deploy.robotsix.net"],
-        fleet_auth=FleetAuthSettings(
-            basic_auth_username="operator",
-            basic_auth_password="s3cret",  # pragma: allowlist secret
-            auth_hosts=["deploy.robotsix.net"],
-        ),
+
+def _central_deploy():
+    from robotsix_chat.config.models import CentralDeploySettings
+
+    return CentralDeploySettings(url="http://central-deploy:8100")
+
+
+@pytest.mark.asyncio
+async def test_http_probe_roster_host_allowed_without_main_allowlist(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A component in the roster is reachable though absent from the allowlist.
+
+    Enabling chat access on a component is the single place that decision is
+    made; repeating the hostname in this tool's allowlist would be a second.
+    """
+    respx_mock.get("http://mail:8080/openapi.json").mock(
+        return_value=httpx.Response(200, text="component")
     )
-    result = json.loads(await tools[0]("https://deploy.robotsix.net/docs"))
+
+    settings = _settings(allowlist=["www.robotsix.net", "robotsix.net"])
+    with _roster("http://mail:8080"):
+        tools = build_http_probe_tools(settings, _central_deploy())
+        result = json.loads(await tools[0]("http://mail:8080/openapi.json"))
 
     assert result["healthy"] is True
-    assert result["body_snippet"] == "authenticated"
-
-    # Verify the Authorization header was sent.
-    last_request = respx_mock.calls.last.request
-    auth = last_request.headers.get("Authorization", "")
-    assert auth.startswith("Basic ")
-    import base64 as _b64
-
-    decoded = _b64.b64decode(auth.removeprefix("Basic ")).decode()
-    assert decoded == "operator:s3cret"  # pragma: allowlist secret
+    assert result["body_snippet"] == "component"
+    # Reached over the internal network — nothing injected.
+    assert "Authorization" not in respx_mock.calls.last.request.headers
 
 
 @pytest.mark.asyncio
-async def test_http_probe_fleet_auth_host_not_matching(
+async def test_http_probe_roster_host_skips_ssrf(
     respx_mock: respx.MockRouter,
 ) -> None:
-    """Fleet auth is NOT sent when the host is not in auth_hosts."""
-    respx_mock.get("https://www.robotsix.net/").mock(
-        return_value=httpx.Response(200, text="public")
-    )
+    """A roster host resolving to a private IP is allowed.
 
-    tools = _tools(
-        fleet_auth=FleetAuthSettings(
-            basic_auth_username="operator",
-            basic_auth_password="s3cret",  # pragma: allowlist secret
-            auth_hosts=["deploy.robotsix.net"],
-        ),
-    )
-    result = json.loads(await tools[0]("https://www.robotsix.net/"))
-
-    assert result["healthy"] is True
-    assert result["body_snippet"] == "public"
-
-    last_request = respx_mock.calls.last.request
-    assert "Authorization" not in last_request.headers
-
-
-@pytest.mark.asyncio
-async def test_http_probe_fleet_auth_none(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """No fleet_auth configured → no auth header sent."""
-    respx_mock.get("https://www.robotsix.net/").mock(
-        return_value=httpx.Response(200, text="public")
-    )
-
-    tools = _tools(fleet_auth=None)
-    result = json.loads(await tools[0]("https://www.robotsix.net/"))
-
-    assert result["healthy"] is True
-    last_request = respx_mock.calls.last.request
-    assert "Authorization" not in last_request.headers
-
-
-@pytest.mark.asyncio
-async def test_http_probe_fleet_auth_host_allowed_without_main_allowlist(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """Fleet-auth hosts are implicitly allowed even when not in the main allowlist."""
-    respx_mock.get("https://deploy.robotsix.net/docs").mock(
-        return_value=httpx.Response(200, text="authenticated")
-    )
-
-    # The main allowlist does NOT include deploy.robotsix.net.
-    tools = _tools(
-        allowlist=["www.robotsix.net", "robotsix.net"],
-        fleet_auth=FleetAuthSettings(
-            basic_auth_username="operator",
-            basic_auth_password="s3cret",  # pragma: allowlist secret
-            auth_hosts=["deploy.robotsix.net"],
-        ),
-    )
-    result = json.loads(await tools[0]("https://deploy.robotsix.net/docs"))
-
-    assert result["healthy"] is True
-    assert result["body_snippet"] == "authenticated"
-
-    # Verify the Authorization header was sent.
-    last_request = respx_mock.calls.last.request
-    auth = last_request.headers.get("Authorization", "")
-    assert auth.startswith("Basic ")
-
-
-@pytest.mark.asyncio
-async def test_http_probe_fleet_auth_empty_credentials_no_header(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """When username or password is empty, no auth header is sent."""
-    respx_mock.get("https://deploy.robotsix.net/docs").mock(
+    A component's internal address is private by definition, so the SSRF guard
+    must not block it — while still blocking everything else.
+    """
+    respx_mock.get("http://mail:8080/health").mock(
         return_value=httpx.Response(200, text="ok")
     )
 
-    tools = _tools(
-        allowlist=["deploy.robotsix.net"],
-        fleet_auth=FleetAuthSettings(
-            basic_auth_username="",
-            basic_auth_password="",
-            auth_hosts=["deploy.robotsix.net"],
+    with (
+        mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.5", 0))],
         ),
+        _roster("http://mail:8080"),
+    ):
+        tools = build_http_probe_tools(_settings(allowlist=["mail"]), _central_deploy())
+        result = json.loads(await tools[0]("http://mail:8080/health"))
+
+    assert result["healthy"] is True, result.get("error")
+
+
+@pytest.mark.asyncio
+async def test_http_probe_non_roster_private_host_still_blocked(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """The SSRF guard still fires for a private host that is not a component."""
+    with (
+        mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=[(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("10.0.0.9", 0))],
+        ),
+        _roster("http://mail:8080"),
+    ):
+        tools = build_http_probe_tools(
+            _settings(allowlist=["internal.example.com"]), _central_deploy()
+        )
+        result = json.loads(await tools[0]("http://internal.example.com/secrets"))
+
+    assert result["healthy"] is False
+    assert "SSRF" in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_http_probe_without_central_deploy_keeps_own_allowlist(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """With no central-deploy configured the tool falls back to its allowlist."""
+    respx_mock.get("https://www.robotsix.net/").mock(
+        return_value=httpx.Response(200, text="public")
     )
-    result = json.loads(await tools[0]("https://deploy.robotsix.net/docs"))
+
+    tools = build_http_probe_tools(_settings(allowlist=["www.robotsix.net"]), None)
+    result = json.loads(await tools[0]("https://www.robotsix.net/"))
 
     assert result["healthy"] is True
-    last_request = respx_mock.calls.last.request
-    assert "Authorization" not in last_request.headers
+    assert "Authorization" not in respx_mock.calls.last.request.headers

@@ -23,7 +23,6 @@ from robotsix_chat.config.models import (
     DirectRepoSettings,
     DockerDigestSettings,
     FeedbackSettings,
-    FleetAuthSettings,
     GitHubActionsSettings,
     GitHubSecuritySettings,
     HttpProbeSettings,
@@ -1169,15 +1168,6 @@ class Settings(BaseModel):
     )
     http_probe: HttpProbeSettings = Field(
         default_factory=HttpProbeSettings, json_schema_extra={"advanced": True}
-    )
-    fleet_auth: FleetAuthSettings | None = Field(
-        default=None,
-        json_schema_extra={"advanced": True},
-        description=(
-            "Basic-auth credentials for the fleet reverse proxy, shared by "
-            "every outbound-HTTP tool (http_probe, render_url, public_fetch). "
-            "One realm, one setting."
-        ),
     )
     docker_digest: DockerDigestSettings = Field(
         default_factory=DockerDigestSettings, json_schema_extra={"advanced": True}

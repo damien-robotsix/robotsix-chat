@@ -5,7 +5,7 @@ Consolidates the duplicated logic that previously lived in both
 
 - SSRF protection (private/internal IP network ranges + DNS-level check)
 - Fleet-auth Basic-Auth header pre-computation
-- Hostname allowlist check (with fleet_auth_hosts implicit-pass)
+- Hostname allowlist check (with fleet-component implicit-pass)
 - URL scheme validation (http / https only)
 
 These are internal helpers — not part of either tool's public API.
@@ -14,11 +14,14 @@ These are internal helpers — not part of either tool's public API.
 from __future__ import annotations
 
 import ipaddress
+import logging
 import socket
 from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
-    from robotsix_chat.config import FleetAuthSettings
+    from robotsix_chat.config import CentralDeploySettings
+
+logger = logging.getLogger(__name__)
 
 # ---------------------------------------------------------------------------
 # SSRF protection — private / internal IP ranges
@@ -90,28 +93,51 @@ def _host_is_private(host: str) -> bool:
 
 
 # ---------------------------------------------------------------------------
-# Fleet-auth Basic-Auth header pre-computation
+# Fleet component hosts, resolved from the central-deploy roster
 # ---------------------------------------------------------------------------
 
 
-def _build_fleet_auth_header(
-    fleet_auth: FleetAuthSettings | None,
-) -> tuple[str | None, set[str]]:
-    """Return ``(header_value, auth_hosts)`` from fleet-auth config.
+async def fleet_component_hosts(
+    central_deploy: CentralDeploySettings | None,
+) -> set[str]:
+    """Return the hostnames of chat-accessible fleet components.
 
-    When *fleet_auth* is ``None`` or missing credentials, returns
-    ``(None, set())`` — no header injection.
+    Derived from the central-deploy roster (``GET /chat/components``), whose
+    ``base_url`` for each component is an address on the internal container
+    network — ``http://mill:8077``, not a public URL. The roster is the fleet's
+    single source of truth for which components the agent may reach; the
+    per-component chat-access toggle is what populates it.
+
+    These hosts get two exemptions in the fetching tools: they satisfy the host
+    allowlist, and they skip the private-address (SSRF) check, because an
+    internal address is exactly what a fleet component's URL looks like.
+
+    Reaching them needs no credential. Requests never leave the container
+    network, so they never meet the fleet's edge or its SSO gate.
+
+    Returns an empty set when central-deploy is not configured or the roster
+    cannot be fetched — the tools then fall back to their own allowlists rather
+    than failing, matching the roster module's no-queues/no-retry-loop stance.
     """
-    if fleet_auth is None:
-        return None, set()
-    username = fleet_auth.basic_auth_username
-    password = fleet_auth.basic_auth_password.get_secret_value()
-    if not username or not password:
-        return None, set()
-    import base64 as _base64
+    if central_deploy is None:
+        return set()
+    from urllib.parse import urlsplit
 
-    encoded = _base64.b64encode(f"{username}:{password}".encode()).decode("ascii")
-    return f"Basic {encoded}", set(fleet_auth.auth_hosts)
+    from robotsix_chat.component_access.roster import fetch_roster
+
+    try:
+        entries = await fetch_roster(central_deploy)
+    except Exception:
+        logger.warning("Could not fetch the component roster", exc_info=True)
+        return set()
+
+    hosts: set[str] = set()
+    for entry in entries:
+        base_url = entry.get("base_url") or ""
+        host = urlsplit(base_url).hostname
+        if host:
+            hosts.add(host)
+    return hosts
 
 
 # ---------------------------------------------------------------------------
@@ -122,22 +148,23 @@ def _build_fleet_auth_header(
 def _check_hostname_allowlist(
     hostname: str,
     allowed_hosts: set[str],
-    fleet_auth_hosts: set[str],
+    fleet_hosts: set[str],
     tool_name: str,
 ) -> str | None:
     """Return an error message when *hostname* is not allowed, or ``None``.
 
-    Fleet-auth hosts are implicitly allowed (the operator explicitly listed
-    them in ``auth_hosts``), so the agent can reach authenticated fleet UIs
-    without duplicating every hostname in the main allowlist.
+    Fleet component hosts are implicitly allowed: the operator granted the
+    agent access by enabling chat access on the component, and requiring the
+    hostname to be repeated in this tool's allowlist would be a second place to
+    configure the same decision.
 
     An empty *allowed_hosts* set means any hostname is permitted.
     """
     if not allowed_hosts:
         return None
-    if hostname in allowed_hosts or hostname in fleet_auth_hosts:
+    if hostname in allowed_hosts or hostname in fleet_hosts:
         return None
-    all_allowed = sorted(allowed_hosts | fleet_auth_hosts)
+    all_allowed = sorted(allowed_hosts | fleet_hosts)
     return (
         f"Hostname {hostname!r} is not in the {tool_name} allowlist. "
         f"Allowed hosts: {all_allowed}"

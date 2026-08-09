@@ -30,14 +30,14 @@ from urllib.parse import urlparse
 import httpx
 
 from robotsix_chat.common.http_fetch import (
-    _build_fleet_auth_header,
     _check_hostname_allowlist,
     _host_is_private,
     _validate_url_scheme,
+    fleet_component_hosts,
 )
 
 if TYPE_CHECKING:
-    from robotsix_chat.config import FleetAuthSettings, HttpProbeSettings
+    from robotsix_chat.config import CentralDeploySettings, HttpProbeSettings
 
 __all__ = ["build_http_probe_tools", "load_http_probe_skill"]
 
@@ -62,17 +62,17 @@ def load_http_probe_skill() -> str:
 
 def build_http_probe_tools(
     settings: HttpProbeSettings,
-    fleet_auth: FleetAuthSettings | None = None,
+    central_deploy: CentralDeploySettings | None = None,
 ) -> list[Callable[..., Any]]:
     """Return the ``http_probe`` tool, or an empty list when disabled.
 
     Args:
         settings: HttpProbe configuration (``enabled`` master switch,
             timeout, allowlist, body-cap, max redirects).
-        fleet_auth: Shared fleet reverse-proxy credentials, from the
-            top-level ``fleet_auth`` setting.  When set, requests to hosts
-            in ``fleet_auth.auth_hosts`` carry server-injected basic auth
-            (never visible to the agent).
+        central_deploy: Central-deploy connection settings, used to resolve
+            which fleet components the agent may reach. Components are
+            addressed at their internal container base_url, so no credential
+            is involved.
 
     Returns:
         A single-element list containing the ``http_probe`` async callable,
@@ -86,8 +86,6 @@ def build_http_probe_tools(
 
     # Pre-compute the basic-auth header value when fleet-auth is
     # configured — the agent never sees the credential; it is injected
-    # server-side for matching hosts only.
-    fleet_auth_header, fleet_auth_hosts = _build_fleet_auth_header(fleet_auth)
 
     async def http_probe(
         url: str,
@@ -157,11 +155,14 @@ def build_http_probe_tools(
 
         # --- Hostname allowlist check ---
         # Fleet-auth hosts are implicitly allowed (the operator
-        # explicitly listed them in auth_hosts), so the agent can
-        # reach authenticated fleet UIs without duplicating every
-        # hostname in the main allowlist.
+        # Fleet components come from the central-deploy roster, so enabling
+        # chat access on a component is the only place that decision is made.
+        fleet_hosts = await fleet_component_hosts(central_deploy)
+        # Fleet components come from the central-deploy roster, so enabling
+        # chat access on a component is the only place that decision is made.
+        fleet_hosts = await fleet_component_hosts(central_deploy)
         allowlist_error = _check_hostname_allowlist(
-            hostname, allowed_hosts, fleet_auth_hosts, "http_probe"
+            hostname, allowed_hosts, fleet_hosts, "http_probe"
         )
         if allowlist_error is not None:
             result["error"] = allowlist_error
@@ -169,8 +170,7 @@ def build_http_probe_tools(
             return json.dumps(result, ensure_ascii=False)
 
         # --- SSRF check ---
-        # Fleet-auth hosts are trusted by the operator — skip SSRF check.
-        if hostname and hostname not in fleet_auth_hosts and _host_is_private(hostname):
+        if hostname and hostname not in fleet_hosts and _host_is_private(hostname):
             result["error"] = (
                 f"Hostname {hostname!r} resolves to a private/internal IP "
                 "address — SSRF protection blocked the request."
@@ -182,8 +182,6 @@ def build_http_probe_tools(
         start = time.monotonic()
         try:
             headers: dict[str, str] = {}
-            if hostname in fleet_auth_hosts and fleet_auth_header is not None:
-                headers["Authorization"] = fleet_auth_header
             async with httpx.AsyncClient(
                 timeout=settings.timeout,
                 follow_redirects=True,
