@@ -65,15 +65,15 @@ context explaining what happened and what to expect next.
    restart the monitor, check the ticket). The prompt instructs the agent to **not** just
    acknowledge the outcome briefly — it must provide actionable context, and to **never conflate**
    auto-stop (closed) with auto-pause (reversible).
-2. **LLM API failure** — if the reaction turn itself fails (e.g. OpenRouter is unreachable), the
+1. **LLM API failure** — if the reaction turn itself fails (e.g. OpenRouter is unreachable), the
    system falls back to publishing a plain `agent_message` frame directly into the chat. You see a
    message like
    `"[System] Background task 'Monitor ticket T-42' (periodic) auto-stopped after consecutive no-change runs."`
    with the full outcome included.
-3. **Depth bounding** — if reaction turns chain-react (a close spawns a new subsession that closes
+1. **Depth bounding** — if reaction turns chain-react (a close spawns a new subsession that closes
    and triggers another reaction, etc.), the recursion is capped at 3 nested turns. Beyond that,
    outcomes are recorded passively without further LLM calls.
-4. **Plan-aware prompts** — if the main conversation has an active autonomous plan (awaiting
+1. **Plan-aware prompts** — if the main conversation has an active autonomous plan (awaiting
    approval or mid-execution), the reaction prompt includes the current plan and instructs the agent
    to acknowledge the subsession outcome as a note and continue without re-requesting approval or
    restarting planning. This prevents subsession notifications from derailing approved work.
@@ -158,14 +158,14 @@ A background **watcher** task (`watch_paused_monitors` in `subsessions/watcher.p
 lifetime of the server process. On every poll tick it:
 
 1. Queries the registry for all paused periodic subsessions (`find_paused_periodic()`).
-2. For each paused monitor, fetches the current ticket state from the mill API via the
+1. For each paused monitor, fetches the current ticket state from the mill API via the
    `board_api_base_url` configured in `direct_repo`.
-3. Compares the fetched state against the checkpoint's `last_known_state`.
-4. If the state differs, the watcher sends an immediate inbox **wake message** to the live `PAUSED`
+1. Compares the fetched state against the checkpoint's `last_known_state`.
+1. If the state differs, the watcher sends an immediate inbox **wake message** to the live `PAUSED`
    worker (`_wake_paused_monitor`), which unblocks it and resumes polling right away. If the worker
    is not reachable (e.g. it died after a server restart), the watcher falls back to `reopen()` +
    spawning a fresh worker.
-5. A second pass also polls GitHub for a tracked PR's merge status, resuming the monitor via the
+1. A second pass also polls GitHub for a tracked PR's merge status, resuming the monitor via the
    same wake/reopen path when the PR is merged.
 
 In addition to resuming monitors, the watcher's GitHub pass actively watches for two PR states that
@@ -175,11 +175,11 @@ would otherwise go unnoticed until a monitor report:
   (`merged is not True`), the change was silently lost. The watcher:
 
   1. Checks the owning ticket's current state (from the board API).
-  2. If the ticket is **not** in a terminal state (`closed`/`done`), it publishes a **high-urgency**
+  1. If the ticket is **not** in a terminal state (`closed`/`done`), it publishes a **high-urgency**
      SSE notification to the conversation and attempts to create a **follow-up ticket** on the board
      (`BoardClient.create_ticket`) so the operator sees the loss immediately. It then resumes the
      monitor so it can report the failure.
-  3. If the ticket is already terminal, the closure is expected and no alarm is raised.
+  1. If the ticket is already terminal, the closure is expected and no alarm is raised.
 
 - **Merge conflict.** If the tracked PR reports `mergeable == false`, the watcher publishes a
   **high-urgency** SSE notification naming the PR and repo, so the conflict is surfaced as soon as
@@ -266,13 +266,13 @@ server restart — it is automatically retried instead of immediately marked `FA
 
 1. The worker catches the exception and calls `_format_worker_error` to produce a readable error
    message (see [Error formatting](#error-formatting) below).
-2. If the subsession kind is `user_chat` or `task` and `retry_count < user_chat_max_retries`:
+1. If the subsession kind is `user_chat` or `task` and `retry_count < user_chat_max_retries`:
    - The retry counter is incremented and persisted immediately to the JSON store so it survives a
      process crash or restart.
    - A `[System note]` is prepended to the subsession's prompt explaining what went wrong on the
      prior attempt and advising the agent to re-fetch any lost external state.
    - The worker re-launches the subsession recursively with the updated prompt.
-3. If retries are exhausted (or the kind is not retryable), the subsession is marked `FAILED` as
+1. If retries are exhausted (or the kind is not retryable), the subsession is marked `FAILED` as
    before.
 
 ### Fallback for exhausted user_chat retries
@@ -315,13 +315,13 @@ self-closing after a fixed number of failures.
 
 1. After **2 consecutive** mill-unreachable failures (`_MAX_MILL_FAILURES`), the subsession stops
    normal periodic ticking and enters recovery mode.
-2. A health probe runs with **exponential backoff** — the first retry sleeps
+1. A health probe runs with **exponential backoff** — the first retry sleeps
    `subsessions.mill_recovery_initial_backoff_seconds` (default 60 s), then doubles on each
    subsequent retry up to `subsessions.mill_recovery_max_backoff_seconds` (default 3600 s / 1 hour).
-3. On each retry cycle, the subsession probes the mill's health endpoint. If mill is reachable
+1. On each retry cycle, the subsession probes the mill's health endpoint. If mill is reachable
    again, the failure counter resets and normal periodic operation resumes automatically — no manual
    intervention needed.
-4. If the mill remains unreachable after `subsessions.mill_recovery_max_retries` (default 10)
+1. If the mill remains unreachable after `subsessions.mill_recovery_max_retries` (default 10)
    recovery retries, the subsession is permanently closed and a summary is delivered to the parent
    conversation.
 
@@ -343,9 +343,9 @@ When a periodic subsession's agent turn fails with a recognised transient error:
 1. The turn is retried with **exponential backoff** — the first retry sleeps
    `subsessions.transient_error_backoff_base` (default 1.0 s), then doubles on each subsequent retry
    up to `subsessions.transient_error_backoff_cap` (default 30.0 s).
-2. A warning is logged with the error details for debugging.
-3. If the turn succeeds on a retry, the periodic cycle continues normally — no result is lost.
-4. If all retries are exhausted (`subsessions.transient_error_max_retries + 1` total attempts), the
+1. A warning is logged with the error details for debugging.
+1. If the turn succeeds on a retry, the periodic cycle continues normally — no result is lost.
+1. If all retries are exhausted (`subsessions.transient_error_max_retries + 1` total attempts), the
    run is **skipped gracefully**: the subsession stays alive (status `SLEEPING`), a
    `"TRANSIENT_ERROR"` result is recorded, and the schedule continues with the next interval. The
    subsession is **not** permanently failed — it will retry on its next scheduled tick.
@@ -362,141 +362,141 @@ run once and a transient failure would silently lose the work.
 
 ## How it works under the hood
 
-01. `spawn_subsession(kind="periodic", ...)` launches an asyncio worker that runs one agent turn per
-    tick on the configured interval (minimum `subsessions.min_interval_seconds`, default 60s).
+1. `spawn_subsession(kind="periodic", ...)` launches an asyncio worker that runs one agent turn per
+   tick on the configured interval (minimum `subsessions.min_interval_seconds`, default 60s).
 
-02. Each turn runs the subsession's own agent (built at the chosen `model_level` via
-    `create_agent_from_settings`) with the full standard tool suite plus the subsession tools. Every
-    turn is guarded by a hard timeout (`subsessions.run_timeout_seconds`, default 600 s): if the
-    agent turn (recall + LLM call + delivery) exceeds the deadline, the run is marked failed, a
-    warning is logged, and the schedule continues with the next tick — preventing a hung cognee
-    adapter lock or stalled LLM call from freezing the subsession forever.
+1. Each turn runs the subsession's own agent (built at the chosen `model_level` via
+   `create_agent_from_settings`) with the full standard tool suite plus the subsession tools. Every
+   turn is guarded by a hard timeout (`subsessions.run_timeout_seconds`, default 600 s): if the
+   agent turn (recall + LLM call + delivery) exceeds the deadline, the run is marked failed, a
+   warning is logged, and the schedule continues with the next tick — preventing a hung cognee
+   adapter lock or stalled LLM call from freezing the subsession forever.
 
-03. When `include_previous_result` is `true`, the previous run's result is prepended to the prompt
-    so the agent can compare state across runs.
+1. When `include_previous_result` is `true`, the previous run's result is prepended to the prompt
+   so the agent can compare state across runs.
 
-04. A `NO_CHANGE` reply suppresses parent delivery and the `subsession_result` SSE frame for that
-    run; N consecutive suppressed runs auto-close the subsession.
+1. A `NO_CHANGE` reply suppresses parent delivery and the `subsession_result` SSE frame for that
+   run; N consecutive suppressed runs auto-close the subsession.
 
-05. A non-suppressed result is delivered to the parent conversation (a synthetic turn in the owning
-    chat session, or the parent subsession's inbox when nested) and published as a
-    `subsession_result` frame to the browser.
+1. A non-suppressed result is delivered to the parent conversation (a synthetic turn in the owning
+   chat session, or the parent subsession's inbox when nested) and published as a
+   `subsession_result` frame to the browser.
 
-    - **Decision chats (user_chat) spawned by periodic parents get dual delivery:** the outcome is
-      enqueued into the periodic parent's inbox (so the periodic sees completed children on its next
-      wake and suppresses duplicate user_chat spawns for the same ticket) AND scheduled as a
-      reaction in the main chat (so the operator sees decisions immediately even while the periodic
-      is sleeping). Previously, outcomes from periodic-spawned decision chats reached only the
-      sleeping periodic parent and were silently stranded.
-    - **Nested user_chat prohibition:** a `user_chat` subsession cannot spawn another `user_chat`
-      subsession — preventing stacked orphaned decision chats. If a spawned decision chat tries to
-      open a second decision chat for the same ticket, the spawn is refused with a
-      `SubsessionUserChatSpawnError`. Non-`user_chat` children (e.g. `task`) from a `user_chat`
-      parent are still allowed.
-    - **Periodic sibling spawning (escalation / remediation).** A **periodic** subsession MAY spawn
-      a `task` (remediation) or `user_chat` (operator-escalation) subsession as a parallel
-      **sibling** attached to the periodic's holding parent conversation — not nested under the
-      periodic itself. The sibling appears at the periodic's own depth, sharing the periodic's
-      parent. Use these for genuine escalation/remediation only (a real operator decision or real
-      remediation work triggered by a detected condition), **not** as a per-tick reflex — a tick
-      that detects no condition performs no spawn.
-    - **Forbidden spawns from a periodic.** A periodic subsession MUST NOT spawn a nested
-      **periodic** child (runaway monitors, spurious escalations) nor an **on_close** child.
-      Forbidden spawns are rejected **silently**: no `user_chat` or operator escalation is ever
-      opened, the refusal is recorded in the audit log (attempted kind + reason), and the spawn tool
-      returns a non-fatal error message so the periodic tick continues without crashing.
-    - **Periodic self-update.** Instead of spawning nested periodic children (which is forbidden), a
-      periodic monitor can call `self_update_subsession` to revise its own instructions, polling
-      interval, or max-run budget from within — the supported path for self-amendment when the
-      monitored scope or tempo evolves.
+   - **Decision chats (user_chat) spawned by periodic parents get dual delivery:** the outcome is
+     enqueued into the periodic parent's inbox (so the periodic sees completed children on its next
+     wake and suppresses duplicate user_chat spawns for the same ticket) AND scheduled as a
+     reaction in the main chat (so the operator sees decisions immediately even while the periodic
+     is sleeping). Previously, outcomes from periodic-spawned decision chats reached only the
+     sleeping periodic parent and were silently stranded.
+   - **Nested user_chat prohibition:** a `user_chat` subsession cannot spawn another `user_chat`
+     subsession — preventing stacked orphaned decision chats. If a spawned decision chat tries to
+     open a second decision chat for the same ticket, the spawn is refused with a
+     `SubsessionUserChatSpawnError`. Non-`user_chat` children (e.g. `task`) from a `user_chat`
+     parent are still allowed.
+   - **Periodic sibling spawning (escalation / remediation).** A **periodic** subsession MAY spawn
+     a `task` (remediation) or `user_chat` (operator-escalation) subsession as a parallel
+     **sibling** attached to the periodic's holding parent conversation — not nested under the
+     periodic itself. The sibling appears at the periodic's own depth, sharing the periodic's
+     parent. Use these for genuine escalation/remediation only (a real operator decision or real
+     remediation work triggered by a detected condition), **not** as a per-tick reflex — a tick
+     that detects no condition performs no spawn.
+   - **Forbidden spawns from a periodic.** A periodic subsession MUST NOT spawn a nested
+     **periodic** child (runaway monitors, spurious escalations) nor an **on_close** child.
+     Forbidden spawns are rejected **silently**: no `user_chat` or operator escalation is ever
+     opened, the refusal is recorded in the audit log (attempted kind + reason), and the spawn tool
+     returns a non-fatal error message so the periodic tick continues without crashing.
+   - **Periodic self-update.** Instead of spawning nested periodic children (which is forbidden), a
+     periodic monitor can call `self_update_subsession` to revise its own instructions, polling
+     interval, or max-run budget from within — the supported path for self-amendment when the
+     monitored scope or tempo evolves.
 
-06. **Terminal-state discipline (three-source verification + CI loop guard).** The sub-agent calls
-    its `complete_subsession(summary)` tool as soon as the monitored condition reaches a verified
-    terminal state — the summary is delivered to the parent and the subsession closes. For periodic
-    monitors with a `ticket_id` in their checkpoint, the agent must verify from **three independent
-    sources** before calling `complete_subsession`:
+1. **Terminal-state discipline (three-source verification + CI loop guard).** The sub-agent calls
+   its `complete_subsession(summary)` tool as soon as the monitored condition reaches a verified
+   terminal state — the summary is delivered to the parent and the subsession closes. For periodic
+   monitors with a `ticket_id` in their checkpoint, the agent must verify from **three independent
+   sources** before calling `complete_subsession`:
 
-    - **(1)** A live GET of the ticket endpoint confirming the terminal state.
-    - **(2)** A check of the PR/MR endpoint confirming merge status (or a statement that the ticket
-      was closed without a PR).
-    - **(3)** A check of the most recent CI workflow run for the affected pipeline (e.g. the
-      "Publish Docker image" workflow or the repo's primary deploy workflow).
+   - **(1)** A live GET of the ticket endpoint confirming the terminal state.
+   - **(2)** A check of the PR/MR endpoint confirming merge status (or a statement that the ticket
+     was closed without a PR).
+   - **(3)** A check of the most recent CI workflow run for the affected pipeline (e.g. the
+     "Publish Docker image" workflow or the repo's primary deploy workflow).
 
-    **Programmatic gate.** `complete_subsession` **rejects** any summary that does not include CI
-    workflow evidence — at least one of: `"CI workflow"`, `"workflow run"`, `"pipeline"`,
-    `"GitHub Actions"`, `"publish"`, `"deploy workflow"`, or `"could not be verified"`. If the
-    summary lacks these keywords, the tool returns a rejection message instructing the agent to
-    fetch the CI workflow status first.
+   **Programmatic gate.** `complete_subsession` **rejects** any summary that does not include CI
+   workflow evidence — at least one of: `"CI workflow"`, `"workflow run"`, `"pipeline"`,
+   `"GitHub Actions"`, `"publish"`, `"deploy workflow"`, or `"could not be verified"`. If the
+   summary lacks these keywords, the tool returns a rejection message instructing the agent to
+   fetch the CI workflow status first.
 
-    **On CI failure.** If the workflow run failed or is still failing, the agent must NOT claim
-    success. Instead it calls `complete_subsession` with a summary documenting the failure (run id,
-    reason, log excerpt), then calls `spawn_subsession` to file a new diagnostic ticket so the
-    operator sees the pipeline is still broken. If the workflow API is unreachable, the agent
-    retries twice with a 5-second pause before acknowledging the status could not be verified.
+   **On CI failure.** If the workflow run failed or is still failing, the agent must NOT claim
+   success. Instead it calls `complete_subsession` with a summary documenting the failure (run id,
+   reason, log excerpt), then calls `spawn_subsession` to file a new diagnostic ticket so the
+   operator sees the pipeline is still broken. If the workflow API is unreachable, the agent
+   retries twice with a 5-second pause before acknowledging the status could not be verified.
 
-07. Subsessions persist to `/data/subsessions.json`; periodic ones are automatically resumed after a
-    process restart (e.g. Watchtower redeploy) with their remaining run budget. Unlike task and
-    user_chat subsessions, periodic monitors resume silently — they are excluded from the restart
-    notice injected into the parent conversation, preventing unnecessary parent-agent noise on every
-    redeploy. Results continue to be delivered via their normal `subsession_result` frames.
+1. Subsessions persist to `/data/subsessions.json`; periodic ones are automatically resumed after a
+   process restart (e.g. Watchtower redeploy) with their remaining run budget. Unlike task and
+   user_chat subsessions, periodic monitors resume silently — they are excluded from the restart
+   notice injected into the parent conversation, preventing unnecessary parent-agent noise on every
+   redeploy. Results continue to be delivered via their normal `subsession_result` frames.
 
-    **Auto-paused monitors are also restored on restart.** If a periodic monitor was auto-paused
-    with reason `paused` (max idle runs), its `PAUSED` state is persisted; the resume hook re-spawns
-    the worker and immediately returns it to the paused wait loop (it does not run an agent turn),
-    so the live watcher can wake it when the ticket state changes. Monitors auto-closed with
-    `no_change_auto_stop` (consecutive no-change runs) or `human_approval_timeout` are re-spawned
-    normally so they can re-verify the ticket state — the underlying condition (no change, idle,
-    pending approval) may have resolved during the outage; the worker's `_check_resume_status`
-    inspects the current ticket state on its first post-restart tick and closes immediately if
-    conditions have not improved.
+   **Auto-paused monitors are also restored on restart.** If a periodic monitor was auto-paused
+   with reason `paused` (max idle runs), its `PAUSED` state is persisted; the resume hook re-spawns
+   the worker and immediately returns it to the paused wait loop (it does not run an agent turn),
+   so the live watcher can wake it when the ticket state changes. Monitors auto-closed with
+   `no_change_auto_stop` (consecutive no-change runs) or `human_approval_timeout` are re-spawned
+   normally so they can re-verify the ticket state — the underlying condition (no change, idle,
+   pending approval) may have resolved during the outage; the worker's `_check_resume_status`
+   inspects the current ticket state on its first post-restart tick and closes immediately if
+   conditions have not improved.
 
-    Monitors closed explicitly (e.g. `completed` by the agent, `max_runs` by user cap, or any
-    explicit close by the user) are **not** re-spawned — the shutdown was intentional.
+   Monitors closed explicitly (e.g. `completed` by the agent, `max_runs` by user cap, or any
+   explicit close by the user) are **not** re-spawned — the shutdown was intentional.
 
-08. **Blocked-resume threshold detection.** When a periodic monitor resumes and finds its ticket
-    still BLOCKED, the subsession's checkpoint tracks a `blocked_resume_count`. If the ticket stays
-    blocked across **3 consecutive resume attempts** (controlled by `_MAX_BLOCKED_RESUMES` in
-    `worker_mill.py`), the subsession is automatically closed with `close_reason="repeated_blocked"`
-    and a diagnostic summary is delivered to the parent conversation. This prevents the agent from
-    cycling through a dead-end implement→blocked→resume loop — e.g. config-standard footprint
-    violations that the assistant cannot fix on its own (the implement step fails to revert
-    base-branch files, re-blocking the ticket on every attempt).
+1. **Blocked-resume threshold detection.** When a periodic monitor resumes and finds its ticket
+   still BLOCKED, the subsession's checkpoint tracks a `blocked_resume_count`. If the ticket stays
+   blocked across **3 consecutive resume attempts** (controlled by `_MAX_BLOCKED_RESUMES` in
+   `worker_mill.py`), the subsession is automatically closed with `close_reason="repeated_blocked"`
+   and a diagnostic summary is delivered to the parent conversation. This prevents the agent from
+   cycling through a dead-end implement→blocked→resume loop — e.g. config-standard footprint
+   violations that the assistant cannot fix on its own (the implement step fails to revert
+   base-branch files, re-blocking the ticket on every attempt).
 
-    - The counter **resets to 0** any time the ticket transitions to a non-blocked state between
-      resumes, meaning the agent made progress.
-    - The stale-worker cap (`_MAX_STALE_WORKER_RESUMES = 2`, which closes with
-      `close_reason="stale_worker"`) is checked independently; whichever cap fires first closes the
-      subsession.
-    - When the counter is between 1 and 2 (below the threshold), the agent receives an additional
-      context note:
-      `"Repeated block: this is blocked-resume attempt X/3 (N remaining before auto-close). If the same failure keeps recurring, stop auto-retrying and escalate to the operator."`
+   - The counter **resets to 0** any time the ticket transitions to a non-blocked state between
+     resumes, meaning the agent made progress.
+   - The stale-worker cap (`_MAX_STALE_WORKER_RESUMES = 2`, which closes with
+     `close_reason="stale_worker"`) is checked independently; whichever cap fires first closes the
+     subsession.
+   - When the counter is between 1 and 2 (below the threshold), the agent receives an additional
+     context note:
+     `"Repeated block: this is blocked-resume attempt X/3 (N remaining before auto-close). If the same failure keeps recurring, stop auto-retrying and escalate to the operator."`
 
-09. **Decision-blocked guidance.** When a periodic monitor finds its ticket awaiting an operator
-    decision — stuck in `human_issue_approval`, waiting on an `"Option A or B?"` choice, or
-    otherwise blocked on human direction — the sub-agent is instructed to **not** silently reply
-    `NO_CHANGE` run after run. Instead, it reports the blocked state with a recommendation to pause
-    the monitor, e.g.:
+1. **Decision-blocked guidance.** When a periodic monitor finds its ticket awaiting an operator
+   decision — stuck in `human_issue_approval`, waiting on an `"Option A or B?"` choice, or
+   otherwise blocked on human direction — the sub-agent is instructed to **not** silently reply
+   `NO_CHANGE` run after run. Instead, it reports the blocked state with a recommendation to pause
+   the monitor, e.g.:
 
-    > "Ticket is awaiting operator decision. Consider pausing this monitor until the operator
-    > provides direction."
+   > "Ticket is awaiting operator decision. Consider pausing this monitor until the operator
+   > provides direction."
 
-    This surfaces the pause recommendation immediately so the operator can act on it, rather than
-    waiting for the `auto_stop_no_change_runs` timeout to close the subsession. The guidance is
-    embedded in the prompt built by `_build_periodic_input` in `worker.py`.
+   This surfaces the pause recommendation immediately so the operator can act on it, rather than
+   waiting for the `auto_stop_no_change_runs` timeout to close the subsession. The guidance is
+   embedded in the prompt built by `_build_periodic_input` in `worker.py`.
 
-    **Wall-clock backstop.** In addition to the run-count gate (`human_approval_timeout_runs`), the
-    system tracks how long the checkpoint has carried `last_known_state='human_issue_approval'`
-    using a `human_approval_since` timestamp stored in the checkpoint. If the wall-clock time spent
-    in the `human_issue_approval` state exceeds `human_approval_timeout_seconds` (default 300 s / 5
-    minutes), the subsession automatically escalates (reason `human_approval_timeout`) — even if the
-    agent never emitted a `NO_CHANGE` reply. This catches the case where the agent follows the
-    system prompt (calling `complete_subsession` instead of replying `NO_CHANGE`) but the call
-    fails, avoiding an indefinite stall.
+   **Wall-clock backstop.** In addition to the run-count gate (`human_approval_timeout_runs`), the
+   system tracks how long the checkpoint has carried `last_known_state='human_issue_approval'`
+   using a `human_approval_since` timestamp stored in the checkpoint. If the wall-clock time spent
+   in the `human_issue_approval` state exceeds `human_approval_timeout_seconds` (default 300 s / 5
+   minutes), the subsession automatically escalates (reason `human_approval_timeout`) — even if the
+   agent never emitted a `NO_CHANGE` reply. This catches the case where the agent follows the
+   system prompt (calling `complete_subsession` instead of replying `NO_CHANGE`) but the call
+   fails, avoiding an indefinite stall.
 
-    | Config key                                   | Default | Description                                                                          |
-    | -------------------------------------------- | ------- | ------------------------------------------------------------------------------------ |
-    | `subsessions.human_approval_timeout_runs`    | `5`     | Consecutive `NO_CHANGE` runs in `human_issue_approval` state before auto-escalate.   |
-    | `subsessions.human_approval_timeout_seconds` | `300.0` | Wall-clock seconds in `human_issue_approval` state before auto-escalate (5 minutes). |
+   | Config key                                   | Default | Description                                                                          |
+   | -------------------------------------------- | ------- | ------------------------------------------------------------------------------------ |
+   | `subsessions.human_approval_timeout_runs`    | `5`     | Consecutive `NO_CHANGE` runs in `human_issue_approval` state before auto-escalate.   |
+   | `subsessions.human_approval_timeout_seconds` | `300.0` | Wall-clock seconds in `human_issue_approval` state before auto-escalate (5 minutes). |
 
     > **Note on user-requested tickets.** This stuck-ticket gate applies to auto-filed chores and
     > feedback tickets. A **user-requested ticket** (one the operator explicitly asked the agent to
@@ -504,12 +504,12 @@ run once and a transient failure would silently lose the work.
     > markers and transitions it out of `draft` / `human_issue_approval` to `ready` in the same
     > turn, so it should never stall at this gate waiting for operator direction.
 
-10. **Mill-recovery mode.** If the mill is unreachable, the monitor enters a recovery loop with
-    exponential backoff (see [Mill-recovery behaviour](#mill-recovery-behaviour) above), probing the
-    mill health endpoint and resuming automatically when it recovers.
+1. **Mill-recovery mode.** If the mill is unreachable, the monitor enters a recovery loop with
+   exponential backoff (see [Mill-recovery behaviour](#mill-recovery-behaviour) above), probing the
+   mill health endpoint and resuming automatically when it recovers.
 
-11. Concurrency is bounded by `subsessions.max_concurrent` (default 8, across all subsession kinds);
-    exceeding it returns a friendly refusal rather than raising.
+1. Concurrency is bounded by `subsessions.max_concurrent` (default 8, across all subsession kinds);
+   exceeding it returns a friendly refusal rather than raising.
 
 ## Autonomous-session interaction
 
