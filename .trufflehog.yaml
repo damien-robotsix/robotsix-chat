@@ -9,5 +9,5 @@
 # The same exclusion is also passed via --exclude-detectors=Lob in
 # .github/workflows/ci.yml as a second layer of defence.
 detectors:
-  - name: Lob
-    exclude: true
+  exclude:
+    - Lob
