@@ -8,12 +8,79 @@ from __future__ import annotations
 
 import logging
 
+import httpx
 from asgi_correlation_id import correlation_id
 from starlette.exceptions import HTTPException
 from starlette.requests import Request
 from starlette.responses import JSONResponse
 
 logger = logging.getLogger(__name__)
+
+#: Stable, machine-readable codes for the mid-stream SSE error frame. Clients
+#: branch on these (retry vs. abort); the wording below may change freely, the
+#: codes may not.
+STREAM_ERROR_SERVER = "server_error"
+STREAM_ERROR_TIMEOUT = "timeout"
+STREAM_ERROR_RATE_LIMIT = "rate_limit_exceeded"
+STREAM_ERROR_AUTH = "authentication_error"
+STREAM_ERROR_INVALID_REQUEST = "invalid_request_error"
+
+#: Curated, client-safe wording per code. Deliberately free of exception
+#: detail: ``str(exc)`` routinely embeds filesystem paths, upstream URLs and
+#: provider error bodies, and the SSE error frame is broadcast to *every*
+#: client watching the session.
+_STREAM_ERROR_MESSAGES: dict[str, str] = {
+    STREAM_ERROR_SERVER: (
+        "The assistant hit an internal error and couldn't complete the response."
+    ),
+    STREAM_ERROR_TIMEOUT: ("The assistant took too long to respond. Please try again."),
+    STREAM_ERROR_RATE_LIMIT: (
+        "The assistant is rate limited right now. Please retry in a moment."
+    ),
+    STREAM_ERROR_AUTH: (
+        "The assistant could not authenticate with its model provider."
+    ),
+    STREAM_ERROR_INVALID_REQUEST: ("The assistant could not process that request."),
+}
+
+
+def stream_error_code(exc: BaseException) -> str:
+    """Map ``exc`` to a stable, client-safe error code.
+
+    Categories are derived from transport-level facts only (timeout, HTTP
+    status on an attached response). Anything unrecognised degrades to
+    ``server_error`` rather than guessing.
+    """
+    if isinstance(exc, TimeoutError | httpx.TimeoutException):
+        return STREAM_ERROR_TIMEOUT
+    status = getattr(getattr(exc, "response", None), "status_code", None)
+    if isinstance(status, int):
+        if status == 429:
+            return STREAM_ERROR_RATE_LIMIT
+        if status in (401, 403):
+            return STREAM_ERROR_AUTH
+        if 400 <= status < 500:
+            return STREAM_ERROR_INVALID_REQUEST
+    return STREAM_ERROR_SERVER
+
+
+def curated_stream_error(
+    exc: BaseException, *, fallback_id: str = ""
+) -> dict[str, str]:
+    """Build the client-facing payload for a mid-stream failure.
+
+    Returns a stable ``code``, curated ``message``, and the request's
+    ``correlation_id`` so a user-reported error can be grepped straight to the
+    server-side ``logger.exception`` line. Falls back to ``fallback_id`` (the
+    turn id) when no correlation id is in context — the coalescer can outlive
+    the request that spawned it.
+    """
+    code = stream_error_code(exc)
+    return {
+        "code": code,
+        "message": _STREAM_ERROR_MESSAGES[code],
+        "correlation_id": correlation_id.get() or fallback_id,
+    }
 
 
 def _error_body(detail: str) -> dict[str, str]:
