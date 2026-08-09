@@ -1330,11 +1330,16 @@ class AutonomousSettings(BaseModel):
     @model_validator(mode="before")
     @classmethod
     def _migrate_legacy_autonomous_keys(cls, data: Any) -> Any:
-        """Strip removed single-session keys and relocate ``max_auto_turns``.
+        """Strip removed single-session keys, inject default preset, and
+        relocate ``max_auto_turns``.
 
         Legacy keys ``enabled``, ``initial_task``, ``session_color``,
         ``persist_path``, and ``pending_subsession_wait_timeout`` are
         stripped silently — they have no equivalent in the preset model.
+
+        When ``sessions`` is absent or empty, a default preset named
+        ``"default"`` is injected so that autonomous behaviour is preserved
+        on upgrade and the session is visible in the UI.
 
         The global ``max_auto_turns`` value is migrated into every session
         preset that does not already define its own ``max_auto_turns``,
@@ -1352,6 +1357,11 @@ class AutonomousSettings(BaseModel):
         )
         for key in _stripped_keys:
             data.pop(key, None)
+
+        # Inject the built-in default preset when sessions is absent or empty.
+        sessions = data.get("sessions")
+        if not sessions:
+            data["sessions"] = [{"name": "default"}]
 
         # Migrate global max_auto_turns into each preset that lacks it.
         legacy_max_turns = data.pop("max_auto_turns", None)

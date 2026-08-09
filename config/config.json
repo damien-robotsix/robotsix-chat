@@ -222,7 +222,11 @@
     "max_idle_auto_turns": 5,
     "continue_interval_seconds": 45.0,
     "stale_monitor_runs_before_completion": 3,
-    "sessions": []
+    "sessions": [
+      {
+        "name": "default"
+      }
+    ]
   },
   "max_images_per_message": 8,
   "max_image_bytes": 5242880,

@@ -95,8 +95,10 @@ class AutonomousRunner:
         # Strong references to in-flight auto-continue tasks (see asyncio
         # docs warning on create_task and weak references).
         self._auto_tasks: set[asyncio.Task[None]] = set()
-        # Resolve session definitions: use the configured list, or synthesize
-        # a default preset when none are configured (backward compat).
+        # Resolve session definitions from the configured presets list.
+        # The settings model injects a default preset when ``sessions``
+        # is empty (backward compat), so ``_resolve_definitions`` always
+        # receives at least that default.
         self._definitions = self._resolve_definitions()
 
     # -- settings accessors -----------------------------------------------
