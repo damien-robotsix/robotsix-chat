@@ -143,9 +143,9 @@ explicitly closes it; there is no auto-close or respawn.
 
 ### Single-session model
 
-When autonomous sessions are configured (`autonomous.sessions` is non-empty), there is **at most one open** autonomous session per owner at any
-instant. "Open" means any non-terminal state (`planning`, `proposal`, `executing`). Terminal states
-are `completed`.
+When autonomous sessions are configured (`autonomous.sessions` is non-empty), there is **at most one
+open** autonomous session per owner at any instant. "Open" means any non-terminal state (`planning`,
+`proposal`, `executing`). Terminal states are `completed`.
 
 - `create_session()` enforces this invariant: if the owner already has an open session, the existing
   session is returned unchanged and no new session is created.
@@ -218,15 +218,15 @@ the same subject from being re-picked until the session ends.
 ### Configuration
 
 All autonomous behaviour is driven by the `autonomous.sessions` presets list (one or more enabled
-entries). An empty list means no autonomous sessions run.
-See `docs/configuration.md` for the full autonomous settings reference.
+entries). An empty list means no autonomous sessions run. See `docs/configuration.md` for the full
+autonomous settings reference.
 
 ### UI changes
 
-The "🤖 New autonomous" button previously shown in the sessions sidebar has been **removed**.
-With the presets model, manual creation is redundant and can violate the single-session invariant.
-The code path that checked `GET /config` to conditionally show the button has also been removed
-from `chat.js`.
+The "🤖 New autonomous" button previously shown in the sessions sidebar has been **removed**. With
+the presets model, manual creation is redundant and can violate the single-session invariant. The
+code path that checked `GET /config` to conditionally show the button has also been removed from
+`chat.js`.
 
 The Approve / Reject buttons that appeared when a session was awaiting approval have been removed.
 Sessions in `proposal` state display "Awaiting review" with a plan snippet. The operator comments on
