@@ -926,6 +926,27 @@ async def test_chat_endpoint_agent_raises() -> None:
     assert len(done_frames) == 0
 
 
+@pytest.mark.asyncio
+async def test_chat_endpoint_agent_raises_empty_message() -> None:
+    """SSE error frame falls back to exception type name when str(exc) is empty."""
+    async with mock_app(error=RuntimeError("")) as f:
+        response = await f.client.post("/chat", json={"message": "hello"})
+
+    assert response.status_code == 200
+    assert SSE_CONTENT_TYPE in response.headers["content-type"]
+
+    frames = _parse_sse(response)
+
+    error_frames = [f for f in frames if f.get("type") == SSE_ERROR_TYPE]
+    assert len(error_frames) == 1
+    # Must fall back to the type name, never an empty string.
+    assert error_frames[0]["message"] == "RuntimeError"
+
+    # A failing agent must not emit a "done" frame.
+    done_frames = [f for f in frames if f.get("type") == SSE_DONE_TYPE]
+    assert len(done_frames) == 0
+
+
 # ---------------------------------------------------------------------------
 # Chat endpoint — image attachments
 # ---------------------------------------------------------------------------

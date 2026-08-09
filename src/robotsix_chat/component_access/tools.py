@@ -337,7 +337,10 @@ async def _component_request_impl(
                 path,
                 exc,
             )
-            return f"Error calling {component_id} {method_upper} {path}: {exc}"
+            return (
+                f"Error calling {component_id} {method_upper} {path}: "
+                f"{str(exc) or type(exc).__name__}"
+            )
 
     # Success (2xx / 3xx).
     status = resp.status_code

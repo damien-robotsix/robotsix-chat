@@ -18,7 +18,10 @@ logger = logging.getLogger(__name__)
 
 def _error_body(detail: str) -> dict[str, str]:
     """Build the standardised error envelope."""
-    return {"error": detail, "correlation_id": correlation_id.get() or ""}
+    return {
+        "error": detail or "internal server error",
+        "correlation_id": correlation_id.get() or "",
+    }
 
 
 async def http_exception_handler(_request: Request, exc: Exception) -> JSONResponse:

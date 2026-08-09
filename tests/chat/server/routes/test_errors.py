@@ -203,6 +203,28 @@ def test_server_error_handler_500() -> None:
 
 
 # ---------------------------------------------------------------------------
+# _error_body empty-detail guard
+# ---------------------------------------------------------------------------
+
+
+def test_error_body_empty_detail() -> None:
+    """``_error_body`` falls back to 'internal server error' on empty detail."""
+    from robotsix_chat.chat.server.routes.errors import _error_body
+
+    result = _error_body("")
+    assert result["error"] == "internal server error"
+    assert "correlation_id" in result
+
+
+def test_error_body_non_empty_detail() -> None:
+    """``_error_body`` passes through a non-empty detail unchanged."""
+    from robotsix_chat.chat.server.routes.errors import _error_body
+
+    result = _error_body("something specific")
+    assert result["error"] == "something specific"
+
+
+# ---------------------------------------------------------------------------
 # unhandled_exception_handler
 # ---------------------------------------------------------------------------
 
