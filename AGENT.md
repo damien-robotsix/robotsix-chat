@@ -227,6 +227,18 @@ pre-commit. This is the established convention in `tests/refdocs/test_refdocs.py
 cycle after pre-commit detect-secrets flagged secret-looking test fixtures; adding the pragma up
 front avoids a CI rebuild cycle.
 
+**Rule:** Any change that adds a new SSE/event frame emission path (e.g. subsession
+auto-pause/resume `notification` frames, `SSE_NOTIFICATION_TYPE`) must ship with a frame-assertion
+test that builds the env with a `RecordingSink` and asserts the emitted frame's type/title/fields.
+An emission path is only "covered" when the test env is wired with an `event_sink`; a
+`build_env(...)` call without one cannot capture a notification frame.
+
+**Rationale:** PR #1095 (ticket 20260731T235525Z) added auto-pause (worker.py:1040) and resume
+(watcher.py:109/:152) notification frames with zero tests — `git show c18e4c1 --stat` touched no
+test files, tests/subsessions/test_watcher.py has no event_sink references, and test_worker.py:410
+builds env without an event_sink. PR #1066 (failing-CI resume branch) shipped untested the same way.
+Both new event-emission paths merged uncovered.
+
 ## Feature flags and activation
 
 **Rule:** Any feature gated behind a runtime flag (`enabled: false`, a feature toggle, or a config
