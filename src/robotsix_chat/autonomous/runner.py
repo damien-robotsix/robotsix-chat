@@ -34,9 +34,10 @@ logger = logging.getLogger(__name__)
 # ui/static/chat.js.
 BOOTSTRAP_OWNER = "autonomous"
 
-# Name of the default session definition — synthesized when the config's
-# ``sessions`` list is empty so the pre-existing single-session behavior is
-# preserved out of the box.
+# Name of the default session definition — used as a stable key to identify
+# the bare ``autonomous`` pseudo-owner when a preset is named "default".
+# (No longer auto-synthesized when ``sessions`` is empty — presets are the
+# sole enablement model.)
 DEFAULT_SESSION_NAME = "default"
 
 # Prefix for owner IDs derived from named session definitions.

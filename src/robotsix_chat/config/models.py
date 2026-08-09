@@ -1220,9 +1220,9 @@ class AutonomousSessionDefinition(BaseModel):
     """Definition of one named autonomous session.
 
     Each definition maps to one autonomous session owner (``autonomous:<name>``
-    or the legacy ``autonomous`` pseudo-owner for the ``"default"`` preset).
-    The runner respects per-definition prompts, trigger type, and the enabled
-    flag independently.
+    when the preset name is not ``"default"``, otherwise the bare
+    ``autonomous`` pseudo-owner).  The runner respects per-definition prompts,
+    trigger type, and the enabled flag independently.
 
     Attributes:
         name: Unique identifier for this session definition.
@@ -1287,10 +1287,9 @@ class AutonomousSettings(BaseModel):
         stale_monitor_runs_before_completion: Number of consecutive NO_CHANGE
             cycles after which a periodic monitor is considered 'stale'.
         sessions: List of named autonomous session definitions.  When empty,
-            a single default preset is synthesized at runtime matching the
-            pre-existing single-session behavior — backward compatible out of
-            the box.  Each entry defines a prompt, trigger, max turns, and
-            enabled flag for one autonomous session.
+            no autonomous sessions run — presets are the sole enablement model.
+            Each entry defines a prompt, trigger, max turns, and enabled flag
+            for one autonomous session.
 
     """
 
@@ -1320,10 +1319,10 @@ class AutonomousSettings(BaseModel):
     sessions: list[AutonomousSessionDefinition] = Field(
         default_factory=list,
         description=(
-            "Named autonomous session definitions.  When empty, a single "
-            "default preset matching the pre-existing behavior is synthesized "
-            "at runtime.  Each entry defines a prompt, trigger, max turns, "
-            "and enabled flag for one autonomous session."
+            "Named autonomous session definitions.  When empty, no autonomous "
+            "sessions run — presets are the sole enablement model.  Each entry "
+            "defines a prompt, trigger, max turns, and enabled flag for one "
+            "autonomous session."
         ),
     )
     model_config = ConfigDict(extra="forbid")
