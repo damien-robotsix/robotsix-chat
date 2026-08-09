@@ -342,6 +342,152 @@ def test_get_config_includes_schema(tmp_path: Path) -> None:
 
 
 # ---------------------------------------------------------------------------
+# GET /config — default overlay (new fields appear even absent from file)
+# ---------------------------------------------------------------------------
+
+
+def test_get_config_includes_autonomous_sessions_when_absent(tmp_path: Path) -> None:
+    """``autonomous.sessions`` appears in GET /config when absent from file.
+
+    The default (empty list) is overlaid from the Settings model defaults.
+    """
+    config_path = tmp_path / "config.json"
+    _write_config(config_path, {"llmio_model_level": 3, "server_port": 8080})
+    client = _make_app(config_path)
+
+    resp = client.get("/config")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    assert "autonomous" in data
+    autonomous = data["autonomous"]
+    assert "sessions" in autonomous
+    assert autonomous["sessions"] == []
+    # Other autonomous defaults should also be present.
+    assert "proposal_marker" in autonomous
+    assert autonomous["proposal_marker"] == "---PROPOSAL READY---"
+
+
+def test_get_config_overlay_preserves_file_values(tmp_path: Path) -> None:
+    """When the file sets a value, it takes precedence over the default."""
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "llmio_model_level": 3,
+            "autonomous": {
+                "max_auto_turns": 100,
+            },
+        },
+    )
+    client = _make_app(config_path)
+
+    resp = client.get("/config")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    # File value wins.
+    assert data["autonomous"]["max_auto_turns"] == 100
+    # Defaults fill in missing keys.
+    assert data["autonomous"]["sessions"] == []
+    assert data["autonomous"]["proposal_marker"] == "---PROPOSAL READY---"
+
+
+# ---------------------------------------------------------------------------
+# Legacy key migration (approval_marker → proposal_marker)
+# ---------------------------------------------------------------------------
+
+
+def test_get_config_migrates_approval_marker(tmp_path: Path) -> None:
+    """A config file containing the legacy ``autonomous.approval_marker`` key.
+
+    Returns the value under ``proposal_marker`` and drops the old key.
+    """
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "llmio_model_level": 3,
+            "autonomous": {
+                "approval_marker": "---CUSTOM MARKER---",
+            },
+        },
+    )
+    client = _make_app(config_path)
+
+    resp = client.get("/config")
+    assert resp.status_code == 200
+    data = resp.json()
+
+    autonomous = data["autonomous"]
+    # Old key is gone.
+    assert "approval_marker" not in autonomous
+    # Value migrated.
+    assert autonomous["proposal_marker"] == "---CUSTOM MARKER---"
+
+
+def test_put_succeeds_when_file_has_approval_marker(tmp_path: Path) -> None:
+    """PUT /config succeeds when file has legacy ``autonomous.approval_marker``.
+
+    The persisted file is cleaned of the legacy key after save.
+    """
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "llmio_model_level": 3,
+            "autonomous": {
+                "approval_marker": "---CUSTOM---",
+            },
+        },
+    )
+    client = _make_app(config_path)
+
+    # Saving any unrelated field must succeed — the legacy key migration
+    # runs during validation.
+    resp = client.put("/config", json={"idle_timeout_minutes": 45})
+    assert resp.status_code == 200, resp.text
+
+    # The persisted file no longer contains the legacy key.
+    on_disk = _read_config_json(config_path)
+    assert "autonomous" in on_disk
+    assert "approval_marker" not in on_disk["autonomous"]
+    # The migrated value was preserved.
+    assert on_disk["autonomous"]["proposal_marker"] == "---CUSTOM---"
+    # The unrelated update landed.
+    assert on_disk["idle_timeout_minutes"] == 45
+
+
+def test_put_drops_unknown_autonomous_keys(tmp_path: Path) -> None:
+    """Unknown keys inside the ``autonomous`` sub-dict are dropped.
+
+    Validation runs ``extra="forbid"`` so unknown keys would brick the save
+    without this migration step.
+    """
+    config_path = tmp_path / "config.json"
+    _write_config(
+        config_path,
+        {
+            "llmio_model_level": 3,
+            "autonomous": {
+                "ghost_key": "should be removed",
+                "max_auto_turns": 42,
+            },
+        },
+    )
+    client = _make_app(config_path)
+
+    resp = client.put("/config", json={"server_port": 9000})
+    assert resp.status_code == 200, resp.text
+
+    on_disk = _read_config_json(config_path)
+    assert "autonomous" in on_disk
+    assert "ghost_key" not in on_disk["autonomous"]
+    # Known keys are preserved.
+    assert on_disk["autonomous"]["max_auto_turns"] == 42
+
+
+# ---------------------------------------------------------------------------
 # PUT /config — deep-merge preservation
 # ---------------------------------------------------------------------------
 

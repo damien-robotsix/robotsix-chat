@@ -326,6 +326,12 @@ def _problem_response(status: int, title: str, detail: str) -> JSONResponse:
 async def config_get_endpoint(request: Request) -> JSONResponse:
     """Return the current on-disk config with secrets masked, plus version and schema.
 
+    The on-disk data is overlaid onto the full :class:`Settings` model
+    defaults — every schema key (including newly-added fields like
+    ``autonomous.sessions``) appears in the response even when absent from
+    the persisted config file.  Legacy keys are migrated during
+    validation (e.g. ``approval_marker`` → ``proposal_marker``).
+
     ``GET /config`` — no auth (gateway handles it).
     """
     config_path = _resolve_config_path_from_app(request)
@@ -334,8 +340,28 @@ async def config_get_endpoint(request: Request) -> JSONResponse:
     # Ensure version history is bootstrapped.
     version = _bootstrap_version_history(config_path, data)
 
+    # Overlay the on-disk config over Settings defaults so every schema
+    # key renders in the UI — new fields like autonomous.sessions appear
+    # even when absent from the persisted file.
+    defaults = Settings().model_dump(mode="json")
+    merged = _deep_merge(defaults, data)
+
+    # Validate through Settings to trigger migration of legacy keys
+    # (approval_marker → proposal_marker) and strip unknown fields.
+    # On failure, fall back to the unvalidated merge — the UI can still
+    # render what we have while the operator addresses validation errors.
+    try:
+        validated = Settings.model_validate(merged)
+        response_data = validated.model_dump(mode="json")
+    except ValidationError:
+        logger.warning(
+            "Config validation failed during GET /config; "
+            "returning unvalidated merge (legacy keys may be present)"
+        )
+        response_data = merged
+
     # Build the response: version + schema + (masked) config keys at top level.
-    masked = _mask_secrets(data)
+    masked = _mask_secrets(response_data)
     response: dict[str, Any] = {
         "version": version,
         "schema": _get_schema(),

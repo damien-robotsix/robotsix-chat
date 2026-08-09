@@ -1356,6 +1356,52 @@ class Settings(BaseModel):
             raise ConfigValidationError(failures)
 
     # ------------------------------------------------------------------
+    # Legacy config key migration
+    # ------------------------------------------------------------------
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_legacy_keys(cls, data: Any) -> Any:
+        """Rename legacy config keys to their current names.
+
+        Handles:
+        - ``autonomous.approval_marker`` → ``autonomous.proposal_marker``
+
+        Also strips unknown keys from the ``autonomous`` sub-dict so
+        ``extra="forbid"`` validation on :class:`AutonomousSettings`
+        doesn't permanently brick saves on configs written by older
+        versions.
+        """
+        if not isinstance(data, dict):
+            return data
+
+        from robotsix_chat.config.models import AutonomousSettings
+
+        autonomous = data.get("autonomous")
+        if isinstance(autonomous, dict):
+            # approval_marker was renamed to proposal_marker.
+            # Always overwrite — the file value (from a legacy key)
+            # takes precedence over any default already present.
+            if "approval_marker" in autonomous:
+                autonomous["proposal_marker"] = autonomous["approval_marker"]
+                logger.info(
+                    "Migrated legacy key autonomous.approval_marker → "
+                    "autonomous.proposal_marker (value preserved)"
+                )
+                del autonomous["approval_marker"]
+
+            # Strip unknown keys so extra="forbid" passes
+            known_auto = set(AutonomousSettings.model_fields.keys())
+            for key in sorted(set(autonomous.keys()) - known_auto):
+                logger.info(
+                    "Dropping unknown key autonomous.%s (not in current schema)",
+                    key,
+                )
+                del autonomous[key]
+
+        return data
+
+    # ------------------------------------------------------------------
     # Legacy config normalisation
     # ------------------------------------------------------------------
 

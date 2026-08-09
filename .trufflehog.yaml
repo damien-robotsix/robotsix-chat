@@ -1,6 +1,6 @@
 # TruffleHog configuration for robotsix-chat
 #
-# The Lob detector (regex: \b((live|test)_[a-zA-Z0-9_]{35})\b) produces
+# The Lob detector (regex: \b((live|test)_[a-zA-Z0-9_]{35,})\b) produces
 # false positives on long test function names such as
 # test_self_update_changes_instructions.  No actual Lob API keys exist in
 # the repo — confirmed by exhaustive grep for live_/test_/live_pub_/test_pub_
@@ -8,5 +8,6 @@
 #
 # The same exclusion is also passed via --exclude-detectors=Lob in
 # .github/workflows/ci.yml as a second layer of defence.
-exclude-detectors:
-  - "Lob"
+detectors:
+  exclude:
+    - Lob

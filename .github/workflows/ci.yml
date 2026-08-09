@@ -75,7 +75,7 @@ jobs:
     with:
       install-extras: ""
       trufflehog-pr-diff: true
-      trufflehog-extra-args: "--results=verified,unknown"
+      trufflehog-extra-args: "--results=verified,unknown --exclude-detectors=Lob"
       # cryptography 49.0.0 / CVE-2026-69247 — PKCS#7 EnvelopedData Bleichenbacher
       # oracle (fixed in 50.0.0). Ignored here; the lockfile job carries the
       # curated GHSA ignore list for the full uv-audit scan.
