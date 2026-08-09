@@ -1,0 +1,1 @@
+Stop leaking raw exception text to chat clients when an agent turn fails. The mid-stream SSE error frame and the `chat_turn_error` event now carry a curated message, a stable `code` (`server_error`, `timeout`, `rate_limit_exceeded`, `authentication_error`, `invalid_request_error`) and the request's `correlation_id`; full detail stays in the server log.

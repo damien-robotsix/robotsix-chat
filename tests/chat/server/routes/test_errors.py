@@ -237,3 +237,93 @@ def test_unhandled_exception_generic_500() -> None:
     data = resp.json()
     assert data["error"] == "internal server error"
     assert "correlation_id" in data
+
+
+# ---------------------------------------------------------------------------
+# Mid-stream SSE error curation
+# ---------------------------------------------------------------------------
+
+
+def test_stream_error_code_defaults_to_server_error() -> None:
+    """An unrecognised exception maps to ``server_error``, not a guess."""
+    from robotsix_chat.chat.server.routes.errors import (
+        STREAM_ERROR_SERVER,
+        stream_error_code,
+    )
+
+    assert stream_error_code(RuntimeError("anything")) == STREAM_ERROR_SERVER
+
+
+def test_stream_error_code_maps_timeouts() -> None:
+    """Both stdlib and httpx timeouts map to the ``timeout`` code."""
+    import httpx
+
+    from robotsix_chat.chat.server.routes.errors import (
+        STREAM_ERROR_TIMEOUT,
+        stream_error_code,
+    )
+
+    assert stream_error_code(TimeoutError()) == STREAM_ERROR_TIMEOUT
+    assert stream_error_code(httpx.ReadTimeout("slow")) == STREAM_ERROR_TIMEOUT
+
+
+def test_stream_error_code_maps_http_status() -> None:
+    """HTTP status on an attached response selects the category."""
+    from robotsix_chat.chat.server.routes.errors import (
+        STREAM_ERROR_AUTH,
+        STREAM_ERROR_INVALID_REQUEST,
+        STREAM_ERROR_RATE_LIMIT,
+        STREAM_ERROR_SERVER,
+        stream_error_code,
+    )
+
+    def _exc(status: int) -> Exception:
+        exc = Exception("upstream said no")
+        exc.response = Mock(status_code=status)  # type: ignore[attr-defined]
+        return exc
+
+    assert stream_error_code(_exc(429)) == STREAM_ERROR_RATE_LIMIT
+    assert stream_error_code(_exc(401)) == STREAM_ERROR_AUTH
+    assert stream_error_code(_exc(403)) == STREAM_ERROR_AUTH
+    assert stream_error_code(_exc(422)) == STREAM_ERROR_INVALID_REQUEST
+    # 5xx is the upstream's problem, not a client-actionable category.
+    assert stream_error_code(_exc(503)) == STREAM_ERROR_SERVER
+
+
+def test_curated_stream_error_hides_exception_text() -> None:
+    """The payload never echoes ``str(exc)`` or the exception class name."""
+    from robotsix_chat.chat.server.routes.errors import curated_stream_error
+
+    secret = "/srv/app/.env password=hunter2 https://upstream.internal/v1"
+    payload = curated_stream_error(RuntimeError(secret), fallback_id="turn-9")
+
+    assert secret not in payload["message"]
+    assert "hunter2" not in payload["message"]
+    assert "RuntimeError" not in payload["message"]
+    assert payload["message"]
+
+
+def test_curated_stream_error_uses_correlation_id_when_set() -> None:
+    """The correlation id in context wins over the fallback."""
+    from robotsix_chat.chat.server.routes.errors import curated_stream_error
+
+    token = cid_ctx.set("cid-abc")
+    try:
+        payload = curated_stream_error(RuntimeError("x"), fallback_id="turn-9")
+    finally:
+        cid_ctx.reset(token)
+
+    assert payload["correlation_id"] == "cid-abc"
+
+
+def test_curated_stream_error_falls_back_to_turn_id() -> None:
+    """With no correlation id in context the turn id is used instead."""
+    from robotsix_chat.chat.server.routes.errors import curated_stream_error
+
+    token = cid_ctx.set(None)
+    try:
+        payload = curated_stream_error(RuntimeError("x"), fallback_id="turn-9")
+    finally:
+        cid_ctx.reset(token)
+
+    assert payload["correlation_id"] == "turn-9"

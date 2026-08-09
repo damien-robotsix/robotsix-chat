@@ -13,6 +13,7 @@ from robotsix_chat.chat.server import (
     SSE_ERROR_TYPE,
     SSE_TOKEN_TYPE,
 )
+from robotsix_chat.chat.server.routes.errors import STREAM_ERROR_SERVER
 from tests.conftest import mock_app
 
 # ---------------------------------------------------------------------------
@@ -377,7 +378,10 @@ async def test_chat_endpoint_agent_error_sends_sse_error_frame() -> None:
 
     error_frames = [f for f in frames if f.get("type") == SSE_ERROR_TYPE]
     assert len(error_frames) == 1
-    assert error_frames[0]["message"] == "LLM failure"
+    # Curated frame: stable code + correlation id, never the raw exception.
+    assert "LLM failure" not in error_frames[0]["message"]
+    assert error_frames[0]["code"] == STREAM_ERROR_SERVER
+    assert "correlation_id" in error_frames[0]
 
     done_frames = [f for f in frames if f.get("type") == SSE_DONE_TYPE]
     assert len(done_frames) == 0
