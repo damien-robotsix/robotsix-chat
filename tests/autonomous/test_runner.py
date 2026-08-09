@@ -1824,3 +1824,182 @@ class TestEnsureActiveSessionAutoRestart:
         ]
         assert len(open_sessions) == 1
         assert open_sessions[0].session_id != done.session_id
+
+
+# ---------------------------------------------------------------------------
+# _schedule_refinement integration
+# ---------------------------------------------------------------------------
+
+
+class TestScheduleRefinement:
+    """Tests for the runner's _schedule_refinement integration."""
+
+    @pytest.fixture(autouse=True)
+    def _mock_persistence(self, monkeypatch) -> None:
+        monkeypatch.setattr(AutonomousRunner, "_save_sessions", MagicMock())
+        monkeypatch.setattr(
+            AutonomousRunner, "_load_sessions", MagicMock(return_value={})
+        )
+
+    @staticmethod
+    def _make_refinement_store() -> MagicMock:
+        """Return a MagicMock standing in for RefinementStore."""
+        store = MagicMock()
+        store.propose_refinement = AsyncMock()
+        store.effective_prompt = MagicMock(return_value="base + addendum")
+        store.get_state = MagicMock()
+        store.get_entries = MagicMock(return_value=[])
+        return store
+
+    def _make_runner(
+        self,
+        tmp_path: Path,
+        *,
+        self_refine: bool = True,
+        refinement_store: MagicMock | None = None,
+    ) -> AutonomousRunner:
+        """Build a runner with a session definition and optional refinement store."""
+        conv_store = ConversationStore()
+        settings = MagicMock()
+        from types import SimpleNamespace
+
+        settings.autonomous.sessions = [
+            SimpleNamespace(
+                name="default",
+                prompt="base prompt",
+                trigger_type=SimpleNamespace(value="periodic"),
+                trigger_interval_seconds=45.0,
+                max_auto_turns=20,
+                enabled=True,
+                self_refine=self_refine,
+                self_refine_require_approval=False,
+            )
+        ]
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=conv_store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+            refinement_store=refinement_store,
+        )
+        # Suppress kickoff side-effects in tests.
+        runner._kickoff_initial_turn = AsyncMock()  # type: ignore[method-assign]
+        return runner
+
+    def test_no_refinement_store_is_noop(self, tmp_path: Path) -> None:
+        """_schedule_refinement returns early when no refinement store is set."""
+        runner = self._make_runner(tmp_path, refinement_store=None)
+        aq = runner.create_session("autonomous")
+        # Should not raise.
+        runner._schedule_refinement(aq.session_id, aq)
+
+    def test_no_self_refine_is_noop(self, tmp_path: Path) -> None:
+        """_schedule_refinement returns early when self_refine is disabled."""
+        mock_store = self._make_refinement_store()
+        runner = self._make_runner(
+            tmp_path, self_refine=False, refinement_store=mock_store
+        )
+        aq = runner.create_session("autonomous")
+        runner._schedule_refinement(aq.session_id, aq)
+        # propose_refinement should never have been called.
+        mock_store.propose_refinement.assert_not_called()
+
+    def test_unknown_owner_is_noop(self, tmp_path: Path) -> None:
+        """_schedule_refinement is a no-op for owners with no definition."""
+        mock_store = self._make_refinement_store()
+        runner = self._make_runner(tmp_path, refinement_store=mock_store)
+        # owner "bogus" has no definition.
+        aq = runner.create_session("bogus")
+        runner._schedule_refinement(aq.session_id, aq)
+        mock_store.propose_refinement.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_schedules_propose_refinement(self, tmp_path: Path) -> None:
+        """_schedule_refinement schedules a propose_refinement background task."""
+        mock_store = self._make_refinement_store()
+        runner = self._make_runner(tmp_path, refinement_store=mock_store)
+        # Suppress kickoff side-effects.
+        runner._kickoff_initial_turn = AsyncMock()  # type: ignore[method-assign]
+        aq = runner.create_session("autonomous")
+        # Put some history in the conversation store.
+        runner._store.record(aq.session_id, aq.owner_id, "user msg", "agent reply")
+
+        runner._schedule_refinement(aq.session_id, aq)
+
+        # The background task was scheduled; we need to drain it.
+        await _drain_tasks(runner)
+
+        mock_store.propose_refinement.assert_called_once()
+        call_kwargs = mock_store.propose_refinement.call_args.kwargs
+        assert call_kwargs["definition_name"] == "default"
+        assert call_kwargs["base_prompt"] == "base prompt"
+        assert call_kwargs["session_id"] == aq.session_id
+        # auto_accept=True when require_approval is False.
+        assert call_kwargs["auto_accept"] is True
+
+    @pytest.mark.asyncio
+    async def test_auto_accept_false_when_approval_required(
+        self, tmp_path: Path
+    ) -> None:
+        """auto_accept=False when self_refine_require_approval is True."""
+        mock_store = self._make_refinement_store()
+        conv_store = ConversationStore()
+        settings = MagicMock()
+        from types import SimpleNamespace
+
+        settings.autonomous.sessions = [
+            SimpleNamespace(
+                name="default",
+                prompt="base prompt",
+                trigger_type=SimpleNamespace(value="periodic"),
+                trigger_interval_seconds=45.0,
+                max_auto_turns=20,
+                enabled=True,
+                self_refine=True,
+                self_refine_require_approval=True,
+            )
+        ]
+        runner = AutonomousRunner(
+            settings=settings,
+            conversation_store=conv_store,
+            agent_factory=MagicMock(),
+            run_serializer=MagicMock(),
+            refinement_store=mock_store,
+        )
+        # Suppress kickoff side-effects.
+        runner._kickoff_initial_turn = AsyncMock()  # type: ignore[method-assign]
+        aq = runner.create_session("autonomous")
+        runner._store.record(aq.session_id, aq.owner_id, "user msg", "agent reply")
+
+        runner._schedule_refinement(aq.session_id, aq)
+        await _drain_tasks(runner)
+
+        mock_store.propose_refinement.assert_called_once()
+        assert mock_store.propose_refinement.call_args.kwargs["auto_accept"] is False
+
+    @pytest.mark.asyncio
+    async def test_history_truncation_head_tail(self, tmp_path: Path) -> None:
+        """Long history is truncated to head+tail before passing to refinement."""
+        mock_store = self._make_refinement_store()
+        runner = self._make_runner(tmp_path, refinement_store=mock_store)
+        aq = runner.create_session("autonomous")
+        # Generate a conversation large enough to trigger truncation (>30k chars).
+        # max_history_turns is 50, so we need per-turn length high enough.
+        long_msg = "x" * 800
+        for i in range(50):
+            runner._store.record(
+                aq.session_id,
+                aq.owner_id,
+                f"u{i}",
+                long_msg,
+            )
+
+        runner._schedule_refinement(aq.session_id, aq)
+        await _drain_tasks(runner)
+
+        mock_store.propose_refinement.assert_called_once()
+        history_text = mock_store.propose_refinement.call_args.kwargs[
+            "conversation_history"
+        ]
+        # Should contain truncation marker.
+        assert "transcript truncated" in history_text

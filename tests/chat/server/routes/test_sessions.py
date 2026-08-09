@@ -13,6 +13,10 @@ from robotsix_chat.chat.events import SSE_AUTONOMOUS_STATE_TYPE
 from robotsix_chat.chat.server.routes.sessions import (
     _cleanup_session,
     _require_owner_id,
+    autonomous_refinements_accept_endpoint,
+    autonomous_refinements_list_endpoint,
+    autonomous_refinements_reject_endpoint,
+    autonomous_refinements_reset_endpoint,
     history_endpoint,
     sessions_close_endpoint,
     sessions_create_endpoint,
@@ -938,3 +942,312 @@ async def test_delete_non_autonomous_session_leaves_runner_untouched() -> None:
     )
     mock_runner.forget_session.assert_not_called()
     mock_runner.ensure_active_session.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Refinement endpoints
+# ---------------------------------------------------------------------------
+
+
+class TestAutonomousRefinementsListEndpoint:
+    """Tests for ``GET /autonomous/definitions/{name}/refinements``."""
+
+    def test_runner_none_returns_404(self) -> None:
+        """404 when autonomous runner is not enabled."""
+        state = MagicMock(autonomous_runner=None)
+        request = _make_request(
+            method="GET",
+            path_params={"name": "def1"},
+            app_state=state,
+        )
+        import asyncio
+
+        response = asyncio.run(autonomous_refinements_list_endpoint(request))
+        assert response.status_code == 404
+        body = json.loads(response.body)
+        assert "autonomous sessions are not enabled" in body["error"]
+
+    def test_refinement_store_none_returns_404(self) -> None:
+        """404 when refinement store is not available."""
+        mock_runner = MagicMock()
+        mock_runner.refinement_store = None
+        state = MagicMock(autonomous_runner=mock_runner)
+        request = _make_request(
+            method="GET",
+            path_params={"name": "def1"},
+            app_state=state,
+        )
+        import asyncio
+
+        response = asyncio.run(autonomous_refinements_list_endpoint(request))
+        assert response.status_code == 404
+        body = json.loads(response.body)
+        assert "refinement store is not available" in body["error"]
+
+    def test_unknown_definition_returns_404(self) -> None:
+        """404 when the definition name is unknown."""
+        mock_runner = MagicMock()
+        mock_runner.refinement_store = MagicMock()
+        mock_runner.get_definition.return_value = None
+        state = MagicMock(autonomous_runner=mock_runner)
+        request = _make_request(
+            method="GET",
+            path_params={"name": "unknown"},
+            app_state=state,
+        )
+        import asyncio
+
+        response = asyncio.run(autonomous_refinements_list_endpoint(request))
+        assert response.status_code == 404
+        body = json.loads(response.body)
+        assert "unknown definition" in body["error"]
+
+    def test_returns_entries(self) -> None:
+        """Successful response includes effective_prompt and entries."""
+        from robotsix_chat.autonomous.refinement import (
+            DefinitionRefinementState,
+            RefinementEntry,
+        )
+
+        entry = RefinementEntry(
+            id="e1",
+            timestamp=1234567890.0,
+            base_prompt="base",
+            previous_addendum="",
+            proposed_addendum="lesson",
+            feedback_summary="summary",
+            session_id="s1",
+            status="pending",
+        )
+        state_obj = DefinitionRefinementState(
+            definition_name="def1",
+            base_prompt="base",
+            accepted_addendum="",
+            entries=[entry],
+        )
+
+        mock_store = MagicMock()
+        mock_store.get_state.return_value = state_obj
+        mock_store.effective_prompt.return_value = "base"
+
+        mock_runner = MagicMock()
+        mock_runner.refinement_store = mock_store
+        mock_runner.get_definition.return_value = {"prompt": "base"}
+        state = MagicMock(autonomous_runner=mock_runner)
+        request = _make_request(
+            method="GET",
+            path_params={"name": "def1"},
+            app_state=state,
+        )
+        import asyncio
+
+        response = asyncio.run(autonomous_refinements_list_endpoint(request))
+        assert response.status_code == 200
+        body = json.loads(response.body)
+        assert body["definition_name"] == "def1"
+        assert body["effective_prompt"] == "base"
+        assert len(body["entries"]) == 1
+        assert body["entries"][0]["id"] == "e1"
+
+
+class TestAutonomousRefinementsAcceptEndpoint:
+    """Tests for ``POST .../refinements/{id}/accept``."""
+
+    def test_runner_none_returns_404(self) -> None:
+        """404 when autonomous runner is not enabled."""
+        state = MagicMock(autonomous_runner=None)
+        request = _make_request(
+            method="POST",
+            path_params={"name": "def1", "refinement_id": "r1"},
+            app_state=state,
+        )
+        import asyncio
+
+        response = asyncio.run(autonomous_refinements_accept_endpoint(request))
+        assert response.status_code == 404
+        body = json.loads(response.body)
+        assert "autonomous sessions are not enabled" in body["error"]
+
+    def test_refinement_store_none_returns_404(self) -> None:
+        """404 when refinement store is not available."""
+        mock_runner = MagicMock()
+        mock_runner.refinement_store = None
+        state = MagicMock(autonomous_runner=mock_runner)
+        request = _make_request(
+            method="POST",
+            path_params={"name": "def1", "refinement_id": "r1"},
+            app_state=state,
+        )
+        import asyncio
+
+        response = asyncio.run(autonomous_refinements_accept_endpoint(request))
+        assert response.status_code == 404
+        body = json.loads(response.body)
+        assert "refinement store is not available" in body["error"]
+
+    def test_not_found_returns_404(self) -> None:
+        """404 when refinement is not found or not pending."""
+        mock_store = MagicMock()
+        mock_store.accept_refinement.return_value = False
+        mock_runner = MagicMock()
+        mock_runner.refinement_store = mock_store
+        state = MagicMock(autonomous_runner=mock_runner)
+        request = _make_request(
+            method="POST",
+            path_params={"name": "def1", "refinement_id": "r1"},
+            app_state=state,
+        )
+        import asyncio
+
+        response = asyncio.run(autonomous_refinements_accept_endpoint(request))
+        assert response.status_code == 404
+        body = json.loads(response.body)
+        assert "not found or not pending" in body["error"]
+
+    def test_accept_success_returns_200(self) -> None:
+        """200 with {"accepted": true} on success."""
+        mock_store = MagicMock()
+        mock_store.accept_refinement.return_value = True
+        mock_runner = MagicMock()
+        mock_runner.refinement_store = mock_store
+        state = MagicMock(autonomous_runner=mock_runner)
+        request = _make_request(
+            method="POST",
+            path_params={"name": "def1", "refinement_id": "r1"},
+            app_state=state,
+        )
+        import asyncio
+
+        response = asyncio.run(autonomous_refinements_accept_endpoint(request))
+        assert response.status_code == 200
+        body = json.loads(response.body)
+        assert body["accepted"] is True
+
+
+class TestAutonomousRefinementsRejectEndpoint:
+    """Tests for ``POST .../refinements/{id}/reject``."""
+
+    def test_runner_none_returns_404(self) -> None:
+        """404 when autonomous runner is not enabled."""
+        state = MagicMock(autonomous_runner=None)
+        request = _make_request(
+            method="POST",
+            path_params={"name": "def1", "refinement_id": "r1"},
+            app_state=state,
+        )
+        import asyncio
+
+        response = asyncio.run(autonomous_refinements_reject_endpoint(request))
+        assert response.status_code == 404
+        body = json.loads(response.body)
+        assert "autonomous sessions are not enabled" in body["error"]
+
+    def test_refinement_store_none_returns_404(self) -> None:
+        """404 when refinement store is not available."""
+        mock_runner = MagicMock()
+        mock_runner.refinement_store = None
+        state = MagicMock(autonomous_runner=mock_runner)
+        request = _make_request(
+            method="POST",
+            path_params={"name": "def1", "refinement_id": "r1"},
+            app_state=state,
+        )
+        import asyncio
+
+        response = asyncio.run(autonomous_refinements_reject_endpoint(request))
+        assert response.status_code == 404
+        body = json.loads(response.body)
+        assert "refinement store is not available" in body["error"]
+
+    def test_not_found_returns_404(self) -> None:
+        """404 when refinement is not found or not pending."""
+        mock_store = MagicMock()
+        mock_store.reject_refinement.return_value = False
+        mock_runner = MagicMock()
+        mock_runner.refinement_store = mock_store
+        state = MagicMock(autonomous_runner=mock_runner)
+        request = _make_request(
+            method="POST",
+            path_params={"name": "def1", "refinement_id": "r1"},
+            app_state=state,
+        )
+        import asyncio
+
+        response = asyncio.run(autonomous_refinements_reject_endpoint(request))
+        assert response.status_code == 404
+        body = json.loads(response.body)
+        assert "not found or not pending" in body["error"]
+
+    def test_reject_success_returns_200(self) -> None:
+        """200 with {"rejected": true} on success."""
+        mock_store = MagicMock()
+        mock_store.reject_refinement.return_value = True
+        mock_runner = MagicMock()
+        mock_runner.refinement_store = mock_store
+        state = MagicMock(autonomous_runner=mock_runner)
+        request = _make_request(
+            method="POST",
+            path_params={"name": "def1", "refinement_id": "r1"},
+            app_state=state,
+        )
+        import asyncio
+
+        response = asyncio.run(autonomous_refinements_reject_endpoint(request))
+        assert response.status_code == 200
+        body = json.loads(response.body)
+        assert body["rejected"] is True
+
+
+class TestAutonomousRefinementsResetEndpoint:
+    """Tests for ``POST .../refinements/reset``."""
+
+    def test_runner_none_returns_404(self) -> None:
+        """404 when autonomous runner is not enabled."""
+        state = MagicMock(autonomous_runner=None)
+        request = _make_request(
+            method="POST",
+            path_params={"name": "def1"},
+            app_state=state,
+        )
+        import asyncio
+
+        response = asyncio.run(autonomous_refinements_reset_endpoint(request))
+        assert response.status_code == 404
+        body = json.loads(response.body)
+        assert "autonomous sessions are not enabled" in body["error"]
+
+    def test_refinement_store_none_returns_404(self) -> None:
+        """404 when refinement store is not available."""
+        mock_runner = MagicMock()
+        mock_runner.refinement_store = None
+        state = MagicMock(autonomous_runner=mock_runner)
+        request = _make_request(
+            method="POST",
+            path_params={"name": "def1"},
+            app_state=state,
+        )
+        import asyncio
+
+        response = asyncio.run(autonomous_refinements_reset_endpoint(request))
+        assert response.status_code == 404
+        body = json.loads(response.body)
+        assert "refinement store is not available" in body["error"]
+
+    def test_reset_success_returns_200(self) -> None:
+        """200 with {"reset": true} on success."""
+        mock_store = MagicMock()
+        mock_store.reset_refinements.return_value = True
+        mock_runner = MagicMock()
+        mock_runner.refinement_store = mock_store
+        state = MagicMock(autonomous_runner=mock_runner)
+        request = _make_request(
+            method="POST",
+            path_params={"name": "def1"},
+            app_state=state,
+        )
+        import asyncio
+
+        response = asyncio.run(autonomous_refinements_reset_endpoint(request))
+        assert response.status_code == 200
+        body = json.loads(response.body)
+        assert body["reset"] is True
