@@ -349,7 +349,8 @@ def test_get_config_includes_schema(tmp_path: Path) -> None:
 def test_get_config_includes_autonomous_sessions_when_absent(tmp_path: Path) -> None:
     """``autonomous.sessions`` appears in GET /config when absent from file.
 
-    The default (empty list) is overlaid from the Settings model defaults.
+    The default preset (``{"name": "default"}``) is overlaid from the
+    Settings model defaults.
     """
     config_path = tmp_path / "config.json"
     _write_config(config_path, {"llmio_model_level": 3, "server_port": 8080})
@@ -362,7 +363,11 @@ def test_get_config_includes_autonomous_sessions_when_absent(tmp_path: Path) -> 
     assert "autonomous" in data
     autonomous = data["autonomous"]
     assert "sessions" in autonomous
-    assert autonomous["sessions"] == []
+    sessions = autonomous["sessions"]
+    assert isinstance(sessions, list)
+    assert len(sessions) == 1
+    assert sessions[0]["name"] == "default"
+    assert sessions[0]["enabled"] is True
     # Other autonomous defaults should also be present.
     assert "proposal_marker" in autonomous
     assert autonomous["proposal_marker"] == "---PROPOSAL READY---"
@@ -388,8 +393,11 @@ def test_get_config_overlay_preserves_file_values(tmp_path: Path) -> None:
 
     # File value wins.
     assert data["autonomous"]["proposal_marker"] == "---CUSTOM MARKER---"
-    # Defaults fill in missing keys.
-    assert data["autonomous"]["sessions"] == []
+    # Defaults fill in missing keys — sessions receives the built-in default preset.
+    sessions = data["autonomous"]["sessions"]
+    assert isinstance(sessions, list)
+    assert len(sessions) == 1
+    assert sessions[0]["name"] == "default"
     assert data["autonomous"]["completion_marker"] == "---AUTONOMOUS COMPLETE---"
 
 

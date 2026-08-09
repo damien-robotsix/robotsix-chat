@@ -96,9 +96,9 @@ class AutonomousRunner:
         # docs warning on create_task and weak references).
         self._auto_tasks: set[asyncio.Task[None]] = set()
         # Resolve session definitions from the configured presets list.
-        # The settings model injects a default preset when ``sessions``
-        # is empty (backward compat), so ``_resolve_definitions`` always
-        # receives at least that default.
+        # The settings model ships a default preset in its field default
+        # (``{"name": "default"}``), so a fresh config always has at least
+        # that definition — there is no hidden injection.
         self._definitions = self._resolve_definitions()
 
     # -- settings accessors -----------------------------------------------
