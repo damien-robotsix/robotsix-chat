@@ -587,6 +587,43 @@ async def test_paused_periodic_resumes_on_parent_message() -> None:
 
 
 @pytest.mark.asyncio
+async def test_paused_periodic_auto_resumes_on_timeout() -> None:
+    """A paused periodic monitor auto-resumes after the configured timeout."""
+    agent = FakeAgent(
+        ["NO_CHANGE", "NO_CHANGE", "NO_CHANGE", "CHANGE_DETECTED", "NO_CHANGE"]
+    )
+    env = build_env(
+        agent=agent,
+        settings=make_settings(
+            max_idle_runs=3,
+            auto_stop_no_change_runs=10,
+            paused_monitor_auto_resume_seconds=0.05,
+        ),
+    )
+
+    sub_id = _spawn(env, kind=SubsessionKind.PERIODIC, interval_seconds=0.02)
+
+    # The worker will: run 3 NO_CHANGE turns → auto-pause → auto-resume
+    # after 0.05s → run at least one more turn (the 4th call).
+    # We verify that the monitor resumed and ran >= 4 turns.
+    await wait_until(lambda: len(agent.calls) >= 4)
+    await asyncio.sleep(0.1)
+
+    info = env.registry.get(sub_id)
+    assert info is not None
+    # After auto-resume, the monitor is back in its normal periodic cycle
+    # (SLEEPING between runs, or RUNNING during a turn).
+    assert info.status in (SubsessionStatus.SLEEPING, SubsessionStatus.RUNNING)
+    assert len(agent.calls) >= 4
+
+    # Clean up — cancel the worker so it doesn't loop forever.
+    task = env.registry._running.get(sub_id)
+    if task is not None and not task.done():
+        task.cancel()
+    await asyncio.sleep(0.05)
+
+
+@pytest.mark.asyncio
 async def test_periodic_max_idle_runs_zero_disables_pause() -> None:
     """max_idle_runs=0 disables pausing; falls through to auto_stop."""
     agent = FakeAgent(["NO_CHANGE", "NO_CHANGE"])

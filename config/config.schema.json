@@ -1193,6 +1193,12 @@
           "title": "Paused Monitor Long Poll Interval Seconds",
           "type": "number"
         },
+        "paused_monitor_auto_resume_seconds": {
+          "default": 1800.0,
+          "description": "Maximum wall-clock seconds a paused periodic monitor remains paused before auto-resuming regardless of ticket-state changes.  When a monitor has been paused for longer than this interval (e.g. 1800 s = 30 min), it resumes its normal periodic cycle so the operator does not need to manually intervene.  Set to ``0`` to disable time-based auto-resume (monitor stays paused until a state change or manual message arrives).",
+          "title": "Paused Monitor Auto Resume Seconds",
+          "type": "number"
+        },
         "event_driven_timeout_seconds": {
           "default": 900.0,
           "description": "Default timeout (seconds) for wait-for-event subsessions. When no matching mill event arrives within this window, the monitor runs a safety-net turn to verify state via the board API in case an event was lost, then re-arms the wait.",
