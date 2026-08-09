@@ -411,33 +411,6 @@
       "title": "FeedbackSettings",
       "type": "object"
     },
-    "FleetAuthSettings": {
-      "additionalProperties": false,
-      "description": "Server-side HTTP basic-auth credentials for authenticated fleet UIs.\n\nConfigured once, at ``fleet_auth`` on the top-level settings, and\nshared by every tool that makes outbound HTTP requests\n(``http_probe``, ``render_url``, ``public_fetch``).  There is one\ncredential \u2014 the fleet's reverse-proxy basic-auth realm \u2014 so there is\none setting; the tools do not authenticate independently.\n\nWhen configured, those tools attach an ``Authorization: Basic \u2026``\nheader (or the equivalent browser credentials) to requests targeting\nhosts in *auth_hosts*.  Credentials are injected server-side and never\nexposed to the chat agent.\n\nAuthenticated hosts must still pass the calling tool's own host\nallowlist (``http_probe.allowlist``, ``render_url.auth_hosts``).\n\nAttributes:\n    basic_auth_username: Username for HTTP basic authentication.\n        Leave empty when auth is not required.\n    basic_auth_password: Password for HTTP basic authentication\n        (stored as a SecretStr \u2014 never serialised in logs or\n        exposed to the agent).\n    auth_hosts: Hostnames (no protocol, no path) for which the\n        basic-auth header is attached.  Requests to hosts not on\n        this list proceed without credentials.  Default empty\n        (no authenticated hosts).",
-      "properties": {
-        "basic_auth_username": {
-          "default": "",
-          "title": "Basic Auth Username",
-          "type": "string"
-        },
-        "basic_auth_password": {
-          "default": "",
-          "format": "password",
-          "title": "Basic Auth Password",
-          "type": "string",
-          "writeOnly": true
-        },
-        "auth_hosts": {
-          "items": {
-            "type": "string"
-          },
-          "title": "Auth Hosts",
-          "type": "array"
-        }
-      },
-      "title": "FleetAuthSettings",
-      "type": "object"
-    },
     "GitHubActionsSettings": {
       "additionalProperties": false,
       "description": "GitHub Actions secrets and workflow dispatch via the GitHub App installation.\n\nWhen enabled, the chat agent gains ``set_actions_secret`` and\n``dispatch_workflow`` tools that can create/update repository Actions\nsecrets and trigger ``workflow_dispatch`` events on repos under the\nconfigured GitHub App's installation scope.\n\n**Guardrails built into the tools (not configurable):**\n- Repo scope is resolved dynamically from the GitHub App installation\n  (list-installation-repositories) \u2014 no static allowlist.\n- Only repos within the installation scope are modifiable.\n- Secret encryption uses libsodium sealed-box (requires ``pynacl``).\n- Both tools are confirmation-gated: the agent must confirm the exact\n  repo, secret name (or workflow id + ref) with the user before calling.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no Actions tools are offered.\n    github_org: GitHub organisation name whose repos are in scope\n        (e.g. ``\"damien-robotsix\"``).\n    deploy_api_key: API key that clients must present in the\n        ``X-API-Key`` header when calling the Actions endpoints.\n        When empty, the endpoints return 503 (unconfigured).\n\nNote: GitHub App authentication is delegated to\n:class:`DirectRepoSettings` \u2014 those credentials must also be configured\nfor the tools to function.",
@@ -900,7 +873,7 @@
     },
     "PublicFetchSettings": {
       "additionalProperties": false,
-      "description": "Scoped public-repo-fetch tool for the chat agent.\n\nWhen enabled, the agent gains a ``fetch_public_url`` tool that performs\na plain HTTP(S) GET to a user-provided public URL, returns the raw\ntext/file contents with metadata, and writes an audit-log entry per\nfetch.  SSRF protection blocks internal/private IP ranges for public\nhosts.  Hosts listed in the top-level ``fleet_auth.auth_hosts`` are\ntrusted by the operator: they bypass the SSRF check and the domain\nallowlist, and their requests carry server-injected basic auth.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no tool is offered.\n    timeout: Per-request HTTP timeout in seconds (default 10 s).\n    max_body_bytes: Maximum bytes of the response body to read and\n        return to the agent (default 1_048_576 \u2014 ~1 MB).\n    max_redirects: Maximum number of redirects to follow (default 5).\n    domain_allowlist: Optional list of hostnames (no protocol, no\n        path) that the tool is permitted to fetch.  When empty, any\n        public hostname is allowed (subject to SSRF checks).\n    rate_limit_requests: Maximum number of requests allowed within\n        ``rate_limit_window_seconds`` (default 10).\n    rate_limit_window_seconds: Sliding window in seconds for the\n        rate limiter (default 60.0).",
+      "description": "Scoped public-repo-fetch tool for the chat agent.\n\nWhen enabled, the agent gains a ``fetch_public_url`` tool that performs\na plain HTTP(S) GET to a user-provided public URL, returns the raw\ntext/file contents with metadata, and writes an audit-log entry per\nfetch.  SSRF protection blocks internal/private IP ranges for public\nhosts.  Fleet components, resolved from the central-deploy roster, are\ntrusted by the operator: they bypass the SSRF check and the domain\nallowlist, and their requests carry server-injected basic auth.\n\nAttributes:\n    enabled: Master switch.  When ``False``, no tool is offered.\n    timeout: Per-request HTTP timeout in seconds (default 10 s).\n    max_body_bytes: Maximum bytes of the response body to read and\n        return to the agent (default 1_048_576 \u2014 ~1 MB).\n    max_redirects: Maximum number of redirects to follow (default 5).\n    domain_allowlist: Optional list of hostnames (no protocol, no\n        path) that the tool is permitted to fetch.  When empty, any\n        public hostname is allowed (subject to SSRF checks).\n    rate_limit_requests: Maximum number of requests allowed within\n        ``rate_limit_window_seconds`` (default 10).\n    rate_limit_window_seconds: Sliding window in seconds for the\n        rate limiter (default 60.0).",
       "properties": {
         "enabled": {
           "default": false,
@@ -1473,19 +1446,6 @@
     "http_probe": {
       "$ref": "#/$defs/HttpProbeSettings",
       "advanced": true
-    },
-    "fleet_auth": {
-      "advanced": true,
-      "anyOf": [
-        {
-          "$ref": "#/$defs/FleetAuthSettings"
-        },
-        {
-          "type": "null"
-        }
-      ],
-      "default": null,
-      "description": "Basic-auth credentials for the fleet reverse proxy, shared by every outbound-HTTP tool (http_probe, render_url, public_fetch). One realm, one setting."
     },
     "docker_digest": {
       "$ref": "#/$defs/DockerDigestSettings",

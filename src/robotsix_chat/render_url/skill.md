@@ -46,9 +46,9 @@ or contexts that cannot handle large base64 blobs. The accessibility tree is sti
 
 ## Authenticated fleet UIs
 
-When the operator has configured fleet-auth credentials (server-side, never exposed to you), the
-browser automatically supplies HTTP basic-auth credentials when the target hostname is in the
-configured `fleet_auth.auth_hosts` list.
+Fleet components are reached at their internal addresses from the central-deploy roster, which needs
+no credential. A public `*.deploy.robotsix.net` URL will land on the SSO login page instead of the
+component.
 
 This means you can render authenticated fleet UIs — the credentials are injected server-side and you
 never see them.
@@ -56,7 +56,7 @@ never see them.
 ## Safety
 
 - **Read-only** — the page is loaded and captured; no clicks, form fills, or navigation.
-- **Credentials never exposed** — when fleet-auth is configured, HTTP credentials are injected
-  server-side into the browser context; you never see them.
+- **No credentials at all** — internal addresses need none; nothing is injected server-side into the
+  browser context; you never see them.
 - **Timeout** — the page load has a configurable timeout (default 30 s).
 - **Single page** — one URL per call; the browser is closed immediately after capture.

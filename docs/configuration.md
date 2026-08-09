@@ -477,21 +477,21 @@ Read-only HTTP uptime/render-probe tool for the agent. Enabled by default.
 | `http_probe.max_body_bytes` | `integer`       | `2048`                                 | Maximum bytes of the response body to return (~2 KB).                        |
 | `http_probe.max_redirects`  | `integer`       | `5`                                    | Maximum number of redirects to follow.                                       |
 
-## Fleet auth
+## Reaching fleet components
 
-`fleet_auth` is a single top-level setting shared by every tool that makes outbound HTTP requests
-(`http_probe`, `render_url`, `public_fetch`). The fleet has one reverse-proxy basic-auth realm, so
-there is one credential and one place to set it — the tools do not authenticate independently.
+There is no credential setting. The tools that make outbound HTTP requests (`http_probe`,
+`render_url`, `public_fetch`) reach fleet components at the internal `base_url` the central-deploy
+roster already publishes for each one — `http://mail:8080`, not `https://mail.deploy.robotsix.net`.
+Requests stay on the container network and never meet the fleet's edge or its SSO gate, so nothing
+has to be provisioned, rotated, or kept out of logs.
 
-Requests to a host in `fleet_auth.auth_hosts` carry server-injected credentials, never visible to
-the agent, and those hosts are implicitly allowed through each tool's own host allowlist and SSRF
-checks.
+The roster is the single place recording which components the agent may reach: a component appears
+in it when its **chat access** toggle is enabled, and that is the whole configuration. Those hosts
+are implicitly allowed through each tool's own host allowlist and SSRF check — an internal address
+being exactly what a component's URL looks like.
 
-| JSON key                         | Type              | Default | Description                                                                                                                      |
-| -------------------------------- | ----------------- | ------- | -------------------------------------------------------------------------------------------------------------------------------- |
-| `fleet_auth.basic_auth_username` | `string`          | `""`    | Username for HTTP basic authentication. Leave empty when auth is not required.                                                   |
-| `fleet_auth.basic_auth_password` | `string` (secret) | `""`    | Password for HTTP basic authentication (`SecretStr` — never serialised in logs or exposed to the agent).                         |
-| `fleet_auth.auth_hosts`          | `array[string]`   | `[]`    | Hostnames (no protocol, no path) for which credentials are attached. Requests to hosts not on this list proceed unauthenticated. |
+A component without chat access enabled is not reachable. Its public `*.deploy.robotsix.net` URL is
+not an alternative route: that lands on the SSO login page.
 
 ### Autonomous
 
@@ -583,8 +583,8 @@ ______________________________________________________________________
 Scoped public-repo-fetch tool for the chat agent. When enabled, the agent gains a `fetch_public_url`
 tool that performs a plain HTTP(S) GET to a user-provided public URL, returns the raw text/file
 contents with metadata, and writes an audit-log entry per fetch. SSRF protection blocks
-internal/private IP ranges for public hosts; hosts listed in `fleet_auth.auth_hosts` are trusted by
-the operator and bypass the SSRF check.
+internal/private IP ranges for public hosts; fleet components from the roster are reached at their
+internal addresses and bypass that check, trusted by the operator and bypass the SSRF check.
 
 | JSON key                                 | Type            | Default   | Description                                                                                                |
 | ---------------------------------------- | --------------- | --------- | ---------------------------------------------------------------------------------------------------------- |

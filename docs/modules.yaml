@@ -80,6 +80,7 @@ modules:
       - changelog.d/20260802T005236Z-improve-ci-startup-failure-diagnostics-t-93b9.bugfix.md
       - changelog.d/20260802T005237Z-auto-prioritize-user-requested-tickets-t-46db.misc.md
       - changelog.d/20260802T005450Z-correct-monitor-status-reporting-to-dist-a2ac.bugfix.md
+      - changelog.d/20260809T140000Z-roster-replaces-fleet-auth.feature.md
       - release-please-config.json
       - .release-please-manifest.json
       - CONTRIBUTING.md

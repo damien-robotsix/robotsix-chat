@@ -77,24 +77,27 @@ Common `expect_absent` patterns:
 - `"Joomla! - Installation"` — Joomla setup wizard
 - `"Drupal installation"` — Drupal setup wizard
 
-## Authenticated fleet UIs
+## Fleet components
 
-When the operator has configured fleet-auth credentials (server-side, never exposed to you), the
-probe automatically attaches an `Authorization: Basic …` header when the target hostname is in the
-configured `fleet_auth.auth_hosts` list. Fleet-auth hosts are **implicitly allowlisted** — you do
-not need to list them in the main `allowlist`.
+Fleet components are reached at their **internal** addresses, taken from the central-deploy roster —
+`http://mail:8080/openapi.json`, not `https://mail.deploy.robotsix.net/openapi.json`. Use the
+`base_url` the component roster gives you.
 
-This means you can probe authenticated fleet UIs such as `https://invest.deploy.robotsix.net/docs`
-or `/openapi.json` — the credentials are injected server-side and you never see them.
+These hosts are **implicitly allowlisted**; you do not need to list them in the main `allowlist`. No
+credential is involved: the request stays on the internal container network and never reaches the
+fleet's public edge or its SSO login.
+
+Only components with chat access enabled appear in the roster. A public `*.deploy.robotsix.net` URL
+will be redirected to the SSO login and is not a way in.
 
 ## Safety
 
 - **Read-only** — GET only; no other HTTP methods are exposed.
-- **Credentials never exposed** — when fleet-auth is configured, the `Authorization` header is
-  injected server-side; you never see the raw credential.
+- **No credentials at all** — fleet components are reached over the internal network, which needs
+  none; nothing is injected and there is nothing for you to see.
 - **Hostname allowlisted** — the probe only reaches hosts in the configurable allowlist
-  (operator-controlled) plus any fleet-auth hosts. At minimum `www.robotsix.net` and `robotsix.net`
-  are permitted.
+  (operator-controlled) plus the fleet components with chat access enabled. At minimum
+  `www.robotsix.net` and `robotsix.net` are permitted.
 - **Size-capped** — only the first ~2 KB of the response body are read and returned.
 - **Timeout** — the request has a short timeout (default 10 s); one request per call.
 

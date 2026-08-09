@@ -1052,42 +1052,6 @@ class FeedbackSettings(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
 
-class FleetAuthSettings(BaseModel):
-    """Server-side HTTP basic-auth credentials for authenticated fleet UIs.
-
-    Configured once, at ``fleet_auth`` on the top-level settings, and
-    shared by every tool that makes outbound HTTP requests
-    (``http_probe``, ``render_url``, ``public_fetch``).  There is one
-    credential — the fleet's reverse-proxy basic-auth realm — so there is
-    one setting; the tools do not authenticate independently.
-
-    When configured, those tools attach an ``Authorization: Basic …``
-    header (or the equivalent browser credentials) to requests targeting
-    hosts in *auth_hosts*.  Credentials are injected server-side and never
-    exposed to the chat agent.
-
-    Authenticated hosts must still pass the calling tool's own host
-    allowlist (``http_probe.allowlist``, ``render_url.auth_hosts``).
-
-    Attributes:
-        basic_auth_username: Username for HTTP basic authentication.
-            Leave empty when auth is not required.
-        basic_auth_password: Password for HTTP basic authentication
-            (stored as a SecretStr — never serialised in logs or
-            exposed to the agent).
-        auth_hosts: Hostnames (no protocol, no path) for which the
-            basic-auth header is attached.  Requests to hosts not on
-            this list proceed without credentials.  Default empty
-            (no authenticated hosts).
-
-    """
-
-    basic_auth_username: str = ""
-    basic_auth_password: SecretStr = SecretStr("")
-    auth_hosts: list[str] = Field(default_factory=list)
-    model_config = ConfigDict(extra="forbid")
-
-
 class RenderUrlSettings(BaseModel):
     """Read-only URL rendering with headless Chromium (Playwright).
 
@@ -1176,7 +1140,7 @@ class PublicFetchSettings(BaseModel):
     a plain HTTP(S) GET to a user-provided public URL, returns the raw
     text/file contents with metadata, and writes an audit-log entry per
     fetch.  SSRF protection blocks internal/private IP ranges for public
-    hosts.  Hosts listed in the top-level ``fleet_auth.auth_hosts`` are
+    hosts.  Fleet components, resolved from the central-deploy roster, are
     trusted by the operator: they bypass the SSRF check and the domain
     allowlist, and their requests carry server-injected basic auth.
 

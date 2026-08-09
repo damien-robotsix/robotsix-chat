@@ -177,7 +177,6 @@
     "max_body_bytes": 2048,
     "max_redirects": 5
   },
-  "fleet_auth": null,
   "docker_digest": {
     "enabled": false,
     "timeout": 30.0

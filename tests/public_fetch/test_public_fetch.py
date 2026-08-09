@@ -16,7 +16,7 @@ import httpx
 import pytest
 import respx
 
-from robotsix_chat.config import FleetAuthSettings, PublicFetchSettings
+from robotsix_chat.config import PublicFetchSettings
 from robotsix_chat.public_fetch import build_public_fetch_tools, load_public_fetch_skill
 
 
@@ -32,14 +32,6 @@ def _settings(**kw: Any) -> PublicFetchSettings:
     }
     base.update(kw)
     return PublicFetchSettings(**base)
-
-
-def _split_fleet_auth(
-    **kw: Any,
-) -> tuple[PublicFetchSettings, FleetAuthSettings | None]:
-    """Split per-tool settings from the top-level fleet_auth setting."""
-    fleet_auth = kw.pop("fleet_auth", None)
-    return _settings(**kw), fleet_auth
 
 
 # ---------------------------------------------------------------------------
@@ -586,221 +578,6 @@ async def test_fetch_403_reports_auth_required(
 
 
 @pytest.mark.asyncio
-async def test_fleet_auth_injects_authorization_header(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """Requests to fleet-auth hosts carry the Basic-Auth header."""
-    route = respx_mock.get("https://fleet.example.com/api").mock(
-        return_value=httpx.Response(200, text="ok")
-    )
-
-    from pydantic import SecretStr
-
-    from robotsix_chat.config import FleetAuthSettings
-
-    settings, fleet_auth = _split_fleet_auth(
-        fleet_auth=FleetAuthSettings(
-            basic_auth_username="user",
-            basic_auth_password=SecretStr("pass"),
-            auth_hosts=["fleet.example.com"],
-        )
-    )
-
-    with mock.patch(
-        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
-        return_value=_MOCK_SOCKET_RETURN,
-    ):
-        tools = build_public_fetch_tools(settings, fleet_auth)
-        result = json.loads(await tools[0]("https://fleet.example.com/api"))
-
-    assert result["status_code"] == 200
-    last_request = route.calls.last.request
-    assert last_request.headers.get("Authorization") == "Basic dXNlcjpwYXNz"
-
-
-@pytest.mark.asyncio
-async def test_non_fleet_host_does_not_get_auth_header(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """Requests to non-fleet-auth hosts do NOT carry the Basic-Auth header."""
-    route = respx_mock.get("https://public.example.com/api").mock(
-        return_value=httpx.Response(200, text="ok")
-    )
-
-    from pydantic import SecretStr
-
-    from robotsix_chat.config import FleetAuthSettings
-
-    settings, fleet_auth = _split_fleet_auth(
-        fleet_auth=FleetAuthSettings(
-            basic_auth_username="user",
-            basic_auth_password=SecretStr("pass"),
-            auth_hosts=["fleet.example.com"],
-        )
-    )
-
-    with mock.patch(
-        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
-        return_value=_MOCK_SOCKET_RETURN,
-    ):
-        tools = build_public_fetch_tools(settings, fleet_auth)
-        result = json.loads(await tools[0]("https://public.example.com/api"))
-
-    assert result["status_code"] == 200
-    last_request = route.calls.last.request
-    assert "Authorization" not in last_request.headers
-
-
-@pytest.mark.asyncio
-async def test_fleet_auth_bypasses_domain_allowlist(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """A fleet-auth host is allowed even when not in domain_allowlist."""
-    respx_mock.get("https://fleet.example.com/api").mock(
-        return_value=httpx.Response(200, text="ok")
-    )
-
-    from pydantic import SecretStr
-
-    from robotsix_chat.config import FleetAuthSettings
-
-    settings, fleet_auth = _split_fleet_auth(
-        domain_allowlist=["public.example.com"],
-        fleet_auth=FleetAuthSettings(
-            basic_auth_username="user",
-            basic_auth_password=SecretStr("pass"),
-            auth_hosts=["fleet.example.com"],
-        ),
-    )
-
-    with mock.patch(
-        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
-        return_value=_MOCK_SOCKET_RETURN,
-    ):
-        tools = build_public_fetch_tools(settings, fleet_auth)
-        result = json.loads(await tools[0]("https://fleet.example.com/api"))
-
-    assert result["status_code"] == 200
-    assert "allowlist" not in result["error"].lower()
-
-
-@pytest.mark.asyncio
-async def test_fleet_auth_bypasses_ssrf_on_initial_host(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """A fleet-auth host resolves to a private IP but bypasses SSRF check."""
-    respx_mock.get("https://fleet.internal.example.com/api").mock(
-        return_value=httpx.Response(200, text="ok")
-    )
-
-    from pydantic import SecretStr
-
-    from robotsix_chat.config import FleetAuthSettings
-
-    settings, fleet_auth = _split_fleet_auth(
-        fleet_auth=FleetAuthSettings(
-            basic_auth_username="user",
-            basic_auth_password=SecretStr("pass"),
-            auth_hosts=["fleet.internal.example.com"],
-        ),
-    )
-
-    with mock.patch(
-        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
-        return_value=_PRIVATE_IP_SOCKADDR,
-    ):
-        tools = build_public_fetch_tools(settings, fleet_auth)
-        result = json.loads(await tools[0]("https://fleet.internal.example.com/api"))
-
-    assert result["status_code"] == 200
-    assert "SSRF" not in result["error"]
-
-
-@pytest.mark.asyncio
-async def test_fleet_auth_bypasses_ssrf_on_redirect_hop(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """SSRF check is also bypassed for fleet-auth hosts on redirect hops."""
-    respx_mock.get("https://fleet.example.com/goto").mock(
-        return_value=httpx.Response(
-            301, headers={"Location": "https://fleet.internal.example.com/api"}
-        )
-    )
-    respx_mock.get("https://fleet.internal.example.com/api").mock(
-        return_value=httpx.Response(200, text="ok")
-    )
-
-    from pydantic import SecretStr
-
-    from robotsix_chat.config import FleetAuthSettings
-
-    settings, fleet_auth = _split_fleet_auth(
-        fleet_auth=FleetAuthSettings(
-            basic_auth_username="user",
-            basic_auth_password=SecretStr("pass"),
-            auth_hosts=[
-                "fleet.example.com",
-                "fleet.internal.example.com",
-            ],
-        ),
-    )
-
-    def _getaddrinfo(host, port):
-        if host == "fleet.internal.example.com":
-            return _PRIVATE_IP_SOCKADDR
-        return _MOCK_SOCKET_RETURN
-
-    with mock.patch(
-        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
-        side_effect=_getaddrinfo,
-    ):
-        tools = build_public_fetch_tools(settings, fleet_auth)
-        result = json.loads(await tools[0]("https://fleet.example.com/goto"))
-
-    assert result["status_code"] == 200
-    assert "SSRF" not in result["error"]
-
-
-@pytest.mark.asyncio
-async def test_fleet_auth_401_reports_stale_credentials(
-    respx_mock: respx.MockRouter,
-) -> None:
-    """401 from fleet-auth host → credentials-update message, not 'unauthenticated'."""
-    respx_mock.get("https://fleet.example.com/api").mock(
-        return_value=httpx.Response(401, text="Unauthorized")
-    )
-
-    from pydantic import SecretStr
-
-    from robotsix_chat.config import FleetAuthSettings
-
-    settings, fleet_auth = _split_fleet_auth(
-        fleet_auth=FleetAuthSettings(
-            basic_auth_username="user",
-            basic_auth_password=SecretStr("pass"),
-            auth_hosts=["fleet.example.com"],
-        ),
-    )
-
-    with mock.patch(
-        "robotsix_chat.common.http_fetch.socket.getaddrinfo",
-        return_value=_MOCK_SOCKET_RETURN,
-    ):
-        tools = build_public_fetch_tools(settings, fleet_auth)
-        result = json.loads(await tools[0]("https://fleet.example.com/api"))
-
-    assert result["status_code"] == 401
-    assert "fleet-auth" in result["error"].lower()
-    assert "credentials" in result["error"].lower()
-    assert "unauthenticated" not in result["error"].lower()
-
-
-# ---------------------------------------------------------------------------
-# Network errors
-# ---------------------------------------------------------------------------
-
-
-@pytest.mark.asyncio
 async def test_fetch_timeout(respx_mock: respx.MockRouter) -> None:
     """Timeout → error message."""
     respx_mock.get("https://example.com/").mock(
@@ -874,3 +651,123 @@ async def test_fetch_no_hostname() -> None:
     result = json.loads(await tools[0]("http:///path"))
 
     assert "no hostname" in result["error"].lower()
+
+
+# ---------------------------------------------------------------------------
+# Fleet components — resolved from the central-deploy roster
+# ---------------------------------------------------------------------------
+
+
+def _roster(*base_urls: str):
+    """Patch the central-deploy roster to advertise *base_urls*."""
+
+    async def _fake_fetch_roster(_settings):
+        return [{"id": f"c{i}", "base_url": u} for i, u in enumerate(base_urls)]
+
+    return mock.patch(
+        "robotsix_chat.component_access.roster.fetch_roster", _fake_fetch_roster
+    )
+
+
+def _central_deploy():
+    from robotsix_chat.config.models import CentralDeploySettings
+
+    return CentralDeploySettings(url="http://central-deploy:8100")
+
+
+@pytest.mark.asyncio
+async def test_roster_host_bypasses_domain_allowlist(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A component in the roster is fetchable though absent from the allowlist."""
+    respx_mock.get("http://mail:8080/api").mock(
+        return_value=httpx.Response(200, text="ok")
+    )
+
+    settings = _settings(domain_allowlist=["public.example.com"])
+    with (
+        mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_MOCK_SOCKET_RETURN,
+        ),
+        _roster("http://mail:8080"),
+    ):
+        tools = build_public_fetch_tools(settings, _central_deploy())
+        result = json.loads(await tools[0]("http://mail:8080/api"))
+
+    assert result["status_code"] == 200
+    assert "allowlist" not in result["error"].lower()
+    # Internal network — no credential is attached.
+    assert "Authorization" not in respx_mock.calls.last.request.headers
+
+
+@pytest.mark.asyncio
+async def test_roster_host_bypasses_ssrf_on_initial_host(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A component address resolving to a private IP is still fetchable."""
+    respx_mock.get("http://mail:8080/api").mock(
+        return_value=httpx.Response(200, text="ok")
+    )
+
+    with (
+        mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_PRIVATE_IP_SOCKADDR,
+        ),
+        _roster("http://mail:8080"),
+    ):
+        tools = build_public_fetch_tools(_settings(), _central_deploy())
+        result = json.loads(await tools[0]("http://mail:8080/api"))
+
+    assert result["status_code"] == 200
+    assert "SSRF" not in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_roster_host_bypasses_ssrf_on_redirect_hop(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """The per-hop SSRF check also exempts component addresses."""
+    respx_mock.get("http://mill:8077/goto").mock(
+        return_value=httpx.Response(301, headers={"Location": "http://mail:8080/api"})
+    )
+    respx_mock.get("http://mail:8080/api").mock(
+        return_value=httpx.Response(200, text="ok")
+    )
+
+    def _getaddrinfo(host, port):
+        if host == "mail":
+            return _PRIVATE_IP_SOCKADDR
+        return _MOCK_SOCKET_RETURN
+
+    with (
+        mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            side_effect=_getaddrinfo,
+        ),
+        _roster("http://mill:8077", "http://mail:8080"),
+    ):
+        tools = build_public_fetch_tools(_settings(), _central_deploy())
+        result = json.loads(await tools[0]("http://mill:8077/goto"))
+
+    assert result["status_code"] == 200
+    assert "SSRF" not in result["error"]
+
+
+@pytest.mark.asyncio
+async def test_non_roster_private_host_still_blocked(
+    respx_mock: respx.MockRouter,
+) -> None:
+    """A private host that is not a component is still refused."""
+    with (
+        mock.patch(
+            "robotsix_chat.common.http_fetch.socket.getaddrinfo",
+            return_value=_PRIVATE_IP_SOCKADDR,
+        ),
+        _roster("http://mail:8080"),
+    ):
+        tools = build_public_fetch_tools(_settings(), _central_deploy())
+        result = json.loads(await tools[0]("http://internal.example.com/secrets"))
+
+    assert "SSRF" in result["error"]
