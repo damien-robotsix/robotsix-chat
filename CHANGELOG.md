@@ -69,6 +69,23 @@ Everything below predates the release-please migration and was
 maintained by hand or by towncrier. It is kept verbatim; new entries
 are added above by release-please.
 
+## [0.8.0](https://github.com/damien-robotsix/robotsix-chat/compare/v0.7.0...v0.8.0) (2026-08-09)
+
+
+### Features
+
+* **feedback:** cap the tickets one feedback run may file ([#1238](https://github.com/damien-robotsix/robotsix-chat/issues/1238)) ([3523ba6](https://github.com/damien-robotsix/robotsix-chat/commit/3523ba688dee0d8077f6b1f457ffb5c6772f7449))
+
+
+### Bug Fixes
+
+* Correct monitor status reporting to distinguish 'paused' from 'closed' (20260802T005450Z-correct-monitor-status-reporting-to-dist-a2ac) ([#1236](https://github.com/damien-robotsix/robotsix-chat/issues/1236)) ([e024ff1](https://github.com/damien-robotsix/robotsix-chat/commit/e024ff10fde832281fa773fdbbbe23f7df07fd1f))
+
+
+### Documentation
+
+* **changelog:** put the newest release at the top ([#1232](https://github.com/damien-robotsix/robotsix-chat/issues/1232)) ([3f5779d](https://github.com/damien-robotsix/robotsix-chat/commit/3f5779d3bdf589334d69e51e56724a20e254688d))
+
 ## [0.6.0] - 2026-08-09
 
 ### Features
