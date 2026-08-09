@@ -1033,6 +1033,12 @@ class FeedbackSettings(BaseModel):
             run-time from the deploy server's chat-component roster
             intersected with the mill board's repo registry — no static
             allowlist is needed.
+        max_tickets_per_run: Ceiling on tickets filed by one feedback run.
+            A run fires at every compaction and session-end boundary, and
+            was previously unbounded: across 37 observed runs it filed 114
+            tickets, mean 3.08, peaking at 9 from a single run. Excess
+            tickets are dropped with a warning naming each one. ``0``
+            disables filing while leaving analysis on.
 
     """
 
@@ -1042,6 +1048,7 @@ class FeedbackSettings(BaseModel):
     board_api_token: SecretStr = SecretStr("")
     deploy_api_key: SecretStr = SecretStr("")
     timeout: float = 60.0
+    max_tickets_per_run: int = 3
     model_config = ConfigDict(extra="forbid")
 
 
