@@ -88,7 +88,6 @@ modules:
       - changelog.d/20260809T014935Z-sanitize-sse-mid-stream-error-payload-st-0ede.bugfix.md
       - changelog.d/20260809T014841Z-config-constants-py-remove-dead-level4-d-ce01.misc.md
       - changelog.d/20260801T104213Z-make-github-monitoring-subsessions-resil-601a.bugfix.md
-      - changelog.d/20260801T120727Z-agent-md-configuration-config-standard-e-e5bf.misc.md
       - release-please-config.json
       - .release-please-manifest.json
       - CONTRIBUTING.md
