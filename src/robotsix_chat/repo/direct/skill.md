@@ -42,11 +42,10 @@ ______________________________________________________________________
 Check whether a repository has auto-merge enabled at the repository level. Reads the
 `allow_auto_merge` setting from the GitHub repository metadata.
 
-**Read-only.** This tool does not modify any state and does not require confirmation gating.
-Use it proactively before filing or managing tickets that require automatic merging — if
-auto-merge is disabled the operator should be informed that manual merging will be required
-and the workflow should be adjusted (e.g., skip `waiting_auto_merge` or set expectations
-early).
+**Read-only.** This tool does not modify any state and does not require confirmation gating. Use it
+proactively before filing or managing tickets that require automatic merging — if auto-merge is
+disabled the operator should be informed that manual merging will be required and the workflow
+should be adjusted (e.g., skip `waiting_auto_merge` or set expectations early).
 
 ### Preconditions
 
