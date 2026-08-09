@@ -1119,9 +1119,10 @@ class DirectRepoClient:
             repo_full_name, run_id
         )
 
-    def _diagnose_billing_failure(
+    async def _diagnose_billing_failure(
         self,
         runs: list[dict[str, Any]],
+        repo_full_name: str,
     ) -> str | None:
         """Inspect recent workflow runs for a private-repo billing failure.
 
@@ -1129,7 +1130,9 @@ class DirectRepoClient:
         """
         from robotsix_chat.repo.direct.actions_client import ActionsClient
 
-        return ActionsClient(self._s)._diagnose_billing_failure(runs)
+        return await ActionsClient(self._s)._diagnose_billing_failure(
+            runs, repo_full_name
+        )
 
     @staticmethod
     def apply_patch(original: str, patch_text: str) -> str:
