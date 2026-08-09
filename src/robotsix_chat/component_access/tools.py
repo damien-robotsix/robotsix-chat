@@ -145,9 +145,34 @@ async def _component_request_impl(
         return f"Error: unsupported HTTP method '{method}'"
 
     url = f"{base_url.rstrip('/')}/{path.lstrip('/')}"
-    headers: dict[str, str] = {"Accept": "application/json"}
+    headers: dict[str, str] = {
+        "Accept": "application/json",
+        # Prevent transparent gzip/deflate on the response so that
+        # proxies which already decompress the body but forward a
+        # Content-Encoding header don't trigger zlib errors.
+        "Accept-Encoding": "identity",
+    }
     if json_body is not None:
         headers["Content-Type"] = "application/json"
+
+    def _safe_text(response: httpx.Response) -> str:
+        """Read ``response.text``, falling back to empty string on any error.
+
+        Catches zlib decompression errors caused by proxies that forward
+        a ``Content-Encoding: gzip`` header on an already-decompressed body.
+        """
+        try:
+            return response.text
+        except Exception:
+            logger.warning(
+                "component_request %s response body read failed for %s %s — "
+                "may be a Content-Encoding mismatch (proxy double-decompression)",
+                component_id,
+                method_upper,
+                path,
+                exc_info=True,
+            )
+            return ""
 
     # Resolve credentials from the component_credentials config dict,
     # keyed by component id.  The roster carries auth metadata (type,
@@ -288,7 +313,7 @@ async def _component_request_impl(
                         retry_body = resp.json()
                         retry_body_str = json.dumps(retry_body)
                     except Exception:
-                        retry_body_str = resp.text
+                        retry_body_str = _safe_text(resp)
                     logger.info(
                         "component_request %s %s %s → %d "
                         "(ok, after 429 Retry-After wait)",
@@ -303,7 +328,7 @@ async def _component_request_impl(
                 body = exc.response.json()
                 body_str = json.dumps(body)
             except Exception:
-                body_str = exc.response.text
+                body_str = _safe_text(exc.response)
             logger.info(
                 "component_request %s %s %s → %d (terminal, not retried)",
                 component_id,
@@ -319,7 +344,7 @@ async def _component_request_impl(
                 body = exc.response.json()
                 body_str = json.dumps(body)
             except Exception:
-                body_str = exc.response.text
+                body_str = _safe_text(exc.response)
             logger.info(
                 "component_request %s %s %s → %d (terminal, not retried)",
                 component_id,
@@ -348,7 +373,7 @@ async def _component_request_impl(
         body = resp.json()
         body_str = json.dumps(body)
     except Exception:
-        body_str = resp.text
+        body_str = _safe_text(resp)
     logger.info(
         "component_request %s %s %s → %d (ok)",
         component_id,
