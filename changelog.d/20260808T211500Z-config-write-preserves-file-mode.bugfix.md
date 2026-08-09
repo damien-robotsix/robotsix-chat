@@ -1,1 +1,0 @@
-`PUT /config` no longer widens the config file's permissions. The atomic write renames a fresh temp file over the target, so a `0600` config — which holds API keys and other secrets — came back world-readable at the process umask after every save. The replacement now carries the original file's mode, falling back to owner-only when there is no existing file to copy from.

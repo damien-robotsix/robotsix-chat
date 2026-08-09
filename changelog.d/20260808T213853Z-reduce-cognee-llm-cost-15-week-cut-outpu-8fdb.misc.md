@@ -1,1 +1,0 @@
-Reduce cognee memory LLM cost: switch default extraction model from `openrouter/openai/gpt-5-mini` to `openrouter/openai/gpt-5-nano` (~10× cheaper), and cap extraction output at 1024 tokens via new `memory.llm.max_completion_tokens` config field.
