@@ -3,20 +3,20 @@ name: Dependabot auto-merge
 on:
   pull_request:
 
-# Workflow-level: start with no permissions; the job requests exactly
-# what it needs (contents: write for merge commits, pull-requests: write
-# for auto-merge via the shared reusable workflow).
-permissions: {}
-
-concurrency:
-  group: dependabot-auto-merge-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+permissions: {}  # no workflow-level default; the job grants its own
 
 jobs:
   auto-merge:
-    name: Auto-merge Dependabot PRs
-    if: github.actor == 'dependabot[bot]'
+    name: Dependabot auto-merge
+    # Dependabot dependency bumps only.
+    #
+    # release-please PRs are deliberately NOT auto-merged: that PR *is* the
+    # release gate. Auto-merging it would cut a release on every push to
+    # main, which makes the version number meaningless. Releases stay a
+    # human decision.
+    if: github.event.pull_request.user.login == 'dependabot[bot]'
+    # contents: write and pull-requests: write needed to approve and merge PRs
     permissions:
-      contents: write       # merge commits require pushing to the PR branch
-      pull-requests: write  # auto-merge approval and merge
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/dependabot-auto-merge.yml@0234f4b82365d776fc021c774dc104c5e7042c29  # main
+      contents: write  # approve and merge the PR
+      pull-requests: write  # label and merge the PR
+    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/dependabot-auto-merge.yml@e33f19f0657947c239ffcbaf3b47f149571e2bc1  # main
