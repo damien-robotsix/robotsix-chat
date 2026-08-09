@@ -183,7 +183,7 @@ class AutonomousRunner:
         """
         configured = self._settings.autonomous.sessions
         if configured and isinstance(configured, list):
-            return {
+            definitions = {
                 d.name: {
                     "name": d.name,
                     "prompt": d.prompt,
@@ -199,6 +199,27 @@ class AutonomousRunner:
                 for d in configured
                 if d.enabled
             }
+            if definitions:
+                preset_summary = ", ".join(
+                    f"{name} (trigger={d['trigger_type']},"
+                    f" interval={d['trigger_interval_seconds']}s)"
+                    for name, d in sorted(definitions.items())
+                )
+                logger.info(
+                    "Autonomous session runner loaded %d enabled preset(s): %s",
+                    len(definitions),
+                    preset_summary,
+                )
+            else:
+                logger.info(
+                    "Autonomous session runner: no enabled presets — "
+                    "no autonomous sessions will run"
+                )
+            return definitions
+        logger.info(
+            "Autonomous session runner: sessions list is empty — "
+            "no autonomous sessions will run"
+        )
         return {}
 
     @property
@@ -365,6 +386,24 @@ class AutonomousRunner:
         self._sessions[session_id] = aq
         self._save_sessions()
 
+        # Lifecycle log: session created.
+        defn = self._definition_for_owner(owner_id)
+        trigger_type = defn.get("trigger_type", "periodic") if defn else "periodic"
+        interval = (
+            defn.get("trigger_interval_seconds", _DEFAULT_TRIGGER_INTERVAL)
+            if defn
+            else _DEFAULT_TRIGGER_INTERVAL
+        )
+        logger.info(
+            "Autonomous session spawned: preset=%s session_id=%s "
+            "owner_id=%s trigger=%s interval=%.0fs",
+            resolved_name,
+            session_id,
+            owner_id,
+            trigger_type,
+            interval,
+        )
+
         if schedule_kickoff:
             # Schedule the initial agent turn so the session immediately
             # begins subject selection + plan drafting (Fix 1: kickoff).
@@ -465,6 +504,7 @@ class AutonomousRunner:
         """
         defn = self._definition_for_owner(owner_id)
         trigger_type = defn.get("trigger_type", "periodic") if defn else "periodic"
+        preset_name = defn.get("name", "unknown") if defn else "unknown"
         if trigger_type == "on_close":
             delay = 0.0
         else:
@@ -474,9 +514,27 @@ class AutonomousRunner:
                 else _DEFAULT_TRIGGER_INTERVAL
             )
             delay = max(0.0, float(interval))
+        next_fire_ts = time.time() + delay
+        logger.info(
+            "Autonomous session restart scheduled: preset=%s owner_id=%s "
+            "trigger=%s delay=%.0fs next_fire_ts=%.3f",
+            preset_name,
+            owner_id,
+            trigger_type,
+            delay,
+            next_fire_ts,
+        )
         try:
             if delay:
                 await asyncio.sleep(delay)
+            logger.info(
+                "Autonomous session restart firing: preset=%s owner_id=%s "
+                "trigger=%s fire_ts=%.3f",
+                preset_name,
+                owner_id,
+                trigger_type,
+                time.time(),
+            )
             self.ensure_active_session(
                 owner_id,
                 definition_name=defn["name"] if defn else "",
@@ -594,9 +652,25 @@ class AutonomousRunner:
                 return None
 
             aq.state = AutonomousState.completed
+            preset_name = aq.definition_name or "unknown"
+            defn = self._definition_for_owner(aq.owner_id)
+            trigger_type = defn.get("trigger_type", "periodic") if defn else "periodic"
+            interval = (
+                defn.get("trigger_interval_seconds", _DEFAULT_TRIGGER_INTERVAL)
+                if defn
+                else _DEFAULT_TRIGGER_INTERVAL
+            )
+            next_fire = time.time() + (0.0 if trigger_type == "on_close" else interval)
             logger.info(
-                "Autonomous session %s completed",
+                "Autonomous session completed: preset=%s session_id=%s "
+                "owner_id=%s trigger=%s interval=%.0fs "
+                "next_fire_ts=%.3f",
+                preset_name,
                 session_id,
+                aq.owner_id,
+                trigger_type,
+                interval,
+                next_fire,
             )
             self._save_sessions()
             self._publish_state(session_id)
@@ -616,8 +690,11 @@ class AutonomousRunner:
             aq.plan_text = reply_text[:idx].strip()
 
             aq.state = AutonomousState.proposal
+            preset_name = aq.definition_name or "unknown"
             logger.info(
-                "Autonomous session %s proposal ready (plan %d chars)",
+                "Autonomous session proposal ready: preset=%s session_id=%s "
+                "(plan %d chars)",
+                preset_name,
                 session_id,
                 len(aq.plan_text),
             )
@@ -830,6 +907,27 @@ class AutonomousRunner:
         resumed rather than freshly created.
         """
         try:
+            defn = self._definition_for_owner(owner_id)
+            preset_name = defn.get("name", "unknown") if defn else "unknown"
+            trigger_type = defn.get("trigger_type", "periodic") if defn else "periodic"
+            interval = (
+                defn.get("trigger_interval_seconds", _DEFAULT_TRIGGER_INTERVAL)
+                if defn
+                else _DEFAULT_TRIGGER_INTERVAL
+            )
+            fire_ts = time.time()
+            logger.info(
+                "Autonomous session kickoff starting: preset=%s session_id=%s "
+                "owner_id=%s trigger=%s interval=%.0fs fire_ts=%.3f "
+                "is_restart=%s",
+                preset_name,
+                session_id,
+                owner_id,
+                trigger_type,
+                interval,
+                fire_ts,
+                is_restart,
+            )
             async with self._run_serializer.for_owner(owner_id):
                 agent = await asyncio.to_thread(self._agent_factory)
                 restart_notice = ""
@@ -841,7 +939,6 @@ class AutonomousRunner:
                 # Build the kickoff prompt: use the session definition's
                 # custom prompt when provided, otherwise fall back to the
                 # global initial_task or the standard prompt.
-                defn = self._definition_for_owner(owner_id)
                 custom_prompt = defn.get("prompt", "") if defn else ""
                 rejected_note = _rejected_subjects_note(self._sessions.get(session_id))
                 if custom_prompt:
@@ -1147,7 +1244,19 @@ class AutonomousRunner:
         - When no sessions exist at all for a definition (e.g. a fresh or
           wiped store), auto-start one session per enabled definition so
           autonomous mode is not permanently idle.
+
+        **Startup semantics for periodic presets:** each enabled periodic
+        preset fires at t=0 (startup), not after one full interval.
+        ``trigger_interval_seconds`` is the delay *between completion
+        and the next restart*, not an initial delay.  The first run
+        begins immediately at startup via :meth:`ensure_all_active_sessions`.
         """
+        logger.info(
+            "Autonomous session runner resuming: %d persisted sessions, "
+            "%d enabled preset(s)",
+            len(self._sessions),
+            len(self._definitions),
+        )
         for session_id in list(self._sessions):
             aq = self._sessions.get(session_id)
             if aq is None:
@@ -1161,9 +1270,17 @@ class AutonomousRunner:
             # to the owner and thus never written to disk — re-register it so
             # the session reappears in ``list_sessions`` for its owner.  This
             # repairs already-orphaned sessions on the next restart.
-            self._store.register_session(
-                aq.owner_id, session_id, title="Autonomous chat"
-            )
+            try:
+                self._store.register_session(
+                    aq.owner_id, session_id, title="Autonomous chat"
+                )
+            except Exception:
+                logger.exception(
+                    "Failed to reconcile conversation store for "
+                    "autonomous session %s (owner=%s) — continuing",
+                    session_id,
+                    aq.owner_id,
+                )
 
             if aq.state is AutonomousState.completed:
                 logger.info(
@@ -1205,14 +1322,29 @@ class AutonomousRunner:
         self.ensure_all_active_sessions()
 
     def ensure_all_active_sessions(self) -> None:
-        """Guarantee one open session per enabled definition (e.g. on startup)."""
+        """Guarantee one open session per enabled definition (e.g. on startup).
+
+        **Periodic presets fire at t=0 (startup).**  The
+        ``trigger_interval_seconds`` is the delay between a completed run
+        and the next restart — not an initial delay.  This method
+        bootstraps every enabled definition immediately, so the first
+        run of a periodic preset begins at startup rather than after
+        one full interval.
+        """
+        startup_ts = time.time()
         for name in self._definitions:
             owner_id = self._owner_id_for_definition(name)
+            defn = self._definitions.get(name, {})
+            trigger_type = defn.get("trigger_type", "periodic")
+            interval = defn.get("trigger_interval_seconds", _DEFAULT_TRIGGER_INTERVAL)
             logger.info(
-                "Ensuring one open autonomous session for definition %r "
-                "(owner %r) after resume",
+                "Autonomous session startup: ensuring preset=%s "
+                "owner_id=%s trigger=%s interval=%.0fs startup_ts=%.3f",
                 name,
                 owner_id,
+                trigger_type,
+                interval,
+                startup_ts,
             )
             self.ensure_active_session(
                 owner_id,
