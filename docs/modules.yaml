@@ -74,6 +74,7 @@ modules:
       - .trufflehog.yaml
       - AGENT.md
       - CHANGELOG.md
+      - changelog.d/20260731T101920Z-detect-and-surface-auto-merge-disabled-s-1aa7.misc.md
       - changelog.d/20260801T100719Z-agent-md-direct-repo-tool-documentation-b0a2.doc.md
       - changelog.d/20260801T113548Z-agent-md-testing-conventions-any-change-4441.doc.md
       - changelog.d/20260801T124303Z-system-prompt-references-nonexistent-too-410c.doc.md
