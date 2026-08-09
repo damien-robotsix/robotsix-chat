@@ -711,7 +711,7 @@ def _inject_skills(
             f"{instruction}\n\n"
             "Component access:\n"
             "– You have one generic tool for calling external components: "
-            "component_request(component_id, method, path, json_body=None). "
+            "component_request(component_id, method, path, json_body=None, params=None). "
             "Each component declares its own API surface as a skill — read "
             "the skill descriptions below for allowed operations.\n"
             "– Obey each component skill's safety section. When a skill marks "

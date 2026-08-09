@@ -87,6 +87,7 @@ async def _component_request_impl(
     method: str,
     path: str,
     json_body: dict[str, Any] | None = None,
+    params: dict[str, str] | None = None,
     read_response_max_chars: int = _TRUNCATE_LENGTH,
     component_credentials: dict[str, Any] | None = None,
     fallback_header_token: str = "",
@@ -215,7 +216,9 @@ async def _component_request_impl(
             if method_upper in ("GET", "HEAD")
             else _TRUNCATE_LENGTH
         )
-        if len(body_str) > limit:
+        if not body_str:
+            body_str = "(empty response body)"
+        elif len(body_str) > limit:
             body_str = body_str[:limit] + (
                 f"\n\n... (truncated at {limit} chars, original length {len(body_str)})"
             )
@@ -227,6 +230,7 @@ async def _component_request_impl(
             resp = await retry_client.request(
                 method_upper,
                 url,
+                params=params,
                 headers=headers,
                 json=json_body,
                 auth=auth_arg,
@@ -259,6 +263,7 @@ async def _component_request_impl(
                         resp = await client.request(
                             method_upper,
                             url,
+                            params=params,
                             headers=headers,
                             json=json_body,
                             auth=auth_arg,
@@ -384,6 +389,7 @@ def build_component_access_tools(
         method: str,
         path: str,
         json_body: dict[str, Any] | None = None,
+        params: dict[str, str] | None = None,
         max_response_chars: int | None = None,
     ) -> str:
         """Call an external component's API.
@@ -398,6 +404,8 @@ def build_component_access_tools(
             path: The API path relative to the component's base URL
                 (e.g. "/tickets", "/chat/skill").
             json_body: Optional JSON body for POST/PUT/PATCH requests.
+            params: Optional query-string parameters as key/value pairs
+                (e.g. ``{"limit": "5", "state": "open"}``).
             max_response_chars: Optional per-call truncation limit for the
                 response body.  When omitted the configured default
                 (component_response_max_chars) is used.  Set to a small
@@ -423,6 +431,7 @@ def build_component_access_tools(
             method,
             path,
             json_body,
+            params=params,
             read_response_max_chars=limit,
             component_credentials=_creds,
             fallback_header_token=_fallback_token,
