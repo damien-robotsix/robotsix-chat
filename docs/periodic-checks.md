@@ -48,12 +48,12 @@ The system distinguishes **two terminal states** that are often conflated:
 
 - **Auto-stopped (closed/terminated).** The monitor reached its consecutive-no-change limit
   (`subsessions.auto_stop_no_change_runs`, default 3) or its `max_runs` cap. The worker terminates
-  permanently — it will **not** reappear on its own. The assistant uses phrasing like
-  *"No change — monitor auto-stopped (closed)"*.
+  permanently — it will **not** reappear on its own. The assistant uses phrasing like *"No change —
+  monitor auto-stopped (closed)"*.
 - **Auto-paused (reversible, worker still alive).** The monitor reached its idle-run limit
-  (`subsessions.max_idle_runs`) and entered a `PAUSED` wait loop. The worker stays alive and can
-  be woken by a ticket state change or a parent message. The assistant uses phrasing like
-  *"No change — monitor auto-paused (will resume on message)"*.
+  (`subsessions.max_idle_runs`) and entered a `PAUSED` wait loop. The worker stays alive and can be
+  woken by a ticket state change or a parent message. The assistant uses phrasing like *"No change —
+  monitor auto-paused (will resume on message)"*.
 
 Both states publish an **SSE notification** (`type: notification`) to connected browsers, so the UI
 can show the status immediately — the pause notification includes the tracked ticket id, and the
