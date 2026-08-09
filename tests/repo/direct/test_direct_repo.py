@@ -53,7 +53,9 @@ def _mock_github_auth(monkeypatch: pytest.MonkeyPatch) -> None:
     from types import SimpleNamespace
 
     def _fake_mint(**kw: object) -> object:
-        return SimpleNamespace(token="ghs_test_installation_token")  # pragma: allowlist secret
+        return SimpleNamespace(
+            token="ghs_test_installation_token"
+        )  # pragma: allowlist secret
 
     fake = SimpleNamespace()
     fake.mint_installation_token = _fake_mint
@@ -2694,7 +2696,9 @@ async def test_github_401_triggers_token_refresh_and_retry(
     ).mock(
         return_value=httpx.Response(
             200,
-            text=json.dumps({"token": "ghs_fresh_token_after_401"}),  # pragma: allowlist secret
+            text=json.dumps(
+                {"token": "ghs_fresh_token_after_401"}
+            ),  # pragma: allowlist secret
         )
     )
 
@@ -2727,7 +2731,9 @@ async def test_github_401_retry_fails_on_second_401(
     ).mock(
         return_value=httpx.Response(
             200,
-            text=json.dumps({"token": "ghs_fresh_token_after_401"}),  # pragma: allowlist secret
+            text=json.dumps(
+                {"token": "ghs_fresh_token_after_401"}
+            ),  # pragma: allowlist secret
         )
     )
 
