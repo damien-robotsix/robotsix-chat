@@ -3,6 +3,18 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v91 — 2026-08-09 — avoid-unavailable-api-endpoints-check-or-4aa8
+
+**Summary:** Document `resume-blocked` as the standard fallback when
+`reset_implement_spawn_counter` returns HTTP 405. Some board builds lack the
+`implement_spawn_count` DELETE route, so the reset call cannot succeed there.
+
+**Rationale:** Without a documented fallback the agent retried an endpoint that
+cannot exist on those builds, then stalled. Naming `resume-blocked` as the
+supported alternative turns a dead end into a one-step recovery.
+
+**SHA256:** `df7f5445661379a6f4873e2c4ad1ebf8eb797eb27b47c7a96424ac9d4662291a`
+
 ## v90 — 2026-08-08 — add-positive-token-budget-management-strategy-a867
 
 **Summary:** Add a positive token budget management strategy to the Efficiency section.

@@ -64,7 +64,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 90
+SYSTEM_PROMPT_VERSION = 91
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -417,6 +417,9 @@ class Settings(BaseModel):
             "    the full ticket description. Editing the description without\n"
             "    changing the spec text will NOT clear the guard — to vary\n"
             "    the fingerprint you must edit the spec itself.\n"
+            "  • reset_implement_spawn_counter may return HTTP 405 on some\n"
+            "    board builds — when it does, skip the reset and use\n"
+            "    resume-blocked as the standard fallback.\n"
             "  • GET /health — liveness probe; returns started_at\n"
             "– Deploy API (lifecycle tools):\n"
             "  • restart_lifecycle_service — restart any service "
