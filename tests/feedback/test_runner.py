@@ -1383,3 +1383,96 @@ class TestDeployBaseUrl:
             ).mock(return_value=httpx.Response(200, json=[]))
             await target_module._do_resolve_allowed_repos("key", "")
         assert route.called
+
+
+# ---------------------------------------------------------------------------
+# FeedbackRunner — max_tickets_per_run
+# ---------------------------------------------------------------------------
+
+
+def _tickets(n: int) -> list[dict[str, Any]]:
+    return [
+        {
+            "title": f"Finding {i}",
+            "description": f"Body {i}",
+            "kind": "code",
+            "target_repo": "robotsix-chat",
+        }
+        for i in range(n)
+    ]
+
+
+class TestMaxTicketsPerRun:
+    """A run fires at every compaction boundary and was unbounded.
+
+    Observed before the cap: 37 runs filed 114 tickets, mean 3.08, with a
+    single run peaking at 9.
+    """
+
+    @pytest.mark.asyncio
+    async def test_a_large_run_is_trimmed_to_the_cap(
+        self, respx_mock: respx.MockRouter
+    ) -> None:
+        """Nine findings, cap of three: only three reach the board."""
+        route = respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(201)
+        )
+        runner = _make_runner(_settings(max_tickets_per_run=3))
+        filed, failed = await runner._file_tickets(
+            _tickets(9), trigger_type="compaction", session_id="s1"
+        )
+        assert (filed, failed) == (3, 0)
+        assert route.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_dropped_titles_are_logged_not_silently_discarded(
+        self, respx_mock: respx.MockRouter, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A chat session ends, so a dropped finding never resurfaces."""
+        respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(201)
+        )
+        runner = _make_runner(_settings(max_tickets_per_run=2))
+        with caplog.at_level(logging.WARNING):
+            await runner._file_tickets(
+                _tickets(5), trigger_type="compaction", session_id="sess-xyz"
+            )
+        assert "sess-xyz" in caplog.text
+        assert "'Finding 2'" in caplog.text
+        assert "'Finding 4'" in caplog.text
+        # Kept ones are not reported as dropped.
+        assert "'Finding 0'" not in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_a_run_under_the_cap_is_untouched(
+        self, respx_mock: respx.MockRouter, caplog: pytest.LogCaptureFixture
+    ) -> None:
+        """A small run files everything and warns about nothing."""
+        route = respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(201)
+        )
+        runner = _make_runner(_settings(max_tickets_per_run=3))
+        with caplog.at_level(logging.WARNING):
+            filed, _ = await runner._file_tickets(
+                _tickets(2), trigger_type="session_end", session_id="s1"
+            )
+        assert filed == 2
+        assert route.call_count == 2
+        assert "Dropped" not in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_zero_files_nothing(self, respx_mock: respx.MockRouter) -> None:
+        """``0`` disables filing while leaving analysis running."""
+        route = respx_mock.post("http://test-board/tickets/ingest").mock(
+            return_value=httpx.Response(201)
+        )
+        runner = _make_runner(_settings(max_tickets_per_run=0))
+        filed, failed = await runner._file_tickets(
+            _tickets(4), trigger_type="compaction", session_id="s1"
+        )
+        assert (filed, failed) == (0, 0)
+        assert route.call_count == 0
+
+    def test_the_default_is_bounded(self) -> None:
+        """Regression: the setting did not exist and runs were unbounded."""
+        assert _settings().max_tickets_per_run == 3

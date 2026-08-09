@@ -280,6 +280,7 @@ class FeedbackRunner:
         self._board_url = settings.board_url.rstrip("/") if settings.board_url else ""
         self._board_token = settings.board_api_token.get_secret_value()
         self._timeout = settings.timeout
+        self._max_tickets_per_run = settings.max_tickets_per_run
 
     # ------------------------------------------------------------------
     # Public entry points — schedule the run as a background task
@@ -654,6 +655,36 @@ class FeedbackRunner:
                     )
             return False
 
+    def _apply_cap(
+        self,
+        tickets: list[dict[str, Any]],
+        *,
+        session_id: str,
+    ) -> list[dict[str, Any]]:
+        """Trim *tickets* to ``max_tickets_per_run``.
+
+        A feedback run fires at every compaction and session-end boundary
+        and was previously unbounded. Unlike a mill periodic pass — whose
+        dropped findings resurface on the next run — a chat session ends,
+        so anything dropped here is gone. Each dropped title is therefore
+        logged at WARNING rather than discarded silently.
+        """
+        cap = self._max_tickets_per_run
+        if cap < 0 or len(tickets) <= cap:
+            return tickets
+
+        kept, dropped = tickets[:cap], tickets[cap:]
+        logger.warning(
+            "Feedback run for session %s produced %d ticket(s); filing %d "
+            "(feedback.max_tickets_per_run=%d). Dropped: %s",
+            session_id,
+            len(tickets),
+            len(kept),
+            cap,
+            "; ".join(repr(t.get("title", "?")) for t in dropped),
+        )
+        return kept
+
     async def _file_tickets(
         self,
         tickets: list[dict[str, Any]],
@@ -663,6 +694,10 @@ class FeedbackRunner:
     ) -> tuple[int, int]:
         """POST each ticket to ``/tickets/ingest``; return (filed, failed)."""
         if not self._board_url:
+            return (0, 0)
+
+        tickets = self._apply_cap(tickets, session_id=session_id)
+        if not tickets:
             return (0, 0)
 
         ingest_url = f"{self._board_url}/tickets/ingest"
