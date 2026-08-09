@@ -711,6 +711,31 @@ def _build_periodic_input(
     return "\n\n".join(parts)
 
 
+def _is_github_rate_limit_error(exc: BaseException) -> bool:
+    """Return ``True`` when *exc* is a GitHub API rate-limit error (403/429).
+
+    Inspects the exception's ``__cause__`` and ``__context__`` chain
+    for ``RuntimeError`` messages matching the pattern emitted by
+    :class:`~robotsix_chat.repo.direct.client.DirectRepoClient`.
+    """
+    seen: set[int] = set()
+    current: BaseException | None = exc
+    while current is not None:
+        exc_id = id(current)
+        if exc_id in seen:
+            break
+        seen.add(exc_id)
+        if isinstance(current, RuntimeError):
+            msg = str(current)
+            if "GitHub API" in msg and (
+                "error 429" in msg
+                or ("error 403" in msg and "rate limit" in msg.lower())
+            ):
+                return True
+        current = current.__cause__ or current.__context__
+    return False
+
+
 async def _run_turn_with_transient_retry(
     env: SubsessionEnv,
     agent: ChatAgent,
@@ -722,10 +747,10 @@ async def _run_turn_with_transient_retry(
     """Run one agent turn, retrying on transient API errors for periodic subsessions.
 
     For PERIODIC subsessions only: transient errors (e.g. OpenRouter
-    upstream hiccups) are retried with exponential backoff.  When all
-    retries are exhausted the function raises :class:`_TransientExhaustedError`
-    so the worker loop can skip the cycle gracefully instead of permanently
-    failing the subsession.
+    upstream hiccups, GitHub API rate-limit 403/429) are retried with
+    exponential backoff.  When all retries are exhausted the function
+    raises :class:`_TransientExhaustedError` so the worker loop can skip
+    the cycle gracefully instead of permanently failing the subsession.
 
     For TASK / USER_CHAT subsessions the error propagates unchanged —
     the outer handler will fail the subsession.
@@ -745,9 +770,14 @@ async def _run_turn_with_transient_retry(
             raise  # timeout is handled separately; never retried
         except Exception as exc:
             last_exc = exc
-            is_periodic = info.kind is SubsessionKind.PERIODIC
-            is_transient = is_openrouter_transient(exc)
-            if not is_periodic or not is_transient:
+            is_monitor = info.kind in (
+                SubsessionKind.PERIODIC,
+                SubsessionKind.WAIT_FOR_EVENT,
+            )
+            is_transient = is_openrouter_transient(exc) or (
+                is_monitor and _is_github_rate_limit_error(exc)
+            )
+            if not is_monitor or not is_transient:
                 raise
 
             if attempt < max_retries:
@@ -1291,6 +1321,11 @@ async def _event_wait_loop(
     checkpoint = info.checkpoint or {}
     ticket_id_raw = checkpoint.get("ticket_id")
     ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+    # Fall back to dedup_key when the checkpoint has not yet recorded
+    # the ticket_id — the dedup_key for ticket monitors is always the
+    # ticket id, so it is authoritative even on the first run.
+    if not ticket_id and info.dedup_key:
+        ticket_id = info.dedup_key
 
     if not ticket_id:
         logger.error(
@@ -1727,6 +1762,20 @@ async def _run_periodic_turn(
         )
         if closed is not None:
             await env.delivery.deliver_summary(closed, summary, "no_change_auto_stop")
+        if env.event_sink is not None:
+            ticket_id_raw = checkpoint.get("ticket_id")
+            ticket_id = ticket_id_raw if isinstance(ticket_id_raw, str) else ""
+            last_known = checkpoint.get("last_known_state", "")
+            env.event_sink.publish(
+                info.owner_session_id,
+                {
+                    "type": SSE_NOTIFICATION_TYPE,
+                    "title": f"Monitor auto-stopped: {info.title}",
+                    "body": (f"Tracked ticket {ticket_id} ({last_known}) — {summary}"),
+                    "urgency": "low",
+                    "link": ticket_id,
+                },
+            )
         return None
 
     # Sleep until the next tick, waking early on a steering message.

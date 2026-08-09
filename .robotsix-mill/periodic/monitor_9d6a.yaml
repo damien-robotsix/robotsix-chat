@@ -12,9 +12,7 @@ prompt_overlay: |
 
   Every tick, poll ticket 9d6a via `ticket_poll`:
 
-  ```
-  ticket_poll("<full-ticket-id>")
-  ```
+  ticket_poll("9d6a")
 
   # ticket_poll() resolves abbreviated IDs automatically — just pass the suffix
 

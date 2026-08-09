@@ -43,11 +43,6 @@ from robotsix_chat.chat.events import agent_message_frame
 
 from .models import SubsessionInfo, SubsessionKind
 
-# Terminal ticket states — matches worker_mill._TICKET_STATE_TERMINAL.
-# Defined locally to avoid a circular import (delivery ← worker_mill ←
-# worker ← delivery).
-_TICKET_STATE_TERMINAL: frozenset[str] = frozenset({"closed", "done"})
-
 if TYPE_CHECKING:
     from robotsix_chat.autonomous.runner import AutonomousRunner
     from robotsix_chat.chat.conversation import ConversationStore
@@ -75,10 +70,15 @@ _REACT_PROMPT_TEMPLATE = (
     "If there are NO earlier subsession outcomes to consolidate (this is the "
     "only one): If the outcome reports no change (the subsession auto-stopped, "
     "auto-paused, or reported NO_CHANGE / nothing changed), reply with a "
-    "single brief acknowledgment like 'No change — monitor paused' or 'No "
-    "change detected.' Do NOT re-list the ticket ID, current state, timestamp, "
-    "or expected next path — the user already knows the monitored state and "
-    "restating it adds noise. If there is something new or actionable, jump "
+    "single brief acknowledgment that reflects the TERMINAL state: for "
+    "auto-stopped (terminal) use phrasing like 'No change — monitor "
+    "auto-stopped (closed)'; for auto-paused (reversible, worker still alive) "
+    "use 'No change — monitor auto-paused (will resume on message).'  Never "
+    "conflate the two — a closed/stopped monitor will NOT reappear on its "
+    "own, while a paused monitor can be woken.  Do NOT re-list the ticket "
+    "ID, current state, timestamp, or expected next path — the user already "
+    "knows the monitored state and restating it adds noise.  If there is "
+    "something new or actionable, jump "
     "straight to the delta: what changed, what the user should know, or what "
     "to do next. Never start with 'Acknowledged' or echo the subsession's "
     "full summary. This is a real turn: your reply will be shown to the user.\n\n"
@@ -140,6 +140,8 @@ _REASON_PHRASES: dict[str, str] = {
     "repeated_blocked": "auto-stopped — ticket repeatedly blocked",
     "mill_unreachable": "failed — mill API unreachable",
     "ticket_unreachable": "failed — ticket API unreachable",
+    "missing_tool": "closed — required tool unavailable",
+    "pre_authorized_approval": "auto-escalated (pre-authorized ticket)",
 }
 
 # Hard cap on how many consecutive reaction turns (triggered by subsession
@@ -301,6 +303,8 @@ class ParentDelivery:
             # Suppress auto-pause delivery when the monitored ticket is
             # already in a terminal state — stale monitors for
             # already-closed tickets should not distract the user.
+            from .worker_mill import _TICKET_STATE_TERMINAL
+
             last_known = _extract_last_known_state(info)
             if last_known is not None and last_known.lower() in _TICKET_STATE_TERMINAL:
                 logger.info(

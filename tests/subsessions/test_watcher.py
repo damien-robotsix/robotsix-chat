@@ -50,16 +50,43 @@ async def test_query_ticket_state_returns_state_string() -> None:
     mock_instance.__aexit__ = AsyncMock(return_value=None)
 
     with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
-        state = await _query_ticket_state(
+        state, pr_url = await _query_ticket_state(
             "https://mill.example.com", "TICKET-1", "sub-1"
         )
 
     assert state == "in_progress"
+    assert pr_url is None
+
+
+@pytest.mark.asyncio
+async def test_query_ticket_state_returns_pr_url() -> None:
+    """Returns pr_url when present in the ticket response."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "state": "closed",
+        "pr_url": "https://github.com/owner/repo/pull/42",
+    }
+    mock_response.raise_for_status.return_value = None
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=mock_response)
+
+    mock_instance = MagicMock()
+    mock_instance.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_instance.__aexit__ = AsyncMock(return_value=None)
+
+    with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
+        state, pr_url = await _query_ticket_state(
+            "https://mill.example.com", "TICKET-1", "sub-1"
+        )
+
+    assert state == "closed"
+    assert pr_url == "https://github.com/owner/repo/pull/42"
 
 
 @pytest.mark.asyncio
 async def test_query_ticket_state_returns_none_on_http_error() -> None:
-    """Returns None when the mill returns a 4xx/5xx status."""
+    """Returns (None, None) when the mill returns a 4xx/5xx status."""
     mock_response = MagicMock()
     mock_response.raise_for_status.side_effect = httpx.HTTPStatusError(
         "not found", request=MagicMock(), response=MagicMock(status_code=404)
@@ -73,16 +100,17 @@ async def test_query_ticket_state_returns_none_on_http_error() -> None:
     mock_instance.__aexit__ = AsyncMock(return_value=None)
 
     with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
-        state = await _query_ticket_state(
+        state, pr_url = await _query_ticket_state(
             "https://mill.example.com", "TICKET-1", "sub-1"
         )
 
     assert state is None
+    assert pr_url is None
 
 
 @pytest.mark.asyncio
 async def test_query_ticket_state_returns_none_on_timeout() -> None:
-    """Returns None when the mill times out."""
+    """Returns (None, None) when the mill times out."""
     mock_client = MagicMock()
     mock_client.get = AsyncMock(side_effect=httpx.TimeoutException("timeout"))
 
@@ -91,18 +119,20 @@ async def test_query_ticket_state_returns_none_on_timeout() -> None:
     mock_instance.__aexit__ = AsyncMock(return_value=None)
 
     with patch("httpx.AsyncClient", MagicMock(return_value=mock_instance)):
-        state = await _query_ticket_state(
+        state, pr_url = await _query_ticket_state(
             "https://mill.example.com", "TICKET-1", "sub-1"
         )
 
     assert state is None
+    assert pr_url is None
 
 
 @pytest.mark.asyncio
 async def test_query_ticket_state_returns_none_on_bad_url() -> None:
-    """Returns None when the board URL is malformed."""
-    state = await _query_ticket_state("not a url", "TICKET-1", "sub-1")
+    """Returns (None, None) when the board URL is malformed."""
+    state, pr_url = await _query_ticket_state("not a url", "TICKET-1", "sub-1")
     assert state is None
+    assert pr_url is None
 
 
 # -- _resume_paused_monitor ------------------------------------------------

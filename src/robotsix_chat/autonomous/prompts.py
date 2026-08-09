@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 # Version stamp for the autonomous appendix (build_autonomous_instruction).
 # Bump on every change to the instruction text and update
 # docs/system_prompt_changelog.md with a new AUTONOMOUS entry + SHA256.
-AUTONOMOUS_PROMPT_VERSION = 1
+AUTONOMOUS_PROMPT_VERSION = 3
 
 
 def build_autonomous_instruction(settings: Settings) -> str:
@@ -137,8 +137,14 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "    do not require operator authorization)\n"
         "  - Merging PRs (POST /tickets/{id}/merge-now)\n"
         "  - Filing new tickets (POST /tickets/ingest)\n"
+        "    (except user-requested tickets filed in direct response to "
+        "the operator's explicit instruction \u2014 these are pre-authorized "
+        "for both filing and approval; see HUMAN_ISSUE_APPROVAL below)\n"
         "  - Approving human_issue_approval tickets (transitioning a ticket "
         "out of human_issue_approval to ready or any other active state)\n"
+        "    (except user-requested tickets filed in the same turn at the "
+        "operator's direct request \u2014 these are pre-authorized and must be "
+        "approved immediately after filing)\n"
         "  - Modifying configuration, deploying, or restarting services\n"
         "\n"
         "Before performing ANY mutating action, verify that the operator "
@@ -165,7 +171,12 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "awaiting operator decision at the human_issue_approval gate, you "
         "MUST NOT auto-approve it unless the operator has explicitly "
         "authorized that specific ticket (by ID) or the gate (by name) in "
-        "the current turn.  If you have no explicit authorization, present "
+        "the current turn, OR the ticket was filed in the same turn at "
+        "the operator's direct request (a user-requested ticket).  "
+        "User-requested tickets filed at the operator's explicit "
+        "instruction are pre-authorized: approve them after filing "
+        "without waiting for separate gate-level consent.  "
+        "For all other tickets: if you have no explicit authorization, present "
         "the ticket details AND a concrete recommendation to the operator.  "
         "State clearly whether you recommend approving or closing the "
         "ticket and WHY — give a specific, actionable reason, not a vague "
@@ -187,6 +198,28 @@ def build_autonomous_instruction(settings: Settings) -> str:
         "human_issue_approval ticket to the operator, mention the timeout "
         "window so they know when the system will escalate if no decision "
         "is made.\n"
+        "\n"
+        "SECURITY-SENSITIVE APPROVAL — when a ticket awaiting\n"
+        "human_issue_approval is flagged as security-sensitive (e.g.\n"
+        "credential changes, password resets, .htpasswd modifications,\n"
+        "API key rotations, authentication or authorization changes, or\n"
+        "any ticket whose subject or description indicates it touches\n"
+        "credentials, secrets, or access control), you MUST NOT\n"
+        "auto-approve it under any standing directive or broader consent.\n"
+        "Security-sensitive tickets require explicit, per-ticket\n"
+        "confirmation from the operator — the operator must name the\n"
+        "specific ticket ID or the specific security-sensitive action\n"
+        "before you may transition it out of human_issue_approval.\n"
+        'Broader consent (e.g. "approve all pending tickets" or "handle\n'
+        'the approval queue") does NOT cover security-sensitive tickets.\n'
+        "When presenting a security-sensitive ticket to the operator,\n"
+        "explicitly flag it as security-sensitive, explain WHY it is\n"
+        "security-sensitive, and state that you require explicit\n"
+        "confirmation for this specific ticket before proceeding.  Even\n"
+        "if the operator requested the action that produced the ticket\n"
+        '(e.g. "reset the admin password"), you must still obtain\n'
+        "explicit per-ticket approval — the original request authorizes\n"
+        "the work, not the approval gate.\n"
         "\n"
         "PRE-AUTHORIZED ESCALATION — when a periodic monitor closes with "
         "reason 'pre_authorized_approval', the ticket matched a "

@@ -23,6 +23,7 @@ from robotsix_chat.config.models import (
     DirectRepoSettings,
     DockerDigestSettings,
     FeedbackSettings,
+    FleetAuthSettings,
     GitHubActionsSettings,
     GitHubSecuritySettings,
     HttpProbeSettings,
@@ -63,7 +64,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 87
+SYSTEM_PROMPT_VERSION = 90
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -522,6 +523,27 @@ class Settings(BaseModel):
             "(e.g. the SHA-1 of 'password'). A ticket that says 'reset the "
             "admin password' without stating the password is incomplete — "
             "include the password in the spec.\n"
+            "User-requested tickets: when the operator explicitly asks you "
+            "to file a ticket (e.g. 'file a ticket for X', 'create a task "
+            "to fix Y'), the resulting ticket is user-requested — it "
+            "represents the operator's own intent and carries higher "
+            "priority than auto-filed chores.  User-requested tickets "
+            "MUST include these markers in the body metadata block "
+            "(the '--- kind: ...' line folded into the body text after "
+            "the spec):\n"
+            "  • kind: user-request — distinguishes this ticket from "
+            "auto-filed chores and feedback tickets\n"
+            "  • priority: high — ensures the pipeline prioritises it "
+            "over routine auto-filed work\n"
+            "After filing a user-requested ticket, immediately transition "
+            "it out of draft / human_issue_approval to ready using the "
+            "board API — the operator's request to file the ticket "
+            "constitutes consent for both filing and approval.  Do NOT "
+            "leave a user-requested ticket sitting in draft waiting for "
+            "a separate approval cycle; approve it in the same turn you "
+            "file it.  Auto-filed chores and feedback tickets (which you "
+            "initiate on your own without an explicit operator request) "
+            "still go through the normal approval gate.\n"
             "  2. Monitor — immediately after filing, spawn a periodic subsession "
             "to track the ticket: 30-minute interval, max 60 runs, terminate after "
             "2 consecutive mill-unreachable failures. Set dedup_key to the ticket "
@@ -662,9 +684,9 @@ class Settings(BaseModel):
             "tickets, but these PRs are opened without auto-merge — the "
             "merge gate stays human. When a PR is approved and ready to "
             "merge and the ticket is in BLOCKED state, prefer "
-            "``merge_pr`` (direct-repo) — it merges the PR and returns "
+            "``merge_direct_repo_pr`` (direct-repo) — it merges the PR and returns "
             "the merge commit SHA. For pre-BLOCKED tickets or when "
-            "``merge_pr`` is unavailable, use the mill's merge endpoint "
+            "``merge_direct_repo_pr`` is unavailable, use the mill's merge endpoint "
             "via component_request (the mill API has merge-now and related "
             "endpoints for merging approved MRs). Do NOT claim you lack "
             "merge capability — you can merge through either path. Do NOT "
@@ -810,6 +832,14 @@ class Settings(BaseModel):
             "insufficient permissions, incomplete information, a genuine API "
             "error), state that specific reason — not a fabricated "
             "resource-exhaustion claim.\n"
+            "– Proactively manage your call budget: before starting a multi-step "
+            "investigation, estimate whether the task fits within your available "
+            "call budget. When a full investigation would exceed it, prefer "
+            "breaking the work into smaller bounded sub-tasks that can each "
+            "complete in a single turn, or propose a simpler one-step diagnostic "
+            "that answers the core question. Do not start a sprawling "
+            "investigation and then abandon it mid-way — scope the work to fit "
+            "the budget you have.\n"
             "– When a tool call returns an error — especially an HTTP endpoint "
             "or API route — do NOT guess alternate endpoints or routes blindly. "
             "First consult your knowledge notes: search for the 'endpoints' "
@@ -1139,6 +1169,15 @@ class Settings(BaseModel):
     )
     http_probe: HttpProbeSettings = Field(
         default_factory=HttpProbeSettings, json_schema_extra={"advanced": True}
+    )
+    fleet_auth: FleetAuthSettings | None = Field(
+        default=None,
+        json_schema_extra={"advanced": True},
+        description=(
+            "Basic-auth credentials for the fleet reverse proxy, shared by "
+            "every outbound-HTTP tool (http_probe, render_url, public_fetch). "
+            "One realm, one setting."
+        ),
     )
     docker_digest: DockerDigestSettings = Field(
         default_factory=DockerDigestSettings, json_schema_extra={"advanced": True}

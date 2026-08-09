@@ -3,6 +3,57 @@
 Governed artifact: `Settings.agent_instruction` default literal in
 `src/robotsix_chat/config/settings.py`. Version stamp: `SYSTEM_PROMPT_VERSION` in the same module.
 
+## v90 — 2026-08-08 — add-positive-token-budget-management-strategy-a867
+
+**Summary:** Add a positive token budget management strategy to the Efficiency section.
+The new directive instructs the agent to proactively manage its call budget: before starting
+a multi-step investigation, estimate whether the task fits within the available call budget;
+when it would exceed it, break the work into smaller bounded sub-tasks that each complete in
+a single turn, or propose a simpler one-step diagnostic. This complements the v86 prohibition
+on fabricated token-exhaustion claims by giving the agent a constructive alternative.
+
+**Rationale:** The v86 Efficiency directive only prohibited fabricated token-exhaustion claims
+but provided no positive strategy for managing call budget. Without a constructive alternative,
+the agent lacked guidance on how to handle genuinely large tasks — the new directive fills
+that gap by instructing the agent to estimate, decompose, or simplify before committing to a
+sprawling investigation.
+
+**SHA256:** `f119e375d16d9913c692d43d4c5fe090c620268d92c45cec9585afe03145074c`
+
+## v89 — 2026-08-02 — auto-prioritize-user-requested-tickets-46db
+
+**Summary:** Add user-requested-ticket guidance to the ticket-filing rules. When the operator
+explicitly asks the agent to file a ticket (e.g. "file a ticket for X"), the resulting ticket is
+user-requested — it represents the operator's own intent and carries higher priority than auto-filed
+chores. User-requested tickets MUST include `kind: user-request` and `priority: high` markers in the
+body metadata block (the `--- kind: ...` line). After filing, the agent must immediately transition
+the ticket out of draft / `human_issue_approval` to `ready` using the board API — the operator's
+request to file constitutes consent for both filing and approval, so the gate is bypassed in the
+same turn. Auto-filed chores and feedback tickets (initiated on the agent's own initiative) still go
+through the normal approval gate.
+
+**Rationale:** User-requested tickets sat in 'draft' for days because the mill's workflow required
+human review while auto-filed chores jumped ahead, delaying the operator's core goals. The new
+guidance makes the filing request double as explicit consent, so user-requested tickets skip the
+draft/human_issue_approval gate immediately without a separate manual approval cycle.
+
+**SHA256:** `eecc27f51153b2565ade8310c9d49a2f4496a939fe38144c19e493d2b54ef1c6`
+
+## v88 — 2026-08-01 — fix-merge-capability-doc-references-to-u-39ff
+
+**Summary:** Fix two references to the non-existent ``merge_pr`` tool in the
+agent_instruction system prompt — both now correctly reference
+``merge_direct_repo_pr``, the exported agent tool. The internal client method
+name ``merge_pr`` was incorrectly used in the guardrail bullet
+(``DirectRepoSettings``) and the system prompt merge/PR guidance.
+
+**Rationale:** PR #1089 updated two agent-facing doc sites but carried over the
+internal method name ``merge_pr`` instead of the exported tool name
+``merge_direct_repo_pr``. An agent directed to use ``merge_pr`` has no callable
+tool by that name.
+
+**SHA256:** `e45f904d8426ec35d18873048776d2355435c3b7dbd63e07135d199149c07641`
+
 ## v87 — 2026-08-01 — config-ownership-migration-robotsix-chat-f7dd
 
 **Summary:** Remove references to the deprecated lifecycle config-store tools
@@ -147,14 +198,14 @@ filing (include the exact value) and merge review (verify the diff has no defaul
 ## v80 — 2026-07-31 — reconcile-direct-repo-merge-capability-docs-074f
 
 **Summary:** Update the direct-repo guardrail text in the system prompt and
-``DirectRepoSettings`` docstring to acknowledge the ``merge_pr`` tool (available for
+`DirectRepoSettings` docstring to acknowledge the `merge_pr` tool (available for
 BLOCKED tickets) instead of claiming no merge capability exists on the direct-repo path.
-When a PR is approved and mergeable, the agent should prefer ``merge_pr``; for
+When a PR is approved and mergeable, the agent should prefer `merge_pr`; for
 pre-BLOCKED tickets or when unavailable, the mill's merge endpoint is the fallback.
 
-**Rationale:** The ``merge_pr`` tool was introduced on the direct-repo path but two
-guardrail doc sites (the ``DirectRepoSettings`` model docstring and the system prompt
-``agent_instruction``) still claimed "no merge capability exists" — causing the agent to
+**Rationale:** The `merge_pr` tool was introduced on the direct-repo path but two
+guardrail doc sites (the `DirectRepoSettings` model docstring and the system prompt
+`agent_instruction`) still claimed "no merge capability exists" — causing the agent to
 incorrectly report it cannot merge and route the operator to a less direct path.
 
 **SHA256:** `b7de916c4cb865a4ea1deffd3f1500b6d6cc0e4f39b4e806b459d9ec4dbb6faa`
@@ -1769,6 +1820,40 @@ Governed artifact: `build_autonomous_instruction()` in
 The hash is computed on the output of `build_autonomous_instruction(Settings())` — i.e. with all
 autonomous settings at their pydantic field defaults (``proposal_marker="---PROPOSAL READY---"``,
 ``completion_marker="---AUTONOMOUS COMPLETE---"``, ``stale_monitor_runs_before_completion=3``).
+
+## AUTONOMOUS v3 — 2026-08-02 — auto-prioritize-user-requested-tickets-46db
+
+**Summary:** Add user-requested-ticket exceptions to the autonomous MUTATION AUTHORIZATION rules.
+The autonomous protocol now acknowledges that tickets filed at the operator's explicit instruction
+(`kind: user-request`, `priority: high`) are pre-authorized for both filing and approval — the
+operator's filing request constitutes consent. The exceptions are added to the 'Filing new tickets'
+and 'Approving human_issue_approval tickets' restriction lists, and to the HUMAN_ISSUE_APPROVAL
+consent-scoping paragraph.
+
+**Rationale:** The autonomous MUTATION AUTHORIZATION rules previously treated all ticket filing
+and approval as restricted without considering the operator's explicit intent. User-requested
+tickets filed at the operator's direct instruction should be auto-approved in the same turn
+without waiting for a separate gate-level consent cycle.
+
+**SHA256:** `7cad12ab915384decd5f32a72db8c727ff90b81bbfd44f6aea9f29e0b91201a0`
+
+## AUTONOMOUS v2 — 2026-07-31 — require-explicit-user-confirmation-for-s-6503
+
+**Summary:** Add `SECURITY-SENSITIVE APPROVAL` section to the autonomous protocol.
+Security-sensitive tickets (credential changes, password resets, .htpasswd modifications,
+API key rotations, authentication/authorization changes) must receive explicit per-ticket
+operator confirmation before being transitioned out of `human_issue_approval`.  Broader
+consent or standing directives do not cover security-sensitive tickets — even when the
+operator requested the work that produced the ticket, the approval gate requires its own
+explicit authorization.
+
+**Rationale:** The assistant auto-approved security-sensitive tickets (e.g. admin password
+reset, placeholder hash replacement) without separate per-ticket confirmation.  The new
+section closes this gap by requiring the assistant to flag security-sensitive tickets
+explicitly, explain why they are security-sensitive, and obtain per-ticket confirmation
+from the operator before transitioning them.
+
+**SHA256:** `b9fb86c6b2ca619cea0ef00eadc91562bcd5e5531be4461beccd6b90ea282a2c`
 
 ## AUTONOMOUS v1 — 2026-08-04 — extend-system-prompt-governance-to-the-a-e556
 

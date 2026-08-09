@@ -28,6 +28,15 @@ def _settings(**kw: Any) -> RenderUrlSettings:
     return RenderUrlSettings(**base)
 
 
+def _tools(fleet_auth: FleetAuthSettings | None = None, **kw: Any) -> list[Any]:
+    """Build the tool. fleet_auth is a top-level setting, not a per-tool one."""
+    # Imported lazily, like the tests do — the fake Playwright must be
+    # installed before the module is first imported.
+    from robotsix_chat.render_url import build_render_url_tools
+
+    return build_render_url_tools(_settings(**kw), fleet_auth)
+
+
 def _fake_playwright_module() -> Any:
     """Return a mock ``playwright.async_api`` module with a fake browser chain."""
     a11y_tree = '- document\n  - heading "Hello" [level=1]\n  - link "Click me"\n'
@@ -364,16 +373,12 @@ async def test_render_url_fleet_auth_passes_http_credentials() -> None:
     """When fleet_auth is configured and host matches, http_credentials are set."""
     fake = _install_fake_playwright()
     try:
-        from robotsix_chat.render_url import build_render_url_tools
-
-        tools = build_render_url_tools(
-            _settings(
-                fleet_auth=FleetAuthSettings(
-                    basic_auth_username="operator",
-                    basic_auth_password="s3cret",  # pragma: allowlist secret
-                    auth_hosts=["deploy.robotsix.net"],
-                ),
-            )
+        tools = _tools(
+            fleet_auth=FleetAuthSettings(
+                basic_auth_username="operator",
+                basic_auth_password="s3cret",  # pragma: allowlist secret
+                auth_hosts=["deploy.robotsix.net"],
+            ),
         )
         render_url = tools[0]
 
@@ -395,16 +400,12 @@ async def test_render_url_fleet_auth_host_not_matching() -> None:
     """Fleet auth http_credentials are NOT set when host is not in auth_hosts."""
     fake = _install_fake_playwright()
     try:
-        from robotsix_chat.render_url import build_render_url_tools
-
-        tools = build_render_url_tools(
-            _settings(
-                fleet_auth=FleetAuthSettings(
-                    basic_auth_username="operator",
-                    basic_auth_password="s3cret",  # pragma: allowlist secret
-                    auth_hosts=["deploy.robotsix.net"],
-                ),
-            )
+        tools = _tools(
+            fleet_auth=FleetAuthSettings(
+                basic_auth_username="operator",
+                basic_auth_password="s3cret",  # pragma: allowlist secret
+                auth_hosts=["deploy.robotsix.net"],
+            ),
         )
         render_url = tools[0]
 
@@ -423,9 +424,7 @@ async def test_render_url_fleet_auth_none() -> None:
     """No fleet_auth → no http_credentials."""
     fake = _install_fake_playwright()
     try:
-        from robotsix_chat.render_url import build_render_url_tools
-
-        tools = build_render_url_tools(_settings(fleet_auth=None))
+        tools = _tools(fleet_auth=None)
         render_url = tools[0]
 
         await render_url("https://www.robotsix.net/")
@@ -442,16 +441,12 @@ async def test_render_url_fleet_auth_empty_credentials_no_http_credentials() -> 
     """Empty username/password → no http_credentials even for matching host."""
     fake = _install_fake_playwright()
     try:
-        from robotsix_chat.render_url import build_render_url_tools
-
-        tools = build_render_url_tools(
-            _settings(
-                fleet_auth=FleetAuthSettings(
-                    basic_auth_username="",
-                    basic_auth_password="",
-                    auth_hosts=["deploy.robotsix.net"],
-                ),
-            )
+        tools = _tools(
+            fleet_auth=FleetAuthSettings(
+                basic_auth_username="",
+                basic_auth_password="",
+                auth_hosts=["deploy.robotsix.net"],
+            ),
         )
         render_url = tools[0]
 

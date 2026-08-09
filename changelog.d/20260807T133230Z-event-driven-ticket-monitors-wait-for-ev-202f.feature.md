@@ -1,1 +1,0 @@
-Replace periodic polling for ticket monitors with event-driven wait-for-event + timeout monitors, fed by mill push events. New ``POST /mill-events`` endpoint accepts ticket state-change events and routes them to waiting monitors within seconds with zero polling between events. Removed misleading "resumes automatically" text from auto-pause notices.

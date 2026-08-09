@@ -16,7 +16,7 @@ import httpx
 import pytest
 import respx
 
-from robotsix_chat.config import PublicFetchSettings
+from robotsix_chat.config import FleetAuthSettings, PublicFetchSettings
 from robotsix_chat.public_fetch import build_public_fetch_tools, load_public_fetch_skill
 
 
@@ -32,6 +32,14 @@ def _settings(**kw: Any) -> PublicFetchSettings:
     }
     base.update(kw)
     return PublicFetchSettings(**base)
+
+
+def _split_fleet_auth(
+    **kw: Any,
+) -> tuple[PublicFetchSettings, FleetAuthSettings | None]:
+    """Split per-tool settings from the top-level fleet_auth setting."""
+    fleet_auth = kw.pop("fleet_auth", None)
+    return _settings(**kw), fleet_auth
 
 
 # ---------------------------------------------------------------------------
@@ -590,7 +598,7 @@ async def test_fleet_auth_injects_authorization_header(
 
     from robotsix_chat.config import FleetAuthSettings
 
-    settings = _settings(
+    settings, fleet_auth = _split_fleet_auth(
         fleet_auth=FleetAuthSettings(
             basic_auth_username="user",
             basic_auth_password=SecretStr("pass"),
@@ -602,7 +610,7 @@ async def test_fleet_auth_injects_authorization_header(
         "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
-        tools = build_public_fetch_tools(settings)
+        tools = build_public_fetch_tools(settings, fleet_auth)
         result = json.loads(await tools[0]("https://fleet.example.com/api"))
 
     assert result["status_code"] == 200
@@ -623,7 +631,7 @@ async def test_non_fleet_host_does_not_get_auth_header(
 
     from robotsix_chat.config import FleetAuthSettings
 
-    settings = _settings(
+    settings, fleet_auth = _split_fleet_auth(
         fleet_auth=FleetAuthSettings(
             basic_auth_username="user",
             basic_auth_password=SecretStr("pass"),
@@ -635,7 +643,7 @@ async def test_non_fleet_host_does_not_get_auth_header(
         "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
-        tools = build_public_fetch_tools(settings)
+        tools = build_public_fetch_tools(settings, fleet_auth)
         result = json.loads(await tools[0]("https://public.example.com/api"))
 
     assert result["status_code"] == 200
@@ -656,7 +664,7 @@ async def test_fleet_auth_bypasses_domain_allowlist(
 
     from robotsix_chat.config import FleetAuthSettings
 
-    settings = _settings(
+    settings, fleet_auth = _split_fleet_auth(
         domain_allowlist=["public.example.com"],
         fleet_auth=FleetAuthSettings(
             basic_auth_username="user",
@@ -669,7 +677,7 @@ async def test_fleet_auth_bypasses_domain_allowlist(
         "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
-        tools = build_public_fetch_tools(settings)
+        tools = build_public_fetch_tools(settings, fleet_auth)
         result = json.loads(await tools[0]("https://fleet.example.com/api"))
 
     assert result["status_code"] == 200
@@ -689,7 +697,7 @@ async def test_fleet_auth_bypasses_ssrf_on_initial_host(
 
     from robotsix_chat.config import FleetAuthSettings
 
-    settings = _settings(
+    settings, fleet_auth = _split_fleet_auth(
         fleet_auth=FleetAuthSettings(
             basic_auth_username="user",
             basic_auth_password=SecretStr("pass"),
@@ -701,7 +709,7 @@ async def test_fleet_auth_bypasses_ssrf_on_initial_host(
         "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_PRIVATE_IP_SOCKADDR,
     ):
-        tools = build_public_fetch_tools(settings)
+        tools = build_public_fetch_tools(settings, fleet_auth)
         result = json.loads(await tools[0]("https://fleet.internal.example.com/api"))
 
     assert result["status_code"] == 200
@@ -726,7 +734,7 @@ async def test_fleet_auth_bypasses_ssrf_on_redirect_hop(
 
     from robotsix_chat.config import FleetAuthSettings
 
-    settings = _settings(
+    settings, fleet_auth = _split_fleet_auth(
         fleet_auth=FleetAuthSettings(
             basic_auth_username="user",
             basic_auth_password=SecretStr("pass"),
@@ -746,7 +754,7 @@ async def test_fleet_auth_bypasses_ssrf_on_redirect_hop(
         "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         side_effect=_getaddrinfo,
     ):
-        tools = build_public_fetch_tools(settings)
+        tools = build_public_fetch_tools(settings, fleet_auth)
         result = json.loads(await tools[0]("https://fleet.example.com/goto"))
 
     assert result["status_code"] == 200
@@ -766,7 +774,7 @@ async def test_fleet_auth_401_reports_stale_credentials(
 
     from robotsix_chat.config import FleetAuthSettings
 
-    settings = _settings(
+    settings, fleet_auth = _split_fleet_auth(
         fleet_auth=FleetAuthSettings(
             basic_auth_username="user",
             basic_auth_password=SecretStr("pass"),
@@ -778,7 +786,7 @@ async def test_fleet_auth_401_reports_stale_credentials(
         "robotsix_chat.common.http_fetch.socket.getaddrinfo",
         return_value=_MOCK_SOCKET_RETURN,
     ):
-        tools = build_public_fetch_tools(settings)
+        tools = build_public_fetch_tools(settings, fleet_auth)
         result = json.loads(await tools[0]("https://fleet.example.com/api"))
 
     assert result["status_code"] == 401

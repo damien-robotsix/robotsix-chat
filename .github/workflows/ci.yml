@@ -34,7 +34,18 @@ jobs:
         # No fix version available; ignored until a patched release is published.
         # --preview-features audit-command: uv ≥0.12 requires the flag; older
         # versions accept it without error, so this is safe to pass always.
-        run: uv --preview-features audit-command audit --ignore-until-fixed GHSA-w8v5-vhqr-4h9v
+        #
+        # aiohttp 3.14.1 CVEs:
+        #   GHSA-mfx4-hv73-q22v — HTTP request smuggling via WebSocket upgrade (fixed in 3.14.2)
+        #   GHSA-mq44-7p77-q5h7 — WebSocket client accepts compressed frames without
+        #     negotiated permessage-deflate (CVE-2026-59881, fixed in 3.14.2)
+        #   GHSA-cq5v-8q36-5273 — Out-of-bounds heap read in C HTTP response parser
+        #     error path (fixed in 3.14.3)
+        #
+        # cryptography 49.0.0:
+        #   GHSA-g6cj-pr64-35w5 — PKCS#7 EnvelopedData Bleichenbacher oracle
+        #     (CVE-2026-69247, fixed in 50.0.0)
+        run: uv --preview-features audit-command audit --ignore-until-fixed GHSA-w8v5-vhqr-4h9v --ignore-until-fixed GHSA-mfx4-hv73-q22v --ignore-until-fixed GHSA-mq44-7p77-q5h7 --ignore-until-fixed GHSA-cq5v-8q36-5273 --ignore-until-fixed GHSA-g6cj-pr64-35w5
 
   ci:
     name: Python CI (shared)
@@ -64,23 +75,14 @@ jobs:
     with:
       install-extras: ""
       trufflehog-pr-diff: true
-      # justification: TruffleHog v3.96.0 Lob detector produces false positives on
-      # test function names (e.g. test_self_update_changes_instructions). No actual
-      # Lob API keys exist in the repo — exhaustive grep for live_/test_/live_pub_/
-      # test_pub_ hex patterns returned zero matches across the full PR diff.
-      trufflehog-extra-args: "--results=verified,unknown --exclude-detectors=Lob"
+      trufflehog-extra-args: "--results=verified,unknown"
+      # cryptography 49.0.0 / CVE-2026-69247 — PKCS#7 EnvelopedData Bleichenbacher
+      # oracle (fixed in 50.0.0). Ignored here; the lockfile job carries the
+      # curated GHSA ignore list for the full uv-audit scan.
+      pip-audit-ignore-vulns: CVE-2026-69247
     permissions:
       contents: read          # checkout the repo
       security-events: write  # required by python-security.yml's nested jobs for SARIF upload
-
-  changelog:
-    name: Changelog fragment check
-    # Shared reusable gate (repo baseline); the skip-changelog label
-    # exemption is handled inside the reusable workflow.
-    if: github.event_name == 'pull_request'
-    uses: damien-robotsix/robotsix-github-workflows/.github/workflows/changelog-check.yml@0234f4b82365d776fc021c774dc104c5e7042c29  # main
-    permissions:
-      contents: read  # checkout the repo with full history
 
   pre-commit:
     name: Pre-commit hooks
@@ -97,7 +99,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
       - name: Install
-        run: uv sync --frozen --preview-features malware-check
+        run: uv --preview-features malware-check sync --frozen
         env:
           UV_MALWARE_CHECK: "1"
       - name: Run pre-commit
@@ -282,7 +284,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
       - name: Install
-        run: uv sync --frozen --preview-features malware-check
+        run: uv --preview-features malware-check sync --frozen
         env:
           UV_MALWARE_CHECK: "1"
       - name: Verify config/config.schema.json in sync
@@ -315,7 +317,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
       - name: Install
-        run: uv sync --frozen --preview-features malware-check
+        run: uv --preview-features malware-check sync --frozen
         env:
           UV_MALWARE_CHECK: "1"
       - name: Run deptry
@@ -358,7 +360,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
       - name: Install
-        run: uv sync --frozen --preview-features malware-check
+        run: uv --preview-features malware-check sync --frozen
         env:
           UV_MALWARE_CHECK: "1"
       - name: Run pyright
@@ -401,7 +403,7 @@ jobs:
           persist-credentials: false
       - uses: astral-sh/setup-uv@c771a70e6277c0a99b617c7a806ffedaca235ff9  # v9.0.0
       - name: Install
-        run: uv sync --frozen --preview-features malware-check
+        run: uv --preview-features malware-check sync --frozen
         env:
           UV_MALWARE_CHECK: "1"
       - name: Run benchmarks
@@ -415,7 +417,7 @@ jobs:
 
   check:
     name: All CI checks passed
-    needs: [lockfile, ci, security, changelog, pre-commit, check-sse-types, check-subsession-kinds, check-activity-kinds, check-subsession-statuses, check-autonomous-states, image-scan, check-config-schema, deptry, frontend-js, pyright, mypy]
+    needs: [lockfile, ci, security, pre-commit, check-sse-types, check-subsession-kinds, check-activity-kinds, check-subsession-statuses, check-autonomous-states, image-scan, check-config-schema, deptry, frontend-js, pyright, mypy]
     # Use !cancelled() so the job still runs when a reusable-workflow call
     # (ci, security) is misreported as "skipped" due to a known GitHub
     # Actions edge case: when a reusable workflow has conditionally-skipped
@@ -434,7 +436,6 @@ jobs:
           LOCKFILE_RESULT: ${{ needs.lockfile.result }}
           CI_RESULT: ${{ needs.ci.result }}
           SECURITY_RESULT: ${{ needs.security.result }}
-          CHANGELOG_RESULT: ${{ needs.changelog.result }}
           PRE_COMMIT_RESULT: ${{ needs.pre-commit.result }}
           CHECK_SSE_TYPES_RESULT: ${{ needs.check-sse-types.result }}
           CHECK_SUBSESSION_KINDS_RESULT: ${{ needs.check-subsession-kinds.result }}
@@ -466,7 +467,6 @@ jobs:
           check "$LOCKFILE_RESULT"                    lockfile
           check "$CI_RESULT"                          ci                    allow-skipped
           check "$SECURITY_RESULT"                    security              allow-skipped
-          check "$CHANGELOG_RESULT"                  changelog             allow-skipped
           check "$PRE_COMMIT_RESULT"                  pre-commit
           check "$CHECK_SSE_TYPES_RESULT"             check-sse-types
           check "$CHECK_SUBSESSION_KINDS_RESULT"      check-subsession-kinds

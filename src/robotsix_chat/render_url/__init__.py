@@ -23,7 +23,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlparse
 
-from robotsix_chat.config.models import RenderUrlSettings
+from robotsix_chat.config.models import FleetAuthSettings, RenderUrlSettings
 
 logger = logging.getLogger(__name__)
 
@@ -46,12 +46,17 @@ def load_render_url_skill() -> str:
 
 def build_render_url_tools(
     settings: RenderUrlSettings,
+    fleet_auth: FleetAuthSettings | None = None,
 ) -> list[Callable[..., Any]]:
     """Return the ``render_url`` tool, or an empty list when disabled.
 
     Args:
         settings: RenderUrl configuration (``enabled`` master switch,
-            timeout, viewport dimensions, optional fleet_auth).
+            timeout, viewport dimensions).
+        fleet_auth: Shared fleet reverse-proxy credentials, from the
+            top-level ``fleet_auth`` setting.  When set, requests to hosts
+            in ``fleet_auth.auth_hosts`` carry server-injected basic auth
+            (never visible to the agent).
 
     Returns:
         A single-element list containing the ``render_url`` async callable,
@@ -76,15 +81,15 @@ def build_render_url_tools(
     # Pre-compute auth credentials for fleet-auth hosts.
     fleet_auth_hosts: set[str] = set()
     fleet_http_credentials: dict[str, str] | None = None
-    if settings.fleet_auth is not None:
-        username = settings.fleet_auth.basic_auth_username
-        password = settings.fleet_auth.basic_auth_password.get_secret_value()
+    if fleet_auth is not None:
+        username = fleet_auth.basic_auth_username
+        password = fleet_auth.basic_auth_password.get_secret_value()
         if username and password:
             fleet_http_credentials = {
                 "username": username,
                 "password": password,
             }
-            fleet_auth_hosts = set(settings.fleet_auth.auth_hosts)
+            fleet_auth_hosts = set(fleet_auth.auth_hosts)
 
     async def render_url(url: str, text_only: bool = False) -> str:
         """Render a URL in headless Chromium and return the page content.
