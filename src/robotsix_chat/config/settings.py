@@ -64,7 +64,7 @@ class ConfigValidationError(ValueError):
 # Version stamp for the agent_instruction default literal.
 # Bump on every change to Settings.agent_instruction and update
 # docs/system_prompt_changelog.md with a new entry + SHA256.
-SYSTEM_PROMPT_VERSION = 89
+SYSTEM_PROMPT_VERSION = 90
 
 # Valid model levels, derived from llmio's tier enum (import-time constant so
 # the set is built once and can never drift from the tiers llmio ships).
@@ -829,6 +829,14 @@ class Settings(BaseModel):
             "insufficient permissions, incomplete information, a genuine API "
             "error), state that specific reason — not a fabricated "
             "resource-exhaustion claim.\n"
+            "– Proactively manage your call budget: before starting a multi-step "
+            "investigation, estimate whether the task fits within your available "
+            "call budget. When a full investigation would exceed it, prefer "
+            "breaking the work into smaller bounded sub-tasks that can each "
+            "complete in a single turn, or propose a simpler one-step diagnostic "
+            "that answers the core question. Do not start a sprawling "
+            "investigation and then abandon it mid-way — scope the work to fit "
+            "the budget you have.\n"
             "– When a tool call returns an error — especially an HTTP endpoint "
             "or API route — do NOT guess alternate endpoints or routes blindly. "
             "First consult your knowledge notes: search for the 'endpoints' "
