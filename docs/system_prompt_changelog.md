@@ -20,7 +20,7 @@ human review while auto-filed chores jumped ahead, delaying the operator's core 
 guidance makes the filing request double as explicit consent, so user-requested tickets skip the
 draft/human_issue_approval gate immediately without a separate manual approval cycle.
 
-**SHA256:** `8d58eb6b6a6a5c05f4c06d50aa5088f74ca803d98bb93a555e2f9e44f2bf5bff`
+**SHA256:** `eecc27f51153b2565ade8310c9d49a2f4496a939fe38144c19e493d2b54ef1c6`
 
 ## v88 — 2026-08-01 — fix-merge-capability-doc-references-to-u-39ff
 
@@ -1818,7 +1818,7 @@ and approval as restricted without considering the operator's explicit intent. U
 tickets filed at the operator's direct instruction should be auto-approved in the same turn
 without waiting for a separate gate-level consent cycle.
 
-**SHA256:** `4c2775e783bc271213c12c45e77704b424520c46409bd9c85bb28f70f311536f`
+**SHA256:** `7cad12ab915384decd5f32a72db8c727ff90b81bbfd44f6aea9f29e0b91201a0`
 
 ## AUTONOMOUS v2 — 2026-07-31 — require-explicit-user-confirmation-for-s-6503
 
